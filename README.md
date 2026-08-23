@@ -127,7 +127,9 @@ assumption that generated code was correct.
 
 Do not report real credentials or non-public vulnerability details in a public
 issue. The project does not yet have a private reporting route, so publication
-remains blocked until one is configured. See the [security policy](SECURITY.md).
+remains blocked until one is configured. See the [security policy](SECURITY.md),
+[threat model](docs/THREAT_MODEL.md), and [local security
+controls](docs/SECURITY_CONTROLS.md).
 
 ## License and attribution
 

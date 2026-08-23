@@ -1,0 +1,26 @@
+title = "Rustleaks repository self-scan"
+minVersion = "0.1.0-alpha.1"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated compatibility corpora contain reviewed synthetic detection cases"
+paths = [
+  '''(^|/)compat/(allowlist|assertion|cli|composite|config|decoder|detect|generator|git|regex|report|session|source)-corpus/''',
+  '''(^|/)compat/(api-dispositions-v1\.jsonl|api-inventory-v1\.json)$''',
+]
+
+[[allowlists]]
+description = "Copied compatibility fixtures intentionally contain upstream secret-shaped test data"
+paths = [
+  '''(^|/)compat/fixtures/''',
+]
+
+[[allowlists]]
+description = "Local Git metadata and build outputs are not repository source"
+paths = [
+  '''(^|/)\.git/''',
+  '''(^|/)target/''',
+  '''(^|/)bazel-(bin|out|testlogs|rustleaks)/''',
+]

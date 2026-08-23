@@ -40,6 +40,12 @@ violated.
 
 Use synthetic or upstream-provided test values. Never commit real credentials.
 
+For security-sensitive changes, run `just security`, `just fuzz-build`, and
+`just fuzz-smoke` in addition to the affected Bazel tests. The maintained
+boundary map, tool versions, dependency review policy, and longer campaign
+cadence are in [the security controls](docs/SECURITY_CONTROLS.md). Keep crash
+artifacts and suspected findings private until their contents are reviewed.
+
 ## Commit messages
 
 Use Conventional Commits with a lowercase imperative description, for example

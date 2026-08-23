@@ -8,11 +8,10 @@ the project remains unpublished. Older snapshots are not supported.
 ## Reporting
 
 Do not include real credentials, exploit payloads, or non-public vulnerability
-details in a public issue. This checkout has no configured repository remote or
-private advisory endpoint, so private vulnerability intake is not yet
-available. A private reporting route must be configured and recorded here
-before any public package release; until then, publication remains an external
-release follow-up.
+details in a public issue. The source repository has a GitHub remote, but this
+policy does not yet document a verified private advisory endpoint. A private
+reporting route must be enabled, tested, and recorded here before any public
+package release. Until then, publication remains blocked.
 
 When a private report route is available, maintainers should acknowledge a
 report within three business days, provide an initial assessment within seven
@@ -33,3 +32,8 @@ Dependency advisories, licenses, versions, and source origins are governed by
 `supply-chain-exceptions.toml` with an owner, rationale, affected package,
 policy, and expiry date. Expired or unreferenced exceptions fail the local
 release gate.
+
+The maintained boundary map, exact local commands, and response procedure are
+documented in [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md),
+[`docs/SECURITY_CONTROLS.md`](docs/SECURITY_CONTROLS.md), and
+[`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md).

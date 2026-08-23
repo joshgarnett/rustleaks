@@ -24,6 +24,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Surface | Bound or ownership |
 | --- | --- |
 | Regex compile | 1 MiB source, nesting 4,096, compiled NFA 256 MiB; limits are per expression |
+| Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
 | Ignore input | Individual scanner token limited to 64 KiB; aggregate collection is caller-owned |
@@ -32,6 +33,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Git | Patch/blob 256 MiB, stderr 1 MiB, metadata 16 MiB, path 1 MiB, files 1,000,000, hunks 2,000,000 |
 | Source runner | Bounded workers/queue and 1,000,000 unique commits; workers and child processes are joined/reaped |
 | Templates | Source 1 MiB, actions 1,000,000, output 64 MiB, nesting 128 |
+| CLI | 4,096 arguments; individual text and path values 1 MiB; normalized paths 4,096 components |
 | Streaming reports | Writer capacity, cancellation, and final I/O errors are caller-owned |
 
 Many ordinary Rust allocations remain infallible; out-of-memory may abort.

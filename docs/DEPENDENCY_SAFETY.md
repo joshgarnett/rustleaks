@@ -6,18 +6,67 @@ complete dependency graph: selected registry dependencies contain internal
 unsafe code.
 
 The reviewed normal-runtime graphs at `0.1.0-alpha.1` are identified by these
-`cargo tree --locked --edges normal --prefix none --target all` SHA-256 values.
+normalized `cargo tree --locked --edges normal --prefix none --target all`
+SHA-256 values. Normalization removes only the absolute workspace checkout
+path; external path identities remain part of the digest.
 The all-target union fails closed on target-specific dependency changes even
 when the release gate runs on macOS; warning-denied target compilation remains
 separate evidence and native Linux/Windows execution remains follow-up work.
 
 | Root and features | Tree SHA-256 |
 | --- | --- |
-| `rustleaks-core` | `aaead9358e53674f93f0c77185adf51a12a23c6407c229d21cc19a167ad631bb` |
-| `rustleaks-report` | `60c9b8d5bde4e2746d47844567c86e4b0a9972243af186501e49224e6d58a3c7` |
-| `rustleaks-sources` | `856c46dfc954ff66679da827fe58766cfef6d391529a4203e767e8c8a6083d4f` |
-| `rustleaks-sources --all-features` | `7de1b426b4b8b069c56cf9fd2d5accddacd780987c214eeda97244ee6a5d0f9b` |
-| `rustleaks-cli --all-features` | `6ee21bdba7367e6b117ac89a77e4f45dd473fa7cb0284035d68722045959ef89` |
+| `rustleaks-core` | `d58ae3874c4c31586e859cab2ac5659608b55c07e7c771991b37700d56faadc1` |
+| `rustleaks-report` | `31d643c37aef98750509103e02a81c8a54c36593899db6f237ce8b4aa21c6b88` |
+| `rustleaks-sources` | `8bb90a9651d9f074b2362f23efbfb0dde8edfd12f82a76a606e5048d102232d9` |
+| `rustleaks-sources --all-features` | `507c513d16c3667a362f7f1f62b43c81e0b6bd6bf27d73fe38f85bc961f44b32` |
+| `rustleaks-cli --all-features` | `abf38e45586827bbc0320814a8dcb7a5a5bafdea44f65f5bf7772b2426116877` |
+
+The workspace-wide locked resolution contains custom build targets in
+`crc32fast 1.5.1`, `libc 0.2.189`, `proc-macro2 1.0.107`, `quote 1.0.47`,
+`rustix 1.1.4`, `serde 1.0.229`, `serde_core 1.0.229`, `serde_json 1.0.151`,
+`thiserror 2.0.20`, and `zmij 1.0.23`. No resolved package declares Cargo's
+native `links` key, and the selected normal all-feature source graph contains
+no `cc`, `cmake`, `bindgen`, `pkg-config`, `vcpkg`, or native `-sys` crate.
+Several listed build targets belong only to target-specific development tools;
+the exact normal-runtime graph hashes above remain the publication boundary.
+
+The enforced cargo-geiger signal currently finds used unsafe constructs in
+exactly these 27 package/version identities:
+
+```text
+aho-corasick@1.1.5
+alloc-no-stdlib@2.0.4
+alloc-stdlib@0.2.4
+block-buffer@0.12.1
+brotli-decompressor@5.0.3
+const-oid@0.10.2
+cpufeatures@0.3.0
+hybrid-array@0.4.14
+itoa@1.0.18
+libc@0.2.189
+lz4_flex@0.14.0
+lzma-rust2@0.16.5
+lzma-rust2@0.19.0
+memchr@2.8.3
+proc-macro2@1.0.107
+regex-automata@0.4.7
+semver@1.0.28
+serde_core@1.0.229
+serde_json@1.0.151
+sha2@0.11.0
+syn@3.0.3
+toml_parser@1.1.3+spec-1.1.0
+twox-hash@2.1.3
+unicode-ident@1.0.24
+winnow@0.7.15
+winnow@1.0.4
+zmij@1.0.23
+```
+
+All first-party packages report zero used unsafe constructs and forbid unsafe
+code. The gate fails if either the dependency set or first-party status
+changes. This inventory is a change detector, not an audit or reachability
+claim.
 
 The publishable core's relevant unsafe-bearing boundary is narrow:
 

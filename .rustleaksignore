@@ -1,0 +1,57 @@
+# Reviewed synthetic AWS compatibility examples and source assertions.
+README.md:aws-access-token:49
+crates/rustleaks-compat/oracle/main_test.go:aws-access-token:504
+crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:131
+crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:205
+crates/xtask/src/main.rs:aws-access-token:755
+crates/xtask/src/tooling/cli_corpus/fixture.rs:aws-access-token:109
+crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:287
+crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:289
+crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:290
+
+# Reviewed generated hashes and synthetic decoder test values.
+MODULE.bazel.lock:generic-api-key:794
+compat/test-manifest.toml:generic-api-key:42
+compat/test-manifest.toml:generic-api-key:45
+crates/rustleaks-compat/oracle/main_test.go:generic-api-key:652
+crates/rustleaks-compat/oracle/main_test.go:generic-api-key:690
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:843
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:848
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:864
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:868
+crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
+crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
+crates/rustleaks-core/tests/engine.rs:generic-api-key:226
+crates/rustleaks-core/tests/engine.rs:generic-api-key:236
+crates/rustleaks-core/tests/engine.rs:generic-api-key:281
+
+# Reviewed synthetic private-key compatibility fixtures.
+crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
+crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
+
+# Commit-qualified synthetic fixtures from the initial compatibility import.
+4e1cf3fb09e60301d930564467bf2749c071c7ea:README.md:aws-access-token:48
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/extract_assertions.rb:aws-access-token:328
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/extract_assertions.rb:aws-access-token:329
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_allowlist_corpus.rb:aws-access-token:236
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_cli_corpus.rb:aws-access-token:728
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_detect_corpus.rb:aws-access-token:162
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_source_corpus.rb:aws-access-token:301
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:129
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:203
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_detect_corpus.rb:discord-api-token:183
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_allowlist_corpus.rb:generic-api-key:242
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:36
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:38
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:39
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:42
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:43
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:44
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/extract_assertions.rb:private-key:339
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_detect_corpus.rb:sidekiq-secret:164
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_detect_corpus.rb:sidekiq-secret:167
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_detect_corpus.rb:sidekiq-sensitive-url:171
+4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/test-manifest.toml:sourcegraph-access-token:3
+
+# Commit-qualified synthetic consumer example introduced after the import.
+44695c5ddb786661dcd70841a433ee837b35bae8:crates/xtask/src/main.rs:aws-access-token:748
