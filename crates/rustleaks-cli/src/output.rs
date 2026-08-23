@@ -119,7 +119,9 @@ pub(crate) fn parse_error(
     writer: &mut dyn Write,
     message: impl std::fmt::Display,
 ) -> io::Result<()> {
-    writeln!(writer, "Error: {message}")
+    writer.write_all(b"Error: ")?;
+    write_terminal_text(writer, &message.to_string())?;
+    writer.write_all(b"\n")
 }
 
 pub(crate) fn root_usage_hint(writer: &mut dyn Write) -> io::Result<()> {
@@ -545,6 +547,14 @@ mod tests {
         let mut output = Vec::new();
         error(&mut output, "path\u{1b}[2J\nforged").unwrap();
         assert_eq!(output, b"error path\\x1b[2J\\nforged\n");
+        assert!(!output.contains(&0x1b));
+    }
+
+    #[test]
+    fn parse_errors_escape_terminal_control_characters() {
+        let mut output = Vec::new();
+        parse_error(&mut output, "invalid value \u{1b}[2J\nforged").unwrap();
+        assert_eq!(output, b"Error: invalid value \\x1b[2J\\nforged\n");
         assert!(!output.contains(&0x1b));
     }
 
