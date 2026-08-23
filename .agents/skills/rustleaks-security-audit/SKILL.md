@@ -46,9 +46,11 @@ The final `just ci` result includes committed parity. When supported behavior
 or fresh Go evidence changes, run `cargo xtask parity --all` against a clean,
 committed candidate tree; it includes package and fuzz checks. Otherwise run
 `just fuzz-smoke`, and add `just package-check` when public APIs, default
-assets, features, manifests, or dependencies change. Follow the incident
-procedure for a suspected live finding, compromised dependency, release input,
-or unexplained fuzz or sanitizer result.
+assets, features, manifests, or dependencies change. Do not run
+`just package-check` for an ordinary owned source-code fix; add it only when
+one of those package-facing boundaries changes. Follow the incident procedure
+for a suspected live finding, compromised dependency, release input, or
+unexplained fuzz or sanitizer result.
 
 For a repository self-scan, build the maintained CLI and keep all findings
 redacted:
