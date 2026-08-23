@@ -110,7 +110,7 @@ jobs:
           RUSTLEAKS_REPORT_CORPUS: ${{ runner.temp }}/report-corpus
           RUSTLEAKS_CLI_CORPUS_OUTPUT: ${{ runner.temp }}/cli-corpus
         run: |
-          ruby compat/generate_source_corpus.rb
+          cargo xtask generate source --output "${RUSTLEAKS_SOURCE_CORPUS_OUTPUT}"
           ruby compat/generate_git_corpus.rb
           cargo xtask generate report --output "${RUSTLEAKS_REPORT_CORPUS_OUTPUT}"
           ruby compat/generate_cli_corpus.rb

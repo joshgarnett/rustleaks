@@ -5,6 +5,7 @@ use std::path::Path;
 use super::{
     Corpus, check_assertions, generate_corpus, generate_go_lowercase, generate_regex_fuzz_seeds,
     write_assertions, write_config_corpus, write_report_corpus, write_session_corpus,
+    write_source_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -39,6 +40,15 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
         [target, flag, output] if target == "session" && flag == "--output" => {
             write_session_corpus(root, Path::new(output))
+        }
+        [target] if target == "source" => {
+            write_source_corpus(root, &root.join("compat/source-corpus"))
+        }
+        [target, flag] if target == "source" && flag == "--check" => {
+            super::check_source_corpus(root)
+        }
+        [target, flag, output] if target == "source" && flag == "--output" => {
+            write_source_corpus(root, Path::new(output))
         }
         [target] if target == "assertions" => {
             let upstream = upstream(root)?;
@@ -92,7 +102,7 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|assertions [--check|--output PATH|--check-output PATH]|config|regex|detect|allowlist|decoder|session|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|assertions [--check|--output PATH|--check-output PATH]|config|regex|detect|allowlist|decoder|session|source|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }

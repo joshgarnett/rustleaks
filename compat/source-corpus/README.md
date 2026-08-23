@@ -17,8 +17,8 @@ mandatory.
 Regenerate or verify from the repository root:
 
 ```sh
-ruby compat/generate_source_corpus.rb
-ruby compat/generate_source_corpus.rb --check
+cargo xtask generate source
+cargo xtask generate source --check
 ```
 
 Outcomes record the generating GOOS/GOARCH. Windows symlink behavior and native
