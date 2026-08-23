@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 
 mod tooling;
 
-use tooling::{command_output, command_status_with_timeout};
+use tooling::{command_output, command_status_with_timeout, sha256_file};
 
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
@@ -437,15 +437,7 @@ fn verify_upstream() -> Result<(), String> {
             "upstream revision mismatch: expected {REVISION}, got {actual_revision}"
         ));
     }
-    let hash_line = command_output(
-        Command::new("shasum")
-            .args(["-a", "256"])
-            .arg(root.join("config/gitleaks.toml")),
-    )?;
-    let actual_hash = hash_line
-        .split_whitespace()
-        .next()
-        .ok_or("shasum returned no hash")?;
+    let actual_hash = sha256_file(&root.join("config/gitleaks.toml"))?;
     if actual_hash != CONFIG_SHA256 {
         return Err(format!(
             "default config hash mismatch: expected {CONFIG_SHA256}, got {actual_hash}"
@@ -2030,15 +2022,7 @@ fn api_check() -> Result<(), String> {
             .env("GOCACHE", env::temp_dir().join("rustleaks-api-gocache"))
             .current_dir(&root),
     )?;
-    let hash_line = command_output(
-        Command::new("shasum")
-            .args(["-a", "256"])
-            .arg(root.join("compat/api-inventory-v1.json")),
-    )?;
-    let actual_hash = hash_line
-        .split_whitespace()
-        .next()
-        .ok_or("shasum returned no API inventory hash")?;
+    let actual_hash = sha256_file(&root.join("compat/api-inventory-v1.json"))?;
     if actual_hash != API_INVENTORY_SHA256 {
         return Err(format!(
             "API inventory hash mismatch: expected {API_INVENTORY_SHA256}, got {actual_hash}"

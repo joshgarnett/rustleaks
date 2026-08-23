@@ -1,10 +1,28 @@
 //! Shared filesystem support for repository tooling.
 
+use std::fmt::Write as _;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use sha2::{Digest, Sha256};
+
+pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut output = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
+}
+
+pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("cannot read {} for SHA-256: {error}", path.display()))?;
+    Ok(sha256_bytes(&bytes))
+}
 
 pub(crate) fn command_output(command: &mut Command) -> Result<String, String> {
     const DIAGNOSTIC_LIMIT: usize = 16 * 1024;
