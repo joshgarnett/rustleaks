@@ -1,36 +1,17 @@
 //! Deterministic binary seed generation for the Go-regex fuzz target.
 
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use base64::Engine as _;
 
+use super::artifacts::GeneratedTree;
+
 pub(crate) fn generate_regex_fuzz_seeds(
     requests_path: &Path,
     output_dir: &Path,
 ) -> Result<usize, String> {
-    fs::create_dir_all(output_dir).map_err(|error| {
-        format!(
-            "cannot create regex fuzz corpus {}: {error}",
-            output_dir.display()
-        )
-    })?;
-    if fs::read_dir(output_dir)
-        .map_err(|error| {
-            format!(
-                "cannot inspect regex fuzz corpus {}: {error}",
-                output_dir.display()
-            )
-        })?
-        .next()
-        .is_some()
-    {
-        return Err(format!(
-            "regex fuzz corpus must be empty before generation: {}",
-            output_dir.display()
-        ));
-    }
     let requests = File::open(requests_path).map_err(|error| {
         format!(
             "cannot open regex requests {}: {error}",
@@ -38,6 +19,7 @@ pub(crate) fn generate_regex_fuzz_seeds(
         )
     })?;
     let mut count = 0_usize;
+    let mut generated = GeneratedTree::default();
     for (line_index, line) in BufReader::new(requests).lines().enumerate() {
         let line = line.map_err(|error| {
             format!(
@@ -76,10 +58,9 @@ pub(crate) fn generate_regex_fuzz_seeds(
         bytes.extend_from_slice(&pattern_len.to_le_bytes());
         bytes.extend_from_slice(&pattern);
         bytes.extend_from_slice(&haystack);
-        let seed = output_dir.join(format!("{count:04}-{safe_id}"));
-        fs::write(&seed, bytes)
-            .map_err(|error| format!("cannot write regex fuzz seed {}: {error}", seed.display()))?;
+        generated.insert(format!("{count:04}-{safe_id}"), bytes)?;
     }
+    generated.write_or_check(output_dir, false)?;
     Ok(count)
 }
 
@@ -128,6 +109,8 @@ mod tests {
             fs::read(output.join("0002-plain")).unwrap(),
             [1, 0, b'a', b'b']
         );
+        assert_eq!(generate_regex_fuzz_seeds(&requests, &output).unwrap(), 2);
+        fs::write(output.join("unexpected"), b"stale").unwrap();
         assert!(generate_regex_fuzz_seeds(&requests, &output).is_err());
     }
 

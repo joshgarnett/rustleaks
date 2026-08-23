@@ -1,5 +1,6 @@
 //! Rust-first repository generation and compatibility verification.
 
+mod artifacts;
 mod fixtures;
 mod fuzz_seeds;
 mod go_lowercase;
