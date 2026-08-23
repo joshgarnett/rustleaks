@@ -1278,8 +1278,8 @@ fn dependency_safety_check() -> Result<(), String> {
     for (package, all_features, expected) in graphs {
         let mut command = Command::new("cargo");
         command.current_dir(&root).args([
-            "tree", "--locked", "--edges", "normal", "--prefix", "none", "-p", package, "--target",
-            "all",
+            "tree", "--color", "never", "--locked", "--edges", "normal", "--prefix", "none", "-p",
+            package, "--target", "all",
         ]);
         if all_features {
             command.arg("--all-features");
