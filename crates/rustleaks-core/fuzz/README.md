@@ -22,11 +22,14 @@ replacement because Rust patterns must be valid UTF-8; haystack bytes remain
 unchanged, including malformed UTF-8.
 
 Seed the target from the frozen 3,618-request Go regex corpus and run a bounded
-smoke test from this directory:
+smoke test from the workspace root:
 
 ```sh
-ruby seed_regex_corpus.rb
-cargo +nightly fuzz run go_regex corpus/go_regex -- \
+cargo xtask generate regex-fuzz-seeds \
+  compat/regex-corpus/requests-v1.jsonl \
+  crates/rustleaks-core/fuzz/corpus/go_regex
+cargo +nightly fuzz run --fuzz-dir crates/rustleaks-core/fuzz \
+  go_regex crates/rustleaks-core/fuzz/corpus/go_regex -- \
   -max_len=4096 -max_total_time=60 -rss_limit_mb=2048
 ```
 

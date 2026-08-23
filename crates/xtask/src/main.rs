@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
+mod tooling;
+
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 const API_INVENTORY_SHA256: &str =
@@ -270,6 +272,21 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "generator-check" => generator_check(),
         [command] if command == "api-check" => api_check(),
         [command] if command == "fixture-check" => fixture_check(),
+        [command, target] if command == "generate" && target == "go-lowercase" => {
+            tooling::generate_go_lowercase(&workspace_root()?, false)
+        }
+        [command, target, flag]
+            if command == "generate" && target == "go-lowercase" && flag == "--check" =>
+        {
+            tooling::generate_go_lowercase(&workspace_root()?, true)
+        }
+        [command, target, requests, output]
+            if command == "generate" && target == "regex-fuzz-seeds" =>
+        {
+            tooling::generate_regex_fuzz_seeds(Path::new(requests), Path::new(output)).map(|count| {
+                println!("wrote {count} GoRegex seeds to {output}");
+            })
+        }
         [command] if command == "config-check" => config_check(),
         [command] if command == "regex-check" => regex_check(),
         [command] if command == "detect-check" => detect_check(),
@@ -307,7 +324,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|generate <go-lowercase [--check]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -1682,12 +1699,9 @@ fn fuzz_check() -> Result<(), String> {
         std::fs::create_dir_all(&artifacts)
             .map_err(|error| format!("cannot create fuzz artifact directory: {error}"))?;
         if target == "go_regex" {
-            command_output(
-                Command::new("ruby")
-                    .current_dir(&root)
-                    .arg("crates/rustleaks-core/fuzz/seed_regex_corpus.rb")
-                    .arg(root.join("compat/regex-corpus/requests-v1.jsonl"))
-                    .arg(&corpus),
+            tooling::generate_regex_fuzz_seeds(
+                &root.join("compat/regex-corpus/requests-v1.jsonl"),
+                &corpus,
             )?;
         } else {
             copy_seed_files(&root.join(fuzz_dir).join(seeds), &corpus)?;
@@ -2247,11 +2261,7 @@ fn validate_assertion_traceability(
 
 fn fixture_check() -> Result<(), String> {
     verify_upstream()?;
-    command_output(
-        Command::new("ruby")
-            .arg("compat/verify_fixtures.rb")
-            .current_dir(workspace_root()?),
-    )?;
+    tooling::verify_fixtures(&workspace_root()?, &oracle_root()?)?;
     println!("independent fixture copy matches the pinned upstream testdata");
     Ok(())
 }
@@ -2292,31 +2302,11 @@ fn oracle_check() -> Result<(), String> {
             .args(["compat/generate_config_corpus.rb", "--check"])
             .current_dir(&root),
     )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_regex_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_detect_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_go_lowercase.rb", "--check"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_allowlist_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_decoder_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
+    tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
+    tooling::generate_go_lowercase(&root, true)?;
+    tooling::replay_corpus(&root, tooling::Corpus::Allowlist)?;
+    tooling::replay_corpus(&root, tooling::Corpus::Decoder)?;
     command_output(
         Command::new("ruby")
             .args(["compat/generate_composite_corpus.rb", "--check"])
@@ -2361,11 +2351,7 @@ fn config_check() -> Result<(), String> {
 fn regex_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_regex_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
     command_output(
         Command::new("cargo")
             .args([
@@ -2384,16 +2370,8 @@ fn regex_check() -> Result<(), String> {
 fn detect_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_detect_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_go_lowercase.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
+    tooling::generate_go_lowercase(&root, true)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-core", "--test", "detect_corpus"])
@@ -2411,11 +2389,7 @@ fn detect_check() -> Result<(), String> {
 fn allowlist_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_allowlist_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::replay_corpus(&root, tooling::Corpus::Allowlist)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-core", "--test", "allowlist"])
@@ -2428,11 +2402,7 @@ fn allowlist_check() -> Result<(), String> {
 fn decoder_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_decoder_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::replay_corpus(&root, tooling::Corpus::Decoder)?;
     command_output(
         Command::new("cargo")
             .args([
