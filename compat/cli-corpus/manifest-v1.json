@@ -91,7 +91,7 @@
     "crates/rustleaks-cli": "c175d8ecdafddb9676df724db36a61ecde033bca37b37497ea7ece18a9c306ae",
     "crates/rustleaks-core": "9d1d5883df0730eae8cdbc7008257083a6e8fc7521d3a313f8674cab2a9959a8",
     "crates/rustleaks-report": "6a4ebf0277309b3e8bbf6e52b3d04be8fee323014ab7a341e816532d12da0d8c",
-    "crates/rustleaks-sources": "1ee2c977617b6a3adb02f7989b32646189f33ca0c3cfd3b4028645268ca2ef57",
+    "crates/rustleaks-sources": "599c67b9289eb073c864c7fa3ca0e860d4bb4355aaa66c7e1a05d7d226109b64",
     "crates/rustleaks-bzip2": "eff6fa1410ebf53eebe2052cb48ca1f42e72e16230407490b86f171fac9e6d32",
     "crates/rustleaks-compcol": "244e1c88bc0eaa9866f92f5c851781d5273cd911d7fd6218a7d6f79a03fcdaf6",
     "crates/rustleaks-rar-codec": "188596cdee2d5b251ac88c6a7d55d3f9ebb6c95d21c5f99abecbf8e50d7e9586",
