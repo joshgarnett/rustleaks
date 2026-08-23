@@ -23,7 +23,7 @@ pub(super) const IDENTITY_SHA256: &str =
 pub(super) const DISPOSITIONS_SHA256: &str =
     "aafe70e228d5cc740b42b8c6dad5ea353aec1052a7d8e8152b0ea731bd41eb56";
 
-/// Recreate the pinned disposition artifact and return Ruby-compatible summary output.
+/// Recreate the pinned disposition artifact and return the stable summary output.
 pub(crate) fn write_api_dispositions(root: &Path, output: &Path) -> Result<String, String> {
     let (inventory, rows, bytes) = expected(root)?;
     validate_rows(root, &inventory, &rows, &rows, true)?;
@@ -36,7 +36,7 @@ pub(crate) fn write_api_dispositions(root: &Path, output: &Path) -> Result<Strin
     render_summary(&rows, SummaryMode::Plain)
 }
 
-/// Check a candidate artifact byte-for-byte and return Ruby-compatible check output.
+/// Check a candidate artifact byte-for-byte and return the stable check output.
 pub(crate) fn check_api_dispositions(root: &Path, candidate: &Path) -> Result<String, String> {
     validate_candidate(root, candidate).and_then(|rows| render_summary(&rows, SummaryMode::Check))
 }
@@ -58,7 +58,7 @@ pub(crate) fn self_test_api_dispositions(root: &Path, candidate: &Path) -> Resul
     render_summary(&rows, SummaryMode::SelfTest)
 }
 
-/// Validate a candidate and return the Ruby `summary` mode output.
+/// Validate a candidate and return the stable `summary` mode output.
 pub(crate) fn summarize_api_dispositions(root: &Path, candidate: &Path) -> Result<String, String> {
     validate_candidate(root, candidate).and_then(|rows| render_summary(&rows, SummaryMode::Plain))
 }

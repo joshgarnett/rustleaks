@@ -15,8 +15,6 @@ pub(super) const DEFAULT_SHA256: &str =
 pub(super) const OUTCOMES_SHA256: &str =
     "a39ba5ae9c7228ee2a19a9c16e11892c1bd9afa5d97f1a6ab9ab5ce1d52ad601";
 const README_SHA256: &str = "b65d60fa4c5d96e8e55c81d14dc171174211a9424cfd94cf360d1497d5b5b2c9";
-const LEGACY_README_SHA256: &str =
-    "08ee8f56a273db11df074174938a0ec3430779021773784ae915a8ebe53aa174";
 const COVERAGE_SHA256: &str = "e0d3b738854524c3b9ce620022c286728c08d807a9ff1e4a11f30401a99c2149";
 const MANIFEST_SHA256: &str = "0434240be7b8cfe39f111db7a9754c234043e5544378e0fcf0ef0d7e10c534d2";
 const NEGATIVE_SHA256: &str = "69dc393a8dea2fec2b88211e5bdcd4dcfb0e916eb4a05647dc47fac690fba0da";
@@ -109,13 +107,9 @@ pub(super) fn load(root: &Path) -> Result<Canonical, String> {
 pub(super) fn rust_readme(canonical: &[u8]) -> Result<Vec<u8>, String> {
     let source = std::str::from_utf8(canonical)
         .map_err(|error| format!("composite README is not UTF-8: {error}"))?;
-    let start = "env GOCACHE=/private/tmp/rustleaks-composite-oracle-gocache   GOMODCACHE=/private/tmp/rustleaks-go-mod-cache   ruby compat/generate_composite_corpus.rb --check";
-    let replacement = "cargo xtask generate composite\ncargo xtask generate composite --check";
-    if source.matches(replacement).count() == 1 && !source.contains(start) {
+    let provenance = "cargo xtask generate composite\ncargo xtask generate composite --check";
+    if source.matches(provenance).count() == 1 {
         return Ok(canonical.to_vec());
-    }
-    if source.matches(start).count() == 1 && !source.contains(replacement) {
-        return Ok(source.replace(start, replacement).into_bytes());
     }
     Err("composite README regeneration provenance changed".into())
 }
@@ -124,11 +118,8 @@ pub(super) fn rust_manifest(canonical: &[u8], readme: &[u8]) -> Result<Vec<u8>, 
     let source = std::str::from_utf8(canonical)
         .map_err(|error| format!("composite manifest is not UTF-8: {error}"))?;
     let expected = sha256_bytes(readme);
-    if source.matches(&expected).count() == 1 && !source.contains(LEGACY_README_SHA256) {
+    if source.matches(&expected).count() == 1 {
         return Ok(canonical.to_vec());
-    }
-    if source.matches(LEGACY_README_SHA256).count() == 1 && !source.contains(&expected) {
-        return Ok(source.replace(LEGACY_README_SHA256, &expected).into_bytes());
     }
     Err("composite manifest README pin changed".into())
 }

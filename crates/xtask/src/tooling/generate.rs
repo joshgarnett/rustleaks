@@ -3,11 +3,12 @@
 use std::path::Path;
 
 use super::{
-    Corpus, check_api_dispositions, check_assertions, check_generator_samples, generate_corpus,
-    generate_go_lowercase, generate_regex_fuzz_seeds, regenerate_generator_samples,
-    self_test_api_dispositions, summarize_api_dispositions, write_api_dispositions,
-    write_assertions, write_composite_corpus, write_config_corpus, write_git_corpus,
-    write_report_corpus, write_session_corpus, write_source_corpus,
+    Corpus, check_api_dispositions, check_assertions, check_cli_corpus, check_generator_samples,
+    check_inventory, generate_corpus, generate_go_lowercase, generate_regex_fuzz_seeds,
+    regenerate_generator_samples, self_test_api_dispositions, summarize_api_dispositions,
+    write_api_dispositions, write_assertions, write_cli_corpus, write_composite_corpus,
+    write_config_corpus, write_git_corpus, write_inventory, write_report_corpus,
+    write_session_corpus, write_source_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -84,6 +85,27 @@ fn run_repository_artifact(root: &Path, args: &[String]) -> Option<Result<(), St
         }
         [target, flag, output] if target == "git" && flag == "--output" => {
             Some(write_git_corpus(root, Path::new(output)))
+        }
+        [target] if target == "cli" => {
+            Some(write_cli_corpus(root, &root.join("compat/cli-corpus")))
+        }
+        [target, flag] if target == "cli" && flag == "--check" => Some(check_cli_corpus(root)),
+        [target, flag, output] if target == "cli" && flag == "--output" => {
+            Some(write_cli_corpus(root, Path::new(output)))
+        }
+        [target] if target == "inventory" => Some(write_inventory(
+            root,
+            &root.join("compat/test-manifest.toml"),
+        )),
+        [target, flag] if target == "inventory" && flag == "--check" => Some(check_inventory(
+            root,
+            &root.join("compat/test-manifest.toml"),
+        )),
+        [target, flag, candidate] if target == "inventory" && flag == "--check" => {
+            Some(check_inventory(root, Path::new(candidate)))
+        }
+        [target, flag, output] if target == "inventory" && flag == "--output" => {
+            Some(write_inventory(root, Path::new(output)))
         }
         _ => None,
     }
@@ -188,7 +210,7 @@ fn run_direct_oracle(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }

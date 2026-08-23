@@ -1,6 +1,7 @@
 //! Rust-first repository generation and compatibility verification.
 
 mod artifacts;
+mod cli_corpus;
 mod composite;
 mod config;
 mod fixtures;
@@ -8,6 +9,7 @@ mod fuzz_seeds;
 mod generate;
 mod git_corpus;
 mod go_lowercase;
+mod inventory;
 mod oracle;
 mod report;
 mod session;
@@ -15,6 +17,7 @@ mod source;
 mod support;
 mod traceability;
 
+pub(crate) use cli_corpus::{check_cli_corpus, write_cli_corpus};
 pub(crate) use composite::{check_composite_corpus, write_composite_corpus};
 pub(crate) use config::{check_config_corpus, write_config_corpus};
 pub(crate) use fixtures::verify_fixtures;
@@ -22,6 +25,7 @@ pub(crate) use fuzz_seeds::generate_regex_fuzz_seeds;
 pub(crate) use generate::run as run_generate;
 pub(crate) use git_corpus::{check_git_corpus, write_git_corpus};
 pub(crate) use go_lowercase::generate_go_lowercase;
+pub(crate) use inventory::{check_inventory, write_inventory};
 pub(crate) use oracle::{Corpus, generate_corpus, replay_corpus};
 pub(crate) use report::{check_report_corpus, write_report_corpus};
 pub(crate) use session::{check_session_corpus, write_session_corpus};

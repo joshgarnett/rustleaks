@@ -19,4 +19,4 @@ members, and ordinary compression from solid compression:
 
 The three files under `expected/` are the exact uncompressed inputs used by
 the upstream reproducible build. Archive and expected-content hashes are
-frozen by `compat/generate_source_corpus.rb`.
+frozen by `cargo xtask generate source`.

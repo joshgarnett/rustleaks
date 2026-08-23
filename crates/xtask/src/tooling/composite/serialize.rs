@@ -1,4 +1,4 @@
-//! Ruby-compatible JSON formatting and private-probe response synthesis.
+//! Legacy-compatible JSON formatting and private-probe response synthesis.
 
 use serde_json::Value;
 
@@ -102,7 +102,7 @@ pub(super) fn synthesized(
     Ok(line.into_bytes())
 }
 
-pub(super) fn ruby_json_number_format(line: &[u8]) -> Result<Vec<u8>, String> {
+pub(super) fn legacy_json_number_format(line: &[u8]) -> Result<Vec<u8>, String> {
     let mut output = Vec::with_capacity(line.len() + 8);
     let mut index = 0;
     let mut in_string = false;
@@ -233,10 +233,10 @@ fn string<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
 mod tests {
     use serde_json::json;
 
-    use super::{filter_input, ruby_json_number_format};
+    use super::{filter_input, legacy_json_number_format};
 
     #[test]
-    fn filter_input_restores_ruby_field_order() {
+    fn filter_input_restores_legacy_field_order() {
         let request =
             json!({"filter_inputs":[{"secret_base64":"Uw==","rule_id":"r","start_line":1}]});
         assert_eq!(
@@ -246,9 +246,9 @@ mod tests {
     }
 
     #[test]
-    fn exponent_format_matches_ruby_without_touching_strings() {
+    fn exponent_format_matches_legacy_output_without_touching_strings() {
         assert_eq!(
-            ruby_json_number_format(b"{\"x\":5e-7,\"s\":\"5e-7\"}\n").unwrap(),
+            legacy_json_number_format(b"{\"x\":5e-7,\"s\":\"5e-7\"}\n").unwrap(),
             b"{\"x\":5.0e-07,\"s\":\"5e-7\"}\n"
         );
     }

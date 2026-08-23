@@ -55,13 +55,6 @@ mod tests {
     use super::spec;
 
     #[test]
-    fn readme_provenance_is_rust_owned() {
-        let ruby = b"env GOCACHE=/private/tmp/rustleaks-composite-oracle-gocache   GOMODCACHE=/private/tmp/rustleaks-go-mod-cache   ruby compat/generate_composite_corpus.rb --check\n";
-        let changed = spec::rust_readme(ruby).unwrap();
-        assert!(!String::from_utf8(changed).unwrap().contains(".rb"));
-    }
-
-    #[test]
     fn rust_provenance_rewrite_is_idempotent() {
         let readme = b"cargo xtask generate composite\ncargo xtask generate composite --check\n";
         assert_eq!(spec::rust_readme(readme).unwrap(), readme);

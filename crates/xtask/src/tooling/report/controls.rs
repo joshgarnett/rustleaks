@@ -1,4 +1,4 @@
-//! Format-specific negative and byte-boundary controls retained from Ruby.
+//! Format-specific negative and byte-boundary controls retained across the tooling migration.
 
 use std::collections::BTreeMap;
 

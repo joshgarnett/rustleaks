@@ -182,7 +182,7 @@ impl OrdinaryContext<'_> {
         if records.len() != 1 {
             return Err(format!("{id}: oracle returned {} records", records.len()));
         }
-        serialize::ruby_json_number_format(records[0])
+        serialize::legacy_json_number_format(records[0])
     }
 }
 

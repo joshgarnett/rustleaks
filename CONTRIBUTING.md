@@ -7,21 +7,18 @@ adapters, report formatting, and CLI behavior.
 ## Local checks
 
 Install the toolchain selected by `rust-toolchain.toml`. The complete parity
-gate also requires the pinned upstream repository at `../gitleaks`, Go, Ruby,
-and the exact auxiliary Cargo tools checked by `xtask`.
+gate also requires the pinned upstream repository at `../gitleaks`, Go, and
+the exact auxiliary Cargo tools checked by `xtask`.
 
 Run focused tests while editing, then run:
 
 ```sh
-cargo fmt --all --check
+cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps --locked
 cargo test --workspace --all-targets --all-features --locked
 cargo xtask parity --all
 ```
-
-Ruby is temporary compatibility orchestration retained for a later
-byte-for-byte tooling migration. It is not a product dependency.
 
 ## Compatibility changes
 

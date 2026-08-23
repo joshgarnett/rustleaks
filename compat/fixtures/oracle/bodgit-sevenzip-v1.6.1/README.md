@@ -5,5 +5,5 @@ These archives are byte-for-byte copies of the decoder fixtures in
 Go behavioral oracle. Together they cover COPY, DELTA, LZMA, Deflate, bzip2,
 Brotli, LZ4, Zstandard, BCJ2, and the x86/ARM/PPC/SPARC branch converters.
 
-The upstream archive hashes are frozen by `compat/generate_source_corpus.rb`.
+The upstream archive hashes are frozen by `cargo xtask generate source`.
 The fixtures remain under the adjacent BSD-3-Clause license.

@@ -1,4 +1,4 @@
-//! JSONL parsing plus Ruby insertion-order compatible serialization.
+//! JSONL parsing plus stable insertion-order compatible serialization.
 
 use std::fmt::Write as _;
 use std::{fs, path::Path};

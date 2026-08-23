@@ -96,9 +96,6 @@ jobs:
         with:
           go-version: 1.25.0
           cache-dependency-path: gitleaks/go.sum
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
       - name: Generate and replay the native source, Git, report, and CLI oracles
         working-directory: rustleaks
         env:
@@ -113,7 +110,7 @@ jobs:
           cargo xtask generate source --output "${RUSTLEAKS_SOURCE_CORPUS_OUTPUT}"
           cargo xtask generate git --output "${RUSTLEAKS_GIT_CORPUS_OUTPUT}"
           cargo xtask generate report --output "${RUSTLEAKS_REPORT_CORPUS_OUTPUT}"
-          ruby compat/generate_cli_corpus.rb
+          cargo xtask generate cli --output "${RUSTLEAKS_CLI_CORPUS_OUTPUT}"
           cargo test -p rustleaks-sources --all-features --test source_corpus
           cargo test -p rustleaks-sources --all-features --test git_corpus --test git_sources --test git_scm
           cargo test -p rustleaks-report

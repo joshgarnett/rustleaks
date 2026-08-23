@@ -184,16 +184,16 @@ fn observe_cases(
                 output_records.len()
             ));
         }
-        outcomes.extend_from_slice(&ruby_json_number_format(output_records[0])?);
+        outcomes.extend_from_slice(&legacy_json_number_format(output_records[0])?);
         fs::remove_dir_all(&case_root)
             .map_err(|error| format!("cannot remove {}: {error}", case_root.display()))?;
     }
     Ok(outcomes)
 }
 
-/// Ruby's JSON round trip preserves Go's object order but renders exponent
+/// The legacy JSON round trip preserves Go's object order but renders exponent
 /// numbers with a decimal mantissa and at least two exponent digits.
-fn ruby_json_number_format(line: &[u8]) -> Result<Vec<u8>, String> {
+fn legacy_json_number_format(line: &[u8]) -> Result<Vec<u8>, String> {
     let mut output = Vec::with_capacity(line.len() + 8);
     let mut index = 0;
     let mut in_string = false;
@@ -348,7 +348,7 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{records, ruby_json_number_format};
+    use super::{legacy_json_number_format, records};
 
     #[test]
     fn records_require_final_newline_and_reject_blanks() {
@@ -358,11 +358,11 @@ mod tests {
     }
 
     #[test]
-    fn ruby_json_number_format_changes_only_exponent_tokens() {
+    fn legacy_json_number_format_changes_only_exponent_tokens() {
         let input = br#"{"tiny":5e-324,"small":1.25e-6,"text":"5e-324","whole":1}
 "#;
         let expected = br#"{"tiny":5.0e-324,"small":1.25e-06,"text":"5e-324","whole":1}
 "#;
-        assert_eq!(ruby_json_number_format(input).unwrap(), expected);
+        assert_eq!(legacy_json_number_format(input).unwrap(), expected);
     }
 }

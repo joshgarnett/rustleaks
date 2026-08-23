@@ -1,4 +1,4 @@
-//! Material Git behavior and negative controls retained from the Ruby generator.
+//! Material Git behavior and negative controls retained from the previous generator.
 
 use std::collections::BTreeMap;
 use std::path::Path;

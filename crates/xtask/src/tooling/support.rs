@@ -24,6 +24,52 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(sha256_bytes(&bytes))
 }
 
+/// Hashes a sorted Rust source tree as portable `path\0content-hash\n` records.
+pub(crate) fn source_tree_sha256(root: &Path, directory: &Path) -> Result<String, String> {
+    let mut files = Vec::new();
+    collect_rust_sources(directory, &mut files)?;
+    files.sort();
+    if files.is_empty() {
+        return Err(format!(
+            "generator source tree {} contains no Rust files",
+            directory.display()
+        ));
+    }
+    let mut records = Vec::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|error| format!("{} is outside {}: {error}", path.display(), root.display()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        records.extend_from_slice(relative.as_bytes());
+        records.push(0);
+        records.extend_from_slice(sha256_file(&path)?.as_bytes());
+        records.push(b'\n');
+    }
+    Ok(sha256_bytes(&records))
+}
+
+fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(directory)
+        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
+    {
+        let entry = entry
+            .map_err(|error| format!("cannot read entry in {}: {error}", directory.display()))?;
+        let path = entry.path();
+        if entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?
+            .is_dir()
+        {
+            collect_rust_sources(&path, output)?;
+        } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
+            output.push(path);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn command_output(command: &mut Command) -> Result<String, String> {
     const DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 

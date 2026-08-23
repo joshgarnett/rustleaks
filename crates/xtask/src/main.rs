@@ -313,7 +313,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|generate <go-lowercase [--check]|regex|detect|allowlist|decoder|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|generate <go-lowercase [--check]|regex|detect|allowlist|decoder|report [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -1622,355 +1622,12 @@ fn fuzz_check() -> Result<(), String> {
 
 fn manifest_check() -> Result<(), String> {
     let root = workspace_root()?;
-    let manifest = std::fs::read_to_string(root.join("compat/test-manifest.toml"))
-        .map_err(|error| format!("cannot read test manifest: {error}"))?;
-    let behavior_matrix = std::fs::read_to_string(root.join("compat/behavior-matrix.toml"))
-        .map_err(|error| format!("cannot read behavior matrix: {error}"))?;
-    let api_dispositions = std::fs::read_to_string(root.join("compat/api-dispositions-v1.jsonl"))
-        .map_err(|error| format!("cannot read API dispositions: {error}"))?;
     package_attribution_check(&root)?;
-    validate_manifest_baselines(&manifest)?;
-    validate_manifest_mappings(&manifest)?;
-    validate_final_traceability_statuses(&manifest, &behavior_matrix, &api_dispositions)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_inventory.rb", "--check"])
-            .current_dir(workspace_root()?),
-    )?;
+    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
     assertion_check()?;
     generator_check()?;
     api_check()?;
     println!("manifest exact mechanical identities and dispositions are consistent");
-    Ok(())
-}
-
-fn validate_manifest_baselines(manifest: &str) -> Result<(), String> {
-    for required in [
-        "packages = 16",
-        "exported_api_identities = 607",
-        "test_files = 19",
-        "active_top_level_tests = 41",
-        "nested_test_identities = 234",
-        "macos_test_identities = 275",
-        "benchmarks = 8",
-        "exported_rule_constructors = 225",
-        "selected_helper_validations = 220",
-        "generator_sample_cases = 6770",
-        "generator_string_true_positive_cases = 6368",
-        "generator_string_false_positive_cases = 342",
-        "generator_path_true_positive_cases = 28",
-        "generator_path_false_positive_cases = 32",
-        "non_t_run_assertion_cases = 283",
-        "benchmark_correctness_assertions = 6",
-        "platform_skip_branches = 2",
-        "deterministic_git_intentions = 7",
-        "testdata_files = 214",
-        "testdata_symlinks = 1",
-        "default_rules = 222",
-        "regular_record_stream_sha256 = \"a29bcb807fc5466fb38bba0134fe6d5f41364e9efeae4980225cc21524fd4ed1\"",
-        "symlink_target = \"../source_file/id_ed25519\"",
-        "copy_root = \"compat/fixtures/upstream\"",
-        "tracked_entries = 215",
-        "ascii_paths = 215",
-        "invalid_utf8_regular_payloads = 67",
-        "api_inventory_sha256 = \"958ddaa92c5cce6afb21ef8209ce5689ff907cb2d9f152951bb75c795362125a\"",
-        "api_identity_set_sha256 = \"de2e917190f3fdcc24c3db77e3e0a5c7fdd09aff97805b066273f4a7b6e96e6b\"",
-        "api_dispositions_sha256 = \"aafe70e228d5cc740b42b8c6dad5ea353aec1052a7d8e8152b0ea731bd41eb56\"",
-        "assertions_sha256 = \"13f1603e6cf32073262bb67d736b158b45a6149dddcb08b36667fab23e64b8c5\"",
-        "generator_samples_sha256 = \"b0d1e24c04f88ec3c875bcbd08a6e0cafbabd7f7cf8757af5e385eb83259b750\"",
-        "config_requests_sha256 = \"91efa888f8fb2a875892f61629b561ceeb52c82bd503fdf6d25de59b5b6373bb\"",
-        "config_outcomes_sha256 = \"1548a91af225e4e28523804590e81629c24cfa3a28270c84decd2bbeceecb6e4\"",
-        "config_cases = 112",
-        "config_effective = 75",
-        "config_errors = 37",
-        "regex_expression_occurrences = 436",
-        "regex_unique_patterns = 390",
-        "regex_requests = 3618",
-        "regex_compile_successes = 3581",
-        "regex_compile_errors = 37",
-        "regex_matching_requests = 879",
-        "regex_adversarial_cases = 252",
-        "regex_expressions_sha256 = \"0811469d53321dd86de9c5c7577682028042864ff998ba328d33c57810e74824\"",
-        "regex_requests_sha256 = \"99917c10d3dddc3bb2645029b474d6987d3fb44607acd5f8d6fdaadcc05a6577\"",
-        "regex_request_metadata_sha256 = \"424276b289ee0e451ac145aa957ccd6ce29715834992a500dc7e57d8912173a3\"",
-        "regex_outcomes_sha256 = \"a8e3ca94a0d1a7210b9260d738b35a623bad9b98f521688770dbce1130a0c394\"",
-        "regex_manifest_sha256 = \"380ff1fd219179bdf07b3830beedd416bca2494aae0071c4b04848207a9b8e24\"",
-        "detect_requests_sha256 = \"e2b77263b65d31b36639ff4da43776f634d321d9a6d133673b3527f0f07f8707\"",
-        "detect_outcomes_sha256 = \"a06329c834e7784484261c4f324ee7e49bdb21a9348f32860a3035fb8858771c\"",
-        "detect_cases = 84",
-        "allowlist_requests_sha256 = \"779e9c5b71e215c2b159528ccef94f71b8b7e7e182e91d59dd1d2f7360b5a26d\"",
-        "allowlist_outcomes_sha256 = \"9cb2cf7bb909e137d9802f569dccd7f004610decfa2cf7e43d0676e5b14e72a3\"",
-        "allowlist_request_metadata_sha256 = \"c42cb275883a9eb50f49893343d238361a0652339f92eb521f9abbc0673435ad\"",
-        "allowlist_coverage_sha256 = \"45f3a08b36849f3eb507a029079ae7e2fe36482b31043c3cc6e7d8bbf0845182\"",
-        "allowlist_cases = 188",
-        "allowlist_method_cases = 127",
-        "allowlist_detect_cases = 61",
-        "decoder_requests_sha256 = \"9b5ee04e0bc49b4b852b3f427ff44f58a8d3c463097c1022dac8a13799b8fed7\"",
-        "decoder_outcomes_sha256 = \"428d8e37112f9b26d65156a0a075a8cfd15897f2b0bc02d7cee7aae17cd9a8b3\"",
-        "decoder_request_metadata_sha256 = \"c8fe20631eead7ddf515d500051c468a115a09a6ec1f0f652e11ab3ea8bb5c9b\"",
-        "decoder_coverage_sha256 = \"c46d32a1b1e340ae1e6b41539ddf812ef2090bd582766fc79813a656512268c2\"",
-        "decoder_cases = 263",
-        "decoder_decode_cases = 204",
-        "decoder_detect_cases = 59",
-        "composite_requests_sha256 = \"be01978f45cbeb6b180e4a28b3fa909c672f2690c8a3861e5088b4b09b5a531f\"",
-        "composite_outcomes_sha256 = \"a39ba5ae9c7228ee2a19a9c16e11892c1bd9afa5d97f1a6ab9ab5ce1d52ad601\"",
-        "composite_coverage_sha256 = \"e0d3b738854524c3b9ce620022c286728c08d807a9ff1e4a11f30401a99c2149\"",
-        "composite_negative_controls_sha256 = \"69dc393a8dea2fec2b88211e5bdcd4dcfb0e916eb4a05647dc47fac690fba0da\"",
-        "composite_cases = 182",
-        "composite_findings = 275",
-        "composite_required_findings = 1623",
-        "session_requests_sha256 = \"d13327151d12bc208786350e42b3c04d722b392cc6f7d9acfa050dd32bc93898\"",
-        "session_outcomes_sha256 = \"026cd026ef68dce45672a6c80bd0850219382217ad0a091434cb303d439779fc\"",
-        "session_coverage_sha256 = \"a92e8bd8b57cac5ad832d4d4fd7f0e44ac20ba114a34cb5e1e8242c266b2d5ed\"",
-        "session_negative_controls_sha256 = \"6a6c4962409a55ce91fd29a30166533eb17ac5a14708280172ef2f3027d8ab95\"",
-        "session_cases = 45",
-        "session_input_findings = 42",
-        "session_collected_findings = 29",
-        "session_baseline_findings = 33",
-    ] {
-        if !manifest.contains(required) {
-            return Err(format!(
-                "test manifest lacks required baseline `{required}`"
-            ));
-        }
-    }
-    validate_source_manifest_baselines(manifest)?;
-    validate_git_manifest_baselines(manifest)?;
-    Ok(())
-}
-
-fn validate_source_manifest_baselines(manifest: &str) -> Result<(), String> {
-    for required in [
-        "source_generator_sha256 = \"8c0610cbdd602fed61c1470b2beae376e8248d570db9d0e2fec6324a078e0886\"",
-        "source_requests_sha256 = \"39021e4cb87609ca40be575805be042bf4b591216f6f54e5df9f43f02237a240\"",
-        "source_outcomes_sha256 = \"dd324a7751145cd5251cd6628d7395710cc68507cb5370989d1c9c33274a3918\"",
-        "source_coverage_sha256 = \"271080c50356b0a108f22f454a5bfdf63c30f450a8ab5836c1687980842c11cb\"",
-        "source_negative_controls_sha256 = \"bf6108fca611806a4f13018f220f9a484cc3163fc8b70437dcb51c3ae6976cd3\"",
-        "source_manifest_sha256 = \"051e650d9cac891b6517257445783cde5520117d54c8c8c1f0d87e1499d2baaf\"",
-        "source_readme_sha256 = \"12a0fa6b05a23d9acd97dac2792b24569ff858216afdb679a4c5242ad17828d3\"",
-        "source_cases = 124",
-        "source_fragments = 276",
-        "source_findings = 61",
-        "source_issues = 17",
-        "source_behaviors = 30",
-        "source_upstream_identities = 34",
-        "source_material_assertions = 56",
-    ] {
-        if !manifest.contains(required) {
-            return Err(format!(
-                "test manifest lacks required source baseline `{required}`"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_git_manifest_baselines(manifest: &str) -> Result<(), String> {
-    for required in [
-        "git_generator_sha256 = \"fce93c100a641f073f5ab9432e80267cbaed34dc3cf4e737c1d3870a98d9693d\"",
-        "git_requests_sha256 = \"9b618a9c6cf1f95b9c3f04122eaf95d8aca9c1c3e863570c65c0a3f5a8c8c814\"",
-        "git_outcomes_sha256 = \"5396b3c80852f10a54c85bb4f8f380d4fa5e65a2a9af9a2be6ce4e682c3e477d\"",
-        "git_coverage_sha256 = \"35d5241bb96138f4526465de5d3f5db5e3fbc554a6f597b160987ab50249d06c\"",
-        "git_negative_controls_sha256 = \"00176d6456a1a1558876b05927a42654b060e4d33979d7988ae8457e1b2f95da\"",
-        "git_manifest_sha256 = \"1e9374f400931c3306d73e342c58c7eee50d0363c5c716f88409ad57e5eeba71\"",
-        "git_readme_sha256 = \"941427ae08258f8c44246bfecf5c3d7f35f667e14c87cec1cc0d2ea016c7426b\"",
-        "git_cases = 34",
-    ] {
-        if !manifest.contains(required) {
-            return Err(format!(
-                "test manifest lacks required Git baseline `{required}`"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_manifest_mappings(manifest: &str) -> Result<(), String> {
-    for (marker, expected) in [
-        ("[[api_package]]", 16),
-        ("[[test_file]]", 19),
-        ("[[case]]", 275),
-        ("[[benchmark]]", 8),
-        ("[[git_intention]]", 7),
-        ("[[generator_constructor]]", 225),
-        ("[[fixture]]", 215),
-        ("top_level = true", 41),
-        ("top_level = false", 234),
-        ("disposition = \"selected-default\"", 222),
-        ("disposition = \"excluded-by-upstream-default\"", 3),
-        ("helper = \"validate\"", 218),
-        ("helper = \"validate_with_paths\"", 5),
-        ("helper = \"none\"", 2),
-        ("kind = \"regular\"", 214),
-        ("kind = \"symlink\"", 1),
-        ("platform_skip_reason = ", 2),
-    ] {
-        let actual = manifest.matches(marker).count();
-        if actual != expected {
-            return Err(format!(
-                "test manifest marker `{marker}` count mismatch: expected {expected}, got {actual}"
-            ));
-        }
-    }
-    if manifest.contains("consumers = []") {
-        return Err("test manifest contains a fixture without a consumer mapping".into());
-    }
-    let mut constructor_rule_ids = manifest
-        .lines()
-        .filter_map(|line| line.strip_prefix("rule_id = \"")?.strip_suffix('"'))
-        .collect::<Vec<_>>();
-    if constructor_rule_ids.len() != 225 || constructor_rule_ids.contains(&"") {
-        return Err("every generator constructor must have a nonempty rule_id mapping".into());
-    }
-    constructor_rule_ids.sort_unstable();
-    constructor_rule_ids.dedup();
-    if constructor_rule_ids.len() != 225 {
-        return Err("generator constructor rule_id mappings are not unique".into());
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_lines)] // Keep the three final-state allow-lists adjacent and reviewable.
-fn validate_final_traceability_statuses(
-    manifest: &str,
-    behavior_matrix: &str,
-    api_dispositions: &str,
-) -> Result<(), String> {
-    let required_sections = [
-        "api_package",
-        "test_file",
-        "case",
-        "benchmark",
-        "git_intention",
-        "generator_constructor",
-        "fixture",
-    ];
-    let mut section = None;
-    let mut manifest_statuses = 0_usize;
-    for line in manifest.lines() {
-        if let Some(name) = line
-            .strip_prefix("[[")
-            .and_then(|value| value.strip_suffix("]]"))
-        {
-            section = required_sections.contains(&name).then_some(name);
-            continue;
-        }
-        let Some(current) = section else {
-            continue;
-        };
-        let Some(status) = line
-            .strip_prefix("status = \"")
-            .and_then(|value| value.strip_suffix('"'))
-        else {
-            continue;
-        };
-        manifest_statuses += 1;
-        if !matches!(status, "implemented" | "final-disposition") {
-            return Err(format!(
-                "{current} traceability row has non-final status `{status}`"
-            ));
-        }
-    }
-    if manifest_statuses != 765 {
-        return Err(format!(
-            "required manifest traceability status count mismatch: expected 765, got {manifest_statuses}"
-        ));
-    }
-
-    let mut in_behavior = false;
-    let mut behavior_statuses = 0_usize;
-    for line in behavior_matrix.lines() {
-        if line == "[[behavior]]" {
-            in_behavior = true;
-            continue;
-        }
-        if line.starts_with("[[") {
-            in_behavior = false;
-        }
-        if !in_behavior {
-            continue;
-        }
-        let Some(status) = line
-            .strip_prefix("status = \"")
-            .and_then(|value| value.strip_suffix('"'))
-        else {
-            continue;
-        };
-        behavior_statuses += 1;
-        let final_status = matches!(
-            status,
-            "traceability-complete"
-                | "explicit-cli-polish-follow-up"
-                | "implemented"
-                | "implemented-native-linux-windows-runtime-follow-up"
-                | "implemented-normalized-diagnostics"
-                | "implemented-pending-native-ci"
-                | "implemented-pending-native-windows"
-                | "implemented-raw"
-                | "implemented-safe-boundary"
-                | "implemented-safe-disclosure-disposition"
-                | "implemented-safe-error-disposition"
-                | "implemented-safe-error-dispositions"
-                | "implemented-safe-filesystem-disposition"
-                | "implemented-safe-in-memory-spool"
-                | "implemented-safe-numeric-disposition"
-                | "implemented-safe-overflow-disposition"
-                | "implemented-safe-process-disposition"
-                | "implemented-safe-profile"
-                | "implemented-timeout-ctrl-c-follow-up"
-        );
-        if !final_status {
-            return Err(format!(
-                "behavior traceability row has non-final status `{status}`"
-            ));
-        }
-    }
-    if behavior_statuses == 0 {
-        return Err("behavior matrix contains no status-bearing behavior rows".into());
-    }
-
-    let mut api_rows = 0_usize;
-    for (index, line) in api_dispositions.lines().enumerate() {
-        let row: serde_json::Value = serde_json::from_str(line)
-            .map_err(|error| format!("invalid API disposition JSONL row {}: {error}", index + 1))?;
-        api_rows += 1;
-        let implementation = row["implementation_status"].as_str();
-        let test = row["test_status"].as_str();
-        let evidence = row["evidence_status"].as_str();
-        let final_status = matches!(
-            (implementation, test, evidence),
-            (Some("implemented"), Some("passing"), Some("rust-tested"))
-                | (
-                    Some("not-applicable"),
-                    Some("not-applicable"),
-                    Some("go-inventoried")
-                )
-        );
-        if !final_status {
-            return Err(format!(
-                "API disposition row {} has non-final status {:?}/{:?}/{:?}",
-                index + 1,
-                implementation,
-                test,
-                evidence
-            ));
-        }
-        if implementation == Some("not-applicable")
-            && !row["implementation_evidence"]
-                .as_str()
-                .is_some_and(|value| value.starts_with("Final release disposition:"))
-        {
-            return Err(format!(
-                "API disposition row {} lacks a precise final release disposition",
-                index + 1
-            ));
-        }
-    }
-    if api_rows != 607 {
-        return Err(format!(
-            "API disposition status count mismatch: expected 607, got {api_rows}"
-        ));
-    }
     Ok(())
 }
 
@@ -2244,14 +1901,7 @@ fn session_check() -> Result<(), String> {
 fn source_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    let manifest = std::fs::read_to_string(root.join("compat/test-manifest.toml"))
-        .map_err(|error| format!("cannot read test manifest: {error}"))?;
-    validate_source_manifest_baselines(&manifest)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_inventory.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
     tooling::check_source_corpus(&root)?;
     command_output(
         Command::new("cargo")
@@ -2265,15 +1915,8 @@ fn source_check() -> Result<(), String> {
 fn git_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    let manifest = std::fs::read_to_string(root.join("compat/test-manifest.toml"))
-        .map_err(|error| format!("cannot read test manifest: {error}"))?;
-    validate_git_manifest_baselines(&manifest)?;
+    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
     validate_git_adversarial_matrix(&root)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_inventory.rb", "--check"])
-            .current_dir(&root),
-    )?;
     tooling::check_git_corpus(&root)?;
     command_output(
         Command::new("cargo")
@@ -2315,46 +1958,13 @@ fn report_check() -> Result<(), String> {
 fn cli_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    let manifest = std::fs::read_to_string(root.join("compat/test-manifest.toml"))
-        .map_err(|error| format!("cannot read test manifest: {error}"))?;
-    validate_cli_manifest_baselines(&manifest)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_cli_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_cli_corpus(&root)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-cli", "--all-features", "--offline"])
             .current_dir(&root),
     )?;
     println!("portable command-line outcomes are consistent");
-    Ok(())
-}
-
-fn validate_cli_manifest_baselines(manifest: &str) -> Result<(), String> {
-    for required in [
-        "cli_generator_sha256 = \"f9f17d36b43a192b2c8b0bbb785d96efea1198a73bd5f5d798a97a463372f92a\"",
-        "cli_requests_sha256 = \"32126f7d65e15f526836391b681811809d799eaf79066b5e60f9bb48191eb6c4\"",
-        "cli_outcomes_sha256 = \"d512a3bdb2ed2db120b36f576bd803dbe5dd5f99a6ccab44d6bae2103997cf24\"",
-        "cli_negative_controls_sha256 = \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\"",
-        "cli_manifest_sha256 = \"a239529002bce98d98e32fd931adce6fa261f170bd11fc0f8fb7812d74a80b1f\"",
-        "cli_readme_sha256 = \"ff4451eea78f0352fef3e85f91d045835c470653e998ab9bd4cea102a7d67d79\"",
-        "cli_cases = 34",
-        "cli_variants = 119",
-        "cli_fresh_processes = 240",
-        "cli_exact_variants = 100",
-        "cli_disposition_variants = 19",
-        "cli_findings_both = 100",
-        "cli_report_bytes_both = 48732",
-        "cli_parser_usage_bytes_both = 19508",
-        "cli_stderr_events_both = 884",
-        "cli_mutation_controls = 20",
-    ] {
-        if !manifest.contains(required) {
-            return Err(format!("test manifest is missing CLI baseline {required}"));
-        }
-    }
     Ok(())
 }
 
@@ -2554,8 +2164,8 @@ mod tests {
         CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, command_output,
         composite_test_executable_from_messages, normalize_workspace_dependency_tree,
         resource_test_command, run_resource_test, validate_core_repository_metadata,
-        validate_final_traceability_statuses, validate_perf_budget, validate_perf_records,
-        validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
+        validate_perf_budget, validate_perf_records, validate_publish_policy,
+        validate_regex_backend_metadata, validate_supply_chain_exceptions,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
@@ -2691,50 +2301,6 @@ outside v1.0.0 (/opt/external/outside)";
         assert!(validate_perf_budget(budget, &mut slow, 20).is_err());
         let mut memory = vec![10; 7];
         assert!(validate_perf_budget(budget, &mut memory, 21).is_err());
-    }
-
-    #[test]
-    fn final_traceability_statuses_fail_closed_under_unfinished_mutations() {
-        let manifest =
-            std::iter::repeat_n("[[case]]\nstatus = \"implemented\"\n", 765).collect::<String>();
-        let behavior = "[[behavior]]\nstatus = \"implemented-safe-error-disposition\"\n";
-        let api_row = serde_json::json!({
-            "implementation_status": "implemented",
-            "test_status": "passing",
-            "evidence_status": "rust-tested",
-            "implementation_evidence": "focused Rust test"
-        });
-        let api = std::iter::repeat_n(format!("{api_row}\n"), 607).collect::<String>();
-        validate_final_traceability_statuses(&manifest, behavior, &api).unwrap();
-
-        assert!(
-            validate_final_traceability_statuses(
-                &manifest.replacen("implemented", "inventoried", 1),
-                behavior,
-                &api,
-            )
-            .is_err()
-        );
-        assert!(
-            validate_final_traceability_statuses(
-                &manifest,
-                &behavior.replace("implemented-safe-error-disposition", "partial"),
-                &api,
-            )
-            .is_err()
-        );
-        assert!(
-            validate_final_traceability_statuses(
-                &manifest,
-                behavior,
-                &api.replacen(
-                    "\"implementation_status\":\"implemented\"",
-                    "\"implementation_status\":\"planned\"",
-                    1,
-                ),
-            )
-            .is_err()
-        );
     }
 
     #[derive(Default)]
