@@ -25,6 +25,10 @@ pub(crate) use source::{check_source_corpus, write_source_corpus};
 #[cfg(test)]
 pub(crate) use support::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 pub(crate) use support::{command_output, command_status_with_timeout, sha256_file};
+pub(crate) use traceability::api::{
+    check_api_dispositions, self_test_api_dispositions, summarize_api_dispositions,
+    write_api_dispositions,
+};
 pub(crate) use traceability::assertions::{
     check_assertions, validate_final_traceability, write_assertions,
 };

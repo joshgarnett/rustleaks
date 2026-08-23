@@ -2016,11 +2016,7 @@ fn api_check() -> Result<(), String> {
             "API inventory hash mismatch: expected {API_INVENTORY_SHA256}, got {actual_hash}"
         ));
     }
-    command_output(
-        Command::new("ruby")
-            .args(["--disable-gems", "compat/annotate_api.rb", "check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_api_dispositions(&root, &root.join("compat/api-dispositions-v1.jsonl"))?;
     println!("API inventory contains the exact pinned 607-identity surface");
     Ok(())
 }
