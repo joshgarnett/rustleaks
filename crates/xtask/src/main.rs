@@ -1687,7 +1687,7 @@ fn validate_manifest_baselines(manifest: &str) -> Result<(), String> {
         "invalid_utf8_regular_payloads = 67",
         "api_inventory_sha256 = \"958ddaa92c5cce6afb21ef8209ce5689ff907cb2d9f152951bb75c795362125a\"",
         "api_identity_set_sha256 = \"de2e917190f3fdcc24c3db77e3e0a5c7fdd09aff97805b066273f4a7b6e96e6b\"",
-        "api_dispositions_sha256 = \"b23fa803be5865648b9453c160cec956ffb181a954191655c38e7186ea51985b\"",
+        "api_dispositions_sha256 = \"00b0968df34b279f93fc69b9d064c80e0ae6ee00a2710230ecea65abffce4062\"",
         "assertions_sha256 = \"13f1603e6cf32073262bb67d736b158b45a6149dddcb08b36667fab23e64b8c5\"",
         "generator_samples_sha256 = \"b0d1e24c04f88ec3c875bcbd08a6e0cafbabd7f7cf8757af5e385eb83259b750\"",
         "config_requests_sha256 = \"91efa888f8fb2a875892f61629b561ceeb52c82bd503fdf6d25de59b5b6373bb\"",
