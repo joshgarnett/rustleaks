@@ -57,9 +57,17 @@ var sampleOrigins = map[string][]sampleOrigin{}
 var observationFile *os.File
 
 func relativeSource(path string) string {
+    path = strings.ReplaceAll(path, "\\", "/")
     marker := "/cmd/generate/"
     if index := strings.Index(path, marker); index >= 0 { return path[index+1:] }
     return path
+}
+func init() {
+    unix := relativeSource("/tmp/repo/cmd/generate/config/rules/example.go")
+    windows := relativeSource(`C:\repo\cmd\generate\config\rules\example.go`)
+    if unix != "cmd/generate/config/rules/example.go" || windows != unix {
+        panic("generator observer source-path normalization failed")
+    }
 }
 func registerSampleOrigin(value string, templateKey string, sourceFile string, sourceLine int) {
     sampleOrigins[value] = append(sampleOrigins[value], sampleOrigin{templateKey, relativeSource(sourceFile), sourceLine})

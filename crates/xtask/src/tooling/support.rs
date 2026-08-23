@@ -3,7 +3,8 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -117,6 +118,127 @@ pub(crate) fn command_status_with_timeout(
     wait_for_child_with_timeout(&mut child, timeout, label, &display)
 }
 
+/// Runs one command in an isolated process tree while enforcing live file-size
+/// limits on redirected output. Descendants are terminated when the direct
+/// child exits, fails, exceeds a limit, or reaches its deadline.
+pub(crate) fn command_status_with_output_limits(
+    command: &mut Command,
+    timeout: Duration,
+    label: &str,
+    limits: &[(&Path, &str, u64)],
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.process_group(0);
+    }
+    let display = format!("{command:?}");
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to run {label} ({display}): {error}"))?;
+    let started = Instant::now();
+    loop {
+        match output_limit_violation(limits, label) {
+            Ok(None) => {}
+            Ok(Some(error)) | Err(error) => return fail_after_cleanup(&mut child, label, error),
+        }
+        let status = match child.try_wait() {
+            Ok(status) => status,
+            Err(error) => {
+                return fail_after_cleanup(
+                    &mut child,
+                    label,
+                    format!("failed to poll {label} ({display}): {error}"),
+                );
+            }
+        };
+        if let Some(status) = status {
+            match output_limit_violation(limits, label) {
+                Ok(None) => {}
+                Ok(Some(error)) | Err(error) => {
+                    return fail_after_cleanup(&mut child, label, error);
+                }
+            }
+            terminate_process_tree(&mut child, label)?;
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(format!("{label} ({display}) exited {status}"))
+            };
+        }
+        if started.elapsed() >= timeout {
+            return fail_after_cleanup(
+                &mut child,
+                label,
+                format!(
+                    "{label} exceeded its external {} second deadline",
+                    timeout.as_secs()
+                ),
+            );
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn output_limit_violation(
+    limits: &[(&Path, &str, u64)],
+    label: &str,
+) -> Result<Option<String>, String> {
+    for (path, stream, limit) in limits {
+        let length = match fs::metadata(path) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(format!("cannot inspect {label} {stream}: {error}")),
+        };
+        if length > *limit {
+            return Ok(Some(format!("{label} {stream} exceeded {limit} bytes")));
+        }
+    }
+    Ok(None)
+}
+
+fn fail_after_cleanup(child: &mut Child, label: &str, error: String) -> Result<(), String> {
+    match terminate_process_tree(child, label) {
+        Ok(()) => Err(error),
+        Err(cleanup) => Err(format!("{error}; cleanup failed: {cleanup}")),
+    }
+}
+
+fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let group = format!("-{}", child.id());
+        let _ = Command::new("kill")
+            .args(["-KILL", "--", &group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if child
+            .try_wait()
+            .map_err(|error| format!("failed to reap {label}: {error}"))?
+            .is_some()
+        {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("failed to reap {label} after bounded cleanup"));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 pub(crate) trait TimeoutChild {
     fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>>;
     fn kill(&mut self) -> std::io::Result<()>;
@@ -174,12 +296,16 @@ pub(super) struct TempDir {
 
 impl TempDir {
     pub(super) fn new(label: &str) -> Result<Self, String> {
+        static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|error| format!("system clock is before Unix epoch: {error}"))?
             .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("rustleaks-{label}-{}-{nonce}", std::process::id()));
+        let sequence = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "rustleaks-{label}-{}-{nonce}-{sequence}",
+            std::process::id()
+        ));
         fs::create_dir(&path).map_err(|error| {
             format!(
                 "cannot create temporary directory {}: {error}",

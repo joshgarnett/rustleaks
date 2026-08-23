@@ -42,7 +42,15 @@ pub(super) fn observations(upstream: &Path, inventory: &[Value]) -> Result<Vec<V
         .env("GOCACHE", go_cache)
         .env("GOMODCACHE", module_cache)
         .env("RUSTLEAKS_GENERATOR_SAMPLE_LOG", &log);
-    process::status(&mut go, "instrumented generator", Duration::from_secs(600))?;
+    process::status_with_limits(
+        &mut go,
+        "instrumented generator",
+        Duration::from_secs(600),
+        &[
+            (&log, "observation log", 32 * 1024 * 1024),
+            (&generated, "generated config", 2 * 1024 * 1024),
+        ],
+    )?;
     let digest = crate::tooling::support::sha256_file(&generated)?;
     if digest != CONFIG_SHA256 {
         return Err(format!(
