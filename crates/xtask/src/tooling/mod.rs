@@ -21,4 +21,6 @@ pub(crate) use session::{check_session_corpus, write_session_corpus};
 #[cfg(test)]
 pub(crate) use support::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 pub(crate) use support::{command_output, command_status_with_timeout, sha256_file};
-pub(crate) use traceability::assertions::{check_assertions, write_assertions};
+pub(crate) use traceability::assertions::{
+    check_assertions, validate_final_traceability, write_assertions,
+};
