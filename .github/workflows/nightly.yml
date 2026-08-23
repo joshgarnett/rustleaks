@@ -1,0 +1,115 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
+jobs:
+  differential:
+    name: Fresh Go differential
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          persist-credentials: false
+      - name: Check out the pinned Go oracle
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache-dependency-path: gitleaks/go.sum
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Verify the pinned oracle and replay fresh differentials
+        working-directory: rustleaks
+        run: |
+          cargo xtask verify-upstream
+          cargo xtask oracle generate --check
+          cargo xtask parity --scope cli
+
+  extended-fuzz:
+    name: Extended AddressSanitizer fuzzing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-bazelisk: "false"
+      - name: Install pinned fuzz tools
+        working-directory: rustleaks
+        run: |
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
+          cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Run extended campaigns
+        working-directory: rustleaks
+        env:
+          RUSTLEAKS_FUZZ_RUNS: "1000000"
+          RUSTLEAKS_FUZZ_MAX_TOTAL_TIME: "120"
+        run: just fuzz-smoke
+
+  newest-and-scan:
+    name: Newest resolution and repository scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+      - name: Check newest allowed dependencies without committing
+        working-directory: rustleaks
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo update --workspace
+          cargo +stable check --workspace --all-targets --all-features
+      - name: Scan the repository and history with redacted output
+        working-directory: rustleaks
+        run: |
+          git restore Cargo.lock
+          bazelisk build //crates/rustleaks-cli:rustleaks
+          bazel-bin/crates/rustleaks-cli/rustleaks dir . --redact --no-banner --timeout=300
+          bazel-bin/crates/rustleaks-cli/rustleaks git . --redact --no-banner --timeout=600

@@ -82,6 +82,7 @@ def rustleaks_library(
             crate = ":" + name,
             deps = ["//bazel:compiler_rt_builtins"],
             proc_macro_deps = ["//bazel:doctest_path_mapper"],
+            rustdoc_flags = ["-Dwarnings"],
             target_compatible_with = _WINDOWS_INCOMPATIBLE,
             visibility = visibility,
         )

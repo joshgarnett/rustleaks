@@ -1,0 +1,41 @@
+name: Release Dry Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-dry-run-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare non-publishing artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: release
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+      - name: Build optimized local artifacts
+        working-directory: rustleaks
+        run: bazelisk build -c opt //:build
+      - name: Exercise package consumers and no-upload publication
+        working-directory: rustleaks
+        run: just release-dry-run
+      - name: Confirm no publication credentials are present
+        run: |
+          test -z "${CARGO_REGISTRY_TOKEN:-}"
+          test -z "${CRATES_IO_TOKEN:-}"

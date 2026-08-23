@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 
 mod build_system;
 mod tooling;
+mod workflows;
 
 use tooling::{command_output, command_status_with_timeout, sha256_file};
 
@@ -1448,6 +1449,7 @@ fn rust_documentation(contents: &str) -> String {
 
 fn docs_check() -> Result<(), String> {
     let root = workspace_root()?;
+    workflows::check(&root)?;
     let mut files = Vec::new();
     collect_documentation(&root, &root, &mut files)?;
     files.sort();
@@ -2127,6 +2129,9 @@ fn fuzz_smoke() -> Result<(), String> {
     let root = workspace_root()?;
     let toolchain = format!("+{FUZZ_TOOLCHAIN}");
     let smoke = ScopedTempDir::new("fuzz-smoke")?;
+    let runs = fuzz_campaign_bound("RUSTLEAKS_FUZZ_RUNS", 16, 1_000_000)?;
+    let max_total_time = fuzz_campaign_bound("RUSTLEAKS_FUZZ_MAX_TOTAL_TIME", 20, 600)?;
+    let campaign_timeout = Duration::from_secs(max_total_time.saturating_add(120));
     let targets = [
         (
             "crates/rustleaks-core/fuzz",
@@ -2201,6 +2206,8 @@ fn fuzz_smoke() -> Result<(), String> {
         }
         let artifact_prefix = format!("{}/", artifacts.display());
         let dictionary = root.join(fuzz_dir).join(dictionary);
+        let runs = format!("-runs={runs}");
+        let max_total_time = format!("-max_total_time={max_total_time}");
         command_status_with_timeout(
             Command::new("cargo")
                 .current_dir(&root)
@@ -2216,20 +2223,35 @@ fn fuzz_smoke() -> Result<(), String> {
                 .arg(&corpus)
                 .arg("--")
                 .args([
-                    "-runs=16",
-                    "-max_total_time=20",
+                    runs.as_str(),
+                    max_total_time.as_str(),
                     "-timeout=5",
                     "-rss_limit_mb=2048",
                 ])
                 .arg(format!("-max_len={max_len}"))
                 .arg(format!("-dict={}", dictionary.display()))
                 .arg(format!("-artifact_prefix={artifact_prefix}")),
-            Duration::from_secs(240),
+            campaign_timeout,
             target,
         )?;
     }
-    println!("all eight bounded fuzz targets compiled and replayed seed smoke campaigns");
+    println!("all eight bounded fuzz targets compiled and replayed seed campaigns");
     Ok(())
+}
+
+fn fuzz_campaign_bound(name: &str, default: u64, maximum: u64) -> Result<u64, String> {
+    let Some(value) = env::var_os(name) else {
+        return Ok(default);
+    };
+    let value = value
+        .to_str()
+        .ok_or_else(|| format!("{name} is not UTF-8"))?
+        .parse::<u64>()
+        .map_err(|error| format!("{name} is not an unsigned integer: {error}"))?;
+    if value == 0 || value > maximum {
+        return Err(format!("{name} must be between 1 and {maximum}"));
+    }
+    Ok(value)
 }
 
 fn fuzz_check() -> Result<(), String> {
@@ -2628,9 +2650,20 @@ fn validate_git_adversarial_matrix(root: &Path) -> Result<(), String> {
     }
     let workflow = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
         .map_err(|error| format!("cannot read CI workflow: {error}"))?;
-    for runner in ["ubuntu-latest", "macos-latest", "windows-latest"] {
-        if !workflow.contains(runner) {
-            return Err(format!("native Git CI runner is missing ({runner})"));
+    for (runner, target) in [
+        ("ubuntu-24.04", "x86_64-unknown-linux-gnu"),
+        ("ubuntu-24.04-arm", "aarch64-unknown-linux-gnu"),
+        ("ubuntu-24.04", "x86_64-unknown-linux-musl"),
+        ("ubuntu-24.04-arm", "aarch64-unknown-linux-musl"),
+        ("macos-15-intel", "x86_64-apple-darwin"),
+        ("macos-15", "aarch64-apple-darwin"),
+        ("windows-2025", "x86_64-pc-windows-msvc"),
+        ("windows-11-arm", "aarch64-pc-windows-msvc"),
+    ] {
+        if !workflow.contains(runner) || !workflow.contains(target) {
+            return Err(format!(
+                "native Git CI matrix is missing {target} on {runner}"
+            ));
         }
     }
     let dispositions = std::fs::read_to_string(root.join("compat/api-dispositions-v1.jsonl"))

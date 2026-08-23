@@ -272,6 +272,7 @@ test_suite(
     name = "ci",
     tests = [
         ":check",
+        ":parity",
         ":test",
     ],
     visibility = ["//visibility:public"],
