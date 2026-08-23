@@ -1087,6 +1087,39 @@ fn parse_patch(
     Ok(files)
 }
 
+/// Exercises the in-process Git patch parser for the standalone fuzz target.
+///
+/// This entry point is available only with the `fuzzing` feature and exposes
+/// no parser implementation types. Production users should use [`GitSource`].
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub fn fuzz_parse_patch(
+    input: &[u8],
+    limits: GitLimits,
+    cancellation: &dyn Cancellation,
+) -> Result<(usize, usize), ()> {
+    let files = parse_patch(input, limits, cancellation).map_err(|_| ())?;
+    let mut hunks = 0_usize;
+    for file in &files {
+        assert!(
+            file.path.len() <= limits.path_bytes(),
+            "successful Git patch path exceeded its parser limit"
+        );
+        hunks = hunks
+            .checked_add(file.hunks.len())
+            .expect("bounded Git patch hunk count must fit usize");
+    }
+    assert!(
+        files.len() <= limits.files(),
+        "successful Git patch file count exceeded its parser limit"
+    );
+    assert!(
+        hunks <= limits.hunks(),
+        "successful Git patch hunk count exceeded its parser limit"
+    );
+    Ok((files.len(), hunks))
+}
+
 fn parse_commit_header(
     lines: &[&[u8]],
     start: usize,
@@ -1789,12 +1822,18 @@ mod tests {
 
     impl Cancellation for CancelAfterPolls {
         fn is_cancelled(&self) -> bool {
-            let previous = self
-                .0
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                    Some(value.saturating_sub(1))
-                })
-                .expect("fetch-update closure always succeeds");
+            let mut previous = self.0.load(Ordering::Acquire);
+            loop {
+                match self.0.compare_exchange_weak(
+                    previous,
+                    previous.saturating_sub(1),
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => break,
+                    Err(observed) => previous = observed,
+                }
+            }
             previous == 0
         }
     }

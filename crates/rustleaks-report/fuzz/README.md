@@ -16,14 +16,16 @@ template is invalid or empty.
 Run a bounded smoke campaign from this directory:
 
 ```sh
-cargo +nightly fuzz run template seeds/template -- \
+cargo +nightly-2026-08-21 fuzz run template seeds/template -- \
+  -dict=dictionaries/template.dict \
   -max_len=8192 -max_total_time=60 -timeout=5 -rss_limit_mb=1024
 ```
 
 Replay a saved artifact exactly:
 
 ```sh
-cargo +nightly fuzz run template artifacts/template/crash-<hash>
+cargo +nightly-2026-08-21 fuzz run template artifacts/template/crash-<hash> -- \
+  -dict=dictionaries/template.dict
 ```
 
 The target is a bounded panic/hang/resource-pathology check. It does not imply

@@ -1,0 +1,6 @@
+capture="(?P<secret>"
+class="[A-Za-z0-9]"
+empty="^$"
+invalid_repeat="{999999999}"
+unicode="\\p{Greek}"
+word_boundary="\\b"

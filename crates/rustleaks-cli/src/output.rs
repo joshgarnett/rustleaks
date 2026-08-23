@@ -130,16 +130,26 @@ pub(crate) fn banner(writer: &mut dyn Write) -> io::Result<()> {
     writer.write_all(BANNER.as_bytes())
 }
 pub(crate) fn error(writer: &mut dyn Write, message: impl std::fmt::Display) -> io::Result<()> {
-    writeln!(writer, "error {message}")
+    diagnostic(writer, "error ", message)
 }
 pub(crate) fn fatal(writer: &mut dyn Write, message: impl std::fmt::Display) -> io::Result<()> {
-    writeln!(writer, "fatal {message}")
+    diagnostic(writer, "fatal ", message)
 }
 pub(crate) fn warn(writer: &mut dyn Write, message: impl std::fmt::Display) -> io::Result<()> {
-    writeln!(writer, "warn {message}")
+    diagnostic(writer, "warn ", message)
 }
 pub(crate) fn info(writer: &mut dyn Write, message: impl std::fmt::Display) -> io::Result<()> {
-    writeln!(writer, "info {message}")
+    diagnostic(writer, "info ", message)
+}
+
+fn diagnostic(
+    writer: &mut dyn Write,
+    prefix: &str,
+    message: impl std::fmt::Display,
+) -> io::Result<()> {
+    writer.write_all(prefix.as_bytes())?;
+    write_terminal_text(writer, &message.to_string())?;
+    writer.write_all(b"\n")
 }
 
 pub(crate) struct ReportPlan {
@@ -316,7 +326,7 @@ fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> 
             if index != 0 {
                 writer.write_all(b" ")?;
             }
-            writer.write_all(tag.as_bytes())?;
+            write_terminal_bytes(writer, tag.as_bytes())?;
         }
         writer.write_all(b"]\n")?;
     }
@@ -361,22 +371,47 @@ fn required(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
             bytes.to_vec()
         };
         let prefix = if index == 0 { "Required:" } else { "" };
-        writeln!(
-            writer,
-            "{prefix:<12} {}:{}:{}",
-            value.rule_id(),
-            value.location().start_line(),
-            String::from_utf8_lossy(&shown)
-        )?;
+        write!(writer, "{prefix:<12} ")?;
+        write_terminal_bytes(writer, value.rule_id().as_bytes())?;
+        write!(writer, ":{}:", value.location().start_line())?;
+        write_terminal_bytes(writer, &shown)?;
+        writer.write_all(b"\n")?;
     }
     Ok(())
 }
 
 fn label(writer: &mut dyn Write, name: &str, value: impl std::fmt::Display) -> io::Result<()> {
-    writeln!(writer, "{name:<12} {value}")
+    write!(writer, "{name:<12} ")?;
+    write_terminal_text(writer, &value.to_string())?;
+    writer.write_all(b"\n")
 }
 fn trim_bytes(value: &ByteText) -> String {
     String::from_utf8_lossy(trim_raw(value.as_bytes())).into_owned()
+}
+
+fn write_terminal_bytes(writer: &mut dyn Write, value: &[u8]) -> io::Result<()> {
+    write_terminal_text(writer, &String::from_utf8_lossy(value))
+}
+
+fn write_terminal_text(writer: &mut dyn Write, value: &str) -> io::Result<()> {
+    for character in value.chars() {
+        match character {
+            '\n' => writer.write_all(br"\n")?,
+            '\r' => writer.write_all(br"\r")?,
+            '\t' => writer.write_all(br"\t")?,
+            character if character.is_ascii_control() => {
+                write!(writer, "\\x{:02x}", u32::from(character))?;
+            }
+            character if character.is_control() => {
+                write!(writer, "\\u{{{:x}}}", u32::from(character))?;
+            }
+            character => {
+                let mut encoded = [0_u8; 4];
+                writer.write_all(character.encode_utf8(&mut encoded).as_bytes())?;
+            }
+        }
+    }
+    Ok(())
 }
 fn trim_raw(bytes: &[u8]) -> &[u8] {
     let Ok(value) = std::str::from_utf8(bytes) else {
@@ -504,6 +539,51 @@ mod tests {
         assert_eq!(human_bytes(1_250), "1.25 KB");
         assert_eq!(human_bytes(1_200), "1.20 KB");
     }
+
+    #[test]
+    fn diagnostics_escape_terminal_control_characters() {
+        let mut output = Vec::new();
+        error(&mut output, "path\u{1b}[2J\nforged").unwrap();
+        assert_eq!(output, b"error path\\x1b[2J\\nforged\n");
+        assert!(!output.contains(&0x1b));
+    }
+
+    #[test]
+    fn verbose_findings_escape_terminal_control_characters() {
+        let finding = Finding::builder()
+            .rule_id(b"rule\x1b[31m".as_slice())
+            .location(rustleaks_core::model::Location::new(1, 1, 1, 1).unwrap())
+            .match_text(b"match\x1b[2J".as_slice())
+            .secret(b"line1\nline2".as_slice())
+            .file(b"file\rname".as_slice())
+            .tags([b"tag\tvalue".as_slice()])
+            .build()
+            .unwrap();
+        let mut output = Vec::new();
+        verbose(&mut output, &[finding]).unwrap();
+        assert!(!output.contains(&0x1b));
+        assert!(
+            output
+                .windows(br"match\x1b[2J".len())
+                .any(|part| part == br"match\x1b[2J")
+        );
+        assert!(
+            output
+                .windows(br"line1\nline2".len())
+                .any(|part| part == br"line1\nline2")
+        );
+        assert!(
+            output
+                .windows(br"file\rname".len())
+                .any(|part| part == br"file\rname")
+        );
+        assert!(
+            output
+                .windows(br"tag\tvalue".len())
+                .any(|part| part == br"tag\tvalue")
+        );
+    }
+
     #[test]
     fn stdout_requires_explicit_format() {
         assert!(infer(Path::new("-")).is_err());

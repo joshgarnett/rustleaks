@@ -373,7 +373,7 @@ fn check_profiles(root: &Path) -> Result<(), String> {
             &["default", "alloc", "rar2", "rar3", "rar5"][..],
         ),
         ("rustleaks-sevenz", &["minimal"][..]),
-        ("rustleaks-sources", &["minimal"][..]),
+        ("rustleaks-sources", &["fuzzing", "minimal"][..]),
     ];
     for (package, required) in profiles {
         let build = fs::read_to_string(root.join("crates").join(package).join("BUILD.bazel"))

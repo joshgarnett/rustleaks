@@ -6,6 +6,7 @@ exports_files(["Cargo.toml"])
 rustleaks_build_contract_files()
 
 _ARCHIVE_FEATURES = ["archives"]
+_FUZZING_FEATURES = ["fuzzing"]
 _ARCHIVE_DEPS = [
     "//crates/rustleaks-bzip2:rustleaks_bzip2",
     "//crates/rustleaks-compcol:profile_rar2",
@@ -45,9 +46,22 @@ rustleaks_library(
     visibility = ["//visibility:public"],
 )
 
+rustleaks_library(
+    name = "profile_fuzzing",
+    crate_features = _FUZZING_FEATURES,
+    crate_name = "rustleaks_sources",
+    deps = ["//crates/rustleaks-core:rustleaks_core"],
+    docs = False,
+    edition = "2024",
+    unit_test = False,
+    version = "0.1.0-alpha.1",
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "feature_profiles",
     srcs = [
+        ":profile_fuzzing",
         ":profile_minimal",
         ":rustleaks_sources",
         ":rustleaks_sources_archives",

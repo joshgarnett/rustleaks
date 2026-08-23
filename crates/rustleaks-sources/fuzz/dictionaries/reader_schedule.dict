@@ -1,0 +1,5 @@
+eof="\x20"
+error="\x30"
+overreport="\x80"
+zero_progress="\x00"
+short_read="\x01"

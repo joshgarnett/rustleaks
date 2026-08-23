@@ -30,6 +30,9 @@ pub use file::{
     DEFAULT_CHUNK_SIZE, FileOptions, FileSource, MAX_BOUNDARY_READ_AHEAD, ReadOutcome, ReadStatus,
     SourceReader,
 };
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub use git::fuzz_parse_patch;
 pub use git::{GitLimits, GitMode, GitSource};
 pub use path::{INNER_PATH_SEPARATOR, LogicalPath};
 pub use runner::{SourceOutcome, SourceRunner, SourceTermination};

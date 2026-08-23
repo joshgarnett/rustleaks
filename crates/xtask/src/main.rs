@@ -20,8 +20,12 @@ const API_INVENTORY_SHA256: &str =
     "958ddaa92c5cce6afb21ef8209ce5689ff907cb2d9f152951bb75c795362125a";
 const RELEASE_VERSION: &str = "0.1.0-alpha.1";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
+const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
+const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
 const CARGO_PUBLIC_API_VERSION: &str = "cargo-public-api 0.52.0";
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
+const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
+const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
 const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 const PUBLIC_API_SNAPSHOT: &str = "compat/public-api/rustleaks-core-0.1.0-alpha.1.txt";
@@ -293,6 +297,9 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "package-check" => package_check(),
         [command] if command == "release-dry-run" => release_dry_run(),
         [command] if command == "security-check" => security_check(),
+        [command] if command == "rustsec-check" => rustsec_check(),
+        [command] if command == "vet-check" => vet_check(),
+        [command] if command == "unsafe-inventory-check" => unsafe_inventory_check(),
         [command] if command == "supply-chain-check" => supply_chain_check(),
         [command] if command == "dependency-safety-check" => dependency_safety_check(),
         [command] if command == "owned-safety-check" => owned_safety_check(),
@@ -319,7 +326,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -963,6 +970,257 @@ fn supply_chain_check() -> Result<(), String> {
     Ok(())
 }
 
+fn rustsec_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["audit", "--version"]),
+        CARGO_AUDIT_VERSION,
+        "cargo-audit",
+    )?;
+    command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args(["audit", "--deny", "warnings", "--color", "never"]),
+    )?;
+    println!(
+        "fresh RustSec audit found no vulnerability, unmaintained, unsound, or yanked warning"
+    );
+    Ok(())
+}
+
+fn vet_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["vet", "--version"]),
+        CARGO_VET_VERSION,
+        "cargo-vet",
+    )?;
+    for required in [
+        "supply-chain/config.toml",
+        "supply-chain/audits.toml",
+        "supply-chain/imports.lock",
+    ] {
+        if !root.join(required).is_file() {
+            return Err(format!("cargo-vet policy is missing {required}"));
+        }
+    }
+    validate_vet_exemptions(&root.join("supply-chain/config.toml"))?;
+    command_output(Command::new("cargo").current_dir(&root).args([
+        "vet",
+        "--locked",
+        "--no-registry-suggestions",
+    ]))?;
+    println!("locked cargo-vet graph satisfies the checked-in review policy");
+    Ok(())
+}
+
+fn validate_vet_exemptions(path: &Path) -> Result<(), String> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read cargo-vet policy {}: {error}", path.display()))?;
+    let config: toml::Value = toml::from_str(&source)
+        .map_err(|error| format!("cannot parse cargo-vet policy {}: {error}", path.display()))?;
+    let exemptions = config
+        .get("exemptions")
+        .and_then(toml::Value::as_table)
+        .ok_or("cargo-vet policy contains no reviewed exemptions")?;
+    let today = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("system clock predates the Unix epoch: {error}"))?
+        .as_secs()
+        / 86_400;
+    for (package, entries) in exemptions {
+        let entries = entries
+            .as_array()
+            .ok_or_else(|| format!("cargo-vet exemptions for {package} are not an array"))?;
+        for entry in entries {
+            let version = entry
+                .get("version")
+                .and_then(toml::Value::as_str)
+                .ok_or_else(|| format!("cargo-vet exemption for {package} omits version"))?;
+            let notes = entry
+                .get("notes")
+                .and_then(toml::Value::as_str)
+                .ok_or_else(|| format!("cargo-vet exemption {package}@{version} omits notes"))?;
+            for marker in ["owner=", "scope=", "rationale=", "review-by="] {
+                if !notes.contains(marker) {
+                    return Err(format!(
+                        "cargo-vet exemption {package}@{version} omits {marker} metadata"
+                    ));
+                }
+            }
+            let review = notes
+                .split(';')
+                .map(str::trim)
+                .find_map(|field| field.strip_prefix("review-by="))
+                .ok_or_else(|| {
+                    format!("cargo-vet exemption {package}@{version} has no review date")
+                })?;
+            let review_day = parse_civil_day(review).ok_or_else(|| {
+                format!("cargo-vet exemption {package}@{version} has invalid review date {review}")
+            })?;
+            if review_day < today {
+                return Err(format!(
+                    "cargo-vet exemption {package}@{version} expired on {review}"
+                ));
+            }
+        }
+    }
+    println!(
+        "all {} cargo-vet bootstrap package groups have owner, scope, rationale, and active review dates",
+        exemptions.len()
+    );
+    Ok(())
+}
+
+fn parse_civil_day(value: &str) -> Option<u64> {
+    let mut fields = value.split('-');
+    let mut year = fields.next()?.parse::<i64>().ok()?;
+    let month = fields.next()?.parse::<i64>().ok()?;
+    let day = fields.next()?.parse::<i64>().ok()?;
+    if fields.next().is_some() || !(1..=12).contains(&month) {
+        return None;
+    }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if !(1..=days_in_month).contains(&day) {
+        return None;
+    }
+    year -= i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    (era * 146_097 + day_of_era - 719_468).try_into().ok()
+}
+
+fn unsafe_count(value: &serde_json::Value) -> u64 {
+    match value {
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .map(|(name, value)| {
+                if name == "unsafe_" {
+                    value.as_u64().unwrap_or_default()
+                } else {
+                    unsafe_count(value)
+                }
+            })
+            .sum(),
+        serde_json::Value::Array(values) => values.iter().map(unsafe_count).sum(),
+        _ => 0,
+    }
+}
+
+fn unsafe_inventory_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["geiger", "--version"]),
+        CARGO_GEIGER_VERSION,
+        "cargo-geiger",
+    )?;
+    let target = ScopedTempDir::new("geiger")?;
+    let manifest = root.join("crates/rustleaks-sources/Cargo.toml");
+    let output = command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .env("CARGO_TARGET_DIR", &target.path)
+            .args(["geiger", "--manifest-path"])
+            .arg(&manifest)
+            .args([
+                "--all-features",
+                "--locked",
+                "--offline",
+                "--output-format",
+                "Json",
+                "--quiet",
+            ]),
+    )?;
+    let report = output
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("{\"packages\":"))
+        .ok_or("cargo-geiger output omitted its JSON inventory")?;
+    let report: serde_json::Value = serde_json::from_str(report)
+        .map_err(|error| format!("cannot decode cargo-geiger inventory: {error}"))?;
+    if report["packages_without_metrics"]
+        .as_array()
+        .is_none_or(|packages| !packages.is_empty())
+    {
+        return Err("cargo-geiger omitted metrics for one or more selected packages".into());
+    }
+    let packages = report["packages"]
+        .as_array()
+        .ok_or("cargo-geiger inventory omits packages")?;
+    let mut unsafe_packages = BTreeSet::new();
+    for package in packages {
+        let id = &package["package"]["id"];
+        let name = id["name"]
+            .as_str()
+            .ok_or("cargo-geiger package omits name")?;
+        let version = id["version"]
+            .as_str()
+            .ok_or("cargo-geiger package omits version")?;
+        let used_unsafe = unsafe_count(&package["unsafety"]["used"]);
+        if id["source"].is_null()
+            && (used_unsafe != 0 || package["unsafety"]["forbids_unsafe"] != true)
+        {
+            return Err(format!(
+                "owned package {name}@{version} does not have a zero-unsafe forbid inventory"
+            ));
+        }
+        if used_unsafe != 0 {
+            unsafe_packages.insert(format!("{name}@{version}"));
+        }
+    }
+    let expected = [
+        "aho-corasick@1.1.5",
+        "alloc-no-stdlib@2.0.4",
+        "alloc-stdlib@0.2.4",
+        "block-buffer@0.12.1",
+        "brotli-decompressor@5.0.3",
+        "const-oid@0.10.2",
+        "cpufeatures@0.3.0",
+        "hybrid-array@0.4.14",
+        "itoa@1.0.18",
+        "libc@0.2.189",
+        "lz4_flex@0.14.0",
+        "lzma-rust2@0.16.5",
+        "lzma-rust2@0.19.0",
+        "memchr@2.8.3",
+        "proc-macro2@1.0.107",
+        "regex-automata@0.4.7",
+        "semver@1.0.28",
+        "serde_core@1.0.229",
+        "serde_json@1.0.151",
+        "sha2@0.11.0",
+        "syn@3.0.3",
+        "toml_parser@1.1.3+spec-1.1.0",
+        "twox-hash@2.1.3",
+        "unicode-ident@1.0.24",
+        "winnow@0.7.15",
+        "winnow@1.0.4",
+        "zmij@1.0.23",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    if unsafe_packages != expected {
+        return Err(format!(
+            "cargo-geiger unsafe-bearing package set changed: expected {expected:?}, got {unsafe_packages:?}"
+        ));
+    }
+    println!(
+        "cargo-geiger matched the reviewed {}-package unsafe-bearing inventory; owned packages remain zero-unsafe",
+        expected.len()
+    );
+    Ok(())
+}
+
 fn normalize_workspace_dependency_tree(root: &Path, tree: &str) -> String {
     tree.lines()
         .map(|line| {
@@ -1074,6 +1332,7 @@ fn owned_safety_check() -> Result<(), String> {
         "crates/rustleaks-core/fuzz/fuzz_targets/session.rs",
         "crates/rustleaks-report/fuzz/fuzz_targets/template.rs",
         "crates/rustleaks-sources/fuzz/fuzz_targets/archive.rs",
+        "crates/rustleaks-sources/fuzz/fuzz_targets/git_patch.rs",
         "crates/rustleaks-sources/fuzz/fuzz_targets/reader_schedule.rs",
     ];
     for relative in crate_roots {
@@ -1095,9 +1354,14 @@ fn owned_safety_check() -> Result<(), String> {
 
 fn security_check() -> Result<(), String> {
     supply_chain_check()?;
+    rustsec_check()?;
+    vet_check()?;
     dependency_safety_check()?;
     owned_safety_check()?;
-    println!("dependency policy and owned-code safety checks passed");
+    unsafe_inventory_check()?;
+    miri_check()?;
+    panic_abort_check()?;
+    println!("dependency policy, vetting, Miri, panic policy, and owned-code safety checks passed");
     Ok(())
 }
 
@@ -1781,6 +2045,7 @@ fn copy_seed_files(source: &Path, destination: &Path) -> Result<(), String> {
 
 fn fuzz_build() -> Result<(), String> {
     let root = workspace_root()?;
+    let toolchain = format!("+{FUZZ_TOOLCHAIN}");
     require_exact_tool_version(
         Command::new("cargo").args(["fuzz", "--version"]),
         CARGO_FUZZ_VERSION,
@@ -1792,6 +2057,7 @@ fn fuzz_build() -> Result<(), String> {
         "crates/rustleaks-report/fuzz/Cargo.toml",
     ] {
         command_output(Command::new("cargo").current_dir(&root).args([
+            toolchain.as_str(),
             "check",
             "--locked",
             "--offline",
@@ -1800,14 +2066,15 @@ fn fuzz_build() -> Result<(), String> {
             manifest,
         ]))?;
     }
-    println!("all seven fuzz targets compile with their locked standalone manifests");
+    println!("all eight fuzz targets compile with their locked standalone manifests");
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)] // The explicit seven-target matrix is easier to audit in one gate.
+#[allow(clippy::too_many_lines)] // The explicit eight-target matrix is easier to audit in one gate.
 fn fuzz_smoke() -> Result<(), String> {
     fuzz_build()?;
     let root = workspace_root()?;
+    let toolchain = format!("+{FUZZ_TOOLCHAIN}");
     let smoke = ScopedTempDir::new("fuzz-smoke")?;
     let targets = [
         (
@@ -1815,40 +2082,59 @@ fn fuzz_smoke() -> Result<(), String> {
             "go_regex",
             "corpus/go_regex",
             4096_u32,
+            "dictionaries/go_regex.dict",
         ),
-        ("crates/rustleaks-core/fuzz", "config", "seeds/config", 8192),
+        (
+            "crates/rustleaks-core/fuzz",
+            "config",
+            "seeds/config",
+            8192,
+            "dictionaries/config.dict",
+        ),
         (
             "crates/rustleaks-core/fuzz",
             "fragment_scan",
             "seeds/fragment_scan",
             8192,
+            "dictionaries/fragment_scan.dict",
         ),
         (
             "crates/rustleaks-core/fuzz",
             "session",
             "seeds/session",
             16_384,
+            "dictionaries/session.dict",
         ),
         (
             "crates/rustleaks-sources/fuzz",
             "archive",
             "seeds/archive",
             8192,
+            "dictionaries/archive.dict",
         ),
         (
             "crates/rustleaks-sources/fuzz",
             "reader_schedule",
             "seeds/reader_schedule",
             4096,
+            "dictionaries/reader_schedule.dict",
+        ),
+        (
+            "crates/rustleaks-sources/fuzz",
+            "git_patch",
+            "seeds/git_patch",
+            16_384,
+            "dictionaries/git_patch.dict",
         ),
         (
             "crates/rustleaks-report/fuzz",
             "template",
             "seeds/template",
             8192,
+            "dictionaries/template.dict",
         ),
     ];
-    for (fuzz_dir, target, seeds, max_len) in targets {
+    for (fuzz_dir, target, seeds, max_len, dictionary) in targets {
         let target_root = smoke.path.join(target);
         let corpus = target_root.join("corpus");
         let artifacts = target_root.join("artifacts");
@@ -1863,11 +2149,12 @@ fn fuzz_smoke() -> Result<(), String> {
             copy_seed_files(&root.join(fuzz_dir).join(seeds), &corpus)?;
         }
         let artifact_prefix = format!("{}/", artifacts.display());
+        let dictionary = root.join(fuzz_dir).join(dictionary);
         command_status_with_timeout(
             Command::new("cargo")
                 .current_dir(&root)
                 .args([
-                    "+nightly",
+                    toolchain.as_str(),
                     "fuzz",
                     "run",
                     "--fuzz-dir",
@@ -1884,12 +2171,13 @@ fn fuzz_smoke() -> Result<(), String> {
                     "-rss_limit_mb=2048",
                 ])
                 .arg(format!("-max_len={max_len}"))
+                .arg(format!("-dict={}", dictionary.display()))
                 .arg(format!("-artifact_prefix={artifact_prefix}")),
             Duration::from_secs(240),
             target,
         )?;
     }
-    println!("all seven bounded fuzz targets compiled and replayed seed smoke campaigns");
+    println!("all eight bounded fuzz targets compiled and replayed seed smoke campaigns");
     Ok(())
 }
 
@@ -2416,14 +2704,25 @@ mod tests {
     use super::{
         CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, build_system,
         composite_test_executable_from_messages, normalize_workspace_dependency_tree,
-        resource_test_command, run_resource_test, validate_core_repository_metadata,
-        validate_perf_budget, validate_perf_records, validate_publish_policy,
-        validate_regex_backend_metadata, validate_supply_chain_exceptions, workspace_root,
+        parse_civil_day, resource_test_command, run_resource_test,
+        validate_core_repository_metadata, validate_perf_budget, validate_perf_records,
+        validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
+        workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
     const TIMEOUT_PROBE_TEST: &str = "tests::resource_launcher_timeout_probe_child";
     const RESOURCE_SELECTOR: &str = "RUSTLEAKS_BOUNDED_RESOURCE_TEST";
+
+    #[test]
+    fn civil_dates_reject_impossible_exemption_deadlines() {
+        assert_eq!(parse_civil_day("1970-01-01"), Some(0));
+        assert!(parse_civil_day("2024-02-29").is_some());
+        assert!(parse_civil_day("2023-02-29").is_none());
+        assert!(parse_civil_day("2026-04-31").is_none());
+        assert!(parse_civil_day("2026-13-01").is_none());
+        assert!(parse_civil_day("2026-01-01-extra").is_none());
+    }
 
     #[test]
     fn subprocess_diagnostics_preserve_bounded_output_tails() {

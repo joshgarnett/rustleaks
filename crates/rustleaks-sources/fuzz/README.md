@@ -26,19 +26,34 @@ zero-progress, short, data-plus-EOF, data-plus-error, overreported-count,
 cancellation, stop, and callback-error schedules. Each operation produces at
 most 15 bytes and the schedule is capped by the 4 KiB fuzz input.
 
+## `git_patch`
+
+This target drives the production in-process Git patch parser without spawning
+Git. The leading control byte selects cancellation and positive file/hunk
+ceilings. The remaining 16 KiB is arbitrary patch data, including invalid
+UTF-8, quoting, metadata, renames, copies, binary markers, submodules, hunk
+counts, and line endings. Repeated parsing must return the same classification
+and bounded file/hunk summary.
+
 Run bounded smoke campaigns from this directory:
 
 ```sh
-cargo +nightly fuzz run archive seeds/archive -- \
+cargo +nightly-2026-08-21 fuzz run archive seeds/archive -- \
+  -dict=dictionaries/archive.dict \
   -max_len=8192 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
-cargo +nightly fuzz run reader_schedule seeds/reader_schedule -- \
+cargo +nightly-2026-08-21 fuzz run reader_schedule seeds/reader_schedule -- \
+  -dict=dictionaries/reader_schedule.dict \
   -max_len=4096 -max_total_time=60 -timeout=5 -rss_limit_mb=1024
+cargo +nightly-2026-08-21 fuzz run git_patch seeds/git_patch -- \
+  -dict=dictionaries/git_patch.dict \
+  -max_len=16384 -max_total_time=60 -timeout=5 -rss_limit_mb=1024
 ```
 
 Replay a saved artifact exactly:
 
 ```sh
-cargo +nightly fuzz run archive artifacts/archive/crash-<hash>
+cargo +nightly-2026-08-21 fuzz run archive artifacts/archive/crash-<hash> -- \
+  -dict=dictionaries/archive.dict
 ```
 
 These are bounded panic/hang/resource-pathology campaigns, not native

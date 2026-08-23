@@ -1,0 +1,5 @@
+field="{{ .RuleID }}"
+range="{{ range . }}{{ .File }}{{ end }}"
+escape="{{ js .Secret }}"
+quote="{{ printf \"%q\" .Match }}"
+comment="{{/* synthetic */}}"

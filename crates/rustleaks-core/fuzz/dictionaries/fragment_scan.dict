@@ -1,0 +1,6 @@
+base64="c2VjcmV0PUZVWlpUT0tFTg=="
+hex="7365637265743d46555a5a544f4b454e"
+percent="secret%3DFUZZTOKEN"
+token="secret=FUZZTOKEN"
+nul="\x00"
+crlf="\x0d\x0a"

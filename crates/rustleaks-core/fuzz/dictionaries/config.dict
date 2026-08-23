@@ -1,0 +1,7 @@
+allowlist="[allowlist]"
+composite="required = [[{ withinLines = 1 }]]"
+extend="[extend]"
+keywords="keywords = [\"secret\"]"
+regex="regex = '''secret=([A-Z0-9]+)'''"
+rule="[[rules]]"
+stopwords="stopwords = [\"synthetic\"]"

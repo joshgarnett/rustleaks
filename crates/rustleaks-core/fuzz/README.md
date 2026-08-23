@@ -28,15 +28,17 @@ smoke test from the workspace root:
 cargo xtask generate regex-fuzz-seeds \
   compat/regex-corpus/requests-v1.jsonl \
   crates/rustleaks-core/fuzz/corpus/go_regex
-cargo +nightly fuzz run --fuzz-dir crates/rustleaks-core/fuzz \
+cargo +nightly-2026-08-21 fuzz run --fuzz-dir crates/rustleaks-core/fuzz \
   go_regex crates/rustleaks-core/fuzz/corpus/go_regex -- \
+  -dict=crates/rustleaks-core/fuzz/dictionaries/go_regex.dict \
   -max_len=4096 -max_total_time=60 -rss_limit_mb=2048
 ```
 
 To replay a saved libFuzzer failure exactly:
 
 ```sh
-cargo +nightly fuzz run go_regex artifacts/go_regex/crash-<hash>
+cargo +nightly-2026-08-21 fuzz run go_regex artifacts/go_regex/crash-<hash> -- \
+  -dict=dictionaries/go_regex.dict
 ```
 
 The target intentionally has no semantic assertions: any Go/Rust parity claim
@@ -74,18 +76,23 @@ session collection.
 Run bounded local smoke campaigns from this directory:
 
 ```sh
-cargo +nightly fuzz run config seeds/config -- \
+cargo +nightly-2026-08-21 fuzz run config seeds/config -- \
+  -dict=dictionaries/config.dict \
   -max_len=8192 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
-cargo +nightly fuzz run fragment_scan seeds/fragment_scan -- \
+cargo +nightly-2026-08-21 fuzz run fragment_scan seeds/fragment_scan -- \
+  -dict=dictionaries/fragment_scan.dict \
   -max_len=8192 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
-cargo +nightly fuzz run session seeds/session -- \
+cargo +nightly-2026-08-21 fuzz run session seeds/session -- \
+  -dict=dictionaries/session.dict \
   -max_len=16384 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
 ```
 
 Replay saved artifacts by replacing the seed directory with the artifact path:
 
 ```sh
-cargo +nightly fuzz run fragment_scan artifacts/fragment_scan/crash-<hash>
+cargo +nightly-2026-08-21 fuzz run fragment_scan \
+  artifacts/fragment_scan/crash-<hash> -- \
+  -dict=dictionaries/fragment_scan.dict
 ```
 
 The harness caps protect routine fuzz jobs; production boundary behavior still

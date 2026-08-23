@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-rustleaks-sources = { path = "..", features = ["archives"] }
+rustleaks-sources = { path = "..", features = ["archives", "fuzzing"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]
@@ -21,6 +21,13 @@ bench = false
 [[bin]]
 name = "reader_schedule"
 path = "fuzz_targets/reader_schedule.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "git_patch"
+path = "fuzz_targets/git_patch.rs"
 test = false
 doc = false
 bench = false

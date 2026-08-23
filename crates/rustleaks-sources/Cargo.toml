@@ -8,6 +8,7 @@ publish = false
 
 [features]
 default = []
+fuzzing = []
 archives = [
     "dep:brotli-decompressor",
     "dep:bzip2-rs",

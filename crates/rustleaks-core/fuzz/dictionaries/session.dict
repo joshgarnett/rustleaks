@@ -1,0 +1,5 @@
+json_secret="\"Secret\":\"SYNTHETIC\""
+json_rule="\"RuleID\":\"fuzz-rule\""
+fingerprint="deadbeef:fuzz/input:fuzz-rule:1"
+ignore="fuzz-rule:fuzz/input:1"
+newline="\x0a"

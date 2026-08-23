@@ -1,0 +1,11 @@
+Acommit deadbeef
+Author: Fuzz User <fuzz@example.invalid>
+Date:   Thu Jan 1 00:00:00 1970 +0000
+
+    synthetic seed
+
+diff --git a/seed.txt b/seed.txt
+--- a/seed.txt
++++ b/seed.txt
+@@ -0,0 +1 @@
++synthetic
