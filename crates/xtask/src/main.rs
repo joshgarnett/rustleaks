@@ -2084,11 +2084,7 @@ fn oracle_check() -> Result<(), String> {
     tooling::generate_go_lowercase(&root, true)?;
     tooling::replay_corpus(&root, tooling::Corpus::Allowlist)?;
     tooling::replay_corpus(&root, tooling::Corpus::Decoder)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_composite_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_composite_corpus(&root)?;
     tooling::check_session_corpus(&root)?;
     tooling::check_source_corpus(&root)?;
     tooling::check_git_corpus(&root)?;
@@ -2194,11 +2190,7 @@ fn decoder_check() -> Result<(), String> {
 fn composite_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_composite_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_composite_corpus(&root)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-core", "--test", "composite_corpus"])

@@ -1,6 +1,7 @@
 //! Rust-first repository generation and compatibility verification.
 
 mod artifacts;
+mod composite;
 mod config;
 mod fixtures;
 mod fuzz_seeds;
@@ -14,6 +15,7 @@ mod source;
 mod support;
 mod traceability;
 
+pub(crate) use composite::{check_composite_corpus, write_composite_corpus};
 pub(crate) use config::{check_config_corpus, write_config_corpus};
 pub(crate) use fixtures::verify_fixtures;
 pub(crate) use fuzz_seeds::generate_regex_fuzz_seeds;

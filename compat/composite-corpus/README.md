@@ -39,7 +39,8 @@ ID.
 From the Rust repository root:
 
 ```sh
-env GOCACHE=/private/tmp/rustleaks-composite-oracle-gocache   GOMODCACHE=/private/tmp/rustleaks-go-mod-cache   ruby compat/generate_composite_corpus.rb --check
+cargo xtask generate composite
+cargo xtask generate composite --check
 ```
 
 The generator refuses a changed upstream revision, default-config hash, or
