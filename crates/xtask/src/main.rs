@@ -2027,11 +2027,8 @@ fn api_check() -> Result<(), String> {
 
 fn assertion_check() -> Result<(), String> {
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["--disable-gems", "compat/extract_assertions.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    let upstream = oracle_root()?;
+    tooling::check_assertions(&root, &upstream, &root.join("compat/assertion-corpus"))?;
     let assertions = std::fs::read_to_string(root.join("compat/assertion-corpus/assertions.jsonl"))
         .map_err(|error| format!("cannot read semantic assertions: {error}"))?;
     let benchmarks =

@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use super::{
-    Corpus, generate_corpus, generate_go_lowercase, generate_regex_fuzz_seeds, write_report_corpus,
-    write_session_corpus,
+    Corpus, check_assertions, generate_corpus, generate_go_lowercase, generate_regex_fuzz_seeds,
+    write_assertions, write_report_corpus, write_session_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -30,6 +30,20 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
         [target, flag, output] if target == "session" && flag == "--output" => {
             write_session_corpus(root, Path::new(output))
+        }
+        [target] if target == "assertions" => {
+            let upstream = upstream(root)?;
+            write_assertions(root, &upstream, &root.join("compat/assertion-corpus")).map(|_| ())
+        }
+        [target, flag] if target == "assertions" && flag == "--check" => {
+            let upstream = upstream(root)?;
+            check_assertions(root, &upstream, &root.join("compat/assertion-corpus")).map(|_| ())
+        }
+        [target, flag, output] if target == "assertions" && flag == "--output" => {
+            write_assertions(root, &upstream(root)?, Path::new(output)).map(|_| ())
+        }
+        [target, flag, output] if target == "assertions" && flag == "--check-output" => {
+            check_assertions(root, &upstream(root)?, Path::new(output)).map(|_| ())
         }
         [target] if Corpus::from_name(target).is_some() => {
             let corpus = Corpus::from_name(target).expect("guarded corpus name");
@@ -69,8 +83,14 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|regex|detect|allowlist|decoder|session|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|assertions [--check|--output PATH|--check-output PATH]|regex|detect|allowlist|decoder|session|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }
+}
+
+fn upstream(root: &Path) -> Result<std::path::PathBuf, String> {
+    root.parent()
+        .map(|parent| parent.join("gitleaks"))
+        .ok_or_else(|| format!("repository root {} has no parent", root.display()))
 }
