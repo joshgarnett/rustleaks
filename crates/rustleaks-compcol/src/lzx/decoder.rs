@@ -2,8 +2,8 @@
 //!
 //! Implements [MS-PATCH] §2 (LZX DELTA Compression and Decompression),
 //! restricted to the CAB profile: window sizes 15..=21, no DELTA-specific
-//! extensions. All three block types — verbatim (1), aligned-offset (2),
-//! and uncompressed (3) — are accepted.
+//! extensions. All three block types - verbatim (1), aligned-offset (2),
+//! and uncompressed (3) - are accepted.
 //!
 //! ## Stream framing
 //!
@@ -64,7 +64,7 @@ struct RunCtx {
     output_so_far: u64,
     /// Total uncompressed length declared in the header.
     output_total: u64,
-    /// LZX header_read flag — false until the leading "intel translation"
+    /// LZX header_read flag - false until the leading "intel translation"
     /// preamble bit (plus possible 32-bit filesize) has been consumed.
     header_read: bool,
     /// True iff the intel-translation post-filter is active for this stream.
@@ -78,7 +78,7 @@ struct RunCtx {
     /// Per-block state.
     block: BlockState,
 
-    /// Last-decoded MAIN_TREE / LENGTH_TREE / ALIGNED_TREE — survive across
+    /// Last-decoded MAIN_TREE / LENGTH_TREE / ALIGNED_TREE - survive across
     /// blocks (verbatim/aligned blocks may reuse the previous tree by
     /// emitting code lengths of zero for symbols they don't redefine).
     main_lens: Vec<u8>, // size = main_tree_size(window_bits)
@@ -134,7 +134,7 @@ enum BlockState {
 enum HuffPhase {
     /// Need to (re)build the block's Huffman trees from code-length data.
     BuildingTrees(Box<TreeBuild>),
-    /// Trees ready — about to decode the next main-tree symbol.
+    /// Trees ready - about to decode the next main-tree symbol.
     NextMain,
     /// Decoded a length-header == 7; need a length_tree symbol next.
     LengthFooter { pos_slot: u16 },
@@ -148,7 +148,7 @@ enum HuffPhase {
     },
     /// Aligned block: need the 3-bit aligned-tree footer.
     AlignedFooter { length: u16, high_offset: u32 },
-    /// Have a finished match — copy it into the window/frame.
+    /// Have a finished match - copy it into the window/frame.
     EmittingMatch { length: u16, distance: u32 },
     /// Pending literal that the caller hasn't drained yet.
     #[allow(dead_code)]
@@ -181,11 +181,11 @@ struct TreeBuild {
 enum PendingPretree {
     #[default]
     None,
-    /// Symbol 17 — need 4 extra bits, run of zeros = value+4.
+    /// Symbol 17 - need 4 extra bits, run of zeros = value+4.
     SeventeenExtra,
-    /// Symbol 18 — need 5 extra bits, run of zeros = value+20.
+    /// Symbol 18 - need 5 extra bits, run of zeros = value+20.
     EighteenExtra,
-    /// Symbol 19 — need 1 extra bit (run = value+4), then a second pretree
+    /// Symbol 19 - need 1 extra bit (run = value+4), then a second pretree
     /// symbol z, then `lens[x] = (prev_len - z) mod 17` for that run.
     NineteenExtra,
     /// Symbol 19, run length known, need a second pretree symbol.
@@ -194,7 +194,7 @@ enum PendingPretree {
 
 #[derive(Clone, Copy)]
 enum TreeSub {
-    /// Aligned block only — read 8×3 bits for ALIGNED_TREE.
+    /// Aligned block only - read 8×3 bits for ALIGNED_TREE.
     AlignedTreeLens,
     /// Main tree pass 1: pretree for symbols 0..256.
     MainPretree1Lens,

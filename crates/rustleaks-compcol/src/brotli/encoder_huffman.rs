@@ -4,7 +4,7 @@
 //!
 //! - [`emit_simple_nsym1`] writes a simple prefix code with NSYM=1
 //!   (one symbol, zero bits per decode). Used when an alphabet has a
-//!   single nonzero-frequency symbol — e.g., a degenerate distance
+//!   single nonzero-frequency symbol - e.g., a degenerate distance
 //!   tree when the encoder emits no back-references in this meta-
 //!   block.
 //!
@@ -393,7 +393,7 @@ fn rle_encode_lengths(lengths: &[u8]) -> Vec<RleSymbol> {
 /// uses to emit data symbols.
 ///
 /// Panics in debug mode if `lengths` does not form a valid full prefix
-/// code (Kraft equality for ≥ 2 nonzero entries) — caller must ensure
+/// code (Kraft equality for ≥ 2 nonzero entries) - caller must ensure
 /// this; usually by passing the output of `length_limited_huffman`.
 pub(crate) fn emit_complex_prefix_code(
     bw: &mut BitWriter,

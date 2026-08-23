@@ -49,10 +49,11 @@ unexplained fuzz, sanitizer, advisory, provenance, or integrity failure.
 - Add an ordinary deterministic regression and any needed property, fuzz,
   resource, parity, or negative-control test. A compatibility difference must
   be explicit and reviewed.
-- Run the affected targeted tests, all corpora, `just security`, `just
-  fuzz-smoke`, `just parity`, `just ci`, package checks, and supported native
-  target evidence in a clean checkout. Obtain a technical review independent
-  of the fix author.
+- Run the affected targeted tests, `just security`, `just fuzz-smoke`,
+  `just ci`, package checks, and supported native target evidence in a clean
+  checkout. The CI gate includes committed corpora and parity. Use
+  `cargo xtask parity --all` when compatibility behavior or fresh Go evidence
+  changed. Obtain a technical review independent of the fix author.
 - Rebuild release artifacts from trusted inputs. Reconcile source, lockfiles,
   Bazel graph, SBOM, checksums, and attestations before restoring publication.
 
@@ -85,4 +86,4 @@ unexplained fuzz, sanitizer, advisory, provenance, or integrity failure.
 The repository currently has no verified private intake endpoint documented in
 `SECURITY.md`. Do not send vulnerability details to a public issue. Enabling
 GitHub private vulnerability reporting and recording the tested route are
-release blockers assigned to Goal 6.
+release blockers for the hosted repository setup.

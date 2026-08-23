@@ -69,7 +69,7 @@ use super::tables::{
 
 /// Streaming RAR 2.x decoder. See module docs for the streaming model.
 pub struct Decoder {
-    /// Configured unpacked output size in bytes. `None` means "unknown" — the
+    /// Configured unpacked output size in bytes. `None` means "unknown" - the
     /// caller created the decoder with [`Decoder::new`] and must use
     /// [`Decoder::with_unpack_size`] (or its setter equivalent) before
     /// feeding input.
@@ -91,7 +91,7 @@ pub struct Decoder {
 
 impl Decoder {
     /// Construct a decoder. Without [`Self::with_unpack_size`] the decoder
-    /// treats the stream as zero-length — useful for the trait-default
+    /// treats the stream as zero-length - useful for the trait-default
     /// factory path. Call [`Self::set_unpack_size`] before `decode` to
     /// actually decompress data.
     pub const fn new() -> Self {
@@ -240,7 +240,7 @@ struct RunCtx {
     /// further deltas are applied on top (per the 16-modulo wrap).
     lengths: [u8; LENGTH_TABLE_SIZE],
 
-    /// Most recent main symbol — used by sym 256 ("repeat last match").
+    /// Most recent main symbol - used by sym 256 ("repeat last match").
     last_length: u16,
     last_offset: u32,
     /// Sliding window of the last four offsets, indexed by `(idx - k) & 3`.

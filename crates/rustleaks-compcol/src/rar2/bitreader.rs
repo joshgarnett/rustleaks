@@ -5,7 +5,7 @@
 //! consumed before `B1`; within each byte the top bit (`(B>>7)&1`) is read
 //! first.
 //!
-//! The reader works over a borrowed `&[u8]` and never panics on truncation —
+//! The reader works over a borrowed `&[u8]` and never panics on truncation -
 //! [`read_bits`] returns [`Error::UnexpectedEnd`] if the requested span runs
 //! past the buffer end. Bits are tracked by a 64-bit accumulator that lazily
 //! pulls fresh bytes only when needed.
@@ -72,7 +72,7 @@ impl BitReader {
 
     /// Peek up to 16 bits without consuming them. If fewer bits are available
     /// in the accumulator, refills first. Returns the bits right-justified at
-    /// width `n` along with the actual number of bits available (≤ `n`) — when
+    /// width `n` along with the actual number of bits available (≤ `n`) - when
     /// the available count is less than `n`, the missing low bits are zero.
     ///
     /// This is used by the Huffman decoder, which needs a lookahead window of

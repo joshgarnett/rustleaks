@@ -1,4 +1,4 @@
-//! Streaming LZX encoder — uncompressed-block-only fallback.
+//! Streaming LZX encoder - uncompressed-block-only fallback.
 //!
 //! This encoder produces a *valid* LZX bitstream that [`super::Decoder`]
 //! accepts, but it never emits verbatim or aligned-offset blocks; everything
@@ -10,7 +10,7 @@
 //!
 //! Block layout we produce (per [MS-PATCH] §2.6):
 //!   - 3 bits  : `BLOCKTYPE = 011` (3)
-//!   - 24 bits : `BLOCK_SIZE` — the number of payload bytes that follow
+//!   - 24 bits : `BLOCK_SIZE` - the number of payload bytes that follow
 //!   - 5 zero bits of pad to reach a 16-bit-word boundary
 //!   - 12 bytes: R0/R1/R2 = 1/1/1 (we never compress so the LRU never matters)
 //!   - `BLOCK_SIZE` bytes of raw payload
@@ -22,7 +22,7 @@
 //! ## Buffering
 //!
 //! The 5-byte stream framing header (window_bits + total uncompressed
-//! length) can only be filled in once we know the total length — i.e. at
+//! length) can only be filled in once we know the total length - i.e. at
 //! `finish` time. The encoder therefore buffers all input until `finish`.
 //! For large inputs this is `O(input)` memory; clients that need streaming
 //! at constant memory should use a real LZ77+Huffman encoder.

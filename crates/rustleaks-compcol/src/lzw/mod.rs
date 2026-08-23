@@ -1,4 +1,4 @@
-//! Lempel–Ziv–Welch — the Unix `compress(1)` (`.Z`) flavour.
+//! Lempel–Ziv–Welch - the Unix `compress(1)` (`.Z`) flavour.
 //!
 //! Wire format (compatible with `compress` / `uncompress` / `gzip -d`):
 //!

@@ -4,7 +4,7 @@
 //! pick the smallest of three encodings:
 //!
 //! - `RLE_Block` (Block_Type=1) when every byte of the pending block is the
-//!   same — costs just one payload byte regardless of block size.
+//!   same - costs just one payload byte regardless of block size.
 //! - `Compressed_Block` (Block_Type=2): runs the hash-chain LZ77 matcher
 //!   ([`crate::zstd::matcher`]) to produce literals + sequences. Literals are
 //!   coded as `Compressed_Literals_Block` (fresh canonical Huffman tree
@@ -76,7 +76,7 @@ const BLOCK_SIZE: usize = 128 * 1024;
 ///   (`btlazy2`-ish behaviour without the actual binary-tree match finder).
 /// - Levels 20..=22 max out the chain budget (`btopt`/`btultra` territory).
 ///   Our encoder still uses a hash chain, so the upside saturates well below
-///   the reference encoder's at those levels — but the size relation
+///   the reference encoder's at those levels - but the size relation
 ///   `level=9 ≤ level=1` continues to hold.
 ///
 /// Values outside `1..=22` are clamped at encoder construction time rather
@@ -108,7 +108,7 @@ pub(crate) struct LevelParams {
 impl LevelParams {
     /// Clamp `level` to `1..=22` and expand to match-finder tuning. The
     /// table broadly tracks zstd's reference presets but doesn't try to
-    /// reproduce them exactly — the strategy here is always hash-chain
+    /// reproduce them exactly - the strategy here is always hash-chain
     /// greedy parsing, so the gains saturate well before level 22.
     pub(crate) fn from_level(level: u8) -> Self {
         let level = level.clamp(1, 22);
@@ -249,7 +249,7 @@ impl Encoder {
     }
 
     /// Build an encoder with explicit configuration. `config.level` is
-    /// clamped to `1..=22` internally — out-of-range values are snapped to
+    /// clamped to `1..=22` internally - out-of-range values are snapped to
     /// the nearest valid level rather than rejected.
     pub fn with_config(config: EncoderConfig) -> Self {
         Self {
@@ -552,7 +552,7 @@ impl Encoder {
         out
     }
 
-    /// Flush `pending` as a single block (RLE / compressed / raw — whichever
+    /// Flush `pending` as a single block (RLE / compressed / raw - whichever
     /// is smallest). Sets `last` on the block header.
     fn flush_block(&mut self, last: bool) {
         // RLE_Block: 4-byte total (3-byte header + 1 payload byte) iff every
@@ -694,7 +694,7 @@ fn all_same(s: &[u8]) -> bool {
 }
 
 /// One LZ77 sequence after repeat-offset assignment. `offset_value` is the
-/// number the FSE/extra-bits encoder will emit — either `distance + 3` for a
+/// number the FSE/extra-bits encoder will emit - either `distance + 3` for a
 /// fresh offset, or `1..=3` aliasing one of the three previous offsets.
 #[derive(Clone, Copy, Debug)]
 struct Seq {
@@ -734,8 +734,8 @@ fn build_raw_literals_section_one(literals: &[u8]) -> Vec<u8> {
 /// Build the literals section, choosing the smallest of: Compressed
 /// (Block_Type=10, fresh Huffman tree), Treeless (Block_Type=11, reusing
 /// `prev_lengths`), or Raw (Block_Type=00). Returns `(section_bytes, new_huff_lengths)`
-/// where `new_huff_lengths` is `Some` iff the picked section carries — or
-/// reuses — a Huffman tree (i.e. the next block could use Treeless from it).
+/// where `new_huff_lengths` is `Some` iff the picked section carries - or
+/// reuses - a Huffman tree (i.e. the next block could use Treeless from it).
 fn build_literals_section(
     literals: &[u8],
     prev_lengths: Option<&HuffLengths>,
@@ -972,7 +972,7 @@ fn try_build_huffman_literals_section_with(
 /// RFC 8478 §3.1.1.5 ("Repeat Offsets").
 ///
 /// For a distance equal to one of the three most recent offsets, we emit a
-/// code in 1..=3 — much shorter than `distance + 3` for any meaningful
+/// code in 1..=3 - much shorter than `distance + 3` for any meaningful
 /// distance. The special case `LL == 0` makes code 1 alias the second offset
 /// (saving the slot when literal-less back-references repeat).
 fn assign_offset(distance: u32, literal_length: u32, prev: &mut [u32; 3]) -> u32 {

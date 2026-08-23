@@ -4,7 +4,7 @@
 //! `literaltable`, `offsettable`) plus their `reverse` companions. Each
 //! entry packs `(value << 8) | rank`. Looking up an index returns the
 //! `value`, then promotes the entry one step closer to the front of its
-//! frequency band — a coarse move-to-front that lets the static Huffman
+//! frequency band - a coarse move-to-front that lets the static Huffman
 //! tables (`huffmancode0..4`) waste fewer code bits on hot bytes.
 //!
 //! The behaviour we mirror:
@@ -22,7 +22,7 @@
 //!
 //! The exact `limit` per table and the per-table "value to swap into a slot
 //! after reset" details are not 100% nailed down in our reverse-engineered
-//! reference — what we replicate here is the structural skeleton plus the
+//! reference - what we replicate here is the structural skeleton plus the
 //! observation that the table converges toward "most-frequently-seen
 //! values cluster at the front". The shape is enough to plug into the
 //! main RAR1 decode loop once the static Huffman tables are in place,
@@ -54,9 +54,9 @@ impl LookupTable {
     ///
     /// `initial_value` chooses what each entry's high byte holds:
     /// - `LookupKind::Identity` → `value = index` (the `literaltable`
-    ///   and `offsettable` initial shape — `i << 8`).
+    ///   and `offsettable` initial shape - `i << 8`).
     /// - `LookupKind::Complement` → `value = (-index) & 0xff` (the
-    ///   `flagtable` initial shape — `((-i) & 0xff) << 8`).
+    ///   `flagtable` initial shape - `((-i) & 0xff) << 8`).
     ///
     /// `limit` is the reset threshold. The original code uses 32 (= group
     /// size), which means a bucket can be touched 31 times before the
@@ -110,7 +110,7 @@ impl LookupTable {
     /// entry with `table[reverse[bucket]]`, increments the moved entry's
     /// rank, and increments `reverse[bucket]`. If `reverse[bucket]` hits
     /// `limit`, the table is reset (we re-initialise the same `kind` we
-    /// were constructed with — callers building from a single immutable
+    /// were constructed with - callers building from a single immutable
     /// trade-off don't need to call this themselves).
     pub fn lookup(&mut self, kind: LookupKind, index: u8) -> u8 {
         let idx = index as usize;

@@ -10,7 +10,7 @@
 //! consuming them, and a dedicated `consume_bits` skips bits in bulk.
 //!
 //! The reader owns the buffer; the decoder feeds it whole blocks at a time so
-//! that the bit reader has random access to its own bytes — this matches the
+//! that the bit reader has random access to its own bytes - this matches the
 //! RAR5 wire layout where each compressed block is self-delimited at the byte
 //! level and the final byte's valid-bit count is encoded in the block header.
 

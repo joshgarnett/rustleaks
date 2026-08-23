@@ -10,7 +10,7 @@
 ///
 /// Bytes are pushed via [`feed`](BitReader::feed) as the caller consumes them
 /// from the codec's input slice. Bits are peeked / consumed by the caller.
-/// Persists across streaming calls — the codec holds one of these per stream.
+/// Persists across streaming calls - the codec holds one of these per stream.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BitReader {
     acc: u64,
@@ -23,7 +23,7 @@ impl BitReader {
     }
 
     /// Push one byte into the accumulator at the high end. Caller must
-    /// ensure `bits_available() <= 56` first — i.e. drain before refilling.
+    /// ensure `bits_available() <= 56` first - i.e. drain before refilling.
     pub fn feed(&mut self, byte: u8) {
         debug_assert!(self.nbits <= 56, "BitReader overflow: drain before feeding");
         self.acc |= (byte as u64) << self.nbits;

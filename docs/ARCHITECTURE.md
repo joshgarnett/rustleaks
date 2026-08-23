@@ -45,6 +45,7 @@ schedule them, but it submits only complete fragment outcomes to a session.
 | `rustleaks-cli` | Argument compatibility, config discovery, orchestration, diagnostics, and exits | Workspace only |
 | `rustleaks-compat` | Go oracle integration and performance workloads | Workspace only |
 | `xtask` | Repository validation and release-policy checks | Workspace only |
+| `rustleaks-bzip2`, `rustleaks-compcol`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Internal safe archive decoder forks | Workspace only |
 
 The dependency direction is core to sources and reports, then into the CLI.
 The core does not depend on source adapters, report writers, the CLI, archive

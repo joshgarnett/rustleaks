@@ -39,11 +39,10 @@ grammar, report bytes, duplicate-preserving findings, exit selection,
 stderr severity, and timeout/output-limit child cleanup.
 
 Selected Go version/platform, Rust host, and cleanup strategy are independently
-queried and mutation-tested before being omitted from exact outcomes. This keeps
-committed artifacts host-independent. The generator has bounded native process-
-tree cleanup, but no native Linux or Windows runtime was available for this
-packet; those lanes remain the explicit nonblocking
-`FOLLOWUP-NATIVE-M11-001`.
+queried and mutation-tested before being omitted from exact outcomes. This
+keeps committed artifacts host-independent. The generator has bounded native
+process-tree cleanup. Native Linux and Windows runtime evidence remains
+unavailable and is not implied by this corpus.
 
 Regenerate with `cargo xtask generate cli`; verify byte-for-byte determinism
 with `cargo xtask generate cli --check`. Use `--output PATH` to write elsewhere.

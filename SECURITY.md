@@ -8,10 +8,11 @@ the project remains unpublished. Older snapshots are not supported.
 ## Reporting
 
 Do not include real credentials, exploit payloads, or non-public vulnerability
-details in a public issue. The source repository has a GitHub remote, but this
-policy does not yet document a verified private advisory endpoint. A private
-reporting route must be enabled, tested, and recorded here before any public
-package release. Until then, publication remains blocked.
+details in a public issue. The intended intake route is GitHub private
+vulnerability reporting. It has not been enabled and tested, so this policy
+does not yet provide a verified private advisory endpoint. The route must be
+enabled, tested, and recorded here before any public package release. Until
+then, publication remains blocked.
 
 When a private report route is available, maintainers should acknowledge a
 report within three business days, provide an initial assessment within seven

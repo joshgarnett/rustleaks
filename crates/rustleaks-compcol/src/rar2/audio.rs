@@ -58,7 +58,7 @@ impl AudioState {
 }
 
 /// Decode one audio sample for the given channel. `channel_delta` is mutated
-/// in place — it tracks the most recent delta across all channels and is read
+/// in place - it tracks the most recent delta across all channels and is read
 /// by the predictor as `weight5 * channel_delta`. `delta` is the raw symbol
 /// the Huffman tree just produced (0..=255).
 ///

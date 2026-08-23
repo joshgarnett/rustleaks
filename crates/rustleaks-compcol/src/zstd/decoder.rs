@@ -5,7 +5,7 @@
 //! a full list of supported literal / sequence sub-modes.
 //!
 //! The decoder also refuses frames whose Frame_Header sets the
-//! `Content_Checksum_Flag` — we do not implement XXH64 in this crate, so we
+//! `Content_Checksum_Flag` - we do not implement XXH64 in this crate, so we
 //! cannot validate the trailing 4-byte checksum.
 
 use alloc::vec::Vec;
@@ -46,7 +46,7 @@ enum DecPhase {
     /// `emit_buf`).
     CompressedEmit,
     /// Reading 4-byte Content_Checksum trailer (only entered if we somehow
-    /// allowed a checksummed frame — currently we refuse such frames in
+    /// allowed a checksummed frame - currently we refuse such frames in
     /// `Fhd`).
     ContentChecksum,
     /// Frame fully consumed; subsequent input is ignored (we do not handle
@@ -77,7 +77,7 @@ pub struct Decoder {
     #[allow(dead_code)]
     window_size: u64,
     /// Frame_Content_Size, if known (Single_Segment frames always report it).
-    /// Currently unused — we don't validate against actual decoded length.
+    /// Currently unused - we don't validate against actual decoded length.
     #[allow(dead_code)]
     frame_content_size: Option<u64>,
 
@@ -99,7 +99,7 @@ pub struct Decoder {
     /// All previously decoded output bytes (back-reference history).
     /// Kept across blocks; the LZ77 reconstruction reads from this.
     history: Vec<u8>,
-    /// Last fully-decoded length of `history` — we slice
+    /// Last fully-decoded length of `history` - we slice
     /// `history[history_emitted..]` to find bytes still to deliver.
     history_emitted: usize,
 

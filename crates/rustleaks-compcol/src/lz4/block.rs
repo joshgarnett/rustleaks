@@ -22,7 +22,7 @@ const MFLIMIT: usize = 12;
 
 /// Size of the encoder's hash table (entries are `u32` block offsets).
 ///
-/// 12 bits = 4096 entries × 4 bytes = 16 KiB scratch — small enough to fit
+/// 12 bits = 4096 entries × 4 bytes = 16 KiB scratch - small enough to fit
 /// comfortably in cache, large enough to find most useful matches in a
 /// 64 KiB block.
 const HASH_LOG: u32 = 12;
@@ -35,7 +35,7 @@ const HASH_EMPTY: u32 = u32::MAX;
 /// Hash 4 bytes down to `HASH_LOG` bits.
 ///
 /// Uses the classic LZ4 multiply-and-shift hash. `2654435761` is Knuth's
-/// golden-ratio constant — any good odd 32-bit multiplier works here.
+/// golden-ratio constant - any good odd 32-bit multiplier works here.
 #[inline]
 fn hash4(bytes: [u8; 4]) -> usize {
     let v = u32::from_le_bytes(bytes);

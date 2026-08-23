@@ -756,7 +756,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &ScanOptions::default(),
     );
     assert!(outcome.is_complete());
-    assert!(!outcome.findings().is_empty());
+    assert_eq!(outcome.findings()[0].rule_id().as_str()?, "aws-access-token");
     Ok(())
 }
 "#
@@ -1381,7 +1381,11 @@ fn run_quality_command(
     )
 }
 
-fn collect_markdown(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+fn collect_documentation(
+    directory: &Path,
+    root: &Path,
+    files: &mut Vec<PathBuf>,
+) -> Result<(), String> {
     for entry in std::fs::read_dir(directory).map_err(|error| {
         format!(
             "cannot read documentation directory {}: {error}",
@@ -1393,10 +1397,17 @@ fn collect_markdown(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> 
         let relative = path
             .strip_prefix(root)
             .map_err(|error| format!("cannot relativize documentation path: {error}"))?;
+        let verbatim_upstream_fixture = [
+            "compat/fixtures/upstream/testdata/expected/report/template_markdown.md",
+            "compat/fixtures/upstream/testdata/repos/archives/README.md",
+            "compat/fixtures/upstream/testdata/repos/small/README.md",
+            "compat/fixtures/upstream/testdata/repos/staged/README.md",
+        ]
+        .iter()
+        .any(|fixture| relative == Path::new(fixture));
         if relative.starts_with("target")
             || relative.starts_with(".git")
-            || relative.starts_with("compat/fixtures/upstream")
-            || relative.starts_with("compat/fixtures/oracle")
+            || verbatim_upstream_fixture
         {
             continue;
         }
@@ -1404,8 +1415,12 @@ fn collect_markdown(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> 
             .file_type()
             .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
         if file_type.is_dir() {
-            collect_markdown(&path, root, files)?;
-        } else if file_type.is_file() && path.extension().is_some_and(|value| value == "md") {
+            collect_documentation(&path, root, files)?;
+        } else if file_type.is_file()
+            && path
+                .extension()
+                .is_some_and(|value| matches!(value.to_str(), Some("md" | "rs" | "yml" | "yaml")))
+        {
             files.push(path);
         }
     }
@@ -1419,24 +1434,52 @@ fn markdown_local_links(contents: &str) -> impl Iterator<Item = &str> {
         .filter_map(|tail| tail.split_once(')').map(|(target, _)| target.trim()))
 }
 
+fn rust_documentation(contents: &str) -> String {
+    contents
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_start();
+            line.strip_prefix("//!")
+                .or_else(|| line.strip_prefix("///"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn docs_check() -> Result<(), String> {
     let root = workspace_root()?;
     let mut files = Vec::new();
-    collect_markdown(&root, &root, &mut files)?;
+    collect_documentation(&root, &root, &mut files)?;
     files.sort();
     if files.is_empty() {
-        return Err("documentation check found no maintained Markdown files".into());
+        return Err("documentation check found no maintained prose surfaces".into());
     }
+    let mut prose_files = 0_usize;
+    let mut rust_doc_surfaces = 0_usize;
     for path in &files {
         let contents = std::fs::read_to_string(path)
             .map_err(|error| format!("cannot read documentation {}: {error}", path.display()))?;
-        if contents.contains('\u{2014}') {
+        let is_rust = path.extension().is_some_and(|value| value == "rs");
+        let prose = if is_rust {
+            rust_documentation(&contents)
+        } else {
+            contents.clone()
+        };
+        if prose.is_empty() {
+            continue;
+        }
+        if is_rust {
+            rust_doc_surfaces += 1;
+        } else {
+            prose_files += 1;
+        }
+        if prose.contains('\u{2014}') {
             return Err(format!(
                 "documentation contains an em dash: {}",
                 path.display()
             ));
         }
-        if contents.chars().any(|character| {
+        if prose.chars().any(|character| {
             ('\u{1f000}'..='\u{1faff}').contains(&character)
                 || ('\u{2600}'..='\u{27bf}').contains(&character)
         }) {
@@ -1445,8 +1488,15 @@ fn docs_check() -> Result<(), String> {
                 path.display()
             ));
         }
-        let lowercase = contents.to_ascii_lowercase();
-        for phrase in ["blazing fast", "best-in-class", "world-class", "ultra-fast"] {
+        let lowercase = prose.to_ascii_lowercase();
+        for phrase in [
+            "100% safe",
+            "blazing fast",
+            "best-in-class",
+            "production-quality",
+            "world-class",
+            "ultra-fast",
+        ] {
             if lowercase.contains(phrase) {
                 return Err(format!(
                     "documentation contains disallowed marketing phrase {phrase:?}: {}",
@@ -1454,31 +1504,32 @@ fn docs_check() -> Result<(), String> {
                 ));
             }
         }
-        let parent = path
-            .parent()
-            .ok_or_else(|| format!("{} has no parent", path.display()))?;
-        for target in markdown_local_links(&contents) {
-            let target = target.trim_matches(['<', '>']);
-            if target.is_empty()
-                || target.starts_with('#')
-                || target.starts_with("http://")
-                || target.starts_with("https://")
-                || target.starts_with("mailto:")
-            {
-                continue;
-            }
-            let target = target.split('#').next().unwrap_or(target);
-            if !parent.join(target).exists() {
-                return Err(format!(
-                    "broken local documentation link {target:?} in {}",
-                    path.display()
-                ));
+        if path.extension().is_some_and(|value| value == "md") {
+            let parent = path
+                .parent()
+                .ok_or_else(|| format!("{} has no parent", path.display()))?;
+            for target in markdown_local_links(&contents) {
+                let target = target.trim_matches(['<', '>']);
+                if target.is_empty()
+                    || target.starts_with('#')
+                    || target.starts_with("http://")
+                    || target.starts_with("https://")
+                    || target.starts_with("mailto:")
+                {
+                    continue;
+                }
+                let target = target.split('#').next().unwrap_or(target);
+                if !parent.join(target).exists() {
+                    return Err(format!(
+                        "broken local documentation link {target:?} in {}",
+                        path.display()
+                    ));
+                }
             }
         }
     }
     println!(
-        "checked {} maintained Markdown files for local links, em dashes, emoji, and marketing phrases",
-        files.len()
+        "checked {prose_files} maintained prose files and {rust_doc_surfaces} Rust documentation surfaces for links and style"
     );
     Ok(())
 }

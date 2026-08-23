@@ -1,6 +1,6 @@
-//! RAR 5.x (2013-present) — LZ77/Huffman + new filters — **decoder only**.
+//! RAR 5.x (2013-present) - LZ77/Huffman + new filters - **decoder only**.
 //!
-//! Reference: <https://www.rarlab.com/technote.htm> (partial — the wire-level
+//! Reference: <https://www.rarlab.com/technote.htm> (partial - the wire-level
 //! algorithm details are not in the public technote; the canonical format
 //! description is the libarchive RAR5 reader, BSD-licensed). This decoder
 //! was implemented from the libarchive reader's algorithm description, not

@@ -55,7 +55,7 @@ pub const FIXED_LIT_LENGTHS: [u8; 288] = {
 };
 
 /// Fixed distance code lengths (all 5 bits). Symbols 30 and 31 are encoded
-/// but reserved — decoders that see them must report corrupt input.
+/// but reserved - decoders that see them must report corrupt input.
 pub const FIXED_DIST_LENGTHS: [u8; 32] = [5u8; 32];
 
 /// Sliding-window size mandated by deflate.

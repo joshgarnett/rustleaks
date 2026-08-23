@@ -4,9 +4,8 @@ use std::io;
 
 /// An error returned by the block decoder
 ///
-/// At the moment it's not possible to find out what
-/// error occurred other than through the `Display`
-/// implementation, this will change in a future release.
+/// The specific decoder reason is available through its `Display`
+/// implementation rather than a structured public field.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockError {
     reason: &'static str,
@@ -29,7 +28,6 @@ impl StdError for BlockError {}
 
 impl From<BlockError> for io::Error {
     fn from(err: BlockError) -> io::Error {
-        // TODO: do better at this
         io::Error::other(err)
     }
 }

@@ -7,10 +7,10 @@
 //! +---+---+---+---+---+---+---+---+---+---+---== ... ==---+---+---+---+---+---+---+---+---+
 //! ```
 //! Fixed 10-byte header followed by optional fields gated by FLG bits:
-//!   FEXTRA (bit 2)   — 2-byte XLEN + XLEN bytes
-//!   FNAME  (bit 3)   — NUL-terminated filename
-//!   FCOMMENT (bit 4) — NUL-terminated comment
-//!   FHCRC  (bit 1)   — 2-byte header CRC16 (low 16 bits of CRC-32)
+//!   FEXTRA (bit 2)   - 2-byte XLEN + XLEN bytes
+//!   FNAME  (bit 3)   - NUL-terminated filename
+//!   FCOMMENT (bit 4) - NUL-terminated comment
+//!   FHCRC  (bit 1)   - 2-byte header CRC16 (low 16 bits of CRC-32)
 //! Then deflate, then 8-byte trailer (little-endian CRC-32 of original data +
 //! ISIZE = uncompressed length mod 2^32).
 //!
@@ -19,7 +19,7 @@
 //!   doesn't expose the filename or comment.
 //! - Encoder always emits a minimal 10-byte header (FLG = 0); the XFL byte
 //!   is filled in from [`EncoderConfig::level`] per RFC 1952 §2.3.1.
-//! - Concatenated gzip members are not supported — decoder stops at the
+//! - Concatenated gzip members are not supported - decoder stops at the
 //!   first member's trailer.
 
 use crate::checksum::Crc32;
@@ -95,7 +95,7 @@ enum DecPhase {
     Name,
     /// Skipping bytes of the comment until a NUL is seen.
     Comment,
-    /// Skipping the 2-byte header-CRC trailer (validation deferred — v1).
+    /// Skipping the 2-byte header-CRC trailer (validation deferred - v1).
     HeaderCrc,
     /// Streaming the deflate payload.
     Deflate,

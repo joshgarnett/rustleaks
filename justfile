@@ -24,16 +24,20 @@ test:
 docs:
     bazelisk build //:docs
 
+# Check maintained prose, templates, skills, and local links.
+docs-check:
+    bazelisk run //crates/xtask:xtask -- docs-check
+
 # Run the committed compatibility replay through Bazel.
 parity:
     bazelisk test //:parity
 
 # Run formatting, lint, documentation, build, and eight-target compile gates.
-check:
+check: docs-check
     bazelisk test //:check
 
 # Run the complete local Bazel acceptance suite.
-ci:
+ci: docs-check
     bazelisk test //:ci
 
 # Build every fuzz target without running a campaign.

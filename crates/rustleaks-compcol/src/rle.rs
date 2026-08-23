@@ -4,7 +4,7 @@
 //! is in `1..=255`. Runs longer than 255 are split across multiple pairs.
 //! A `count` of `0` is reserved as a corruption marker.
 //!
-//! This algorithm is not chosen for compression ratio — it is the smallest
+//! This algorithm is not chosen for compression ratio - it is the smallest
 //! interesting state machine for validating the streaming trait shape.
 
 use crate::error::Error;

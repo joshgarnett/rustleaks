@@ -406,19 +406,61 @@ fn verify_trees(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<
     Ok(())
 }
 
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 10] = [
+    (
+        "Cargo.lock",
+        "8b3054f67f1b52a8bda4ffab8f5ce9a961c091d924f5b75880624bbd125ae567",
+        "81059f032e7b4e4330dbc035d6fff09f52c0d2a1fb7af20d36437a993cc64320",
+    ),
+    (
+        "crates/rustleaks-cli/src/output.rs",
+        "800a1c3350f56b4f7af25193e6c5d1a54e3cb44d8273ecdebd5f4bbb45b000ba",
+        "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
+    ),
+    (
+        "crates/rustleaks-cli",
+        "c175d8ecdafddb9676df724db36a61ecde033bca37b37497ea7ece18a9c306ae",
+        "673205da570d79a356069e4b2f07f37aa0c18fc21f101888d29b0d02460a790e",
+    ),
+    (
+        "crates/rustleaks-core",
+        "9d1d5883df0730eae8cdbc7008257083a6e8fc7521d3a313f8674cab2a9959a8",
+        "294fef4563ca3c85bec379bd17c59e9e7ad7bf83bbcf82a429a294f1a106ecd9",
+    ),
+    (
+        "crates/rustleaks-report",
+        "6a4ebf0277309b3e8bbf6e52b3d04be8fee323014ab7a341e816532d12da0d8c",
+        "b6fe16e5ea5b7a5434717c3ce7c161a49fd8e26460367670b37af1c5deebe9d9",
+    ),
+    (
+        "crates/rustleaks-sources",
+        "599c67b9289eb073c864c7fa3ca0e860d4bb4355aaa66c7e1a05d7d226109b64",
+        "81b2a3e05aacf7d3d806163099e59a2bfeb30f16ccfaa420c90fa9be540befde",
+    ),
+    (
+        "crates/rustleaks-bzip2",
+        "eff6fa1410ebf53eebe2052cb48ca1f42e72e16230407490b86f171fac9e6d32",
+        "0ef028bb702d4714b78432d0cbc9f8f7cce3c2db3dc4a220b562eae00189e185",
+    ),
+    (
+        "crates/rustleaks-compcol",
+        "244e1c88bc0eaa9866f92f5c851781d5273cd911d7fd6218a7d6f79a03fcdaf6",
+        "2317ab99087e5f721638bb5a41134c2784d73ac93dcc782af34085823c7ad9fa",
+    ),
+    (
+        "crates/rustleaks-rar-codec",
+        "188596cdee2d5b251ac88c6a7d55d3f9ebb6c95d21c5f99abecbf8e50d7e9586",
+        "ddffa1487347c797fc035bd018ded0189e6fbb6c360258ca18f1a19beefe8ae1",
+    ),
+    (
+        "crates/rustleaks-sevenz",
+        "4fde1e7cc679c93d6cad1714da6961b4d20e0215854b0b1016a9fea721ba33ce",
+        "ae212024414a86cf443f5ae54c3f7dfcdabcfceb05b2cf9d75a3062208e106f7",
+    ),
+];
+
 fn declared_transition(path: &str, expected: &str, actual: &str) -> bool {
-    matches!(
-        (path, expected, actual),
-        (
-            "Cargo.lock",
-            "c27f70ea157cdacf5f493de0a68a30e737f44b1d7051bdf53a07a4ea440ad008",
-            "8b3054f67f1b52a8bda4ffab8f5ce9a961c091d924f5b75880624bbd125ae567"
-        ) | (
-            "crates/rustleaks-core",
-            "f35c35413025ee78af5ca9a0a8227e723f3572a1a7092f80989153f49b7d0891",
-            "9d1d5883df0730eae8cdbc7008257083a6e8fc7521d3a313f8674cab2a9959a8"
-        )
-    )
+    DECLARED_TRANSITIONS.contains(&(path, expected, actual))
 }
 
 pub(super) fn tree_hash(root: &Path, relative: &str) -> Result<String, String> {
@@ -474,20 +516,13 @@ fn strings(values: &[&str]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::declared_transition;
+    use super::{DECLARED_TRANSITIONS, declared_transition};
 
     #[test]
     fn only_declared_coordinator_transitions_are_accepted() {
-        assert!(declared_transition(
-            "Cargo.lock",
-            "c27f70ea157cdacf5f493de0a68a30e737f44b1d7051bdf53a07a4ea440ad008",
-            "8b3054f67f1b52a8bda4ffab8f5ce9a961c091d924f5b75880624bbd125ae567"
-        ));
-        assert!(declared_transition(
-            "crates/rustleaks-core",
-            "f35c35413025ee78af5ca9a0a8227e723f3572a1a7092f80989153f49b7d0891",
-            "9d1d5883df0730eae8cdbc7008257083a6e8fc7521d3a313f8674cab2a9959a8"
-        ));
+        for &(path, expected, actual) in &DECLARED_TRANSITIONS {
+            assert!(declared_transition(path, expected, actual));
+        }
         assert!(!declared_transition("Cargo.lock", "wrong", "wrong"));
         assert!(!declared_transition("crates/rustleaks-cli", "old", "new"));
     }

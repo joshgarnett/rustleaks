@@ -7,16 +7,16 @@
 //!
 //! ```text
 //! byte 0: block_flags
-//!   bits 0..2  : codec_byte — valid bit count of the *final* compressed
+//!   bits 0..2  : codec_byte - valid bit count of the *final* compressed
 //!                byte, minus 1. (i.e. the bitstream ends after
 //!                `codec_byte + 1` bits of the last data byte.)
-//!   bits 3..5  : byte_count — the block_size field below is
+//!   bits 3..5  : byte_count - the block_size field below is
 //!                `byte_count + 1` bytes long (1, 2 or 3 bytes).
-//!   bit  6     : last_block — set on the final block of the stream.
-//!   bit  7     : table_present — set when the block carries a fresh set
+//!   bit  6     : last_block - set on the final block of the stream.
+//!   bit  7     : table_present - set when the block carries a fresh set
 //!                of Huffman tables (otherwise the previous block's tables
 //!                are reused).
-//! byte 1: block_cksum — 0x5A ^ block_flags ^ size_b0 ^ size_b1 ^ size_b2
+//! byte 1: block_cksum - 0x5A ^ block_flags ^ size_b0 ^ size_b1 ^ size_b2
 //! bytes 2..2+(byte_count+1): block_size (little-endian), number of
 //!   compressed-data bytes that follow.
 //! bytes 2+(byte_count+1) ..: the compressed bitstream proper.
@@ -24,8 +24,8 @@
 //!
 //! The bitstream uses big-endian bit order (most-significant bit of each
 //! byte first). When `table_present` is set, the very first bits of the
-//! block carry a *pre-code* — 20 lengths in 4-bit nibbles (with an escape
-//! sequence for runs of zeros) — followed by the canonical lengths of the
+//! block carry a *pre-code* - 20 lengths in 4-bit nibbles (with an escape
+//! sequence for runs of zeros) - followed by the canonical lengths of the
 //! five main Huffman tables (sizes 306, 64, 16, 44) packed via the
 //! pre-code's RLE.
 //!
@@ -37,7 +37,7 @@
 //! `output`. When the unpack-size has been emitted the decoder transitions
 //! to a Done state.
 //!
-//! Window size is supplied via [`Decoder::with_window_size`] — the RAR5
+//! Window size is supplied via [`Decoder::with_window_size`] - the RAR5
 //! container header carries it; for stand-alone fuzz / integration use a
 //! 1 MiB default is reasonable.
 //!
@@ -119,7 +119,7 @@ enum State {
     BlockHeader,
     /// Inside a block. The block has been fully buffered into `bits`.
     InBlock { bits: Box<BitBuf>, last_block: bool },
-    /// Stream finished — we've emitted `unpack_total` bytes.
+    /// Stream finished - we've emitted `unpack_total` bytes.
     Done,
 }
 
@@ -815,7 +815,7 @@ fn read_filter(bits: &mut BitBuf, window_size: usize, cur_pos: u64) -> Result<Fi
     })
 }
 
-/// Parse an RAR5 "filter uint" — 2 bits encode the byte count `n`, then
+/// Parse an RAR5 "filter uint" - 2 bits encode the byte count `n`, then
 /// `n + 1` 8-bit values combine little-endian.
 fn read_filter_uint(bits: &mut BitBuf) -> Result<u32, Error> {
     let bc = bits.read(2)?;

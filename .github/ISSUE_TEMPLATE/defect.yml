@@ -1,0 +1,54 @@
+name: Defect
+description: Report reproducible incorrect Rustleaks behavior that is not a security vulnerability.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real credentials or non-public vulnerability details. Follow SECURITY.md for sensitive reports.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide the smallest complete steps and synthetic input needed to reproduce the problem.
+      placeholder: |
+        1. Command or API call
+        2. Synthetic input or repository shape
+        3. Observed output with secrets redacted
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Give the Rustleaks version or exact Git commit.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the operating system, architecture, Rust target, tool versions, features, and relevant configuration source.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation already run
+      description: List exact commands and results, or state that none were run.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Sensitive information
+      options:
+        - label: I used only synthetic or reviewed public test data and did not include a live credential or non-public vulnerability detail.
+          required: true

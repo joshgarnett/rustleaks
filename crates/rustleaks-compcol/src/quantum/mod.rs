@@ -1,22 +1,15 @@
-//! Quantum (Stac, used in older Microsoft CAB files) — **decoder only**.
+//! Quantum (Stac, used in older Microsoft CAB files) - **decoder only**.
 //!
-//! Quantum was created by David Stafford at Stac Electronics and adapted by
-//! Microsoft for the legacy Cabinet (`.cab`) format. The relevant patents
-//! expired around 2007 but the algorithm remained obscure and is no longer
-//! used by any actively-developed tool. There is **no publicly-implemented
-//! Quantum encoder** that we are aware of — even libmspack, the de facto
-//! reference, ships decoder-only support. This crate matches that scope:
-//! the [`Encoder`] in this module returns [`Error::Unsupported`] from every
-//! call.
+//! This imported implementation handles the legacy Cabinet (`.cab`) Quantum
+//! format. It follows libmspack's decoder-only scope: the [`Encoder`] in this
+//! module returns [`Error::Unsupported`] from every call.
 //!
 //! Reference: libmspack `qtmd.c` and `qtm.h`
 //! (<https://github.com/kyz/libmspack/blob/master/libmspack/mspack/qtmd.c>).
-//! See also Matthew Russotto's notes at
-//! <http://www.speakeasy.org/~russotto/quantumcomp.html>.
 //!
 //! ## Window size
 //!
-//! Quantum streams do **not** carry window size in-band — it is supplied by
+//! Quantum streams do **not** carry window size in-band - it is supplied by
 //! the container (a CAB folder header byte). Callers that have parsed the
 //! CAB folder should construct the decoder with
 //! [`Decoder::with_window_bits`]. [`Decoder::new`] picks 15 (32 KiB) as a
@@ -74,8 +67,7 @@ impl Algorithm for Quantum {
     }
 }
 
-/// Encoder stub. Quantum has no publicly-documented or publicly-implemented
-/// encoder; every method here returns [`Error::Unsupported`].
+/// Encoder stub; every method returns [`Error::Unsupported`].
 #[derive(Debug, Default)]
 pub struct Encoder;
 impl Encoder {

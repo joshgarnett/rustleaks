@@ -23,7 +23,7 @@ pub struct SequencesState {
     pub ll_table: Option<FseTable>,
     pub ml_table: Option<FseTable>,
     pub of_table: Option<FseTable>,
-    /// Previous offsets — repeat-code aliases for offsets 1..=3 in the
+    /// Previous offsets - repeat-code aliases for offsets 1..=3 in the
     /// encoded stream. Default per spec: [1, 4, 8].
     pub prev_offsets: [u32; 3],
 }

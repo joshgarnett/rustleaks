@@ -27,13 +27,14 @@ the JSONL invokes location through the public detector path and does not claim
 a standalone call to the private function.
 
 `matrix-coverage-v1.json` reconciles all 42 deterministic rows in
-the deterministic detector matrix to committed requests. `M4-ENT-008` is
-kept out of deterministic JSONL: Go map iteration produces both zero- and
+the deterministic detector matrix to committed requests. The recorded
+nondeterministic entropy-threshold row is kept out of deterministic JSONL:
+Go map iteration produces both zero- and
 one-finding outcomes at the exact threshold. The real-detector Go test
 `TestDirectDetectorEntropyThresholdOutcomeSet` performs 100,000 bounded scans,
 requires both outcomes, and requires every accepted finding to have entropy
-bits `0x4046a218`. D-0012 resolves the outcome set: the Rust parity gate also
-proves its selected admissible scalar-order f64 result and threshold predicate.
+bits `0x4046a218`. The Rust parity gate proves its selected admissible
+scalar-order f64 result and threshold predicate.
 
 All request content, config, paths, commit metadata, and every text-bearing
 finding field use standard base64. Consequently invalid UTF-8 survives both
@@ -48,9 +49,9 @@ is present and empty.
 The metadata case supplies `remote_platform: "none"` with an empty remote URL.
 That is the upstream `NoPlatform` sentinel required when a `CommitInfo` is
 present; a nil `CommitInfo.Remote` is dereferenced by the pinned detector.
-Nonempty SCM link generation is a later source/SCM concern. The generator
-rejects any nonempty URL, any platform other than empty/`none`, or any nonempty
-finding link.
+Nonempty SCM link generation is outside this corpus and covered by the source
+and Git corpora. The generator rejects any nonempty URL, any platform other
+than empty/`none`, or any nonempty finding link.
 
 Out of this gate: allowlists, decoding, composite/required rules, generic-rule
 suppression, redaction, baselines, ignore/session filtering, and source/SCM

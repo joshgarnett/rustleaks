@@ -7,8 +7,8 @@ once and executes one new OS process for every request. `--check` regenerates
 all outcomes and byte-compares them with these files.
 
 The corpus contains 263 requests: 204 codec observations and 59 detector
-observations. `coverage-v1.json` additionally maps every mandatory audit case
-1 through 31 from `M6-DECODER-SEMANTICS-001` to explicit request IDs. The
+observations. `coverage-v1.json` additionally maps all 31 mandatory decoder
+audit cases to explicit request IDs. The
 generator rejects a missing/substituted ID and asserts the important outcome
 of every branch matrix before either writing or checking artifacts.
 
@@ -68,8 +68,8 @@ replayable.
   current-line positive/negative behavior.
 - `DEC-013`: bounded greedy/candidate resource envelopes.
 
-This 13-ID map is authoritative for the decoder corpus. The broader semantics
-packet may use finer-grained global rows, but it must map those rows back to
+This 13-ID map is authoritative for the decoder corpus. Broader traceability
+may use finer-grained rows, but it must map those rows back to
 these exact categories and request IDs rather than redefining their meaning.
 
 `DEC-005` includes paired canonical and noncanonical final quanta for both
@@ -91,8 +91,8 @@ itself is unchanged.
 The detector matrix separately freezes keywords, original/decoded allow
 markers, capture/strict-entropy behavior, secret/match/line allowlist targets,
 global and per-pass early gates, rule-tag state reuse, malformed UTF-8 around
-all four codecs, and the required-rule context boundary. After M7 integration,
-the positive composite and mapped-proximity rows retain exact required vectors
+all four codecs, and the required-rule context boundary. The positive
+composite and mapped-proximity rows retain exact required vectors
 and all 59 detector rows replay in Rust with no deferred exclusions. The
 opposite-pass zeros plus inherited decoded `skipReport` and allowlisted controls
 continue to guard the decoder/composite boundary.
@@ -102,9 +102,7 @@ continue to guard the decoder/composite boundary.
 From the Rust repository root:
 
 ```sh
-env GOCACHE=/private/tmp/rustleaks-m7-oracle-gocache \
-  GOMODCACHE=/private/tmp/rustleaks-go-mod-cache \
-  cargo xtask generate decoder --check
+cargo xtask generate decoder --check
 ```
 
 The generator refuses changed upstream revision, default-config hash, or

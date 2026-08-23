@@ -1,6 +1,6 @@
-//! RAR 2.x (1997-2002) — reverse-engineered — decoder-only.
+//! RAR 2.x (1997-2002) - reverse-engineered - decoder-only.
 //!
-//! Reference: The Unarchiver's `XADRAR20Handle` (LGPL — patterns copied,
+//! Reference: The Unarchiver's `XADRAR20Handle` (LGPL - patterns copied,
 //! not code), at <https://github.com/MacPaw/XADMaster>.
 //!
 //! # Format overview
@@ -11,7 +11,7 @@
 //! plus delta-coded length values; the window is a fixed 1 MiB and offsets
 //! are LRU-tracked across symbols.
 //!
-//! Unlike RAR3/RAR5, the window size and bit format are constants — the
+//! Unlike RAR3/RAR5, the window size and bit format are constants - the
 //! container hands the decoder a raw byte stream and the unpacked length;
 //! everything else is inferred from the bitstream.
 //!
@@ -28,12 +28,14 @@
 //! RAR2 streams do not carry an in-band decompressed length, so callers
 //! must supply it out of band:
 //!
-//! ```ignore
+//! ```
 //! use compcol::rar2::Decoder;
-//! use compcol::Decoder as _;
+//! use compcol::{Decoder as _, Status};
 //!
-//! let mut dec = Decoder::with_unpack_size(unpacked_len as u64);
-//! // feed compressed bytes via `decode(...)`, then drain via `finish(...)`.
+//! let mut decoder = Decoder::with_unpack_size(0);
+//! let (progress, status) = decoder.finish(&mut []).unwrap();
+//! assert_eq!(progress.written, 0);
+//! assert_eq!(status, Status::StreamEnd);
 //! ```
 //!
 //! `decode` buffers input but never emits output; once the caller switches

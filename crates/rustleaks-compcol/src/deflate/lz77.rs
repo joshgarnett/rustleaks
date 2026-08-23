@@ -74,7 +74,7 @@ impl MatchFinder {
     /// `max_chain` caps how many hash-chain links we walk before giving up;
     /// `nice_match` is the length at which we stop searching for a longer
     /// candidate. When `have_good` is true we already hold a "good enough"
-    /// match elsewhere and quarter the chain budget — this is the lazy-match
+    /// match elsewhere and quarter the chain budget - this is the lazy-match
     /// speed-up.
     ///
     /// Returns `Some((length, distance))` with `length ≥ MIN_MATCH` if a

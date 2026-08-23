@@ -9,7 +9,7 @@
 //! accumulator. The accumulator is 64 bits wide so up to four whole input
 //! bytes (two words) can be buffered, leaving enough headroom to refill
 //! whenever fewer than 17 bits remain. The reader never panics on
-//! over-consumption — callers must check [`bits_available`] first.
+//! over-consumption - callers must check [`bits_available`] first.
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BitReader {
@@ -93,7 +93,7 @@ impl BitReader {
 
     /// Read and discard 0..=15 bits to reach the next 16-bit word boundary
     /// (relative to the wire stream). Used by uncompressed blocks per spec
-    /// §2.2 — "the bitstream is aligned to a 16-bit boundary before the 12-byte
+    /// §2.2 - "the bitstream is aligned to a 16-bit boundary before the 12-byte
     /// R0/R1/R2 dump and after the raw payload (if length is odd, an extra
     /// pad byte follows)".
     pub fn align_to_word(&mut self) {

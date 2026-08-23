@@ -1,0 +1,66 @@
+name: Compatibility gap
+description: Report a difference between Rustleaks and the pinned Gitleaks compatibility profile.
+title: "compat: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The accepted profile is documented in docs/COMPATIBILITY.md. Do not include live credentials or private vulnerability details.
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Compatibility domain
+      options:
+        - Configuration
+        - Regular expressions
+        - Detection or locations
+        - Allowlists or ignores
+        - Decoding or composite rules
+        - Sessions or baselines
+        - Files, archives, or Git
+        - Reports or CLI
+    validations:
+      required: true
+  - type: input
+    id: rustleaks_revision
+    attributes:
+      label: Rustleaks revision
+      description: Give the exact Rustleaks commit tested.
+    validations:
+      required: true
+  - type: input
+    id: upstream_revision
+    attributes:
+      label: Gitleaks revision
+      description: Confirm the exact upstream revision used for comparison.
+      value: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Synthetic reproducer
+      description: Provide the smallest configuration, byte input, source state, or command that demonstrates the difference.
+    validations:
+      required: true
+  - type: textarea
+    id: outcomes
+    attributes:
+      label: Compared outcomes
+      description: Record the exact redacted Go and Rust outcomes, including spans, locations, ordering, errors, or exit status that differ.
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands and environment
+      description: List the commands, target, feature set, and tool versions used.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Sensitive information
+      options:
+        - label: I used only synthetic or reviewed public test data and redacted finding values.
+          required: true

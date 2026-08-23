@@ -4,7 +4,7 @@
 //!   - [MS-PATCH] §2 (LZX DELTA Compression and Decompression):
 //!     <https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-patch/cc78752a-b4af-4eee-88cb-01f4d8a4c2bf>
 //!   - libmspack's `lzxd.c` reference implementation (LGPL 2.1, used for
-//!     cross-checking constants and edge cases — no code is copied).
+//!     cross-checking constants and edge cases - no code is copied).
 //!
 //! ## What this build supports
 //!

@@ -7,7 +7,7 @@
 //!
 //! Streams are read backward MSB-first via [`RevBitReader`]. A lookup table
 //! sized to the maximum code length is built to decode one byte per call in
-//! O(1) — index the table by the next `max_length` bits, read off the symbol
+//! O(1) - index the table by the next `max_length` bits, read off the symbol
 //! and its actual length.
 
 use alloc::vec;

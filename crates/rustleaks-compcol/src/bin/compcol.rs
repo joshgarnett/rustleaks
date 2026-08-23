@@ -1,4 +1,4 @@
-//! `compcol` — pure-Rust streaming compression / decompression CLI.
+//! `compcol` - pure-Rust streaming compression / decompression CLI.
 //!
 //! Selects an algorithm with `-t ALGO` (required), compresses by default,
 //! decompresses with `-d`. Reads stdin or an input file, writes stdout or

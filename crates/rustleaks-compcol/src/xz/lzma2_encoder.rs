@@ -8,7 +8,7 @@
 //!    framing, not by this code path.
 //! 2. No end-of-stream marker. LZMA2 frames the uncompressed length
 //!    explicitly in each chunk header, so the decoder stops at exactly that
-//!    many output bytes — emitting an EOS marker would be wrong (the
+//!    many output bytes - emitting an EOS marker would be wrong (the
 //!    next chunk's range coder is independent).
 //!
 //! Output of [`encode_lzma_chunk`] is the raw range-coded body. The range
@@ -18,7 +18,7 @@
 //!
 //! Strategy mirrors the LZMA encoder: a greedy parser over the input buffer
 //! with a 3-byte hash chain match finder. Quality is the same as the
-//! `.lzma` encoder — sufficient for xz cross-validation; not competitive
+//! `.lzma` encoder - sufficient for xz cross-validation; not competitive
 //! with xz-utils at higher presets.
 
 use alloc::boxed::Box;
@@ -83,7 +83,7 @@ const fn state_after_short_rep(s: usize) -> usize {
 // ─── encoder parameters ──────────────────────────────────────────────────
 
 /// Properties byte = `(pb*5 + lp)*9 + lc` per the LZMA spec; (3, 0, 2) packs
-/// to 0x5d — the canonical default that xz-utils emits at its standard
+/// to 0x5d - the canonical default that xz-utils emits at its standard
 /// presets.
 const ENC_LC: u32 = 3;
 const ENC_LP: u32 = 0;
@@ -102,7 +102,7 @@ const NIL: u32 = u32::MAX;
 /// levels widen `max_chain` (more hash-chain links walked per probe) and
 /// raise `nice_match` (the length at which the chain walk gives up and
 /// accepts the current match). This is the same speed-vs-ratio knob that
-/// xz-utils exposes — we just expose a small subset.
+/// xz-utils exposes - we just expose a small subset.
 #[derive(Clone, Copy)]
 pub(crate) struct EncoderParams {
     pub max_chain: usize,
@@ -114,7 +114,7 @@ impl EncoderParams {
     ///
     /// The mapping is monotonic and centred on the default level 6 producing
     /// the same `(96, 192)` numbers the previous fixed-tuning code used.
-    /// Values outside `0..=9` are clamped — we keep the public surface
+    /// Values outside `0..=9` are clamped - we keep the public surface
     /// infallible.
     pub fn from_level(level: u8) -> Self {
         let level = level.min(9);
@@ -251,7 +251,7 @@ impl RangeEncoder {
     /// The LZMA2 decoder in [`super::lzma2_decoder`] assembles direct bits
     /// MSB-first: each decoded bit shifts the accumulator left, with the
     /// first bit landing in the highest position. To match, we emit
-    /// MSB-first — bit `(value >> (bits-1)) & 1` first, bit 0 last.
+    /// MSB-first - bit `(value >> (bits-1)) & 1` first, bit 0 last.
     ///
     /// Note: this differs from `src/lzma/encoder.rs`, which is paired with
     /// the LSB-first direct-bit assembly used by `src/lzma/` decoder. Both
@@ -728,7 +728,7 @@ fn rep_match_len(input: &[u8], pos: usize, dist: u32) -> u32 {
 ///
 /// The returned byte vector contains the LZMA range-coded packet stream
 /// plus the 5-byte range coder flush. There is no `.lzma` header and no
-/// LZMA EOS marker — both would be wrong inside an LZMA2 chunk.
+/// LZMA EOS marker - both would be wrong inside an LZMA2 chunk.
 ///
 /// `dict_size` is the LZMA dictionary size to advertise. Match distances
 /// are bounded by this value. For LZMA2 the dict size is shared across

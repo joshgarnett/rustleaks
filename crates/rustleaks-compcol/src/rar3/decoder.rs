@@ -7,7 +7,7 @@
 //! end-of-stream marker that the decoder can rely on without overrunning the
 //! requested size. Callers therefore construct the decoder with
 //! [`Decoder::with_unpack_size`] and feed the raw compressed bytes that
-//! immediately follow the RAR file header — see the module-level
+//! immediately follow the RAR file header - see the module-level
 //! `//!` block for details. [`Decoder::new`] is provided as a default that
 //! decodes up to `u64::MAX` bytes (suitable for tests where the caller
 //! independently tracks output length).
@@ -19,7 +19,7 @@
 //! - All five Huffman codes (precode + main + offset + low-offset + length).
 //! - The 4-deep rolling-offset buffer, short offsets (codes 263..=270), and
 //!   the full match-length / offset machinery.
-//! - The keep-table flag — successive blocks may reuse the previous code
+//! - The keep-table flag - successive blocks may reuse the previous code
 //!   lengths.
 //! - The standalone E8/E9 post-pass filter when enabled via
 //!   [`Decoder::with_e8_filter`].
@@ -34,7 +34,7 @@
 //!   bytecode for the RarVM interpreter). These also fail with
 //!   `Error::Unsupported`. The standalone E8/E9 filter remains available.
 //! - **Dictionary sizes** other than the default 4 MiB. Streams compressed
-//!   with smaller dictionaries decode correctly with the larger window —
+//!   with smaller dictionaries decode correctly with the larger window -
 //!   the larger window doesn't change semantics.
 
 use alloc::boxed::Box;
@@ -88,7 +88,7 @@ impl Decoder {
     /// will produce as much output as the compressed stream encodes.
     ///
     /// Most callers should prefer [`Decoder::with_unpack_size`] so the
-    /// decoder knows when to stop — RAR3 streams do not carry their
+    /// decoder knows when to stop - RAR3 streams do not carry their
     /// uncompressed length in-band.
     pub fn new() -> Self {
         Self {
@@ -288,7 +288,7 @@ struct RunCtx {
     num_low_offset_repeats: u32,
     /// The decoded output stream.
     out: Vec<u8>,
-    /// Sliding window — kept in sync with `out` for back-reference lookups.
+    /// Sliding window - kept in sync with `out` for back-reference lookups.
     /// We use a plain Vec sized to DICT_DEFAULT_SIZE so wrap-around at the
     /// end is cheap; reads use modular indexing.
     window: Vec<u8>,

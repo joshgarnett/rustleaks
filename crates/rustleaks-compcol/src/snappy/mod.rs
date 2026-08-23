@@ -1,4 +1,4 @@
-//! Google Snappy — raw block format.
+//! Google Snappy - raw block format.
 //!
 //! This module implements the **Snappy raw block format** described in
 //! <https://github.com/google/snappy/blob/main/format_description.txt>.
@@ -7,18 +7,18 @@
 //!
 //! 1. The uncompressed length encoded as a Base-128 varint (1–5 bytes).
 //! 2. A stream of tag bytes followed by their payloads:
-//!    * `00` — literal. The high 6 bits hold `length-1` when in `0..=59`;
+//!    * `00` - literal. The high 6 bits hold `length-1` when in `0..=59`;
 //!      values `60..=63` mean the length minus one is stored in 1, 2, 3 or 4
 //!      little-endian bytes that follow the tag.
-//!    * `01` — copy with a 1-byte offset. Bits `[2:4]` hold `length-4`
+//!    * `01` - copy with a 1-byte offset. Bits `[2:4]` hold `length-4`
 //!      (length is 4..=11), bits `[5:7]` hold the high three bits of the
 //!      11-bit offset, followed by a 1-byte little-endian low offset.
-//!    * `10` — copy with a 2-byte offset. Bits `[2:7]` hold `length-1`
+//!    * `10` - copy with a 2-byte offset. Bits `[2:7]` hold `length-1`
 //!      (length is 1..=64), followed by a 2-byte little-endian offset.
-//!    * `11` — copy with a 4-byte offset. Bits `[2:7]` hold `length-1`
+//!    * `11` - copy with a 4-byte offset. Bits `[2:7]` hold `length-1`
 //!      (length is 1..=64), followed by a 4-byte little-endian offset.
 //!
-//! The framed `snzip` format (`framing_format.txt`) is *not* implemented —
+//! The framed `snzip` format (`framing_format.txt`) is *not* implemented -
 //! the raw block format is what `Snappy_Compress` / `Snappy_Uncompress` in
 //! the reference library produce and consume.
 //!
@@ -35,7 +35,7 @@
 //! ## Encoder
 //!
 //! The encoder uses a small fixed-size hash table (14-bit index, 16 KiB
-//! `u32` entries) to find back-references — the same general shape as the
+//! `u32` entries) to find back-references - the same general shape as the
 //! reference `snappy::CompressFragment` implementation. Matches are
 //! emitted greedily; runs that cannot find a back-reference are folded
 //! into literal tags. The maximum match length per copy tag is 64 bytes,

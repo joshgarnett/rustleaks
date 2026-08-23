@@ -7,13 +7,13 @@
 //!
 //! ## Filter types
 //!
-//! - `0` — Delta. RGB pre-processing (channel deinterleaving).
-//! - `1` — x86 E8 call-translation. Rewrites the 4-byte relative target of
+//! - `0` - Delta. RGB pre-processing (channel deinterleaving).
+//! - `1` - x86 E8 call-translation. Rewrites the 4-byte relative target of
 //!   every `0xE8` opcode.
-//! - `2` — x86 E8/E9 call+jump-translation. Same as `1` but also fires on
+//! - `2` - x86 E8/E9 call+jump-translation. Same as `1` but also fires on
 //!   `0xE9`.
-//! - `3` — ARM call-translation. Branch instructions get a similar fixup.
-//! - `4..=7` — Audio, RGB, Itanium, PPM. Not used in any RAR5 stream we have
+//! - `3` - ARM call-translation. Branch instructions get a similar fixup.
+//! - `4..=7` - Audio, RGB, Itanium, PPM. Not used in any RAR5 stream we have
 //!   seen in the wild; treated as `Unsupported`.
 //!
 //! This crate implements filters `1` and `2` (the most common) and rejects
@@ -32,13 +32,13 @@ use crate::error::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterKind {
-    /// 0 — RGB delta. `channels` is the channel count (1..=32).
+    /// 0 - RGB delta. `channels` is the channel count (1..=32).
     Delta { channels: u8 },
-    /// 1 — x86 `0xE8` (CALL) relative-address rewrite.
+    /// 1 - x86 `0xE8` (CALL) relative-address rewrite.
     X86Call,
-    /// 2 — x86 `0xE8`/`0xE9` (CALL/JMP) relative-address rewrite.
+    /// 2 - x86 `0xE8`/`0xE9` (CALL/JMP) relative-address rewrite.
     X86CallJmp,
-    /// 3 — ARM branch instruction rewrite.
+    /// 3 - ARM branch instruction rewrite.
     Arm,
 }
 

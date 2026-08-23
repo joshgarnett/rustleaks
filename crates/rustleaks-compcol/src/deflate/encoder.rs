@@ -343,7 +343,7 @@ impl Encoder {
     }
 
     /// Build an encoder with explicit configuration. `config.level` is
-    /// clamped to `1..=9` internally — out-of-range values are snapped to
+    /// clamped to `1..=9` internally - out-of-range values are snapped to
     /// the nearest valid level rather than rejected.
     pub fn with_config(config: EncoderConfig) -> Self {
         Self {

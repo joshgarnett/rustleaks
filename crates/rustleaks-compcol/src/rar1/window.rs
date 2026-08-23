@@ -15,7 +15,7 @@
 //!   into a caller buffer, returning how many were written.
 //!
 //! The encoder always references bytes that are still inside the 64 KiB
-//! window — RAR1 streams that try to read past the start return
+//! window - RAR1 streams that try to read past the start return
 //! [`Error::InvalidDistance`].
 
 // Building-block; consumer is the future RAR1 state machine.

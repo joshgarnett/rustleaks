@@ -1,4 +1,4 @@
-//! RAR 3.x (2002-2013) — LZ77 + Huffman path — **decoder only**.
+//! RAR 3.x (2002-2013) - LZ77 + Huffman path - **decoder only**.
 //!
 //! ## Encoder is permanently unsupported
 //!
@@ -12,40 +12,33 @@
 //!
 //! RAR3 streams use one of two compression methods at the block level:
 //!
-//! 1. **LZ77 + Huffman** — five canonical Huffman codes drive a sliding-window
+//! 1. **LZ77 + Huffman** - five canonical Huffman codes drive a sliding-window
 //!    LZ77 with a 4-deep repeat-offset buffer. This is the vast majority of
 //!    real-world RAR3 archives.
-//! 2. **PPMd-II** — an Order-N context-mixed arithmetic coder. Used by some
+//! 2. **PPMd-II** - an Order-N context-mixed arithmetic coder. Used by some
 //!    text-heavy archives and `-m5` (best compression) runs.
 //!
 //! This build implements the **LZ77 + Huffman path** in full. PPMd-II blocks
-//! are refused with `Error::Unsupported` — see the private `decoder` submodule for details and
+//! are refused with `Error::Unsupported` - see the private `decoder` submodule for details and
 //! limitations. The standalone E8/E9 (x86 near-call) post-pass filter can
 //! be enabled via [`Decoder::with_e8_filter`]; the in-band RarVM filter
 //! mechanism (main symbols 257..=261) is refused.
 //!
 //! ## Calling convention
 //!
-//! We deliberately do **not** parse the surrounding RAR archive container —
+//! We deliberately do **not** parse the surrounding RAR archive container -
 //! that's a separate (much larger) project. The decoder takes the raw
 //! compressed-data block (the bytes that immediately follow the RAR file
 //! header in a `.rar` file) plus the declared unpacked size:
 //!
-//! ```ignore
+//! ```
 //! use compcol::rar3::Decoder;
-//! use compcol::Decoder as _;
+//! use compcol::{Decoder as _, Status};
 //!
-//! let mut dec = Decoder::with_unpack_size(file_header.unpacked_size);
-//! // feed bytes
-//! let _ = dec.decode(&compressed_block, &mut [])?;
-//! // collect output
-//! let mut out = vec![0u8; file_header.unpacked_size as usize];
-//! let mut total = 0;
-//! loop {
-//!     let p = dec.finish(&mut out[total..])?;
-//!     total += p.written;
-//!     if p.done { break }
-//! }
+//! let mut decoder = Decoder::with_unpack_size(0);
+//! let (progress, status) = decoder.finish(&mut []).unwrap();
+//! assert_eq!(progress.written, 0);
+//! assert_eq!(status, Status::StreamEnd);
 //! ```
 //!
 //! ## References

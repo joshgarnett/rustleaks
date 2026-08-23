@@ -1,4 +1,4 @@
-//! Brotli (RFC 7932) — partial-but-functional implementation.
+//! Brotli (RFC 7932) - partial-but-functional implementation.
 //!
 //! Reference: <https://datatracker.ietf.org/doc/html/rfc7932>.
 //!
@@ -15,7 +15,7 @@
 //!   dictionary word (with one of the Identity or UppercaseFirst-ASCII
 //!   transforms) sits at the current input position and would beat the
 //!   in-window LZ77 match. The encoder still does not exploit multiple
-//!   block types or context modelling on the literal/distance side —
+//!   block types or context modelling on the literal/distance side -
 //!   those would push us into the "roof" tier of the spec.
 //!
 //! - **Decoder**: parses the stream header, walks the meta-block chain,
@@ -84,10 +84,9 @@ pub struct Brotli;
 /// mirrors the reference CLI and is a reasonable starting point. Values
 /// outside `0..=11` are clamped at encoder construction time.
 ///
-/// **Known issue**: at every quality level the encoder produces output
-/// that the matching decoder cannot decode once total input exceeds
-/// 128 KiB (the chunk-boundary path has an off-by-one — see BENCH.md).
-/// Stay below 128 KiB per stream to round-trip safely.
+/// The encoder's chunk-boundary path does not round-trip inputs larger than
+/// 128 KiB with the matching decoder. Callers must keep each stream at or
+/// below 128 KiB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncoderConfig {
     /// Quality level in `0..=11`. Lower is faster, higher is smaller.
@@ -259,7 +258,7 @@ pub struct Encoder {
     /// haven't pushed anything we emit the empty-stream terminator.
     seen_any_input: bool,
     /// Distance ring buffer, persistent across meta-blocks within a
-    /// single stream — must mirror the decoder's view.
+    /// single stream - must mirror the decoder's view.
     ring: DistRing,
     /// Total bytes ever emitted across all completed meta-blocks of
     /// this stream. Mirrors the decoder's `total_out` and is used to
@@ -284,7 +283,7 @@ impl Encoder {
     }
 
     /// Build an encoder with explicit configuration. `config.quality`
-    /// is clamped to `0..=11` internally — out-of-range values are
+    /// is clamped to `0..=11` internally - out-of-range values are
     /// snapped to the nearest valid quality rather than rejected.
     pub fn with_config(config: EncoderConfig) -> Self {
         Self {
@@ -518,7 +517,7 @@ enum LzAtom {
     },
 }
 
-/// Count distinct literal bytes in `payload` (capped at 32 — we only
+/// Count distinct literal bytes in `payload` (capped at 32 - we only
 /// need a rough proxy for "literal entropy is high enough to make
 /// dictionary references pay off").
 fn distinct_bytes_low(payload: &[u8]) -> usize {
@@ -1018,7 +1017,7 @@ fn write_meta_block_header(bw: &mut BitWriter, out: &mut Vec<u8>, mlen: u32, is_
 enum HuffStrategy {
     /// One symbol used, zero bits per emission.
     SingleSymbol(u32),
-    /// Two symbols used, one bit each. `(symbols, codes)` are aligned —
+    /// Two symbols used, one bit each. `(symbols, codes)` are aligned -
     /// `codes[i]` is the 1-bit code for `symbols[i]`.
     TwoSymbols { symbols: [u32; 2], codes: [u32; 2] },
     /// General case: a code-length array per symbol of the alphabet.
@@ -1028,7 +1027,7 @@ enum HuffStrategy {
 /// Choose a prefix-code strategy for an alphabet given symbol frequencies.
 ///
 /// Simple-NSYM=1 / NSYM=2 are preferred over complex codes when the
-/// alphabet has only 1 or 2 distinct used symbols — both because they
+/// alphabet has only 1 or 2 distinct used symbols - both because they
 /// save bits and because they sidestep cl-cl edge cases where the
 /// RLE-encoded code lengths would lack the variety needed for a valid
 /// Kraft-balanced cl-cl tree.
@@ -1157,7 +1156,7 @@ fn encode_meta_block(
 /// Caller uses these together with the original `HuffStrategy` to
 /// dispatch via `write_symbol`.
 ///
-/// For NSYM=1 we return an empty vec — `write_symbol` ignores `codes`.
+/// For NSYM=1 we return an empty vec - `write_symbol` ignores `codes`.
 /// For NSYM=2 we return a 2-entry vec aligned with `symbols` of the
 /// strategy. For complex codes we return the canonical (MSB-first)
 /// code table of size `alphabet_size`.

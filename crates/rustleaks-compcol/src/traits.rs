@@ -20,7 +20,7 @@ pub struct Progress {
     pub written: usize,
 }
 
-/// Why a codec call returned — the explicit "what should I do next?" signal.
+/// Why a codec call returned - the explicit "what should I do next?" signal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// All of `input` was consumed; the codec can't make further progress
@@ -112,7 +112,7 @@ pub trait RawDecoder {
 ///     consumed += p.consumed;
 ///     match status {
 ///         Status::OutputFull => continue,           // drain buf, call again
-///         Status::InputEmpty => break,              // give it more input — none left
+///         Status::InputEmpty => break,              // give it more input - none left
 ///         Status::StreamEnd => break,               // (encode doesn't normally return this)
 ///     }
 /// }
@@ -164,7 +164,7 @@ pub trait Decoder {
     fn decode(&mut self, input: &[u8], output: &mut [u8]) -> Result<(Progress, Status), Error>;
     fn finish(&mut self, output: &mut [u8]) -> Result<(Progress, Status), Error>;
 
-    /// See [`Encoder::reset`] — configuration is preserved.
+    /// See [`Encoder::reset`] - configuration is preserved.
     fn reset(&mut self);
 
     /// Advance the decompressed stream by up to `n` decompressed bytes

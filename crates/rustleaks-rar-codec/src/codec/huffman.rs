@@ -8,8 +8,8 @@ use std::collections::BinaryHeap;
 /// Strict RAR 5 decoders build their tables with 7-Zip's
 /// `k_BuildMode_Full_or_Empty`, which rejects any under-full table (a table
 /// whose codes leave part of the code space unassigned). A frequency table
-/// with a single used symbol otherwise yields one length-1 code — Kraft sum
-/// `0.5` — and such archives decode fine in unRAR but fail in 7-Zip / WinRAR
+/// with a single used symbol otherwise yields one length-1 code - Kraft sum
+/// `0.5` - and such archives decode fine in unRAR but fail in 7-Zip / WinRAR
 /// with a spurious "Data Error". Real Huffman codes for two or more symbols are
 /// already complete, so this only adjusts the degenerate single-symbol case (and
 /// the rare uniform-length fallback), padding with phantom codes that are never

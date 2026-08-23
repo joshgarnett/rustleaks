@@ -6,20 +6,20 @@
 //! brotli's minimum copy code is `2`, but back-references below 4 bytes
 //! rarely beat encoding them as literals so we set our floor at 4),
 //! and the maximum match length is capped by the largest representable
-//! copy length 2118 + 2^24 — well above anything we'd find in a 16 KiB
+//! copy length 2118 + 2^24 - well above anything we'd find in a 16 KiB
 //! search window.
 //!
 //! The window size is fixed at 64 KiB (WBITS=16, max-back-distance =
 //! 65520) to match the encoder's choice of stream header.
 //!
 //! The match-finder's `MAX_CHAIN` (chain depth) and `NICE_MATCH` (early
-//! exit threshold) are not compile-time constants — they're supplied by
+//! exit threshold) are not compile-time constants - they're supplied by
 //! the caller as a `FinderParams` and ultimately driven by the encoder's
 //! quality knob.
 
 use alloc::boxed::Box;
 
-/// Minimum match length we'll consider — anything shorter is cheaper
+/// Minimum match length we'll consider - anything shorter is cheaper
 /// as literals.
 pub(crate) const MIN_MATCH: usize = 4;
 
@@ -37,7 +37,7 @@ const HASH_BITS: u32 = 15;
 const HASH_SIZE: usize = 1 << HASH_BITS;
 const NIL: u32 = u32::MAX;
 
-/// Per-block buffer size — at most this many positions are tracked at
+/// Per-block buffer size - at most this many positions are tracked at
 /// once. The encoder feeds a fresh `MatchFinder` per meta-block.
 pub(crate) const BUFFER_SIZE: usize = 65_536;
 

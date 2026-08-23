@@ -1,0 +1,51 @@
+# The repository currently has one verified owner. Replace these entries with
+# a maintainer team only after that team exists and its review role is agreed.
+
+* @joshgarnett
+
+/.github/workflows/ @joshgarnett
+/.github/CODEOWNERS @joshgarnett
+/Cargo.toml @joshgarnett
+/Cargo.lock @joshgarnett
+/crates/**/Cargo.toml @joshgarnett
+/crates/**/fuzz/Cargo.lock @joshgarnett
+/rust-toolchain.toml @joshgarnett
+/MODULE.bazel @joshgarnett
+/MODULE.bazel.lock @joshgarnett
+/cargo-bazel-lock.json @joshgarnett
+/.bazelrc @joshgarnett
+/.bazelversion @joshgarnett
+/**/BUILD.bazel @joshgarnett
+/bazel/ @joshgarnett
+/platforms/ @joshgarnett
+/justfile @joshgarnett
+/crates/xtask/ @joshgarnett
+/deny.toml @joshgarnett
+/supply-chain-exceptions.toml @joshgarnett
+/supply-chain/ @joshgarnett
+/LICENSE @joshgarnett
+/NOTICE @joshgarnett
+/crates/rustleaks-core/default/gitleaks.toml @joshgarnett
+/crates/rustleaks-core/Cargo.toml @joshgarnett
+/crates/rustleaks-core/README.md @joshgarnett
+/crates/rustleaks-core/LICENSE @joshgarnett
+/crates/rustleaks-core/NOTICE @joshgarnett
+/compat/upstream-revision.txt @joshgarnett
+/compat/config-corpus/default-gitleaks.toml @joshgarnett
+/compat/test-manifest.toml @joshgarnett
+/compat/api-dispositions-v1.jsonl @joshgarnett
+/compat/api-inventory-v1.json @joshgarnett
+/compat/*-corpus/ @joshgarnett
+/compat/fixtures/ @joshgarnett
+/SECURITY.md @joshgarnett
+/docs/THREAT_MODEL.md @joshgarnett
+/docs/SECURITY_CONTROLS.md @joshgarnett
+/docs/INCIDENT_RESPONSE.md @joshgarnett
+/docs/RESOURCE_LIMITS.md @joshgarnett
+/docs/DEPENDENCY_SAFETY.md @joshgarnett
+/docs/DEPENDENCIES.md @joshgarnett
+/.rustleaks.toml @joshgarnett
+/.rustleaksignore @joshgarnett
+/CHANGELOG.md @joshgarnett
+/docs/RELEASING.md @joshgarnett
+/.agents/skills/rustleaks-release/ @joshgarnett

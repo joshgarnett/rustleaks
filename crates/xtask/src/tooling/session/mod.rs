@@ -33,7 +33,8 @@ cargo xtask generate session
 cargo xtask generate session --check
 ```
 
-Production safety/unsafe design and Rust implementation claims are outside this packet.
+Production safety, unsafe-code policy, and Rust implementation claims are
+outside this corpus.
 ";
 
 pub(crate) fn check_session_corpus(root: &Path) -> Result<(), String> {

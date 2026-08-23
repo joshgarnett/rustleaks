@@ -15,11 +15,11 @@
 //! dictionary size derived from [`EncoderConfig::level`] (clamped to the
 //! input length rounded up to a power of two, so a short input never forces
 //! the decoder to allocate a huge window); uncompressed size left as
-//! `u64::MAX` so the EOS marker terminates the stream — matches what
+//! `u64::MAX` so the EOS marker terminates the stream - matches what
 //! Python's `lzma.compress(..., format=lzma.FORMAT_ALONE)` produces.
 //!
 //! Quality: a greedy parser with a bounded hash-chain match search. Output is
-//! valid LZMA but noticeably weaker than xz at level 6 — there is no lazy
+//! valid LZMA but noticeably weaker than xz at level 6 - there is no lazy
 //! matching, no optimal parsing, and no price-based selection of rep slots.
 //! The constraints of this task are correctness and decoder-symmetry, not
 //! compression ratio.
@@ -43,7 +43,7 @@ use super::{
 // ─── encoder parameters ──────────────────────────────────────────────────
 
 /// Properties byte = `(pb*5 + lp)*9 + lc` per the LZMA spec; (3, 0, 2) packs
-/// to 0x5d — the canonical default that Python's `lzma.FORMAT_ALONE` emits.
+/// to 0x5d - the canonical default that Python's `lzma.FORMAT_ALONE` emits.
 const ENC_LC: u32 = 3;
 const ENC_LP: u32 = 0;
 const ENC_PB: u32 = 2;
@@ -70,7 +70,7 @@ const MIN_DICT_SIZE: u32 = 1 << 12; // 4 KiB
 /// encoder construction time rather than rejected.
 ///
 /// Internally `level` maps to the advertised dictionary size and the
-/// match-finder's chain budget / nice-match cutoff — the same quality knobs
+/// match-finder's chain budget / nice-match cutoff - the same quality knobs
 /// the xz reference encoder exposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncoderConfig {
@@ -285,7 +285,7 @@ impl RangeEncoder {
     /// The decoder's loop is `for i in 0..direct_count: direct |= bit << i`,
     /// so the i-th bit it reads becomes bit position `i` of its result. For
     /// our emission to produce a matching `direct`, the i-th bit we emit
-    /// must equal `(value >> i) & 1` — i.e. LSB-first emission, with the
+    /// must equal `(value >> i) & 1` - i.e. LSB-first emission, with the
     /// MSB of `value` being the LAST bit encoded.
     fn encode_direct_bits(&mut self, value: u32, bits: u32) {
         for i in 0..bits {
@@ -948,7 +948,7 @@ impl Encoder {
     }
 
     /// Build an encoder with explicit configuration. `config.level` is
-    /// clamped to `0..=9` internally — out-of-range values are snapped to
+    /// clamped to `0..=9` internally - out-of-range values are snapped to
     /// the nearest valid level rather than rejected.
     pub fn with_config(config: EncoderConfig) -> Self {
         Self {

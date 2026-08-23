@@ -2,7 +2,7 @@
 //!
 //! Builds a length-limited canonical Huffman code from a byte-frequency
 //! histogram, then encodes the tree description as a "weight" array
-//! (direct nibble-packed — we do not emit FSE-compressed weight tables) and
+//! (direct nibble-packed - we do not emit FSE-compressed weight tables) and
 //! one or four reverse-bitstream Huffman streams.
 //!
 //! The output layout matches the decoder side in [`crate::zstd::huffman`] and
@@ -53,7 +53,7 @@ impl HuffEncoder {
 ///
 /// Returns the canonical per-symbol code lengths capped at
 /// [`HUF_MAX_BITS`] (11). Returns `None` if fewer than 2 distinct symbols
-/// appear in the histogram — that case is unsuitable for Huffman coding and
+/// appear in the histogram - that case is unsuitable for Huffman coding and
 /// should be handled with an RLE or raw literal block by the caller.
 pub fn build_huff_lengths(freq: &[u32; 256]) -> Option<HuffLengths> {
     let present: Vec<usize> = (0..256).filter(|&s| freq[s] > 0).collect();
@@ -290,7 +290,7 @@ pub fn lengths_to_weights(lengths: &HuffLengths) -> (Vec<u8>, u8) {
 /// encoding (Header_Byte = 127 + num_symbols, then weights packed two per
 /// byte, hi nibble first).
 ///
-/// Returns the serialised bytes — always `1 + ceil(num_symbols / 2)` long.
+/// Returns the serialised bytes - always `1 + ceil(num_symbols / 2)` long.
 pub fn encode_huff_tree_direct(weights: &[u8]) -> Vec<u8> {
     debug_assert!(
         weights.len() <= 128,
@@ -347,7 +347,7 @@ pub fn encode_huff_4streams(
 
 // ─── Helpers for the encoder pipeline ─────────────────────────────────────
 
-/// Sum of `lengths[sym] * freq[sym]` — the raw bit count we'd emit, before
+/// Sum of `lengths[sym] * freq[sym]` - the raw bit count we'd emit, before
 /// the tree-header overhead. Used to decide whether Huffman compression is a
 /// net win over a Raw_Literals_Block.
 pub fn predicted_bits(lengths: &HuffLengths, freq: &[u32; 256]) -> u64 {

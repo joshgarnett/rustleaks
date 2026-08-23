@@ -27,7 +27,7 @@
 /// transform that produces the original executable bytes.
 ///
 /// `data_start_offset` is the offset of the first byte of `data` in the
-/// uncompressed stream — needed because the filter only operates on
+/// uncompressed stream - needed because the filter only operates on
 /// the first 1 GiB of any executable, mirroring the original
 /// implementation.
 ///

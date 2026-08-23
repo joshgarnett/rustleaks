@@ -28,7 +28,8 @@ pub(crate) const K_A_TIME: u8 = 0x13;
 pub(crate) const K_M_TIME: u8 = 0x14;
 pub(crate) const K_WIN_ATTRIBUTES: u8 = 0x15;
 
-/// TODO: Implement reading & writing comments
+/// Archive comment property identifier. Comment parsing and writing are not
+/// supported by this crate.
 #[allow(unused)]
 pub(crate) const K_COMMENT: u8 = 0x16;
 pub(crate) const K_ENCODED_HEADER: u8 = 0x17;

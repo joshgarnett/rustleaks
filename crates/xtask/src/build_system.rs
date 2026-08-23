@@ -563,8 +563,8 @@ fn check_interface(root: &Path) -> Result<(), String> {
     let recipes = justfile
         .lines()
         .filter(|line| line.chars().next().is_some_and(|ch| !ch.is_whitespace()))
-        .filter_map(|line| line.strip_suffix(':'))
-        .filter(|line| !line.starts_with('['))
+        .filter_map(|line| line.split_once(':').map(|(name, _)| name))
+        .filter(|name| !name.starts_with('[') && !name.chars().any(char::is_whitespace))
         .collect::<BTreeSet<_>>();
     let expected = [
         "build",
@@ -572,6 +572,7 @@ fn check_interface(root: &Path) -> Result<(), String> {
         "ci",
         "deps-repin",
         "docs",
+        "docs-check",
         "doctor",
         "format",
         "fuzz-build",
@@ -593,6 +594,10 @@ fn check_interface(root: &Path) -> Result<(), String> {
         ("build", "bazelisk build //:build"),
         ("test", "bazelisk test //:test"),
         ("docs", "bazelisk build //:docs"),
+        (
+            "docs-check",
+            "bazelisk run //crates/xtask:xtask -- docs-check",
+        ),
         ("parity", "bazelisk test //:parity"),
         ("check", "bazelisk test //:check"),
         ("ci", "bazelisk test //:ci"),

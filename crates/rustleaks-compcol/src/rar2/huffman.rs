@@ -14,7 +14,7 @@
 //! The decoder uses a direct length-walk: peek up to MAX_BITS bits, then for
 //! each length 1..=MAX_BITS check whether the top `length` bits fall inside
 //! the canonical range for that length. This is `O(MAX_BITS)` per symbol but
-//! avoids building a lookup table (kept simple — RAR2 is a slow archival
+//! avoids building a lookup table (kept simple - RAR2 is a slow archival
 //! decoder anyway).
 
 use crate::error::Error;

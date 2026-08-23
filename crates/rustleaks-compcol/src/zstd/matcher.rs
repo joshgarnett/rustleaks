@@ -67,8 +67,8 @@ impl MatchFinder {
     }
 
     /// Forget every position recorded so far. The buffer length stays the
-    /// same. Not currently called — [`MatchFinder::resize_for`] is used on
-    /// each new block — but kept for completeness / future tuning.
+    /// same. Not currently called - [`MatchFinder::resize_for`] is used on
+    /// each new block - but kept for completeness / future tuning.
     #[allow(dead_code)]
     pub fn reset(&mut self) {
         for h in self.head.iter_mut() {

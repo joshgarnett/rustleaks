@@ -8,7 +8,7 @@
 //!
 //! The reference for this is RFC 8478 §4.1 plus the FSE library's
 //! [`FSE_buildCTable`](https://github.com/Cyan4973/FiniteStateEntropy/blob/dev/lib/fse_compress.c).
-//! Only the construction we actually need is implemented — we do not generate
+//! Only the construction we actually need is implemented - we do not generate
 //! `FSE_Compressed_Mode` table headers (we only emit Predefined_Mode tables
 //! whose normalized counts the decoder already knows).
 //!
@@ -56,15 +56,15 @@ pub struct FseEncoder {
     /// One entry per symbol, indexed by symbol value.
     symbol_tt: Vec<SymbolTT>,
     /// For symbol `s`, `cumul[s]` is the first state-table slot belonging to
-    /// `s` — used to bootstrap [`init_state`].
+    /// `s` - used to bootstrap [`init_state`].
     cumul: Vec<u32>,
 }
 
 impl FseEncoder {
     /// Build the encoder tables from a normalized-count array. Entries may be:
-    ///   - `0` — symbol does not appear in the stream.
-    ///   - `-1` — "less-than-1" probability (single slot at the table top).
-    ///   - `n > 0` — symbol has `n` slots in the table.
+    ///   - `0` - symbol does not appear in the stream.
+    ///   - `-1` - "less-than-1" probability (single slot at the table top).
+    ///   - `n > 0` - symbol has `n` slots in the table.
     pub fn from_normalized(counts: &[i16], accuracy_log: u8) -> Self {
         assert!(accuracy_log > 0 && accuracy_log <= 9, "bad accuracy_log");
         let table_size = 1usize << accuracy_log;
@@ -196,7 +196,7 @@ impl FseEncoder {
 /// `2^accuracy_log` (where `-1` slots also count as 1 toward the sum). Each
 /// present symbol (`hist[s] > 0`) gets at least 1 slot.
 ///
-/// Returns `None` only if the histogram is all zero (no symbols emitted —
+/// Returns `None` only if the histogram is all zero (no symbols emitted -
 /// caller should pick a different table or drop the FSE stream).
 ///
 /// Strategy: proportional allocation with a "round and adjust" pass to hit

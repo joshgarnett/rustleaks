@@ -26,11 +26,11 @@
 //! from this crate's `lzma` module.
 //!
 //! The encoder emits LZMA-compressed LZMA2 chunks (control byte
-//! `0xE0` — compressed, with dictionary + properties + state reset on
+//! `0xE0` - compressed, with dictionary + properties + state reset on
 //! every chunk so each chunk is independently decodable). When
 //! compression would expand a chunk relative to its uncompressed
-//! input — which happens on already-random or already-compressed
-//! data — we fall back to an uncompressed chunk (control byte `0x01`).
+//! input - which happens on already-random or already-compressed
+//! data - we fall back to an uncompressed chunk (control byte `0x01`).
 //! Real LZMA-compressed output is produced by the private
 //! `lzma2_encoder` submodule, which is a port of the `.lzma` encoder in
 //! `src/lzma/` adapted to emit a raw range-coded body (no header, no
@@ -208,7 +208,7 @@ fn varint_decode(buf: &[u8], pos: &mut usize) -> Result<Option<u64>, Error> {
 /// and produces the smallest. The default of `6` mirrors `xz-utils`' default
 /// preset.
 ///
-/// Values outside `0..=9` are clamped at encoder construction time — the
+/// Values outside `0..=9` are clamped at encoder construction time - the
 /// public surface is intentionally infallible.
 ///
 /// Note: the level is fully threaded into our LZMA2 chunk encoder's
@@ -270,7 +270,7 @@ fn build_stream_header() -> [u8; 12] {
 
 /// Build the Block Header for our single-LZMA2-filter block.
 ///
-/// We set neither the "Compressed Size" nor the "Uncompressed Size" flag —
+/// We set neither the "Compressed Size" nor the "Uncompressed Size" flag -
 /// the decoder discovers the block's end via the LZMA2 `0x00` end marker,
 /// and our own decoder relies on that too. This keeps the encoder fully
 /// streaming.
@@ -416,7 +416,7 @@ impl Encoder {
     }
 
     /// Build an encoder with explicit configuration. `config.level` is
-    /// clamped to `0..=9` internally — out-of-range values snap to 9.
+    /// clamped to `0..=9` internally - out-of-range values snap to 9.
     pub fn with_config(config: EncoderConfig) -> Self {
         let header = build_stream_header();
         let mut pending = Vec::with_capacity(12);
@@ -522,7 +522,7 @@ impl Encoder {
         self.compressed_payload_bytes += (header_len + compressed.len()) as u64;
     }
 
-    /// Stage an LZMA2 uncompressed chunk (control byte 0x01 — dict reset,
+    /// Stage an LZMA2 uncompressed chunk (control byte 0x01 - dict reset,
     /// for the simple case where compression wouldn't help).
     fn stage_uncompressed_chunk(&mut self, data: &[u8]) {
         debug_assert!(!data.is_empty() && data.len() <= LZMA2_CHUNK_MAX);

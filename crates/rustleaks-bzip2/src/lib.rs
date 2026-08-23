@@ -7,9 +7,11 @@
 //!
 //! ## Features
 //!
-//! * Default features: Rust >= 1.34.2 is supported
-//! * `rustc_1_37`: bump MSRV to 1.37, enable more optimizations
-//! * `nightly`: require Rust Nightly, enable more optimizations
+//! All feature profiles use the workspace MSRV, Rust 1.85. The retained
+//! `rustc_1_37`, `rustc_1_40`, and `rustc_1_51` names preserve the forked
+//! crate's feature interface; they do not lower the supported compiler.
+//! `nightly` selects the fixed-array decoder path without changing the
+//! workspace compiler policy.
 //!
 //! ## Usage
 //!
@@ -40,7 +42,6 @@
 )]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![forbid(unsafe_code)]
-// TODO: remove once rustc 1.35 is our MSRV
 #![allow(clippy::manual_range_contains)]
 
 #[doc(no_inline)]

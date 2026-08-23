@@ -1,45 +1,28 @@
 #![forbid(unsafe_code)]
 //! Byte-first Rustleaks detection engine with a pinned compatibility profile.
 //!
-//! Source content and finding text retain arbitrary bytes. Direct fragments
-//! start at line zero unless the caller supplies source-specific metadata.
-//!
-//! ```
-//! use rustleaks_core::model::Fragment;
-//!
-//! let fragment = Fragment::builder([0xff, b'k', b'e', b'y'])
-//!     .file_path("src/example.bin")
-//!     .start_line(1)
-//!     .build();
-//!
-//! assert_eq!(fragment.content().as_bytes(), &[0xff, b'k', b'e', b'y']);
-//! assert!(fragment.content().as_str().is_err());
-//! ```
-//!
-//! The engine is immutable and may be shared between threads. Each call owns
-//! its normalized keyword buffer, match scratch, and findings. Optional
-//! [`session`] policy and batches retain cross-fragment filtering state without
-//! creating threads, requiring an async runtime, or logging.
+//! Source content and finding text retain arbitrary bytes. This example loads
+//! the packaged default configuration and scans one in-memory byte slice.
 //!
 //! ```
 //! use rustleaks_core::config::ConfigLoader;
 //! use rustleaks_core::model::{Fragment, ScanOptions};
 //! use rustleaks_core::Engine;
 //!
-//! let config = ConfigLoader::new().load_toml(r#"
-//!     [[rules]]
-//!     id = "example-token"
-//!     regex = '''token=([A-Z0-9]{4})'''
-//!     keywords = ["token"]
-//! "#)?;
+//! let config = ConfigLoader::new().load_default()?;
 //! let engine = Engine::builder(config).build()?;
-//! let fragment = Fragment::builder(b"token=AB12").start_line(1).build();
-//! let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
+//! let input = b"string AWSToken = \"AKIALALEMEL33243OLIB\";";
+//! let outcome = engine.scan_fragment(&Fragment::new(input), &ScanOptions::default());
 //!
-//! assert_eq!(outcome.findings().len(), 1);
-//! assert_eq!(outcome.findings()[0].secret().as_bytes(), b"AB12");
+//! assert!(outcome.is_complete());
+//! assert_eq!(outcome.findings()[0].rule_id().as_str()?, "aws-access-token");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
+//!
+//! The engine is immutable and may be shared between threads. Each call owns
+//! its normalized keyword buffer, match scratch, and findings. Optional
+//! [`session`] policy and batches retain cross-fragment filtering state without
+//! creating threads, requiring an async runtime, or logging.
 //!
 //! Controlled scans remain synchronous and runtime-independent. Budgets are
 //! inclusive, and a partial outcome never contains candidates from an

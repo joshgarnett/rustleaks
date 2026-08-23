@@ -3,9 +3,9 @@
 //! The length-base / length-extra-bits / offset-base / offset-extra-bits
 //! tables, plus short-match-base / short-match-extra-bits, are dictated by
 //! the wire format. See XADMaster's XADRAR20Handle.m for the same constants
-//! (LGPL — we don't copy code, but the constants are facts).
+//! (LGPL - we don't copy code, but the constants are facts).
 
-/// 1 MiB sliding window — XADMaster initializes `XADFastLZSSHandle` with
+/// 1 MiB sliding window - XADMaster initializes `XADFastLZSSHandle` with
 /// `windowSize:0x100000` for RAR2 streams. The window size is *fixed* in
 /// RAR2; unlike RAR3/RAR5 it isn't negotiated in the stream header.
 pub const WINDOW_SIZE: usize = 0x100000;

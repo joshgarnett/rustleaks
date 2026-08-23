@@ -1,7 +1,7 @@
 # Security controls
 
-This file is the operator contract for local security checks and the input for
-Goal 6 automation. Run commands from the repository root with the checked-in
+This file is the operator contract for local security checks and hosted
+automation. Run commands from the repository root with the checked-in
 lockfiles unchanged.
 
 ## Local commands
@@ -46,7 +46,7 @@ offline check. The other dependency decisions remain bound to `Cargo.lock`.
 
 The default cargo-fuzz Clang configuration supplies AddressSanitizer on the
 verified Apple Silicon macOS host. The targets are designed for x86-64 and
-ARM64 Unix-like cargo-fuzz hosts. Goal 6 must verify each scheduled host before
+ARM64 Unix-like cargo-fuzz hosts. Hosted automation must verify each scheduled host before
 claiming support. MemorySanitizer and ThreadSanitizer do not have a supported
 lane in the current graph and must be recorded as unsupported jobs unless a
 reproducible pinned lane is established.
@@ -84,7 +84,7 @@ dependency-delta inventory. Its current exact unsafe-bearing package set is
 enforced by `xtask`; it is not a security conclusion.
 
 The public API snapshot is the pre-publication SemVer baseline. Before a
-release candidate, Goal 6 must run `cargo-semver-checks` for every public crate
+release candidate, maintainers must run `cargo-semver-checks` for every public crate
 and supported feature profile against an actual prior release when one exists,
 then require manual API review. A snapshot alone cannot compare to a release
 that has not been published.
@@ -111,29 +111,28 @@ A reported value must not be copied into an issue, log, or commit message.
 Triage it privately, determine whether it is synthetic or live, revoke it if
 needed, and follow [`INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md).
 
-## Goal 6 cadence
+## Hosted automation cadence
 
-Goal 6 should translate the following exact local boundaries into secretless,
+Hosted workflows must translate the following exact local boundaries into secretless,
 least-privilege jobs. It must pin actions to reviewed full commit SHAs and must
 not execute untrusted pull request code from `pull_request_target`,
 `workflow_run`, or a privileged release context.
 
 | Cadence | Required work |
 | --- | --- |
-| Pull request | `just ci`, `just parity`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the matching native platform slice. Keep RustSec freshness in a network-enabled secretless job. |
+| Pull request | `just ci`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the matching native platform slice. Keep RustSec freshness in a network-enabled secretless job. `just ci` includes committed parity. |
 | Nightly | Longer high-risk fuzz campaigns, increased property cases, batched Go differentials, fresh RustSec, newest-allowed dependency resolution in a noncommitting checkout, and repository self-scan. |
 | Weekly | Slower archive and large-input campaigns, pinned Miri, supported sanitizers, corpus minimization and coverage review, unsafe inventory review, cargo-vet exemption reduction, CodeQL, and all available native target lanes. |
-| Release candidate | A clean extended campaign with no unresolved crash, timeout, memory, sanitizer, invariant, advisory, vetting, or parity finding; `just security`; `just ci`; `just parity`; `just package-check`; `just release-dry-run`; SemVer comparison; exact-target SBOMs reconciled with the Bazel graph; checksums and attestations. |
+| Release candidate | A clean extended campaign with no unresolved crash, timeout, memory, sanitizer, invariant, advisory, vetting, or parity finding; `just security`; `just ci`; `just release-dry-run`; SemVer comparison; exact-target SBOMs reconciled with the Bazel graph; checksums and attestations. The CI gate includes committed parity, and the release dry run includes package consumers. |
 
-OSS-Fuzz is a future evaluation after the repository is ready for public
-integration. Until eligibility and project ownership are reviewed, scheduled
-CI must run the same targets.
+OSS-Fuzz is not configured. Until eligibility and project ownership are
+reviewed, scheduled CI must run the same targets.
 
 ## Protected files
 
-Goal 6 must require review for changes to at least:
+Hosted ownership rules must require review for changes to at least:
 
-- `.github/workflows/`, future release configuration, and `CODEOWNERS`;
+- `.github/workflows/`, release configuration, and `CODEOWNERS`;
 - `Cargo.toml`, `Cargo.lock`, every crate manifest, `rust-toolchain.toml`, and
   all fuzz manifests;
 - `MODULE.bazel`, `MODULE.bazel.lock`, `cargo-bazel-lock.json`, `.bazelrc`,

@@ -2,7 +2,7 @@
 //!
 //! Builds a hash index from the 13,504-word static dictionary and uses
 //! it to find dictionary references at each input position. We only
-//! consider transforms of `Tr::Identity` kind — those just wrap the
+//! consider transforms of `Tr::Identity` kind - those just wrap the
 //! word with a fixed prefix/suffix, which is straightforward to verify
 //! against the input. The Uppercase* and Shift* transforms would
 //! require trial-decoding into a scratch buffer per candidate; the
@@ -41,7 +41,7 @@ const fn compute_num_words() -> usize {
     total
 }
 
-/// Packed (length, word_idx) — length in low 5 bits, word_idx in upper.
+/// Packed (length, word_idx) - length in low 5 bits, word_idx in upper.
 /// Max length 24 fits in 5 bits; max word_idx (1<<10 = 1024) fits in 11 bits.
 #[derive(Clone, Copy, Debug)]
 struct WordRef(u32);
@@ -170,7 +170,7 @@ pub(crate) struct IdTransform {
 
 /// Build the list of identity- and (ASCII) UppercaseFirst-style
 /// transforms. Other transform kinds (`OmitFirst/Last`, `UppercaseAll`,
-/// shift) are skipped — they're either rare or non-trivial to invert
+/// shift) are skipped - they're either rare or non-trivial to invert
 /// from a raw input byte. The two kinds we keep cover the most
 /// frequent natural-text patterns (verbatim word and capitalised
 /// sentence-start word).
@@ -201,7 +201,7 @@ pub(crate) fn identity_transforms() -> Vec<IdTransform> {
 /// One match candidate produced by [`find_dict_match`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DictMatch {
-    /// Dictionary word length, in 4..=24 — goes into the `copy_len` field
+    /// Dictionary word length, in 4..=24 - goes into the `copy_len` field
     /// of the brotli command.
     pub(crate) word_len: u8,
     /// In-bucket word index.

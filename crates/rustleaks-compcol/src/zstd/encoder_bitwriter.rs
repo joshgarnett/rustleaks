@@ -3,14 +3,14 @@
 //! Mirror image of [`crate::zstd::bitreader::RevBitReader`]. The output is
 //! laid out so that the byte the decoder reads first (highest-indexed byte
 //! holding the start marker) corresponds to the bits the encoder *most
-//! recently* wrote — i.e. the decoder reads them in reverse-write order.
+//! recently* wrote - i.e. the decoder reads them in reverse-write order.
 //!
 //! Internally we accumulate bits LSB-first into a `u64` and flush whole bytes
 //! little-endian to a [`Vec<u8>`] as the accumulator overflows; the start
 //! marker (a single `1`-bit) is appended at [`finish`].
 //!
 //! Per RFC 8478 §3.1.1.3.2 the FSE sequence stream is written in *reverse
-//! sequence order* — the last sequence is encoded first, so that the decoder
+//! sequence order* - the last sequence is encoded first, so that the decoder
 //! (which reads from the marker downward) recovers the original order.
 
 use alloc::vec::Vec;

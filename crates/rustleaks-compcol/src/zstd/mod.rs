@@ -1,4 +1,4 @@
-//! Zstandard (RFC 8478) — partial implementation.
+//! Zstandard (RFC 8478) - partial implementation.
 //!
 //! Reference: <https://datatracker.ietf.org/doc/html/rfc8478>.
 //!
@@ -32,7 +32,7 @@
 //!         - **LZ77** match finding via a 4-byte hash-chain matcher.
 //!         - **Repeat offsets** (offset_value ∈ 1..=3) tracked in a ring
 //!           buffer carried across blocks per RFC 8478 §3.1.1.5.
-//!         - **Huffman literals** (RFC §4.2) — direct nibble-packed weight
+//!         - **Huffman literals** (RFC §4.2) - direct nibble-packed weight
 //!           encoding, 1-stream for blocks ≤ 1023 literals and 4-stream
 //!           otherwise. Emits `Compressed_Literals_Block` (fresh tree) when
 //!           the previous block's tree is missing or worse;
@@ -62,7 +62,7 @@
 //!
 //! - **Dictionary_ID != 0** frames are unsupported (no dictionary registry).
 //!
-//! - **Concatenated frames** are not supported — the decoder stops after the
+//! - **Concatenated frames** are not supported - the decoder stops after the
 //!   last block of the first frame.
 //!
 //! Both halves are pure streaming: caller owns the input/output buffers and
@@ -92,7 +92,7 @@ pub mod _internal_test_api {
 
     /// Decode a single Compressed_Block body (the bytes after its 3-byte
     /// block header) into the decompressed output. Returns the decoded
-    /// bytes. State carried across blocks is **not** preserved — for
+    /// bytes. State carried across blocks is **not** preserved - for
     /// multi-block decoding use the [`super::Decoder`] type.
     pub fn decode_compressed_block_body(body: &[u8]) -> Result<alloc::vec::Vec<u8>, Error> {
         use alloc::vec::Vec;

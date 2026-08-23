@@ -1,6 +1,6 @@
 //! LZO1X-1 block-format codec (single-block, in-memory).
 //!
-//! Reference: <https://docs.kernel.org/staging/lzo.html> — Willy Tarreau's
+//! Reference: <https://docs.kernel.org/staging/lzo.html> - Willy Tarreau's
 //! reverse-engineered description of the LZO stream format as understood by
 //! the Linux kernel decompressor, which matches Markus Oberhumer's
 //! `minilzo` / `lzo1x_decompress_safe` behaviour bit-for-bit.
@@ -60,7 +60,7 @@ use crate::error::Error;
 ///
 /// LZO1X copies always cover at least 2 bytes, but the 2-byte form
 /// (`0000_DDSS` consumed when the decoder's `state` is in 1..=3) is only
-/// reachable after a copy that emitted 1..=3 inline literals — a delicate
+/// reachable after a copy that emitted 1..=3 inline literals - a delicate
 /// state dance that our encoder doesn't bother to maintain. We require
 /// 3+ byte matches and always emit one of the M2/M3/M4 token forms.
 const MIN_MATCH: usize = 3;

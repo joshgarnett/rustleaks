@@ -19,11 +19,15 @@ mod reader;
 /// Repeating this process for every block in sequence will result
 /// into the entire file being decompressed.
 ///
-/// ```ignore
+/// ```
 /// use rustleaks_bzip2::decoder::{Decoder, ReadState, WriteState};
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut compressed_file: &[u8] = include_bytes!("../../tests/samplefiles/sample1.bz2").as_ref();
+/// // Canonical bzip2 encoding of an empty byte sequence.
+/// let mut compressed_file: &[u8] = &[
+///     0x42, 0x5a, 0x68, 0x39, 0x17, 0x72, 0x45,
+///     0x38, 0x50, 0x90, 0x00, 0x00, 0x00, 0x00,
+/// ];
 /// let mut output = Vec::new();
 ///
 /// let mut decoder = Decoder::new();
@@ -58,10 +62,7 @@ mod reader;
 ///     }
 /// }
 ///
-/// // `output` contains the decompressed file
-/// let decompressed_file: &[u8] = include_bytes!("../../tests/samplefiles/sample1.ref").as_ref();
-/// assert_eq!(output, decompressed_file);
-/// #
+/// assert!(output.is_empty());
 /// # Ok(())
 /// # }
 /// ```

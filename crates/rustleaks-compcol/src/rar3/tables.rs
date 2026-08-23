@@ -1,7 +1,7 @@
 //! RAR 3.x lookup tables.
 //!
 //! These match the canonical RAR3 spec as documented in the unarr README
-//! and libarchive's `archive_read_support_format_rar.c` (BSD-licensed —
+//! and libarchive's `archive_read_support_format_rar.c` (BSD-licensed -
 //! values cross-checked but no code copied).
 
 /// Number of symbols in the main Huffman code.
@@ -69,6 +69,6 @@ pub const SHORT_EXTRA_BITS: [u8; 8] = [2, 2, 3, 4, 5, 6, 6, 6];
 /// Maximum dictionary size supported by RAR3 (4 MiB).
 pub const DICT_MAX_SIZE: usize = 4 * 1024 * 1024;
 
-/// Default dictionary size when the caller doesn't specify one — RAR3
+/// Default dictionary size when the caller doesn't specify one - RAR3
 /// most commonly uses 4 MiB.
 pub const DICT_DEFAULT_SIZE: usize = DICT_MAX_SIZE;

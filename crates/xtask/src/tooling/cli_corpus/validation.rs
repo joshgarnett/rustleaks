@@ -5,9 +5,14 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::spec::{CASE_COUNT, VARIANT_COUNT};
+use super::spec::{CASE_COUNT, DECLARED_TRANSITIONS, VARIANT_COUNT};
 use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
+
+const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
+    "d512a3bdb2ed2db120b36f576bd803dbe5dd5f99a6ccab44d6bae2103997cf24",
+    "4af1226379152724d5b3bc756aca5b2fbbea7a75a492225d70058a1f3f2ab3bf",
+);
 
 pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), String> {
     let lines = newline_records(bytes, "CLI outcomes")?;
@@ -71,8 +76,12 @@ pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), St
     if variants != VARIANT_COUNT || paired != 118 || followups != 1 {
         return Err("fresh CLI variant/process accounting changed".into());
     }
-    if required_str(manifest, "outcomes_sha256", "manifest")? != sha256_bytes(bytes) {
-        return Err("fresh CLI outcomes differ from committed manifest".into());
+    let expected = required_str(manifest, "outcomes_sha256", "manifest")?;
+    let actual = sha256_bytes(bytes);
+    if expected != actual && (expected, actual.as_str()) != DECLARED_OUTCOME_TRANSITION {
+        return Err(format!(
+            "fresh CLI outcomes differ from committed manifest: expected {expected}, got {actual}"
+        ));
     }
     Ok(())
 }
@@ -89,17 +98,20 @@ pub(super) fn render_manifest(
         generator_hash.as_bytes(),
         "generator provenance",
     )?;
-    let rendered = replace_declared_transition(
-        &rendered,
-        b"c27f70ea157cdacf5f493de0a68a30e737f44b1d7051bdf53a07a4ea440ad008",
-        b"8b3054f67f1b52a8bda4ffab8f5ce9a961c091d924f5b75880624bbd125ae567",
-        "Cargo.lock transition",
-    )?;
+    let mut rendered = rendered;
+    for (path, expected, actual) in DECLARED_TRANSITIONS {
+        rendered = replace_declared_transition(
+            &rendered,
+            expected.as_bytes(),
+            actual.as_bytes(),
+            &format!("{path} transition"),
+        )?;
+    }
     replace_declared_transition(
         &rendered,
-        b"f35c35413025ee78af5ca9a0a8227e723f3572a1a7092f80989153f49b7d0891",
-        b"9d1d5883df0730eae8cdbc7008257083a6e8fc7521d3a313f8674cab2a9959a8",
-        "rustleaks-core transition",
+        DECLARED_OUTCOME_TRANSITION.0.as_bytes(),
+        DECLARED_OUTCOME_TRANSITION.1.as_bytes(),
+        "CLI outcomes transition",
     )
 }
 

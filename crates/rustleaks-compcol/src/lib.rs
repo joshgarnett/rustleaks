@@ -1,9 +1,10 @@
-//! `compcol` — a collection of pure-Rust, `no_std`, 100% safe compression
+//! `compcol` is a collection of pure-Rust, `no_std` compression
 //! algorithms behind a uniform streaming trait.
 //!
-//! Each algorithm sits behind its own Cargo feature so downstream crates
-//! only pay for what they use. The upstream package also offers a runtime
-//! by-name factory; this decoder-only fork does not expose it.
+//! The maintained feature surface contains the RAR2, RAR3, and RAR5 decoders
+//! used by Rustleaks. Other imported codec sources are retained for upstream
+//! provenance but are not declared package features. The upstream package also
+//! offers a runtime by-name factory; this decoder-only fork does not expose it.
 //!
 //! See [`Encoder`], [`Decoder`], and [`Algorithm`] for the contract every
 //! algorithm in this crate implements.

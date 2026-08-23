@@ -5,14 +5,14 @@
 //! `lastlength` for the single most-recent match. The short-match branch
 //! ("selector 9..13" in the reverse-engineered notes) selects between
 //! "repeat the immediately-prior match" and "reuse one of the four
-//! recently-recorded offsets" — a coarse LZX-style LRU.
+//! recently-recorded offsets" - a coarse LZX-style LRU.
 //!
 //! We surface that as two pieces:
 //!
 //! - [`OffsetHistory`]: the 4-slot ring and the "last" record. Pushing a
 //!   new offset moves the ring forward and updates "last". A read at
 //!   logical position `0..4` returns one of the historical offsets without
-//!   any reordering — RAR1's `EmitShortMatch` reads at
+//!   any reordering - RAR1's `EmitShortMatch` reads at
 //!   `(oldoffsetindex - (selector - 9)) & 3`, treating the ring as a plain
 //!   ring buffer (not a move-to-front list).
 //! - [`RepeatLastTracker`]: the `numrepeatedlastmatches` counter that

@@ -1,4 +1,4 @@
-//! RAR 1.x (1995-1996) — building-block library, no end-to-end decoder.
+//! RAR 1.x (1995-1996) - building-block library, no end-to-end decoder.
 //!
 //! RAR 1.x is the original Roshal Archive format and was in active use for
 //! roughly twelve months in 1995-1996 before RAR 2.0 displaced it. There is
@@ -11,27 +11,27 @@
 //!
 //! Per [`crate::traits::Algorithm`] + [`Encoder`] / [`Decoder`], the public
 //! types you'd expect are all here, but the decoder **does not produce
-//! decoded output** — see "What does not work" below.
+//! decoded output** - see "What does not work" below.
 //!
 //! Internally the module ships the well-defined building blocks any RAR1
 //! decoder needs:
 //!
-//! - `bits::BitReader` — MSB-first bit reader matching
+//! - `bits::BitReader` - MSB-first bit reader matching
 //!   `XADRAR15Handle.m`'s `CSInputNextBit`/`CSInputNextBitString` consumption
 //!   order (Huffman codes are flagged `shortestCodeIsZeros:YES`).
-//! - `huffman::StaticHuffman` — canonical Huffman decoder. RAR1's
-//!   Huffman trees are **all static** — they're never transmitted — so this
+//! - `huffman::StaticHuffman` - canonical Huffman decoder. RAR1's
+//!   Huffman trees are **all static** - they're never transmitted - so this
 //!   takes pre-baked code-length arrays. Maximum code length is 12 bits;
 //!   the alphabet size is a const generic so the same type covers the
 //!   256-symbol length trees, the 257-symbol literal trees, and the small
 //!   short-match selector tables.
-//! - `window::Window` — 64 KiB LZSS sliding-window output buffer with
+//! - `window::Window` - 64 KiB LZSS sliding-window output buffer with
 //!   literal / match emission primitives and a drain cursor for streaming.
-//! - `lookup::LookupTable` — the self-adjusting 256-entry symbol cache
+//! - `lookup::LookupTable` - the self-adjusting 256-entry symbol cache
 //!   used as `flagtable` / `literaltable` / `offsettable` in the reference
 //!   implementation. Implements the reset / swap / rank-bump machinery
 //!   described by the reverse-engineered notes.
-//! - `offset_history::OffsetHistory` — the 4-deep ring of recent match
+//! - `offset_history::OffsetHistory` - the 4-deep ring of recent match
 //!   offsets plus the `lastoffset` / `lastlength` registers used by the
 //!   short-match selector branch.
 //!
@@ -47,25 +47,9 @@
 //!
 //! What this means concretely:
 //!
-//! 1. The bit reader, Huffman decoder, LZSS window, lookup tables, and
-//!    offset history are all production-quality and unit-tested.
-//! 2. A future change that introduces the static tables (either by
-//!    clean-room re-derivation, or by re-licensing under terms compatible
-//!    with the LGPL source) can wire them straight into
-//!    `huffman::StaticHuffman::from_lengths` and into a new `decode`
-//!    state machine — no rebuilding required.
-//! 3. Until then, there is no way to decode an actual RAR1 stream from
-//!    bytes alone.
-//!
-//! ## Fixture famine
-//!
-//! Even if the decoder existed, exercising it is hard: RAR1 files
-//! essentially do not exist on the open internet in 2026. The few surviving
-//! samples are tied up in archive-history mirrors and shareware
-//! collections that often pre-date the algorithm's actual deployment
-//! window. The integration tests under `tests/rar1.rs` therefore cover
-//! the [`Decoder`] / [`Encoder`] surface (constructor, name, `Unsupported`
-//! semantics) plus the building blocks via unit tests in each submodule.
+//! The retained bit reader, Huffman decoder, LZSS window, lookup tables, and
+//! offset history have focused unit tests. Without the static tables, this
+//! module cannot decode an actual RAR1 stream from bytes alone.
 //!
 //! ## Encoder
 //!
@@ -129,7 +113,7 @@ impl RawEncoder for Encoder {
 ///
 /// The decoder owns the building blocks needed for a real implementation
 /// (bit reader, optional Huffman trees, 64 KiB window, lookup tables,
-/// offset history) but no `decode` path is wired up — see the module-level
+/// offset history) but no `decode` path is wired up - see the module-level
 /// "What does not work" section.
 ///
 /// `unpack_size` is the declared decompressed length, supplied by the RAR
@@ -139,14 +123,14 @@ impl RawEncoder for Encoder {
 /// has no effect on observable output.
 pub struct Decoder {
     /// Declared decompressed length, in bytes. `None` for a freshly
-    /// constructed decoder where the caller hasn't supplied one yet —
+    /// constructed decoder where the caller hasn't supplied one yet -
     /// `decode` would return [`Error::Unsupported`] in either case for
     /// this build, so it's purely informational.
     unpack_size: Option<u64>,
     /// The streaming-bit reader. Currently unused outside unit tests but
     /// kept so the public types match what a real decoder will need.
     bit_reader: bits::BitReader,
-    /// 64 KiB sliding window — same reason.
+    /// 64 KiB sliding window - same reason.
     #[allow(dead_code)]
     window: window::Window,
     /// `flagtable` analogue.
@@ -201,7 +185,7 @@ impl Decoder {
 
     /// Construct a decoder that knows the declared decompressed length up
     /// front. RAR1 itself transmits this in the container's per-file
-    /// header — callers parsing a real archive would supply that value
+    /// header - callers parsing a real archive would supply that value
     /// here.
     pub fn with_unpack_size(n: u64) -> Self {
         let mut d = Self::new();

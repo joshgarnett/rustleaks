@@ -32,7 +32,7 @@ pub struct FseEntry {
 /// FSE decode table built from a Normalized_Counts array.
 pub struct FseTable {
     pub accuracy_log: u8,
-    /// `entries[state]` — table size is `1 << accuracy_log`.
+    /// `entries[state]` - table size is `1 << accuracy_log`.
     pub entries: Vec<FseEntry>,
 }
 

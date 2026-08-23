@@ -29,7 +29,7 @@ const FRAME_SIZE: u32 = 32_768;
 /// Quantum window_bits ranges from 10 (1 KiB) to 21 (2 MiB); 21 is the max
 /// any real CAB stream can use and decodes any smaller stream just fine
 /// from the decoder's perspective. But it allocates 2 MiB up front, which
-/// is wasteful for small inputs — pick 15 (32 KiB, same as a frame) as a
+/// is wasteful for small inputs - pick 15 (32 KiB, same as a frame) as a
 /// reasonable middle ground.
 pub(crate) const DEFAULT_WINDOW_BITS: u32 = 15;
 

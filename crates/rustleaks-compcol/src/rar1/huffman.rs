@@ -1,6 +1,6 @@
 //! Canonical Huffman decoder for RAR1.
 //!
-//! All of RAR1's Huffman trees are **static** — they are pre-baked into the
+//! All of RAR1's Huffman trees are **static** - they are pre-baked into the
 //! algorithm and never transmitted. The wire format only carries the
 //! decoded symbols. We still need a canonical-Huffman decoder so that, when
 //! the static code-length tables are supplied, decoding follows the
@@ -16,8 +16,8 @@
 //!   257-symbol alphabets, max code lengths 12, 12, 10, 10, 9 bits.
 //! - Four **short-match selector** trees with 14 or 15 explicit entries.
 //!
-//! We don't ship the static tables themselves — they are the bulk of the
-//! algorithm and we have no clean-room source for them — but [`StaticHuffman`]
+//! We don't ship the static tables themselves - they are the bulk of the
+//! algorithm and we have no clean-room source for them - but [`StaticHuffman`]
 //! is parameterised by alphabet size and accepts any caller-supplied
 //! `code_lengths` slice, so tests can build trees with known shapes and an
 //! eventual implementation can drop the tables in without further plumbing.

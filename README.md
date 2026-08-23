@@ -16,11 +16,8 @@ Version `0.1.0-alpha.1` has not been published. Only `rustleaks-core` is in the
 initial publishable package boundary. The source, report, CLI, compatibility,
 and codec crates are tested workspace components, not registry promises.
 
-The complete local runtime suite has been run on Apple Silicon macOS. Bazel
-compile-only evidence covers the library and feature-profile graph for all
-eight declared Linux GNU, Linux musl, macOS, and Windows MSVC targets on both
-x86-64 and AArch64. Matching-host Linux, Windows, Intel macOS, and musl runtime
-validation is still required. Rustleaks is not described as production-ready.
+Platform evidence and its limitations are summarized below. Rustleaks is not
+described as production-ready.
 
 ## Why Rustleaks exists
 

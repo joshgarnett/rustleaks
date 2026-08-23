@@ -21,7 +21,7 @@ pub(crate) struct ModelSym {
     pub cumfreq: u16,
 }
 
-/// Quantum probability model. `syms` has length `entries + 1` — the trailing
+/// Quantum probability model. `syms` has length `entries + 1` - the trailing
 /// entry is a sentinel with `cumfreq == 0` and `sym` set to the "one past the
 /// last" symbol value. The model owns its symbol array; sizes are small
 /// (≤ 43 entries) so we use fixed-size storage.

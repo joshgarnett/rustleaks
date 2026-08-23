@@ -10,7 +10,7 @@
 //!   three LZMA parameters in `0..=4`, `0..=4`, `0..=8`).
 //! - 4 bytes little-endian dictionary size.
 //! - 8 bytes little-endian uncompressed size; `0xFFFF_FFFF_FFFF_FFFF` means
-//!   "unknown" — the stream is terminated by an explicit end-of-stream marker.
+//!   "unknown" - the stream is terminated by an explicit end-of-stream marker.
 //! - The remainder of the input is a range-coded LZMA payload.
 //!
 //! References: 7-Zip / lzma-sdk source (well-commented C reference) and
@@ -25,7 +25,7 @@
 //! the streaming `consumed`/`written` contract from `traits.rs`.
 //!
 //! The encoder lives in the private `encoder` submodule. It accumulates input into a buffer and
-//! emits the entire compressed stream on `finish` — LZMA's range coder
+//! emits the entire compressed stream on `finish` - LZMA's range coder
 //! prevents a true byte-streaming output, and full-buffer encoding is by far
 //! the simplest correct strategy.
 
@@ -170,7 +170,7 @@ impl RangeDecoder {
     }
 
     /// Try to normalise. Returns `Err(UnexpectedEnd)` if there isn't enough
-    /// input — callers above this layer must ensure adequate input has been
+    /// input - callers above this layer must ensure adequate input has been
     /// buffered (see `REQUIRED_INPUT_MAX`).
     fn normalize(&mut self, buf: &[u8]) -> Result<(), Error> {
         if self.range < RC_TOP_VALUE {

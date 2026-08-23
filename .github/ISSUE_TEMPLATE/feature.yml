@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a Rustleaks capability or maintained workflow change.
+title: "feat: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the concrete caller or maintainer need, without naming a private downstream project.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe observable behavior and the package or maintenance boundary that should own it.
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Primary boundary
+      options:
+        - Core engine
+        - Source adapter
+        - Report formatting
+        - CLI
+        - Compatibility tooling
+        - Build or maintenance tooling
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Compatibility and security impact
+      description: Explain effects on the pinned profile, public API, dependencies, unsafe code, sensitive data, resource limits, and target support. State "Unknown" where investigation is needed.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Note existing APIs or workflows considered and why they do not meet the need.

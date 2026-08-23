@@ -5,12 +5,12 @@
 //! Two changes are needed to make it fit the LZMA2 framing:
 //!
 //! 1. There is no 13-byte `.lzma` header. Properties (lc/lp/pb) and dict
-//!    size arrive out-of-band — via a per-chunk 1-byte properties field
+//!    size arrive out-of-band - via a per-chunk 1-byte properties field
 //!    plus the dict size derived from the xz Block Header's filter
 //!    properties.
 //! 2. Each chunk carries an explicit *uncompressed length*; decoding
 //!    stops at exactly that many output bytes (there is no embedded EOS
-//!    marker inside a compressed chunk — chunks are framed externally).
+//!    marker inside a compressed chunk - chunks are framed externally).
 //! 3. State and dictionary may persist across chunks subject to the
 //!    LZMA2 reset bits (see [`State::reset_state`] /
 //!    [`State::reset_dict`]).
