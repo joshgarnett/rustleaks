@@ -2506,7 +2506,7 @@ fn validate_report_manifest_baselines(manifest: &str) -> Result<(), String> {
         "report_requests_sha256 = \"bac1c15ddfa36abd14fc43f8bac8f32859bdb6c9aee5095c716bd84e1fb9392e\"",
         "report_outcomes_sha256 = \"7f9d89b13ec90c6ccfa0449c427513be1f22f0822abedfabba331125e485c953\"",
         "report_coverage_sha256 = \"3c5d859bc4093cdfdc478270c84796f1456dc4d4b0866a3938b2451d063fe549\"",
-        "report_readme_sha256 = \"f49c10b7c8747a34b4ae71f335bdddb6f0a6a4604c9035861f79352f205e8bcf\"",
+        "report_readme_sha256 = \"989ee01f88e463de6770a4a5b77276611e8a1142461fd00db956ce29dc5f8bf0\"",
         "report_cases = 49",
         "report_output_bytes = 16322",
         "report_error_cases = 18",

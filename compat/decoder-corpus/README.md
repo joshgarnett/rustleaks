@@ -104,7 +104,7 @@ From the Rust repository root:
 ```sh
 env GOCACHE=/private/tmp/rustleaks-m7-oracle-gocache \
   GOMODCACHE=/private/tmp/rustleaks-go-mod-cache \
-  ruby compat/generate_decoder_corpus.rb --check
+  cargo xtask generate decoder --check
 ```
 
 The generator refuses changed upstream revision, default-config hash, or

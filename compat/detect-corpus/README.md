@@ -4,8 +4,8 @@ This directory freezes raw direct-fragment behavior from Gitleaks
 commit `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and Go 1.25.0. Generate it with:
 
 ```sh
-ruby compat/generate_detect_corpus.rb
-ruby compat/generate_detect_corpus.rb --check
+cargo xtask generate detect
+cargo xtask generate detect --check
 ```
 
 `--check` verifies the sibling revision, exact default-config SHA-256, and

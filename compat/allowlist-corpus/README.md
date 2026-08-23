@@ -7,8 +7,8 @@ allowlist behavior from pinned Gitleaks commit
 and the ordinary Go standard-regexp build. Generate or verify it with:
 
 ```sh
-ruby compat/generate_allowlist_corpus.rb
-ruby compat/generate_allowlist_corpus.rb --check
+cargo xtask generate allowlist
+cargo xtask generate allowlist --check
 ```
 
 The generator verifies both pins and the expected read-only sibling status,
