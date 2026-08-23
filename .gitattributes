@@ -1,0 +1,7 @@
+# Pinned fixture bytes are opaque compatibility evidence. Do not normalize
+# line endings or flag upstream-significant trailing/blank whitespace.
+compat/fixtures/upstream/testdata/** -text -whitespace
+compat/fixtures/oracle/** -text -whitespace
+crates/rustleaks-compcol/src/brotli/dictionary.bin -text -whitespace
+compat/config-corpus/default-gitleaks.toml -text -whitespace
+crates/rustleaks-core/default/gitleaks.toml -text -whitespace

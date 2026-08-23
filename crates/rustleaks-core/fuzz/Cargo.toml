@@ -1,0 +1,45 @@
+[package]
+name = "rustleaks-core-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+rustleaks-core = { path = ".." }
+libfuzzer-sys = "0.4"
+regex-automata = { version = "=0.4.7", default-features = false, features = ["std", "syntax", "nfa-pikevm", "unicode"] }
+regex-syntax = "=0.8.4"
+
+[[bin]]
+name = "go_regex"
+path = "fuzz_targets/go_regex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config"
+path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fragment_scan"
+path = "fuzz_targets/fragment_scan.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session"
+path = "fuzz_targets/session.rs"
+test = false
+doc = false
+bench = false
+
+# Keep this development-only fuzz package out of the repository workspace.
+[workspace]

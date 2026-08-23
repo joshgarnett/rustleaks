@@ -1,0 +1,3 @@
+[]
+file:fuzz-rule:1
+deadbeef:file:fuzz-rule:1

@@ -1,0 +1,23 @@
+[package]
+name = "rustleaks-report-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+rustleaks-core = { path = "../../rustleaks-core" }
+rustleaks-report = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "template"
+path = "fuzz_targets/template.rs"
+test = false
+doc = false
+bench = false
+
+# Keep this development-only fuzz package out of the repository workspace.
+[workspace]

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "source",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.25.0",
+  "platform": "darwin/arm64",
+  "fresh_process_per_request": true,
+  "deadline_seconds": 15,
+  "stream_limit_bytes": 8388608,
+  "request_count": 124,
+  "outcome_count": 124,
+  "fragment_count": 276,
+  "finding_count": 61,
+  "issue_count": 17,
+  "behavior_count": 30,
+  "upstream_identity_count": 34,
+  "material_assertion_count": 56,
+  "files": {
+    "requests-v1.jsonl": {
+      "sha256": "39021e4cb87609ca40be575805be042bf4b591216f6f54e5df9f43f02237a240",
+      "records": 124
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "dd324a7751145cd5251cd6628d7395710cc68507cb5370989d1c9c33274a3918",
+      "records": 124
+    },
+    "coverage-v1.json": {
+      "sha256": "271080c50356b0a108f22f454a5bfdf63c30f450a8ab5836c1687980842c11cb"
+    },
+    "negative-controls-v1.json": {
+      "sha256": "bf6108fca611806a4f13018f220f9a484cc3163fc8b70437dcb51c3ae6976cd3"
+    },
+    "README.md": {
+      "sha256": "6f17f7febec78e278d552d6a733af6bc023b2555765e7be2c66cb21a43ff7615"
+    }
+  }
+}

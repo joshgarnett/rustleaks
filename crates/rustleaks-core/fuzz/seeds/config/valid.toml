@@ -1,0 +1,6 @@
+title = "fuzz seed"
+
+[[rules]]
+id = "seed"
+regex = '''secret=([A-Z0-9]{4})'''
+keywords = ["secret"]

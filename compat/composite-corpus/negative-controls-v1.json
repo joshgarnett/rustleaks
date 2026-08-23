@@ -1,0 +1,24 @@
+{
+  "same_count_substitutions": [
+    {
+      "positive": "pass-both-encoded-same",
+      "negative": "pass-primary-encoded-aux-raw"
+    },
+    {
+      "positive": "proximity-line-boundary",
+      "negative": "proximity-line-outside"
+    },
+    {
+      "positive": "proximity-column-boundary",
+      "negative": "proximity-column-outside"
+    },
+    {
+      "positive": "generic-both-generic-survive",
+      "negative": "generic-shadow-contained"
+    },
+    {
+      "positive": "aux-marker-ignore-option",
+      "negative": "aux-marker-reject"
+    }
+  ]
+}

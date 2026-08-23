@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "session",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.25.0",
+  "fresh_process_per_request": true,
+  "deadline_seconds": 10,
+  "stream_limit_bytes": 4194304,
+  "request_count": 45,
+  "outcome_count": 45,
+  "input_finding_count": 42,
+  "collected_finding_count": 29,
+  "baseline_finding_count": 33,
+  "behavior_count": 10,
+  "upstream_identity_count": 10,
+  "material_assertion_count": 33,
+  "files": {
+    "requests-v1.jsonl": {
+      "sha256": "d13327151d12bc208786350e42b3c04d722b392cc6f7d9acfa050dd32bc93898",
+      "records": 45
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "026cd026ef68dce45672a6c80bd0850219382217ad0a091434cb303d439779fc",
+      "records": 45
+    },
+    "coverage-v1.json": {
+      "sha256": "a92e8bd8b57cac5ad832d4d4fd7f0e44ac20ba114a34cb5e1e8242c266b2d5ed"
+    },
+    "negative-controls-v1.json": {
+      "sha256": "6a6c4962409a55ce91fd29a30166533eb17ac5a14708280172ef2f3027d8ab95"
+    },
+    "README.md": {
+      "sha256": "71127f59fa79f619940a31df050e43c10c755c58aafa012c6f93f90dedd89199"
+    }
+  }
+}

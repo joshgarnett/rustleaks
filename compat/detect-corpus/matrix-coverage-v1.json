@@ -1,0 +1,323 @@
+{
+  "schema_version": 1,
+  "source": "docs/COMPATIBILITY.md",
+  "deterministic_row_count": 42,
+  "covered_deterministic_row_count": 42,
+  "decision_row_count": 1,
+  "rows": [
+    {
+      "id": "M4-KW-001",
+      "status": "covered",
+      "request_ids": [
+        "keywordless-rule-always-runs"
+      ]
+    },
+    {
+      "id": "M4-KW-002",
+      "status": "covered",
+      "request_ids": [
+        "keyword-case-insensitive-hit"
+      ]
+    },
+    {
+      "id": "M4-KW-003",
+      "status": "covered",
+      "request_ids": [
+        "keyword-contained-overlap"
+      ]
+    },
+    {
+      "id": "M4-KW-004",
+      "status": "covered",
+      "request_ids": [
+        "keyword-empty-does-not-activate"
+      ]
+    },
+    {
+      "id": "M4-KW-005",
+      "status": "covered",
+      "request_ids": [
+        "keyword-malformed-byte-activates-replacement"
+      ]
+    },
+    {
+      "id": "M4-DUP-001",
+      "status": "covered",
+      "request_ids": [
+        "duplicate-id-final-map-once"
+      ]
+    },
+    {
+      "id": "M4-DUP-002",
+      "status": "covered",
+      "request_ids": [
+        "distinct-rules-preserve-duplicate-findings"
+      ]
+    },
+    {
+      "id": "M4-PATH-001",
+      "status": "covered",
+      "request_ids": [
+        "upstream-path-only-rule",
+        "path-only-normalized"
+      ]
+    },
+    {
+      "id": "M4-PATH-002",
+      "status": "covered",
+      "request_ids": [
+        "path-only-windows-fallback"
+      ]
+    },
+    {
+      "id": "M4-PATH-003",
+      "status": "covered",
+      "request_ids": [
+        "path-plus-regex-normalized",
+        "path-plus-regex-path-miss"
+      ]
+    },
+    {
+      "id": "M4-PATH-004",
+      "status": "covered",
+      "request_ids": [
+        "path-only-unmatched-keyword"
+      ]
+    },
+    {
+      "id": "M4-PATH-005",
+      "status": "covered",
+      "request_ids": [
+        "path-only-bypasses-size-and-marker"
+      ]
+    },
+    {
+      "id": "M4-SKIP-001",
+      "status": "covered",
+      "request_ids": [
+        "skip-report-ordinary"
+      ]
+    },
+    {
+      "id": "M4-SKIP-002",
+      "status": "covered",
+      "request_ids": [
+        "skip-report-inherited"
+      ]
+    },
+    {
+      "id": "M4-MAX-001",
+      "status": "covered",
+      "request_ids": [
+        "max-target-one-megabyte-accepted",
+        "max-target-truncated-megabyte-accepted"
+      ]
+    },
+    {
+      "id": "M4-MAX-002",
+      "status": "covered",
+      "request_ids": [
+        "max-target-next-megabyte-skipped"
+      ]
+    },
+    {
+      "id": "M4-MAX-003",
+      "status": "covered",
+      "request_ids": [
+        "max-target-zero-disabled",
+        "max-target-negative-disabled"
+      ]
+    },
+    {
+      "id": "M4-TRIM-001",
+      "status": "covered",
+      "request_ids": [
+        "newline-trim-exact-trailing"
+      ]
+    },
+    {
+      "id": "M4-TRIM-002",
+      "status": "covered",
+      "request_ids": [
+        "newline-trim-exact-leading-skew"
+      ]
+    },
+    {
+      "id": "M4-TRIM-003",
+      "status": "covered",
+      "request_ids": [
+        "newline-carriage-return-not-trimmed"
+      ]
+    },
+    {
+      "id": "M4-TRIM-004",
+      "status": "covered",
+      "request_ids": [
+        "newline-trim-exact-empty"
+      ]
+    },
+    {
+      "id": "M4-CAP-001",
+      "status": "covered",
+      "request_ids": [
+        "capture-first-nonempty"
+      ]
+    },
+    {
+      "id": "M4-CAP-002",
+      "status": "covered",
+      "request_ids": [
+        "capture-explicit-matched-empty"
+      ]
+    },
+    {
+      "id": "M4-CAP-003",
+      "status": "covered",
+      "request_ids": [
+        "capture-negative-group-uses-implicit"
+      ]
+    },
+    {
+      "id": "M4-CAP-004",
+      "status": "covered",
+      "request_ids": [
+        "capture-rerun-after-lf-trim-fails"
+      ]
+    },
+    {
+      "id": "M4-ENT-001",
+      "status": "covered",
+      "request_ids": [
+        "entropy-equal-threshold-rejected"
+      ]
+    },
+    {
+      "id": "M4-ENT-002",
+      "status": "covered",
+      "request_ids": [
+        "entropy-zero-disables-filter",
+        "entropy-negative-zero-disables-filter"
+      ]
+    },
+    {
+      "id": "M4-ENT-003",
+      "status": "covered",
+      "request_ids": [
+        "entropy-single-and-repeated-multibyte-rune"
+      ]
+    },
+    {
+      "id": "M4-ENT-004",
+      "status": "covered",
+      "request_ids": [
+        "entropy-unicode-runes-byte-denominator"
+      ]
+    },
+    {
+      "id": "M4-ENT-005",
+      "status": "covered",
+      "request_ids": [
+        "entropy-valid-and-malformed-replacement-runes"
+      ]
+    },
+    {
+      "id": "M4-ENT-006",
+      "status": "covered",
+      "request_ids": [
+        "entropy-threshold-nan",
+        "entropy-threshold-positive-infinity",
+        "entropy-threshold-negative-infinity"
+      ]
+    },
+    {
+      "id": "M4-ENT-007",
+      "status": "covered",
+      "request_ids": [
+        "entropy-counts-one-two-three"
+      ]
+    },
+    {
+      "id": "M4-LOC-001",
+      "status": "covered",
+      "request_ids": [
+        "location-exact-utf8-byte-column"
+      ]
+    },
+    {
+      "id": "M4-LOC-002",
+      "status": "covered",
+      "request_ids": [
+        "location-final-unterminated-prefix-line"
+      ]
+    },
+    {
+      "id": "M4-LOC-003",
+      "status": "covered",
+      "request_ids": [
+        "location-terminated-leading-lf-line"
+      ]
+    },
+    {
+      "id": "M4-LOC-004",
+      "status": "covered",
+      "request_ids": [
+        "location-crlf-retains-cr"
+      ]
+    },
+    {
+      "id": "M4-LOC-005",
+      "status": "covered",
+      "request_ids": [
+        "location-start-line-seven"
+      ]
+    },
+    {
+      "id": "M4-LOC-006",
+      "status": "covered",
+      "request_ids": [
+        "location-empty-input-empty-match"
+      ]
+    },
+    {
+      "id": "M4-ALLOW-001",
+      "status": "covered",
+      "request_ids": [
+        "allow-marker-same-line-suppressed",
+        "allow-marker-toggle-reports"
+      ]
+    },
+    {
+      "id": "M4-ALLOW-002",
+      "status": "covered",
+      "request_ids": [
+        "allow-marker-case-sensitive"
+      ]
+    },
+    {
+      "id": "M4-ALLOW-003",
+      "status": "covered",
+      "request_ids": [
+        "allow-marker-prefix-final-unterminated"
+      ]
+    },
+    {
+      "id": "M4-ALLOW-004",
+      "status": "covered",
+      "request_ids": [
+        "allow-marker-prefix-terminated"
+      ]
+    },
+    {
+      "id": "M4-ENT-008",
+      "status": "outcome-set-resolved",
+      "request_ids": [
+
+      ],
+      "evidence": "go test ./... -run TestDirectDetectorEntropyThresholdOutcomeSet",
+      "rust_evidence": "cargo test -p rustleaks-core --lib engine::tests::canonical_entropy_is_one_proven_go_admissible_value",
+      "decision": "D-0012",
+      "coordinator_decision_required": false,
+      "reason": "Go map-order summation changes the threshold predicate while every accepted finding has identical f32 bits"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "decoder",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.25.0",
+  "scope": [
+    "codec-pass-output",
+    "complete-segment-metadata",
+    "full-decode",
+    "direct-decoded-detector",
+    "decoded-line-allowlist"
+  ],
+  "excluded": [
+    "rust-implementation",
+    "session-baseline-ignore",
+    "source-adapters",
+    "cli"
+  ],
+  "request_count": 263,
+  "decode_request_count": 204,
+  "detect_request_count": 59,
+  "run_count": 212,
+  "pass_count": 414,
+  "segment_count": 278,
+  "finding_count": 177,
+  "behavior_id_count": 17,
+  "linked_decoder_leaf_count": 54,
+  "top_level_aggregator_count": 1,
+  "linked_detect_leaf_count": 1,
+  "fresh_process_per_request": true,
+  "depth_finding_counts": {
+    "0": 2,
+    "1": 9,
+    "2": 15,
+    "3": 16,
+    "4": 18,
+    "5": 19,
+    "6": 19,
+    "7": 20,
+    "8": 20
+  },
+  "files": {
+    "requests-v1.jsonl": {
+      "sha256": "9b5ee04e0bc49b4b852b3f427ff44f58a8d3c463097c1022dac8a13799b8fed7",
+      "records": 263
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "428d8e37112f9b26d65156a0a075a8cfd15897f2b0bc02d7cee7aae17cd9a8b3",
+      "records": 263
+    },
+    "request-metadata-v1.jsonl": {
+      "sha256": "c8fe20631eead7ddf515d500051c468a115a09a6ec1f0f652e11ab3ea8bb5c9b",
+      "records": 263
+    },
+    "coverage-v1.json": {
+      "sha256": "c46d32a1b1e340ae1e6b41539ddf812ef2090bd582766fc79813a656512268c2",
+      "records": 104
+    },
+    "negative-controls-v1.json": {
+      "sha256": "2a11ebd76c68be3d1894cae5e2c20d3aea29201af70bf7436d81908a3d54b41c",
+      "records": 2
+    }
+  }
+}

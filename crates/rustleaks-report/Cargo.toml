@@ -1,0 +1,18 @@
+[package]
+name = "rustleaks-report"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.1" }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+base64 = "0.22"
+
+[lints]
+workspace = true

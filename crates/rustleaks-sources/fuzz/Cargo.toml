@@ -1,0 +1,29 @@
+[package]
+name = "rustleaks-sources-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+rustleaks-sources = { path = "..", features = ["archives"] }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "archive"
+path = "fuzz_targets/archive.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "reader_schedule"
+path = "fuzz_targets/reader_schedule.rs"
+test = false
+doc = false
+bench = false
+
+# Keep this development-only fuzz package out of the repository workspace.
+[workspace]

@@ -1,0 +1,23 @@
+[package]
+name = "rustleaks-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT AND BSD-3-Clause"
+description = "Byte-first synchronous engine for the independent Rustleaks port"
+readme = "README.md"
+repository.workspace = true
+
+[dependencies]
+aho-corasick = "1"
+base64 = "0.22"
+semver = "1"
+regex-syntax = "=0.8.4"
+regex-automata = { version = "=0.4.7", default-features = false, features = ["std", "syntax", "nfa-pikevm", "unicode"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.9"
+
+[lints]
+workspace = true

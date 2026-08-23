@@ -1,0 +1,1104 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "behavior_ids": [
+    {
+      "id": "SRC-001",
+      "definition": "A synchronous source visits fragment-or-issue events; callback stop/errors and terminal source errors remain distinct.",
+      "request_ids": [
+        "file-yield-error"
+      ],
+      "material_assertions": [
+        "callback-yield-error-propagates"
+      ]
+    },
+    {
+      "id": "SRC-002",
+      "definition": "File fragments own exact bytes and metadata; they never expose the Go reusable-buffer alias.",
+      "request_ids": [
+        "file-invalid-bytes"
+      ],
+      "material_assertions": [
+        "owned-raw-and-bytes-projections"
+      ]
+    },
+    {
+      "id": "SRC-003",
+      "definition": "Nil file buffers select 100,000 bytes; custom positive sizes are exact; the compatibility shim preserves the zero-buffer empty-success quirk.",
+      "request_ids": [
+        "detect-reader-nil",
+        "detect-reader-eof",
+        "stream-single",
+        "stream-empty",
+        "stream-error",
+        "stream-multiple",
+        "stream-eof",
+        "stream-split",
+        "stream-late-error",
+        "file-default-buffer",
+        "file-custom-buffer"
+      ],
+      "material_assertions": [
+        "default-and-custom-buffer-sizes"
+      ]
+    },
+    {
+      "id": "SRC-004",
+      "definition": "A suffix already containing two LFs separated only by SP/TAB/CR/LF ends a chunk without read-ahead.",
+      "request_ids": [
+        "boundary-original-lf",
+        "boundary-original-crlf",
+        "boundary-lf",
+        "boundary-crlf",
+        "boundary-blank",
+        "file-custom-buffer"
+      ],
+      "material_assertions": [
+        "boundary-original-lf-safe-suffix",
+        "boundary-original-crlf-safe-suffix",
+        "custom-file-safe-suffix-no-read-ahead"
+      ]
+    },
+    {
+      "id": "SRC-005",
+      "definition": "Unsafe boundaries append bytewise through the second LF or exactly 25,000 bytes, with no byte pushback.",
+      "request_ids": [
+        "boundary-lf",
+        "boundary-crlf",
+        "boundary-blank",
+        "boundary-none",
+        "boundary-empty",
+        "boundary-25000-ceiling",
+        "stream-late-error",
+        "file-default-buffer"
+      ],
+      "material_assertions": [
+        "boundary-lf-lookahead",
+        "boundary-crlf-lookahead",
+        "boundary-blank-lookahead",
+        "boundary-none-lookahead",
+        "lookahead-ceiling-is-exact"
+      ]
+    },
+    {
+      "id": "SRC-006",
+      "definition": "EOF, n>0+EOF, n>0+nil, n>0+error, n==0+error, and read-ahead errors preserve the pinned fragment/error outcomes.",
+      "request_ids": [
+        "detect-reader-nil",
+        "detect-reader-eof",
+        "stream-single",
+        "stream-empty",
+        "stream-error",
+        "stream-multiple",
+        "stream-eof",
+        "stream-split",
+        "stream-late-error",
+        "file-data-plus-error",
+        "file-empty"
+      ],
+      "material_assertions": [
+        "reader-error-and-eof-matrix"
+      ]
+    },
+    {
+      "id": "SRC-007",
+      "definition": "File fragments start at one plus prior LF count; only byte 0x0a advances the next start line.",
+      "request_ids": [
+        "stream-multiple",
+        "file-invalid-bytes",
+        "file-default-buffer",
+        "file-custom-buffer",
+        "file-lf-line-count",
+        "files-nogit-main",
+        "files-nogit-env"
+      ],
+      "material_assertions": [
+        "lf-only-start-line-accounting"
+      ]
+    },
+    {
+      "id": "SRC-008",
+      "definition": "MIME matching uses the original read before extension whenever prior LF count is zero and skips only h2non/filetype-v1.1.3 application/*.",
+      "request_ids": [
+        "file-mime-skip",
+        "file-repeat-mime-before-first-lf",
+        "archive-magic-without-name"
+      ],
+      "material_assertions": [
+        "mime-before-extension-and-repeat"
+      ]
+    },
+    {
+      "id": "SRC-009",
+      "definition": "Reader compatibility adapters preserve count/error/finalization outcomes without requiring channels, goroutines, or an async runtime.",
+      "request_ids": [
+        "detect-reader-nil",
+        "detect-reader-eof",
+        "stream-single",
+        "stream-empty",
+        "stream-error",
+        "stream-multiple",
+        "stream-eof",
+        "stream-split",
+        "stream-late-error"
+      ],
+      "material_assertions": [
+        "stream-single-adapter-outcome",
+        "stream-empty-adapter-outcome",
+        "stream-error-adapter-outcome",
+        "stream-multiple-adapter-outcome",
+        "stream-eof-adapter-outcome",
+        "stream-split-adapter-outcome",
+        "stream-late-error-adapter-outcome"
+      ]
+    },
+    {
+      "id": "SRC-010",
+      "definition": "Directory discovery follows host WalkDir lexical traversal semantics for root file, root directory, and nested entries.",
+      "request_ids": [
+        "files-upstream-directory",
+        "files-nogit-directory",
+        "files-nogit-main",
+        "files-nogit-api",
+        "files-nogit-env",
+        "files-prune-directory"
+      ],
+      "material_assertions": [
+        "root-file-directory-and-lexical-nested-discovery"
+      ]
+    },
+    {
+      "id": "SRC-011",
+      "definition": "Empty files are skipped; positive maximum file size is an exact strict-greater-than byte gate and equality is scanned.",
+      "request_ids": [
+        "file-empty",
+        "files-symlink-alias-size-skip",
+        "files-symlink-target-size-bypass",
+        "files-size-boundary"
+      ],
+      "material_assertions": [
+        "empty-and-over-limit-skip-equal-retained",
+        "symlink-alias-size-precedes-target-size"
+      ]
+    },
+    {
+      "id": "SRC-012",
+      "definition": "Missing, unreadable, and metadata-failing paths are skipped/diagnosed at the pinned stage; untrusted filesystem states never panic.",
+      "request_ids": [
+        "files-dangling-symlink",
+        "files-looping-symlink",
+        "files-permission-denied",
+        "files-missing"
+      ],
+      "material_assertions": [
+        "missing-and-invalid-symlink-stages",
+        "native-unreadable-file-is-skipped"
+      ]
+    },
+    {
+      "id": "SRC-013",
+      "definition": "Global path allowlists prune directories early and skip discovered files/aliases, with Windows raw-plus-slash checks.",
+      "request_ids": [
+        "archive-inner-allowlist-scope",
+        "files-upstream-directory",
+        "files-prune-directory"
+      ],
+      "material_assertions": [
+        "directory-and-inner-path-allowlists"
+      ]
+    },
+    {
+      "id": "SRC-014",
+      "definition": "Symlink entries are skipped when following is disabled and directory symlinks are never traversed.",
+      "request_ids": [
+        "files-symlink-disabled",
+        "files-symlink-enabled",
+        "files-directory-symlink"
+      ],
+      "material_assertions": [
+        "disabled-and-directory-symlinks-skip"
+      ]
+    },
+    {
+      "id": "SRC-015",
+      "definition": "Followed file symlinks scan the resolved target while reporting target FilePath and discovered alias SymlinkFile.",
+      "request_ids": [
+        "files-symlink-enabled",
+        "files-chained-symlink",
+        "files-symlink-alias-size-skip",
+        "files-symlink-target-size-bypass"
+      ],
+      "material_assertions": [
+        "followed-and-chained-file-symlinks"
+      ]
+    },
+    {
+      "id": "SRC-016",
+      "definition": "Chained, dangling, looping, and escaping symlinks terminate safely as scan issues; no target is scanned twice by implicit directory following.",
+      "request_ids": [
+        "files-symlink-enabled",
+        "files-directory-symlink",
+        "files-chained-symlink",
+        "files-dangling-symlink",
+        "files-looping-symlink"
+      ],
+      "material_assertions": [
+        "invalid-symlinks-terminate"
+      ]
+    },
+    {
+      "id": "SRC-017",
+      "definition": "Physical paths stay as PathBuf; logical fragment paths reproduce host Go cleaning and Windows slash/original dual fields without Unicode normalization.",
+      "request_ids": [
+        "file-invalid-bytes",
+        "file-path-nfc",
+        "file-path-nfd",
+        "file-path-windows-mixed-drive",
+        "file-path-windows-unc",
+        "file-path-windows-extended",
+        "archive-windows-outer-path",
+        "files-symlink-disabled",
+        "files-symlink-enabled"
+      ],
+      "material_assertions": [
+        "invalid-bytes-and-logical-paths-preserved",
+        "unicode-normalization-is-not-applied",
+        "native-windows-dual-path-projection"
+      ]
+    },
+    {
+      "id": "SRC-018",
+      "definition": "Archive identification is case-insensitive name-only with the pinned format/substring profile; magic alone does not activate archive handling.",
+      "request_ids": [
+        "file-malformed-archive",
+        "archive-files-7z",
+        "archive-files-tar",
+        "archive-files-tar-xz",
+        "archive-files-tar-zst",
+        "archive-files-zip",
+        "archive-uppercase-name",
+        "archive-substring-name",
+        "archive-magic-without-name",
+        "decompress-main-go-gz",
+        "decompress-main-go-xz",
+        "decompress-main-go-zst",
+        "decompress-safe-br",
+        "decompress-safe-tar-br",
+        "decompress-safe-bz2",
+        "decompress-safe-tar-bz2",
+        "decompress-safe-lz4",
+        "decompress-safe-tar-lz4",
+        "decompress-safe-mz",
+        "decompress-safe-tar-mz",
+        "decompress-safe-s2",
+        "decompress-safe-tar-s2",
+        "decompress-safe-sz",
+        "decompress-safe-tar-sz",
+        "archive-7z-copy",
+        "archive-7z-delta",
+        "archive-7z-lzma",
+        "archive-7z-deflate",
+        "archive-7z-bzip2",
+        "archive-7z-brotli",
+        "archive-7z-lz4",
+        "archive-7z-zstd",
+        "archive-7z-bcj",
+        "archive-7z-bcj2",
+        "archive-7z-arm",
+        "archive-7z-ppc",
+        "archive-7z-sparc",
+        "archive-rar5-stored",
+        "archive-rar5-compressed",
+        "archive-rar2-compressed",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "archive-rar5-encrypted-headers",
+        "archive-rar5-multivolume",
+        "nested-depth-0",
+        "nested-depth-1",
+        "nested-depth-2",
+        "nested-depth-8",
+        "archive-direct-corrupt-tar",
+        "archive-direct-corrupt-zip",
+        "archive-direct-corrupt-7z",
+        "archive-direct-corrupt-br",
+        "archive-direct-corrupt-bz2",
+        "archive-direct-corrupt-gz",
+        "archive-direct-corrupt-lz4",
+        "archive-direct-corrupt-mz",
+        "archive-direct-corrupt-s2",
+        "archive-direct-corrupt-sz",
+        "archive-direct-corrupt-xz",
+        "archive-direct-corrupt-zst",
+        "archive-direct-corrupt-lz",
+        "archive-direct-corrupt-zz",
+        "files-upstream-directory",
+        "files-corrupt-tar",
+        "files-corrupt-archive-matrix"
+      ],
+      "material_assertions": [
+        "name-only-case-insensitive-substring-identification"
+      ]
+    },
+    {
+      "id": "SRC-019",
+      "definition": "Each recognized extractor/decompressor layer consumes one depth; zero disables, and a compressed tar is one layer.",
+      "request_ids": [
+        "archive-files-7z",
+        "archive-files-tar",
+        "archive-files-tar-xz",
+        "archive-files-tar-zst",
+        "archive-files-zip",
+        "decompress-main-go-gz",
+        "decompress-main-go-xz",
+        "decompress-main-go-zst",
+        "decompress-safe-br",
+        "decompress-safe-tar-br",
+        "decompress-safe-bz2",
+        "decompress-safe-tar-bz2",
+        "decompress-safe-lz4",
+        "decompress-safe-tar-lz4",
+        "decompress-safe-mz",
+        "decompress-safe-tar-mz",
+        "decompress-safe-s2",
+        "decompress-safe-tar-s2",
+        "decompress-safe-sz",
+        "decompress-safe-tar-sz",
+        "archive-7z-copy",
+        "archive-7z-delta",
+        "archive-7z-lzma",
+        "archive-7z-deflate",
+        "archive-7z-bzip2",
+        "archive-7z-brotli",
+        "archive-7z-lz4",
+        "archive-7z-zstd",
+        "archive-7z-bcj",
+        "archive-7z-bcj2",
+        "archive-7z-arm",
+        "archive-7z-ppc",
+        "archive-7z-sparc",
+        "archive-rar5-stored",
+        "archive-rar5-compressed",
+        "archive-rar2-compressed",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "nested-depth-0",
+        "nested-depth-1",
+        "nested-depth-2",
+        "nested-depth-8",
+        "archive-inner-allowlist-scope"
+      ],
+      "material_assertions": [
+        "each-archive-layer-consumes-depth"
+      ]
+    },
+    {
+      "id": "SRC-020",
+      "definition": "Extractors ignore directories, preserve backend entry order, clean entry names with host filepath semantics, and recurse synchronously.",
+      "request_ids": [
+        "archive-files-7z",
+        "archive-files-tar",
+        "archive-files-tar-xz",
+        "archive-files-tar-zst",
+        "archive-files-zip",
+        "archive-uppercase-name",
+        "archive-substring-name",
+        "decompress-safe-tar-br",
+        "decompress-safe-tar-bz2",
+        "decompress-safe-tar-lz4",
+        "decompress-safe-tar-mz",
+        "decompress-safe-tar-s2",
+        "decompress-safe-tar-sz",
+        "archive-7z-copy",
+        "archive-7z-delta",
+        "archive-7z-lzma",
+        "archive-7z-deflate",
+        "archive-7z-bzip2",
+        "archive-7z-brotli",
+        "archive-7z-lz4",
+        "archive-7z-zstd",
+        "archive-7z-bcj",
+        "archive-7z-bcj2",
+        "archive-7z-arm",
+        "archive-7z-ppc",
+        "archive-7z-sparc",
+        "archive-rar5-stored",
+        "archive-rar5-compressed",
+        "archive-rar2-compressed",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "nested-depth-1",
+        "nested-depth-2",
+        "nested-depth-8",
+        "archive-inner-allowlist-scope"
+      ],
+      "material_assertions": [
+        "extractor-entry-order-and-cleaning",
+        "rar-backend-entry-order"
+      ]
+    },
+    {
+      "id": "SRC-021",
+      "definition": "Observable inner paths are slash-normalized outer layers joined to the current entry with literal !; fingerprints use that full path.",
+      "request_ids": [
+        "archive-files-7z",
+        "archive-files-tar",
+        "archive-files-tar-xz",
+        "archive-files-tar-zst",
+        "archive-files-zip",
+        "archive-uppercase-name",
+        "archive-substring-name",
+        "archive-windows-outer-path",
+        "archive-7z-copy",
+        "archive-7z-delta",
+        "archive-7z-lzma",
+        "archive-7z-deflate",
+        "archive-7z-bzip2",
+        "archive-7z-brotli",
+        "archive-7z-lz4",
+        "archive-7z-zstd",
+        "archive-7z-bcj",
+        "archive-7z-bcj2",
+        "archive-7z-arm",
+        "archive-7z-ppc",
+        "archive-7z-sparc",
+        "archive-rar5-stored",
+        "archive-rar5-compressed",
+        "archive-rar2-compressed",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "nested-depth-1",
+        "nested-depth-2",
+        "nested-depth-8"
+      ],
+      "material_assertions": [
+        "inner-paths-and-fingerprints-use-bang",
+        "native-windows-archive-outer-path"
+      ]
+    },
+    {
+      "id": "SRC-022",
+      "definition": "Registered single-stream decompressors retain the outer filename while scanning decoded bytes; compressed TARs consume one archive layer.",
+      "request_ids": [
+        "archive-files-tar-xz",
+        "archive-files-tar-zst",
+        "decompress-main-go-gz",
+        "decompress-main-go-xz",
+        "decompress-main-go-zst",
+        "decompress-safe-br",
+        "decompress-safe-tar-br",
+        "decompress-safe-bz2",
+        "decompress-safe-tar-bz2",
+        "decompress-safe-lz4",
+        "decompress-safe-tar-lz4",
+        "decompress-safe-mz",
+        "decompress-safe-tar-mz",
+        "decompress-safe-s2",
+        "decompress-safe-tar-s2",
+        "decompress-safe-sz",
+        "decompress-safe-tar-sz",
+        "archive-7z-copy",
+        "archive-7z-delta",
+        "archive-7z-lzma",
+        "archive-7z-deflate",
+        "archive-7z-bzip2",
+        "archive-7z-brotli",
+        "archive-7z-lz4",
+        "archive-7z-zstd",
+        "archive-7z-bcj",
+        "archive-7z-bcj2",
+        "archive-7z-arm",
+        "archive-7z-ppc",
+        "archive-7z-sparc",
+        "archive-rar5-stored",
+        "archive-rar5-compressed",
+        "archive-rar2-compressed",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "archive-rar5-encrypted-headers",
+        "archive-rar5-multivolume",
+        "nested-depth-2",
+        "nested-depth-8",
+        "files-upstream-directory"
+      ],
+      "material_assertions": [
+        "gzip-xz-zstd-retain-outer-name",
+        "safe-native-stream-codecs-retain-outer-name",
+        "safe-native-compressed-tars-extract-members",
+        "safe-native-7z-codec-profile",
+        "safe-native-rar-container-and-compression",
+        "rar3-rar5-ordinary-and-solid-members",
+        "rar2-compressed-member"
+      ]
+    },
+    {
+      "id": "SRC-023",
+      "definition": "First-level inner allowlist checks use the cleaned inner name; nested child config non-propagation and later full-path engine checks are frozen.",
+      "request_ids": [
+        "nested-depth-2",
+        "nested-depth-8",
+        "archive-inner-allowlist-scope"
+      ],
+      "material_assertions": [
+        "first-level-allowlist-not-propagated-to-child"
+      ]
+    },
+    {
+      "id": "SRC-024",
+      "definition": "Zip/7z work from seekable files and bounded safe spool storage for non-seekable nested streams; temporary artifacts are always reclaimed.",
+      "request_ids": [
+        "archive-files-7z",
+        "archive-files-zip",
+        "nested-depth-2",
+        "nested-depth-8"
+      ],
+      "material_assertions": [
+        "nested-zip-and-7z-nonseekable-members-scan"
+      ]
+    },
+    {
+      "id": "SRC-025",
+      "definition": "Corrupt/member-open/decompress/read errors preserve direct-file versus directory outcome classes while Rust surfaces structured issues.",
+      "request_ids": [
+        "file-malformed-archive",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "archive-rar5-encrypted-headers",
+        "archive-rar5-multivolume",
+        "archive-direct-corrupt-tar",
+        "archive-direct-corrupt-zip",
+        "archive-direct-corrupt-7z",
+        "archive-direct-corrupt-br",
+        "archive-direct-corrupt-bz2",
+        "archive-direct-corrupt-gz",
+        "archive-direct-corrupt-lz4",
+        "archive-direct-corrupt-mz",
+        "archive-direct-corrupt-s2",
+        "archive-direct-corrupt-sz",
+        "archive-direct-corrupt-xz",
+        "archive-direct-corrupt-zst",
+        "archive-direct-corrupt-lz",
+        "archive-direct-corrupt-zz",
+        "files-corrupt-tar",
+        "files-corrupt-archive-matrix"
+      ],
+      "material_assertions": [
+        "rar-password-and-unnamed-volume-failures",
+        "corrupt-direct-and-directory-outcomes-frozen",
+        "supported-codec-corruption-matrix"
+      ]
+    },
+    {
+      "id": "SRC-026",
+      "definition": "Directory parallelism is caller-selected and bounded; result order is unspecified but the complete finding multiset and duplicates are invariant.",
+      "request_ids": [
+        "files-upstream-directory",
+        "files-nogit-directory",
+        "files-corrupt-tar",
+        "files-corrupt-archive-matrix",
+        "files-bounded-order"
+      ],
+      "material_assertions": [
+        "bounded-order-independent-duplicates"
+      ]
+    },
+    {
+      "id": "SRC-027",
+      "definition": "Cancellation is checked during traversal, scheduling, chunk loops, archive enumeration/decoding, and runner detection; cancellation never leaves unjoined workers.",
+      "request_ids": [
+        "file-canceled",
+        "nested-canceled",
+        "files-canceled"
+      ],
+      "material_assertions": [
+        "pre-cancel-is-terminal-and-joined"
+      ]
+    },
+    {
+      "id": "SRC-028",
+      "definition": "Source running scans each successful fragment through immutable Engine, then policy-binds and merges owned ScanSession batches so fingerprints/ignore/baseline behavior is unchanged.",
+      "request_ids": [
+        "files-upstream-directory",
+        "files-nogit-directory",
+        "files-nogit-main",
+        "files-nogit-api",
+        "files-nogit-env",
+        "files-symlink-enabled"
+      ],
+      "material_assertions": [
+        "engine-session-fingerprints-and-ignore"
+      ]
+    },
+    {
+      "id": "SRC-029",
+      "definition": "All lengths, line counts, depths, entry counts, expansion totals, and spool sizes use checked arithmetic and configurable limits with structured limit outcomes.",
+      "request_ids": [
+        "files-size-boundary",
+        "files-bounded-order"
+      ],
+      "material_assertions": [
+        "configured-size-depth-and-entry-limits"
+      ]
+    },
+    {
+      "id": "SRC-030",
+      "definition": "rustleaks-sources and its archive feature are safe, synchronous, native macOS/Linux/Windows Rust and keep all source/archive/scheduler dependencies out of rustleaks-core.",
+      "request_ids": [
+        "file-path-nfc",
+        "file-path-nfd",
+        "file-path-windows-mixed-drive",
+        "file-path-windows-unc",
+        "file-path-windows-extended",
+        "archive-windows-outer-path",
+        "decompress-safe-br",
+        "decompress-safe-tar-br",
+        "decompress-safe-bz2",
+        "decompress-safe-tar-bz2",
+        "decompress-safe-lz4",
+        "decompress-safe-tar-lz4",
+        "decompress-safe-mz",
+        "decompress-safe-tar-mz",
+        "decompress-safe-s2",
+        "decompress-safe-tar-s2",
+        "decompress-safe-sz",
+        "decompress-safe-tar-sz",
+        "archive-7z-copy",
+        "archive-7z-delta",
+        "archive-7z-lzma",
+        "archive-7z-deflate",
+        "archive-7z-bzip2",
+        "archive-7z-brotli",
+        "archive-7z-lz4",
+        "archive-7z-zstd",
+        "archive-7z-bcj",
+        "archive-7z-bcj2",
+        "archive-7z-arm",
+        "archive-7z-ppc",
+        "archive-7z-sparc",
+        "archive-rar5-stored",
+        "archive-rar5-compressed",
+        "archive-rar2-compressed",
+        "archive-rar-rar3",
+        "archive-rar-rar3-solid",
+        "archive-rar-rar3-multi",
+        "archive-rar-rar3-solid-multi",
+        "archive-rar-rar5",
+        "archive-rar-rar5-solid",
+        "archive-rar-rar5-multi",
+        "archive-rar-rar5-solid-multi",
+        "archive-rar5-encrypted-headers",
+        "archive-rar5-multivolume",
+        "files-symlink-disabled",
+        "files-symlink-enabled",
+        "files-permission-denied"
+      ],
+      "material_assertions": [
+        "native-platform-recorded-without-emulation"
+      ]
+    }
+  ],
+  "upstream": [
+    {
+      "test_case_id": "TM-0098",
+      "go_name": "TestDetectReader",
+      "classification": "aggregator",
+      "request_ids": [
+        "detect-reader-nil",
+        "detect-reader-eof"
+      ]
+    },
+    {
+      "test_case_id": "TM-0099",
+      "go_name": "TestDetectReader/Test_case_-_Reader_returns_n_>_0_bytes_and_io.EOF_error",
+      "classification": "leaf",
+      "request_ids": [
+        "detect-reader-eof"
+      ]
+    },
+    {
+      "test_case_id": "TM-0100",
+      "go_name": "TestDetectReader/Test_case_-_Reader_returns_n_>_0_bytes_and_nil_error",
+      "classification": "leaf",
+      "request_ids": [
+        "detect-reader-nil"
+      ]
+    },
+    {
+      "test_case_id": "TM-0116",
+      "go_name": "TestDetectWithArchives",
+      "classification": "aggregator",
+      "request_ids": [
+        "archive-files-7z",
+        "archive-files-tar",
+        "archive-files-tar-xz",
+        "archive-files-tar-zst",
+        "archive-files-zip",
+        "nested-depth-8",
+        "nested-canceled",
+        "files-upstream-directory",
+        "files-missing"
+      ]
+    },
+    {
+      "test_case_id": "TM-0117",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/files",
+      "classification": "leaf",
+      "request_ids": [
+        "files-upstream-directory"
+      ]
+    },
+    {
+      "test_case_id": "TM-0118",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/files.7z",
+      "classification": "leaf",
+      "request_ids": [
+        "archive-files-7z"
+      ]
+    },
+    {
+      "test_case_id": "TM-0119",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/files.tar",
+      "classification": "leaf",
+      "request_ids": [
+        "archive-files-tar"
+      ]
+    },
+    {
+      "test_case_id": "TM-0120",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/files.tar.xz",
+      "classification": "leaf",
+      "request_ids": [
+        "archive-files-tar-xz"
+      ]
+    },
+    {
+      "test_case_id": "TM-0121",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/files.tar.zst",
+      "classification": "leaf",
+      "request_ids": [
+        "archive-files-tar-zst"
+      ]
+    },
+    {
+      "test_case_id": "TM-0122",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/files.zip",
+      "classification": "leaf",
+      "request_ids": [
+        "archive-files-zip"
+      ]
+    },
+    {
+      "test_case_id": "TM-0123",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/nested.tar.gz",
+      "classification": "leaf",
+      "request_ids": [
+        "nested-depth-8"
+      ]
+    },
+    {
+      "test_case_id": "TM-0124",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/nested.tar.gz#01",
+      "classification": "leaf",
+      "request_ids": [
+        "nested-canceled"
+      ]
+    },
+    {
+      "test_case_id": "TM-0125",
+      "go_name": "TestDetectWithArchives/archives_-_../testdata/archives/this-path-does-not-exist",
+      "classification": "leaf",
+      "request_ids": [
+        "files-missing"
+      ]
+    },
+    {
+      "test_case_id": "TM-0126",
+      "go_name": "TestDetectWithSymlinks",
+      "classification": "leaf",
+      "request_ids": [
+        "files-symlink-enabled"
+      ]
+    },
+    {
+      "test_case_id": "TM-0128",
+      "go_name": "TestFromFiles",
+      "classification": "aggregator",
+      "request_ids": [
+        "files-nogit-directory",
+        "files-nogit-main",
+        "files-nogit-api",
+        "files-nogit-env"
+      ]
+    },
+    {
+      "test_case_id": "TM-0129",
+      "go_name": "TestFromFiles/generic_-_../testdata/repos/nogit/.env.prod",
+      "classification": "leaf",
+      "request_ids": [
+        "files-nogit-env"
+      ]
+    },
+    {
+      "test_case_id": "TM-0130",
+      "go_name": "TestFromFiles/simple_-_../testdata/repos/nogit",
+      "classification": "leaf",
+      "request_ids": [
+        "files-nogit-directory"
+      ]
+    },
+    {
+      "test_case_id": "TM-0131",
+      "go_name": "TestFromFiles/simple_-_../testdata/repos/nogit/api.go",
+      "classification": "leaf",
+      "request_ids": [
+        "files-nogit-api"
+      ]
+    },
+    {
+      "test_case_id": "TM-0132",
+      "go_name": "TestFromFiles/simple_-_../testdata/repos/nogit/main.go",
+      "classification": "leaf",
+      "request_ids": [
+        "files-nogit-main"
+      ]
+    },
+    {
+      "test_case_id": "TM-0147",
+      "go_name": "TestStreamDetectReader",
+      "classification": "aggregator",
+      "request_ids": [
+        "stream-single",
+        "stream-empty",
+        "stream-error",
+        "stream-multiple",
+        "stream-eof",
+        "stream-split",
+        "stream-late-error"
+      ]
+    },
+    {
+      "test_case_id": "TM-0148",
+      "go_name": "TestStreamDetectReader/Empty_reader",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-empty"
+      ]
+    },
+    {
+      "test_case_id": "TM-0149",
+      "go_name": "TestStreamDetectReader/Mock_reader_with_EOF",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-eof"
+      ]
+    },
+    {
+      "test_case_id": "TM-0150",
+      "go_name": "TestStreamDetectReader/Multiple_secrets_with_larger_buffer",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-multiple"
+      ]
+    },
+    {
+      "test_case_id": "TM-0151",
+      "go_name": "TestStreamDetectReader/Reader_returns_error",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-error"
+      ]
+    },
+    {
+      "test_case_id": "TM-0152",
+      "go_name": "TestStreamDetectReader/Reader_returns_error_after_first_read",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-late-error"
+      ]
+    },
+    {
+      "test_case_id": "TM-0153",
+      "go_name": "TestStreamDetectReader/Secret_split_across_boundary",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-split"
+      ]
+    },
+    {
+      "test_case_id": "TM-0154",
+      "go_name": "TestStreamDetectReader/Single_secret_streaming",
+      "classification": "leaf",
+      "request_ids": [
+        "stream-single"
+      ]
+    },
+    {
+      "test_case_id": "TM-0269",
+      "go_name": "Test_readUntilSafeBoundary",
+      "classification": "aggregator",
+      "request_ids": [
+        "boundary-original-lf",
+        "boundary-original-crlf",
+        "boundary-lf",
+        "boundary-crlf",
+        "boundary-blank",
+        "boundary-none"
+      ]
+    },
+    {
+      "test_case_id": "TM-0270",
+      "go_name": "Test_readUntilSafeBoundary/no_safe_split",
+      "classification": "leaf",
+      "request_ids": [
+        "boundary-none"
+      ]
+    },
+    {
+      "test_case_id": "TM-0271",
+      "go_name": "Test_readUntilSafeBoundary/safe_original_split_-_CRLF",
+      "classification": "leaf",
+      "request_ids": [
+        "boundary-original-crlf"
+      ]
+    },
+    {
+      "test_case_id": "TM-0272",
+      "go_name": "Test_readUntilSafeBoundary/safe_original_split_-_LF",
+      "classification": "leaf",
+      "request_ids": [
+        "boundary-original-lf"
+      ]
+    },
+    {
+      "test_case_id": "TM-0273",
+      "go_name": "Test_readUntilSafeBoundary/safe_split_-_CRLF",
+      "classification": "leaf",
+      "request_ids": [
+        "boundary-crlf"
+      ]
+    },
+    {
+      "test_case_id": "TM-0274",
+      "go_name": "Test_readUntilSafeBoundary/safe_split_-_LF",
+      "classification": "leaf",
+      "request_ids": [
+        "boundary-lf"
+      ]
+    },
+    {
+      "test_case_id": "TM-0275",
+      "go_name": "Test_readUntilSafeBoundary/safe_split_-_blank_line",
+      "classification": "leaf",
+      "request_ids": [
+        "boundary-blank"
+      ]
+    }
+  ],
+  "source_hashes": {
+    "sources/common.go": "eb0d687e7d7565058b9320cf372b2250e9de774ed78be7b2f166077901704147",
+    "sources/common_test.go": "e51ccb8147787134c8d5576a83e06d2e146e0fa28b606e1d4ec9d9d1d4bb0dac",
+    "sources/source.go": "c8d049dbe91f539102f4f31e734c2dd8947e5b478762fd6f7003796c18370b62",
+    "sources/fragment.go": "cc691fcc9fbf7af6eaeafece9e6c3e7467204ab9c760648a490a6a922a21de0b",
+    "sources/file.go": "c9d1d8be4e5bbac08c0df774882f33060572ed8d720e7f34360f0a5164c822fa",
+    "sources/files.go": "fab6f4357a87cd67490707f37ac85746938a88d9c1c3601a91270eb85e4c5a4d",
+    "detect/reader.go": "369875f6b8828f1647005740fd6c762e0f7700113a5dcdf049c48b3030854234",
+    "detect/reader_test.go": "e53b2f25936c532b01d6abaa2906469cc4cec75d2f26c74759195fff66a04831",
+    "detect/files.go": "dbf6443db44cb962e0193698f1f2f11206e7e9c8621bad9873aacc0cb421b0af",
+    "detect/detect_test.go": "191e7178827d790ae7c72f7b17824e3d368fe66b263fb12a9b8f3ede225124d3"
+  },
+  "fixture_hashes": {
+    "testdata/archives/files.7z": "12b24deb9671676775a0f54ed23e1031344729a9f810722e444a4600e3f64b8e",
+    "testdata/archives/files.tar": "c0bb06d452191ea913a75bafc7733b4629fd654689a2aea2babae35e81653f74",
+    "testdata/archives/files.tar.xz": "c461ef5d1e3125ec23ffe96ad8f2fcd211c1119dca35ece08542dc27375df4ec",
+    "testdata/archives/files.tar.zst": "e9b8caa2791e484986d06ad5ffc79839e3e96d0ab50a45369fd742b8cdcb2ace",
+    "testdata/archives/files.zip": "bc48e0f379f22471d506c22b1d388ad3fff394f025c8c336fb873f6c334879af",
+    "testdata/archives/nested.tar.gz": "2411e66a569df59ea1a674a71432a292461a7ea0b35ea0f310b86127a1f70ecc",
+    "bodgit-sevenzip-v1.6.1/copy.7z": "1958eb1571c30a18e6415dd2125a2a3354929df47bc93f22638664c5ce6e4b88",
+    "bodgit-sevenzip-v1.6.1/delta.7z": "19cd2b8760ced64fd0978c185c51902c13b030a394137ebaec245bbe873785b8",
+    "bodgit-sevenzip-v1.6.1/lzma.7z": "445b934fa71e08d0eae18643a5918ecb6c0e738f03fed2f20a3e24b84896a67c",
+    "bodgit-sevenzip-v1.6.1/deflate.7z": "12564aaa084b6e2c8c096fb3d2401d567b89e3ac731cbe30dbca50868c4e4845",
+    "bodgit-sevenzip-v1.6.1/bzip2.7z": "3042c0bce90020043ac8b7bfafe3a4cea5c61f564f5804d439948a0e999d44a0",
+    "bodgit-sevenzip-v1.6.1/brotli.7z": "5c17ae05c8d0283c31dab171e0083e3289bf880b0e07a303f9caec2713ea543d",
+    "bodgit-sevenzip-v1.6.1/lz4.7z": "286935225e4a54c328547b7c95a227997f836baefebe9e49ae1993395757d2e9",
+    "bodgit-sevenzip-v1.6.1/zstd.7z": "edc1e616f62264e4e5e16725cebdc2cd4be42c85c82436edaf6cc4f0e856e290",
+    "bodgit-sevenzip-v1.6.1/bcj.7z": "a9210f90631a00206e465b8d380175b996facf143be872f46f0a346418e77d80",
+    "bodgit-sevenzip-v1.6.1/bcj2.7z": "dea54a6ca971eca5b97e682c673b42a88401b5c10c1802f91bbadab450102f62",
+    "bodgit-sevenzip-v1.6.1/arm.7z": "afefd9abc2891928fa3cfca9c848d7d0bc6f3a53ea6dd0a45c3f9fa25cb9f186",
+    "bodgit-sevenzip-v1.6.1/ppc.7z": "243bac7d6bcdaec54e91658bcccf5b0c3a95a8a7b14203633bc700b2b1c846c9",
+    "bodgit-sevenzip-v1.6.1/sparc.7z": "0cb00955648716ed2ab86400a9614e0708ec1910a920fa69ba7332e367a21985",
+    "rar-test-files-16b785c/testfile.rar3.rar": "dce342bc0c2852fcaa36a03da5e55abb7dd69c045bbd812faebebc1a3844f5a4",
+    "rar-test-files-16b785c/testfile.rar3.solid.rar": "92230106bac5c170d472d5459646ec7cd78b4a01cc0537c15c877d5573cbc0fe",
+    "rar-test-files-16b785c/testfile.rar3.cbr": "6598d1c5f7accfeefbda2bf03f934181486a42ea06a4d322d6016410d1a89cc1",
+    "rar-test-files-16b785c/testfile.rar3.solid.cbr": "610376cfa11ec11bf55cd117f5d5b83dd11dded6aad2f825b41dbe84d7f3098d",
+    "rar-test-files-16b785c/testfile.rar5.rar": "a546b39c1aa42669543ef81f5ec8c4ef49fc7c2e5b8d08ab10549e919996e1a4",
+    "rar-test-files-16b785c/testfile.rar5.solid.rar": "7b4ca6b02ab7affd2f67827a6a938c4d02bb1fc84e548512b42e5b7a0109eb4b",
+    "rar-test-files-16b785c/testfile.rar5.cbr": "e8b106048f18e6fb9a5f8ec6a95346e76906e7e4e9ca15ec97e4f926159cb398",
+    "rar-test-files-16b785c/testfile.rar5.solid.cbr": "23ef370c58b7646d527106829410700ac314d86380b9c968a37066f39fe6c70b",
+    "rar-test-files-16b785c/expected/testfile.txt": "b2f51cd17b3cbe77f091f887d91110164a2cb5a5a9ebe828c44d655c83dca8eb",
+    "rar-test-files-16b785c/expected/testfile.jpg": "e514232511df1a4f4221a75c27523518c3c62a2fe6470fa56e430364428eecd1",
+    "rar-test-files-16b785c/expected/testfile.png": "fdda20984cc1591419ec4583e24e72e4dba39d0b96608253f853a2dfb238ad1a",
+    "mholt-archives-v0.1.5/test.part01.rar": "42804be55f3a26bcc9a1f3366c9940f33dfa85c6dbfff02883c4c2f14b5ed26f",
+    "mholt-archives-v0.1.5/test.part02.rar": "07639da22106be2aaa12e59651ea277bcb4aaffd021b9b40b0dc9e76b2649c20"
+  },
+  "platform_contract": "host GOOS/GOARCH is recorded; Windows symlink creation/metadata remains a native CI lane obligation",
+  "ordering_contract": "file callbacks preserve emission order; concurrent directory cases use worker_limit=1 and also include canonical_fragments",
+  "known_gaps": {
+    "SRC-003": "the current Go adapter protocol cannot distinguish an omitted buffer from an explicit non-nil zero-length buffer",
+    "SRC-012": "native Unix permission denial is covered; metadata TOCTOU still requires deterministic filesystem fault injection",
+    "SRC-013": "Windows raw-plus-slash allowlist fallback requires native Windows",
+    "SRC-016": "chained, dangling, and looping links are covered; an escaping-but-valid target requires a separately controlled parent fixture",
+    "SRC-017": "NFC/NFD and Windows drive/UNC/extended/mixed spellings are generated natively; Windows evidence requires the declared native workflow to run",
+    "SRC-018": "ambiguous multi-format registered-map iteration and formats absent from assigned fixtures remain unfrozen",
+    "SRC-022": "The pinned non-encrypted 7z codec profile plus Brotli, bzip2, gzip, LZ4, MinLZ, Snappy/S2, XZ, and Zstandard streams and compressed TARs are covered; RAR3/RAR5 ordinary and solid members are covered while password support is intentionally outside the source API",
+    "SRC-024": "nested zip/7z exercises non-seekable spooling, but temporary-file reclamation and spool ceilings are not externally observable here",
+    "SRC-025": "direct and directory corruption is frozen for TAR, ZIP, 7z, Brotli, bzip2, gzip, LZ4, MinLZ, Snappy/S2, XZ, Zstandard, LZIP, and zlib; encrypted RAR and unnamed-stream multi-volume failures are frozen while malformed RAR remains excluded because the pinned Go backend hangs",
+    "SRC-026": "worker-one bounded order is frozen; worker counts above one intentionally expose no stable emission order",
+    "SRC-027": "pre-cancellation matches the assigned upstream assertion; deterministic mid-flight cancellation needs an injectable cancellation probe",
+    "SRC-028": "source fingerprints and ignore merging are covered; baseline equivalence remains in the M8 session corpus",
+    "SRC-029": "Go size/depth gates are covered; Rust checked-overflow, expansion, entry, and spool limits are implementation obligations",
+    "SRC-030": "native path and permission overlays carry platform provenance; safe Rust crate boundaries and dependency audits are implementation evidence"
+  },
+  "excluded": [
+    "Git source semantics",
+    "Rust implementation",
+    "metadata TOCTOU fault injection"
+  ]
+}

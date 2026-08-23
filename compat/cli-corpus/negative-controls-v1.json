@@ -1,0 +1,144 @@
+{
+  "controls": [
+    {
+      "id": "MUT-CLI-CONFIG-LEVEL-1-2-SWAP",
+      "case_id": "CLI-BB-005",
+      "variant_id": "explicit-over-env",
+      "expected_failure_class": "selected-findings",
+      "observed_rejection_sha256": "9d1eabae8ed23297fccf99c836c4da8e16c3cc008151055e02301e9eb8147fe0"
+    },
+    {
+      "id": "MUT-CLI-REDACT-FOLLOWING-CONSUMED",
+      "case_id": "CLI-BB-018",
+      "variant_id": "following-positional",
+      "expected_failure_class": "safe-arity",
+      "observed_rejection_sha256": "edbaac9a29888826b8f1e30161066d3a4f69ac9ee0a359f2354d2797aca23993"
+    },
+    {
+      "id": "MUT-CLI-DIR-SURPLUS-REACHES-SOURCE",
+      "case_id": "CLI-BB-004",
+      "variant_id": "dir-surplus",
+      "expected_failure_class": "safe-arity",
+      "observed_rejection_sha256": "06324f2f94c9c3d7bc4d63d193b9e8b46b883d97582f695c8992a89c5bba49ef"
+    },
+    {
+      "id": "MUT-CLI-FORMAT-ONLY-WRITES",
+      "case_id": "CLI-BB-020",
+      "variant_id": "format-only",
+      "expected_failure_class": "dormant-report",
+      "observed_rejection_sha256": "b60100e34ac7a64868d2f43ed0aa8175cb892318b41899fe84971de1cf1a9a83"
+    },
+    {
+      "id": "MUT-CLI-STDOUT-INFERS-JSON",
+      "case_id": "CLI-BB-021",
+      "variant_id": "missing-format",
+      "expected_failure_class": "stdout-format",
+      "observed_rejection_sha256": "9039a5ffc808ea7647ab9679be7dcefb5725cb835746eea09461755acd85be2f"
+    },
+    {
+      "id": "MUT-CLI-TERMINAL-USES-LEAK-CODE",
+      "case_id": "CLI-BB-029",
+      "variant_id": "invalid-repository",
+      "expected_failure_class": "terminal-exit",
+      "observed_rejection_sha256": "9361ce457c368e392bb021a7b29a101a5aa9ec07ad3406fd153b2964f30125d9"
+    },
+    {
+      "id": "MUT-CLI-REPORT-AFTER-EXIT-SELECTION",
+      "case_id": "CLI-BB-029",
+      "variant_id": "invalid-repository",
+      "expected_failure_class": "report-before-exit",
+      "observed_rejection_sha256": "43a587bc584061c0f21607b16ec5b962429d61927aed72b8cc1507f833cf3ff7"
+    },
+    {
+      "id": "MUT-CLI-CONFIG-DISCLOSURE",
+      "case_id": "CLI-BB-009",
+      "variant_id": "malformed-inline-marker",
+      "expected_failure_class": "non-disclosure",
+      "observed_rejection_sha256": "40dbdb6f9620e79c01ad388e96067d1c37cc0bd5a081998d20ca466dad602184"
+    },
+    {
+      "id": "MUT-CLI-FAILED-SETUP-TRUNCATES",
+      "case_id": "CLI-BB-024",
+      "variant_id": "preexisting-later-setup-failure",
+      "expected_failure_class": "safe-preflight",
+      "observed_rejection_sha256": "2f8448b8139d2f6db746ae2ac75a7383aeaee6d18e75e8200121022f686f7272"
+    },
+    {
+      "id": "MUT-CLI-REPORT-OPEN-FAILURE-SUCCEEDS",
+      "case_id": "CLI-BB-024",
+      "variant_id": "report-open-directory",
+      "expected_failure_class": "report-open-failure",
+      "observed_rejection_sha256": "8ccf7fcacbb45a850e976de6dce06894f3e402030dcff162e6bb3ee3ed5d59e8"
+    },
+    {
+      "id": "MUT-CLI-HELP-FLAG-GRAMMAR-DROP",
+      "case_id": "CLI-BB-001",
+      "variant_id": "help",
+      "expected_failure_class": "help-golden",
+      "observed_rejection_sha256": "39c90f4a037f55663499a718732f9444b932450d2fd163d517b02301c5e6b6f5"
+    },
+    {
+      "id": "MUT-CLI-VERSION-PERSISTENT-REJECT",
+      "case_id": "CLI-BB-001",
+      "variant_id": "version-persistent-flag",
+      "expected_failure_class": "persistent-grammar",
+      "observed_rejection_sha256": "2dd16f1b6fa8d4de9bd43ce9cce0d8796a149689e96fd76833a74c4da2192cd6"
+    },
+    {
+      "id": "MUT-CLI-SHORT-ATTACHED-CONFIG-REJECT",
+      "case_id": "CLI-BB-032",
+      "variant_id": "short-attached-config",
+      "expected_failure_class": "shorthand-grammar",
+      "observed_rejection_sha256": "731519f44ee29401e18822b412029c35dc6eb0f243ec0e9faed35084b8aa3f42"
+    },
+    {
+      "id": "MUT-CLI-UPPERCASE-TEMPLATE-ACCEPT",
+      "case_id": "CLI-BB-023",
+      "variant_id": "raw-uppercase",
+      "expected_failure_class": "raw-template-grammar",
+      "observed_rejection_sha256": "1df5be0ddda3a712c252de05c0a7b3570f808fe8a092d72d9fb2bd7f41809819"
+    },
+    {
+      "id": "MUT-CLI-REPORT-BYTE-FLIP",
+      "case_id": "CLI-BB-002",
+      "variant_id": "dir",
+      "expected_failure_class": "report-bytes",
+      "observed_rejection_sha256": "0b3ae0763dc27c0131bdc477855322944c186dac2c7308ec2b972ccb9ae8f78c"
+    },
+    {
+      "id": "MUT-CLI-COMPLETE-FINDING-DROP",
+      "case_id": "CLI-BB-033",
+      "variant_id": "spaces-unicode",
+      "expected_failure_class": "complete-findings",
+      "observed_rejection_sha256": "81e9cc73f7cda36eb6cbf52fe4c408a2468c4b757464e46fac169d20abe3017c"
+    },
+    {
+      "id": "MUT-CLI-EXIT-NO-FINDING",
+      "case_id": "CLI-BB-019",
+      "variant_id": "no-finding",
+      "expected_failure_class": "exit",
+      "observed_rejection_sha256": "8396245fb089153af9e498019cc62f66bc9394bf850e2fa20e8b3b70e61a9400"
+    },
+    {
+      "id": "MUT-CLI-STDERR-SEVERITY",
+      "case_id": "CLI-BB-019",
+      "variant_id": "default",
+      "expected_failure_class": "stderr-severity",
+      "observed_rejection_sha256": "ffa4d321c947c307230316bea8ec6509f8fbb18b6bf513779d0e99a535a60511"
+    },
+    {
+      "id": "MUT-CLI-TIMEOUT-CHILD-NOT-REAPED",
+      "case_id": "CLI-BB-031",
+      "variant_id": "source-timeout",
+      "expected_failure_class": "process-cleanup",
+      "observed_rejection_sha256": "1a4bfff5ae2ac600113c644685f829580fd77ffc0ea9da459a1e1c6037e554d1"
+    },
+    {
+      "id": "MUT-CLI-OUTPUT-LIMIT-CHILD-NOT-REAPED",
+      "case_id": "CLI-BB-029",
+      "variant_id": "child-stderr-output-limit",
+      "expected_failure_class": "process-cleanup",
+      "observed_rejection_sha256": "e9ca072349837799c1e2592c7074bfdbca87e66566250cddf7e9745887057d1e"
+    }
+  ]
+}

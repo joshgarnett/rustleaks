@@ -1,0 +1,29 @@
+{
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "request_count": 34,
+  "outcome_count": 34,
+  "files": {
+    "README.md": {
+      "sha256": "8782a13e8456ed73058dbd4307f2709f030c2b2e5386ecf4446aef80c963cb51",
+      "bytes": 885
+    },
+    "requests-v1.jsonl": {
+      "sha256": "9b618a9c6cf1f95b9c3f04122eaf95d8aca9c1c3e863570c65c0a3f5a8c8c814",
+      "bytes": 8227
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "5396b3c80852f10a54c85bb4f8f380d4fa5e65a2a9af9a2be6ce4e682c3e477d",
+      "bytes": 187919
+    },
+    "coverage-v1.json": {
+      "sha256": "35d5241bb96138f4526465de5d3f5db5e3fbc554a6f597b160987ab50249d06c",
+      "bytes": 9893
+    },
+    "negative-controls-v1.json": {
+      "sha256": "00176d6456a1a1558876b05927a42654b060e4d33979d7988ae8457e1b2f95da",
+      "bytes": 1190
+    }
+  }
+}

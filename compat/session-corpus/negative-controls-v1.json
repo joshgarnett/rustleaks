@@ -1,0 +1,20 @@
+{
+  "pairs": [
+    {
+      "positive": "ignore-slash-positive-backslash-negative[0]",
+      "negative": "ignore-slash-positive-backslash-negative[1]"
+    },
+    {
+      "positive": "ignore-commit-exact-and-near-misses[0]",
+      "negative": "ignore-commit-exact-and-near-misses[2]"
+    },
+    {
+      "positive": "baseline-redaction-enabled",
+      "negative": "baseline-redaction-disabled-near-negative"
+    },
+    {
+      "positive": "baseline-equal",
+      "negative": "baseline-compared-description"
+    }
+  ]
+}

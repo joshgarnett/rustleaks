@@ -1,0 +1,11 @@
+# Every temporary supply-chain exception must include these fields. The local
+# gate rejects missing, expired, or unreferenced records before cargo-deny runs.
+schema = 1
+
+# [[exception]]
+# id = "SC-YYYY-NNN"
+# owner = "named maintainer or team"
+# rationale = "why the policy cannot yet be satisfied"
+# package = "crate-name@version"
+# policy = "advisory | ban | license | source"
+# expires = "YYYY-MM-DD"

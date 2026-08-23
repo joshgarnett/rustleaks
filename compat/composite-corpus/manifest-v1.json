@@ -1,0 +1,19 @@
+{
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "request_count": 182,
+  "outcome_count": 182,
+  "finding_count": 275,
+  "required_finding_count": 1623,
+  "behavior_count": 12,
+  "leaf_identity_count": 9,
+  "aggregator_identity_count": 2,
+  "files": {
+    "requests-v1.jsonl": "be01978f45cbeb6b180e4a28b3fa909c672f2690c8a3861e5088b4b09b5a531f",
+    "outcomes-v1.jsonl": "a39ba5ae9c7228ee2a19a9c16e11892c1bd9afa5d97f1a6ab9ab5ce1d52ad601",
+    "coverage-v1.json": "e0d3b738854524c3b9ce620022c286728c08d807a9ff1e4a11f30401a99c2149",
+    "negative-controls-v1.json": "69dc393a8dea2fec2b88211e5bdcd4dcfb0e916eb4a05647dc47fac690fba0da",
+    "README.md": "08ee8f56a273db11df074174938a0ec3430779021773784ae915a8ebe53aa174"
+  }
+}

@@ -1,0 +1,1453 @@
+{
+  "schema_version": 1,
+  "behavior_ids": [
+    {
+      "id": "AL-001",
+      "status": "observed",
+      "request_ids": [
+        "validate-empty",
+        "validate-dedup-idempotent",
+        "commit-validated-trim-case-hit-empty-payload",
+        "commit-invalid-byte-collapse"
+      ]
+    },
+    {
+      "id": "AL-002",
+      "status": "observed",
+      "request_ids": [
+        "commit-assert-hit-unvalidated",
+        "commit-assert-miss-unvalidated",
+        "commit-assert-empty-unvalidated",
+        "commit-validated-trim-case-hit-empty-payload",
+        "commit-validated-query-not-trimmed",
+        "commit-unvalidated-case-sensitive-payload",
+        "commit-unvalidated-case-miss",
+        "commit-invalid-byte-collapse"
+      ]
+    },
+    {
+      "id": "AL-003",
+      "status": "observed",
+      "request_ids": [
+        "path-assert-hit",
+        "path-assert-miss",
+        "path-combined-second-pattern",
+        "path-empty-pattern-validated",
+        "path-empty-pattern-unvalidated",
+        "path-empty-input",
+        "regex-combined-inline-flag-scope",
+        "path-invalid-byte-dot",
+        "base-AS-BASE-PATH-javascript-A-01",
+        "base-AS-BASE-PATH-javascript-A-02",
+        "base-AS-BASE-PATH-javascript-A-03",
+        "base-AS-BASE-PATH-javascript-A-04",
+        "base-AS-BASE-PATH-javascript-A-05",
+        "base-AS-BASE-PATH-javascript-A-06",
+        "base-AS-BASE-PATH-javascript-A-07",
+        "base-AS-BASE-PATH-javascript-A-08",
+        "base-AS-BASE-PATH-javascript-A-09",
+        "base-AS-BASE-PATH-python-A-01",
+        "base-AS-BASE-PATH-python-A-02",
+        "base-AS-BASE-PATH-python-A-03",
+        "base-AS-BASE-PATH-python-A-04",
+        "base-AS-BASE-PATH-python-A-05",
+        "base-AS-BASE-PATH-python-A-06",
+        "base-AS-BASE-PATH-python-A-07",
+        "base-AS-BASE-PATH-python-A-08",
+        "base-AS-BASE-PATH-python-A-09",
+        "base-AS-BASE-PATH-python-A-10",
+        "base-AS-BASE-PATH-python-A-11",
+        "base-AS-BASE-PATH-python-A-12",
+        "base-AS-BASE-PATH-python-A-13",
+        "base-AS-BASE-PATH-python-A-14",
+        "base-AS-BASE-PATH-python-A-15"
+      ]
+    },
+    {
+      "id": "AL-004",
+      "status": "observed",
+      "request_ids": [
+        "regex-assert-hit",
+        "regex-assert-miss",
+        "regex-combined-inline-flag-scope",
+        "regex-empty-pattern-validated",
+        "regex-empty-pattern-unvalidated",
+        "regex-invalid-byte-dot",
+        "base-AS-BASE-RX-general-placeholders-A-01",
+        "base-AS-BASE-RX-general-placeholders-A-02",
+        "base-AS-BASE-RX-general-placeholders-A-03",
+        "base-AS-BASE-RX-general-placeholders-A-04",
+        "base-AS-BASE-RX-general-placeholders-A-05",
+        "base-AS-BASE-RX-general-placeholders-A-06",
+        "base-AS-BASE-RX-repeated-characters-A-01",
+        "base-AS-BASE-RX-repeated-characters-A-02",
+        "base-AS-BASE-RX-repeated-characters-A-03",
+        "base-AS-BASE-RX-repeated-characters-N-01",
+        "base-AS-BASE-RX-repeated-characters-N-02",
+        "base-AS-BASE-RX-environment-variables-A-01",
+        "base-AS-BASE-RX-environment-variables-A-02",
+        "base-AS-BASE-RX-environment-variables-A-03",
+        "base-AS-BASE-RX-environment-variables-A-04",
+        "base-AS-BASE-RX-environment-variables-N-01",
+        "base-AS-BASE-RX-environment-variables-N-02",
+        "base-AS-BASE-RX-environment-variables-N-03",
+        "base-AS-BASE-RX-ansible-A-01",
+        "base-AS-BASE-RX-ansible-A-02",
+        "base-AS-BASE-RX-ansible-A-03",
+        "base-AS-BASE-RX-ansible-A-04",
+        "base-AS-BASE-RX-ansible-A-05",
+        "base-AS-BASE-RX-github-actions-A-01",
+        "base-AS-BASE-RX-github-actions-A-02",
+        "base-AS-BASE-RX-github-actions-A-03",
+        "base-AS-BASE-RX-github-actions-A-04",
+        "base-AS-BASE-RX-github-actions-A-05",
+        "base-AS-BASE-RX-github-actions-A-06",
+        "base-AS-BASE-RX-github-actions-A-07",
+        "base-AS-BASE-RX-github-actions-A-08",
+        "base-AS-BASE-RX-github-actions-A-09",
+        "base-AS-BASE-RX-github-actions-A-10",
+        "base-AS-BASE-RX-nuget-A-01",
+        "base-AS-BASE-RX-nuget-A-02",
+        "base-AS-BASE-RX-go-fmt-A-01",
+        "base-AS-BASE-RX-go-fmt-A-02",
+        "base-AS-BASE-RX-go-fmt-A-03",
+        "base-AS-BASE-RX-go-fmt-A-04",
+        "base-AS-BASE-RX-go-fmt-A-05",
+        "base-AS-BASE-RX-go-fmt-A-06",
+        "base-AS-BASE-RX-go-fmt-A-07",
+        "base-AS-BASE-RX-go-fmt-A-08",
+        "base-AS-BASE-RX-go-fmt-A-09",
+        "base-AS-BASE-RX-go-fmt-A-10",
+        "base-AS-BASE-RX-go-fmt-A-11",
+        "base-AS-BASE-RX-go-fmt-A-12",
+        "base-AS-BASE-RX-go-fmt-A-13",
+        "base-AS-BASE-RX-go-fmt-A-14",
+        "base-AS-BASE-RX-go-fmt-A-15",
+        "base-AS-BASE-RX-go-fmt-A-16",
+        "base-AS-BASE-RX-go-fmt-A-17",
+        "base-AS-BASE-RX-go-fmt-A-18",
+        "base-AS-BASE-RX-go-fmt-A-19",
+        "base-AS-BASE-RX-go-fmt-A-20",
+        "base-AS-BASE-RX-go-fmt-A-21",
+        "base-AS-BASE-RX-go-fmt-A-22",
+        "base-AS-BASE-RX-go-fmt-A-23",
+        "base-AS-BASE-RX-go-fmt-A-24",
+        "base-AS-BASE-RX-go-fmt-A-25",
+        "base-AS-BASE-RX-python-fmt-A-01",
+        "base-AS-BASE-RX-python-fmt-A-02",
+        "base-AS-BASE-RX-python-fmt-A-03",
+        "base-AS-BASE-RX-ucd-A-01",
+        "base-AS-BASE-RX-ucd-A-02",
+        "base-AS-BASE-RX-ucd-N-01",
+        "base-AS-BASE-RX-file-paths-A-01",
+        "base-AS-BASE-RX-file-paths-A-02",
+        "fixture-generic-rule-regex",
+        "regex-target-secret",
+        "regex-target-match",
+        "regex-target-line",
+        "regex-target-secret-negative",
+        "regex-target-match-negative",
+        "regex-target-line-negative"
+      ]
+    },
+    {
+      "id": "AL-005",
+      "status": "observed",
+      "request_ids": [
+        "stopword-validated-case-hit-payload",
+        "stopword-validated-miss",
+        "stopword-empty-validated",
+        "stopword-empty-unvalidated",
+        "stopword-invalid-byte-replacement",
+        "stopword-nonascii-simple-lower",
+        "stopword-overlap-direct-before-suffix",
+        "stopword-unvalidated-config-order",
+        "stopword-ignores-regex-target"
+      ]
+    },
+    {
+      "id": "AL-006",
+      "status": "observed",
+      "request_ids": [
+        "fixture-rule-commit",
+        "fixture-rule-path",
+        "commit-and-path-not",
+        "commit-and-path-allowed",
+        "commit-or-path-allowed",
+        "commit-allowed",
+        "path-allowed",
+        "unix-unix-or",
+        "unix-windows-or",
+        "windows-unix-or",
+        "windows-windows-or",
+        "path-only-or-path-suppressed",
+        "or-commit-miss-regex-hit",
+        "or-path-miss-stopword-hit",
+        "windows-only-path-early-guard"
+      ]
+    },
+    {
+      "id": "AL-007",
+      "status": "observed",
+      "request_ids": [
+        "fixture-rule-regex",
+        "fixture-global-regex",
+        "fixture-generic-rule-regex",
+        "regex-or-stop-allowed",
+        "regex-allowed",
+        "stopword-allowed",
+        "regex-target-secret",
+        "regex-target-match",
+        "or-commit-miss-regex-hit",
+        "or-path-miss-stopword-hit",
+        "path-only-or-regex-reports"
+      ]
+    },
+    {
+      "id": "AL-008",
+      "status": "observed",
+      "request_ids": [
+        "fixture-global-and-partial",
+        "fixture-global-and-path-partial",
+        "fixture-global-and-all",
+        "commit-and-path-not",
+        "commit-and-path-regex-not",
+        "commit-and-path-allowed",
+        "regex-and-stop-not",
+        "regex-stop-nongit-other",
+        "regex-stop-wrong-other",
+        "regex-and-stop-allowed",
+        "all-criteria-allowed",
+        "unix-unix-and",
+        "unix-windows-and",
+        "windows-unix-and",
+        "windows-windows-and",
+        "path-only-and-finding-criterion-reports",
+        "path-only-and-path-only-suppressed",
+        "path-plus-regex-and-path-stopword",
+        "fixture-extend_rule_allowlist_or",
+        "fixture-extend_rule_allowlist_and"
+      ]
+    },
+    {
+      "id": "AL-009",
+      "status": "observed",
+      "request_ids": [
+        "fixture-global-and-partial",
+        "fixture-global-and-path-partial",
+        "fixture-global-and-all",
+        "fixture-global-regex",
+        "targeted-global-two-of-three-rules",
+        "multiple-allowlists-or-of-tables",
+        "global-targeted-rule-precedence",
+        "duplicate-matches-preserved"
+      ]
+    },
+    {
+      "id": "AL-010",
+      "status": "observed",
+      "request_ids": [
+        "targeted-global-two-of-three-rules",
+        "global-targeted-rule-precedence",
+        "extended-base-targeted-global-discarded",
+        "outer-target-attaches-to-base-rule"
+      ]
+    },
+    {
+      "id": "AL-011",
+      "status": "observed",
+      "request_ids": [
+        "unix-unix-and",
+        "unix-unix-or",
+        "unix-windows-and",
+        "unix-windows-or",
+        "windows-unix-and",
+        "windows-unix-or",
+        "windows-windows-and",
+        "windows-windows-or",
+        "windows-only-path-early-guard"
+      ]
+    },
+    {
+      "id": "AL-012",
+      "status": "observed",
+      "request_ids": [
+        "fixture-generic-rule-regex",
+        "allow-marker-before-finding-allowlist",
+        "allow-marker-disabled-then-rule-allowlist",
+        "regex-target-secret-negative",
+        "regex-target-match-negative",
+        "regex-target-line-negative",
+        "line-target-raw-multiline",
+        "stopword-ignores-regex-target",
+        "entropy-before-allowlist"
+      ]
+    },
+    {
+      "id": "AL-013",
+      "status": "observed",
+      "request_ids": [
+        "fixture-rule-path",
+        "path-only-or-path-suppressed",
+        "path-only-and-finding-criterion-reports",
+        "path-only-or-regex-reports",
+        "path-only-and-path-only-suppressed",
+        "path-plus-regex-and-path-stopword",
+        "entropy-before-allowlist"
+      ]
+    },
+    {
+      "id": "AL-014",
+      "status": "future-m7-ordering-cases-frozen-no-positive-composite-claim",
+      "request_ids": [
+        "composite-primary-allowlisted-future",
+        "composite-aux-allowlisted-future",
+        "composite-inherited-primary-bypasses-projection"
+      ]
+    },
+    {
+      "id": "AL-015",
+      "status": "raw-line-observed-decoded-line-deferred-m6",
+      "request_ids": [
+        "regex-target-line",
+        "line-target-raw-multiline"
+      ]
+    },
+    {
+      "id": "AL-016",
+      "status": "observed",
+      "request_ids": [
+        "fixture-rule-commit",
+        "fixture-rule-extend-default",
+        "extended-base-targeted-global-discarded",
+        "outer-target-attaches-to-base-rule",
+        "fixture-extend_rule_allowlist_or",
+        "fixture-extend_rule_allowlist_and"
+      ]
+    },
+    {
+      "id": "AL-017",
+      "status": "observed",
+      "request_ids": [
+        "validate-empty",
+        "commit-assert-empty-unvalidated",
+        "path-empty-pattern-validated",
+        "path-empty-pattern-unvalidated",
+        "path-empty-input",
+        "regex-empty-pattern-validated",
+        "regex-empty-pattern-unvalidated",
+        "stopword-empty-validated",
+        "stopword-empty-unvalidated",
+        "stopword-unvalidated-config-order",
+        "nil-receiver-commit",
+        "nil-receiver-path",
+        "nil-receiver-regex",
+        "nil-receiver-stopword"
+      ]
+    },
+    {
+      "id": "AL-018",
+      "status": "observed",
+      "request_ids": [
+        "validate-dedup-idempotent",
+        "commit-validated-trim-case-hit-empty-payload",
+        "commit-validated-query-not-trimmed",
+        "commit-unvalidated-case-sensitive-payload",
+        "regex-invalid-byte-dot",
+        "stopword-validated-case-hit-payload",
+        "stopword-invalid-byte-replacement",
+        "stopword-nonascii-simple-lower",
+        "stopword-overlap-direct-before-suffix",
+        "commit-invalid-byte-collapse",
+        "path-invalid-byte-dot",
+        "base-AS-BASE-RX-general-placeholders-A-01",
+        "base-AS-BASE-RX-general-placeholders-A-02",
+        "base-AS-BASE-RX-general-placeholders-A-03",
+        "base-AS-BASE-RX-general-placeholders-A-04",
+        "base-AS-BASE-RX-general-placeholders-A-05",
+        "base-AS-BASE-RX-general-placeholders-A-06",
+        "base-AS-BASE-RX-repeated-characters-A-01",
+        "base-AS-BASE-RX-repeated-characters-A-02",
+        "base-AS-BASE-RX-repeated-characters-A-03",
+        "base-AS-BASE-RX-repeated-characters-N-01",
+        "base-AS-BASE-RX-repeated-characters-N-02",
+        "base-AS-BASE-RX-environment-variables-A-01",
+        "base-AS-BASE-RX-environment-variables-A-02",
+        "base-AS-BASE-RX-environment-variables-A-03",
+        "base-AS-BASE-RX-environment-variables-A-04",
+        "base-AS-BASE-RX-environment-variables-N-01",
+        "base-AS-BASE-RX-environment-variables-N-02",
+        "base-AS-BASE-RX-environment-variables-N-03",
+        "base-AS-BASE-RX-ansible-A-01",
+        "base-AS-BASE-RX-ansible-A-02",
+        "base-AS-BASE-RX-ansible-A-03",
+        "base-AS-BASE-RX-ansible-A-04",
+        "base-AS-BASE-RX-ansible-A-05",
+        "base-AS-BASE-RX-github-actions-A-01",
+        "base-AS-BASE-RX-github-actions-A-02",
+        "base-AS-BASE-RX-github-actions-A-03",
+        "base-AS-BASE-RX-github-actions-A-04",
+        "base-AS-BASE-RX-github-actions-A-05",
+        "base-AS-BASE-RX-github-actions-A-06",
+        "base-AS-BASE-RX-github-actions-A-07",
+        "base-AS-BASE-RX-github-actions-A-08",
+        "base-AS-BASE-RX-github-actions-A-09",
+        "base-AS-BASE-RX-github-actions-A-10",
+        "base-AS-BASE-RX-nuget-A-01",
+        "base-AS-BASE-RX-nuget-A-02",
+        "base-AS-BASE-RX-go-fmt-A-01",
+        "base-AS-BASE-RX-go-fmt-A-02",
+        "base-AS-BASE-RX-go-fmt-A-03",
+        "base-AS-BASE-RX-go-fmt-A-04",
+        "base-AS-BASE-RX-go-fmt-A-05",
+        "base-AS-BASE-RX-go-fmt-A-06",
+        "base-AS-BASE-RX-go-fmt-A-07",
+        "base-AS-BASE-RX-go-fmt-A-08",
+        "base-AS-BASE-RX-go-fmt-A-09",
+        "base-AS-BASE-RX-go-fmt-A-10",
+        "base-AS-BASE-RX-go-fmt-A-11",
+        "base-AS-BASE-RX-go-fmt-A-12",
+        "base-AS-BASE-RX-go-fmt-A-13",
+        "base-AS-BASE-RX-go-fmt-A-14",
+        "base-AS-BASE-RX-go-fmt-A-15",
+        "base-AS-BASE-RX-go-fmt-A-16",
+        "base-AS-BASE-RX-go-fmt-A-17",
+        "base-AS-BASE-RX-go-fmt-A-18",
+        "base-AS-BASE-RX-go-fmt-A-19",
+        "base-AS-BASE-RX-go-fmt-A-20",
+        "base-AS-BASE-RX-go-fmt-A-21",
+        "base-AS-BASE-RX-go-fmt-A-22",
+        "base-AS-BASE-RX-go-fmt-A-23",
+        "base-AS-BASE-RX-go-fmt-A-24",
+        "base-AS-BASE-RX-go-fmt-A-25",
+        "base-AS-BASE-RX-python-fmt-A-01",
+        "base-AS-BASE-RX-python-fmt-A-02",
+        "base-AS-BASE-RX-python-fmt-A-03",
+        "base-AS-BASE-RX-ucd-A-01",
+        "base-AS-BASE-RX-ucd-A-02",
+        "base-AS-BASE-RX-ucd-N-01",
+        "base-AS-BASE-RX-file-paths-A-01",
+        "base-AS-BASE-RX-file-paths-A-02",
+        "base-AS-BASE-PATH-javascript-A-01",
+        "base-AS-BASE-PATH-javascript-A-02",
+        "base-AS-BASE-PATH-javascript-A-03",
+        "base-AS-BASE-PATH-javascript-A-04",
+        "base-AS-BASE-PATH-javascript-A-05",
+        "base-AS-BASE-PATH-javascript-A-06",
+        "base-AS-BASE-PATH-javascript-A-07",
+        "base-AS-BASE-PATH-javascript-A-08",
+        "base-AS-BASE-PATH-javascript-A-09",
+        "base-AS-BASE-PATH-python-A-01",
+        "base-AS-BASE-PATH-python-A-02",
+        "base-AS-BASE-PATH-python-A-03",
+        "base-AS-BASE-PATH-python-A-04",
+        "base-AS-BASE-PATH-python-A-05",
+        "base-AS-BASE-PATH-python-A-06",
+        "base-AS-BASE-PATH-python-A-07",
+        "base-AS-BASE-PATH-python-A-08",
+        "base-AS-BASE-PATH-python-A-09",
+        "base-AS-BASE-PATH-python-A-10",
+        "base-AS-BASE-PATH-python-A-11",
+        "base-AS-BASE-PATH-python-A-12",
+        "base-AS-BASE-PATH-python-A-13",
+        "base-AS-BASE-PATH-python-A-14",
+        "base-AS-BASE-PATH-python-A-15",
+        "commit-and-path-not",
+        "commit-and-path-regex-not",
+        "commit-and-path-allowed",
+        "commit-or-path-allowed",
+        "commit-allowed",
+        "path-allowed",
+        "regex-and-stop-not",
+        "regex-stop-nongit-other",
+        "regex-stop-wrong-other",
+        "regex-and-stop-allowed",
+        "all-criteria-allowed",
+        "regex-or-stop-allowed",
+        "regex-allowed",
+        "stopword-allowed",
+        "unix-unix-and",
+        "unix-unix-or",
+        "unix-windows-and",
+        "unix-windows-or",
+        "windows-unix-and",
+        "windows-unix-or",
+        "windows-windows-and",
+        "windows-windows-or",
+        "duplicate-matches-preserved"
+      ]
+    }
+  ],
+  "assertion_ids": [
+    {
+      "id": "AS-CFG-COMMIT-01",
+      "kind": "leaf",
+      "request_ids": [
+        "commit-assert-hit-unvalidated"
+      ]
+    },
+    {
+      "id": "AS-CFG-COMMIT-02",
+      "kind": "leaf",
+      "request_ids": [
+        "commit-assert-miss-unvalidated"
+      ]
+    },
+    {
+      "id": "AS-CFG-COMMIT-03",
+      "kind": "leaf",
+      "request_ids": [
+        "commit-assert-empty-unvalidated"
+      ]
+    },
+    {
+      "id": "AS-CFG-PATH-01",
+      "kind": "leaf",
+      "request_ids": [
+        "path-assert-hit"
+      ]
+    },
+    {
+      "id": "AS-CFG-PATH-02",
+      "kind": "leaf",
+      "request_ids": [
+        "path-assert-miss"
+      ]
+    },
+    {
+      "id": "AS-CFG-REGEX-01",
+      "kind": "leaf",
+      "request_ids": [
+        "regex-assert-hit"
+      ]
+    },
+    {
+      "id": "AS-CFG-REGEX-02",
+      "kind": "leaf",
+      "request_ids": [
+        "regex-assert-miss"
+      ]
+    },
+    {
+      "id": "AS-CFG-VALIDATE-DEDUP",
+      "kind": "leaf",
+      "request_ids": [
+        "validate-dedup-idempotent"
+      ]
+    },
+    {
+      "id": "AS-CFG-VALIDATE-EMPTY",
+      "kind": "leaf",
+      "request_ids": [
+        "validate-empty"
+      ]
+    }
+  ],
+  "related_assertion_ids": [
+    {
+      "id": "AS-BASE-PATH-javascript-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-05",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-05"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-06",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-06"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-07",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-07"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-08",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-08"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-javascript-A-09",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-javascript-A-09"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-05",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-05"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-06",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-06"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-07",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-07"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-08",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-08"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-09",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-09"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-10",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-10"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-11",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-11"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-12",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-12"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-13",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-13"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-14",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-14"
+      ]
+    },
+    {
+      "id": "AS-BASE-PATH-python-A-15",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-PATH-python-A-15"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ansible-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ansible-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ansible-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ansible-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ansible-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ansible-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ansible-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ansible-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ansible-A-05",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ansible-A-05"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-N-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-N-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-N-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-N-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-environment-variables-N-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-environment-variables-N-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-file-paths-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-file-paths-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-file-paths-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-file-paths-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-general-placeholders-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-general-placeholders-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-general-placeholders-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-general-placeholders-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-general-placeholders-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-general-placeholders-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-general-placeholders-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-general-placeholders-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-general-placeholders-A-05",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-general-placeholders-A-05"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-general-placeholders-A-06",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-general-placeholders-A-06"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-05",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-05"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-06",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-06"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-07",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-07"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-08",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-08"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-09",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-09"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-github-actions-A-10",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-github-actions-A-10"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-04",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-04"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-05",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-05"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-06",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-06"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-07",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-07"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-08",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-08"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-09",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-09"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-10",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-10"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-11",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-11"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-12",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-12"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-13",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-13"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-14",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-14"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-15",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-15"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-16",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-16"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-17",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-17"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-18",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-18"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-19",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-19"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-20",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-20"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-21",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-21"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-22",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-22"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-23",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-23"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-24",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-24"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-go-fmt-A-25",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-go-fmt-A-25"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-nuget-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-nuget-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-nuget-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-nuget-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-python-fmt-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-python-fmt-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-python-fmt-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-python-fmt-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-python-fmt-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-python-fmt-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-repeated-characters-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-repeated-characters-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-repeated-characters-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-repeated-characters-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-repeated-characters-A-03",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-repeated-characters-A-03"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-repeated-characters-N-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-repeated-characters-N-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-repeated-characters-N-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-repeated-characters-N-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ucd-A-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ucd-A-01"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ucd-A-02",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ucd-A-02"
+      ]
+    },
+    {
+      "id": "AS-BASE-RX-ucd-N-01",
+      "kind": "related-base-allowlist-leaf",
+      "request_ids": [
+        "base-AS-BASE-RX-ucd-N-01"
+      ]
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TM-0028",
+      "kind": "assertion-leaf-aggregator",
+      "direct_request_ids": [
+
+      ]
+    },
+    {
+      "id": "TM-0032",
+      "kind": "assertion-leaf-aggregator",
+      "direct_request_ids": [
+
+      ]
+    },
+    {
+      "id": "TM-0033",
+      "kind": "assertion-leaf-aggregator",
+      "direct_request_ids": [
+
+      ]
+    },
+    {
+      "id": "TM-0072",
+      "kind": "assertion-leaf-aggregator",
+      "direct_request_ids": [
+
+      ]
+    },
+    {
+      "id": "TM-0101",
+      "kind": "nested-test-aggregator",
+      "direct_request_ids": [
+
+      ]
+    },
+    {
+      "id": "TM-0155",
+      "kind": "nested-test-aggregator",
+      "direct_request_ids": [
+
+      ]
+    },
+    {
+      "id": "TM-0074",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-rule-commit"
+      ]
+    },
+    {
+      "id": "TM-0075",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-rule-path"
+      ]
+    },
+    {
+      "id": "TM-0076",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-rule-extend-default"
+      ]
+    },
+    {
+      "id": "TM-0077",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-rule-regex"
+      ]
+    },
+    {
+      "id": "TM-0085",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-global-and-partial"
+      ]
+    },
+    {
+      "id": "TM-0086",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-global-and-path-partial"
+      ]
+    },
+    {
+      "id": "TM-0087",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-global-and-all"
+      ]
+    },
+    {
+      "id": "TM-0088",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-global-regex"
+      ]
+    },
+    {
+      "id": "TM-0089",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "fixture-generic-rule-regex"
+      ]
+    },
+    {
+      "id": "TM-0102",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "commit-and-path-not"
+      ]
+    },
+    {
+      "id": "TM-0103",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "commit-and-path-regex-not"
+      ]
+    },
+    {
+      "id": "TM-0104",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "commit-and-path-allowed"
+      ]
+    },
+    {
+      "id": "TM-0105",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "commit-or-path-allowed"
+      ]
+    },
+    {
+      "id": "TM-0106",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "commit-allowed"
+      ]
+    },
+    {
+      "id": "TM-0107",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "path-allowed"
+      ]
+    },
+    {
+      "id": "TM-0108",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "regex-and-stop-not"
+      ]
+    },
+    {
+      "id": "TM-0109",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "regex-stop-nongit-other"
+      ]
+    },
+    {
+      "id": "TM-0110",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "regex-stop-wrong-other"
+      ]
+    },
+    {
+      "id": "TM-0111",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "regex-and-stop-allowed"
+      ]
+    },
+    {
+      "id": "TM-0112",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "all-criteria-allowed"
+      ]
+    },
+    {
+      "id": "TM-0113",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "regex-or-stop-allowed"
+      ]
+    },
+    {
+      "id": "TM-0114",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "regex-allowed"
+      ]
+    },
+    {
+      "id": "TM-0115",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "stopword-allowed"
+      ]
+    },
+    {
+      "id": "TM-0156",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "unix-unix-and"
+      ]
+    },
+    {
+      "id": "TM-0157",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "unix-unix-or"
+      ]
+    },
+    {
+      "id": "TM-0158",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "unix-windows-and"
+      ]
+    },
+    {
+      "id": "TM-0159",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "unix-windows-or"
+      ]
+    },
+    {
+      "id": "TM-0160",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "windows-unix-and"
+      ]
+    },
+    {
+      "id": "TM-0161",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "windows-unix-or"
+      ]
+    },
+    {
+      "id": "TM-0162",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "windows-windows-and"
+      ]
+    },
+    {
+      "id": "TM-0163",
+      "kind": "nested-test-leaf",
+      "direct_request_ids": [
+        "windows-windows-or"
+      ]
+    }
+  ]
+}

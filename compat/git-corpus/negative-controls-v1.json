@@ -1,0 +1,40 @@
+{
+  "protocol_version": 1,
+  "controls": [
+    {
+      "id": "shared-fixture-mutation",
+      "rejected": true,
+      "reason": "all repository operations occur only after a recursive temporary copy"
+    },
+    {
+      "id": "shell-log-options",
+      "rejected": true,
+      "reason": "custom options are literal space-split argv, never shell parsed"
+    },
+    {
+      "id": "native-git-reimplementation",
+      "rejected": true,
+      "reason": "the corpus first freezes exact external Git behavior"
+    },
+    {
+      "id": "silent-stderr-normalization",
+      "rejected": true,
+      "reason": "unexpected stderr remains one generic structured issue"
+    },
+    {
+      "id": "force-stale-default-golden",
+      "rejected": true,
+      "reason": "live pinned output is 1,477 bytes; the 907-byte file predates commit 53cd7a3c"
+    },
+    {
+      "id": "force-stale-foo-golden",
+      "rejected": true,
+      "reason": "live pinned output is 786 bytes; the 216-byte file predates commit 53cd7a3c"
+    },
+    {
+      "id": "force-stale-archive-count",
+      "rejected": true,
+      "reason": "live pinned archive detection returns 16 findings, not the earlier estimate of 15"
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy,rustfmt
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-targets --all-features
+      - run: cargo test --workspace --all-targets --no-default-features
+      - name: Exercise native source and archive adapters
+        run: |
+          cargo test -p rustleaks-sources --all-targets --all-features
+          cargo test -p rustleaks-sources --all-targets --no-default-features
+      - run: cargo doc --workspace --all-features --no-deps
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - run: cargo check --workspace --all-targets
+      - run: cargo check --workspace --all-targets --all-features
+
+  pinned-oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rustleaks
+      - uses: actions/checkout@v4
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.0
+          cache-dependency-path: gitleaks/go.sum
+      - name: Verify pinned revision and corpus
+        working-directory: rustleaks
+        run: |
+          cargo xtask manifest-check
+          cargo xtask fixture-check
+          cargo xtask config-check
+          cargo xtask regex-check
+          cargo xtask source-check
+          cargo xtask git-check
+          cargo xtask report-check
+          cargo xtask cli-check
+          cargo xtask oracle generate --check
+      - name: Run upstream tests repeatedly
+        working-directory: gitleaks
+        run: go test -count=10 ./...
+      - name: Run upstream race detector
+        working-directory: gitleaks
+        run: go test -race ./...
+      - name: Reproduce embedded default configuration twice
+        working-directory: gitleaks/cmd/generate/config
+        run: |
+          go run . "$RUNNER_TEMP/gitleaks-generated-1.toml"
+          go run . "$RUNNER_TEMP/gitleaks-generated-2.toml"
+          cmp "$RUNNER_TEMP/gitleaks-generated-1.toml" ../../../config/gitleaks.toml
+          cmp "$RUNNER_TEMP/gitleaks-generated-2.toml" ../../../config/gitleaks.toml
+
+  native-source-git-oracle:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rustleaks
+      - uses: actions/checkout@v4
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.0
+          cache-dependency-path: gitleaks/go.sum
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - name: Generate and replay the native source, Git, report, and CLI oracles
+        working-directory: rustleaks
+        env:
+          RUSTLEAKS_SOURCE_CORPUS_OUTPUT: ${{ runner.temp }}/source-corpus
+          RUSTLEAKS_SOURCE_CORPUS: ${{ runner.temp }}/source-corpus
+          RUSTLEAKS_GIT_CORPUS_OUTPUT: ${{ runner.temp }}/git-corpus
+          RUSTLEAKS_GIT_CORPUS: ${{ runner.temp }}/git-corpus
+          RUSTLEAKS_REPORT_CORPUS_OUTPUT: ${{ runner.temp }}/report-corpus
+          RUSTLEAKS_REPORT_CORPUS: ${{ runner.temp }}/report-corpus
+          RUSTLEAKS_CLI_CORPUS_OUTPUT: ${{ runner.temp }}/cli-corpus
+        run: |
+          ruby compat/generate_source_corpus.rb
+          ruby compat/generate_git_corpus.rb
+          ruby compat/generate_report_corpus.rb
+          ruby compat/generate_cli_corpus.rb
+          cargo test -p rustleaks-sources --all-features --test source_corpus
+          cargo test -p rustleaks-sources --all-features --test git_corpus --test git_sources --test git_scm
+          cargo test -p rustleaks-report
+          cargo test -p rustleaks-cli --all-features

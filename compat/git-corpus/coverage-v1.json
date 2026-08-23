@@ -1,0 +1,452 @@
+{
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "fixture_tree_sha256": "eb313dd4364adc7fea158435a817287d655d566ad23cba6dda8a47e2a47f2d64",
+  "git_intention_ids": [
+    "GIT-INT-001",
+    "GIT-INT-002",
+    "GIT-INT-003",
+    "GIT-INT-004",
+    "GIT-INT-005",
+    "GIT-INT-006",
+    "GIT-INT-007"
+  ],
+  "behavior_ids": [
+    "GIT-001",
+    "GIT-002",
+    "GIT-003",
+    "GIT-004",
+    "GIT-005",
+    "GIT-006",
+    "GIT-007",
+    "GIT-008",
+    "GIT-009",
+    "GIT-010",
+    "GIT-011",
+    "GIT-013",
+    "GIT-014",
+    "GIT-015",
+    "GIT-016",
+    "GIT-017",
+    "GIT-018",
+    "GIT-019",
+    "GIT-023"
+  ],
+  "behavior_definitions": {
+    "GIT-001": "Default history argv is exact and shell-free.",
+    "GIT-002": "Nonempty raw log options use literal ASCII-space splitting, including empty and quoted tokens.",
+    "GIT-003": "Working-tree/staged argv and final dot pathspec are exact; untracked files are absent.",
+    "GIT-004": "stdout is parsed as bytes into ordered files/hunks; asynchronous parse truncation needs a safe disposition.",
+    "GIT-005": "Raw contains only compacted added-line bytes and StartLine is hunk NewPosition.",
+    "GIT-006": "No-newline, hunk deletion, and whole-file deletion distinctions remain exact.",
+    "GIT-007": "Git logical paths remain byte preserving.",
+    "GIT-008": "Nonarchive binaries skip and filename-recognized binary archives scan the selected blob.",
+    "GIT-009": "History uses commit:path and empty-commit diff archives use index :path.",
+    "GIT-010": "History metadata and diff-only zero metadata are exact.",
+    "GIT-011": "The source-level commit allowlist attempt is a no-op.",
+    "GIT-013": "stderr whitelist and one-generic-issue behavior have an explicit safe overflow disposition.",
+    "GIT-014": "Rust must not silently lose child exit, parser, kill, wait, or reap outcomes.",
+    "GIT-015": "Cancellation stops process/blob/archive work and joins helpers before return.",
+    "GIT-016": "Remote discovery argv, directory, and no-platform behavior are exact.",
+    "GIT-017": "Remote normalization, userinfo removal, no-remote errors, and first-remote selection are exact.",
+    "GIT-018": "Platform parsing and host inference use the closed pinned mapping.",
+    "GIT-019": "SCM links preserve pinned template/path/anchor behavior.",
+    "GIT-023": "GIT-INT-001..007 use isolated complete copies and preserve shared fixture bytes."
+  },
+  "cases": [
+    {
+      "id": "int-default-log",
+      "git_intention_ids": [
+        "GIT-INT-001"
+      ],
+      "behavior_ids": [
+        "GIT-001",
+        "GIT-004",
+        "GIT-005",
+        "GIT-006",
+        "GIT-007",
+        "GIT-010",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "int-all-foo-log",
+      "git_intention_ids": [
+        "GIT-INT-002"
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-004",
+        "GIT-005",
+        "GIT-006",
+        "GIT-007",
+        "GIT-010",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "int-working-tree-diff",
+      "git_intention_ids": [
+        "GIT-INT-003"
+      ],
+      "behavior_ids": [
+        "GIT-003",
+        "GIT-005",
+        "GIT-006",
+        "GIT-010",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "int-default-findings",
+      "git_intention_ids": [
+        "GIT-INT-004"
+      ],
+      "behavior_ids": [
+        "GIT-001",
+        "GIT-004",
+        "GIT-005",
+        "GIT-006",
+        "GIT-007",
+        "GIT-010",
+        "GIT-016",
+        "GIT-017",
+        "GIT-018",
+        "GIT-019",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "int-all-foo-findings",
+      "git_intention_ids": [
+        "GIT-INT-005"
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-004",
+        "GIT-005",
+        "GIT-006",
+        "GIT-007",
+        "GIT-010",
+        "GIT-016",
+        "GIT-017",
+        "GIT-018",
+        "GIT-019",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "int-archive-findings",
+      "git_intention_ids": [
+        "GIT-INT-006"
+      ],
+      "behavior_ids": [
+        "GIT-001",
+        "GIT-004",
+        "GIT-008",
+        "GIT-009",
+        "GIT-010",
+        "GIT-015",
+        "GIT-016",
+        "GIT-017",
+        "GIT-018",
+        "GIT-019",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "int-staged-findings",
+      "git_intention_ids": [
+        "GIT-INT-007"
+      ],
+      "behavior_ids": [
+        "GIT-003",
+        "GIT-004",
+        "GIT-005",
+        "GIT-006",
+        "GIT-010",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "log-options-double-space",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-013"
+      ]
+    },
+    {
+      "id": "log-options-leading-trailing-space",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-013"
+      ]
+    },
+    {
+      "id": "log-options-literal-quotes",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-013"
+      ]
+    },
+    {
+      "id": "log-options-literal-double-quotes",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-013"
+      ]
+    },
+    {
+      "id": "log-options-tab-not-split",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-013"
+      ]
+    },
+    {
+      "id": "log-options-shell-metacharacters-literal",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-002",
+        "GIT-013"
+      ]
+    },
+    {
+      "id": "delete-skip",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-006",
+        "GIT-008"
+      ]
+    },
+    {
+      "id": "binary-skip",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-008"
+      ]
+    },
+    {
+      "id": "pure-rename-skip",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-003",
+        "GIT-007"
+      ]
+    },
+    {
+      "id": "ineffective-commit-allowlist",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-011"
+      ]
+    },
+    {
+      "id": "unstaged-archive-reads-index",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-008",
+        "GIT-009",
+        "GIT-014"
+      ]
+    },
+    {
+      "id": "staged-malformed-archive-worker-error",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-008",
+        "GIT-009",
+        "GIT-014"
+      ]
+    },
+    {
+      "id": "malformed-not-a-repository",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-013",
+        "GIT-014"
+      ]
+    },
+    {
+      "id": "cancel-after-start",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-014",
+        "GIT-015",
+        "GIT-023"
+      ]
+    },
+    {
+      "id": "remote-explicit-none",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-016"
+      ]
+    },
+    {
+      "id": "remote-ssh-port-github",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-userinfo-gitlab",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-unknown-host",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-malformed-url",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-013",
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-azure",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-visualstudio",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-gitea",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-forgejo",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-codeberg",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-bitbucket",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-uppercase-host-suffix",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    },
+    {
+      "id": "remote-ssh-url",
+      "git_intention_ids": [
+
+      ],
+      "behavior_ids": [
+        "GIT-017",
+        "GIT-018"
+      ]
+    }
+  ],
+  "gaps": [
+    "The disabled low-level default-log golden is stale: pinned behavior emits 1,477 bytes; removing commit 53cd7a3c... yields its 907 bytes exactly.",
+    "The disabled --all foo... golden is likewise stale: pinned behavior emits 786 bytes; removing commit 53cd7a3c... yields its 216 bytes exactly.",
+    "The earlier archive estimate counted 15 findings; the pinned source, configuration, and fixture produce 16, which this corpus freezes.",
+    "go-gitdiff asynchronous parse-error truncation has no deterministic real-Git fixture; source hash and semantics audit pin it until a safe byte-stream seam exists.",
+    "Allowed rename/gc stderr warnings require large or timing-sensitive repositories and remain source-hash evidence rather than corpus cases.",
+    "Native Linux and Windows runtime evidence is not available locally; the corpus records local GOOS/GOARCH.",
+    "GIT-012 and GIT-020..022 are implementation, scheduler, limit, and platform contracts not fully certifiable by this real-Git oracle corpus."
+  ]
+}

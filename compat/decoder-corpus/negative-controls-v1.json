@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "same_count_pass_original_sha256": "7ee4f1641aac2ced7bf319d26596acab097a020da0580a768771bdc3ff38a82f",
+  "same_count_pass_substituted_sha256": "f4172ec710e801d6f5c5d44f55273232ce555b2c0c68cd6510ef1f1cd6eb447f",
+  "same_count_finding_original_sha256": "9740682631ed0cd07465bb7923a8ace5ec76ae38ff46de6d53458d8a0808af4f",
+  "same_count_finding_substituted_sha256": "a431acced90a9bd374b1bd4dc61febeb62366f506149060616693086f14a1e6c",
+  "assertion": "original and substituted hashes must differ while array counts remain equal"
+}

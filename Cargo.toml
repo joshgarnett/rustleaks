@@ -1,0 +1,29 @@
+[workspace]
+members = [
+    "crates/rustleaks-bzip2",
+    "crates/rustleaks-compcol",
+    "crates/rustleaks-rar-codec",
+    "crates/rustleaks-sevenz",
+    "crates/rustleaks-core",
+    "crates/rustleaks-sources",
+    "crates/rustleaks-report",
+    "crates/rustleaks-cli",
+    "crates/rustleaks-compat",
+    "crates/xtask",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/joshgarnett/rustleaks"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

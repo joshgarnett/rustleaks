@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.25.0",
+  "unicode_version": "15.0.0",
+  "expression_occurrence_count": 436,
+  "default_expression_occurrence_count": 306,
+  "fixture_expression_occurrence_count": 130,
+  "unique_pattern_count": 390,
+  "base_input_count": 5,
+  "sampled_default_rule_regex_count": 219,
+  "sampled_default_rule_path_count": 5,
+  "adversarial_case_count": 252,
+  "request_count": 3618,
+  "compile_success_count": 3581,
+  "compile_error_count": 37,
+  "matching_request_count": 879,
+  "files": {
+    "expressions-v1.jsonl": {
+      "sha256": "0811469d53321dd86de9c5c7577682028042864ff998ba328d33c57810e74824",
+      "records": 436
+    },
+    "requests-v1.jsonl": {
+      "sha256": "99917c10d3dddc3bb2645029b474d6987d3fb44607acd5f8d6fdaadcc05a6577",
+      "records": 3618
+    },
+    "request-metadata-v1.jsonl": {
+      "sha256": "424276b289ee0e451ac145aa957ccd6ce29715834992a500dc7e57d8912173a3",
+      "records": 3618
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "a8e3ca94a0d1a7210b9260d738b35a623bad9b98f521688770dbce1130a0c394",
+      "records": 3618
+    }
+  }
+}

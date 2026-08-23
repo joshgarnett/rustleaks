@@ -1,0 +1,600 @@
+pub mod rustleaks_core
+pub mod rustleaks_core::config
+pub enum rustleaks_core::config::Condition
+pub rustleaks_core::config::Condition::And
+pub rustleaks_core::config::Condition::Or
+pub rustleaks_core::config::Condition::Unknown(alloc::string::String)
+impl core::fmt::Display for rustleaks_core::config::Condition
+pub fn rustleaks_core::config::Condition::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for rustleaks_core::config::Condition
+pub fn rustleaks_core::config::Condition::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for rustleaks_core::config::Condition
+pub fn rustleaks_core::config::Condition::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub enum rustleaks_core::config::ConfigError
+pub rustleaks_core::config::ConfigError::ConflictingExtension
+pub rustleaks_core::config::ConfigError::Decode
+pub rustleaks_core::config::ConfigError::Decode::at: alloc::string::String
+pub rustleaks_core::config::ConfigError::Decode::source: toml::de::error::Error
+pub rustleaks_core::config::ConfigError::EmptyAllowlist
+pub rustleaks_core::config::ConfigError::EmptyAllowlist::scope: alloc::string::String
+pub rustleaks_core::config::ConfigError::EmptyRequiredRuleId
+pub rustleaks_core::config::ConfigError::EmptyRequiredRuleId::rule_id: alloc::string::String
+pub rustleaks_core::config::ConfigError::EmptyRuleId
+pub rustleaks_core::config::ConfigError::EmptyRuleId::context: alloc::string::String
+pub rustleaks_core::config::ConfigError::Extended(alloc::boxed::Box<rustleaks_core::config::ConfigError>)
+pub rustleaks_core::config::ConfigError::GlobalAllowlistConflict
+pub rustleaks_core::config::ConfigError::InvalidAllowlistCondition
+pub rustleaks_core::config::ConfigError::InvalidAllowlistCondition::scope: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidAllowlistCondition::value: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidMinVersion
+pub rustleaks_core::config::ConfigError::InvalidMinVersion::message: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidMinVersion::value: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidPattern
+pub rustleaks_core::config::ConfigError::InvalidPattern::field: &'static str
+pub rustleaks_core::config::ConfigError::InvalidPattern::message: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidPattern::pattern: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidPattern::scope: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidRegexTarget
+pub rustleaks_core::config::ConfigError::InvalidRegexTarget::scope: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidRegexTarget::value: alloc::string::String
+pub rustleaks_core::config::ConfigError::InvalidSecretGroup
+pub rustleaks_core::config::ConfigError::InvalidSecretGroup::group: i64
+pub rustleaks_core::config::ConfigError::InvalidSecretGroup::max: usize
+pub rustleaks_core::config::ConfigError::InvalidSecretGroup::rule_id: alloc::string::String
+pub rustleaks_core::config::ConfigError::MissingRequiredRuleId
+pub rustleaks_core::config::ConfigError::MissingRequiredRuleId::required_id: alloc::string::String
+pub rustleaks_core::config::ConfigError::MissingRequiredRuleId::rule_id: alloc::string::String
+pub rustleaks_core::config::ConfigError::MissingRulePattern
+pub rustleaks_core::config::ConfigError::MissingRulePattern::rule_id: alloc::string::String
+pub rustleaks_core::config::ConfigError::MissingTargetRuleId
+pub rustleaks_core::config::ConfigError::MissingTargetRuleId::rule_id: alloc::string::String
+pub rustleaks_core::config::ConfigError::Parse
+pub rustleaks_core::config::ConfigError::Parse::at: alloc::string::String
+pub rustleaks_core::config::ConfigError::Parse::source: toml::de::error::Error
+pub rustleaks_core::config::ConfigError::Resolve(rustleaks_core::config::ResolverError)
+pub rustleaks_core::config::ConfigError::RuleAllowlistConflict
+pub rustleaks_core::config::ConfigError::RuleAllowlistConflict::rule_id: alloc::string::String
+pub enum rustleaks_core::config::ConfigOrigin
+pub rustleaks_core::config::ConfigOrigin::EmbeddedDefault
+pub rustleaks_core::config::ConfigOrigin::Path(std::path::PathBuf)
+pub rustleaks_core::config::ConfigOrigin::Virtual(alloc::string::String)
+impl rustleaks_core::config::ConfigOrigin
+pub fn rustleaks_core::config::ConfigOrigin::path(impl core::convert::Into<std::path::PathBuf>) -> Self
+pub fn rustleaks_core::config::ConfigOrigin::virtual_path(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for rustleaks_core::config::ConfigOrigin
+pub fn rustleaks_core::config::ConfigOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum rustleaks_core::config::RegexTarget
+pub rustleaks_core::config::RegexTarget::Line
+pub rustleaks_core::config::RegexTarget::Match
+pub rustleaks_core::config::RegexTarget::Secret
+pub rustleaks_core::config::RegexTarget::Unknown(alloc::string::String)
+impl rustleaks_core::config::RegexTarget
+pub fn rustleaks_core::config::RegexTarget::as_str(&self) -> &str
+impl core::fmt::Display for rustleaks_core::config::RegexTarget
+pub fn rustleaks_core::config::RegexTarget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for rustleaks_core::config::RegexTarget
+pub fn rustleaks_core::config::RegexTarget::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for rustleaks_core::config::RegexTarget
+pub fn rustleaks_core::config::RegexTarget::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
+pub struct rustleaks_core::config::AllowlistSpec
+pub rustleaks_core::config::AllowlistSpec::commits: alloc::vec::Vec<alloc::string::String>
+pub rustleaks_core::config::AllowlistSpec::condition: rustleaks_core::config::Condition
+pub rustleaks_core::config::AllowlistSpec::description: alloc::string::String
+pub rustleaks_core::config::AllowlistSpec::paths: alloc::vec::Vec<alloc::string::String>
+pub rustleaks_core::config::AllowlistSpec::regex_target: rustleaks_core::config::RegexTarget
+pub rustleaks_core::config::AllowlistSpec::regexes: alloc::vec::Vec<alloc::string::String>
+pub rustleaks_core::config::AllowlistSpec::stop_words: alloc::vec::Vec<alloc::string::String>
+pub struct rustleaks_core::config::CompiledAllowlist
+impl rustleaks_core::config::CompiledAllowlist
+pub fn rustleaks_core::config::CompiledAllowlist::commits(&self) -> impl core::iter::traits::exact_size::ExactSizeIterator<Item = &str>
+pub fn rustleaks_core::config::CompiledAllowlist::condition(&self) -> &rustleaks_core::config::Condition
+pub fn rustleaks_core::config::CompiledAllowlist::description(&self) -> &str
+pub fn rustleaks_core::config::CompiledAllowlist::paths(&self) -> &[alloc::string::String]
+pub fn rustleaks_core::config::CompiledAllowlist::regex_target(&self) -> &rustleaks_core::config::RegexTarget
+pub fn rustleaks_core::config::CompiledAllowlist::regexes(&self) -> &[alloc::string::String]
+pub fn rustleaks_core::config::CompiledAllowlist::stop_words(&self) -> impl core::iter::traits::exact_size::ExactSizeIterator<Item = &str>
+impl core::cmp::Eq for rustleaks_core::config::CompiledAllowlist
+impl core::cmp::PartialEq for rustleaks_core::config::CompiledAllowlist
+pub fn rustleaks_core::config::CompiledAllowlist::eq(&self, &Self) -> bool
+impl core::fmt::Debug for rustleaks_core::config::CompiledAllowlist
+pub fn rustleaks_core::config::CompiledAllowlist::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::config::CompiledConfig
+impl rustleaks_core::config::CompiledConfig
+pub const rustleaks_core::config::CompiledConfig::MAX_SELECTED_BYTES: usize
+pub const rustleaks_core::config::CompiledConfig::MAX_SELECTED_RULES: usize
+pub fn rustleaks_core::config::CompiledConfig::allowlists(&self) -> &[rustleaks_core::config::CompiledAllowlist]
+pub fn rustleaks_core::config::CompiledConfig::description(&self) -> &str
+pub fn rustleaks_core::config::CompiledConfig::extension(&self) -> &rustleaks_core::config::ConfigExtension
+pub fn rustleaks_core::config::CompiledConfig::keywords(&self) -> &alloc::collections::btree::set::BTreeSet<alloc::string::String>
+pub fn rustleaks_core::config::CompiledConfig::min_version(&self) -> &str
+pub fn rustleaks_core::config::CompiledConfig::ordered_rule_ids(&self) -> &[alloc::string::String]
+pub fn rustleaks_core::config::CompiledConfig::ordered_rules(&self) -> impl core::iter::traits::exact_size::ExactSizeIterator<Item = &rustleaks_core::config::CompiledRule>
+pub fn rustleaks_core::config::CompiledConfig::origin(&self) -> core::option::Option<&rustleaks_core::config::ConfigOrigin>
+pub fn rustleaks_core::config::CompiledConfig::requires_newer_version(&self) -> bool
+pub fn rustleaks_core::config::CompiledConfig::rule(&self, &str) -> core::option::Option<&rustleaks_core::config::CompiledRule>
+pub fn rustleaks_core::config::CompiledConfig::rules(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, rustleaks_core::config::CompiledRule>
+pub fn rustleaks_core::config::CompiledConfig::select_rules<'a>(&self, impl core::iter::traits::collect::IntoIterator<Item = &'a str>) -> core::result::Result<Self, rustleaks_core::config::RuleSelectionError>
+pub fn rustleaks_core::config::CompiledConfig::source_path_allowed(&self, &[u8], core::option::Option<&[u8]>) -> bool
+pub fn rustleaks_core::config::CompiledConfig::title(&self) -> &str
+pub struct rustleaks_core::config::CompiledRule
+impl rustleaks_core::config::CompiledRule
+pub fn rustleaks_core::config::CompiledRule::allowlists(&self) -> &[rustleaks_core::config::CompiledAllowlist]
+pub fn rustleaks_core::config::CompiledRule::description(&self) -> &str
+pub fn rustleaks_core::config::CompiledRule::entropy(&self) -> f64
+pub fn rustleaks_core::config::CompiledRule::id(&self) -> &str
+pub fn rustleaks_core::config::CompiledRule::keywords(&self) -> &[alloc::string::String]
+pub fn rustleaks_core::config::CompiledRule::path(&self) -> core::option::Option<&str>
+pub fn rustleaks_core::config::CompiledRule::regex(&self) -> core::option::Option<&str>
+pub fn rustleaks_core::config::CompiledRule::required_rules(&self) -> &[rustleaks_core::config::RequiredRuleSpec]
+pub fn rustleaks_core::config::CompiledRule::secret_group(&self) -> i64
+pub fn rustleaks_core::config::CompiledRule::skip_report(&self) -> bool
+pub fn rustleaks_core::config::CompiledRule::tags(&self) -> &[alloc::string::String]
+pub struct rustleaks_core::config::ConfigExtension
+pub rustleaks_core::config::ConfigExtension::disabled_rules: alloc::vec::Vec<alloc::string::String>
+pub rustleaks_core::config::ConfigExtension::path: alloc::string::String
+pub rustleaks_core::config::ConfigExtension::url: alloc::string::String
+pub rustleaks_core::config::ConfigExtension::use_default: bool
+pub struct rustleaks_core::config::ConfigLoader
+impl rustleaks_core::config::ConfigLoader
+pub fn rustleaks_core::config::ConfigLoader::compile(&self, rustleaks_core::config::RawConfig) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::compile_at(&self, rustleaks_core::config::RawConfig, core::option::Option<rustleaks_core::config::ConfigOrigin>) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::load_default(&self) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::load_resolved(&self, &str) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::load_toml(&self, &str) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::load_toml_at(&self, &str, core::option::Option<rustleaks_core::config::ConfigOrigin>) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::new() -> Self
+pub fn rustleaks_core::config::ConfigLoader::parse_toml(&self, &str, core::option::Option<&rustleaks_core::config::ConfigOrigin>) -> core::result::Result<rustleaks_core::config::RawConfig, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::with_current_version(self, &str) -> core::result::Result<Self, rustleaks_core::config::ConfigError>
+pub fn rustleaks_core::config::ConfigLoader::with_default_config(self, impl core::convert::Into<alloc::sync::Arc<str>>) -> Self
+pub fn rustleaks_core::config::ConfigLoader::with_resolver(self, impl rustleaks_core::config::ConfigResolver + 'static) -> Self
+impl core::default::Default for rustleaks_core::config::ConfigLoader
+pub fn rustleaks_core::config::ConfigLoader::default() -> Self
+impl core::fmt::Debug for rustleaks_core::config::ConfigLoader
+pub fn rustleaks_core::config::ConfigLoader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::config::FileSystemResolver
+impl rustleaks_core::config::FileSystemResolver
+pub fn rustleaks_core::config::FileSystemResolver::new() -> Self
+pub fn rustleaks_core::config::FileSystemResolver::with_base_directory(impl core::convert::Into<std::path::PathBuf>) -> Self
+impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::FileSystemResolver
+pub fn rustleaks_core::config::FileSystemResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+pub struct rustleaks_core::config::NoIoResolver
+impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::NoIoResolver
+pub fn rustleaks_core::config::NoIoResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+pub struct rustleaks_core::config::RawConfig
+pub rustleaks_core::config::RawConfig::allowlist: core::option::Option<rustleaks_core::config::RawGlobalAllowlist>
+pub rustleaks_core::config::RawConfig::allowlists: alloc::vec::Vec<rustleaks_core::config::RawGlobalAllowlist>
+pub rustleaks_core::config::RawConfig::description: alloc::string::String
+pub rustleaks_core::config::RawConfig::extend: rustleaks_core::config::ConfigExtension
+pub rustleaks_core::config::RawConfig::min_version: alloc::string::String
+pub rustleaks_core::config::RawConfig::rules: alloc::vec::Vec<rustleaks_core::config::RuleSpec>
+pub rustleaks_core::config::RawConfig::title: alloc::string::String
+pub struct rustleaks_core::config::RawGlobalAllowlist
+pub rustleaks_core::config::RawGlobalAllowlist::allowlist: rustleaks_core::config::AllowlistSpec
+pub rustleaks_core::config::RawGlobalAllowlist::target_rules: alloc::vec::Vec<alloc::string::String>
+pub struct rustleaks_core::config::RequiredRuleSpec
+pub rustleaks_core::config::RequiredRuleSpec::id: alloc::string::String
+pub rustleaks_core::config::RequiredRuleSpec::within_columns: core::option::Option<i64>
+pub rustleaks_core::config::RequiredRuleSpec::within_lines: core::option::Option<i64>
+pub struct rustleaks_core::config::ResolvedConfig
+impl rustleaks_core::config::ResolvedConfig
+pub fn rustleaks_core::config::ResolvedConfig::contents(&self) -> &str
+pub fn rustleaks_core::config::ResolvedConfig::new(impl core::convert::Into<alloc::string::String>, rustleaks_core::config::ConfigOrigin) -> Self
+pub fn rustleaks_core::config::ResolvedConfig::origin(&self) -> &rustleaks_core::config::ConfigOrigin
+pub struct rustleaks_core::config::ResolverError
+impl rustleaks_core::config::ResolverError
+pub fn rustleaks_core::config::ResolverError::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn rustleaks_core::config::ResolverError::path(&self) -> &str
+pub struct rustleaks_core::config::RuleSelectionError
+impl rustleaks_core::config::RuleSelectionError
+pub fn rustleaks_core::config::RuleSelectionError::rule_id(&self) -> &str
+impl core::error::Error for rustleaks_core::config::RuleSelectionError
+impl core::fmt::Display for rustleaks_core::config::RuleSelectionError
+pub fn rustleaks_core::config::RuleSelectionError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::config::RuleSpec
+pub rustleaks_core::config::RuleSpec::allowlist: core::option::Option<rustleaks_core::config::RawAllowlist>
+pub rustleaks_core::config::RuleSpec::allowlists: alloc::vec::Vec<rustleaks_core::config::RawAllowlist>
+pub rustleaks_core::config::RuleSpec::description: alloc::string::String
+pub rustleaks_core::config::RuleSpec::entropy: f64
+pub rustleaks_core::config::RuleSpec::id: alloc::string::String
+pub rustleaks_core::config::RuleSpec::keywords: alloc::vec::Vec<alloc::string::String>
+pub rustleaks_core::config::RuleSpec::path: alloc::string::String
+pub rustleaks_core::config::RuleSpec::regex: alloc::string::String
+pub rustleaks_core::config::RuleSpec::required: alloc::vec::Vec<rustleaks_core::config::RequiredRuleSpec>
+pub rustleaks_core::config::RuleSpec::secret_group: i64
+pub rustleaks_core::config::RuleSpec::skip_report: bool
+pub rustleaks_core::config::RuleSpec::tags: alloc::vec::Vec<alloc::string::String>
+pub struct rustleaks_core::config::VirtualResolver
+impl rustleaks_core::config::VirtualResolver
+pub fn rustleaks_core::config::VirtualResolver::insert(&mut self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>)
+pub fn rustleaks_core::config::VirtualResolver::new() -> Self
+pub fn rustleaks_core::config::VirtualResolver::with_file(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::VirtualResolver
+pub fn rustleaks_core::config::VirtualResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+pub const rustleaks_core::config::DEFAULT_CONFIG: &str
+pub const rustleaks_core::config::DEFAULT_CONFIG_BYTES: &[u8]
+pub const rustleaks_core::config::DEFAULT_CONFIG_REVISION: &str
+pub const rustleaks_core::config::DEFAULT_CONFIG_SHA256: &str
+pub trait rustleaks_core::config::ConfigResolver: core::marker::Send + core::marker::Sync
+pub fn rustleaks_core::config::ConfigResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::FileSystemResolver
+pub fn rustleaks_core::config::FileSystemResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::NoIoResolver
+pub fn rustleaks_core::config::NoIoResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::VirtualResolver
+pub fn rustleaks_core::config::VirtualResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
+pub type rustleaks_core::config::AllowlistCondition = rustleaks_core::config::Condition
+pub type rustleaks_core::config::RawAllowlist = rustleaks_core::config::AllowlistSpec
+pub mod rustleaks_core::model
+#[non_exhaustive] pub enum rustleaks_core::model::ModelError
+pub rustleaks_core::model::ModelError::ByteRangeOverflow
+pub rustleaks_core::model::ModelError::ByteRangeOverflow::len: usize
+pub rustleaks_core::model::ModelError::ByteRangeOverflow::start: usize
+pub rustleaks_core::model::ModelError::InvalidByteRange
+pub rustleaks_core::model::ModelError::InvalidByteRange::end: usize
+pub rustleaks_core::model::ModelError::InvalidByteRange::start: usize
+pub rustleaks_core::model::ModelError::InvalidColumnRange
+pub rustleaks_core::model::ModelError::InvalidColumnRange::end: usize
+pub rustleaks_core::model::ModelError::InvalidColumnRange::start: usize
+pub rustleaks_core::model::ModelError::InvalidLineRange
+pub rustleaks_core::model::ModelError::InvalidLineRange::end: usize
+pub rustleaks_core::model::ModelError::InvalidLineRange::start: usize
+pub rustleaks_core::model::ModelError::MissingField
+pub rustleaks_core::model::ModelError::MissingField::field: &'static str
+pub rustleaks_core::model::ModelError::MissingField::model: &'static str
+impl core::error::Error for rustleaks_core::model::ModelError
+impl core::fmt::Display for rustleaks_core::model::ModelError
+pub fn rustleaks_core::model::ModelError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::model::ByteRange
+impl rustleaks_core::model::ByteRange
+pub const fn rustleaks_core::model::ByteRange::as_range(self) -> core::ops::range::Range<usize>
+pub const fn rustleaks_core::model::ByteRange::end(self) -> usize
+pub fn rustleaks_core::model::ByteRange::from_start_len(usize, usize) -> core::result::Result<Self, rustleaks_core::model::ModelError>
+pub const fn rustleaks_core::model::ByteRange::is_empty(self) -> bool
+pub const fn rustleaks_core::model::ByteRange::len(self) -> usize
+pub const fn rustleaks_core::model::ByteRange::new(usize, usize) -> core::result::Result<Self, rustleaks_core::model::ModelError>
+pub const fn rustleaks_core::model::ByteRange::start(self) -> usize
+impl core::convert::From<rustleaks_core::model::ByteRange> for core::ops::range::Range<usize>
+pub fn core::ops::range::Range<usize>::from(rustleaks_core::model::ByteRange) -> Self
+impl core::convert::TryFrom<core::ops::range::Range<usize>> for rustleaks_core::model::ByteRange
+pub type rustleaks_core::model::ByteRange::Error = rustleaks_core::model::ModelError
+pub fn rustleaks_core::model::ByteRange::try_from(core::ops::range::Range<usize>) -> core::result::Result<Self, Self::Error>
+pub struct rustleaks_core::model::ByteText(_)
+impl rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::as_bytes(&self) -> &[u8]
+pub fn rustleaks_core::model::ByteText::as_str(&self) -> core::result::Result<&str, core::str::error::Utf8Error>
+pub fn rustleaks_core::model::ByteText::into_bytes(self) -> alloc::vec::Vec<u8>
+pub fn rustleaks_core::model::ByteText::is_empty(&self) -> bool
+pub fn rustleaks_core::model::ByteText::len(&self) -> usize
+pub fn rustleaks_core::model::ByteText::new(impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+pub fn rustleaks_core::model::ByteText::to_string_lossy(&self) -> alloc::borrow::Cow<'_, str>
+impl core::borrow::Borrow<[u8]> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::borrow(&self) -> &[u8]
+impl core::convert::AsRef<[u8]> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::as_ref(&self) -> &[u8]
+impl core::convert::From<&[u8]> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::from(&[u8]) -> Self
+impl core::convert::From<&str> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::from(alloc::string::String) -> Self
+impl core::convert::From<alloc::vec::Vec<u8>> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::from(alloc::vec::Vec<u8>) -> Self
+impl core::fmt::Debug for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl<const N: usize> core::convert::From<&[u8; N]> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::from(&[u8; N]) -> Self
+impl<const N: usize> core::convert::From<[u8; N]> for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::from([u8; N]) -> Self
+pub struct rustleaks_core::model::CommitMetadata
+impl rustleaks_core::model::CommitMetadata
+pub const fn rustleaks_core::model::CommitMetadata::author_email(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::CommitMetadata::author_name(&self) -> &rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::CommitMetadata::builder() -> rustleaks_core::model::CommitMetadataBuilder
+pub const fn rustleaks_core::model::CommitMetadata::date(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::CommitMetadata::message(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::CommitMetadata::sha(&self) -> &rustleaks_core::model::ByteText
+impl serde_core::ser::Serialize for rustleaks_core::model::CommitMetadata
+pub fn rustleaks_core::model::CommitMetadata::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+pub struct rustleaks_core::model::CommitMetadataBuilder
+impl rustleaks_core::model::CommitMetadataBuilder
+pub fn rustleaks_core::model::CommitMetadataBuilder::author_email(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::CommitMetadataBuilder::author_name(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::CommitMetadataBuilder::build(self) -> rustleaks_core::model::CommitMetadata
+pub fn rustleaks_core::model::CommitMetadataBuilder::date(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::CommitMetadataBuilder::message(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::CommitMetadataBuilder::sha(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub struct rustleaks_core::model::Finding
+impl rustleaks_core::model::Finding
+pub fn rustleaks_core::model::Finding::add_required_findings(&mut self, impl core::iter::traits::collect::IntoIterator<Item = rustleaks_core::model::RequiredFinding>)
+pub const fn rustleaks_core::model::Finding::author(&self) -> &rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::Finding::builder() -> rustleaks_core::model::FindingBuilder
+pub const fn rustleaks_core::model::Finding::commit(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::date(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::description(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::email(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::entropy(&self) -> f32
+pub const fn rustleaks_core::model::Finding::file(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::fingerprint(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::fragment(&self) -> core::option::Option<&rustleaks_core::model::Fragment>
+pub const fn rustleaks_core::model::Finding::line(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::link(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::location(&self) -> rustleaks_core::model::Location
+pub const fn rustleaks_core::model::Finding::match_text(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::message(&self) -> &rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::Finding::redacted(self, usize) -> Self
+pub fn rustleaks_core::model::Finding::required_findings(&self) -> &[rustleaks_core::model::RequiredFinding]
+pub const fn rustleaks_core::model::Finding::rule_id(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::secret(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::symlink_file(&self) -> &rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::Finding::tags(&self) -> &[rustleaks_core::model::ByteText]
+pub fn rustleaks_core::model::Finding::with_link(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+impl serde_core::ser::Serialize for rustleaks_core::model::Finding
+pub fn rustleaks_core::model::Finding::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+pub struct rustleaks_core::model::FindingBuilder
+impl rustleaks_core::model::FindingBuilder
+pub fn rustleaks_core::model::FindingBuilder::author(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::build(self) -> core::result::Result<rustleaks_core::model::Finding, rustleaks_core::model::ModelError>
+pub fn rustleaks_core::model::FindingBuilder::commit(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::date(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::description(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::email(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::FindingBuilder::entropy(self, f32) -> Self
+pub fn rustleaks_core::model::FindingBuilder::file(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::fingerprint(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::fragment(self, rustleaks_core::model::Fragment) -> Self
+pub fn rustleaks_core::model::FindingBuilder::line(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::link(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::FindingBuilder::location(self, rustleaks_core::model::Location) -> Self
+pub fn rustleaks_core::model::FindingBuilder::match_text(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::message(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::required_findings(self, impl core::iter::traits::collect::IntoIterator<Item = rustleaks_core::model::RequiredFinding>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::rule_id(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::secret(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::symlink_file(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FindingBuilder::tags(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<rustleaks_core::model::ByteText>>) -> Self
+pub struct rustleaks_core::model::Fragment
+impl rustleaks_core::model::Fragment
+pub fn rustleaks_core::model::Fragment::builder(impl core::convert::Into<rustleaks_core::model::ByteText>) -> rustleaks_core::model::FragmentBuilder
+pub const fn rustleaks_core::model::Fragment::commit(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Fragment::commit_metadata(&self) -> core::option::Option<&rustleaks_core::model::CommitMetadata>
+pub const fn rustleaks_core::model::Fragment::content(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Fragment::file_path(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Fragment::inherited_from_finding(&self) -> bool
+pub fn rustleaks_core::model::Fragment::new(impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::Fragment::start_line(&self) -> usize
+pub const fn rustleaks_core::model::Fragment::symlink_file(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Fragment::windows_file_path(&self) -> &rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::Fragment::with_source_paths(self, rustleaks_core::model::ByteText, rustleaks_core::model::ByteText, rustleaks_core::model::ByteText) -> Self
+impl serde_core::ser::Serialize for rustleaks_core::model::Fragment
+pub fn rustleaks_core::model::Fragment::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+pub struct rustleaks_core::model::FragmentBuilder
+impl rustleaks_core::model::FragmentBuilder
+pub fn rustleaks_core::model::FragmentBuilder::build(self) -> rustleaks_core::model::Fragment
+pub fn rustleaks_core::model::FragmentBuilder::commit(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FragmentBuilder::commit_metadata(self, rustleaks_core::model::CommitMetadata) -> Self
+pub fn rustleaks_core::model::FragmentBuilder::file_path(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::FragmentBuilder::inherited_from_finding(self, bool) -> Self
+pub const fn rustleaks_core::model::FragmentBuilder::start_line(self, usize) -> Self
+pub fn rustleaks_core::model::FragmentBuilder::symlink_file(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::FragmentBuilder::windows_file_path(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub struct rustleaks_core::model::Location
+impl rustleaks_core::model::Location
+pub const fn rustleaks_core::model::Location::end_column(self) -> usize
+pub const fn rustleaks_core::model::Location::end_line(self) -> usize
+pub const fn rustleaks_core::model::Location::new(usize, usize, usize, usize) -> core::result::Result<Self, rustleaks_core::model::ModelError>
+pub const fn rustleaks_core::model::Location::start_column(self) -> usize
+pub const fn rustleaks_core::model::Location::start_line(self) -> usize
+pub struct rustleaks_core::model::RequiredFinding
+impl rustleaks_core::model::RequiredFinding
+pub fn rustleaks_core::model::RequiredFinding::builder() -> rustleaks_core::model::RequiredFindingBuilder
+pub const fn rustleaks_core::model::RequiredFinding::line(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::RequiredFinding::location(&self) -> rustleaks_core::model::Location
+pub const fn rustleaks_core::model::RequiredFinding::match_text(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::RequiredFinding::rule_id(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::RequiredFinding::secret(&self) -> &rustleaks_core::model::ByteText
+impl serde_core::ser::Serialize for rustleaks_core::model::RequiredFinding
+pub fn rustleaks_core::model::RequiredFinding::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+pub struct rustleaks_core::model::RequiredFindingBuilder
+impl rustleaks_core::model::RequiredFindingBuilder
+pub fn rustleaks_core::model::RequiredFindingBuilder::build(self) -> core::result::Result<rustleaks_core::model::RequiredFinding, rustleaks_core::model::ModelError>
+pub fn rustleaks_core::model::RequiredFindingBuilder::line(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::RequiredFindingBuilder::location(self, rustleaks_core::model::Location) -> Self
+pub fn rustleaks_core::model::RequiredFindingBuilder::match_text(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::RequiredFindingBuilder::rule_id(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::RequiredFindingBuilder::secret(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub struct rustleaks_core::model::ScanOptions
+impl rustleaks_core::model::ScanOptions
+pub fn rustleaks_core::model::ScanOptions::builder() -> rustleaks_core::model::ScanOptionsBuilder
+pub const fn rustleaks_core::model::ScanOptions::honor_allow_markers(self) -> bool
+pub const fn rustleaks_core::model::ScanOptions::honor_gitleaks_allow(self) -> bool
+pub const fn rustleaks_core::model::ScanOptions::max_decode_depth(self) -> usize
+pub const fn rustleaks_core::model::ScanOptions::max_target_bytes(self) -> core::option::Option<usize>
+pub const fn rustleaks_core::model::ScanOptions::redaction_percent(self) -> usize
+impl core::default::Default for rustleaks_core::model::ScanOptions
+pub fn rustleaks_core::model::ScanOptions::default() -> Self
+pub struct rustleaks_core::model::ScanOptionsBuilder
+impl rustleaks_core::model::ScanOptionsBuilder
+pub const fn rustleaks_core::model::ScanOptionsBuilder::build(self) -> rustleaks_core::model::ScanOptions
+pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_allow_markers(self, bool) -> Self
+pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_gitleaks_allow(self, bool) -> Self
+pub const fn rustleaks_core::model::ScanOptionsBuilder::max_decode_depth(self, usize) -> Self
+pub const fn rustleaks_core::model::ScanOptionsBuilder::max_target_bytes(self, core::option::Option<usize>) -> Self
+pub const fn rustleaks_core::model::ScanOptionsBuilder::redaction_percent(self, usize) -> Self
+pub mod rustleaks_core::session
+pub enum rustleaks_core::session::AddOutcome
+pub rustleaks_core::session::AddOutcome::Accepted
+pub rustleaks_core::session::AddOutcome::Accepted::fingerprint: rustleaks_core::model::ByteText
+pub rustleaks_core::session::AddOutcome::Suppressed
+pub rustleaks_core::session::AddOutcome::Suppressed::fingerprint: rustleaks_core::model::ByteText
+pub rustleaks_core::session::AddOutcome::Suppressed::reason: rustleaks_core::session::SuppressionReason
+impl rustleaks_core::session::AddOutcome
+pub const fn rustleaks_core::session::AddOutcome::fingerprint(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::AddOutcome::is_accepted(&self) -> bool
+pub const fn rustleaks_core::session::AddOutcome::suppression_reason(&self) -> core::option::Option<rustleaks_core::session::SuppressionReason>
+pub enum rustleaks_core::session::BaselineLoadError
+pub rustleaks_core::session::BaselineLoadError::Io
+pub rustleaks_core::session::BaselineLoadError::Io::path: std::path::PathBuf
+pub rustleaks_core::session::BaselineLoadError::Io::source: core::io::error::Error
+pub rustleaks_core::session::BaselineLoadError::Parse
+pub rustleaks_core::session::BaselineLoadError::Parse::path: std::path::PathBuf
+pub rustleaks_core::session::BaselineLoadError::Parse::source: rustleaks_core::session::BaselineParseError
+pub enum rustleaks_core::session::BaselineParseError
+pub rustleaks_core::session::BaselineParseError::Json(serde_json::error::Error)
+pub enum rustleaks_core::session::IgnoreIssue
+pub rustleaks_core::session::IgnoreIssue::InvalidFieldCount
+pub rustleaks_core::session::IgnoreIssue::InvalidFieldCount::entry: rustleaks_core::model::ByteText
+pub rustleaks_core::session::IgnoreIssue::InvalidFieldCount::fields: usize
+pub rustleaks_core::session::IgnoreIssue::TokenTooLong
+pub rustleaks_core::session::IgnoreIssue::TokenTooLong::offset: usize
+pub enum rustleaks_core::session::SuppressionReason
+pub rustleaks_core::session::SuppressionReason::Baseline
+pub rustleaks_core::session::SuppressionReason::CommitIgnore
+pub rustleaks_core::session::SuppressionReason::GlobalIgnore
+pub struct rustleaks_core::session::Baseline
+impl rustleaks_core::session::Baseline
+pub fn rustleaks_core::session::Baseline::entries(&self) -> &[rustleaks_core::session::BaselineFinding]
+pub fn rustleaks_core::session::Baseline::from_findings(&[rustleaks_core::model::Finding]) -> Self
+pub fn rustleaks_core::session::Baseline::from_go_json(&[u8]) -> core::result::Result<Self, rustleaks_core::session::BaselineParseError>
+pub fn rustleaks_core::session::Baseline::is_empty(&self) -> bool
+pub fn rustleaks_core::session::Baseline::is_new(&self, &rustleaks_core::model::Finding, usize) -> bool
+pub fn rustleaks_core::session::Baseline::len(&self) -> usize
+pub fn rustleaks_core::session::Baseline::load_go_json(impl core::convert::AsRef<std::path::Path>) -> core::result::Result<Self, rustleaks_core::session::BaselineLoadError>
+pub const fn rustleaks_core::session::Baseline::was_null(&self) -> bool
+pub struct rustleaks_core::session::BaselineFinding
+impl rustleaks_core::session::BaselineFinding
+pub const fn rustleaks_core::session::BaselineFinding::author(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::commit(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::date(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::description(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::email(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::end_column(&self) -> i128
+pub const fn rustleaks_core::session::BaselineFinding::end_line(&self) -> i128
+pub const fn rustleaks_core::session::BaselineFinding::entropy(&self) -> f32
+pub const fn rustleaks_core::session::BaselineFinding::file(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::fingerprint(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::link(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::match_text(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::message(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::rule_id(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::secret(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::session::BaselineFinding::start_column(&self) -> i128
+pub const fn rustleaks_core::session::BaselineFinding::start_line(&self) -> i128
+pub const fn rustleaks_core::session::BaselineFinding::symlink_file(&self) -> &rustleaks_core::model::ByteText
+pub fn rustleaks_core::session::BaselineFinding::tags(&self) -> &[rustleaks_core::model::ByteText]
+pub struct rustleaks_core::session::ClassifiedFinding
+impl rustleaks_core::session::ClassifiedFinding
+pub const fn rustleaks_core::session::ClassifiedFinding::finding(&self) -> &rustleaks_core::model::Finding
+pub fn rustleaks_core::session::ClassifiedFinding::into_parts(self) -> (rustleaks_core::model::Finding, rustleaks_core::session::AddOutcome)
+pub const fn rustleaks_core::session::ClassifiedFinding::outcome(&self) -> &rustleaks_core::session::AddOutcome
+pub struct rustleaks_core::session::IgnoreParseOutcome
+pub rustleaks_core::session::IgnoreParseOutcome::ignores: rustleaks_core::session::IgnoreSet
+pub rustleaks_core::session::IgnoreParseOutcome::issues: alloc::vec::Vec<rustleaks_core::session::IgnoreIssue>
+pub struct rustleaks_core::session::IgnoreSet
+impl rustleaks_core::session::IgnoreSet
+pub fn rustleaks_core::session::IgnoreSet::contains(&self, &[u8]) -> bool
+pub fn rustleaks_core::session::IgnoreSet::extend_go_compatible(&mut self, &[u8]) -> alloc::vec::Vec<rustleaks_core::session::IgnoreIssue>
+pub fn rustleaks_core::session::IgnoreSet::is_empty(&self) -> bool
+pub fn rustleaks_core::session::IgnoreSet::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = &rustleaks_core::model::ByteText>
+pub fn rustleaks_core::session::IgnoreSet::len(&self) -> usize
+pub fn rustleaks_core::session::IgnoreSet::parse_go_compatible(&[u8]) -> rustleaks_core::session::IgnoreParseOutcome
+pub struct rustleaks_core::session::PolicyMismatch
+pub struct rustleaks_core::session::ScanSession
+impl rustleaks_core::session::ScanSession
+pub fn rustleaks_core::session::ScanSession::add_finding(&mut self, rustleaks_core::model::Finding) -> rustleaks_core::session::AddOutcome
+pub fn rustleaks_core::session::ScanSession::findings(&self) -> &[rustleaks_core::model::Finding]
+pub fn rustleaks_core::session::ScanSession::into_findings(self) -> alloc::vec::Vec<rustleaks_core::model::Finding>
+pub fn rustleaks_core::session::ScanSession::merge(&mut self, rustleaks_core::session::SessionBatch) -> core::result::Result<(), rustleaks_core::session::PolicyMismatch>
+pub fn rustleaks_core::session::ScanSession::new(rustleaks_core::session::SessionPolicy) -> Self
+pub fn rustleaks_core::session::ScanSession::new_batch(&self) -> rustleaks_core::session::SessionBatch
+pub const fn rustleaks_core::session::ScanSession::policy(&self) -> &rustleaks_core::session::SessionPolicy
+pub fn rustleaks_core::session::ScanSession::snapshot(&self) -> alloc::vec::Vec<rustleaks_core::model::Finding>
+pub struct rustleaks_core::session::SessionBatch
+impl rustleaks_core::session::SessionBatch
+pub fn rustleaks_core::session::SessionBatch::add_finding(&mut self, rustleaks_core::model::Finding) -> rustleaks_core::session::AddOutcome
+pub fn rustleaks_core::session::SessionBatch::findings(&self) -> &[rustleaks_core::model::Finding]
+pub fn rustleaks_core::session::SessionBatch::into_findings(self) -> alloc::vec::Vec<rustleaks_core::model::Finding>
+pub struct rustleaks_core::session::SessionPolicy(_)
+impl rustleaks_core::session::SessionPolicy
+pub fn rustleaks_core::session::SessionPolicy::builder() -> rustleaks_core::session::SessionPolicyBuilder
+pub fn rustleaks_core::session::SessionPolicy::classify(&self, rustleaks_core::model::Finding) -> rustleaks_core::session::ClassifiedFinding
+pub fn rustleaks_core::session::SessionPolicy::new_batch(&self) -> rustleaks_core::session::SessionBatch
+pub struct rustleaks_core::session::SessionPolicyBuilder
+impl rustleaks_core::session::SessionPolicyBuilder
+pub fn rustleaks_core::session::SessionPolicyBuilder::baseline(self, rustleaks_core::session::Baseline) -> Self
+pub fn rustleaks_core::session::SessionPolicyBuilder::build(self) -> rustleaks_core::session::SessionPolicy
+pub fn rustleaks_core::session::SessionPolicyBuilder::ignores(self, rustleaks_core::session::IgnoreSet) -> Self
+pub const fn rustleaks_core::session::SessionPolicyBuilder::redaction_percent(self, usize) -> Self
+pub fn rustleaks_core::session::canonical_finding_cmp(&rustleaks_core::model::Finding, &rustleaks_core::model::Finding) -> core::cmp::Ordering
+pub fn rustleaks_core::session::global_fingerprint(&rustleaks_core::model::Finding) -> rustleaks_core::model::ByteText
+pub fn rustleaks_core::session::qualified_fingerprint(&rustleaks_core::model::Finding) -> rustleaks_core::model::ByteText
+pub fn rustleaks_core::session::sort_findings_canonical(&mut [rustleaks_core::model::Finding])
+#[non_exhaustive] pub enum rustleaks_core::ScanBudgetKind
+pub rustleaks_core::ScanBudgetKind::DecodedBytes
+pub rustleaks_core::ScanBudgetKind::FindingRecords
+pub rustleaks_core::ScanBudgetKind::WorkUnits
+#[non_exhaustive] pub enum rustleaks_core::ScanError
+pub rustleaks_core::ScanError::Prefilter
+pub rustleaks_core::ScanError::Prefilter::message: alloc::string::String
+impl core::error::Error for rustleaks_core::ScanError
+impl core::fmt::Display for rustleaks_core::ScanError
+pub fn rustleaks_core::ScanError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum rustleaks_core::ScanTermination
+pub rustleaks_core::ScanTermination::BudgetExceeded
+pub rustleaks_core::ScanTermination::BudgetExceeded::consumed: usize
+pub rustleaks_core::ScanTermination::BudgetExceeded::kind: rustleaks_core::ScanBudgetKind
+pub rustleaks_core::ScanTermination::BudgetExceeded::limit: usize
+pub rustleaks_core::ScanTermination::BudgetExceeded::requested: usize
+pub rustleaks_core::ScanTermination::Cancelled
+impl core::error::Error for rustleaks_core::ScanTermination
+impl core::fmt::Display for rustleaks_core::ScanTermination
+pub fn rustleaks_core::ScanTermination::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::Engine
+impl rustleaks_core::Engine
+pub fn rustleaks_core::Engine::builder(rustleaks_core::config::CompiledConfig) -> rustleaks_core::EngineBuilder
+pub const fn rustleaks_core::Engine::config(&self) -> &rustleaks_core::config::CompiledConfig
+pub fn rustleaks_core::Engine::scan_fragment(&self, &rustleaks_core::model::Fragment, &rustleaks_core::model::ScanOptions) -> rustleaks_core::ScanOutcome
+pub fn rustleaks_core::Engine::scan_fragment_controlled(&self, &rustleaks_core::model::Fragment, &rustleaks_core::model::ScanOptions, &rustleaks_core::ScanControl<'_>) -> rustleaks_core::ScanOutcome
+pub struct rustleaks_core::EngineBuilder
+impl rustleaks_core::EngineBuilder
+pub fn rustleaks_core::EngineBuilder::build(self) -> core::result::Result<rustleaks_core::Engine, rustleaks_core::ScanError>
+pub struct rustleaks_core::ScanBudget
+impl rustleaks_core::ScanBudget
+pub const fn rustleaks_core::ScanBudget::decoded_bytes(self) -> core::option::Option<usize>
+pub const fn rustleaks_core::ScanBudget::finding_records(self) -> core::option::Option<usize>
+pub const fn rustleaks_core::ScanBudget::max_decoded_bytes(self, usize) -> Self
+pub const fn rustleaks_core::ScanBudget::max_finding_records(self, usize) -> Self
+pub const fn rustleaks_core::ScanBudget::max_work_units(self, usize) -> Self
+pub const fn rustleaks_core::ScanBudget::unlimited() -> Self
+pub const fn rustleaks_core::ScanBudget::work_units(self) -> core::option::Option<usize>
+pub struct rustleaks_core::ScanControl<'a>
+impl rustleaks_core::ScanControl<'static>
+pub const fn rustleaks_core::ScanControl<'static>::unlimited() -> Self
+impl<'a> rustleaks_core::ScanControl<'a>
+pub const fn rustleaks_core::ScanControl<'a>::budget(self) -> rustleaks_core::ScanBudget
+pub fn rustleaks_core::ScanControl<'a>::cancellable(&'a dyn rustleaks_core::ScanCancellation) -> Self
+pub const fn rustleaks_core::ScanControl<'a>::with_budget(self, rustleaks_core::ScanBudget) -> Self
+impl core::fmt::Debug for rustleaks_core::ScanControl<'_>
+pub fn rustleaks_core::ScanControl<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::ScanOutcome
+impl rustleaks_core::ScanOutcome
+pub fn rustleaks_core::ScanOutcome::findings(&self) -> &[rustleaks_core::model::Finding]
+pub fn rustleaks_core::ScanOutcome::into_findings(self) -> alloc::vec::Vec<rustleaks_core::model::Finding>
+pub const fn rustleaks_core::ScanOutcome::is_complete(&self) -> bool
+pub const fn rustleaks_core::ScanOutcome::termination(&self) -> core::option::Option<&rustleaks_core::ScanTermination>
+pub const fn rustleaks_core::ScanOutcome::usage(&self) -> rustleaks_core::ScanUsage
+pub struct rustleaks_core::ScanUsage
+impl rustleaks_core::ScanUsage
+pub const fn rustleaks_core::ScanUsage::decoded_bytes(self) -> usize
+pub const fn rustleaks_core::ScanUsage::finding_records(self) -> usize
+pub const fn rustleaks_core::ScanUsage::work_units(self) -> usize
+pub const rustleaks_core::UPSTREAM_REVISION: &str
+pub trait rustleaks_core::ScanCancellation: core::marker::Send + core::marker::Sync
+pub fn rustleaks_core::ScanCancellation::is_cancelled(&self) -> bool
+impl rustleaks_core::ScanCancellation for core::sync::atomic::AtomicBool
+pub fn core::sync::atomic::AtomicBool::is_cancelled(&self) -> bool
+impl<F> rustleaks_core::ScanCancellation for F where F: core::ops::function::Fn() -> bool + core::marker::Send + core::marker::Sync
+pub fn F::is_cancelled(&self) -> bool

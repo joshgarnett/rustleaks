@@ -1,0 +1,15 @@
+[package]
+name = "rustleaks-rar-codec"
+version = "0.9.3-rustleaks.1"
+edition = "2021"
+rust-version = "1.85"
+license-file = "COPYING"
+description = "Safe decode-only RAR3 and RAR5 codecs for rustleaks"
+publish = false
+
+[lib]
+name = "rustleaks_rar_codec"
+path = "src/lib.rs"
+
+[lints]
+workspace = true

@@ -1,0 +1,1006 @@
+{
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "behavior_ids": [
+    "COMP-001",
+    "COMP-002",
+    "COMP-003",
+    "COMP-004",
+    "COMP-005",
+    "COMP-006",
+    "COMP-007",
+    "COMP-008",
+    "SUP-001",
+    "RED-001",
+    "RED-002",
+    "RED-003"
+  ],
+  "upstream": [
+    {
+      "test_case_id": "TM-0084",
+      "go_name": "TestDetect/fragment_level_composite",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0241",
+      "go_name": "TestMask",
+      "classification": "aggregator"
+    },
+    {
+      "test_case_id": "TM-0242",
+      "go_name": "TestMask/empty_secret",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0243",
+      "go_name": "TestMask/normal_secret",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0244",
+      "go_name": "TestMask/short_secret",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0245",
+      "go_name": "TestMaskSecret",
+      "classification": "aggregator"
+    },
+    {
+      "test_case_id": "TM-0246",
+      "go_name": "TestMaskSecret/high_masking",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0247",
+      "go_name": "TestMaskSecret/invalid_masking",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0248",
+      "go_name": "TestMaskSecret/low_masking",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0249",
+      "go_name": "TestMaskSecret/normal_masking",
+      "classification": "leaf"
+    },
+    {
+      "test_case_id": "TM-0250",
+      "go_name": "TestRedact",
+      "classification": "leaf"
+    }
+  ],
+  "request_ids": [
+    "upstream-tm-0084-fragment-level-composite",
+    "required-raw-raw",
+    "required-absent",
+    "required-runtime-missing-fail-closed",
+    "required-extension-disabled-dependency-fail-closed",
+    "required-extension-valid-plus-missing-fail-closed",
+    "required-config-missing-id",
+    "required-config-empty-id",
+    "required-duplicate-specs",
+    "required-duplicate-config-id-last-wins",
+    "required-duplicate-aux-last-wins-positive",
+    "required-duplicate-aux-last-wins-negative",
+    "required-two-ids-one-present",
+    "required-self-cycle",
+    "required-two-rule-cycle",
+    "required-nested-ignored",
+    "required-inherited-primary-bypass",
+    "aux-skipreport-bypassed",
+    "aux-nonskip-top-level-visible",
+    "aux-keyword-prefilter-bypassed",
+    "aux-keyword-ordinary-top-level-rejected",
+    "aux-keyword-ordinary-top-level-control",
+    "aux-marker-reject",
+    "aux-marker-ignore-option",
+    "aux-capture-tags",
+    "aux-entropy-reject",
+    "aux-entropy-pass",
+    "aux-entropy-equal-reject",
+    "aux-entropy-above-reject",
+    "aux-entropy-below-visible",
+    "aux-rule-allowlist-reject",
+    "aux-global-allowlist-reject",
+    "aux-commit-early-reject",
+    "aux-path-early-reject",
+    "primary-keyword-raw",
+    "primary-keyword-absent",
+    "primary-keyword-unicode-case",
+    "primary-keyword-decoded",
+    "global-early-all-passes",
+    "aux-global-finding-untargeted-reject",
+    "aux-global-finding-targeted-control",
+    "aux-allow-target-secret-raw",
+    "aux-allow-target-match-raw",
+    "aux-allow-target-line-raw",
+    "aux-allow-target-line-decoded",
+    "aux-allow-target-line-nested-decoded",
+    "aux-line-nested-original-line-control",
+    "aux-allow-target-line-multisegment",
+    "aux-line-multisegment-original-line-control",
+    "aux-capture-match-allowlist-reject",
+    "aux-capture-secret-target-control",
+    "aux-capture-entropy-allowlist-control",
+    "aux-capture-entropy-allowlist-reject",
+    "aux-capture-entropy-before-allowlist-source-boundary",
+    "primary-marker-original-line",
+    "primary-marker-isolated-line",
+    "aux-marker-isolated-line",
+    "marker-decoded-only-does-not-suppress",
+    "marker-neighbor-outside-encoded-token",
+    "aux-path-only-raw",
+    "aux-path-only-decoded-negative",
+    "aux-path-regex-positive",
+    "aux-path-regex-negative",
+    "pass-both-encoded-same",
+    "pass-primary-encoded-aux-raw",
+    "pass-primary-raw-aux-encoded",
+    "pass-both-nested-same-depth",
+    "pass-different-decoded-depth",
+    "decoded-line-primary-wrong-line-control",
+    "decoded-line-primary-own-line-reject",
+    "decoded-line-aux-wrong-line-control",
+    "decoded-line-aux-own-line-reject",
+    "proximity-mapped-outside",
+    "proximity-mapped-inside",
+    "proximity-mapped-column-exact",
+    "proximity-mapped-column-just-outside",
+    "proximity-mapped-line-exact",
+    "proximity-mapped-line-outside",
+    "proximity-mapped-reverse-shift",
+    "pass-raw-and-decoded-composite-duplicates",
+    "proximity-line-boundary",
+    "proximity-line-outside",
+    "proximity-line-zero",
+    "proximity-line-negative",
+    "proximity-line-distance-plus-one",
+    "proximity-line-reverse",
+    "proximity-column-boundary",
+    "proximity-column-outside",
+    "proximity-column-zero",
+    "proximity-column-negative",
+    "proximity-column-distance-plus-one",
+    "proximity-zero-equal-start",
+    "proximity-both-conjunctive-fail",
+    "proximity-both-conjunctive-pass",
+    "proximity-max-signed",
+    "proximity-min-signed",
+    "proximity-negative-fragment-start",
+    "proximity-match-start-not-capture",
+    "proximity-same-start-different-ends",
+    "proximity-overlapping-spans-start-outside",
+    "proximity-overlapping-spans-start-exact",
+    "projection-aux-regex-order",
+    "projection-required-spec-order",
+    "projection-primary-multiplicity",
+    "projection-primary-aux-cartesian-2x2",
+    "projection-duplicate-pass-and-requirements",
+    "projection-decoded-aux-metadata-visible",
+    "projection-arbitrary-bytes",
+    "malformed-composite-before",
+    "malformed-composite-inside",
+    "malformed-composite-after",
+    "malformed-adjacent-keyword",
+    "malformed-adjacent-unicode-keyword",
+    "malformed-primary-aux-inside-secrets",
+    "generic-shadow-contained",
+    "generic-alone-retained",
+    "generic-case-insensitive-substring",
+    "generic-both-generic-survive",
+    "generic-noncontained-survives",
+    "generic-different-lines-survive",
+    "generic-reversed-containment-survives",
+    "generic-case-different-survives",
+    "generic-same-line-different-file-ignored",
+    "generic-filter-adapter-ignores-file-column-end",
+    "generic-filter-adapter-different-commit",
+    "generic-filter-adapter-same-rule-id",
+    "filter-exact-duplicate-primaries-required",
+    "generic-empty-secret-suppressed",
+    "generic-empty-secret-alone-retained",
+    "generic-suppression-before-redaction",
+    "generic-terminal-redaction-discriminator",
+    "generic-filter-duplicate-order",
+    "generic-raw-shadowed-decoded-specific",
+    "generic-decoded-shadowed-composite-specific",
+    "generic-attachment-alone-cannot-suppress",
+    "generic-visible-aux-can-suppress",
+    "upstream-tm-0242-empty-secret",
+    "upstream-tm-0243-normal-secret",
+    "upstream-tm-0244-short-secret",
+    "upstream-tm-0246-high-masking",
+    "upstream-tm-0247-invalid-masking",
+    "upstream-tm-0248-low-masking",
+    "upstream-tm-0249-normal-masking",
+    "upstream-tm-0250-redact",
+    "redact-direct-zero",
+    "redact-one",
+    "redact-ten",
+    "redact-tie-25",
+    "redact-tie-50",
+    "redact-tie-75",
+    "redact-ninety",
+    "redact-ninety-nine",
+    "redact-hundred",
+    "redact-over-hundred",
+    "redact-max-uint",
+    "redact-empty-partial",
+    "redact-empty-full-utf8-invalid",
+    "redact-utf8-byte-split",
+    "redact-utf8-mid-rune-75",
+    "redact-malformed-byte-slice",
+    "redact-secret-absent",
+    "redact-secret-one-occurrence",
+    "redact-five-byte-half-even",
+    "redact-five-byte-one-percent",
+    "redact-overlapping-replaceall",
+    "redact-required-arbitrary-byte-set",
+    "redact-empty-over-hundred-rune-boundaries",
+    "redact-full-invariant-state",
+    "redact-composite-aux-unredacted",
+    "redact-detector-option-zero",
+    "redact-detector-partial",
+    "redact-decoded-composite",
+    "redact-ordinary-raw-top-level",
+    "redact-ordinary-decoded-top-level",
+    "resource-many-auxiliaries",
+    "resource-self-cycle-bounded",
+    "resource-primary-aux-duplicate-cartesian",
+    "resource-many-generics",
+    "resource-empty-full-long-malformed",
+    "resource-deep-required-graph",
+    "resource-deep-required-graph-missing-tail",
+    "resource-deep-required-cycle"
+  ],
+  "mandatory_cases": [
+    {
+      "number": 1,
+      "request_ids": [
+        "required-raw-raw",
+        "required-config-empty-id",
+        "required-config-missing-id"
+      ]
+    },
+    {
+      "number": 2,
+      "request_ids": [
+        "required-extension-disabled-dependency-fail-closed",
+        "required-extension-valid-plus-missing-fail-closed",
+        "required-runtime-missing-fail-closed"
+      ]
+    },
+    {
+      "number": 3,
+      "request_ids": [
+        "required-duplicate-aux-last-wins-positive",
+        "required-duplicate-aux-last-wins-negative"
+      ]
+    },
+    {
+      "number": 4,
+      "request_ids": [
+        "required-duplicate-specs"
+      ]
+    },
+    {
+      "number": 5,
+      "request_ids": [
+        "required-two-ids-one-present"
+      ]
+    },
+    {
+      "number": 6,
+      "request_ids": [
+        "required-self-cycle",
+        "required-two-rule-cycle",
+        "required-nested-ignored"
+      ]
+    },
+    {
+      "number": 7,
+      "request_ids": [
+        "aux-skipreport-bypassed",
+        "aux-nonskip-top-level-visible"
+      ]
+    },
+    {
+      "number": 8,
+      "request_ids": [
+        "required-inherited-primary-bypass"
+      ]
+    },
+    {
+      "number": 9,
+      "request_ids": [
+        "primary-keyword-raw",
+        "primary-keyword-decoded",
+        "primary-keyword-unicode-case",
+        "primary-keyword-absent",
+        "required-raw-raw"
+      ]
+    },
+    {
+      "number": 10,
+      "request_ids": [
+        "aux-keyword-prefilter-bypassed",
+        "aux-keyword-ordinary-top-level-rejected",
+        "aux-keyword-ordinary-top-level-control"
+      ]
+    },
+    {
+      "number": 11,
+      "request_ids": [
+        "global-early-all-passes",
+        "aux-commit-early-reject",
+        "aux-rule-allowlist-reject",
+        "aux-global-allowlist-reject",
+        "aux-global-finding-untargeted-reject",
+        "aux-global-finding-targeted-control"
+      ]
+    },
+    {
+      "number": 12,
+      "request_ids": [
+        "aux-capture-entropy-allowlist-control",
+        "aux-capture-entropy-allowlist-reject",
+        "aux-capture-entropy-before-allowlist-source-boundary"
+      ]
+    },
+    {
+      "number": 13,
+      "request_ids": [
+        "aux-allow-target-line-nested-decoded",
+        "aux-line-nested-original-line-control",
+        "aux-allow-target-line-multisegment",
+        "aux-line-multisegment-original-line-control"
+      ]
+    },
+    {
+      "number": 14,
+      "request_ids": [
+        "marker-neighbor-outside-encoded-token",
+        "marker-decoded-only-does-not-suppress"
+      ]
+    },
+    {
+      "number": 15,
+      "request_ids": [
+        "aux-capture-tags",
+        "aux-entropy-below-visible",
+        "aux-entropy-equal-reject",
+        "aux-entropy-above-reject"
+      ]
+    },
+    {
+      "number": 16,
+      "request_ids": [
+        "aux-path-only-raw",
+        "aux-path-only-decoded-negative",
+        "aux-path-regex-positive",
+        "aux-path-regex-negative"
+      ]
+    },
+    {
+      "number": 17,
+      "request_ids": [
+        "required-raw-raw",
+        "proximity-line-boundary",
+        "proximity-column-boundary",
+        "proximity-both-conjunctive-pass"
+      ]
+    },
+    {
+      "number": 18,
+      "request_ids": [
+        "proximity-line-outside",
+        "proximity-line-boundary",
+        "proximity-line-distance-plus-one",
+        "proximity-column-outside",
+        "proximity-column-boundary",
+        "proximity-column-distance-plus-one"
+      ]
+    },
+    {
+      "number": 19,
+      "request_ids": [
+        "proximity-zero-equal-start",
+        "proximity-line-zero",
+        "proximity-column-zero",
+        "proximity-line-negative",
+        "proximity-min-signed",
+        "proximity-max-signed"
+      ]
+    },
+    {
+      "number": 20,
+      "request_ids": [
+        "proximity-same-start-different-ends",
+        "proximity-overlapping-spans-start-outside",
+        "proximity-overlapping-spans-start-exact"
+      ]
+    },
+    {
+      "number": 21,
+      "request_ids": [
+        "proximity-match-start-not-capture"
+      ]
+    },
+    {
+      "number": 22,
+      "request_ids": [
+        "proximity-line-boundary",
+        "proximity-negative-fragment-start"
+      ]
+    },
+    {
+      "number": 23,
+      "request_ids": [
+        "projection-primary-aux-cartesian-2x2"
+      ]
+    },
+    {
+      "number": 24,
+      "request_ids": [
+        "projection-required-spec-order"
+      ]
+    },
+    {
+      "number": 25,
+      "request_ids": [
+        "filter-exact-duplicate-primaries-required",
+        "projection-duplicate-pass-and-requirements"
+      ]
+    },
+    {
+      "number": 26,
+      "request_ids": [
+        "projection-decoded-aux-metadata-visible"
+      ]
+    },
+    {
+      "number": 27,
+      "request_ids": [
+        "required-raw-raw"
+      ]
+    },
+    {
+      "number": 28,
+      "request_ids": [
+        "pass-primary-raw-aux-encoded",
+        "pass-primary-encoded-aux-raw"
+      ]
+    },
+    {
+      "number": 29,
+      "request_ids": [
+        "pass-both-encoded-same",
+        "proximity-mapped-inside"
+      ]
+    },
+    {
+      "number": 30,
+      "request_ids": [
+        "pass-both-nested-same-depth",
+        "pass-different-decoded-depth"
+      ]
+    },
+    {
+      "number": 31,
+      "request_ids": [
+        "proximity-mapped-column-just-outside",
+        "proximity-mapped-column-exact",
+        "proximity-mapped-inside",
+        "proximity-mapped-line-outside",
+        "proximity-mapped-line-exact",
+        "proximity-mapped-reverse-shift"
+      ]
+    },
+    {
+      "number": 32,
+      "request_ids": [
+        "decoded-line-primary-wrong-line-control",
+        "decoded-line-primary-own-line-reject",
+        "decoded-line-aux-wrong-line-control",
+        "decoded-line-aux-own-line-reject"
+      ]
+    },
+    {
+      "number": 33,
+      "request_ids": [
+        "pass-raw-and-decoded-composite-duplicates"
+      ]
+    },
+    {
+      "number": 34,
+      "request_ids": [
+        "generic-alone-retained",
+        "generic-case-insensitive-substring"
+      ]
+    },
+    {
+      "number": 35,
+      "request_ids": [
+        "generic-shadow-contained"
+      ]
+    },
+    {
+      "number": 36,
+      "request_ids": [
+        "generic-different-lines-survive",
+        "generic-reversed-containment-survives",
+        "generic-case-different-survives",
+        "generic-filter-adapter-different-commit",
+        "generic-filter-adapter-same-rule-id"
+      ]
+    },
+    {
+      "number": 37,
+      "request_ids": [
+        "generic-both-generic-survive"
+      ]
+    },
+    {
+      "number": 38,
+      "request_ids": [
+        "generic-filter-adapter-ignores-file-column-end"
+      ]
+    },
+    {
+      "number": 39,
+      "request_ids": [
+        "generic-empty-secret-suppressed",
+        "generic-empty-secret-alone-retained"
+      ]
+    },
+    {
+      "number": 40,
+      "request_ids": [
+        "generic-filter-duplicate-order"
+      ]
+    },
+    {
+      "number": 41,
+      "request_ids": [
+        "generic-raw-shadowed-decoded-specific",
+        "generic-decoded-shadowed-composite-specific"
+      ]
+    },
+    {
+      "number": 42,
+      "request_ids": [
+        "generic-attachment-alone-cannot-suppress",
+        "generic-visible-aux-can-suppress"
+      ]
+    },
+    {
+      "number": 43,
+      "request_ids": [
+        "generic-terminal-redaction-discriminator"
+      ]
+    },
+    {
+      "number": 44,
+      "request_ids": [
+        "redact-detector-option-zero",
+        "redact-direct-zero"
+      ]
+    },
+    {
+      "number": 45,
+      "request_ids": [
+        "redact-one",
+        "redact-ten",
+        "redact-tie-25",
+        "redact-tie-50",
+        "redact-tie-75",
+        "redact-ninety",
+        "redact-ninety-nine",
+        "redact-hundred",
+        "redact-over-hundred",
+        "redact-max-uint"
+      ]
+    },
+    {
+      "number": 46,
+      "request_ids": [
+        "upstream-tm-0243-normal-secret",
+        "upstream-tm-0244-short-secret",
+        "redact-five-byte-half-even",
+        "redact-five-byte-one-percent"
+      ]
+    },
+    {
+      "number": 47,
+      "request_ids": [
+        "redact-secret-absent",
+        "redact-secret-one-occurrence",
+        "redact-overlapping-replaceall",
+        "redact-ten"
+      ]
+    },
+    {
+      "number": 48,
+      "request_ids": [
+        "redact-utf8-byte-split",
+        "redact-utf8-mid-rune-75",
+        "redact-malformed-byte-slice",
+        "redact-required-arbitrary-byte-set"
+      ]
+    },
+    {
+      "number": 49,
+      "request_ids": [
+        "redact-empty-partial",
+        "redact-empty-full-utf8-invalid",
+        "redact-empty-over-hundred-rune-boundaries"
+      ]
+    },
+    {
+      "number": 50,
+      "request_ids": [
+        "redact-full-invariant-state"
+      ]
+    },
+    {
+      "number": 51,
+      "request_ids": [
+        "redact-composite-aux-unredacted"
+      ]
+    },
+    {
+      "number": 52,
+      "request_ids": [
+        "redact-ordinary-raw-top-level",
+        "redact-ordinary-decoded-top-level",
+        "redact-decoded-composite"
+      ]
+    },
+    {
+      "number": 53,
+      "request_ids": [
+        "malformed-composite-before",
+        "malformed-composite-inside",
+        "malformed-composite-after",
+        "malformed-primary-aux-inside-secrets"
+      ]
+    },
+    {
+      "number": 54,
+      "request_ids": [
+        "malformed-adjacent-keyword",
+        "malformed-adjacent-unicode-keyword"
+      ]
+    },
+    {
+      "number": 55,
+      "request_ids": [
+        "resource-primary-aux-duplicate-cartesian"
+      ]
+    },
+    {
+      "number": 56,
+      "request_ids": [
+        "resource-many-generics"
+      ]
+    },
+    {
+      "number": 57,
+      "request_ids": [
+        "resource-empty-full-long-malformed"
+      ]
+    },
+    {
+      "number": 58,
+      "request_ids": [
+        "resource-deep-required-graph",
+        "resource-deep-required-graph-missing-tail",
+        "resource-deep-required-cycle"
+      ]
+    }
+  ],
+  "material_assertions": [
+    {
+      "number": 3,
+      "assertion_ids": [
+        "duplicate-aux-last-definition-controls-projection"
+      ]
+    },
+    {
+      "number": 5,
+      "assertion_ids": [
+        "two-distinct-required-ids-one-match-fails-closed"
+      ]
+    },
+    {
+      "number": 9,
+      "assertion_ids": [
+        "keyword-absent-retains-regex-candidate"
+      ]
+    },
+    {
+      "number": 10,
+      "assertion_ids": [
+        "aux-keyword-bypass-versus-ordinary-gate"
+      ]
+    },
+    {
+      "number": 11,
+      "assertion_ids": [
+        "global-finding-target-isolated-from-early-and-rule-gates"
+      ]
+    },
+    {
+      "number": 12,
+      "assertion_ids": [
+        "combined-capture-entropy-allowlist-pairs-and-source-order-boundary"
+      ]
+    },
+    {
+      "number": 13,
+      "assertion_ids": [
+        "nested-and-multisegment-current-line-with-original-projection"
+      ]
+    },
+    {
+      "number": 14,
+      "assertion_ids": [
+        "mapped-original-line-neighbor-marker-versus-decoded-only"
+      ]
+    },
+    {
+      "number": 15,
+      "assertion_ids": [
+        "capture-entropy-below-equal-above-f32"
+      ]
+    },
+    {
+      "number": 16,
+      "assertion_ids": [
+        "path-regex-positive-negative-and-path-only-pass-boundary"
+      ]
+    },
+    {
+      "number": 18,
+      "assertion_ids": [
+        "line-column-distance-minus-exact-plus"
+      ]
+    },
+    {
+      "number": 19,
+      "assertion_ids": [
+        "zero-equal-positive-zero-unequal-negative-signed-extremes"
+      ]
+    },
+    {
+      "number": 20,
+      "assertion_ids": [
+        "end-geometry-ignored-overlap-start-controls"
+      ]
+    },
+    {
+      "number": 22,
+      "assertion_ids": [
+        "fragment-start-shift-and-negative-domain-explicit"
+      ]
+    },
+    {
+      "number": 23,
+      "assertion_ids": [
+        "two-primary-by-two-aux-cartesian"
+      ]
+    },
+    {
+      "number": 25,
+      "assertion_ids": [
+        "byte-identical-primary-and-required-vector-preservation"
+      ]
+    },
+    {
+      "number": 26,
+      "assertion_ids": [
+        "visible-aux-metadata-dropped-from-eight-field-attachment"
+      ]
+    },
+    {
+      "number": 31,
+      "assertion_ids": [
+        "mapped-expanded-spans-and-cumulative-shrink-shifts"
+      ]
+    },
+    {
+      "number": 32,
+      "assertion_ids": [
+        "primary-aux-decoded-line-gates-isolated"
+      ]
+    },
+    {
+      "number": 33,
+      "assertion_ids": [
+        "raw-decoded-genuinely-new-composites-retain-vectors"
+      ]
+    },
+    {
+      "number": 36,
+      "assertion_ids": [
+        "different-commit-and-same-rule-id-filter-controls"
+      ]
+    },
+    {
+      "number": 39,
+      "assertion_ids": [
+        "empty-generic-suppressed-and-alone-retained"
+      ]
+    },
+    {
+      "number": 40,
+      "assertion_ids": [
+        "true-generic-specific-duplicates-and-stable-bookend-order"
+      ]
+    },
+    {
+      "number": 41,
+      "assertion_ids": [
+        "cross-pass-and-composite-specific-suppression"
+      ]
+    },
+    {
+      "number": 42,
+      "assertion_ids": [
+        "attachment-alone-versus-visible-aux-suppression"
+      ]
+    },
+    {
+      "number": 43,
+      "assertion_ids": [
+        "suppression-uses-original-before-noncontaining-masks"
+      ]
+    },
+    {
+      "number": 45,
+      "assertion_ids": [
+        "public-redact-max-uint-full-mask"
+      ]
+    },
+    {
+      "number": 47,
+      "assertion_ids": [
+        "zero-one-repeated-overlap-replacement"
+      ]
+    },
+    {
+      "number": 48,
+      "assertion_ids": [
+        "required-control-byte-set-and-mid-rune-slice"
+      ]
+    },
+    {
+      "number": 49,
+      "assertion_ids": [
+        "empty-secret-partial-full-over-rune-boundaries"
+      ]
+    },
+    {
+      "number": 50,
+      "assertion_ids": [
+        "all-public-fields-fragment-required-invariant"
+      ]
+    },
+    {
+      "number": 52,
+      "assertion_ids": [
+        "ordinary-raw-decoded-and-composite-terminal-redaction"
+      ]
+    },
+    {
+      "number": 53,
+      "assertion_ids": [
+        "malformed-before-inside-after-primary-aux-exact-slices"
+      ]
+    },
+    {
+      "number": 54,
+      "assertion_ids": [
+        "invalid-byte-ascii-and-unicode-keyword-adjacency"
+      ]
+    },
+    {
+      "number": 55,
+      "assertion_ids": [
+        "bounded-cartesian-count-and-vector"
+      ]
+    },
+    {
+      "number": 56,
+      "assertion_ids": [
+        "bounded-quadratic-generic-result"
+      ]
+    },
+    {
+      "number": 57,
+      "assertion_ids": [
+        "bounded-empty-secret-expansion-bytes"
+      ]
+    },
+    {
+      "number": 58,
+      "assertion_ids": [
+        "deep-missing-tail-and-closed-cycle-under-external-contracts"
+      ]
+    }
+  ],
+  "source_order_evidence": [
+    {
+      "group": 12,
+      "classification": "source-order-only",
+      "source": "detect/detect.go",
+      "source_sha256": "2bac563a09f22ff76c56b200c3b9b5dc865c1de699eb0ba2a27cca741fa9bd13",
+      "entropy_line": 543,
+      "global_allowlist_line": 557,
+      "rule_allowlist_line": 563
+    }
+  ],
+  "domain_observations": [
+    {
+      "group": 22,
+      "classification": "Go-only-negative-Fragment.StartLine",
+      "request_id": "proximity-negative-fragment-start",
+      "request_start_line": -20,
+      "primary_start_line": -18
+    }
+  ],
+  "resource_contracts": [
+    {
+      "case": 55,
+      "deadline_seconds": 10,
+      "output_bytes": 8388608,
+      "allocation_bytes": 1073741824,
+      "request_id": "resource-primary-aux-duplicate-cartesian"
+    },
+    {
+      "case": 56,
+      "deadline_seconds": 10,
+      "output_bytes": 4194304,
+      "allocation_bytes": 1073741824,
+      "request_id": "resource-many-generics"
+    },
+    {
+      "case": 57,
+      "deadline_seconds": 10,
+      "output_bytes": 4194304,
+      "allocation_bytes": 1073741824,
+      "request_id": "resource-empty-full-long-malformed"
+    },
+    {
+      "case": 58,
+      "deadline_seconds": 10,
+      "output_bytes": 4194304,
+      "allocation_bytes": 1073741824,
+      "request_id": "resource-deep-required-graph"
+    },
+    {
+      "case": 58,
+      "deadline_seconds": 10,
+      "output_bytes": 4194304,
+      "allocation_bytes": 1073741824,
+      "request_id": "resource-deep-required-graph-missing-tail"
+    },
+    {
+      "case": 58,
+      "deadline_seconds": 10,
+      "output_bytes": 4194304,
+      "allocation_bytes": 1073741824,
+      "request_id": "resource-deep-required-cycle"
+    }
+  ],
+  "exclusions": [
+    "session ignore/baseline behavior",
+    "report/CLI presentation",
+    "SARIF/JSON/CSV/JUnit rendering",
+    "Rust implementation claims"
+  ]
+}

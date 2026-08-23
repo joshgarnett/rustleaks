@@ -1,0 +1,1074 @@
+schema_version = 1
+upstream_revision = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b"
+status = "understanding-complete"
+
+[[behavior]]
+id = "BOOT-001"
+description = "The external Go oracle revision and default configuration hash are pinned."
+go_evidence = "compat/upstream-revision.txt"
+rust_evidence = "cargo xtask verify-upstream"
+status = "implemented"
+
+[[behavior]]
+id = "MODEL-001"
+description = "Fragment content and finding text preserve arbitrary bytes."
+go_evidence = "sources/fragment.go; report/finding.go"
+rust_evidence = "crates/rustleaks-core/tests/model.rs"
+status = "implemented"
+
+[[behavior]]
+id = "MODEL-002"
+description = "Fragment metadata preserves paths, start line, commit, and author/message fields."
+go_evidence = "sources/fragment.go"
+rust_evidence = "crates/rustleaks-core/tests/model.rs"
+status = "implemented"
+
+[[behavior]]
+id = "MODEL-003"
+description = "Finding and required-finding models preserve byte coordinates, entropy bits, tags, and duplicates."
+go_evidence = "report/finding.go"
+rust_evidence = "crates/rustleaks-core/tests/model.rs"
+status = "implemented"
+
+[[behavior]]
+id = "TM-ALL-001"
+description = "All pinned runnable Go identities plus 283 nested semantic assertions, six benchmark correctness links, and two platform branches are traceable."
+go_evidence = "compat/api-inventory-v1.json; compat/assertion-corpus"
+rust_evidence = "cargo xtask manifest-check"
+status = "traceability-complete"
+
+[[behavior]]
+id = "API-ALL-001"
+description = "All 607 atomic exported Go API identities across 16 packages are extracted exactly and joined one-to-one to explicit Rust dispositions."
+go_evidence = "compat/api-inventory-v1.json; compat/api-dispositions-v1.jsonl"
+rust_evidence = "cargo xtask api-check"
+status = "traceability-complete"
+
+[[behavior]]
+id = "GEN-ALL-001"
+description = "All 225 constructors, 222 selections, 220 helper-covered rules, and 6770 embedded validation occurrences have stable source identities and frozen Go observations."
+go_evidence = "compat/generator-corpus"
+rust_evidence = "cargo xtask generator-check"
+status = "traceability-complete"
+
+[[behavior]]
+id = "FIX-ALL-001"
+description = "All 214 regular testdata files and the real symlink are independently copied and verified by path, bytes, size, mode, and target."
+go_evidence = "compat/api-inventory-v1.json"
+rust_evidence = "cargo xtask fixture-check"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-INT-ALL-001"
+description = "All seven disabled or unsafe shared-fixture Git intentions run from isolated copies with exact fragment, finding, metadata, link, and safe-disposition comparisons."
+go_evidence = "compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/tests/git_corpus.rs; cargo xtask git-check"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-001"
+description = "Default history argv is exact and shell-free."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-002"
+description = "Nonempty raw log options use literal ASCII-space splitting, including empty and quoted tokens."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "GIT-003"
+description = "Working-tree and staged argv plus the final dot pathspec are exact; untracked files are absent."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-004"
+description = "Git stdout is parsed as bytes into ordered files and hunks; malformed output produces a structured error."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "GIT-005"
+description = "Fragment content contains only compacted added-line bytes and starts at the hunk new position."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-006"
+description = "No-newline markers, hunk deletion, and whole-file deletion distinctions remain exact."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-007"
+description = "Quoted and octal Git logical paths remain byte preserving."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-008"
+description = "Nonarchive binaries skip while filename-recognized binary archives scan the selected full blob."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-009"
+description = "History reads commit:path while staged and unstaged empty-commit archive reads use index :path."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-010"
+description = "History metadata and diff-only zero metadata are exact."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-011"
+description = "The source-level commit allowlist attempt remains a no-op; detector allowlists remain downstream policy."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-012"
+description = "File concurrency is not observable ordering; the safe source is synchronous and optional runner concurrency is joined."
+go_evidence = "sources/git.go"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/src/runner.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-013"
+description = "Recognized Git stderr warnings continue, unexpected stderr becomes one issue, and overflow fails safely."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented-safe-overflow-disposition"
+
+[[behavior]]
+id = "GIT-014"
+description = "Child exit, parser, kill, wait, pipe-reader, and reap outcomes are never silently lost."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_sources.rs"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "GIT-015"
+description = "Cancellation stops process, blob, and archive work and joins helpers before return."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-016"
+description = "Remote discovery argv, working directory, and no-platform behavior are exact."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/scm.rs; crates/rustleaks-sources/tests/git_scm.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-017"
+description = "Remote normalization, credential removal, no-remote handling, and first-remote selection are exact."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/scm.rs; crates/rustleaks-sources/tests/git_scm.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-018"
+description = "Platform parsing and host inference use the closed pinned mapping."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/scm.rs; crates/rustleaks-sources/tests/git_scm.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-019"
+description = "SCM link templates, escaping, archive outer paths, and line anchors are exact."
+go_evidence = "detect/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/scm.rs; crates/rustleaks-sources/tests/git_scm.rs; crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-020"
+description = "Git patch bytes, lines, stderr, blobs, metadata, paths, files, and hunks use checked fallible boundaries with structured failures."
+go_evidence = "sources/git.go; compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/src/git.rs; crates/rustleaks-sources/tests/git_sources.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "GIT-021"
+description = "Git, process, archive, and scheduler dependencies remain outside rustleaks-core."
+go_evidence = "sources"
+rust_evidence = "crates/rustleaks-sources/Cargo.toml; crates/rustleaks-sources/src/lib.rs"
+status = "implemented"
+
+[[behavior]]
+id = "GIT-022"
+description = "Owned Git code forbids unsafe and uses portable native Rust across macOS, Linux, and Windows."
+go_evidence = "sources"
+rust_evidence = "crates/rustleaks-sources/src/lib.rs; .github/workflows/ci.yml"
+status = "implemented-native-linux-windows-runtime-follow-up"
+
+[[behavior]]
+id = "GIT-023"
+description = "Every Git intention runs on an isolated complete repository copy and preserves shared fixture bytes."
+go_evidence = "compat/git-corpus"
+rust_evidence = "crates/rustleaks-sources/tests/git_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CONFIG-RAW-001"
+description = "Gitleaks TOML is decoded into a constructible permissive raw model with camelCase keys, deprecated singular allowlist aliases, case-insensitive field matching, and ignored unknown fields."
+go_evidence = "config/config.go; config/config_test.go; compat/config-corpus"
+rust_evidence = "crates/rustleaks-core/tests/config.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CONFIG-COMPILE-002"
+description = "Raw rules, required rules, allowlists, weak input coercions, keyword normalization, duplicate IDs, version metadata, Go-compatible private regex validation, and deterministic rule order normalize to the same effective config as Go."
+go_evidence = "config/config.go; config/rule.go; config/allowlist.go; config tests"
+rust_evidence = "crates/rustleaks-core/tests/config.rs; crates/rustleaks-core/src/regex; cargo xtask parity --scope regex"
+status = "implemented"
+
+[[behavior]]
+id = "CONFIG-EXTEND-003"
+description = "Default and path extension use injected origin-aware resolution, a reentrant two-level context, Go-compatible merge precedence/appends/disabled rules, and deterministic sorted merged order."
+go_evidence = "config/config.go; testdata/config/valid/extend*; testdata/config/invalid/extend*"
+rust_evidence = "crates/rustleaks-core/tests/config.rs; compat/config-corpus"
+status = "implemented"
+
+[[behavior]]
+id = "CONFIG-DEFAULT-004"
+description = "The byte-exact pinned default TOML is embedded with revision/hash metadata and loads to the Go-equivalent 222-rule effective configuration."
+go_evidence = "config/gitleaks.toml; cmd/generate/config; compat/generator-corpus"
+rust_evidence = "crates/rustleaks-core/default/gitleaks.toml; crates/rustleaks-core/tests/config.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REGEX-GOREGEX-005"
+description = "The private GoRegex frontend preserves Go 1.25 regexp compilation, Unicode-15 simple folding/classes, ASCII shorthands and boundaries, leftmost-first captures, empty iteration, malformed-UTF-8 RuneError behavior, and original byte spans behind an exact-pinned direct PikeVM backend."
+go_evidence = "crates/rustleaks-compat/oracle; compat/regex-corpus"
+rust_evidence = "crates/rustleaks-core/src/regex; cargo xtask regex-check"
+status = "implemented"
+
+[[behavior]]
+id = "DETECT-RAW-006"
+description = "The immutable byte-first engine matches the pinned direct raw detector for final-rule execution, keyword filtering, path gates, skipReport, captures, entropy, locations, allow markers, metadata, duplicates, and max-target boundaries."
+go_evidence = "crates/rustleaks-compat/oracle; compat/detect-corpus"
+rust_evidence = "crates/rustleaks-core/tests/detect_corpus.rs; crates/rustleaks-core/src/engine.rs; cargo xtask parity --scope detect"
+status = "implemented"
+
+[[behavior]]
+id = "AL-001"
+description = "Validated allowlists compile once into immutable normalized commit/stopword sets, exact ordered combined path/content regexes, and stopword matching state; empty tables fail safely."
+go_evidence = "config/allowlist.go:70-114; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/config; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-002"
+description = "Validated commit criteria use Go Unicode-15 lowercase, trim stored values only, deduplicate, reject empty queries, and match case-insensitively."
+go_evidence = "config/allowlist.go:117-133; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-003"
+description = "Validated path criteria use one exact ordered noncapturing GoRegex alternation, including empty spans, inline-flag scope, malformed bytes, and nonempty-input guards."
+go_evidence = "config/allowlist.go:136-146; config/utils.go; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-004"
+description = "Validated finding-regex criteria use one exact ordered combined GoRegex against the selected nonempty secret, match, or line target."
+go_evidence = "config/allowlist.go:149-159; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-005"
+description = "Validated stopwords are Go-lowercased, deduplicated, empty-word inert, and matched as case-insensitive substrings with pinned first-match geometry."
+go_evidence = "config/allowlist.go:93-102,161-179; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-006"
+description = "OR allowlists evaluate only commit and dual-path criteria in the early global/rule phase, preserving the Windows-only metadata guard."
+go_evidence = "detect/detect.go:763-815; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-007"
+description = "OR allowlists evaluate only regex and stopword criteria per finding after capture and entropy, without reconsidering commit or path."
+go_evidence = "detect/detect.go:817-890; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-008"
+description = "AND allowlists require every present category and defer the whole decision to finding time whenever regexes or stopwords are present."
+go_evidence = "detect/detect.go:783-800,848-866; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-009"
+description = "Allowlist tables aggregate independently by first success in global-early, rule-early, global-finding, then rule-finding order."
+go_evidence = "detect/detect.go:302-305,388-391,556-566; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-010"
+description = "Non-targeted globals retain global scope; targeted globals execute only as appended rule allowlists, including pinned extension attachment/discard behavior."
+go_evidence = "config/config.go:228-240,269-276; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/config.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-011"
+description = "Allowlist path criteria check normalized FilePath and nonempty original WindowsFilePath at both applicable stages."
+go_evidence = "detect/detect.go:780-781,855-857; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-012"
+description = "Finding regex targets select extracted secret by default, trimmed full match for match, and the explicit current raw line for line; stopwords always target secret."
+go_evidence = "detect/detect.go:830-837; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented-raw"
+
+[[behavior]]
+id = "AL-013"
+description = "Allowlist evaluation preserves ordering after skipReport/path gates and after allow marker, capture, and entropy; path-only findings bypass finding-level checks."
+go_evidence = "detect/detect.go:383-566; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-014"
+description = "Primary and required-rule allowlist ordering preserves non-inherited suppression and the inherited pre-projection bypass while positive required projections retain every later gate."
+go_evidence = "detect/detect.go:556-655; compat/allowlist-corpus; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/allowlist.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-015"
+description = "Finding line allowlists use the explicit current decoded-pass line while the reported finding line and location remain mapped to original fragment bytes."
+go_evidence = "detect/detect.go:460-472,517-519,830-837; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/allowlist.rs; crates/rustleaks-core/tests/detect_corpus.rs; compat/decoder-corpus"
+status = "implemented"
+
+[[behavior]]
+id = "AL-016"
+description = "Extension merging preserves upstream allowlist table append/order semantics and the pinned targeted-global base-extension discard."
+go_evidence = "config/config.go:450-487; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/config.rs; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "AL-017"
+description = "Rust exposes only safe immutable validated matching; nil, unvalidated, stale-mutation, and panic states remain versioned oracle observations rather than production API."
+go_evidence = "config/allowlist.go; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/tests/allowlist.rs; docs/COMPATIBILITY.md"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "AL-018"
+description = "Commit/stopword normalization and path/regex byte matching reuse pinned Go Unicode-15 and GoRegex behavior, including malformed-byte replacement and exact combined-source order."
+go_evidence = "config/allowlist.go; config/utils.go; compat/allowlist-corpus"
+rust_evidence = "crates/rustleaks-core/src/go_unicode.rs; crates/rustleaks-core/src/regex; crates/rustleaks-core/tests/allowlist.rs"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-001"
+description = "A per-fragment decoder performs iterative passes until exhaustion or the exact configured depth and caches both successful and empty results by exact candidate bytes."
+go_evidence = "detect/codec/decoder.go; detect/detect.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; crates/rustleaks-core/src/engine.rs; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-002"
+description = "Percent candidates use the pinned greedy same-line grammar and partially decode valid escapes while applying the byte filter only to decoded escapes."
+go_evidence = "detect/codec/encodings.go; detect/codec/percent.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-003"
+description = "Unicode candidates preserve the exact U+XXXX and one/two-backslash escape forms, whitespace consumption, UTF-8 output, NUL, and surrogate replacement behavior."
+go_evidence = "detect/codec/unicode.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-004"
+description = "Hex candidates preserve the 32-character threshold, maximal-run failure, decimal-digit likelihood heuristic, even-length requirement, and decoded-byte filter."
+go_evidence = "detect/codec/encodings.go; detect/codec/hex.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-005"
+description = "Base64 candidates preserve the grammar and likelihood heuristic, permissive standard-padded then raw-URL/no-pad decoding order, non-zero trailing bits, and decoded-byte filter."
+go_evidence = "detect/codec/encodings.go; detect/codec/base64.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-006"
+description = "Combined candidate discovery preserves encoding precedence and the original immediate-neighbor filter with inclusive endpoint-touch overlap."
+go_evidence = "detect/codec/encodings.go; detect/codec/start_end.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-007"
+description = "Replacement passes preserve signed shifts, original/encoded/decoded ranges, immutable shared predecessor snapshots, encoding unions, depth, and recursive original mapping."
+go_evidence = "detect/codec/decoder.go; detect/codec/segment.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-008"
+description = "Decoded overlap selection, original-index adjustment, decoded current-line slicing, and metadata tag ordering match the pinned byte-range helpers."
+go_evidence = "detect/codec/segment.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-009"
+description = "Decoder filtering preserves each codec's exact malformed, non-ASCII, nonprintable, and arbitrary-byte behavior without narrowing fragment bytes to UTF-8 strings."
+go_evidence = "detect/codec/ascii.go; detect/codec; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-010"
+description = "The detector always scans raw bytes then at most N decoded passes, rebuilding keyword hits on every pass and stopping on exact depth or segment exhaustion."
+go_evidence = "detect/detect.go:309-366; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/detect_corpus.rs; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-011"
+description = "Decoded findings preserve decoded match/secret and entropy while reporting mapped original lines, locations, ordered tags, and raw/decoded duplicate multiplicity."
+go_evidence = "detect/detect.go:371-576; detect/detect_test.go; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/detect_corpus.rs; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-012"
+description = "Decoded finding allowlists target the current decoded line while allow-marker checks and reported line data remain bound to original bytes."
+go_evidence = "detect/detect.go:460-566,817-890; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/detect_corpus.rs; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "DEC-013"
+description = "Bounded long percent, hex, and base64 candidates retain exact compatibility outcomes under the private regex, cache, and replacement implementation."
+go_evidence = "detect/codec; compat/decoder-corpus"
+rust_evidence = "crates/rustleaks-core/src/decoder; cargo xtask decoder-check"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-001"
+description = "Required-rule lookup uses the merged rule map, duplicate rule IDs select the final definition, duplicate required specifications rerun and overwrite by ID, and a dangling runtime dependency fails the primary closed."
+go_evidence = "detect/detect.go:577-655; config/config.go; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/engine.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-002"
+description = "Auxiliary rules run on the same current pass with inherited context, bypass skipReport, and stop recursive required projection after one level, including self, cyclic, and nested graphs."
+go_evidence = "detect/detect.go:383-391,577-655; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/engine.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-003"
+description = "Required auxiliary execution bypasses keyword prefiltering but retains rule early allowlists, target gates, allow markers, capture, entropy, and global/rule finding allowlists."
+go_evidence = "detect/detect.go:371-655; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/engine.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-004"
+description = "Required proximity compares inclusive absolute start-line and start-column differences, requires both supplied bounds, treats absent bounds as unrestricted, and rejects negative bounds."
+go_evidence = "detect/detect.go:675-700; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/engine.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-005"
+description = "A satisfied primary receives the exact eight-field required-finding projection in required-specification then auxiliary-regex match order, preserving duplicates and requiring every referenced ID to be present."
+go_evidence = "detect/detect.go:592-653; detect/detect_test.go; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/src/model.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-006"
+description = "Primary and auxiliary rules share the exact raw or decoded pass; decoded overlap and original-coordinate mapping apply independently, and path-only auxiliaries can satisfy only the raw pass."
+go_evidence = "detect/detect.go:309-655; detect/codec/segment.go; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-007"
+description = "Required evaluation remains inside each detection pass after early gates, while generic suppression and redaction run once over the complete raw-plus-decoded finding list."
+go_evidence = "detect/detect.go:302-367,577-700; detect/utils.go:136-166; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "COMP-008"
+description = "Composite output preserves arbitrary bytes, duplicate top-level and required findings, bounded resource cases, exact required-vector order, and only canonicalizes unspecified top-level Go rule-map order for comparison."
+go_evidence = "detect/detect.go; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/tests/composite_corpus.rs; cargo xtask composite-check"
+status = "implemented"
+
+[[behavior]]
+id = "SUP-001"
+description = "A finding whose Go-lowercased rule ID contains generic is removed when the immutable full list contains a different non-generic rule on the same start line and exact commit whose secret contains the generic secret; other geometry and file fields are ignored."
+go_evidence = "detect/utils.go:136-157; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/src/engine.rs::tests::private_filter_replays_the_frozen_oracle_adapter; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "RED-001"
+description = "Detector redaction dispatch runs only for a positive option, masks by byte length using binary64 round-to-even retention, appends an ellipsis for partial masking, and treats every percentage at or above 100 as full redaction."
+go_evidence = "detect/detect.go:367; detect/utils.go:158-160; report/finding.go:77-99; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/model.rs; crates/rustleaks-core/tests/model.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "RED-002"
+description = "Redaction replaces every original secret occurrence in line and match byte-for-byte, including repeated, UTF-8, malformed-byte, and empty-secret cases, while leaving unrelated finding fields invariant."
+go_evidence = "report/finding.go; report/finding_test.go; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/model.rs; crates/rustleaks-core/tests/model.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "RED-003"
+description = "Generic suppression precedes redaction, and redaction transforms only the primary finding's secret, line, and match while ordered required-finding attachments remain unredacted."
+go_evidence = "detect/detect.go:367; detect/utils.go:136-166; report/finding.go:77-99; compat/composite-corpus"
+rust_evidence = "crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/src/model.rs; crates/rustleaks-core/tests/composite_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-001"
+description = "Session assignment overwrites the stored copy's fingerprint with the exact global or commit-qualified byte concatenation while leaving caller-owned values independent."
+go_evidence = "detect/detect.go:710-718; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-002"
+description = "Ignore parsing applies Go line scanning and Unicode trim semantics, skips blank/comment-first tokens, and normalizes backslashes only in the arity-selected file field."
+go_evidence = "detect/detect.go:153-193; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-003"
+description = "Malformed ignore entries remain opaque installed keys, duplicates collapse, and the pinned 65,535/65,536-byte scanner boundary retains only prior entries with a structured nonfatal issue."
+go_evidence = "detect/detect.go:153-193; bufio.Scanner; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-004"
+description = "Suppression checks the global ignore key, then the commit-qualified key, then baseline equality, preserving the first matching reason and accepted duplicates."
+go_evidence = "detect/detect.go:710-749; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-005"
+description = "Baseline loading accepts null or an ordered duplicate-preserving finding array and reports structured read/format failures without extension-based dispatch."
+go_evidence = "detect/baseline.go:37-50; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-006"
+description = "Baseline equality compares the pinned fifteen scalar fields, treats one equal row as existential suppression, and ignores report-only fields including fingerprint, tags, fragment, and required findings."
+go_evidence = "detect/baseline.go:12-35; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-007"
+description = "Any nonzero redaction mode omits match and secret only from baseline equality; the session never performs redaction itself."
+go_evidence = "detect/baseline.go:12-35; detect/detect.go:710-749; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-008"
+description = "Accepted findings preserve insertion and merge order and exact duplicate multiplicity, while snapshots and consuming accessors never alias mutable internal storage."
+go_evidence = "detect/detect.go:710-754; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-009"
+description = "Immutable Send+Sync policy and owned mergeable batches support caller-selected concurrency without spawning threads, exporting locks, or requiring a scheduler/runtime dependency."
+go_evidence = "detect/detect.go:38-107,710-754; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SESSION-010"
+description = "The opt-in stable canonical helper compares every retained raw field, preserves duplicates, and treats tag and required-finding vectors as ordered values without sorting their contents."
+go_evidence = "report/finding.go; compat/session-corpus"
+rust_evidence = "crates/rustleaks-core/src/session.rs; crates/rustleaks-core/tests/session_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-001"
+description = "A synchronous source visits fragment-or-issue events; callback stop/errors and terminal source errors remain distinct."
+go_evidence = "sources/source.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/source.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-002"
+description = "File fragments own exact bytes and metadata; they never expose the Go reusable-buffer alias."
+go_evidence = "sources/fragment.go; sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "SRC-003"
+description = "Nil file buffers select 100,000 bytes; custom positive sizes are exact; the compatibility shim preserves the zero-buffer empty-success quirk."
+go_evidence = "sources/file.go; detect/reader.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "SRC-004"
+description = "A suffix already containing two LFs separated only by SP/TAB/CR/LF ends a chunk without read-ahead."
+go_evidence = "sources/file.go; sources/common_test.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-005"
+description = "Unsafe boundaries append bytewise through the second LF or exactly 25,000 bytes, with no byte pushback."
+go_evidence = "sources/file.go; sources/common_test.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-006"
+description = "EOF, n>0+EOF, n>0+nil, n>0+error, n==0+error, and read-ahead errors preserve the pinned fragment/error outcomes."
+go_evidence = "sources/file.go; detect/reader_test.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/tests/native_sources.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "SRC-007"
+description = "File fragments start at one plus prior LF count; only byte 0x0a advances the next start line."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-008"
+description = "MIME matching uses the original read before extension whenever prior LF count is zero and skips only h2non/filetype-v1.1.3 application/*."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/mime.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-009"
+description = "Reader compatibility adapters preserve count/error/finalization outcomes without requiring channels, goroutines, or an async runtime."
+go_evidence = "detect/reader.go; detect/reader_test.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-010"
+description = "Directory discovery follows host WalkDir lexical traversal semantics for root file, root directory, and nested entries."
+go_evidence = "sources/files.go; detect/detect_test.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-011"
+description = "Empty files are skipped; positive maximum file size is an exact strict-greater-than byte gate and equality is scanned."
+go_evidence = "sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-012"
+description = "Missing, unreadable, and metadata-failing paths are skipped or diagnosed at the pinned stage; untrusted filesystem states never panic."
+go_evidence = "sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "SRC-013"
+description = "Global path allowlists prune directories early and skip discovered files or aliases, with Windows raw-plus-slash checks."
+go_evidence = "sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-core/src/config/compiled.rs; crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/archive_sources.rs"
+status = "implemented-pending-native-windows"
+
+[[behavior]]
+id = "SRC-014"
+description = "Symlink entries are skipped when following is disabled and directory symlinks are never traversed."
+go_evidence = "sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-015"
+description = "Followed file symlinks scan the resolved target while reporting target FilePath and discovered alias SymlinkFile."
+go_evidence = "sources/files.go; detect/detect_test.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-016"
+description = "Chained, dangling, looping, and escaping symlinks terminate safely as scan issues; no target is scanned twice by implicit directory following."
+go_evidence = "sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "SRC-017"
+description = "Physical paths stay as PathBuf; logical fragment paths reproduce host Go cleaning and Windows slash/original dual fields without Unicode normalization."
+go_evidence = "sources/file.go; sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/path.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented-pending-native-windows"
+
+[[behavior]]
+id = "SRC-018"
+description = "Archive identification is case-insensitive name-only with the pinned format/substring profile; magic alone does not activate archive handling."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-019"
+description = "Each recognized extractor or decompressor layer consumes one depth; zero disables archives, and a compressed tar is one layer."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-020"
+description = "Extractors ignore directories, preserve backend entry order, clean entry names with host filepath semantics, and recurse synchronously."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-021"
+description = "Observable inner paths are slash-normalized outer layers joined to the current entry with literal !; fingerprints use that full path."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/path.rs; crates/rustleaks-sources/tests/source_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-022"
+description = "Registered single-stream decompressors retain the outer filename while scanning decoded bytes; compressed TARs consume one archive layer."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/source_corpus.rs; docs/RESOURCE_LIMITS.md"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-023"
+description = "First-level inner allowlist checks use the cleaned inner name; nested child config non-propagation and later full-path engine checks are frozen."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/archive_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-024"
+description = "Zip and 7z work from seekable files and bounded safe spool storage for non-seekable nested streams; temporary artifacts are always reclaimed."
+go_evidence = "sources/file.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/archive_sources.rs; docs/RESOURCE_LIMITS.md"
+status = "implemented-safe-in-memory-spool"
+
+[[behavior]]
+id = "SRC-025"
+description = "Corrupt, member-open, decompress, unsupported-codec, and read failures have a final safe disposition: terminal cancellation/callback failures remain terminal, while recoverable direct-file and directory failures become stable structured issues instead of Go errors or panics."
+go_evidence = "sources/file.go; sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/archive_sources.rs::corrupt_and_limit_failures_are_structured; crates/rustleaks-sources/tests/source_corpus.rs::complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions; docs/RESOURCE_LIMITS.md; cargo xtask source-check"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "SRC-026"
+description = "Directory parallelism is caller-selected and bounded; result order is unspecified but the complete finding multiset and duplicates are invariant."
+go_evidence = "sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/runner.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-027"
+description = "Cancellation is checked during traversal, scheduling, chunk loops, archive enumeration or decoding, and runner detection; cancellation never leaves unjoined workers."
+go_evidence = "sources/file.go; sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/cancellation.rs; crates/rustleaks-sources/src/runner.rs; crates/rustleaks-sources/tests/archive_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-028"
+description = "Source running scans each successful fragment through immutable Engine, then policy-binds and merges owned ScanSession batches so fingerprints, ignore, and baseline behavior is unchanged."
+go_evidence = "detect/detect.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/runner.rs; crates/rustleaks-sources/tests/native_sources.rs"
+status = "implemented"
+
+[[behavior]]
+id = "SRC-029"
+description = "All lengths, line counts, depths, entry counts, expansion totals, and spool sizes use checked arithmetic and configurable limits with structured limit outcomes."
+go_evidence = "sources/file.go; sources/files.go; compat/source-corpus"
+rust_evidence = "crates/rustleaks-sources/src/file.rs; crates/rustleaks-sources/src/archive.rs; crates/rustleaks-sources/tests/archive_sources.rs"
+status = "implemented-safe-boundary"
+
+[[behavior]]
+id = "SRC-030"
+description = "rustleaks-sources and its archive feature are safe, synchronous, native macOS/Linux/Windows Rust and keep all source, archive, and scheduler dependencies out of rustleaks-core."
+go_evidence = "sources; compat/source-corpus"
+rust_evidence = ".github/workflows/ci.yml; crates/rustleaks-sources/src/lib.rs; docs/DEPENDENCIES.md"
+status = "implemented-pending-native-ci"
+
+[[behavior]]
+id = "REPORT-001"
+description = "Reusable synchronous reporters preserve finding order and duplicates, return structured errors, and never close, flush, log, panic, or interpret finding paths."
+go_evidence = "report; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/lib.rs; crates/rustleaks-report/tests/report_corpus.rs; cargo xtask report-check; .github/workflows/ci.yml"
+status = "implemented-native-linux-windows-runtime-follow-up"
+
+[[behavior]]
+id = "REPORT-002"
+description = "JSON fields, declaration order, indentation, escaping, replacement, optional fields, and final LF match the pinned writer byte-for-byte."
+go_evidence = "report/json.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/json.rs; crates/rustleaks-report/src/go_json.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REPORT-003"
+description = "JSON empty, fragment, link, tags, float32 boundary, non-finite error, and already-redacted finding behavior is explicit."
+go_evidence = "report/json.go; report/finding.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/json.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "REPORT-004"
+description = "CSV preserves the exact schema, empty output, finding order, tags, and first-finding Link-column selection."
+go_evidence = "report/csv.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/csv.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REPORT-005"
+description = "CSV quoting matches pinned comma, quote, CR, LF, leading Unicode whitespace, backslash-dot, and raw malformed-byte behavior."
+go_evidence = "report/csv.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/csv.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REPORT-006"
+description = "JUnit preserves the exact XML envelope, testcase and failure order, messages, empty shape, and ending."
+go_evidence = "report/junit.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/junit.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REPORT-007"
+description = "JUnit embeds Go-compatible finding JSON and applies exact XML escaping and invalid-byte/control replacement while returning the first writer error."
+go_evidence = "report/junit.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/junit.rs; crates/rustleaks-report/src/go_json.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "REPORT-008"
+description = "SARIF preserves the pinned envelope, constants, caller-provided ordered rules including duplicates, and explicit empty arrays."
+go_evidence = "report/sarif.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/sarif.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REPORT-009"
+description = "SARIF findings preserve message grammar, symlink URI precedence, commit metadata, tags, locations, ordering, and Go JSON byte policy."
+go_evidence = "report/sarif.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/sarif.rs; crates/rustleaks-report/src/go_json.rs; crates/rustleaks-report/tests/report_corpus.rs"
+status = "implemented"
+
+[[behavior]]
+id = "REPORT-010"
+description = "The versioned capability-free template profile rejects undeclared helpers and enforces checked source, action, iteration, and output ceilings with structured errors."
+go_evidence = "report/template.go; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/template.rs; crates/rustleaks-report/tests/template.rs"
+status = "implemented-safe-profile"
+
+[[behavior]]
+id = "REPORT-011"
+description = "Safe templates preserve the complete pinned fixture syntax, raw direct fields, quote/sub/len/eq behavior, whitespace, variables, and ordered duplicate findings."
+go_evidence = "report/template.go; testdata/report; compat/report-corpus"
+rust_evidence = "crates/rustleaks-report/src/template.rs; crates/rustleaks-report/tests/template.rs"
+status = "implemented-safe-profile"
+
+[[behavior]]
+id = "CLI-001"
+description = "The thin CLI preserves root help/version forms and git, dir/file/directory, and stdin command topology with explicit safe arity."
+go_evidence = "cmd/root.go; cmd/git.go; cmd/directory.go; cmd/stdin.go"
+rust_evidence = "crates/rustleaks-cli/src/args.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-002"
+description = "Configuration selection preserves nonempty flag, path environment, inline environment, source-local, and embedded-default precedence, including cwd-relative extension resolution."
+go_evidence = "cmd/root.go; cmd/config.go"
+rust_evidence = "crates/rustleaks-cli/src/config.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-003"
+description = "Config and successfully loaded baseline fragments are counted then excluded by their compatible logical spellings, while named and source-local ignore files are layered without excluding themselves."
+go_evidence = "cmd/root.go; detect/detect.go"
+rust_evidence = "crates/rustleaks-cli/src/config.rs; crates/rustleaks-cli/src/source.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-004"
+description = "Decode depth, target-size threshold, gitleaks:allow handling, and redaction flags map through checked values into immutable scan/session options."
+go_evidence = "cmd/root.go; cmd/directory.go"
+rust_evidence = "crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/src/source.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-005"
+description = "Positive archive depth enables the bounded native archive profile, nonpositive depth disables it, and directory file-size and symlink flags retain source-adapter semantics."
+go_evidence = "cmd/root.go; cmd/directory.go; sources"
+rust_evidence = "crates/rustleaks-cli/src/source.rs; crates/rustleaks-sources; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-006"
+description = "Enabled-rule requests build a new immutable effective configuration, preserve requested report order and duplicates, and reject the first absent ID before scanning."
+go_evidence = "cmd/root.go; detect/detect.go"
+rust_evidence = "crates/rustleaks-core/src/config/compiled.rs; crates/rustleaks-core/tests/config.rs; crates/rustleaks-cli/src/config.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-007"
+description = "Git history, worktree, staged, literal-space log options, platform discovery, links, structured terminal failure, and commit accounting compose the portable reviewed Git source without a shell."
+go_evidence = "cmd/git.go; cmd/root.go; sources/git.go"
+rust_evidence = "crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/src/source.rs; crates/rustleaks-cli/tests/cli.rs; cargo xtask git-check"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-008"
+description = "Reports activate only for a nonempty target; explicit formats, CSV/JSON/SARIF inference, stdout requirements, and pre-scan safe-template construction preserve the frozen routing contract."
+go_evidence = "cmd/root.go; report; compat/report-corpus"
+rust_evidence = "crates/rustleaks-cli/src/output.rs; crates/rustleaks-cli/tests/cli.rs; cargo xtask report-check"
+status = "implemented-safe-profile"
+
+[[behavior]]
+id = "CLI-009"
+description = "Help, version, verbose findings, and stdout reports use stdout; banner, diagnostics, summaries, and normalized failure classes use stderr without disclosing inline configuration."
+go_evidence = "cmd/root.go; cmd/helpers.go"
+rust_evidence = "crates/rustleaks-cli/src/output.rs; crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented-normalized-diagnostics"
+
+[[behavior]]
+id = "CLI-010"
+description = "Completed scans exit zero without findings and use the configured signed 32-bit leak exit when findings exist, including an explicitly allowed zero."
+go_evidence = "cmd/root.go"
+rust_evidence = "crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-011"
+description = "Terminal source failure and cancellation remain partial, write any requested report before returning, and exit one regardless of the configured leak code."
+go_evidence = "cmd/root.go; sources/git.go"
+rust_evidence = "crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "CLI-012"
+description = "A positive timeout shares cooperative cancellation with discovery and sources, and every timer, Git child, and detection worker is joined or reaped before return; portable Ctrl-C integration remains a follow-up."
+go_evidence = "cmd/root.go; sources"
+rust_evidence = "crates/rustleaks-cli/src/run.rs; crates/rustleaks-sources; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented-timeout-ctrl-c-follow-up"
+
+[[behavior]]
+id = "CLI-013"
+description = "Parser failures occur before scan side effects; unknown long flags retain exit 126 while unknown shorthand, command, arity, missing-value, and invalid-value failures exit one."
+go_evidence = "cmd/root.go"
+rust_evidence = "crates/rustleaks-cli/src/args.rs; crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented"
+
+[[behavior]]
+id = "CLI-014"
+description = "Invalid extra positionals, inline-config disclosure, ignored Git terminal failure, pre-scan report mutation, and unchecked host-width arithmetic are replaced by five explicit safe failure dispositions."
+go_evidence = "cmd/root.go; cmd/directory.go; cmd/stdin.go; sources/git.go"
+rust_evidence = "crates/rustleaks-cli/src; crates/rustleaks-cli/tests/cli.rs"
+status = "implemented-safe-error-dispositions"
+
+[[behavior]]
+id = "CLI-015"
+description = "CLI orchestration uses native Path/OsStr/process arguments, injected cwd/environment and I/O, no shell or global context mutation, and safe synchronous Rust across the three first-class target families."
+go_evidence = "cmd; sources"
+rust_evidence = "crates/rustleaks-cli/src/lib.rs; crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/src/source.rs; .github/workflows/ci.yml"
+status = "implemented-native-linux-windows-runtime-follow-up"
+
+[[behavior]]
+id = "CLI-SAFE-001"
+description = "Surplus directory and stdin positionals are rejected before setup instead of scanning the current directory or silently ignoring input."
+go_evidence = "cmd/directory.go; cmd/stdin.go; compat/cli-corpus"
+rust_evidence = "crates/rustleaks-cli/src/args.rs; compat/cli-corpus"
+status = "implemented-safe-error-disposition"
+
+[[behavior]]
+id = "CLI-SAFE-002"
+description = "Inline configuration contents are never copied into diagnostics, including fatal parse failures."
+go_evidence = "cmd/root.go; compat/cli-corpus"
+rust_evidence = "crates/rustleaks-cli/src/config.rs; compat/cli-corpus"
+status = "implemented-safe-disclosure-disposition"
+
+[[behavior]]
+id = "CLI-SAFE-003"
+description = "Terminal Git, parse, output-limit, and cancellation failures remain partial, write any requested report, reap children and workers, and exit one."
+go_evidence = "cmd/git.go; sources/git.go; compat/cli-corpus"
+rust_evidence = "crates/rustleaks-cli/src/run.rs; crates/rustleaks-sources; compat/cli-corpus"
+status = "implemented-safe-process-disposition"
+
+[[behavior]]
+id = "CLI-SAFE-004"
+description = "Report targets are not created, removed, or truncated during preflight and are opened only for final report writing."
+go_evidence = "cmd/root.go; compat/cli-corpus"
+rust_evidence = "crates/rustleaks-cli/src/output.rs; compat/cli-corpus"
+status = "implemented-safe-filesystem-disposition"
+
+[[behavior]]
+id = "CLI-SAFE-005"
+description = "Arithmetic and process-exit values outside the checked portable domain fail before scan or report side effects."
+go_evidence = "cmd/root.go; cmd/directory.go; compat/cli-corpus"
+rust_evidence = "crates/rustleaks-cli/src/args.rs; crates/rustleaks-cli/src/config.rs; crates/rustleaks-cli/src/source.rs; compat/cli-corpus"
+status = "implemented-safe-numeric-disposition"
+
+[[behavior]]
+id = "CLI-DEFER-001"
+description = "Cobra completion and help commands plus diagnostics flags are explicitly omitted while all remaining help and parser-usage bytes stay exact."
+go_evidence = "cmd/root.go; Cobra generated commands; compat/cli-corpus"
+rust_evidence = "crates/rustleaks-cli/src/output.rs; compat/cli-corpus"
+status = "explicit-cli-polish-follow-up"

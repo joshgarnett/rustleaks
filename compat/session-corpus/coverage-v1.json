@@ -1,0 +1,327 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "behavior_ids": [
+    {
+      "id": "SESSION-001",
+      "request_ids": [
+        "fingerprints-global-and-commit",
+        "ignore-global-before-commit",
+        "ignore-commit-exact-and-near-misses"
+      ]
+    },
+    {
+      "id": "SESSION-002",
+      "request_ids": [
+        "upstream-normalize-window-paths",
+        "ignore-comments-invalid-duplicates",
+        "ignore-slash-positive-backslash-negative",
+        "ignore-explicit-drive-colon-bytes"
+      ]
+    },
+    {
+      "id": "SESSION-003",
+      "request_ids": [
+        "upstream-normalize-window-paths",
+        "ignore-comments-invalid-duplicates",
+        "ignore-missing"
+      ]
+    },
+    {
+      "id": "SESSION-004",
+      "request_ids": [
+        "ignore-global-before-commit",
+        "ignore-commit-exact-and-near-misses",
+        "ignore-slash-positive-backslash-negative",
+        "ignore-explicit-drive-colon-bytes"
+      ]
+    },
+    {
+      "id": "SESSION-005",
+      "request_ids": [
+        "baseline-valid-empty",
+        "baseline-valid-null",
+        "baseline-upstream-json-fixture",
+        "baseline-preserves-duplicates-order",
+        "baseline-invalid-csv",
+        "baseline-invalid-sarif",
+        "baseline-float32-overflow",
+        "baseline-unicode-folded-keys",
+        "baseline-missing"
+      ]
+    },
+    {
+      "id": "SESSION-006",
+      "request_ids": [
+        "baseline-equal",
+        "baseline-compared-rule-id",
+        "baseline-compared-description",
+        "baseline-compared-start-line",
+        "baseline-compared-end-line",
+        "baseline-compared-start-column",
+        "baseline-compared-end-column",
+        "baseline-compared-match",
+        "baseline-compared-secret",
+        "baseline-compared-file",
+        "baseline-compared-commit",
+        "baseline-compared-author",
+        "baseline-compared-email",
+        "baseline-compared-date",
+        "baseline-compared-message",
+        "baseline-compared-entropy",
+        "baseline-ignored-line",
+        "baseline-ignored-symlink",
+        "baseline-ignored-link",
+        "baseline-ignored-tags",
+        "baseline-ignored-fingerprint",
+        "baseline-ignored-fragment",
+        "baseline-ignored-required-findings",
+        "baseline-redaction-disabled-near-negative",
+        "baseline-redaction-enabled",
+        "upstream-redacted-different-baseline"
+      ]
+    },
+    {
+      "id": "SESSION-007",
+      "request_ids": [
+        "baseline-redaction-disabled-near-negative",
+        "baseline-redaction-enabled",
+        "upstream-redacted-different-baseline"
+      ]
+    },
+    {
+      "id": "SESSION-008",
+      "request_ids": [
+        "baseline-preserves-duplicates-order",
+        "collection-order-duplicates-canonical"
+      ]
+    },
+    {
+      "id": "SESSION-009",
+      "request_ids": [
+        "fingerprints-global-and-commit",
+        "collection-order-duplicates-canonical"
+      ]
+    },
+    {
+      "id": "SESSION-010",
+      "request_ids": [
+        "collection-order-duplicates-canonical",
+        "canonical-sort-full-projection-inputs"
+      ]
+    }
+  ],
+  "upstream": [
+    {
+      "test_case_id": "TM-0127",
+      "go_name": "TestFileLoadBaseline",
+      "classification": "aggregator",
+      "request_ids": [
+        "baseline-upstream-json-fixture",
+        "baseline-invalid-csv",
+        "baseline-invalid-sarif",
+        "baseline-missing"
+      ]
+    },
+    {
+      "test_case_id": "TM-0139",
+      "go_name": "TestIgnoreIssuesInBaseline",
+      "classification": "aggregator",
+      "request_ids": [
+        "baseline-ignored-fingerprint"
+      ]
+    },
+    {
+      "test_case_id": "TM-0140",
+      "go_name": "TestIsNew",
+      "classification": "aggregator",
+      "request_ids": [
+
+      ]
+    },
+    {
+      "test_case_id": "TM-0141",
+      "go_name": "TestIsNew/new_-_commit_doesn't_match_baseline",
+      "classification": "leaf",
+      "request_ids": [
+        "baseline-compared-commit"
+      ]
+    },
+    {
+      "test_case_id": "TM-0142",
+      "go_name": "TestIsNew/new_-_redacted,_different_baseline",
+      "classification": "leaf",
+      "request_ids": [
+        "upstream-redacted-different-baseline"
+      ]
+    },
+    {
+      "test_case_id": "TM-0143",
+      "go_name": "TestIsNew/not_new_-_commit+author_matches",
+      "classification": "leaf",
+      "request_ids": [
+        "baseline-equal"
+      ]
+    },
+    {
+      "test_case_id": "TM-0144",
+      "go_name": "TestIsNew/not_new_-_commit+author_matches,_tags_ignored",
+      "classification": "leaf",
+      "request_ids": [
+        "baseline-ignored-tags"
+      ]
+    },
+    {
+      "test_case_id": "TM-0145",
+      "go_name": "TestIsNew/not_new_-_redacted,_everything_else_matches",
+      "classification": "leaf",
+      "request_ids": [
+        "baseline-redaction-enabled"
+      ]
+    },
+    {
+      "test_case_id": "TM-0146",
+      "go_name": "TestNormalizeGitleaksIgnorePaths",
+      "classification": "leaf",
+      "request_ids": [
+        "upstream-normalize-window-paths"
+      ]
+    },
+    {
+      "test_case_id": "TM-0250",
+      "go_name": "TestRedact",
+      "classification": "aggregator",
+      "request_ids": [
+        "baseline-redaction-enabled"
+      ]
+    }
+  ],
+  "baseline_compared_fields": [
+    "rule-id",
+    "description",
+    "start-line",
+    "end-line",
+    "start-column",
+    "end-column",
+    "match",
+    "secret",
+    "file",
+    "commit",
+    "author",
+    "email",
+    "date",
+    "message",
+    "entropy"
+  ],
+  "baseline_ignored_fields": [
+    "line",
+    "symlink",
+    "link",
+    "tags",
+    "fingerprint",
+    "fragment",
+    "required-findings"
+  ],
+  "material_assertions": [
+    {
+      "number": 1,
+      "assertions": [
+        "exact-global-and-commit-fingerprints"
+      ]
+    },
+    {
+      "number": 2,
+      "assertions": [
+        "exact-upstream-windows-normalization"
+      ]
+    },
+    {
+      "number": 3,
+      "assertions": [
+        "comments-blanks-invalid-and-duplicates"
+      ]
+    },
+    {
+      "number": 4,
+      "assertions": [
+        "ignore-precedence-and-near-misses"
+      ]
+    },
+    {
+      "number": 5,
+      "assertions": [
+        "baseline-load-and-error-classes",
+        "baseline-unicode-simple-fold-keys",
+        "baseline-float32-overflow-rejected"
+      ]
+    },
+    {
+      "number": 6,
+      "assertions": [
+        "compared-field-rule-id",
+        "compared-field-description",
+        "compared-field-start-line",
+        "compared-field-end-line",
+        "compared-field-start-column",
+        "compared-field-end-column",
+        "compared-field-match",
+        "compared-field-secret",
+        "compared-field-file",
+        "compared-field-commit",
+        "compared-field-author",
+        "compared-field-email",
+        "compared-field-date",
+        "compared-field-message",
+        "compared-field-entropy",
+        "exact-equality-suppresses"
+      ]
+    },
+    {
+      "number": 7,
+      "assertions": [
+        "ignored-field-line",
+        "ignored-field-symlink",
+        "ignored-field-link",
+        "ignored-field-tags",
+        "ignored-field-fingerprint",
+        "ignored-field-fragment",
+        "ignored-field-required-findings"
+      ]
+    },
+    {
+      "number": 8,
+      "assertions": [
+        "redaction-match-secret-only"
+      ]
+    },
+    {
+      "number": 9,
+      "assertions": [
+        "collection-order-and-duplicates"
+      ]
+    },
+    {
+      "number": 10,
+      "assertions": [
+        "canonical-sort-and-fingerprint-mutation"
+      ]
+    }
+  ],
+  "source_hashes": {
+    "detect/baseline.go": "23d043ab3bf70d0a4ff560598a22b8507f38054b038acd3e6e684abf5c663e93",
+    "detect/detect.go": "2bac563a09f22ff76c56b200c3b9b5dc865c1de699eb0ba2a27cca741fa9bd13",
+    "report/finding.go": "a1ecd3837f6d89b8ddf95f2b0a6c301103b8d3e67f84e1b3520ffc6f7d7751a6",
+    "detect/baseline_test.go": "4e6e40bae1d71f14acf66f8ebeb1f328607e1ca01b675c28a8447284f5068895",
+    "detect/detect_test.go": "191e7178827d790ae7c72f7b17824e3d368fe66b263fb12a9b8f3ede225124d3",
+    "report/finding_test.go": "60f6950823fd227c77d65c630b540fdb3dba46b947bda5bf98f5a72d9d513874"
+  },
+  "cross_platform_contract": "all path cases are explicit request bytes; no host path conversion determines an expectation",
+  "canonical_sort_key": "stable ascending byte comparison of each complete canonical finding's compact JSON projection",
+  "excluded": [
+    "production safety/unsafe design",
+    "Rust session implementation",
+    "file/archive/Git scheduling"
+  ]
+}

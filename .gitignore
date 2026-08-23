@@ -1,0 +1,36 @@
+# Rust build output
+/target/
+**/target/
+
+# Fuzzing runtime output. Committed seeds live in fuzz/seeds.
+**/fuzz/artifacts/
+**/fuzz/corpus/
+
+# Coverage and profiling output
+/coverage/
+*.profraw
+*.profdata
+tarpaulin-report.html
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!compat/fixtures/**/.env*
+.direnv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local scratch and failed patch files
+/.cache/
+/.tmp/
+/tmp/
+*.orig
+*.rej

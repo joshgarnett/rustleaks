@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "detect",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.25.0",
+  "scope": [
+    "raw-direct-fragment",
+    "effective-rule-map-and-duplicates",
+    "keyword-prefilter",
+    "path-only-and-path-plus-regex",
+    "skip-report",
+    "capture-selection",
+    "entropy-threshold",
+    "byte-location-and-line",
+    "newline-trim",
+    "gitleaks-allow-toggle",
+    "max-target"
+  ],
+  "excluded": [
+    "allowlists",
+    "decoding",
+    "composites",
+    "generic-suppression",
+    "redaction",
+    "baseline",
+    "session"
+  ],
+  "request_count": 84,
+  "finding_count": 77,
+  "zero_finding_request_count": 14,
+  "behavior_id_count": 100,
+  "linked_test_case_id_count": 14,
+  "linked_assertion_id_count": 2,
+  "deterministic_matrix_row_count": 42,
+  "covered_deterministic_matrix_row_count": 42,
+  "resolved_outcome_set_matrix_row_count": 1,
+  "maximum_content_bytes": 2000000,
+  "files": {
+    "requests-v1.jsonl": {
+      "sha256": "e2b77263b65d31b36639ff4da43776f634d321d9a6d133673b3527f0f07f8707",
+      "records": 84
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "a06329c834e7784484261c4f324ee7e49bdb21a9348f32860a3035fb8858771c",
+      "records": 84
+    },
+    "request-metadata-v1.jsonl": {
+      "sha256": "6fe4a0a79ec70a4abe9566c34a06ff593c864257606c81316872f651a6b2c72d",
+      "records": 84
+    },
+    "matrix-coverage-v1.json": {
+      "sha256": "dbd0aea5ea8cfc6becf4f8f9032e5424978251d51ffc55d882bd5a92dc91da28",
+      "records": 323
+    }
+  }
+}

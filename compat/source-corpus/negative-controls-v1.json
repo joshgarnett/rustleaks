@@ -1,0 +1,29 @@
+{
+  "pairs": [
+    {
+      "positive": "detect-reader-eof",
+      "negative": "stream-error",
+      "dimension": "EOF-versus-error"
+    },
+    {
+      "positive": "files-size-boundary/equal",
+      "negative": "files-size-boundary/over",
+      "dimension": "strict-size-limit"
+    },
+    {
+      "positive": "files-symlink-enabled",
+      "negative": "files-symlink-disabled",
+      "dimension": "follow-symlinks"
+    },
+    {
+      "positive": "nested-depth-8",
+      "negative": "nested-depth-1",
+      "dimension": "archive-depth"
+    },
+    {
+      "positive": "files-prune-directory/keep",
+      "negative": "files-prune-directory/skip",
+      "dimension": "directory-pruning"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+[graph]
+all-features = true
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "all"
+unused-ignored-advisory = "deny"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+unused-allowed-license = "deny"
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "LicenseRef-Rustleaks-Rar-Codec",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+# This workspace-only decoder carries a short custom grant. The clarification
+# is valid only while cargo-deny's content hash for COPYING remains unchanged.
+[[licenses.clarify]]
+crate = "rustleaks-rar-codec@0.9.3-rustleaks.1"
+expression = "LicenseRef-Rustleaks-Rar-Codec"
+license-files = [
+    { path = "COPYING", hash = 0xb7d07a9c },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+unused-allowed-source = "deny"

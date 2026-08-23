@@ -1,0 +1,4 @@
+[[RuLeS]]
+ID = 7
+REGEX = '''token[=:]([a-z0-9]+)'''
+KEYWORDS = "token"

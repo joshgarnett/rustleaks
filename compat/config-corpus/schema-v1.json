@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "request": [
+    "protocol_version",
+    "id",
+    "category",
+    "manifest_ids",
+    "input_sha256",
+    "source"
+  ],
+  "source_kinds": [
+    "default",
+    "inline",
+    "origin",
+    "path"
+  ],
+  "response": [
+    "protocol_version",
+    "oracle_mode",
+    "id",
+    "upstream_revision",
+    "default_config_sha256",
+    "go_version",
+    "source",
+    "config_sha256",
+    "effective",
+    "diagnostics",
+    "error"
+  ],
+  "canonicalization": {
+    "rules": "sorted by rule ID because Config.Rules is a Go map",
+    "normalized_keywords": "sorted because Config.Keywords is a Go map set",
+    "allowlist_commits_stop_words": "sorted because Allowlist.Validate rebuilds these values from Go maps",
+    "non_finite_entropy": "finite entropy is a JSON number; NaN and infinities use NaN, +Inf, or -Inf strings while entropy_bits remains exact",
+    "all_other_lists": "preserved exactly, including ordered-rule duplicates"
+  }
+}

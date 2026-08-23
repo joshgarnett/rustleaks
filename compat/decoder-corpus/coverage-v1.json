@@ -1,0 +1,1497 @@
+{
+  "schema_version": 1,
+  "behavior_ids": [
+    {
+      "id": "COMP-003",
+      "request_ids": [
+        "required-auxiliary-allowlisted-same-pass"
+      ]
+    },
+    {
+      "id": "COMP-004",
+      "request_ids": [
+        "required-mapped-proximity-outside",
+        "required-mapped-proximity-inside"
+      ]
+    },
+    {
+      "id": "COMP-005",
+      "request_ids": [
+        "required-both-encoded-same-pass",
+        "required-mapped-proximity-inside"
+      ]
+    },
+    {
+      "id": "COMP-006",
+      "request_ids": [
+        "required-primary-raw-aux-encoded-different-pass",
+        "required-primary-encoded-aux-raw-different-pass",
+        "required-both-encoded-same-pass",
+        "required-auxiliary-allowlisted-same-pass",
+        "required-mapped-proximity-outside",
+        "required-mapped-proximity-inside"
+      ]
+    },
+    {
+      "id": "DEC-001",
+      "request_ids": [
+        "upstream-tm-0226-direct",
+        "upstream-tm-0227-path-escape",
+        "upstream-tm-0228-hex",
+        "upstream-tm-0220-direct",
+        "upstream-tm-0221-path-escape",
+        "upstream-tm-0222-hex",
+        "upstream-tm-0223-direct",
+        "upstream-tm-0224-path-escape",
+        "upstream-tm-0225-hex",
+        "upstream-tm-0205-direct",
+        "upstream-tm-0206-path-escape",
+        "upstream-tm-0207-hex",
+        "upstream-tm-0208-direct",
+        "upstream-tm-0209-path-escape",
+        "upstream-tm-0210-hex",
+        "upstream-tm-0217-direct",
+        "upstream-tm-0218-path-escape",
+        "upstream-tm-0219-hex",
+        "upstream-tm-0199-direct",
+        "upstream-tm-0200-path-escape",
+        "upstream-tm-0201-hex",
+        "upstream-tm-0196-direct",
+        "upstream-tm-0197-path-escape",
+        "upstream-tm-0198-hex",
+        "upstream-tm-0187-direct",
+        "upstream-tm-0188-path-escape",
+        "upstream-tm-0189-hex",
+        "upstream-tm-0190-direct",
+        "upstream-tm-0191-path-escape",
+        "upstream-tm-0192-hex",
+        "upstream-tm-0193-direct",
+        "upstream-tm-0194-path-escape",
+        "upstream-tm-0195-hex",
+        "upstream-tm-0202-direct",
+        "upstream-tm-0203-path-escape",
+        "upstream-tm-0204-hex",
+        "upstream-tm-0214-direct",
+        "upstream-tm-0215-path-escape",
+        "upstream-tm-0216-hex",
+        "upstream-tm-0238-direct",
+        "upstream-tm-0239-path-escape",
+        "upstream-tm-0240-hex",
+        "upstream-tm-0211-direct",
+        "upstream-tm-0212-path-escape",
+        "upstream-tm-0213-hex",
+        "upstream-tm-0229-direct",
+        "upstream-tm-0230-path-escape",
+        "upstream-tm-0231-hex",
+        "upstream-tm-0232-direct",
+        "upstream-tm-0233-path-escape",
+        "upstream-tm-0234-hex",
+        "upstream-tm-0235-direct",
+        "upstream-tm-0236-path-escape",
+        "upstream-tm-0237-hex",
+        "cache-repeat-success",
+        "cache-repeat-empty",
+        "cache-empty-input",
+        "percent-wrap-base64-success",
+        "percent-wrap-hex-success",
+        "nested-base64",
+        "nested-percent-base64",
+        "cache-two-successes-one-pass",
+        "cache-two-failures-one-pass",
+        "cache-key-reappears-deeper",
+        "cache-shared-instance",
+        "cache-isolated-instances",
+        "cache-carried-unrelated-global-depth",
+        "mapping-success-failure-success-shifts",
+        "outer-all-letter-likelihood-stops-recursion",
+        "detect-encoded-depth-negative-one",
+        "detect-exhaustion-before-huge-depth",
+        "resource-many-distinct-failures",
+        "resource-many-successful-segments",
+        "resource-nested-depth-six"
+      ]
+    },
+    {
+      "id": "DEC-002",
+      "request_ids": [
+        "upstream-tm-0227-path-escape",
+        "upstream-tm-0221-path-escape",
+        "upstream-tm-0224-path-escape",
+        "upstream-tm-0206-path-escape",
+        "upstream-tm-0209-path-escape",
+        "upstream-tm-0218-path-escape",
+        "upstream-tm-0200-path-escape",
+        "upstream-tm-0197-path-escape",
+        "upstream-tm-0188-path-escape",
+        "upstream-tm-0191-path-escape",
+        "upstream-tm-0194-path-escape",
+        "upstream-tm-0203-path-escape",
+        "upstream-tm-0215-path-escape",
+        "upstream-tm-0238-direct",
+        "upstream-tm-0239-path-escape",
+        "upstream-tm-0240-hex",
+        "upstream-tm-0212-path-escape",
+        "upstream-tm-0230-path-escape",
+        "upstream-tm-0233-path-escape",
+        "upstream-tm-0236-path-escape",
+        "percent-single",
+        "percent-min-minus-one",
+        "percent-min-plus-one",
+        "percent-scattered",
+        "percent-lowercase",
+        "percent-tab-printable",
+        "percent-del-printability-reject",
+        "percent-control-reject",
+        "percent-malformed-short",
+        "percent-malformed-nonhex",
+        "percent-invalid-utf8-literal",
+        "percent-copied-invalid-byte-inside",
+        "percent-broad-reject-blocks-base64",
+        "percent-greedy-same-line",
+        "percent-does-not-cross-lf",
+        "percent-incomplete-copied-inside",
+        "percent-lf-printable",
+        "percent-tilde-printable",
+        "percent-wrap-base64-success",
+        "percent-wrap-hex-success",
+        "touch-three-precedence-neighbors",
+        "multi-line-spanning-percent",
+        "nested-percent-base64",
+        "line-segment-decodes-to-lf",
+        "resource-percent-4096",
+        "required-aux-encoded-candidate-control",
+        "required-primary-encoded-candidate-control"
+      ]
+    },
+    {
+      "id": "DEC-003",
+      "request_ids": [
+        "upstream-tm-0229-direct",
+        "upstream-tm-0230-path-escape",
+        "upstream-tm-0231-hex",
+        "upstream-tm-0232-direct",
+        "upstream-tm-0233-path-escape",
+        "upstream-tm-0234-hex",
+        "upstream-tm-0235-direct",
+        "upstream-tm-0236-path-escape",
+        "upstream-tm-0237-hex",
+        "unicode-codepoint",
+        "unicode-min-minus-one",
+        "unicode-min-plus-one",
+        "unicode-eof",
+        "unicode-space",
+        "unicode-tab",
+        "unicode-lf",
+        "unicode-two-spaces",
+        "unicode-lowercase-codepoint-rejected",
+        "unicode-codepoint-fifth-digit",
+        "unicode-codepoint-sequence",
+        "unicode-single-slash",
+        "unicode-double-slash",
+        "unicode-case-insensitive-u",
+        "unicode-mixed-forms",
+        "unicode-nonascii",
+        "unicode-nul",
+        "unicode-surrogate",
+        "unicode-surrogate-pair-not-combined",
+        "unicode-three-backslashes",
+        "unicode-four-backslashes",
+        "unicode-escape-trailing-ascii",
+        "unicode-escapes-separated",
+        "unicode-escapes-contiguous",
+        "unicode-codepoint-u0008",
+        "unicode-codepoint-u0009",
+        "unicode-codepoint-u007e",
+        "unicode-codepoint-u007f",
+        "unicode-codepoint-u00e9",
+        "unicode-codepoint-ud800",
+        "unicode-codepoint-udfff",
+        "unicode-fifth-hex-digit",
+        "unicode-malformed-width",
+        "touch-unicode-before-hex",
+        "touch-three-precedence-neighbors",
+        "finding-all-four-encoding-tags",
+        "keyword-unicode-case-folded"
+      ]
+    },
+    {
+      "id": "DEC-004",
+      "request_ids": [
+        "upstream-tm-0228-hex",
+        "upstream-tm-0222-hex",
+        "upstream-tm-0225-hex",
+        "upstream-tm-0207-hex",
+        "upstream-tm-0210-hex",
+        "upstream-tm-0219-hex",
+        "upstream-tm-0201-hex",
+        "upstream-tm-0198-hex",
+        "upstream-tm-0189-hex",
+        "upstream-tm-0192-hex",
+        "upstream-tm-0195-hex",
+        "upstream-tm-0204-hex",
+        "upstream-tm-0214-direct",
+        "upstream-tm-0215-path-escape",
+        "upstream-tm-0216-hex",
+        "upstream-tm-0240-hex",
+        "upstream-tm-0211-direct",
+        "upstream-tm-0212-path-escape",
+        "upstream-tm-0213-hex",
+        "upstream-tm-0231-hex",
+        "upstream-tm-0234-hex",
+        "upstream-tm-0237-hex",
+        "percent-wrap-hex-success",
+        "hex-minimum",
+        "hex-under-minimum",
+        "hex-uppercase",
+        "hex-no-digit-heuristic",
+        "hex-odd-length",
+        "hex-length-34",
+        "hex-lowercase-pairs",
+        "hex-one-digit-likelihood",
+        "hex-nonprint-first",
+        "hex-nonprint-middle",
+        "hex-nonprint-last",
+        "hex-lf-printable",
+        "hex-tilde-printable",
+        "hex-tab-printable",
+        "hex-control-reject",
+        "hex-del-reject",
+        "touch-unicode-before-hex",
+        "same-start-hex-base64-success",
+        "same-start-hex-base64-likelihood-failure",
+        "same-start-hex-base64-odd-failure",
+        "same-start-hex-base64-printability-failure",
+        "resource-hex-16384",
+        "finding-all-four-encoding-tags"
+      ]
+    },
+    {
+      "id": "DEC-005",
+      "request_ids": [
+        "upstream-tm-0226-direct",
+        "upstream-tm-0227-path-escape",
+        "upstream-tm-0228-hex",
+        "upstream-tm-0220-direct",
+        "upstream-tm-0221-path-escape",
+        "upstream-tm-0222-hex",
+        "upstream-tm-0205-direct",
+        "upstream-tm-0206-path-escape",
+        "upstream-tm-0207-hex",
+        "upstream-tm-0208-direct",
+        "upstream-tm-0209-path-escape",
+        "upstream-tm-0210-hex",
+        "upstream-tm-0217-direct",
+        "upstream-tm-0218-path-escape",
+        "upstream-tm-0219-hex",
+        "upstream-tm-0199-direct",
+        "upstream-tm-0200-path-escape",
+        "upstream-tm-0201-hex",
+        "upstream-tm-0196-direct",
+        "upstream-tm-0197-path-escape",
+        "upstream-tm-0198-hex",
+        "upstream-tm-0187-direct",
+        "upstream-tm-0188-path-escape",
+        "upstream-tm-0189-hex",
+        "upstream-tm-0190-direct",
+        "upstream-tm-0191-path-escape",
+        "upstream-tm-0192-hex",
+        "upstream-tm-0193-direct",
+        "upstream-tm-0194-path-escape",
+        "upstream-tm-0195-hex",
+        "upstream-tm-0202-direct",
+        "upstream-tm-0203-path-escape",
+        "upstream-tm-0204-hex",
+        "upstream-tm-0214-direct",
+        "upstream-tm-0215-path-escape",
+        "upstream-tm-0216-hex",
+        "cache-repeat-empty",
+        "percent-broad-reject-blocks-base64",
+        "percent-wrap-base64-success",
+        "base64-minimum-padded",
+        "base64-under-minimum",
+        "base64-length-16",
+        "base64-length-17",
+        "base64-standard",
+        "base64-raw-url",
+        "base64-no-likely-byte",
+        "base64-bad-padding",
+        "base64-tab-printable",
+        "base64-control-reject",
+        "base64-del-reject",
+        "base64-lf-printable",
+        "base64-tilde-printable",
+        "base64-standard-pad2-canonical",
+        "base64-standard-pad2-noncanonical",
+        "base64-standard-pad1-canonical",
+        "base64-standard-pad1-noncanonical",
+        "base64-raw-url-pad2-canonical",
+        "base64-raw-url-pad2-noncanonical",
+        "base64-raw-url-pad1-canonical",
+        "base64-raw-url-pad1-noncanonical",
+        "base64-unpadded-standard-plus-rejected",
+        "base64-padded-url-rejected",
+        "base64-mixed-alphabet-rejected",
+        "touch-equal-base64",
+        "touch-three-precedence-neighbors",
+        "nested-base64",
+        "nested-percent-base64",
+        "base64-likelihood-48",
+        "base64-likelihood-49",
+        "base64-likelihood-50",
+        "base64-likelihood-51",
+        "base64-likelihood-52",
+        "base64-likelihood-53",
+        "base64-likelihood-54",
+        "base64-likelihood-55",
+        "base64-likelihood-56",
+        "base64-likelihood-57",
+        "base64-likelihood-43",
+        "base64-likelihood-47",
+        "base64-likelihood-45",
+        "base64-likelihood-95",
+        "same-start-hex-base64-success",
+        "same-start-hex-base64-likelihood-failure",
+        "same-start-hex-base64-odd-failure",
+        "same-start-hex-base64-printability-failure",
+        "cache-two-failures-one-pass",
+        "outer-all-letter-likelihood-stops-recursion",
+        "resource-base64-16384",
+        "finding-all-four-encoding-tags"
+      ]
+    },
+    {
+      "id": "DEC-006",
+      "request_ids": [
+        "percent-broad-reject-blocks-base64",
+        "percent-wrap-base64-success",
+        "percent-wrap-hex-success",
+        "precedence-percent-over-base64",
+        "precedence-percent-over-hex",
+        "touch-percent-hex",
+        "touch-percent-before-base64",
+        "touch-base64-before-percent",
+        "touch-unicode-before-hex",
+        "touch-equal-base64",
+        "touch-three-precedence-neighbors",
+        "touch-two-percent-segments",
+        "adjacent-base64-values",
+        "same-start-hex-base64-success",
+        "same-start-hex-base64-likelihood-failure",
+        "same-start-hex-base64-odd-failure",
+        "same-start-hex-base64-printability-failure",
+        "inclusive-touch-unchanged-duplicate",
+        "inclusive-touch-after-duplicate"
+      ]
+    },
+    {
+      "id": "DEC-007",
+      "request_ids": [
+        "percent-scattered",
+        "unicode-codepoint-sequence",
+        "precedence-percent-over-base64",
+        "precedence-percent-over-hex",
+        "touch-percent-hex",
+        "touch-three-precedence-neighbors",
+        "touch-two-percent-segments",
+        "adjacent-base64-values",
+        "multiline-current-line",
+        "multi-line-spanning-percent",
+        "nested-base64",
+        "nested-percent-base64",
+        "cache-two-successes-one-pass",
+        "cache-key-reappears-deeper",
+        "cache-carried-unrelated-global-depth",
+        "mapping-contained-left-right-both-none-touch",
+        "mapping-two-segments-shift-span",
+        "mapping-success-failure-success-shifts",
+        "required-mapped-proximity-outside",
+        "required-mapped-proximity-inside",
+        "inherited-decoded-skipreport-context",
+        "inherited-decoded-skipreport-allowlisted",
+        "resource-many-successful-segments",
+        "resource-nested-depth-six"
+      ]
+    },
+    {
+      "id": "DEC-008",
+      "request_ids": [
+        "percent-does-not-cross-lf",
+        "unicode-tab",
+        "unicode-lf",
+        "unicode-two-spaces",
+        "unicode-escapes-separated",
+        "adjacent-base64-values",
+        "multiline-current-line",
+        "multi-line-spanning-percent",
+        "nested-base64",
+        "nested-percent-base64",
+        "cache-carried-unrelated-global-depth",
+        "mapping-contained-left-right-both-none-touch",
+        "mapping-two-segments-shift-span",
+        "line-segment-at-byte-zero",
+        "line-segment-after-lf",
+        "line-segment-before-lf",
+        "line-segment-decodes-to-lf",
+        "line-selected-segments-separate-lines",
+        "inclusive-touch-unchanged-duplicate",
+        "inclusive-touch-after-duplicate",
+        "finding-all-four-encoding-tags",
+        "rule-tags-state-reuse",
+        "marker-previous-line-currentline-quirk",
+        "allow-target-multisegment-decoded-line"
+      ]
+    },
+    {
+      "id": "DEC-009",
+      "request_ids": [
+        "upstream-tm-0214-direct",
+        "upstream-tm-0215-path-escape",
+        "upstream-tm-0216-hex",
+        "cache-repeat-empty",
+        "cache-empty-input",
+        "percent-tab-printable",
+        "percent-del-printability-reject",
+        "percent-control-reject",
+        "percent-malformed-short",
+        "percent-malformed-nonhex",
+        "percent-invalid-utf8-literal",
+        "percent-copied-invalid-byte-inside",
+        "percent-broad-reject-blocks-base64",
+        "percent-incomplete-copied-inside",
+        "percent-lf-printable",
+        "percent-tilde-printable",
+        "unicode-min-minus-one",
+        "unicode-lowercase-codepoint-rejected",
+        "unicode-codepoint-fifth-digit",
+        "unicode-nonascii",
+        "unicode-nul",
+        "unicode-surrogate",
+        "unicode-surrogate-pair-not-combined",
+        "unicode-codepoint-u0008",
+        "unicode-codepoint-u0009",
+        "unicode-codepoint-u007e",
+        "unicode-codepoint-u007f",
+        "unicode-codepoint-u00e9",
+        "unicode-codepoint-ud800",
+        "unicode-codepoint-udfff",
+        "unicode-fifth-hex-digit",
+        "unicode-malformed-width",
+        "hex-odd-length",
+        "hex-nonprint-first",
+        "hex-nonprint-middle",
+        "hex-nonprint-last",
+        "hex-lf-printable",
+        "hex-tilde-printable",
+        "hex-tab-printable",
+        "hex-control-reject",
+        "hex-del-reject",
+        "base64-length-17",
+        "base64-bad-padding",
+        "base64-tab-printable",
+        "base64-control-reject",
+        "base64-del-reject",
+        "base64-lf-printable",
+        "base64-tilde-printable",
+        "base64-unpadded-standard-plus-rejected",
+        "base64-padded-url-rejected",
+        "base64-mixed-alphabet-rejected",
+        "arbitrary-bytes",
+        "same-start-hex-base64-printability-failure",
+        "malformed-utf8-percent-before",
+        "malformed-utf8-percent-inside",
+        "malformed-utf8-percent-after",
+        "malformed-utf8-unicode-before",
+        "malformed-utf8-unicode-inside",
+        "malformed-utf8-unicode-after",
+        "malformed-utf8-hex-before",
+        "malformed-utf8-hex-inside",
+        "malformed-utf8-hex-after",
+        "malformed-utf8-base64-before",
+        "malformed-utf8-base64-inside",
+        "malformed-utf8-base64-after"
+      ]
+    },
+    {
+      "id": "DEC-010",
+      "request_ids": [
+        "detect-encoded-depth-0",
+        "detect-encoded-depth-1",
+        "detect-encoded-depth-2",
+        "detect-encoded-depth-3",
+        "detect-encoded-depth-4",
+        "detect-encoded-depth-5",
+        "detect-encoded-depth-6",
+        "detect-encoded-depth-7",
+        "detect-encoded-depth-8",
+        "detect-encoded-depth-negative-one",
+        "detect-exhaustion-before-huge-depth",
+        "decoded-line-allowlist-positive",
+        "decoded-line-allowlist-negative",
+        "duplicates-across-passes",
+        "inclusive-touch-unchanged-duplicate",
+        "inclusive-touch-after-duplicate",
+        "keyword-absent-raw-present-decoded",
+        "keyword-present-raw-absent-decoded",
+        "keyword-unicode-case-folded",
+        "keyword-none-every-pass",
+        "marker-original-same-line",
+        "marker-decoded-only",
+        "marker-neighboring-original-line",
+        "marker-previous-line-currentline-quirk",
+        "decoded-capture-entropy-equal-reject",
+        "decoded-capture-entropy-below-report",
+        "allow-target-decoded-secret",
+        "allow-target-decoded-match",
+        "allow-target-decoded-line",
+        "allow-target-original-line-not-decoded",
+        "allow-target-nested-decoded-line",
+        "allow-target-multisegment-decoded-line",
+        "early-global-fragment-gate-once",
+        "early-rule-gate-each-pass",
+        "early-gate-control",
+        "required-primary-raw-aux-encoded-different-pass",
+        "required-primary-encoded-aux-raw-different-pass",
+        "required-aux-encoded-candidate-control",
+        "required-primary-encoded-candidate-control",
+        "required-both-encoded-same-pass",
+        "required-auxiliary-allowlisted-same-pass",
+        "required-mapped-proximity-outside",
+        "required-mapped-proximity-inside",
+        "inherited-decoded-skipreport-context",
+        "inherited-decoded-skipreport-allowlisted",
+        "malformed-utf8-percent-before",
+        "malformed-utf8-percent-inside",
+        "malformed-utf8-percent-after",
+        "malformed-utf8-unicode-before",
+        "malformed-utf8-unicode-inside",
+        "malformed-utf8-unicode-after",
+        "malformed-utf8-hex-before",
+        "malformed-utf8-hex-inside",
+        "malformed-utf8-hex-after",
+        "malformed-utf8-base64-before",
+        "malformed-utf8-base64-inside",
+        "malformed-utf8-base64-after"
+      ]
+    },
+    {
+      "id": "DEC-011",
+      "request_ids": [
+        "detect-encoded-depth-0",
+        "detect-encoded-depth-1",
+        "detect-encoded-depth-2",
+        "detect-encoded-depth-3",
+        "detect-encoded-depth-4",
+        "detect-encoded-depth-5",
+        "detect-encoded-depth-6",
+        "detect-encoded-depth-7",
+        "detect-encoded-depth-8",
+        "detect-encoded-depth-negative-one",
+        "duplicates-across-passes",
+        "inclusive-touch-unchanged-duplicate",
+        "inclusive-touch-after-duplicate",
+        "finding-all-four-encoding-tags",
+        "rule-tags-state-reuse",
+        "keyword-absent-raw-present-decoded",
+        "keyword-present-raw-absent-decoded",
+        "keyword-unicode-case-folded",
+        "keyword-none-every-pass",
+        "marker-original-same-line",
+        "marker-decoded-only",
+        "marker-neighboring-original-line",
+        "marker-previous-line-currentline-quirk",
+        "decoded-capture-entropy-equal-reject",
+        "decoded-capture-entropy-below-report",
+        "required-primary-raw-aux-encoded-different-pass",
+        "required-primary-encoded-aux-raw-different-pass",
+        "required-aux-encoded-candidate-control",
+        "required-primary-encoded-candidate-control",
+        "required-both-encoded-same-pass",
+        "required-auxiliary-allowlisted-same-pass",
+        "required-mapped-proximity-outside",
+        "required-mapped-proximity-inside",
+        "inherited-decoded-skipreport-context",
+        "inherited-decoded-skipreport-allowlisted",
+        "malformed-utf8-percent-before",
+        "malformed-utf8-percent-inside",
+        "malformed-utf8-percent-after",
+        "malformed-utf8-unicode-before",
+        "malformed-utf8-unicode-inside",
+        "malformed-utf8-unicode-after",
+        "malformed-utf8-hex-before",
+        "malformed-utf8-hex-inside",
+        "malformed-utf8-hex-after",
+        "malformed-utf8-base64-before",
+        "malformed-utf8-base64-inside",
+        "malformed-utf8-base64-after"
+      ]
+    },
+    {
+      "id": "DEC-012",
+      "request_ids": [
+        "decoded-line-allowlist-positive",
+        "decoded-line-allowlist-negative",
+        "allow-target-decoded-secret",
+        "allow-target-decoded-match",
+        "allow-target-decoded-line",
+        "allow-target-original-line-not-decoded",
+        "allow-target-nested-decoded-line",
+        "allow-target-multisegment-decoded-line",
+        "early-global-fragment-gate-once",
+        "early-rule-gate-each-pass",
+        "early-gate-control",
+        "required-auxiliary-allowlisted-same-pass",
+        "inherited-decoded-skipreport-allowlisted"
+      ]
+    },
+    {
+      "id": "DEC-013",
+      "request_ids": [
+        "resource-percent-4096",
+        "resource-hex-16384",
+        "resource-base64-16384",
+        "resource-many-distinct-failures",
+        "resource-many-successful-segments",
+        "resource-nested-depth-six"
+      ]
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TM-0186",
+      "kind": "top-level-aggregator",
+      "direct_request_ids": [
+
+      ],
+      "child_ids": [
+        "TM-0187",
+        "TM-0188",
+        "TM-0189",
+        "TM-0190",
+        "TM-0191",
+        "TM-0192",
+        "TM-0193",
+        "TM-0194",
+        "TM-0195",
+        "TM-0196",
+        "TM-0197",
+        "TM-0198",
+        "TM-0199",
+        "TM-0200",
+        "TM-0201",
+        "TM-0202",
+        "TM-0203",
+        "TM-0204",
+        "TM-0205",
+        "TM-0206",
+        "TM-0207",
+        "TM-0208",
+        "TM-0209",
+        "TM-0210",
+        "TM-0211",
+        "TM-0212",
+        "TM-0213",
+        "TM-0214",
+        "TM-0215",
+        "TM-0216",
+        "TM-0217",
+        "TM-0218",
+        "TM-0219",
+        "TM-0220",
+        "TM-0221",
+        "TM-0222",
+        "TM-0223",
+        "TM-0224",
+        "TM-0225",
+        "TM-0226",
+        "TM-0227",
+        "TM-0228",
+        "TM-0229",
+        "TM-0230",
+        "TM-0231",
+        "TM-0232",
+        "TM-0233",
+        "TM-0234",
+        "TM-0235",
+        "TM-0236",
+        "TM-0237",
+        "TM-0238",
+        "TM-0239",
+        "TM-0240"
+      ]
+    },
+    {
+      "id": "TM-0078",
+      "kind": "nested-detector-leaf",
+      "direct_request_ids": [
+        "detect-encoded-depth-8"
+      ]
+    },
+    {
+      "id": "TM-0187",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0187-direct"
+      ]
+    },
+    {
+      "id": "TM-0188",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0188-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0189",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0189-hex"
+      ]
+    },
+    {
+      "id": "TM-0190",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0190-direct"
+      ]
+    },
+    {
+      "id": "TM-0191",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0191-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0192",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0192-hex"
+      ]
+    },
+    {
+      "id": "TM-0193",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0193-direct"
+      ]
+    },
+    {
+      "id": "TM-0194",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0194-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0195",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0195-hex"
+      ]
+    },
+    {
+      "id": "TM-0196",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0196-direct"
+      ]
+    },
+    {
+      "id": "TM-0197",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0197-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0198",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0198-hex"
+      ]
+    },
+    {
+      "id": "TM-0199",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0199-direct"
+      ]
+    },
+    {
+      "id": "TM-0200",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0200-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0201",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0201-hex"
+      ]
+    },
+    {
+      "id": "TM-0202",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0202-direct"
+      ]
+    },
+    {
+      "id": "TM-0203",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0203-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0204",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0204-hex"
+      ]
+    },
+    {
+      "id": "TM-0205",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0205-direct"
+      ]
+    },
+    {
+      "id": "TM-0206",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0206-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0207",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0207-hex"
+      ]
+    },
+    {
+      "id": "TM-0208",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0208-direct"
+      ]
+    },
+    {
+      "id": "TM-0209",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0209-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0210",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0210-hex"
+      ]
+    },
+    {
+      "id": "TM-0211",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0211-direct"
+      ]
+    },
+    {
+      "id": "TM-0212",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0212-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0213",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0213-hex"
+      ]
+    },
+    {
+      "id": "TM-0214",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0214-direct"
+      ]
+    },
+    {
+      "id": "TM-0215",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0215-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0216",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0216-hex"
+      ]
+    },
+    {
+      "id": "TM-0217",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0217-direct"
+      ]
+    },
+    {
+      "id": "TM-0218",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0218-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0219",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0219-hex"
+      ]
+    },
+    {
+      "id": "TM-0220",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0220-direct"
+      ]
+    },
+    {
+      "id": "TM-0221",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0221-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0222",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0222-hex"
+      ]
+    },
+    {
+      "id": "TM-0223",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0223-direct"
+      ]
+    },
+    {
+      "id": "TM-0224",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0224-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0225",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0225-hex"
+      ]
+    },
+    {
+      "id": "TM-0226",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0226-direct"
+      ]
+    },
+    {
+      "id": "TM-0227",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0227-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0228",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0228-hex"
+      ]
+    },
+    {
+      "id": "TM-0229",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0229-direct"
+      ]
+    },
+    {
+      "id": "TM-0230",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0230-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0231",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0231-hex"
+      ]
+    },
+    {
+      "id": "TM-0232",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0232-direct"
+      ]
+    },
+    {
+      "id": "TM-0233",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0233-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0234",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0234-hex"
+      ]
+    },
+    {
+      "id": "TM-0235",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0235-direct"
+      ]
+    },
+    {
+      "id": "TM-0236",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0236-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0237",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0237-hex"
+      ]
+    },
+    {
+      "id": "TM-0238",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0238-direct"
+      ]
+    },
+    {
+      "id": "TM-0239",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0239-path-escape"
+      ]
+    },
+    {
+      "id": "TM-0240",
+      "kind": "nested-codec-leaf",
+      "direct_request_ids": [
+        "upstream-tm-0240-hex"
+      ]
+    }
+  ],
+  "mandatory_cases": [
+    {
+      "case": 1,
+      "request_ids": [
+        "percent-min-minus-one",
+        "percent-single",
+        "percent-min-plus-one",
+        "unicode-min-minus-one",
+        "unicode-eof",
+        "unicode-min-plus-one",
+        "hex-under-minimum",
+        "hex-minimum",
+        "hex-odd-length",
+        "hex-length-34",
+        "base64-under-minimum",
+        "base64-length-16",
+        "base64-length-17"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 2,
+      "request_ids": [
+        "same-start-hex-base64-success",
+        "same-start-hex-base64-likelihood-failure",
+        "same-start-hex-base64-odd-failure",
+        "same-start-hex-base64-printability-failure"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 3,
+      "request_ids": [
+        "percent-wrap-base64-success",
+        "percent-wrap-hex-success",
+        "percent-broad-reject-blocks-base64"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 4,
+      "request_ids": [
+        "touch-percent-before-base64",
+        "touch-base64-before-percent",
+        "touch-unicode-before-hex",
+        "touch-equal-base64",
+        "touch-three-precedence-neighbors"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 5,
+      "request_ids": [
+        "percent-greedy-same-line",
+        "percent-does-not-cross-lf",
+        "percent-malformed-nonhex",
+        "percent-malformed-short",
+        "percent-incomplete-copied-inside"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 6,
+      "request_ids": [
+        "percent-control-reject",
+        "percent-tab-printable",
+        "percent-lf-printable",
+        "percent-tilde-printable",
+        "percent-del-printability-reject",
+        "unicode-codepoint-u0008",
+        "unicode-codepoint-u0009",
+        "unicode-codepoint-u007e",
+        "unicode-codepoint-u007f",
+        "hex-control-reject",
+        "hex-tab-printable",
+        "hex-lf-printable",
+        "hex-tilde-printable",
+        "hex-del-reject",
+        "base64-control-reject",
+        "base64-tab-printable",
+        "base64-lf-printable",
+        "base64-tilde-printable",
+        "base64-del-reject"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 7,
+      "request_ids": [
+        "percent-copied-invalid-byte-inside",
+        "percent-invalid-utf8-literal"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 8,
+      "request_ids": [
+        "hex-under-minimum",
+        "hex-minimum",
+        "hex-odd-length",
+        "hex-length-34",
+        "hex-no-digit-heuristic",
+        "hex-one-digit-likelihood",
+        "hex-uppercase",
+        "hex-lowercase-pairs",
+        "hex-nonprint-first",
+        "hex-nonprint-middle",
+        "hex-nonprint-last"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 9,
+      "request_ids": [
+        "base64-likelihood-48",
+        "base64-likelihood-49",
+        "base64-likelihood-50",
+        "base64-likelihood-51",
+        "base64-likelihood-52",
+        "base64-likelihood-53",
+        "base64-likelihood-54",
+        "base64-likelihood-55",
+        "base64-likelihood-56",
+        "base64-likelihood-57",
+        "base64-likelihood-43",
+        "base64-likelihood-47",
+        "base64-likelihood-45",
+        "base64-likelihood-95",
+        "base64-standard",
+        "base64-raw-url",
+        "base64-bad-padding",
+        "base64-unpadded-standard-plus-rejected",
+        "base64-padded-url-rejected",
+        "base64-mixed-alphabet-rejected",
+        "base64-standard-pad2-canonical",
+        "base64-standard-pad2-noncanonical",
+        "base64-standard-pad1-canonical",
+        "base64-standard-pad1-noncanonical",
+        "base64-raw-url-pad2-canonical",
+        "base64-raw-url-pad2-noncanonical",
+        "base64-raw-url-pad1-canonical",
+        "base64-raw-url-pad1-noncanonical"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 10,
+      "request_ids": [
+        "unicode-eof",
+        "unicode-space",
+        "unicode-tab",
+        "unicode-lf",
+        "unicode-two-spaces",
+        "unicode-codepoint",
+        "unicode-lowercase-codepoint-rejected",
+        "unicode-single-slash",
+        "unicode-double-slash",
+        "unicode-three-backslashes",
+        "unicode-four-backslashes",
+        "unicode-case-insensitive-u",
+        "unicode-escape-trailing-ascii",
+        "unicode-escapes-separated",
+        "unicode-escapes-contiguous",
+        "unicode-codepoint-fifth-digit",
+        "unicode-fifth-hex-digit"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 11,
+      "request_ids": [
+        "unicode-nul",
+        "unicode-codepoint-u0008",
+        "unicode-codepoint-u0009",
+        "unicode-codepoint-u007e",
+        "unicode-codepoint-u007f",
+        "unicode-codepoint-u00e9",
+        "unicode-codepoint-ud800",
+        "unicode-codepoint-udfff",
+        "unicode-surrogate-pair-not-combined"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 12,
+      "request_ids": [
+        "cache-two-successes-one-pass",
+        "cache-two-failures-one-pass"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 13,
+      "request_ids": [
+        "cache-key-reappears-deeper"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 14,
+      "request_ids": [
+        "cache-shared-instance",
+        "cache-isolated-instances"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 15,
+      "request_ids": [
+        "detect-encoded-depth-negative-one",
+        "detect-encoded-depth-0",
+        "detect-encoded-depth-1",
+        "detect-encoded-depth-7",
+        "detect-encoded-depth-8",
+        "detect-exhaustion-before-huge-depth"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 16,
+      "request_ids": [
+        "outer-all-letter-likelihood-stops-recursion"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 17,
+      "request_ids": [
+        "mapping-two-segments-shift-span",
+        "mapping-success-failure-success-shifts"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 18,
+      "request_ids": [
+        "mapping-contained-left-right-both-none-touch",
+        "mapping-two-segments-shift-span"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 19,
+      "request_ids": [
+        "inclusive-touch-unchanged-duplicate",
+        "inclusive-touch-after-duplicate"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 20,
+      "request_ids": [
+        "line-segment-at-byte-zero",
+        "line-segment-after-lf",
+        "line-segment-before-lf",
+        "line-segment-decodes-to-lf",
+        "line-selected-segments-separate-lines"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 21,
+      "request_ids": [
+        "finding-all-four-encoding-tags",
+        "cache-carried-unrelated-global-depth"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 22,
+      "request_ids": [
+        "rule-tags-state-reuse"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 23,
+      "request_ids": [
+        "duplicates-across-passes"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 24,
+      "request_ids": [
+        "keyword-absent-raw-present-decoded",
+        "keyword-present-raw-absent-decoded",
+        "keyword-unicode-case-folded",
+        "keyword-none-every-pass"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 25,
+      "request_ids": [
+        "marker-original-same-line",
+        "marker-decoded-only",
+        "marker-neighboring-original-line",
+        "marker-previous-line-currentline-quirk"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 26,
+      "request_ids": [
+        "decoded-capture-entropy-equal-reject",
+        "decoded-capture-entropy-below-report"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 27,
+      "request_ids": [
+        "allow-target-decoded-secret",
+        "allow-target-decoded-match",
+        "allow-target-decoded-line",
+        "allow-target-original-line-not-decoded",
+        "allow-target-nested-decoded-line",
+        "allow-target-multisegment-decoded-line"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 28,
+      "request_ids": [
+        "early-global-fragment-gate-once",
+        "early-rule-gate-each-pass",
+        "early-gate-control"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 29,
+      "request_ids": [
+        "required-primary-raw-aux-encoded-different-pass",
+        "required-primary-encoded-aux-raw-different-pass",
+        "required-aux-encoded-candidate-control",
+        "required-primary-encoded-candidate-control",
+        "required-both-encoded-same-pass",
+        "required-auxiliary-allowlisted-same-pass",
+        "required-mapped-proximity-outside",
+        "required-mapped-proximity-inside",
+        "inherited-decoded-skipreport-context",
+        "inherited-decoded-skipreport-allowlisted"
+      ],
+      "scope": "M6 decoder context plus M7-integrated composite/proximity projection"
+    },
+    {
+      "case": 30,
+      "request_ids": [
+        "malformed-utf8-percent-before",
+        "malformed-utf8-percent-inside",
+        "malformed-utf8-percent-after",
+        "malformed-utf8-unicode-before",
+        "malformed-utf8-unicode-inside",
+        "malformed-utf8-unicode-after",
+        "malformed-utf8-hex-before",
+        "malformed-utf8-hex-inside",
+        "malformed-utf8-hex-after",
+        "malformed-utf8-base64-before",
+        "malformed-utf8-base64-inside",
+        "malformed-utf8-base64-after"
+      ],
+      "scope": "M6"
+    },
+    {
+      "case": 31,
+      "request_ids": [
+        "resource-percent-4096",
+        "resource-hex-16384",
+        "resource-base64-16384",
+        "resource-many-distinct-failures",
+        "resource-many-successful-segments",
+        "resource-nested-depth-six"
+      ],
+      "scope": "M6"
+    }
+  ],
+  "depth_finding_counts": {
+    "0": 2,
+    "1": 9,
+    "2": 15,
+    "3": 16,
+    "4": 18,
+    "5": 19,
+    "6": 19,
+    "7": 20,
+    "8": 20
+  }
+}

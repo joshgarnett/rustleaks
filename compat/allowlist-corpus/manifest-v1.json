@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "allowlist",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.25.0",
+  "scope": [
+    "compiled-allowlist-methods",
+    "raw-direct-fragment-allowlists",
+    "translated-config-fixtures",
+    "complete-canonical-findings"
+  ],
+  "excluded": [
+    "decoded-target-lines-m6",
+    "composite-required-rules",
+    "source-session-baseline-ignore"
+  ],
+  "request_count": 188,
+  "method_request_count": 127,
+  "detect_request_count": 61,
+  "finding_count": 22,
+  "zero_finding_detect_request_count": 40,
+  "finding_bearing_detect_request_count": 21,
+  "behavior_id_count": 18,
+  "assertion_leaf_count": 9,
+  "related_base_assertion_leaf_count": 92,
+  "linked_nested_test_leaf_count": 31,
+  "aggregator_test_case_count": 6,
+  "fresh_process_per_request": true,
+  "files": {
+    "requests-v1.jsonl": {
+      "sha256": "779e9c5b71e215c2b159528ccef94f71b8b7e7e182e91d59dd1d2f7360b5a26d",
+      "records": 188
+    },
+    "outcomes-v1.jsonl": {
+      "sha256": "9cb2cf7bb909e137d9802f569dccd7f004610decfa2cf7e43d0676e5b14e72a3",
+      "records": 188
+    },
+    "request-metadata-v1.jsonl": {
+      "sha256": "c42cb275883a9eb50f49893343d238361a0652339f92eb521f9abbc0673435ad",
+      "records": 188
+    },
+    "coverage-v1.json": {
+      "sha256": "45f3a08b36849f3eb507a029079ae7e2fe36482b31043c3cc6e7d8bbf0845182",
+      "records": 156
+    }
+  }
+}
