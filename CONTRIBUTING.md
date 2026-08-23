@@ -6,19 +6,29 @@ adapters, report formatting, and CLI behavior.
 
 ## Local checks
 
-Install the toolchain selected by `rust-toolchain.toml`. The complete parity
-gate also requires the pinned upstream repository at `../gitleaks`, Go, and
-the exact auxiliary Cargo tools checked by `xtask`.
+Install Bazelisk, Just, and the toolchain selected by `rust-toolchain.toml`.
+The repository pins Bazel in `.bazelversion`; `just doctor` reports the selected
+versions without installing or changing anything. The complete upstream oracle
+also requires the pinned repository at `../gitleaks`, Go, and the exact
+auxiliary Cargo tools checked by `xtask`.
 
-Run focused tests while editing, then run:
+Use `just --list` to discover the public commands. Run focused Bazel targets
+while editing, then run the complete local gate:
 
 ```sh
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps --locked
-cargo test --workspace --all-targets --all-features --locked
-cargo xtask parity --all
+just ci
 ```
+
+`just build`, `just test`, `just docs`, `just parity`, and `just check` expose
+the canonical named Bazel targets. Formatting and Clippy are Bazel checks, and
+the check gate also compiles the library/feature graph for all eight declared
+targets. Cross-compilation is compile-only evidence; matching native runners
+remain a separate requirement.
+
+Cargo remains the public package metadata interface. Use `just package-check`
+for extracted external Cargo and Bazel consumers, and `just release-dry-run`
+for Cargo's locked no-upload publish check. `just deps-repin` is the only
+public path that regenerates Cargo, crate-universe, and Bazel module lockfiles.
 
 ## Compatibility changes
 

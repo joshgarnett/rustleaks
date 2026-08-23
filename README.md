@@ -16,10 +16,11 @@ Version `0.1.0-alpha.1` has not been published. Only `rustleaks-core` is in the
 initial publishable package boundary. The source, report, CLI, compatibility,
 and codec crates are tested workspace components, not registry promises.
 
-The complete local runtime suite has been run on Apple Silicon macOS. Selected
-Linux and Windows targets have compile-only evidence. Matching-host Linux,
-Windows, Intel macOS, and musl runtime validation is still required. Rustleaks
-is not described as production-ready.
+The complete local runtime suite has been run on Apple Silicon macOS. Bazel
+compile-only evidence covers the library and feature-profile graph for all
+eight declared Linux GNU, Linux musl, macOS, and Windows MSVC targets on both
+x86-64 and AArch64. Matching-host Linux, Windows, Intel macOS, and musl runtime
+validation is still required. Rustleaks is not described as production-ready.
 
 ## Why Rustleaks exists
 
@@ -61,10 +62,10 @@ finding-record budgets.
 
 ## CLI example
 
-Build and scan a directory with the workspace CLI:
+Build and scan a directory with the authoritative Bazel CLI target:
 
 ```sh
-cargo run -p rustleaks-cli -- dir ./src --no-banner
+bazelisk run //crates/rustleaks-cli:rustleaks -- dir ./src --no-banner
 ```
 
 Rustleaks uses `RUSTLEAKS_CONFIG`, `RUSTLEAKS_CONFIG_TOML`,
@@ -89,14 +90,15 @@ composite rules, sessions, files, archives, Git, reports, and the CLI. See the
 [compatibility profile](docs/COMPATIBILITY.md) for counts, normalization, and
 known differences.
 
-With the exact pinned upstream checkout at `../gitleaks`, run:
+Run the committed compatibility replay through its canonical Bazel target:
 
 ```sh
-cargo xtask parity --all
+just parity
 ```
 
-The sibling checkout is an oracle input for repository validation. It is not a
-build or runtime dependency of any Rustleaks package.
+The exact pinned upstream checkout at `../gitleaks` is an additional oracle
+input for regeneration and complete differential validation. It is not a
+normal Bazel build/test input or a runtime dependency of any Rustleaks package.
 
 ## Platform and dependency evidence
 
@@ -106,11 +108,11 @@ dependency boundary is documented in
 [dependency safety](docs/DEPENDENCY_SAFETY.md). The default core graph has no
 native library, C, C++, archive, Git, report, CLI, or async-runtime dependency.
 
-Native runtime evidence currently covers `aarch64-apple-darwin`. Compile-only
-checks have covered `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-gnu`, and
-`x86_64-pc-windows-msvc`. Compilation does not establish runtime support. See
-the [architecture](docs/ARCHITECTURE.md) and
-[resource contract](docs/RESOURCE_LIMITS.md).
+Native runtime evidence currently covers `aarch64-apple-darwin`. Hermetic
+Bazel cross-compilation covers `x86_64` and `aarch64` for Linux GNU, Linux
+musl, macOS, and Windows MSVC. Compilation does not establish runtime support.
+See the [architecture](docs/ARCHITECTURE.md) and [resource
+contract](docs/RESOURCE_LIMITS.md).
 
 ## AI-assisted development
 

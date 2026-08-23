@@ -64,10 +64,12 @@ named, bounded Rust dispositions rather than normalized away.
 ## Platforms
 
 Complete local runtime evidence currently covers `aarch64-apple-darwin`.
-Compile-only evidence covers selected Linux and Windows triples. Native Linux,
-Windows, Intel macOS, and musl replay remains required before those targets can
-be described as supported. The absence of matching-host evidence is not a
-compatibility exception.
+Hermetic Bazel compile-only evidence covers `x86_64` and `aarch64` for Linux
+GNU, Linux musl, macOS, and Windows MSVC. Native Linux, Windows, Intel macOS,
+and musl replay remains required before those targets can be described as
+supported. The absence of matching-host evidence is not a compatibility
+exception.
 
-Run `cargo xtask parity --all` with the pinned sibling checkout to reproduce
-the complete local profile.
+Run `just parity` for the committed replay. The pinned sibling checkout is
+required separately when regenerating or performing the complete differential
+oracle validation.
