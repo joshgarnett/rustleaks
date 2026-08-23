@@ -1772,8 +1772,8 @@ fn validate_git_manifest_baselines(manifest: &str) -> Result<(), String> {
         "git_outcomes_sha256 = \"5396b3c80852f10a54c85bb4f8f380d4fa5e65a2a9af9a2be6ce4e682c3e477d\"",
         "git_coverage_sha256 = \"35d5241bb96138f4526465de5d3f5db5e3fbc554a6f597b160987ab50249d06c\"",
         "git_negative_controls_sha256 = \"00176d6456a1a1558876b05927a42654b060e4d33979d7988ae8457e1b2f95da\"",
-        "git_manifest_sha256 = \"1fcdee8867d3c608c9200d267fa15ea8d7ce95724d734224d5ccfc366bc3043e\"",
-        "git_readme_sha256 = \"8782a13e8456ed73058dbd4307f2709f030c2b2e5386ecf4446aef80c963cb51\"",
+        "git_manifest_sha256 = \"1e9374f400931c3306d73e342c58c7eee50d0363c5c716f88409ad57e5eeba71\"",
+        "git_readme_sha256 = \"941427ae08258f8c44246bfecf5c3d7f35f667e14c87cec1cc0d2ea016c7426b\"",
         "git_cases = 34",
     ] {
         if !manifest.contains(required) {
@@ -2091,11 +2091,7 @@ fn oracle_check() -> Result<(), String> {
     )?;
     tooling::check_session_corpus(&root)?;
     tooling::check_source_corpus(&root)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_git_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_git_corpus(&root)?;
     println!("oracle corpus matches fresh Go outcomes");
     Ok(())
 }
@@ -2294,11 +2290,7 @@ fn git_check() -> Result<(), String> {
             .args(["compat/generate_inventory.rb", "--check"])
             .current_dir(&root),
     )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_git_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_git_corpus(&root)?;
     command_output(
         Command::new("cargo")
             .args([

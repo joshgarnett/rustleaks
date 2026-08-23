@@ -5,8 +5,8 @@ use std::path::Path;
 use super::{
     Corpus, check_api_dispositions, check_assertions, generate_corpus, generate_go_lowercase,
     generate_regex_fuzz_seeds, self_test_api_dispositions, summarize_api_dispositions,
-    write_api_dispositions, write_assertions, write_config_corpus, write_report_corpus,
-    write_session_corpus, write_source_corpus,
+    write_api_dispositions, write_assertions, write_config_corpus, write_git_corpus,
+    write_report_corpus, write_session_corpus, write_source_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -64,6 +64,15 @@ fn run_repository_artifact(root: &Path, args: &[String]) -> Option<Result<(), St
         }
         [target, flag, output] if target == "source" && flag == "--output" => {
             Some(write_source_corpus(root, Path::new(output)))
+        }
+        [target] if target == "git" => {
+            Some(write_git_corpus(root, &root.join("compat/git-corpus")))
+        }
+        [target, flag] if target == "git" && flag == "--check" => {
+            Some(super::check_git_corpus(root))
+        }
+        [target, flag, output] if target == "git" && flag == "--output" => {
+            Some(write_git_corpus(root, Path::new(output)))
         }
         _ => None,
     }
@@ -149,7 +158,7 @@ fn run_direct_oracle(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions [--check|--output PATH|--check-output PATH]|config|regex|detect|allowlist|decoder|session|source|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions [--check|--output PATH|--check-output PATH]|config|regex|detect|allowlist|decoder|session|source|git|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }
