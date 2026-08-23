@@ -2,7 +2,107 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Child, Command, ExitStatus};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+pub(crate) fn command_output(command: &mut Command) -> Result<String, String> {
+    const DIAGNOSTIC_LIMIT: usize = 16 * 1024;
+
+    let display = format!("{command:?}");
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to run {display}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{display} exited {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            diagnostic_tail(&output.stdout, DIAGNOSTIC_LIMIT),
+            diagnostic_tail(&output.stderr, DIAGNOSTIC_LIMIT),
+        ));
+    }
+    String::from_utf8(output.stdout)
+        .map(|value| value.trim().to_owned())
+        .map_err(|error| format!("{display} returned non-UTF-8 output: {error}"))
+}
+
+pub(crate) fn diagnostic_tail(output: &[u8], limit: usize) -> String {
+    if output.is_empty() {
+        return "<empty>".into();
+    }
+    if output.len() <= limit {
+        return String::from_utf8_lossy(output).trim().to_owned();
+    }
+
+    let omitted = output.len() - limit;
+    format!(
+        "... {omitted} bytes omitted ...\n{}",
+        String::from_utf8_lossy(&output[omitted..]).trim()
+    )
+}
+
+pub(crate) fn command_status_with_timeout(
+    command: &mut Command,
+    timeout: Duration,
+    label: &str,
+) -> Result<(), String> {
+    let display = format!("{command:?}");
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to run {label} ({display}): {error}"))?;
+    wait_for_child_with_timeout(&mut child, timeout, label, &display)
+}
+
+pub(crate) trait TimeoutChild {
+    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>>;
+    fn kill(&mut self) -> std::io::Result<()>;
+    fn reap(&mut self) -> std::io::Result<()>;
+}
+
+impl TimeoutChild for Child {
+    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+        Child::try_wait(self)
+    }
+
+    fn kill(&mut self) -> std::io::Result<()> {
+        Child::kill(self)
+    }
+
+    fn reap(&mut self) -> std::io::Result<()> {
+        Child::wait(self).map(|_| ())
+    }
+}
+
+pub(crate) fn wait_for_child_with_timeout(
+    child: &mut impl TimeoutChild,
+    timeout: Duration,
+    label: &str,
+    display: &str,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        match child
+            .try_wait()
+            .map_err(|error| format!("failed to poll {label} ({display}): {error}"))?
+        {
+            Some(status) if status.success() => return Ok(()),
+            Some(status) => return Err(format!("{label} ({display}) exited {status}")),
+            None if started.elapsed() >= timeout => {
+                child
+                    .kill()
+                    .map_err(|error| format!("failed to terminate timed-out {label}: {error}"))?;
+                child
+                    .reap()
+                    .map_err(|error| format!("failed to reap timed-out {label}: {error}"))?;
+                return Err(format!(
+                    "{label} exceeded its external {} second deadline",
+                    timeout.as_secs()
+                ));
+            }
+            None => thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
 
 pub(super) struct TempDir {
     pub(super) path: PathBuf,

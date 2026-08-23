@@ -4,13 +4,14 @@
 use std::collections::BTreeSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitCode, ExitStatus};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::{Command, ExitCode};
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
 mod tooling;
+
+use tooling::{command_output, command_status_with_timeout};
 
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
@@ -341,104 +342,6 @@ fn oracle_root() -> Result<PathBuf, String> {
         .parent()
         .ok_or("workspace has no parent")?
         .join("gitleaks"))
-}
-
-fn command_output(command: &mut Command) -> Result<String, String> {
-    const DIAGNOSTIC_LIMIT: usize = 16 * 1024;
-
-    let display = format!("{command:?}");
-    let output = command
-        .output()
-        .map_err(|error| format!("failed to run {display}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "{display} exited {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            diagnostic_tail(&output.stdout, DIAGNOSTIC_LIMIT),
-            diagnostic_tail(&output.stderr, DIAGNOSTIC_LIMIT),
-        ));
-    }
-    String::from_utf8(output.stdout)
-        .map(|value| value.trim().to_owned())
-        .map_err(|error| format!("{display} returned non-UTF-8 output: {error}"))
-}
-
-fn diagnostic_tail(output: &[u8], limit: usize) -> String {
-    if output.is_empty() {
-        return "<empty>".into();
-    }
-    if output.len() <= limit {
-        return String::from_utf8_lossy(output).trim().to_owned();
-    }
-
-    let omitted = output.len() - limit;
-    format!(
-        "... {omitted} bytes omitted ...\n{}",
-        String::from_utf8_lossy(&output[omitted..]).trim()
-    )
-}
-
-fn command_status_with_timeout(
-    command: &mut Command,
-    timeout: Duration,
-    label: &str,
-) -> Result<(), String> {
-    let display = format!("{command:?}");
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("failed to run {label} ({display}): {error}"))?;
-    wait_for_child_with_timeout(&mut child, timeout, label, &display)
-}
-
-trait TimeoutChild {
-    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>>;
-    fn kill(&mut self) -> std::io::Result<()>;
-    fn reap(&mut self) -> std::io::Result<()>;
-}
-
-impl TimeoutChild for Child {
-    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
-        Child::try_wait(self)
-    }
-
-    fn kill(&mut self) -> std::io::Result<()> {
-        Child::kill(self)
-    }
-
-    fn reap(&mut self) -> std::io::Result<()> {
-        Child::wait(self).map(|_| ())
-    }
-}
-
-fn wait_for_child_with_timeout(
-    child: &mut impl TimeoutChild,
-    timeout: Duration,
-    label: &str,
-    display: &str,
-) -> Result<(), String> {
-    let started = Instant::now();
-    loop {
-        match child
-            .try_wait()
-            .map_err(|error| format!("failed to poll {label} ({display}): {error}"))?
-        {
-            Some(status) if status.success() => return Ok(()),
-            Some(status) => return Err(format!("{label} ({display}) exited {status}")),
-            None if started.elapsed() >= timeout => {
-                child
-                    .kill()
-                    .map_err(|error| format!("failed to terminate timed-out {label}: {error}"))?;
-                child
-                    .reap()
-                    .map_err(|error| format!("failed to reap timed-out {label}: {error}"))?;
-                return Err(format!(
-                    "{label} exceeded its external {} second deadline",
-                    timeout.as_secs()
-                ));
-            }
-            None => thread::sleep(Duration::from_millis(10)),
-        }
-    }
 }
 
 fn composite_test_executable_from_messages(messages: &str) -> Result<PathBuf, String> {
@@ -2822,14 +2725,14 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, TimeoutChild,
-        command_output, composite_test_executable_from_messages, diagnostic_tail,
-        normalize_workspace_dependency_tree, resource_test_command, run_resource_test,
-        validate_assertion_traceability, validate_core_repository_metadata,
-        validate_final_traceability_statuses, validate_perf_budget, validate_perf_records,
-        validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
-        wait_for_child_with_timeout,
+        CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, command_output,
+        composite_test_executable_from_messages, normalize_workspace_dependency_tree,
+        resource_test_command, run_resource_test, validate_assertion_traceability,
+        validate_core_repository_metadata, validate_final_traceability_statuses,
+        validate_perf_budget, validate_perf_records, validate_publish_policy,
+        validate_regex_backend_metadata, validate_supply_chain_exceptions,
     };
+    use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
     const TIMEOUT_PROBE_TEST: &str = "tests::resource_launcher_timeout_probe_child";
     const RESOURCE_SELECTOR: &str = "RUSTLEAKS_BOUNDED_RESOURCE_TEST";
