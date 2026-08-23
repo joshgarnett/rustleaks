@@ -112,7 +112,7 @@ jobs:
         run: |
           ruby compat/generate_source_corpus.rb
           ruby compat/generate_git_corpus.rb
-          ruby compat/generate_report_corpus.rb
+          cargo xtask generate report --output "${RUSTLEAKS_REPORT_CORPUS_OUTPUT}"
           ruby compat/generate_cli_corpus.rb
           cargo test -p rustleaks-sources --all-features --test source_corpus
           cargo test -p rustleaks-sources --all-features --test git_corpus --test git_sources --test git_scm

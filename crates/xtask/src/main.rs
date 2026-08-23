@@ -281,6 +281,20 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             tooling::generate_go_lowercase(&workspace_root()?, true)
         }
+        [command, target] if command == "generate" && target == "report" => {
+            let root = workspace_root()?;
+            tooling::write_report_corpus(&root, &root.join("compat/report-corpus"))
+        }
+        [command, target, flag]
+            if command == "generate" && target == "report" && flag == "--check" =>
+        {
+            tooling::check_report_corpus(&workspace_root()?)
+        }
+        [command, target, flag, output]
+            if command == "generate" && target == "report" && flag == "--output" =>
+        {
+            tooling::write_report_corpus(&workspace_root()?, Path::new(output))
+        }
         [command, target, requests, output]
             if command == "generate" && target == "regex-fuzz-seeds" =>
         {
@@ -325,7 +339,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|generate <go-lowercase [--check]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|generate <go-lowercase [--check]|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -2456,11 +2470,7 @@ fn report_check() -> Result<(), String> {
     let manifest = std::fs::read_to_string(root.join("compat/test-manifest.toml"))
         .map_err(|error| format!("cannot read test manifest: {error}"))?;
     validate_report_manifest_baselines(&manifest)?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_report_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_report_corpus(&root)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-report", "--offline"])
