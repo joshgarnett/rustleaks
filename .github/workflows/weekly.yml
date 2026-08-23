@@ -38,7 +38,7 @@ jobs:
         working-directory: rustleaks
         run: |
           cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit-audit --locked --version 0.22.2
+          cargo install cargo-audit --locked --version 0.22.2
           cargo install cargo-vet --locked --version 0.10.2
           cargo install cargo-geiger --locked --version 0.13.0
           rustup toolchain install nightly-2026-08-21 --profile minimal --component miri

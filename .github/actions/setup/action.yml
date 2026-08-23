@@ -1,5 +1,5 @@
 name: Set up Rustleaks tools
-description: Install the pinned Rust, Just, and Bazelisk command-line tools.
+description: Configure the native Bazel platform and install maintained tools.
 
 inputs:
   rust-toolchain:
@@ -22,6 +22,25 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Configure the native Bazel platform
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}:${RUNNER_ARCH}" in
+          Linux:X64) native_platform=//platforms:linux_x86_64_gnu ;;
+          Linux:ARM64) native_platform=//platforms:linux_aarch64_gnu ;;
+          macOS:X64) native_platform=//platforms:macos_x86_64 ;;
+          macOS:ARM64) native_platform=//platforms:macos_aarch64 ;;
+          Windows:X64) native_platform=//platforms:windows_x86_64_msvc ;;
+          Windows:ARM64) native_platform=//platforms:windows_aarch64_msvc ;;
+          *)
+            echo "unsupported GitHub runner ${RUNNER_OS}:${RUNNER_ARCH}" >&2
+            exit 1
+            ;;
+        esac
+        printf 'build --platforms=%s\nbuild --host_platform=%s\n' \
+          "${native_platform}" "${native_platform}" > "${HOME}/.bazelrc"
+
     - name: Install Rust toolchain
       shell: bash
       env:

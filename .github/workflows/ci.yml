@@ -94,7 +94,7 @@ jobs:
         working-directory: rustleaks
         run: |
           cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit-audit --locked --version 0.22.2
+          cargo install cargo-audit --locked --version 0.22.2
           cargo install cargo-vet --locked --version 0.10.2
           cargo install cargo-geiger --locked --version 0.13.0
           rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
@@ -208,18 +208,22 @@ jobs:
             architecture: x86_64
             target: x86_64-unknown-linux-gnu
             config: linux-x86_64-gnu
+            host_platform: //platforms:linux_x86_64_gnu
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-gnu
             config: linux-aarch64-gnu
+            host_platform: //platforms:linux_aarch64_gnu
           - runner: ubuntu-24.04
             architecture: x86_64
             target: x86_64-unknown-linux-musl
             config: linux-x86_64-musl
+            host_platform: //platforms:linux_x86_64_gnu
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-musl
             config: linux-aarch64-musl
+            host_platform: //platforms:linux_aarch64_gnu
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -245,9 +249,10 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
+          HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
-          bazelisk build --config="${BAZEL_CONFIG}" //:build //:docs
-          bazelisk test --config="${BAZEL_CONFIG}" //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:test
 
   native-macos:
     name: Native ${{ matrix.target }}
@@ -259,10 +264,12 @@ jobs:
             architecture: x86_64
             target: x86_64-apple-darwin
             config: macos-x86_64
+            host_platform: //platforms:macos_x86_64
           - runner: macos-15
             architecture: arm64
             target: aarch64-apple-darwin
             config: macos-aarch64
+            host_platform: //platforms:macos_aarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -288,9 +295,10 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
+          HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
-          bazelisk build --config="${BAZEL_CONFIG}" //:build //:docs
-          bazelisk test --config="${BAZEL_CONFIG}" //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:test
 
   native-windows:
     name: Native ${{ matrix.target }}
@@ -302,10 +310,12 @@ jobs:
             architecture: X64
             target: x86_64-pc-windows-msvc
             config: windows-x86_64-msvc
+            host_platform: //platforms:windows_x86_64_msvc
           - runner: windows-11-arm
             architecture: Arm64
             target: aarch64-pc-windows-msvc
             config: windows-aarch64-msvc
+            host_platform: //platforms:windows_aarch64_msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -337,10 +347,11 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
+          HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
-          bazelisk build --config="$env:BAZEL_CONFIG" //:build //:docs
+          bazelisk build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" //:build //:docs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk test --config="$env:BAZEL_CONFIG" //:test
+          bazelisk test --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   required:
