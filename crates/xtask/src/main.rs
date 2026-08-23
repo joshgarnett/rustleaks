@@ -1942,9 +1942,7 @@ fn git_check() -> Result<(), String> {
 fn report_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    let manifest = std::fs::read_to_string(root.join("compat/test-manifest.toml"))
-        .map_err(|error| format!("cannot read test manifest: {error}"))?;
-    validate_report_manifest_baselines(&manifest)?;
+    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
     tooling::check_report_corpus(&root)?;
     command_output(
         Command::new("cargo")
@@ -1965,27 +1963,6 @@ fn cli_check() -> Result<(), String> {
             .current_dir(&root),
     )?;
     println!("portable command-line outcomes are consistent");
-    Ok(())
-}
-
-fn validate_report_manifest_baselines(manifest: &str) -> Result<(), String> {
-    for required in [
-        "report_generator_sha256 = \"4aae65d315b52f8facdcb8c5111152d1c08b659eff7eeb3f90f4de1111dda1ab\"",
-        "report_requests_sha256 = \"bac1c15ddfa36abd14fc43f8bac8f32859bdb6c9aee5095c716bd84e1fb9392e\"",
-        "report_outcomes_sha256 = \"7f9d89b13ec90c6ccfa0449c427513be1f22f0822abedfabba331125e485c953\"",
-        "report_coverage_sha256 = \"3c5d859bc4093cdfdc478270c84796f1456dc4d4b0866a3938b2451d063fe549\"",
-        "report_readme_sha256 = \"989ee01f88e463de6770a4a5b77276611e8a1142461fd00db956ce29dc5f8bf0\"",
-        "report_cases = 49",
-        "report_output_bytes = 16322",
-        "report_error_cases = 18",
-        "report_behaviors = 13",
-    ] {
-        if !manifest.contains(required) {
-            return Err(format!(
-                "test manifest lacks required report baseline `{required}`"
-            ));
-        }
-    }
     Ok(())
 }
 
