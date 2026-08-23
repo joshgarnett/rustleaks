@@ -7,6 +7,7 @@ mod generate;
 mod go_lowercase;
 mod oracle;
 mod report;
+mod session;
 mod support;
 
 pub(crate) use fixtures::verify_fixtures;
@@ -15,6 +16,7 @@ pub(crate) use generate::run as run_generate;
 pub(crate) use go_lowercase::generate_go_lowercase;
 pub(crate) use oracle::{Corpus, generate_corpus, replay_corpus};
 pub(crate) use report::{check_report_corpus, write_report_corpus};
+pub(crate) use session::{check_session_corpus, write_session_corpus};
 #[cfg(test)]
 pub(crate) use support::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 pub(crate) use support::{command_output, command_status_with_timeout, sha256_file};

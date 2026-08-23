@@ -2187,11 +2187,7 @@ fn oracle_check() -> Result<(), String> {
             .args(["compat/generate_composite_corpus.rb", "--check"])
             .current_dir(&root),
     )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_session_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_session_corpus(&root)?;
     command_output(
         Command::new("ruby")
             .args(["compat/generate_source_corpus.rb", "--check"])
@@ -2356,11 +2352,7 @@ fn composite_check() -> Result<(), String> {
 fn session_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_session_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_session_corpus(&root)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-core", "--test", "session_corpus"])

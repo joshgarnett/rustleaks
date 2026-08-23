@@ -4,6 +4,7 @@ use std::path::Path;
 
 use super::{
     Corpus, generate_corpus, generate_go_lowercase, generate_regex_fuzz_seeds, write_report_corpus,
+    write_session_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -20,6 +21,15 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
         [target, flag, output] if target == "report" && flag == "--output" => {
             write_report_corpus(root, Path::new(output))
+        }
+        [target] if target == "session" => {
+            write_session_corpus(root, &root.join("compat/session-corpus"))
+        }
+        [target, flag] if target == "session" && flag == "--check" => {
+            super::check_session_corpus(root)
+        }
+        [target, flag, output] if target == "session" && flag == "--output" => {
+            write_session_corpus(root, Path::new(output))
         }
         [target] if Corpus::from_name(target).is_some() => {
             let corpus = Corpus::from_name(target).expect("guarded corpus name");
@@ -59,7 +69,7 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|regex|detect|allowlist|decoder|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|regex|detect|allowlist|decoder|session|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }

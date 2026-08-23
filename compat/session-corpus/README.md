@@ -14,8 +14,8 @@ entries, duplicate collapse, and precedence.
 Regenerate or verify from the repository root:
 
 ```sh
-ruby compat/generate_session_corpus.rb
-ruby compat/generate_session_corpus.rb --check
+cargo xtask generate session
+cargo xtask generate session --check
 ```
 
 Production safety/unsafe design and Rust implementation claims are outside this packet.
