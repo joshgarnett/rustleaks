@@ -149,10 +149,10 @@ fn validate_paths_and_symlinks(outcomes: &BTreeMap<&str, &Value>) -> Result<(), 
         if array_len(outcomes, id, "fragments")? != 0 {
             return Err(format!("{id}: SRC-016 invalid symlink emitted data"));
         }
-        if let Some(class) = error_class(outcomes, id)?
-            && !["panic", "source"].contains(&class)
-        {
-            return Err(format!("{id}: invalid symlink error class changed"));
+        if let Some(class) = error_class(outcomes, id)? {
+            if !["panic", "source"].contains(&class) {
+                return Err(format!("{id}: invalid symlink error class changed"));
+            }
         }
     }
     Ok(())

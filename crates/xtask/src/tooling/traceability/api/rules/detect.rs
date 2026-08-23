@@ -152,10 +152,10 @@ fn detector(record: &Record) -> Attrs {
             "detection-and-codec").links(&["MODEL-001", "MODEL-002", "MODEL-003", "COMP-001", "COMP-002", "COMP-003", "COMP-004", "COMP-005", "COMP-006", "COMP-007", "COMP-008", "SUP-001", "RED-001", "RED-002", "RED-003"])
             .tested("crates/rustleaks-core/src/engine.rs; crates/rustleaks-core/tests/detect_corpus.rs; crates/rustleaks-core/tests/composite_corpus.rs; crates/rustleaks-sources/src/runner.rs; cargo xtask source-check");
     }
-    if kind == "method"
-        && let Some(value) = session_method(name)
-    {
-        return value;
+    if kind == "method" {
+        if let Some(value) = session_method(name) {
+            return value;
+        }
     }
     if kind == "field" {
         return field(record);
