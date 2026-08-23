@@ -186,6 +186,7 @@ impl Default for GitLimits {
 /// metadata projection, cancellation, output accounting, and optional archive
 /// expansion are implemented in safe portable Rust.
 pub struct GitSource {
+    executable: OsString,
     repository: PathBuf,
     mode: GitMode,
     limits: GitLimits,
@@ -199,6 +200,7 @@ impl GitSource {
     #[must_use]
     pub fn new(repository: impl Into<PathBuf>) -> Self {
         Self {
+            executable: OsString::from("git"),
             repository: crate::path::clean_native_path(&repository.into()),
             mode: GitMode::default(),
             limits: GitLimits::default(),
@@ -206,6 +208,16 @@ impl GitSource {
             #[cfg(feature = "archives")]
             archives: None,
         }
+    }
+
+    /// Selects the Git executable used by this source.
+    ///
+    /// The default is `git` resolved by the child process. Embedders and test
+    /// harnesses can provide a declared absolute executable instead.
+    #[must_use]
+    pub fn executable(mut self, executable: impl Into<OsString>) -> Self {
+        self.executable = executable.into();
+        self
     }
 
     /// Selects history or diff mode.
@@ -301,7 +313,7 @@ impl Source for GitSource {
             return Err(SourceError::Cancelled);
         }
         let output = collect_command(
-            OsStr::new("git"),
+            &self.executable,
             &self.arguments(),
             self.limits.patch_bytes(),
             self.limits.stderr_bytes(),
@@ -424,7 +436,7 @@ impl GitSource {
     ) -> Result<SourceControl, SourceError> {
         let object = object_spec(&file.commit, &file.path)?;
         let output = collect_command(
-            OsStr::new("git"),
+            &self.executable,
             &[
                 OsString::from("-C"),
                 self.repository.as_os_str().to_owned(),

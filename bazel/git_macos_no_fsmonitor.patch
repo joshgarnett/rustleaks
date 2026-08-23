@@ -1,0 +1,32 @@
+diff --git a/compat/BUILD.bazel b/compat/BUILD.bazel
+--- a/compat/BUILD.bazel
++++ b/compat/BUILD.bazel
+@@ -175,7 +175,6 @@ cc_library(
+         ":procinfo",
+     ] + select({
+         "@platforms//os:macos": [
+-            ":fsmonitor",
+             ":macos",
+         ],
+         "@platforms//os:linux": [
+diff --git a/contrib/bazel/defs.bzl b/contrib/bazel/defs.bzl
+--- a/contrib/bazel/defs.bzl
++++ b/contrib/bazel/defs.bzl
+@@ -71,10 +71,6 @@ _GIT_OS_DEFINES = select({
+         "-DHAVE_NS_GET_EXECUTABLE_PATH",
+         "-DUSE_ENHANCED_BASIC_REGULAR_EXPRESSIONS",
+         "-DHAVE_ARC4RANDOM",
+-        # fsmonitor
+-        "-DHAVE_FSMONITOR_DAEMON_BACKEND",
+-        "-DHAVE_FSMONITOR_OS_SETTINGS",
+     ] + _GIT_MACOS_ICONV_COPTS,
+     "@platforms//os:windows": [
+         # fsmonitor
+@@ -91,7 +87,5 @@ GIT_COPTS = _GIT_BASE_COPTS + _GIT_CPU_DEFINES + _GIT_OS_DEFINES
+ GIT_LINKOPTS = ["-lpthread"] + select({
+     "@platforms//os:macos": [
+-        "-framework",
+-        "CoreServices",
+     ] + _GIT_MACOS_ICONV_LINKOPTS,
+     "//conditions:default": [],
+ })

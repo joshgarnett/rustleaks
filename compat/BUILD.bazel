@@ -1,0 +1,28 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "all",
+    srcs = glob(["**"], exclude = ["BUILD.bazel"]),
+)
+
+filegroup(
+    name = "parity_corpora",
+    srcs = glob([
+        "allowlist-corpus/**",
+        "cli-corpus/**",
+        "composite-corpus/**",
+        "config-corpus/**",
+        "decoder-corpus/**",
+        "detect-corpus/**",
+        "git-corpus/**",
+        "regex-corpus/**",
+        "report-corpus/**",
+        "session-corpus/**",
+        "source-corpus/**",
+    ]),
+)
+
+filegroup(
+    name = "fixtures",
+    srcs = glob(["fixtures/**"]),
+)

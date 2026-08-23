@@ -36,14 +36,62 @@ impl Drop for Fixture {
 }
 
 fn command(cwd: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_rustleaks"));
+    let mut command = Command::new(rustleaks_executable());
     command
         .current_dir(cwd)
         .env_remove("RUSTLEAKS_CONFIG")
         .env_remove("RUSTLEAKS_CONFIG_TOML")
         .env_remove("GITLEAKS_CONFIG")
         .env_remove("GITLEAKS_CONFIG_TOML");
+    let git = git_executable();
+    if git.is_absolute() {
+        command.env("PATH", git.parent().expect("declared Git has a parent"));
+    }
     command
+}
+
+fn rustleaks_executable() -> PathBuf {
+    resolve_runfile(PathBuf::from(env!("CARGO_BIN_EXE_rustleaks")), "Rustleaks")
+}
+
+fn git_executable() -> PathBuf {
+    let runfile = std::env::var_os("RUSTLEAKS_TEST_GIT_RUNFILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("git"));
+    resolve_runfile(runfile, "Git")
+}
+
+fn resolve_runfile(runfile: PathBuf, label: &str) -> PathBuf {
+    if runfile.is_absolute() {
+        return runfile;
+    }
+    for root in ["RUNFILES_DIR", "TEST_SRCDIR"] {
+        if let Some(root) = std::env::var_os(root) {
+            let root = PathBuf::from(root);
+            for candidate in [root.join(&runfile), root.join("_main").join(&runfile)] {
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+        }
+    }
+    if let Some(manifest) = std::env::var_os("RUNFILES_MANIFEST_FILE") {
+        let key = runfile.to_string_lossy();
+        let contents = fs::read_to_string(manifest).expect("read Bazel runfiles manifest");
+        let workspace_key = format!("_main/{key}");
+        let external_key = key.strip_prefix("../");
+        if let Some((_, resolved)) = contents.lines().find_map(|line| {
+            let (entry, resolved) = line.split_once(' ')?;
+            (entry == key || entry == workspace_key || external_key == Some(entry))
+                .then_some((entry, resolved))
+        }) {
+            return PathBuf::from(resolved);
+        }
+    }
+    if runfile == Path::new("git") {
+        return runfile;
+    }
+    panic!("cannot resolve {label} runfile {runfile:?}");
 }
 
 fn output(cwd: &Path, arguments: &[&str]) -> Output {
@@ -51,7 +99,7 @@ fn output(cwd: &Path, arguments: &[&str]) -> Output {
 }
 
 fn git(cwd: &Path, arguments: &[&str]) {
-    let result = Command::new("git")
+    let result = Command::new(git_executable())
         .current_dir(cwd)
         .args(arguments)
         .output()

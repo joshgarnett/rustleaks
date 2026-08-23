@@ -418,6 +418,7 @@ impl RunCtx {
     /// Read the per-block header: flag bits + length-table delta + tree
     /// construction. Called at the start of every block and on every
     /// `sym == 269` / audio `sym == 256` "restart" signal.
+    #[allow(clippy::comparison_chain)]
     fn read_block_header(&mut self, input: &[u8]) -> Result<(), Error> {
         self.in_audio_block = self.bit.read_bits(1, input)? == 1;
         let keep_lengths = self.bit.read_bits(1, input)? == 1;

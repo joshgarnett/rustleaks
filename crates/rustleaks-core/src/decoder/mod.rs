@@ -430,7 +430,7 @@ fn decode_percent(encoded: &[u8]) -> Vec<u8> {
                 hex_nibble(encoded[index + 1]),
                 hex_nibble(encoded[index + 2]),
             ) {
-                let byte = high << 4 | low;
+                let byte = (high << 4) | low;
                 if !is_printable_ascii(byte) {
                     return Vec::new();
                 }
@@ -454,7 +454,7 @@ fn decode_hex(encoded: &[u8]) -> Vec<u8> {
         let (Some(high), Some(low)) = (hex_nibble(pair[0]), hex_nibble(pair[1])) else {
             return Vec::new();
         };
-        let byte = high << 4 | low;
+        let byte = (high << 4) | low;
         if !is_printable_ascii(byte) {
             return Vec::new();
         }
@@ -925,18 +925,12 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn canonical_decoder_pass_corpus_matches_go() {
-        let requests = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../compat/decoder-corpus/requests-v1.jsonl"
-        ))
-        .lines()
-        .map(|line| serde_json::from_str::<OracleRequest>(line).unwrap())
-        .filter(|request| request.operation == "decode")
-        .collect::<Vec<_>>();
-        let corpus = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../compat/decoder-corpus/outcomes-v1.jsonl"
-        ));
+        let requests = include_str!("../../../../compat/decoder-corpus/requests-v1.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str::<OracleRequest>(line).unwrap())
+            .filter(|request| request.operation == "decode")
+            .collect::<Vec<_>>();
+        let corpus = include_str!("../../../../compat/decoder-corpus/outcomes-v1.jsonl");
         let outcomes = corpus
             .lines()
             .map(|line| serde_json::from_str::<OracleOutcome>(line).unwrap())

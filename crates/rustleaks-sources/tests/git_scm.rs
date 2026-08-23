@@ -1,8 +1,9 @@
 //! Git remote discovery and source-control link parity tests.
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
@@ -339,14 +340,14 @@ fn cancellation_after_spawn_reaps_and_joins_the_git_child() {
     let cancellation = CancelAfterPreflight {
         checks: AtomicUsize::new(0),
     };
-    let error = RemoteMetadata::discover(ScmPlatform::Unknown, Path::new("."), &cancellation)
+    let error = support::discover_remote(ScmPlatform::Unknown, Path::new("."), &cancellation)
         .expect_err("second cancellation check occurs after spawn");
     assert_eq!(error.kind(), ScmErrorKind::Cancelled);
 }
 
 #[test]
 fn dot_source_uses_the_callers_current_repository_without_a_directory_override() {
-    let result = RemoteMetadata::discover(
+    let result = support::discover_remote(
         ScmPlatform::Unknown,
         Path::new("."),
         &CancellationToken::new(),
@@ -366,7 +367,7 @@ fn discovers_first_remote_and_normalizes_scp_syntax() {
         ("origin", "git@GitHub.com:2222/example/first.git"),
         ("second", "https://gitlab.com/example/second.git"),
     ]);
-    let remote = RemoteMetadata::discover(
+    let remote = support::discover_remote(
         ScmPlatform::Unknown,
         repository.path(),
         &CancellationToken::new(),
@@ -420,7 +421,7 @@ fn normalizes_https_and_ssh_credentials_and_preserves_forced_platforms() {
     for (requested, input, expected_platform, expected_url) in cases {
         let repository = TestRepository::new(&[("origin", input)]);
         let remote =
-            RemoteMetadata::discover(requested, repository.path(), &CancellationToken::new())
+            support::discover_remote(requested, repository.path(), &CancellationToken::new())
                 .expect("valid remote");
         assert_eq!(remote.platform(), expected_platform, "input={input}");
         assert_eq!(
@@ -447,7 +448,7 @@ fn maps_all_known_hosts_and_retains_unknown_hosts() {
     for (host, expected) in cases {
         let repository =
             TestRepository::new(&[("origin", &format!("https://{host}/example/repo.git"))]);
-        let remote = RemoteMetadata::discover(
+        let remote = support::discover_remote(
             ScmPlatform::Unknown,
             repository.path(),
             &CancellationToken::new(),
@@ -460,7 +461,7 @@ fn maps_all_known_hosts_and_retains_unknown_hosts() {
 #[test]
 fn absent_and_invalid_remotes_are_safe_recoverable_outcomes() {
     let absent = TestRepository::new(&[]);
-    let remote = RemoteMetadata::discover(
+    let remote = support::discover_remote(
         ScmPlatform::GitHub,
         absent.path(),
         &CancellationToken::new(),
@@ -470,7 +471,7 @@ fn absent_and_invalid_remotes_are_safe_recoverable_outcomes() {
     assert!(remote.url().is_empty());
 
     let invalid = TestRepository::new(&[("origin", "https://github.com/example/%zz.git")]);
-    let error = RemoteMetadata::discover(
+    let error = support::discover_remote(
         ScmPlatform::Unknown,
         invalid.path(),
         &CancellationToken::new(),
@@ -483,7 +484,7 @@ fn absent_and_invalid_remotes_are_safe_recoverable_outcomes() {
         "person@github.com:example/repo.git",
     ] {
         let repository = TestRepository::new(&[("origin", malformed)]);
-        let error = RemoteMetadata::discover(
+        let error = support::discover_remote(
             ScmPlatform::Unknown,
             repository.path(),
             &CancellationToken::new(),
@@ -509,14 +510,14 @@ impl TestRepository {
                 Err(error) => panic!("create temporary repository: {error}"),
             }
         };
-        let initialized = Command::new("git")
+        let initialized = support::command()
             .args(["init", "--quiet"])
             .current_dir(&path)
             .status()
             .expect("spawn git init");
         assert!(initialized.success(), "initialize temporary repository");
         for (name, url) in remotes {
-            let configured = Command::new("git")
+            let configured = support::command()
                 .args(["remote", "add", name, url])
                 .current_dir(&path)
                 .status()

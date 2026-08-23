@@ -1,0 +1,278 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_rust//rust:defs.bzl", "rust_clippy_test", "rustfmt_test")
+load("//bazel:platform_matrix.bzl", "platform_build")
+
+exports_files([
+    "Cargo.lock",
+    "Cargo.toml",
+    "LICENSE",
+    "NOTICE",
+    "cargo-bazel-lock.json",
+])
+
+filegroup(
+    name = "workspace_files",
+    srcs = glob([
+        "*.md",
+        "*.toml",
+        "docs/**",
+    ]) + [
+        "Cargo.lock",
+        "LICENSE",
+        "NOTICE",
+        "cargo-bazel-lock.json",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "build_contract_files",
+    srcs = [
+        ".bazelignore",
+        ".bazelrc",
+        ".bazelversion",
+        "BUILD.bazel",
+        "Cargo.lock",
+        "Cargo.toml",
+        "MODULE.bazel",
+        "MODULE.bazel.lock",
+        "cargo-bazel-lock.json",
+        "justfile",
+        "rust-toolchain.toml",
+        "//bazel:build_contract_files",
+        "//crates/rustleaks-bzip2:build_contract_files",
+        "//crates/rustleaks-cli:build_contract_files",
+        "//crates/rustleaks-compat:build_contract_files",
+        "//crates/rustleaks-compcol:build_contract_files",
+        "//crates/rustleaks-core:build_contract_files",
+        "//crates/rustleaks-rar-codec:build_contract_files",
+        "//crates/rustleaks-report:build_contract_files",
+        "//crates/rustleaks-sevenz:build_contract_files",
+        "//crates/rustleaks-sources:build_contract_files",
+        "//crates/xtask:build_contract_files",
+        "//platforms:build_contract_files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "libraries",
+    srcs = [
+        "//crates/rustleaks-bzip2:feature_profiles",
+        "//crates/rustleaks-bzip2:rustleaks_bzip2",
+        "//crates/rustleaks-compcol:compcol",
+        "//crates/rustleaks-compcol:feature_profiles",
+        "//crates/rustleaks-compat:rustleaks_compat",
+        "//crates/rustleaks-core:rustleaks_core",
+        "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
+        "//crates/rustleaks-report:rustleaks_report",
+        "//crates/rustleaks-sevenz:feature_profiles",
+        "//crates/rustleaks-sevenz:rustleaks_sevenz",
+        "//crates/rustleaks-sources:feature_profiles",
+        "//crates/rustleaks-sources:rustleaks_sources",
+        "//crates/rustleaks-sources:rustleaks_sources_archives",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "build",
+    srcs = [
+        ":libraries",
+        "//crates/rustleaks-cli:rustleaks",
+        "//crates/rustleaks-cli:rustleaks_cli",
+        "//crates/rustleaks-compat:rustleaks_perf",
+        "//crates/rustleaks-sources:panic_abort_policy",
+        "//crates/xtask:xtask",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+[
+    platform_build(
+        name = "build_" + name,
+        platform = "//platforms:" + name,
+        target = ":libraries",
+    )
+    for name in [
+        "linux_x86_64_gnu",
+        "linux_aarch64_gnu",
+        "linux_x86_64_musl",
+        "linux_aarch64_musl",
+        "macos_x86_64",
+        "macos_aarch64",
+        "windows_x86_64_msvc",
+        "windows_aarch64_msvc",
+    ]
+]
+
+filegroup(
+    name = "platform_matrix",
+    srcs = [
+        ":build_linux_x86_64_gnu",
+        ":build_linux_aarch64_gnu",
+        ":build_linux_x86_64_musl",
+        ":build_linux_aarch64_musl",
+        ":build_macos_x86_64",
+        ":build_macos_aarch64",
+        ":build_windows_x86_64_msvc",
+        ":build_windows_aarch64_msvc",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "docs",
+    srcs = [
+        "//crates/rustleaks-bzip2:rustleaks_bzip2_docs",
+        "//crates/rustleaks-cli:rustleaks_cli_docs",
+        "//crates/rustleaks-compat:rustleaks_compat_docs",
+        "//crates/rustleaks-compcol:compcol_docs",
+        "//crates/rustleaks-core:rustleaks_core_docs",
+        "//crates/rustleaks-rar-codec:rustleaks_rar_codec_docs",
+        "//crates/rustleaks-report:rustleaks_report_docs",
+        "//crates/rustleaks-sevenz:rustleaks_sevenz_docs",
+        "//crates/rustleaks-sources:rustleaks_sources_docs",
+        "//crates/rustleaks-sources:rustleaks_sources_archives_docs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+_RUST_TARGETS = [
+    "//crates/rustleaks-bzip2:profile_default",
+    "//crates/rustleaks-bzip2:profile_nightly",
+    "//crates/rustleaks-bzip2:profile_rustc_1_37",
+    "//crates/rustleaks-bzip2:profile_rustc_1_40",
+    "//crates/rustleaks-bzip2:profile_rustc_1_51",
+    "//crates/rustleaks-bzip2:rustleaks_bzip2",
+    "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
+    "//crates/rustleaks-cli:cli_test",
+    "//crates/rustleaks-cli:rustleaks",
+    "//crates/rustleaks-cli:rustleaks_cli",
+    "//crates/rustleaks-cli:rustleaks_cli_unit_test",
+    "//crates/rustleaks-compat:rustleaks_compat",
+    "//crates/rustleaks-compat:rustleaks_compat_unit_test",
+    "//crates/rustleaks-compat:rustleaks_perf",
+    "//crates/rustleaks-compcol:compcol",
+    "//crates/rustleaks-compcol:compcol_unit_test",
+    "//crates/rustleaks-compcol:profile_alloc",
+    "//crates/rustleaks-compcol:profile_default",
+    "//crates/rustleaks-compcol:profile_rar2",
+    "//crates/rustleaks-compcol:profile_rar2_unit_test",
+    "//crates/rustleaks-compcol:profile_rar3",
+    "//crates/rustleaks-compcol:profile_rar5",
+    "//crates/rustleaks-core:allowlist_test",
+    "//crates/rustleaks-core:composite_corpus_test",
+    "//crates/rustleaks-core:config_test",
+    "//crates/rustleaks-core:controlled_scan_test",
+    "//crates/rustleaks-core:default_rule_corpus_test",
+    "//crates/rustleaks-core:detect_corpus_test",
+    "//crates/rustleaks-core:engine_test",
+    "//crates/rustleaks-core:model_test",
+    "//crates/rustleaks-core:rustleaks_core",
+    "//crates/rustleaks-core:rustleaks_core_unit_test",
+    "//crates/rustleaks-core:session_corpus_test",
+    "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
+    "//crates/rustleaks-rar-codec:rustleaks_rar_codec_unit_test",
+    "//crates/rustleaks-report:report_corpus_test",
+    "//crates/rustleaks-report:reporters_test",
+    "//crates/rustleaks-report:rustleaks_report",
+    "//crates/rustleaks-report:rustleaks_report_unit_test",
+    "//crates/rustleaks-report:template_test",
+    "//crates/rustleaks-sevenz:oracle_codecs_test",
+    "//crates/rustleaks-sevenz:profile_minimal",
+    "//crates/rustleaks-sevenz:rustleaks_sevenz",
+    "//crates/rustleaks-sevenz:rustleaks_sevenz_unit_test",
+    "//crates/rustleaks-sources:archive_sources_test",
+    "//crates/rustleaks-sources:git_corpus_test",
+    "//crates/rustleaks-sources:git_scm_test",
+    "//crates/rustleaks-sources:git_sources_test",
+    "//crates/rustleaks-sources:native_sources_test",
+    "//crates/rustleaks-sources:panic_abort_policy",
+    "//crates/rustleaks-sources:profile_minimal",
+    "//crates/rustleaks-sources:rustleaks_sources",
+    "//crates/rustleaks-sources:rustleaks_sources_archives",
+    "//crates/rustleaks-sources:rustleaks_sources_archives_unit_test",
+    "//crates/rustleaks-sources:rustleaks_sources_unit_test",
+    "//crates/rustleaks-sources:source_corpus_test",
+    "//crates/xtask:xtask",
+    "//crates/xtask:xtask_unit_test",
+]
+
+rustfmt_test(
+    name = "format",
+    targets = _RUST_TARGETS,
+    transitive = True,
+)
+
+rust_clippy_test(
+    name = "clippy",
+    targets = _RUST_TARGETS,
+    transitive = True,
+)
+
+test_suite(
+    name = "parity",
+    tests = [
+        "//crates/rustleaks-cli:parity_tests",
+        "//crates/rustleaks-core:parity_tests",
+        "//crates/rustleaks-report:parity_tests",
+        "//crates/rustleaks-sources:parity_tests",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "test",
+    tests = [
+        "//crates/rustleaks-bzip2:rustleaks_bzip2_doc_test",
+        "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
+        "//crates/rustleaks-cli:all_tests",
+        "//crates/rustleaks-compat:all_tests",
+        "//crates/rustleaks-compcol:all_tests",
+        "//crates/rustleaks-core:all_tests",
+        "//crates/rustleaks-rar-codec:rustleaks_rar_codec_doc_test",
+        "//crates/rustleaks-rar-codec:rustleaks_rar_codec_unit_test",
+        "//crates/rustleaks-report:all_tests",
+        "//crates/rustleaks-sevenz:all_tests",
+        "//crates/rustleaks-sources:all_tests",
+        "//crates/xtask:all_tests",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+build_test(
+    name = "build_gate",
+    targets = [":build"],
+)
+
+build_test(
+    name = "docs_gate",
+    targets = [":docs"],
+)
+
+build_test(
+    name = "platform_matrix_gate",
+    targets = [":platform_matrix"],
+)
+
+test_suite(
+    name = "check",
+    tests = [
+        ":build_gate",
+        ":clippy",
+        ":docs_gate",
+        ":format",
+        ":platform_matrix_gate",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "ci",
+    tests = [
+        ":check",
+        ":test",
+    ],
+    visibility = ["//visibility:public"],
+)

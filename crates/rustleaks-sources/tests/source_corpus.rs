@@ -517,6 +517,13 @@ fn copy_fixture_tree(source: &Path, destination: &Path) {
     let metadata = fs::symlink_metadata(source).expect("fixture metadata");
     if metadata.file_type().is_symlink() {
         let target = fs::read_link(source).expect("read fixture symlink");
+        // Bazel materializes ordinary data files as absolute runfile symlinks.
+        // Copy those as files so directory traversal exercises the same tree
+        // Cargo sees, while preserving relative fixture symlinks.
+        if target.is_absolute() {
+            copy_fixture_tree(&target, destination);
+            return;
+        }
         let target_is_dir = source
             .parent()
             .expect("fixture parent")

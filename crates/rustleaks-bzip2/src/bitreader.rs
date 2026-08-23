@@ -86,7 +86,7 @@ impl<'a> BitReader<'a> {
     }
 }
 
-impl<'a> Iterator for BitReader<'a> {
+impl Iterator for BitReader<'_> {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {

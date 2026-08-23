@@ -1,0 +1,14 @@
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_library")
+
+exports_files([
+    "COPYING",
+    "Cargo.toml",
+])
+rustleaks_build_contract_files()
+
+rustleaks_library(
+    name = "rustleaks_rar_codec",
+    crate_name = "rustleaks_rar_codec",
+    edition = "2021",
+    version = "0.9.3-rustleaks.1",
+)

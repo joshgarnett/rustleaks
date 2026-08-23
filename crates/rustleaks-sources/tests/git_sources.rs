@@ -1,5 +1,7 @@
 //! Isolated native Git subprocess coverage.
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,8 +10,8 @@ use rustleaks_core::model::Fragment;
 #[cfg(feature = "archives")]
 use rustleaks_sources::ArchiveOptions;
 use rustleaks_sources::{
-    CallbackError, CancellationToken, GitLimits, GitMode, GitSource, Source, SourceControl,
-    SourceError, SourceEvent, SourceIssueKind, SourceStage,
+    CallbackError, CancellationToken, GitLimits, GitMode, Source, SourceControl, SourceError,
+    SourceEvent, SourceIssueKind, SourceStage,
 };
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -83,7 +85,7 @@ fn collect(source: &mut dyn Source) -> (Vec<Fragment>, Vec<SourceIssueKind>) {
 #[test]
 fn default_log_matches_current_pinned_added_fragment_stream() {
     let repository = TempRepo::copy_fixture("small");
-    let mut source = GitSource::new(repository.path());
+    let mut source = support::git_source(repository.path());
     let (fragments, issues) = collect(&mut source);
     assert!(issues.is_empty());
 
@@ -118,7 +120,7 @@ fn default_log_matches_current_pinned_added_fragment_stream() {
 #[test]
 fn matrix_f_diff_and_index_fragments_have_zero_metadata() {
     let repository = TempRepo::copy_fixture("staged");
-    let mut source = GitSource::new(repository.path()).mode(GitMode::Diff { staged: true });
+    let mut source = support::git_source(repository.path()).mode(GitMode::Diff { staged: true });
     let (fragments, issues) = collect(&mut source);
     assert!(issues.is_empty());
     assert_eq!(fragments.len(), 1);
@@ -142,7 +144,7 @@ fn patch_byte_and_line_ceilings_are_structured_limit_failures() {
         GitLimits::new(1 << 20, 1, 1 << 20, 1 << 20).expect("line ceiling"),
     ];
     for limits in cases {
-        let error = GitSource::new(repository.path())
+        let error = support::git_source(repository.path())
             .limits(limits)
             .visit(&CancellationToken::new(), &mut |_| {
                 Ok(SourceControl::Continue)
@@ -163,7 +165,7 @@ fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
     let repository = TempRepo::copy_fixture("small");
     let mut callbacks = 0;
     assert_eq!(
-        GitSource::new(repository.path())
+        support::git_source(repository.path())
             .visit(&CancellationToken::new(), &mut |_| {
                 callbacks += 1;
                 Ok(SourceControl::Stop)
@@ -172,7 +174,7 @@ fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
         SourceControl::Stop
     );
     assert_eq!(callbacks, 1);
-    let error = GitSource::new(repository.path())
+    let error = support::git_source(repository.path())
         .visit(&CancellationToken::new(), &mut |_| {
             Err(CallbackError::new("injected callback failure"))
         })
@@ -184,7 +186,7 @@ fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
 #[test]
 fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
     let repository = TempRepo::copy_fixture("archives");
-    let mut source = GitSource::new(repository.path()).archives(ArchiveOptions::default());
+    let mut source = support::git_source(repository.path()).archives(ArchiveOptions::default());
     let (fragments, issues) = collect(&mut source);
     assert!(issues.is_empty(), "unexpected archive issues: {issues:?}");
 
@@ -232,7 +234,7 @@ fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
     let limits =
         |blob| GitLimits::new(64 << 20, 1_000_000, 1 << 20, blob).expect("Git blob limits");
 
-    let mut exact = GitSource::new(repository.path())
+    let mut exact = support::git_source(repository.path())
         .mode(mode())
         .limits(limits(blob_size))
         .archives(ArchiveOptions::default());
@@ -240,7 +242,7 @@ fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
     assert!(!fragments.is_empty());
     assert!(issues.is_empty());
 
-    let error = GitSource::new(repository.path())
+    let error = support::git_source(repository.path())
         .mode(mode())
         .limits(limits(blob_size - 1))
         .archives(ArchiveOptions::default())
@@ -257,7 +259,7 @@ fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
     ));
 
     let mut callbacks = 0;
-    let control = GitSource::new(repository.path())
+    let control = support::git_source(repository.path())
         .mode(mode())
         .limits(limits(blob_size))
         .archives(ArchiveOptions::default())

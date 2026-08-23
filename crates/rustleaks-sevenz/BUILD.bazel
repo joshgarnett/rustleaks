@@ -1,0 +1,64 @@
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+_DEFAULT_FEATURES = [
+    "brotli",
+    "bzip2",
+    "deflate",
+    "lz4",
+    "zstd",
+]
+
+rustleaks_library(
+    name = "rustleaks_sevenz",
+    aliases_extra = {"//crates/rustleaks-bzip2:rustleaks_bzip2": "bzip2_rs"},
+    crate_features = _DEFAULT_FEATURES,
+    crate_name = "rustleaks_sevenz",
+    deps = ["//crates/rustleaks-bzip2:rustleaks_bzip2"],
+    edition = "2024",
+    version = "0.20.2-rustleaks.1",
+)
+
+rustleaks_library(
+    name = "profile_minimal",
+    aliases_extra = {"//crates/rustleaks-bzip2:rustleaks_bzip2": "bzip2_rs"},
+    crate_name = "rustleaks_sevenz",
+    deps = ["//crates/rustleaks-bzip2:rustleaks_bzip2"],
+    docs = False,
+    edition = "2024",
+    unit_test = False,
+    version = "0.20.2-rustleaks.1",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "feature_profiles",
+    srcs = [
+        ":profile_minimal",
+        ":rustleaks_sevenz",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+rustleaks_integration_test(
+    name = "oracle_codecs_test",
+    src = "tests/oracle_codecs.rs",
+    crate_features = _DEFAULT_FEATURES,
+    data = ["//compat:fixtures"],
+    deps = [
+        ":rustleaks_sevenz",
+        "//crates/rustleaks-bzip2:rustleaks_bzip2",
+    ],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":oracle_codecs_test",
+        ":rustleaks_sevenz_doc_test",
+        ":rustleaks_sevenz_unit_test",
+    ],
+    visibility = ["//visibility:public"],
+)

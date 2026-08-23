@@ -25,6 +25,9 @@ use crate::codec::lz4::Lz4Decoder;
 use crate::encryption::Aes256Sha256Decoder;
 use crate::{ByteReader, Password, archive::EncoderMethod, block::Coder, error::Error};
 
+// Preserve the inherited public variant shapes; the minimal feature profile
+// makes `Delta` look disproportionately large only because other codecs are absent.
+#[allow(clippy::large_enum_variant)]
 pub enum Decoder<R: Read> {
     Copy(R),
     Lzma(Box<LzmaReader<R>>),

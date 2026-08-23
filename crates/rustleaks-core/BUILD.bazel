@@ -1,0 +1,64 @@
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+rustleaks_library(
+    name = "rustleaks_core",
+    compile_data = glob(["default/**"]) + ["//compat:parity_corpora"],
+    crate_name = "rustleaks_core",
+    data = ["//compat:all"],
+    edition = "2024",
+    version = "0.1.0-alpha.1",
+)
+
+[
+    rustleaks_integration_test(
+        name = test + "_test",
+        src = "tests/" + test + ".rs",
+        data = ["//compat:all"],
+        deps = [":rustleaks_core"],
+    )
+    for test in [
+        "allowlist",
+        "composite_corpus",
+        "config",
+        "controlled_scan",
+        "default_rule_corpus",
+        "detect_corpus",
+        "engine",
+        "model",
+        "session_corpus",
+    ]
+]
+
+test_suite(
+    name = "parity_tests",
+    tests = [
+        ":allowlist_test",
+        ":composite_corpus_test",
+        ":config_test",
+        ":default_rule_corpus_test",
+        ":detect_corpus_test",
+        ":session_corpus_test",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":allowlist_test",
+        ":composite_corpus_test",
+        ":config_test",
+        ":controlled_scan_test",
+        ":default_rule_corpus_test",
+        ":detect_corpus_test",
+        ":engine_test",
+        ":model_test",
+        ":rustleaks_core_doc_test",
+        ":rustleaks_core_unit_test",
+        ":session_corpus_test",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -79,7 +79,7 @@ pub(crate) struct SharedBoundedReader<'a, R> {
     bounds: (u64, u64),
 }
 
-impl<'a, R> Clone for SharedBoundedReader<'a, R> {
+impl<R> Clone for SharedBoundedReader<'_, R> {
     fn clone(&self) -> Self {
         Self {
             inner: Rc::clone(&self.inner),
@@ -89,7 +89,7 @@ impl<'a, R> Clone for SharedBoundedReader<'a, R> {
     }
 }
 
-impl<'a, R: Read + Seek> Seek for SharedBoundedReader<'a, R> {
+impl<R: Read + Seek> Seek for SharedBoundedReader<'_, R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(pos) => self.bounds.0 as i64 + pos as i64,
@@ -104,7 +104,7 @@ impl<'a, R: Read + Seek> Seek for SharedBoundedReader<'a, R> {
     }
 }
 
-impl<'a, R: Read + Seek> Read for SharedBoundedReader<'a, R> {
+impl<R: Read + Seek> Read for SharedBoundedReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.cur >= self.bounds.1 {
             return Ok(0);

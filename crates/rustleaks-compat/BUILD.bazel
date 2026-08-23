@@ -1,0 +1,45 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+_DEPS = [
+    "//crates/rustleaks-core:rustleaks_core",
+    "//crates/rustleaks-report:rustleaks_report",
+    "//crates/rustleaks-sources:rustleaks_sources",
+]
+
+rustleaks_library(
+    name = "rustleaks_compat",
+    crate_name = "rustleaks_compat",
+    deps = _DEPS,
+    edition = "2024",
+    version = "0.1.0-alpha.1",
+)
+
+rust_binary(
+    name = "rustleaks_perf",
+    aliases = aliases(),
+    crate_name = "rustleaks_perf",
+    crate_root = "src/bin/rustleaks-perf.rs",
+    data = ["//compat:all"],
+    deps = all_crate_deps(normal = True) + _DEPS + [":rustleaks_compat"],
+    edition = "2024",
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+    },
+    srcs = glob(["src/**/*.rs"]),
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":rustleaks_compat_doc_test",
+        ":rustleaks_compat_unit_test",
+    ],
+    visibility = ["//visibility:public"],
+)

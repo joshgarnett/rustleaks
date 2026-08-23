@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
+mod build_system;
 mod tooling;
 
 use tooling::{command_output, command_status_with_timeout, sha256_file};
@@ -288,7 +289,10 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "report-check" => report_check(),
         [command] if command == "cli-check" => cli_check(),
         [command] if command == "public-api-check" => public_api_check(),
+        [command] if command == "build-system-check" => build_system::check(&workspace_root()?),
         [command] if command == "package-check" => package_check(),
+        [command] if command == "release-dry-run" => release_dry_run(),
+        [command] if command == "security-check" => security_check(),
         [command] if command == "supply-chain-check" => supply_chain_check(),
         [command] if command == "dependency-safety-check" => dependency_safety_check(),
         [command] if command == "owned-safety-check" => owned_safety_check(),
@@ -297,6 +301,8 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "miri-check" => miri_check(),
         [command] if command == "panic-abort-check" => panic_abort_check(),
         [command] if command == "fuzz-check" => fuzz_check(),
+        [command] if command == "fuzz-build" => fuzz_build(),
+        [command] if command == "fuzz-smoke" => fuzz_smoke(),
         [command, subcommand] if command == "perf" && subcommand == "run" => perf_run(),
         [command, subcommand] if command == "perf" && subcommand == "check" => perf_check(),
         [command, subcommand, flag] if command == "oracle" && subcommand == "generate" && flag == "--check" => oracle_check(),
@@ -313,16 +319,24 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|package-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
 fn workspace_root() -> Result<PathBuf, String> {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    if let Some(root) = env::var_os("BUILD_WORKSPACE_DIRECTORY").filter(|root| !root.is_empty()) {
+        return Ok(PathBuf::from(root));
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .map(Path::to_path_buf)
-        .ok_or_else(|| "cannot locate workspace root".into())
+        .ok_or_else(|| "cannot locate workspace root".to_owned())?;
+    if root.as_os_str().is_empty() {
+        Ok(PathBuf::from("."))
+    } else {
+        Ok(root)
+    }
 }
 
 fn oracle_root() -> Result<PathBuf, String> {
@@ -436,12 +450,6 @@ fn verify_upstream() -> Result<(), String> {
 }
 
 fn package_attribution_check(root: &Path) -> Result<(), String> {
-    let upstream_license = std::fs::read(
-        root.parent()
-            .ok_or("workspace has no parent")?
-            .join("gitleaks/LICENSE"),
-    )
-    .map_err(|error| format!("cannot read pinned Gitleaks license: {error}"))?;
     for name in ["LICENSE", "NOTICE"] {
         let workspace_copy = std::fs::read(root.join(name))
             .map_err(|error| format!("cannot read workspace {name}: {error}"))?;
@@ -453,13 +461,16 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
             ));
         }
     }
-    let notice = std::fs::read(root.join("NOTICE"))
+    let notice = std::fs::read_to_string(root.join("NOTICE"))
         .map_err(|error| format!("cannot read workspace NOTICE: {error}"))?;
-    if !notice
-        .windows(upstream_license.len())
-        .any(|window| window == upstream_license)
-    {
-        return Err("NOTICE omits the complete pinned Gitleaks MIT license".into());
+    for required in [
+        "pinned commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+        "MIT License\n\nCopyright (c) 2019 Zachary Rice",
+        "Copyright 2009 The Go Authors.",
+    ] {
+        if !notice.contains(required) {
+            return Err(format!("NOTICE omits required attribution `{required}`"));
+        }
     }
     let rustc_version = command_output(Command::new("rustc").arg("-vV"))?;
     let host = rustc_version
@@ -657,16 +668,262 @@ fn package_check() -> Result<(), String> {
     ]))?;
     validate_publish_policy(&metadata)?;
     package_attribution_check(&root)?;
+    let staging = ScopedTempDir::new("package-check")?;
+    command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args([
+                "package",
+                "--locked",
+                "--offline",
+                "--allow-dirty",
+                "-p",
+                "rustleaks-core",
+                "--target-dir",
+            ])
+            .arg(staging.path.join("target")),
+    )?;
+    let package_dir = extract_core_package(&staging.path)?;
+    run_external_cargo_consumer(&staging.path, &package_dir)?;
+    run_external_bazel_consumer(&staging.path, &package_dir)?;
+    println!("rustleaks-core packaged and ran from clean external Cargo and Bazel consumers");
+    Ok(())
+}
+
+fn extract_core_package(staging: &Path) -> Result<PathBuf, String> {
+    let archive_dir = staging.join("target/package");
+    let archive = std::fs::read_dir(&archive_dir)
+        .map_err(|error| {
+            format!(
+                "cannot read package directory {}: {error}",
+                archive_dir.display()
+            )
+        })?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("rustleaks-core-") && name.ends_with(".crate"))
+        })
+        .ok_or_else(|| {
+            format!(
+                "cargo did not create a rustleaks-core archive in {}",
+                archive_dir.display()
+            )
+        })?;
+    let output = staging.join("extracted");
+    std::fs::create_dir(&output)
+        .map_err(|error| format!("cannot create package extraction directory: {error}"))?;
+    let file = std::fs::File::open(&archive)
+        .map_err(|error| format!("cannot open package archive {}: {error}", archive.display()))?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    tar::Archive::new(decoder)
+        .unpack(&output)
+        .map_err(|error| {
+            format!(
+                "cannot extract package archive {}: {error}",
+                archive.display()
+            )
+        })?;
+    let package = output.join(format!("rustleaks-core-{RELEASE_VERSION}"));
+    if !package.join("Cargo.toml").is_file() {
+        return Err(format!(
+            "extracted package is missing {}",
+            package.join("Cargo.toml").display()
+        ));
+    }
+    Ok(package)
+}
+
+fn consumer_source() -> &'static str {
+    r#"use rustleaks_core::config::ConfigLoader;
+use rustleaks_core::model::{Fragment, ScanOptions};
+use rustleaks_core::Engine;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = ConfigLoader::new().load_default()?;
+    let engine = Engine::builder(config).build()?;
+    let outcome = engine.scan_fragment(
+        &Fragment::new(b"string AWSToken = \"AKIALALEMEL33243OLIB\";"),
+        &ScanOptions::default(),
+    );
+    assert!(outcome.is_complete());
+    assert!(!outcome.findings().is_empty());
+    Ok(())
+}
+"#
+}
+
+fn write_external_consumer(root: &Path, package: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(root.join("src"))
+        .map_err(|error| format!("cannot create external consumer: {error}"))?;
+    let path = package.to_string_lossy().replace('\\', "/");
+    let manifest = format!(
+        "[package]\nname = \"rustleaks-external-consumer\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[dependencies]\nrustleaks-core = {{ path = {} }}\n",
+        serde_json::to_string(&path)
+            .map_err(|error| format!("cannot quote package path: {error}"))?
+    );
+    std::fs::write(root.join("Cargo.toml"), manifest)
+        .map_err(|error| format!("cannot write external Cargo manifest: {error}"))?;
+    std::fs::write(root.join("src/main.rs"), consumer_source())
+        .map_err(|error| format!("cannot write external consumer source: {error}"))?;
+    Ok(())
+}
+
+fn run_external_cargo_consumer(staging: &Path, package: &Path) -> Result<(), String> {
+    let root = staging.join("cargo-consumer");
+    write_external_consumer(&root, package)?;
+    command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args(["generate-lockfile", "--offline"]),
+    )?;
     command_output(Command::new("cargo").current_dir(&root).args([
-        "package",
+        "run",
         "--locked",
         "--offline",
-        "--allow-dirty",
-        "-p",
-        "rustleaks-core",
     ]))?;
-    println!("rustleaks-core is the sole publishable and packageable alpha crate");
     Ok(())
+}
+
+fn run_external_bazel_consumer(staging: &Path, package: &Path) -> Result<(), String> {
+    let root = staging.join("bazel-consumer");
+    write_external_consumer(&root, package)?;
+    command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args(["generate-lockfile", "--offline"]),
+    )?;
+    std::fs::write(
+        root.join("MODULE.bazel"),
+        r#"module(name = "rustleaks_external_consumer")
+bazel_dep(name = "rules_rust", version = "0.72.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(edition = "2024", versions = ["1.85.0"])
+use_repo(rust, "rust_toolchains")
+register_toolchains("@rust_toolchains//:all")
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lockfile = "//:Cargo.lock",
+    isolated = True,
+    manifests = ["//:Cargo.toml"],
+)
+use_repo(crate, "crates")
+"#,
+    )
+    .map_err(|error| format!("cannot write external Bazel module: {error}"))?;
+    std::fs::write(
+        root.join("BUILD.bazel"),
+        r#"load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "consumer",
+    aliases = aliases(),
+    crate_root = "src/main.rs",
+    deps = all_crate_deps(normal = True),
+    edition = "2024",
+    srcs = ["src/main.rs"],
+)
+"#,
+    )
+    .map_err(|error| format!("cannot write external Bazel build: {error}"))?;
+    command_output(Command::new("bazelisk").current_dir(&root).args([
+        "run",
+        "//:consumer",
+        "--lockfile_mode=update",
+    ]))?;
+    command_output(Command::new("bazelisk").current_dir(&root).args([
+        "run",
+        "//:consumer",
+        "--lockfile_mode=error",
+        "--nofetch",
+    ]))?;
+    Ok(())
+}
+
+fn release_dry_run() -> Result<(), String> {
+    package_check()?;
+    let root = workspace_root()?;
+    let staging = ScopedTempDir::new("release-registry")?;
+    let index = staging.path.join("index");
+    let bare_index = staging.path.join("index.git");
+    std::fs::create_dir(&index)
+        .map_err(|error| format!("cannot create local release registry: {error}"))?;
+    std::fs::write(
+        index.join("config.json"),
+        r#"{"dl":"https://static.crates.io/crates","api":"http://127.0.0.1:9"}"#,
+    )
+    .map_err(|error| format!("cannot write local release registry: {error}"))?;
+    command_output(
+        Command::new("git")
+            .current_dir(&index)
+            .args(["init", "--quiet"]),
+    )?;
+    command_output(
+        Command::new("git")
+            .current_dir(&index)
+            .args(["add", "config.json"]),
+    )?;
+    command_output(Command::new("git").current_dir(&index).args([
+        "-c",
+        "user.name=Rustleaks",
+        "-c",
+        "user.email=local@invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "initialize local registry",
+    ]))?;
+    command_output(
+        Command::new("git")
+            .args(["clone", "--quiet", "--bare"])
+            .arg(&index)
+            .arg(&bare_index),
+    )?;
+    let index_url = local_file_url(&bare_index)?;
+    command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args([
+                "publish",
+                "--dry-run",
+                "--locked",
+                "--allow-dirty",
+                "-p",
+                "rustleaks-core",
+                "--index",
+            ])
+            .arg(index_url),
+    )?;
+    println!("rustleaks-core locked publish dry run passed against a local no-upload registry");
+    Ok(())
+}
+
+fn local_file_url(path: &Path) -> Result<String, String> {
+    let path = path
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve local registry path: {error}"))?;
+    let path = path.to_string_lossy().replace('\\', "/");
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b':' | b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+        }
+    }
+    if cfg!(windows) {
+        Ok(format!("file:///{encoded}"))
+    } else {
+        Ok(format!("file://{encoded}"))
+    }
 }
 
 fn validate_supply_chain_exceptions(source: &str) -> Result<(), String> {
@@ -833,6 +1090,14 @@ fn owned_safety_check() -> Result<(), String> {
         }
     }
     println!("workspace, fork, executable, example, and standalone fuzz roots forbid unsafe code");
+    Ok(())
+}
+
+fn security_check() -> Result<(), String> {
+    supply_chain_check()?;
+    dependency_safety_check()?;
+    owned_safety_check()?;
+    println!("dependency policy and owned-code safety checks passed");
     Ok(())
 }
 
@@ -1313,6 +1578,7 @@ fn calibrated_m1_max_host() -> Result<bool, String> {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[allow(clippy::unnecessary_wraps)] // Keep the platform implementations type-identical.
 fn calibrated_m1_max_host() -> Result<bool, String> {
     Ok(false)
 }
@@ -1424,6 +1690,7 @@ fn perf_budget_check(root: &Path, expected_revision: &str) -> Result<(), String>
 }
 
 #[cfg(not(target_os = "macos"))]
+#[allow(clippy::unnecessary_wraps)] // Keep the platform implementations type-identical.
 fn perf_budget_check(_root: &Path, _expected_revision: &str) -> Result<(), String> {
     Ok(())
 }
@@ -1512,8 +1779,7 @@ fn copy_seed_files(source: &Path, destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)] // The explicit seven-target matrix is easier to audit in one gate.
-fn fuzz_check() -> Result<(), String> {
+fn fuzz_build() -> Result<(), String> {
     let root = workspace_root()?;
     require_exact_tool_version(
         Command::new("cargo").args(["fuzz", "--version"]),
@@ -1534,7 +1800,14 @@ fn fuzz_check() -> Result<(), String> {
             manifest,
         ]))?;
     }
+    println!("all seven fuzz targets compile with their locked standalone manifests");
+    Ok(())
+}
 
+#[allow(clippy::too_many_lines)] // The explicit seven-target matrix is easier to audit in one gate.
+fn fuzz_smoke() -> Result<(), String> {
+    fuzz_build()?;
+    let root = workspace_root()?;
     let smoke = ScopedTempDir::new("fuzz-smoke")?;
     let targets = [
         (
@@ -1618,6 +1891,10 @@ fn fuzz_check() -> Result<(), String> {
     }
     println!("all seven bounded fuzz targets compiled and replayed seed smoke campaigns");
     Ok(())
+}
+
+fn fuzz_check() -> Result<(), String> {
+    fuzz_smoke()
 }
 
 fn manifest_check() -> Result<(), String> {
@@ -2133,16 +2410,15 @@ fn full_parity() -> Result<(), String> {
 mod tests {
     use std::fs;
     use std::path::Path;
-    use std::process::Command;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, command_output,
+        CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, build_system,
         composite_test_executable_from_messages, normalize_workspace_dependency_tree,
         resource_test_command, run_resource_test, validate_core_repository_metadata,
         validate_perf_budget, validate_perf_records, validate_publish_policy,
-        validate_regex_backend_metadata, validate_supply_chain_exceptions,
+        validate_regex_backend_metadata, validate_supply_chain_exceptions, workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
@@ -2490,50 +2766,20 @@ outside v1.0.0 (/opt/external/outside)";
     }
 
     #[test]
-    fn cargo_workspace_inheritance_negative_control_fails_closed() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "rustleaks-repository-inheritance-{}-{nonce}",
-            std::process::id()
-        ));
-        let core = root.join("core");
-        fs::create_dir_all(core.join("src")).unwrap();
-        fs::write(
-            root.join("Cargo.toml"),
-            r#"[workspace]
-members = ["core"]
-resolver = "2"
+    fn resolved_workspace_inheritance_negative_control_fails_closed() {
+        // This is the resolved shape Cargo emits for `repository.workspace =
+        // true`; test the metadata boundary without relying on a host Cargo.
+        let inherited = r#"{
+            "packages": [{
+                "name": "rustleaks-core",
+                "repository": "https://github.com/gitleaks/gitleaks"
+            }]
+        }"#;
+        assert!(validate_core_repository_metadata(inherited).is_err());
+    }
 
-[workspace.package]
-repository = "https://github.com/gitleaks/gitleaks"
-"#,
-        )
-        .unwrap();
-        fs::write(
-            core.join("Cargo.toml"),
-            r#"[package]
-name = "rustleaks-core"
-version = "0.0.0"
-edition = "2024"
-repository.workspace = true
-"#,
-        )
-        .unwrap();
-        fs::write(core.join("src/lib.rs"), "").unwrap();
-
-        let metadata = command_output(Command::new("cargo").current_dir(&root).args([
-            "metadata",
-            "--no-deps",
-            "--format-version",
-            "1",
-            "--offline",
-        ]))
-        .unwrap();
-        let result = validate_core_repository_metadata(&metadata);
-        fs::remove_dir_all(&root).unwrap();
-        assert!(result.is_err());
+    #[test]
+    fn cargo_and_bazel_build_contracts_match() {
+        build_system::check(&workspace_root().unwrap()).unwrap();
     }
 }

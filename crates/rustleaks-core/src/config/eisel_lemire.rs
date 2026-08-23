@@ -53,7 +53,7 @@ pub(crate) fn parse_64(mantissa: u64, exponent_10: i64) -> Option<f64> {
         return None;
     }
     Some(f64::from_bits(
-        exponent_2 << 52 | result_mantissa & 0x000f_ffff_ffff_ffff,
+        (exponent_2 << 52) | result_mantissa & 0x000f_ffff_ffff_ffff,
     ))
 }
 

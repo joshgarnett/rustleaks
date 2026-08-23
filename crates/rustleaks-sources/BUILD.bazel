@@ -1,0 +1,120 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+_ARCHIVE_FEATURES = ["archives"]
+_ARCHIVE_DEPS = [
+    "//crates/rustleaks-bzip2:rustleaks_bzip2",
+    "//crates/rustleaks-compcol:profile_rar2",
+    "//crates/rustleaks-core:rustleaks_core",
+    "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
+    "//crates/rustleaks-sevenz:rustleaks_sevenz",
+]
+
+rustleaks_library(
+    name = "rustleaks_sources",
+    crate_name = "rustleaks_sources",
+    deps = ["//crates/rustleaks-core:rustleaks_core"],
+    edition = "2024",
+    version = "0.1.0-alpha.1",
+)
+
+rustleaks_library(
+    name = "rustleaks_sources_archives",
+    aliases_extra = {"//crates/rustleaks-bzip2:rustleaks_bzip2": "bzip2_rs"},
+    compile_data = ["//compat:fixtures"],
+    crate_features = _ARCHIVE_FEATURES,
+    crate_name = "rustleaks_sources",
+    data = ["//compat:all"],
+    deps = _ARCHIVE_DEPS,
+    edition = "2024",
+    version = "0.1.0-alpha.1",
+)
+
+rustleaks_library(
+    name = "profile_minimal",
+    crate_name = "rustleaks_sources",
+    deps = ["//crates/rustleaks-core:rustleaks_core"],
+    docs = False,
+    edition = "2024",
+    unit_test = False,
+    version = "0.1.0-alpha.1",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "feature_profiles",
+    srcs = [
+        ":profile_minimal",
+        ":rustleaks_sources",
+        ":rustleaks_sources_archives",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+rust_binary(
+    name = "panic_abort_policy",
+    aliases = aliases(),
+    compile_data = ["//compat:fixtures"],
+    crate_features = _ARCHIVE_FEATURES,
+    crate_name = "panic_abort_policy",
+    crate_root = "examples/panic_abort_policy.rs",
+    deps = all_crate_deps(normal = True) + _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    edition = "2024",
+    srcs = ["examples/panic_abort_policy.rs"],
+    visibility = ["//visibility:public"],
+)
+
+[
+    rustleaks_integration_test(
+        name = test + "_test",
+        src = "tests/" + test + ".rs",
+        crate_features = _ARCHIVE_FEATURES,
+        data = [
+            "//compat:all",
+            "@git//:git",
+        ],
+        deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+        env = {
+            "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
+        },
+        srcs = ["tests/support/mod.rs"],
+    )
+    for test in [
+        "archive_sources",
+        "git_corpus",
+        "git_scm",
+        "git_sources",
+        "native_sources",
+        "source_corpus",
+    ]
+]
+
+test_suite(
+    name = "parity_tests",
+    tests = [
+        ":git_corpus_test",
+        ":source_corpus_test",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":archive_sources_test",
+        ":git_corpus_test",
+        ":git_scm_test",
+        ":git_sources_test",
+        ":native_sources_test",
+        ":rustleaks_sources_doc_test",
+        ":rustleaks_sources_unit_test",
+        ":rustleaks_sources_archives_doc_test",
+        ":rustleaks_sources_archives_unit_test",
+        ":source_corpus_test",
+    ],
+    visibility = ["//visibility:public"],
+)

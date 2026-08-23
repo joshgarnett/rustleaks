@@ -1,0 +1,43 @@
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+rustleaks_library(
+    name = "rustleaks_bzip2",
+    crate_name = "rustleaks_bzip2",
+    edition = "2018",
+    version = "0.1.2-rustleaks.1",
+)
+
+[
+    rustleaks_library(
+        name = "profile_" + profile,
+        crate_features = features,
+        crate_name = "rustleaks_bzip2",
+        docs = False,
+        edition = "2018",
+        unit_test = False,
+        version = "0.1.2-rustleaks.1",
+        visibility = ["//visibility:public"],
+    )
+    for profile, features in {
+        "default": [],
+        "nightly": ["nightly", "rustc_1_37", "rustc_1_40"],
+        "rustc_1_37": ["rustc_1_37"],
+        "rustc_1_40": ["rustc_1_37", "rustc_1_40"],
+        "rustc_1_51": ["rustc_1_51"],
+    }.items()
+]
+
+filegroup(
+    name = "feature_profiles",
+    srcs = [
+        ":profile_default",
+        ":profile_nightly",
+        ":profile_rustc_1_37",
+        ":profile_rustc_1_40",
+        ":profile_rustc_1_51",
+    ],
+    visibility = ["//visibility:public"],
+)

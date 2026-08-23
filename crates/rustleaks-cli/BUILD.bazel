@@ -1,0 +1,66 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+_DEPS = [
+    "//crates/rustleaks-core:rustleaks_core",
+    "//crates/rustleaks-report:rustleaks_report",
+    "//crates/rustleaks-sources:rustleaks_sources_archives",
+]
+
+rustleaks_library(
+    name = "rustleaks_cli",
+    crate_name = "rustleaks_cli",
+    deps = _DEPS,
+    edition = "2024",
+    version = "0.1.0-alpha.1",
+)
+
+rust_binary(
+    name = "rustleaks",
+    aliases = aliases(),
+    crate_name = "rustleaks",
+    crate_root = "src/main.rs",
+    deps = all_crate_deps(normal = True) + _DEPS + [":rustleaks_cli"],
+    edition = "2024",
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "crates/rustleaks-cli",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+    },
+    srcs = glob(["src/**/*.rs"]),
+    visibility = ["//visibility:public"],
+)
+
+rustleaks_integration_test(
+    name = "cli_test",
+    src = "tests/cli.rs",
+    data = [
+        ":rustleaks",
+        "//compat:all",
+        "@git//:git",
+    ],
+    deps = _DEPS + [":rustleaks_cli"],
+    env = {
+        "CARGO_BIN_EXE_rustleaks": "$(rlocationpath :rustleaks)",
+        "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
+    },
+)
+
+test_suite(
+    name = "parity_tests",
+    tests = [":cli_test"],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":cli_test",
+        ":rustleaks_cli_doc_test",
+        ":rustleaks_cli_unit_test",
+    ],
+    visibility = ["//visibility:public"],
+)

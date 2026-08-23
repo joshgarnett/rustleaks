@@ -32,5 +32,6 @@ Thumbs.db
 /.cache/
 /.tmp/
 /tmp/
+/bazel-*
 *.orig
 *.rej

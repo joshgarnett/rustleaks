@@ -1,0 +1,51 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+rust_binary(
+    name = "xtask",
+    aliases = aliases(),
+    compile_data = glob(["src/**/*.txt"]),
+    crate_name = "xtask",
+    deps = all_crate_deps(normal = True),
+    edition = "2024",
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "crates/xtask",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+    },
+    srcs = glob(["src/**/*.rs"]),
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "xtask_unit_test",
+    aliases = aliases(normal = True, normal_dev = True),
+    # These two generator integration checks intentionally inspect the pinned
+    # sibling Go checkout. Normal Bazel tests must remain sibling-independent;
+    # the generator is exercised explicitly by the parity workflow instead.
+    args = [
+        "--skip=tooling::inventory::tests::explicit_candidate_mode_supports_spaces_and_non_ascii",
+        "--skip=tooling::inventory::tests::generated_inventory_is_idempotent",
+    ],
+    crate = ":xtask",
+    data = [
+        "//:build_contract_files",
+        "//:workspace_files",
+        "//compat:all",
+    ],
+    deps = all_crate_deps(normal = True, normal_dev = True),
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "crates/xtask",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+    },
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [":xtask_unit_test"],
+    visibility = ["//visibility:public"],
+)

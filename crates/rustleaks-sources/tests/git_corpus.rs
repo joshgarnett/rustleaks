@@ -1,11 +1,12 @@
 //! Differential replay of the pinned fresh-process Git source corpus.
 #![cfg(feature = "archives")]
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -17,8 +18,8 @@ use rustleaks_core::model::{
 };
 use rustleaks_core::session::{IgnoreSet, ScanSession, SessionPolicy};
 use rustleaks_sources::{
-    ArchiveLimits, ArchiveOptions, CancellationToken, GitMode, GitSource, RemoteMetadata,
-    ScmPlatform, Source, SourceControl, SourceError, SourceEvent, SourceIssueKind, SourceStage,
+    ArchiveLimits, ArchiveOptions, CancellationToken, GitMode, ScmPlatform, Source, SourceControl,
+    SourceError, SourceEvent, SourceIssueKind, SourceStage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -275,7 +276,7 @@ fn replay(request: &Request) -> Replay {
         operation => panic!("unsupported Git corpus operation {operation}"),
     };
     let detector_config = load_config(request);
-    let mut source = GitSource::new(&repository)
+    let mut source = support::git_source(&repository)
         .mode(mode)
         .command_environment(environment.clone());
     if let Some(depth) = request.max_archive_depth {
@@ -369,7 +370,7 @@ fn detect_findings(
         }
     }
     let remote =
-        RemoteMetadata::discover(ScmPlatform::Unknown, repository, &CancellationToken::new())
+        support::discover_remote(ScmPlatform::Unknown, repository, &CancellationToken::new())
             .expect("discover fixture remote");
     session
         .into_findings()
@@ -541,7 +542,7 @@ fn run_git<const N: usize>(
     arguments: [&str; N],
     environment: &[(OsString, OsString)],
 ) {
-    let status = Command::new("git")
+    let status = support::command()
         .arg("-C")
         .arg(repository)
         .args(arguments)

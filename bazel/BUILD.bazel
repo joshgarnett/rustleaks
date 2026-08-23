@@ -1,0 +1,31 @@
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+
+exports_files([
+    "platform_matrix.bzl",
+    "rust_crate.bzl",
+])
+
+# rules_rust's stable-channel doctest runner executes from runfiles. Wrapping
+# the selected LLVM builtins archive in CcInfo lets it remap that generated
+# archive from the Bazel execroot into the test runfiles tree.
+cc_import(
+    name = "compiler_rt_builtins",
+    static_library = "@llvm//runtimes/compiler-rt:clang_rt.builtins.static",
+    visibility = ["//visibility:public"],
+)
+
+rust_proc_macro(
+    name = "doctest_path_mapper",
+    crate_name = "rustleaks_doctest_path_mapper",
+    crate_root = "doctest_path_mapper.rs",
+    edition = "2024",
+    srcs = ["doctest_path_mapper.rs"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "build_contract_files",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)

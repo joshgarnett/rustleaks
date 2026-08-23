@@ -1,0 +1,48 @@
+load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files(["Cargo.toml"])
+rustleaks_build_contract_files()
+
+rustleaks_library(
+    name = "rustleaks_report",
+    crate_name = "rustleaks_report",
+    deps = ["//crates/rustleaks-core:rustleaks_core"],
+    edition = "2024",
+    version = "0.1.0-alpha.1",
+)
+
+[
+    rustleaks_integration_test(
+        name = test + "_test",
+        src = "tests/" + test + ".rs",
+        compile_data = ["//compat:fixtures"],
+        data = ["//compat:all"],
+        deps = [
+            ":rustleaks_report",
+            "//crates/rustleaks-core:rustleaks_core",
+        ],
+    )
+    for test in [
+        "report_corpus",
+        "reporters",
+        "template",
+    ]
+]
+
+test_suite(
+    name = "parity_tests",
+    tests = [":report_corpus_test"],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":report_corpus_test",
+        ":reporters_test",
+        ":rustleaks_report_doc_test",
+        ":rustleaks_report_unit_test",
+        ":template_test",
+    ],
+    visibility = ["//visibility:public"],
+)
