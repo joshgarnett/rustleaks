@@ -1788,12 +1788,15 @@ mod tests {
     }
 
     #[cfg(unix)]
-    struct CancelWhenFileExists(PathBuf);
+    struct CancelWhenFileContainsPid(PathBuf);
 
     #[cfg(unix)]
-    impl Cancellation for CancelWhenFileExists {
+    impl Cancellation for CancelWhenFileContainsPid {
         fn is_cancelled(&self) -> bool {
-            self.0.is_file()
+            std::fs::read_to_string(&self.0)
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|pid| pid != 0)
         }
     }
 
@@ -1943,7 +1946,7 @@ mod tests {
             64 * 1024,
             64 * 1024,
             &environment,
-            &CancelWhenFileExists(pid_path.clone()),
+            &CancelWhenFileContainsPid(pid_path.clone()),
             SourceStage::GitCommand,
         );
         assert!(matches!(result, Err(SourceError::Cancelled)));
