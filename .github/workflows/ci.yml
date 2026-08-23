@@ -203,7 +203,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Review dependency changes
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: low
 
@@ -266,7 +266,7 @@ jobs:
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --build_tests_only //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
           bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 //:test
 
   native-macos:
@@ -316,7 +316,7 @@ jobs:
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --build_tests_only //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
           bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 //:test
 
   native-windows:
@@ -371,11 +371,11 @@ jobs:
           EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
-          bazelisk build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build //:docs
+          bazelisk --output_user_root=C:/b build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build //:docs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
+          bazelisk --output_user_root=C:/b build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk test --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --jobs=1 //:test
+          bazelisk --output_user_root=C:/b test --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   required:

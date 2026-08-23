@@ -841,11 +841,13 @@ rust_binary(
     )
     .map_err(|error| format!("cannot write external Bazel build: {error}"))?;
     command_output(Command::new("bazelisk").current_dir(&root).args([
+        "--ignore_all_rc_files",
         "run",
         "//:consumer",
         "--lockfile_mode=update",
     ]))?;
     command_output(Command::new("bazelisk").current_dir(&root).args([
+        "--ignore_all_rc_files",
         "run",
         "//:consumer",
         "--lockfile_mode=error",
