@@ -71,6 +71,12 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
           cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Hydrate locked fuzz dependencies
+        working-directory: rustleaks
+        run: |
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
       - name: Run slower campaigns
         working-directory: rustleaks
         env:

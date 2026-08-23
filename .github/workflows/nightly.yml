@@ -19,7 +19,7 @@ env:
 jobs:
   differential:
     name: Fresh Go differential
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - name: Check out Rustleaks
@@ -75,6 +75,12 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
           cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Hydrate locked fuzz dependencies
+        working-directory: rustleaks
+        run: |
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
       - name: Run extended campaigns
         working-directory: rustleaks
         env:

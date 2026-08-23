@@ -29,6 +29,9 @@ jobs:
           cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
+      - name: Hydrate locked package dependencies
+        working-directory: rustleaks
+        run: cargo fetch --locked
       - name: Build optimized local artifacts
         working-directory: rustleaks
         run: bazelisk build -c opt //:build

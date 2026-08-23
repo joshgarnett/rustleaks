@@ -127,6 +127,12 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
           cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Hydrate locked fuzz dependencies
+        working-directory: rustleaks
+        run: |
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
       - name: Build targets and replay bounded smoke campaigns
         working-directory: rustleaks
         run: just fuzz-smoke
@@ -148,13 +154,16 @@ jobs:
           cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
+      - name: Hydrate locked package dependencies
+        working-directory: rustleaks
+        run: cargo fetch --locked
       - name: Run package consumers and no-upload publish simulation
         working-directory: rustleaks
         run: just release-dry-run
 
   parity:
     name: Pinned oracle and committed parity
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - name: Check out Rustleaks
@@ -209,21 +218,25 @@ jobs:
             target: x86_64-unknown-linux-gnu
             config: linux-x86_64-gnu
             host_platform: //platforms:linux_x86_64_gnu
+            execution_platform: //platforms:linux_x86_64_gnu
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-gnu
             config: linux-aarch64-gnu
             host_platform: //platforms:linux_aarch64_gnu
+            execution_platform: //platforms:linux_aarch64_gnu
           - runner: ubuntu-24.04
             architecture: x86_64
             target: x86_64-unknown-linux-musl
             config: linux-x86_64-musl
             host_platform: //platforms:linux_x86_64_gnu
+            execution_platform: //platforms:linux_x86_64_musl
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-musl
             config: linux-aarch64-musl
             host_platform: //platforms:linux_aarch64_gnu
+            execution_platform: //platforms:linux_aarch64_musl
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -249,10 +262,12 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
+          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --build_tests_only //:test
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 //:test
 
   native-macos:
     name: Native ${{ matrix.target }}
@@ -265,11 +280,13 @@ jobs:
             target: x86_64-apple-darwin
             config: macos-x86_64
             host_platform: //platforms:macos_x86_64
+            execution_platform: //platforms:macos_x86_64
           - runner: macos-15
             architecture: arm64
             target: aarch64-apple-darwin
             config: macos-aarch64
             host_platform: //platforms:macos_aarch64
+            execution_platform: //platforms:macos_aarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -295,10 +312,12 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
+          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --build_tests_only //:test
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 //:test
 
   native-windows:
     name: Native ${{ matrix.target }}
@@ -311,11 +330,13 @@ jobs:
             target: x86_64-pc-windows-msvc
             config: windows-x86_64-msvc
             host_platform: //platforms:windows_x86_64_msvc
+            execution_platform: //platforms:windows_x86_64_msvc
           - runner: windows-11-arm
             architecture: Arm64
             target: aarch64-pc-windows-msvc
             config: windows-aarch64-msvc
             host_platform: //platforms:windows_aarch64_msvc
+            execution_platform: //platforms:windows_aarch64_msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -347,11 +368,14 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
+          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
-          bazelisk build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" //:build //:docs
+          bazelisk build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build //:docs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk test --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" //:test
+          bazelisk build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bazelisk test --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   required:
