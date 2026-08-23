@@ -4,8 +4,7 @@ use super::super::inventory::{Inventory, Record};
 use super::super::model::{Attrs, attrs};
 use super::member;
 
-const GENERATOR_EVIDENCE: &str =
-    "compat/generator-corpus; compat/extract_generator_samples.rb; cargo xtask generator-check";
+const GENERATOR_EVIDENCE: &str = "compat/generator-corpus; crates/xtask/src/tooling/traceability/generator_samples; cargo xtask generator-check";
 
 pub(super) fn annotation(record: &Record, inventory: &Inventory) -> Result<Attrs, String> {
     let package = record.package.as_str();

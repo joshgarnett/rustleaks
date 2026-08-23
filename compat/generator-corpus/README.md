@@ -15,8 +15,8 @@ not production secrets.
 - `samples-v1.jsonl` contains exactly 6,770 helper cases from one reviewed
   concrete run: 6,368 ordinary positives, 342 ordinary negatives, 28 path
   positives, and 32 path negatives. Duplicate cases remain separate rows.
-- `../extract_generator_samples.rb` verifies or deliberately regenerates the
-  files without writing to the sibling Go checkout.
+- `cargo xtask generate generator-samples` verifies or deliberately
+  regenerates the files without writing to the sibling Go checkout.
 
 Frozen SHA-256 digests:
 
@@ -95,7 +95,7 @@ The two Dropbox gaps and three exclusions are records in
 From the `rustleaks` root:
 
 ```sh
-ruby compat/extract_generator_samples.rb --check
+cargo xtask generate generator-samples --check
 ```
 
 `--check` validates the frozen file digests, JSONL schema, canonical base64,
@@ -116,10 +116,11 @@ the positive or negative count contract.
 Deliberate regeneration is:
 
 ```sh
-ruby compat/extract_generator_samples.rb --regenerate
+cargo xtask generate generator-samples
 ```
 
-This overwrites the two versioned JSONL files with a newly frozen deterministic run
-and prints their new digests. Review the observation diff and update the two
-digest constants in the extractor and this README. Until that review step,
-`--check` fails closed.
+This overwrites the two versioned JSONL files with a newly observed run and
+prints their new digests. Fresh secret and finding bytes may vary, as they did
+under the legacy generator; the ordered stable recipe identities must remain
+exact. Review the observation diff and update the two digest constants in the
+Rust generator and this README. Until that review step, `--check` fails closed.

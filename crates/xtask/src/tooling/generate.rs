@@ -3,10 +3,11 @@
 use std::path::Path;
 
 use super::{
-    Corpus, check_api_dispositions, check_assertions, generate_corpus, generate_go_lowercase,
-    generate_regex_fuzz_seeds, self_test_api_dispositions, summarize_api_dispositions,
-    write_api_dispositions, write_assertions, write_composite_corpus, write_config_corpus,
-    write_git_corpus, write_report_corpus, write_session_corpus, write_source_corpus,
+    Corpus, check_api_dispositions, check_assertions, check_generator_samples, generate_corpus,
+    generate_go_lowercase, generate_regex_fuzz_seeds, regenerate_generator_samples,
+    self_test_api_dispositions, summarize_api_dispositions, write_api_dispositions,
+    write_assertions, write_composite_corpus, write_config_corpus, write_git_corpus,
+    write_report_corpus, write_session_corpus, write_source_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -90,7 +91,26 @@ fn run_repository_artifact(root: &Path, args: &[String]) -> Option<Result<(), St
 
 fn run_traceability(root: &Path, args: &[String]) -> Option<Result<(), String>> {
     let canonical_api = root.join("compat/api-dispositions-v1.jsonl");
+    let canonical_samples = root.join("compat/generator-corpus");
     match args {
+        [target] if target == "generator-samples" => Some(upstream(root).and_then(|upstream| {
+            print_result(regenerate_generator_samples(&upstream, &canonical_samples))
+        })),
+        [target, flag] if target == "generator-samples" && flag == "--check" => {
+            Some(upstream(root).and_then(|upstream| {
+                print_result(check_generator_samples(&upstream, &canonical_samples))
+            }))
+        }
+        [target, flag, output] if target == "generator-samples" && flag == "--output" => {
+            Some(upstream(root).and_then(|upstream| {
+                print_result(regenerate_generator_samples(&upstream, Path::new(output)))
+            }))
+        }
+        [target, flag, output] if target == "generator-samples" && flag == "--check-output" => {
+            Some(upstream(root).and_then(|upstream| {
+                print_result(check_generator_samples(&upstream, Path::new(output)))
+            }))
+        }
         [target] if target == "assertions" => Some(upstream(root).and_then(|upstream| {
             write_assertions(root, &upstream, &root.join("compat/assertion-corpus")).map(|_| ())
         })),
@@ -168,7 +188,7 @@ fn run_direct_oracle(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }

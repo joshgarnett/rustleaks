@@ -36,3 +36,6 @@ pub(crate) use traceability::api::{
 pub(crate) use traceability::assertions::{
     check_assertions, validate_final_traceability, write_assertions,
 };
+pub(crate) use traceability::generator_samples::{
+    check_generator_samples, regenerate_generator_samples,
+};

@@ -21,7 +21,7 @@ pub(super) const IDENTITY_COUNT: usize = 607;
 pub(super) const IDENTITY_SHA256: &str =
     "de2e917190f3fdcc24c3db77e3e0a5c7fdd09aff97805b066273f4a7b6e96e6b";
 pub(super) const DISPOSITIONS_SHA256: &str =
-    "00b0968df34b279f93fc69b9d064c80e0ae6ee00a2710230ecea65abffce4062";
+    "aafe70e228d5cc740b42b8c6dad5ea353aec1052a7d8e8152b0ea731bd41eb56";
 
 /// Recreate the pinned disposition artifact and return Ruby-compatible summary output.
 pub(crate) fn write_api_dispositions(root: &Path, output: &Path) -> Result<String, String> {
