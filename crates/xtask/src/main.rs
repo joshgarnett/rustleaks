@@ -2082,11 +2082,7 @@ fn oracle_check() -> Result<(), String> {
             .arg(corpus.join("bootstrap-golden.jsonl"))
             .current_dir(oracle_dir),
     )?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_config_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_config_corpus(&root)?;
     tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
     tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
     tooling::generate_go_lowercase(&root, true)?;
@@ -2115,11 +2111,7 @@ fn oracle_check() -> Result<(), String> {
 fn config_check() -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    command_output(
-        Command::new("ruby")
-            .args(["compat/generate_config_corpus.rb", "--check"])
-            .current_dir(&root),
-    )?;
+    tooling::check_config_corpus(&root)?;
     command_output(
         Command::new("cargo")
             .args(["test", "-p", "rustleaks-core", "--test", "config"])

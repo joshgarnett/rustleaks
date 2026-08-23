@@ -1,6 +1,7 @@
 //! Rust-first repository generation and compatibility verification.
 
 mod artifacts;
+mod config;
 mod fixtures;
 mod fuzz_seeds;
 mod generate;
@@ -11,6 +12,7 @@ mod session;
 mod support;
 mod traceability;
 
+pub(crate) use config::{check_config_corpus, write_config_corpus};
 pub(crate) use fixtures::verify_fixtures;
 pub(crate) use fuzz_seeds::generate_regex_fuzz_seeds;
 pub(crate) use generate::run as run_generate;

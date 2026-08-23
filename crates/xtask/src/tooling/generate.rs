@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::{
     Corpus, check_assertions, generate_corpus, generate_go_lowercase, generate_regex_fuzz_seeds,
-    write_assertions, write_report_corpus, write_session_corpus,
+    write_assertions, write_config_corpus, write_report_corpus, write_session_corpus,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -12,6 +12,15 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         [target] if target == "go-lowercase" => generate_go_lowercase(root, false),
         [target, flag] if target == "go-lowercase" && flag == "--check" => {
             generate_go_lowercase(root, true)
+        }
+        [target] if target == "config" => {
+            write_config_corpus(root, &root.join("compat/config-corpus"))
+        }
+        [target, flag] if target == "config" && flag == "--check" => {
+            super::check_config_corpus(root)
+        }
+        [target, flag, output] if target == "config" && flag == "--output" => {
+            write_config_corpus(root, Path::new(output))
         }
         [target] if target == "report" => {
             write_report_corpus(root, &root.join("compat/report-corpus"))
@@ -83,7 +92,7 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|assertions [--check|--output PATH|--check-output PATH]|regex|detect|allowlist|decoder|session|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|assertions [--check|--output PATH|--check-output PATH]|config|regex|detect|allowlist|decoder|session|report [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }
