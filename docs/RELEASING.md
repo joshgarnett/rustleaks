@@ -41,10 +41,10 @@ release exists.
 
 Before the first publication, the repository still needs:
 
-- matching native build, test, feature, parity, example, and CLI evidence for
-  each target claimed as supported;
-- a verified private vulnerability reporting route;
-- pinned, least-privilege release automation and a protected environment;
+- refreshed native build, test, feature, parity, example, and CLI evidence for
+  the exact release candidate on every claimed target;
+- an exercise of the private reporting and incident-response procedure;
+- publication automation within the protected environment;
 - reviewed crates.io trusted publishing;
 - checksums, target-specific SBOMs reconciled with Cargo and Bazel inputs,
   provenance, and attestations for actual artifacts; and
