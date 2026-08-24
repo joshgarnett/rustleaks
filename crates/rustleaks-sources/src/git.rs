@@ -1565,15 +1565,14 @@ fn git_date_to_rfc3339(value: &[u8], limit: usize) -> PatchResult<Option<Vec<u8>
         return Ok(None);
     };
     let zone = zone_text.as_bytes();
-    if zone.len() != 5 || !matches!(zone[0], b'+' | b'-') {
+    if zone.len() != 5
+        || !matches!(zone[0], b'+' | b'-')
+        || !zone[1..].iter().all(|byte| byte.is_ascii_digit())
+    {
         return Ok(None);
     }
-    let Ok(zone_hours) = zone_text[1..3].parse::<i64>() else {
-        return Ok(None);
-    };
-    let Ok(zone_minutes) = zone_text[3..5].parse::<i64>() else {
-        return Ok(None);
-    };
+    let zone_hours = i64::from((zone[1] - b'0') * 10 + (zone[2] - b'0'));
+    let zone_minutes = i64::from((zone[3] - b'0') * 10 + (zone[4] - b'0'));
     let sign = if zone[0] == b'-' { -1 } else { 1 };
     let offset = sign * (zone_hours * 3600 + zone_minutes * 60);
     let Some(days) = days_from_civil(year, month, day) else {
@@ -2344,6 +2343,15 @@ mod tests {
         assert_eq!(metadata.author_name().as_bytes(), b"A User");
         assert_eq!(metadata.date().as_bytes(), b"2021-11-02T23:37:53Z");
         assert_eq!(metadata.message().as_bytes(), b"fuller title");
+    }
+
+    #[test]
+    fn malformed_multibyte_git_timezone_fails_closed() {
+        assert_eq!(
+            git_date_to_rfc3339("Thu Jan 1 00:00:00 1970 +0풉".as_bytes(), 64)
+                .expect("malformed date is non-fatal"),
+            None
+        );
     }
 
     #[test]
