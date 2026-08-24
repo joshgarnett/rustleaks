@@ -281,12 +281,14 @@ jobs:
             config: macos-x86_64
             host_platform: //platforms:macos_x86_64
             execution_platform: //platforms:macos_x86_64
+            test_compilation_mode: opt
           - runner: macos-15
             architecture: arm64
             target: aarch64-apple-darwin
             config: macos-aarch64
             host_platform: //platforms:macos_aarch64
             execution_platform: //platforms:macos_aarch64
+            test_compilation_mode: fastbuild
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -314,10 +316,11 @@ jobs:
           BAZEL_CONFIG: ${{ matrix.config }}
           EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
           HOST_PLATFORM: ${{ matrix.host_platform }}
+          TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build //:docs
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 //:test
 
   native-windows:
     name: Native ${{ matrix.target }}

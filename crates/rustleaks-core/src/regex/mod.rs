@@ -1726,7 +1726,7 @@ mod tests {
         // This intentionally runs in the ordinary debug test profile. Release
         // measurements are recorded separately in the M3 resource report.
         const SEARCH_BYTES: usize = 1 << 20;
-        const WALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+        const WALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(15);
 
         fn collect_patterns(value: &toml::Value, key: Option<&str>, patterns: &mut Vec<String>) {
             match value {
