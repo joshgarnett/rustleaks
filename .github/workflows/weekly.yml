@@ -17,36 +17,6 @@ env:
   CARGO_NET_RETRY: "5"
 
 jobs:
-  miri-and-supply-chain:
-    name: Miri, unsafe, advisory, and vet policy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version: 1.26.7
-          cache: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Install pinned security tools
-        working-directory: rustleaks
-        run: |
-          cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo install cargo-vet --locked --version 0.10.2
-          cargo install cargo-geiger --locked --version 0.13.0
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
-          cargo +nightly-2026-08-21 miri setup
-      - name: Run the complete local security policy
-        working-directory: rustleaks
-        run: just security
-
   slower-fuzz:
     name: Slower archive and large-input fuzzing
     runs-on: ubuntu-24.04

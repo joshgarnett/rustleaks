@@ -27,10 +27,12 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
             .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
         validate_workflow(path, &source, &mut names)?;
     }
-    validate_ci_matrix(
-        &fs::read_to_string(directory.join("ci.yml"))
-            .map_err(|error| format!("cannot read CI workflow: {error}"))?,
-    )?;
+    let ci = fs::read_to_string(directory.join("ci.yml"))
+        .map_err(|error| format!("cannot read CI workflow: {error}"))?;
+    let weekly = fs::read_to_string(directory.join("weekly.yml"))
+        .map_err(|error| format!("cannot read weekly workflow: {error}"))?;
+    validate_ci_matrix(&ci)?;
+    validate_workflow_efficiency(&ci, &weekly)?;
     validate_dependabot(root)?;
     println!(
         "checked {} least-privilege workflows with immutable action pins and exact runners",
@@ -148,6 +150,16 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_workflow_efficiency(ci: &str, weekly: &str) -> Result<(), String> {
+    if weekly.contains("run: just security") {
+        return Err("weekly workflow duplicates the scheduled CI security boundary".into());
+    }
+    if ci.contains("//:build //:docs") {
+        return Err("native CI duplicates the acceptance gate's API documentation build".into());
+    }
+    Ok(())
+}
+
 fn validate_dependabot(root: &Path) -> Result<(), String> {
     let source = fs::read_to_string(root.join(".github/dependabot.yml"))
         .map_err(|error| format!("cannot read Dependabot configuration: {error}"))?;
@@ -172,7 +184,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::path::Path;
 
-    use super::validate_workflow;
+    use super::{validate_workflow, validate_workflow_efficiency};
 
     const PIN: &str = "d23441a48e516b6c34aea4fa41551a30e30af803";
 
@@ -200,5 +212,19 @@ mod tests {
         let error =
             validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap_err();
         assert!(error.contains("pull_request_target"));
+    }
+
+    #[test]
+    fn rejects_duplicate_scheduled_security_work() {
+        let error = validate_workflow_efficiency("run: just security\n", "run: just security\n")
+            .unwrap_err();
+        assert!(error.contains("duplicates the scheduled CI security boundary"));
+    }
+
+    #[test]
+    fn rejects_duplicate_native_documentation_builds() {
+        let error =
+            validate_workflow_efficiency("run: bazelisk build //:build //:docs\n", "").unwrap_err();
+        assert!(error.contains("duplicates the acceptance gate's API documentation build"));
     }
 }
