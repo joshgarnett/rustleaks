@@ -92,13 +92,16 @@ pub(super) fn render_manifest(
     generator_hash: &str,
 ) -> Result<Vec<u8>, String> {
     let old = required_str(manifest, "generator_sha256", "manifest")?;
-    let rendered = replace_once(
-        legacy,
+    let mut rendered = legacy.to_vec();
+    for field in ["go_runtime_tree_sha256", "rust_runtime_tree_sha256"] {
+        rendered = remove_flat_object_field(&rendered, field)?;
+    }
+    rendered = replace_once(
+        &rendered,
         old.as_bytes(),
         generator_hash.as_bytes(),
         "generator provenance",
     )?;
-    let mut rendered = rendered;
     for (path, expected, actual) in DECLARED_TRANSITIONS {
         rendered = replace_declared_transition(
             &rendered,
@@ -113,6 +116,36 @@ pub(super) fn render_manifest(
         DECLARED_OUTCOME_TRANSITION.1.as_bytes(),
         "CLI outcomes transition",
     )
+}
+
+fn remove_flat_object_field(bytes: &[u8], field: &str) -> Result<Vec<u8>, String> {
+    let prefix = format!("  \"{field}\": {{\n");
+    let positions = bytes
+        .windows(prefix.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == prefix.as_bytes()).then_some(index))
+        .collect::<Vec<_>>();
+    if positions.is_empty() {
+        return Ok(bytes.to_vec());
+    }
+    if positions.len() != 1 {
+        return Err(format!(
+            "expected at most one {field} object, found {}",
+            positions.len()
+        ));
+    }
+    let start = positions[0];
+    let body = &bytes[start + prefix.len()..];
+    let suffix = b"\n  },\n";
+    let relative_end = body
+        .windows(suffix.len())
+        .position(|window| window == suffix)
+        .ok_or_else(|| format!("{field} object is not a flat generated object"))?;
+    let end = start + prefix.len() + relative_end + suffix.len();
+    let mut rendered = Vec::with_capacity(bytes.len() - (end - start));
+    rendered.extend_from_slice(&bytes[..start]);
+    rendered.extend_from_slice(&bytes[end..]);
+    Ok(rendered)
 }
 
 fn replace_declared_transition(
@@ -243,7 +276,21 @@ pub(super) fn required_u64(value: &Value, field: &str, label: &str) -> Result<u6
 
 #[cfg(test)]
 mod tests {
-    use super::{replace_declared_transition, replace_once};
+    use super::{remove_flat_object_field, replace_declared_transition, replace_once};
+
+    #[test]
+    fn flat_generated_object_removal_is_idempotent_and_fails_closed() {
+        let input =
+            b"{\n  \"keep\": 1,\n  \"tree\": {\n    \"path\": \"hash\"\n  },\n  \"tail\": 2\n}\n";
+        let expected = b"{\n  \"keep\": 1,\n  \"tail\": 2\n}\n";
+        assert_eq!(remove_flat_object_field(input, "tree").unwrap(), expected);
+        assert_eq!(
+            remove_flat_object_field(expected, "tree").unwrap(),
+            expected
+        );
+        assert!(remove_flat_object_field(b"  \"tree\": {\n  \"tree\": {\n", "tree").is_err());
+    }
+
     #[test]
     fn provenance_replacement_fails_closed() {
         assert_eq!(
