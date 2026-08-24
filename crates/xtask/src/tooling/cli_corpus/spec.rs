@@ -206,12 +206,12 @@ pub(super) fn selected_runtime(
         .map(str::to_owned)
         .collect::<Vec<_>>();
     if fields.len() != 3
-        || !(fields[0] == "go1.25"
+        || !(fields[0] == "go1.26"
             || fields[0]
-                .strip_prefix("go1.25.")
+                .strip_prefix("go1.26.")
                 .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())))
     {
-        return Err("selected Go runtime is outside 1.25".into());
+        return Err("selected Go runtime is outside 1.26".into());
     }
     let rust = process::command(
         Path::new("rustc"),
@@ -384,11 +384,16 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
     Ok(())
 }
 
-pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 2] = [
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 3] = [
+    (
+        "Cargo.toml",
+        "1d01e816e7c21c0642e25a468fd2ccba3d460b84e9828891730cce2cdc4e861b",
+        "bc2bdfa222a06e6f77bbea3f8b23a581369142aa6a786203a64fdcd3d2035489",
+    ),
     (
         "Cargo.lock",
-        "8b3054f67f1b52a8bda4ffab8f5ce9a961c091d924f5b75880624bbd125ae567",
-        "81059f032e7b4e4330dbc035d6fff09f52c0d2a1fb7af20d36437a993cc64320",
+        "637be2cbd6135428d7513ebea67088ae85654f8a733775ba1c1621d57d2a2923",
+        "c40a3695cb4d6d3bea29cd6ea74a89ef0ae9db207f6282e60a941dbbc5767e6b",
     ),
     (
         "crates/rustleaks-cli/src/output.rs",

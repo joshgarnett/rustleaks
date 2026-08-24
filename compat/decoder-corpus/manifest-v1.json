@@ -4,7 +4,7 @@
   "oracle_mode": "decoder",
   "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
-  "go_version": "go1.25.0",
+  "go_version": "go1.26.7",
   "scope": [
     "codec-pass-output",
     "complete-segment-metadata",
@@ -47,7 +47,7 @@
       "records": 263
     },
     "outcomes-v1.jsonl": {
-      "sha256": "428d8e37112f9b26d65156a0a075a8cfd15897f2b0bc02d7cee7aae17cd9a8b3",
+      "sha256": "b47fa7fa2d6c5f7c4ec3d1cc1d7f7ff7b54ca515bd00f55e4b31df1c6a7f5131",
       "records": 263
     },
     "request-metadata-v1.jsonl": {

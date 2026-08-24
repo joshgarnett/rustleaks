@@ -118,8 +118,8 @@ fn selected_runtime(upstream: &Path, temporary: &TempDir) -> Result<(String, Str
         .map_err(|error| format!("go env returned non-UTF-8 output: {error}"))?
         .lines()
         .collect::<Vec<_>>();
-    if fields.len() != 3 || !go_1_25(fields[0]) {
-        return Err("selected Go toolchain is not pinned to Go 1.25".into());
+    if fields.len() != 3 || !go_1_26(fields[0]) {
+        return Err("selected Go toolchain is not pinned to Go 1.26".into());
     }
     let platform = format!("{}/{}", fields[1], fields[2]);
     if !valid_platform(&platform) {
@@ -197,9 +197,9 @@ pub(super) fn capture(
     Ok(output)
 }
 
-fn go_1_25(version: &str) -> bool {
-    version == "go1.25"
-        || version.strip_prefix("go1.25.").is_some_and(|patch| {
+fn go_1_26(version: &str) -> bool {
+    version == "go1.26"
+        || version.strip_prefix("go1.26.").is_some_and(|patch| {
             !patch.is_empty() && patch.bytes().all(|byte| byte.is_ascii_digit())
         })
 }
@@ -218,12 +218,12 @@ fn valid_platform(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{go_1_25, valid_platform};
+    use super::{go_1_26, valid_platform};
 
     #[test]
     fn runtime_and_platform_fail_closed() {
-        assert!(go_1_25("go1.25.0"));
-        assert!(!go_1_25("go1.25rc1"));
+        assert!(go_1_26("go1.26.0"));
+        assert!(!go_1_26("go1.26rc1"));
         assert!(valid_platform("darwin/arm64"));
         assert!(!valid_platform("Darwin/arm64"));
     }

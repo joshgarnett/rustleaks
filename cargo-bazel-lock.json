@@ -1,5 +1,5 @@
 {
-  "checksum": "5d32861852e90a062233651b77445684ce98ba86be2ef8a58981b31b7adcc4b9",
+  "checksum": "2d38e8ce2528a7ecec8b897bde0feae8be6ec2c167b7e5ac20c96dc898825355",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -182,14 +182,14 @@
       ],
       "license_file": null
     },
-    "base64 0.22.1": {
+    "base64 0.23.1": {
       "name": "base64",
-      "version": "0.22.1",
+      "version": "0.23.1",
       "package_url": "https://github.com/marshallpierce/rust-base64",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/base64/0.22.1/download",
-          "sha256": "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+          "url": "https://static.crates.io/crates/base64/0.23.1/download",
+          "sha256": "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
         }
       },
       "targets": [
@@ -214,13 +214,12 @@
         "crate_features": {
           "common": [
             "alloc",
-            "default",
             "std"
           ],
           "selects": {}
         },
-        "edition": "2018",
-        "version": "0.22.1"
+        "edition": "2021",
+        "version": "0.23.1"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -419,6 +418,51 @@
         "MIT"
       ],
       "license_file": "LICENSE-APACHE"
+    },
+    "compcol 0.3.1": {
+      "name": "compcol",
+      "version": "0.3.1",
+      "package_url": "https://github.com/magicaltux/compcol",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/compcol/0.3.1/download",
+          "sha256": "08bace7d08c63bb7a3f9c9f33e5f3263ea09fb072a914d888e63a052cb4c943f"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "compcol",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "compcol",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "alloc",
+            "rar2"
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.3.1"
+      },
+      "license": "MIT",
+      "license_ids": [
+        "MIT"
+      ],
+      "license_file": "LICENSE"
     },
     "const-oid 0.10.2": {
       "name": "const-oid",
@@ -1316,58 +1360,14 @@
       ],
       "license_file": "LICENSE"
     },
-    "lzma-rust2 0.16.5": {
+    "lzma-rust2 0.20.0": {
       "name": "lzma-rust2",
-      "version": "0.16.5",
+      "version": "0.20.0",
       "package_url": "https://github.com/hasenbanck/lzma-rust2/",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/lzma-rust2/0.16.5/download",
-          "sha256": "ca93e534d1142d1d0dcca6d25fe302508a5dfb40b302802904577725ea0b695b"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "lzma_rust2",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "lzma_rust2",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "crate_features": {
-          "common": [
-            "std"
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.16.5"
-      },
-      "license": "Apache-2.0",
-      "license_ids": [
-        "Apache-2.0"
-      ],
-      "license_file": "LICENSE"
-    },
-    "lzma-rust2 0.19.0": {
-      "name": "lzma-rust2",
-      "version": "0.19.0",
-      "package_url": "https://github.com/hasenbanck/lzma-rust2/",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/lzma-rust2/0.19.0/download",
-          "sha256": "5c1bf3331fb5cf60f2ef15b63361f6cc39492a5d94c096053c395515e17d147f"
+          "url": "https://static.crates.io/crates/lzma-rust2/0.20.0/download",
+          "sha256": "e6effa5c575f68109664a511f378c0e170888e33a426694ee0910a673762bd47"
         }
       },
       "targets": [
@@ -1408,7 +1408,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.19.0"
+        "version": "0.20.0"
       },
       "license": "Apache-2.0",
       "license_ids": [
@@ -2184,47 +2184,6 @@
       ],
       "license_file": null
     },
-    "rustleaks-compcol 0.3.0-rustleaks.1": {
-      "name": "rustleaks-compcol",
-      "version": "0.3.0-rustleaks.1",
-      "package_url": null,
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "compcol",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "compcol",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "crate_features": {
-          "common": [
-            "alloc",
-            "default",
-            "rar2"
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.3.0-rustleaks.1"
-      },
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "license_file": null
-    },
     "rustleaks-core 0.1.0-alpha.1": {
       "name": "rustleaks-core",
       "version": "0.1.0-alpha.1",
@@ -2256,7 +2215,7 @@
               "target": "aho_corasick"
             },
             {
-              "id": "base64 0.22.1",
+              "id": "base64 0.23.1",
               "target": "base64"
             },
             {
@@ -2284,7 +2243,7 @@
               "target": "thiserror"
             },
             {
-              "id": "toml 0.9.12+spec-1.1.0",
+              "id": "toml 1.1.4+spec-1.1.0",
               "target": "toml"
             }
           ],
@@ -2371,7 +2330,7 @@
         "deps_dev": {
           "common": [
             {
-              "id": "base64 0.22.1",
+              "id": "base64 0.23.1",
               "target": "base64"
             }
           ],
@@ -2432,7 +2391,7 @@
               "target": "lz4_flex"
             },
             {
-              "id": "lzma-rust2 0.16.5",
+              "id": "lzma-rust2 0.20.0",
               "target": "lzma_rust2"
             },
             {
@@ -2493,11 +2452,15 @@
               "target": "brotli_decompressor"
             },
             {
+              "id": "compcol 0.3.1",
+              "target": "compcol"
+            },
+            {
               "id": "lz4_flex 0.14.0",
               "target": "lz4_flex"
             },
             {
-              "id": "lzma-rust2 0.19.0",
+              "id": "lzma-rust2 0.20.0",
               "target": "lzma_rust2"
             },
             {
@@ -2522,7 +2485,7 @@
         "deps_dev": {
           "common": [
             {
-              "id": "base64 0.22.1",
+              "id": "base64 0.23.1",
               "target": "base64"
             },
             {
@@ -2826,7 +2789,7 @@
               "target": "quote"
             },
             {
-              "id": "syn 3.0.3",
+              "id": "syn 3.0.4",
               "target": "syn"
             }
           ],
@@ -3106,14 +3069,14 @@
       ],
       "license_file": "LICENSE.md"
     },
-    "syn 3.0.3": {
+    "syn 3.0.4": {
       "name": "syn",
-      "version": "3.0.3",
+      "version": "3.0.4",
       "package_url": "https://github.com/dtolnay/syn",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/syn/3.0.3/download",
-          "sha256": "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+          "url": "https://static.crates.io/crates/syn/3.0.4/download",
+          "sha256": "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
         }
       },
       "targets": [
@@ -3164,7 +3127,7 @@
           "selects": {}
         },
         "edition": "2021",
-        "version": "3.0.3"
+        "version": "3.0.4"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -3395,7 +3358,7 @@
               "target": "quote"
             },
             {
-              "id": "syn 3.0.3",
+              "id": "syn 3.0.4",
               "target": "syn"
             }
           ],
@@ -3451,14 +3414,14 @@
       ],
       "license_file": "LICENSE-APACHE.md"
     },
-    "toml 0.9.12+spec-1.1.0": {
+    "toml 1.1.4+spec-1.1.0": {
       "name": "toml",
-      "version": "0.9.12+spec-1.1.0",
+      "version": "1.1.4+spec-1.1.0",
       "package_url": "https://github.com/toml-rs/toml",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/toml/0.9.12+spec-1.1.0/download",
-          "sha256": "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
+          "url": "https://static.crates.io/crates/toml/1.1.4+spec-1.1.0/download",
+          "sha256": "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5"
         }
       },
       "targets": [
@@ -3501,7 +3464,7 @@
               "target": "serde_spanned"
             },
             {
-              "id": "toml_datetime 0.7.5+spec-1.1.0",
+              "id": "toml_datetime 1.1.1+spec-1.1.0",
               "target": "toml_datetime"
             },
             {
@@ -3513,14 +3476,14 @@
               "target": "toml_writer"
             },
             {
-              "id": "winnow 0.7.15",
+              "id": "winnow 1.0.4",
               "target": "winnow"
             }
           ],
           "selects": {}
         },
-        "edition": "2021",
-        "version": "0.9.12+spec-1.1.0"
+        "edition": "2024",
+        "version": "1.1.4+spec-1.1.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -3529,14 +3492,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "toml_datetime 0.7.5+spec-1.1.0": {
+    "toml_datetime 1.1.1+spec-1.1.0": {
       "name": "toml_datetime",
-      "version": "0.7.5+spec-1.1.0",
+      "version": "1.1.1+spec-1.1.0",
       "package_url": "https://github.com/toml-rs/toml",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/toml_datetime/0.7.5+spec-1.1.0/download",
-          "sha256": "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
+          "url": "https://static.crates.io/crates/toml_datetime/1.1.1+spec-1.1.0/download",
+          "sha256": "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
         }
       },
       "targets": [
@@ -3575,8 +3538,8 @@
           ],
           "selects": {}
         },
-        "edition": "2021",
-        "version": "0.7.5+spec-1.1.0"
+        "edition": "2024",
+        "version": "1.1.1+spec-1.1.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -3902,44 +3865,6 @@
       ],
       "license_file": "license-apache-2.0"
     },
-    "winnow 0.7.15": {
-      "name": "winnow",
-      "version": "0.7.15",
-      "package_url": "https://github.com/winnow-rs/winnow",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/winnow/0.7.15/download",
-          "sha256": "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "winnow",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "winnow",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "edition": "2021",
-        "version": "0.7.15"
-      },
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "license_file": "LICENSE-MIT"
-    },
     "winnow 1.0.4": {
       "name": "winnow",
       "version": "1.0.4",
@@ -4055,7 +3980,7 @@
         "deps": {
           "common": [
             {
-              "id": "base64 0.22.1",
+              "id": "base64 0.23.1",
               "target": "base64"
             },
             {
@@ -4075,7 +4000,7 @@
               "target": "tar"
             },
             {
-              "id": "toml 0.9.12+spec-1.1.0",
+              "id": "toml 1.1.4+spec-1.1.0",
               "target": "toml"
             }
           ],
@@ -4213,7 +4138,6 @@
     "rustleaks-bzip2 0.1.2-rustleaks.1": "crates/rustleaks-bzip2",
     "rustleaks-cli 0.1.0-alpha.1": "crates/rustleaks-cli",
     "rustleaks-compat 0.1.0-alpha.1": "crates/rustleaks-compat",
-    "rustleaks-compcol 0.3.0-rustleaks.1": "crates/rustleaks-compcol",
     "rustleaks-core 0.1.0-alpha.1": "crates/rustleaks-core",
     "rustleaks-rar-codec 0.9.3-rustleaks.1": "crates/rustleaks-rar-codec",
     "rustleaks-report 0.1.0-alpha.1": "crates/rustleaks-report",
@@ -4303,12 +4227,12 @@
   },
   "direct_deps": [
     "aho-corasick 1.1.5",
-    "base64 0.22.1",
+    "base64 0.23.1",
     "brotli-decompressor 5.0.3",
+    "compcol 0.3.1",
     "flate2 1.1.9",
     "lz4_flex 0.14.0",
-    "lzma-rust2 0.16.5",
-    "lzma-rust2 0.19.0",
+    "lzma-rust2 0.20.0",
     "miniz_oxide 0.9.1",
     "rawzip 0.5.1",
     "regex-automata 0.4.7",
@@ -4320,7 +4244,7 @@
     "tar 0.4.46",
     "thiserror 2.0.20",
     "tinyvec 1.12.0",
-    "toml 0.9.12+spec-1.1.0",
+    "toml 1.1.4+spec-1.1.0",
     "zstd-zero 0.1.0"
   ],
   "direct_dev_deps": [

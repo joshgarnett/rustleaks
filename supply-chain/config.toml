@@ -25,9 +25,9 @@ criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
 [[exemptions.base64]]
-version = "0.22.1"
+version = "0.23.1"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked graph with default features disabled; rationale=approved update keeps the simd-unsafe feature out of the selected graph pending source audit; review-by=2026-11-23"
 
 [[exemptions.bitflags]]
 version = "2.13.1"
@@ -48,6 +48,11 @@ notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; ratio
 version = "1.0.4"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+
+[[exemptions.compcol]]
+version = "0.3.1"
+criteria = "safe-to-deploy"
+notes = "owner=Rustleaks maintainers; scope=locked alloc and rar2 features; rationale=approved upstream replacement matches the selected owned-fork RAR2 implementation pending source audit; review-by=2026-11-23"
 
 [[exemptions.const-oid]]
 version = "0.10.2"
@@ -130,14 +135,9 @@ criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
 [[exemptions.lzma-rust2]]
-version = "0.16.5"
+version = "0.20.0"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
-[[exemptions.lzma-rust2]]
-version = "0.19.0"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked std, xz, and lzip feature union; rationale=approved update unifies both archive consumers on the MSRV-compatible release pending source audit; review-by=2026-11-23"
 
 [[exemptions.memchr]]
 version = "2.8.3"
@@ -172,12 +172,12 @@ notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; ratio
 [[exemptions.regex-automata]]
 version = "0.4.7"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked std, syntax, nfa-pikevm, and unicode features; rationale=exact backend remains pinned to the Go-compatible Unicode 15 graph pending source audit; review-by=2026-11-23"
 
 [[exemptions.regex-syntax]]
 version = "0.8.4"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked Unicode 15 syntax graph; rationale=newer Unicode 16 tables fail the pinned regex oracle pending source audit; review-by=2026-11-23"
 
 [[exemptions.rustix]]
 version = "1.1.4"
@@ -225,9 +225,9 @@ criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
 [[exemptions.syn]]
-version = "3.0.3"
+version = "3.0.4"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked procedural macro graph; rationale=approved patch update pending source audit; review-by=2026-11-23"
 
 [[exemptions.tar]]
 version = "0.4.46"
@@ -250,14 +250,14 @@ criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
 [[exemptions.toml]]
-version = "0.9.12+spec-1.1.0"
+version = "1.1.4+spec-1.1.0"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked workspace parser graph; rationale=approved TOML implementation update is configuration-corpus gated pending source audit; review-by=2026-11-23"
 
 [[exemptions.toml_datetime]]
-version = "0.7.5+spec-1.1.0"
+version = "1.1.1+spec-1.1.0"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked workspace parser graph; rationale=approved TOML implementation update is configuration-corpus gated pending source audit; review-by=2026-11-23"
 
 [[exemptions.toml_parser]]
 version = "1.1.3+spec-1.1.0"
@@ -291,11 +291,6 @@ notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; ratio
 
 [[exemptions.windows-sys]]
 version = "0.61.2"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
-[[exemptions.winnow]]
-version = "0.7.15"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 

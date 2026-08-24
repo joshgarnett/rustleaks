@@ -39,7 +39,7 @@ pub fn git_executable() -> PathBuf {
     if runfile == Path::new("git") {
         return runfile;
     }
-    panic!("cannot resolve declared Git runfile {runfile:?}");
+    panic!("cannot resolve declared Git runfile {}", runfile.display());
 }
 
 pub fn git_source(repository: impl Into<PathBuf>) -> GitSource {

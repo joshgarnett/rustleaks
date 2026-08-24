@@ -65,11 +65,12 @@ cannot be reproduced as possible state leakage or nondeterminism.
 ## Dependency review
 
 The cargo-vet policy is self-contained and imports no third-party trust. Its
-initial graph uses 63 bootstrap exemptions with this metadata on every entry:
+current graph uses 61 bootstrap exemptions with this metadata on every entry:
 
 - owner: Rustleaks maintainers;
-- scope: locked all-features workspace;
-- rationale: initial bootstrap exemption pending source audit; and
+- scope: the locked graph or a narrower selected feature graph;
+- rationale: the initial bootstrap or an approved dependency transition,
+  pending source audit; and
 - review date: 2026-11-23.
 
 `just security` rejects a missing, malformed, or expired review date. A vet

@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/rustleaks-bzip2",
-    "crates/rustleaks-compcol",
     "crates/rustleaks-rar-codec",
     "crates/rustleaks-sevenz",
     "crates/rustleaks-core",

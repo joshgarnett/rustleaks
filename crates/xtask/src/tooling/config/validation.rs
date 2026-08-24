@@ -119,7 +119,7 @@ fn validate_envelope(
         return Err(format!("{id}: fresh config outcome envelope changed"));
     }
     let version = required_str(outcome, "go_version", id)?;
-    if !version.starts_with("go1.25.") {
+    if !version.starts_with("go1.26.") {
         return Err(format!("{id}: unsupported Go version {version}"));
     }
     if !outcome["source"].is_object() || !outcome["diagnostics"].is_array() {
@@ -259,7 +259,7 @@ mod tests {
         let outcome = json!({
             "protocol_version":1, "oracle_mode":"config", "id":"case",
             "upstream_revision":"wrong", "default_config_sha256":"wrong",
-            "go_version":"go1.25.0", "source":{}, "config_sha256":"input",
+            "go_version":"go1.26.0", "source":{}, "config_sha256":"input",
             "effective":{}, "diagnostics":[], "error":null
         });
         let fields = outcome

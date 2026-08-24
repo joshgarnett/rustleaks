@@ -4,7 +4,7 @@
   "oracle_mode": "source",
   "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
-  "go_version": "go1.25.0",
+  "go_version": "go1.26.7",
   "platform": "darwin/arm64",
   "fresh_process_per_request": true,
   "deadline_seconds": 15,
@@ -23,7 +23,7 @@
       "records": 124
     },
     "outcomes-v1.jsonl": {
-      "sha256": "dd324a7751145cd5251cd6628d7395710cc68507cb5370989d1c9c33274a3918",
+      "sha256": "03c640cc0ea526d0eb8bbbdb71f7fbb7dc495da8d158fc758b094de8b5f2c7f9",
       "records": 124
     },
     "coverage-v1.json": {

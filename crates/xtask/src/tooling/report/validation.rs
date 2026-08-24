@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn missing_fields_and_mutated_provenance_fail() {
         assert!(required_str(&json!({}), "id", "test").is_err());
-        let outcome = json!({"go_version":"go1.25", "platform":"linux/amd64"});
-        runtime_negative_control(&outcome, "go1.25", "linux/amd64").unwrap();
+        let outcome = json!({"go_version":"go1.26", "platform":"linux/amd64"});
+        runtime_negative_control(&outcome, "go1.26", "linux/amd64").unwrap();
     }
 }
