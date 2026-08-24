@@ -10,7 +10,7 @@ repository.workspace = true
 
 [dependencies]
 aho-corasick = "1"
-base64 = "0.22"
+base64 = "0.23"
 semver = "1"
 regex-syntax = "=0.8.4"
 regex-automata = { version = "=0.4.7", default-features = false, features = ["std", "syntax", "nfa-pikevm", "unicode"] }
