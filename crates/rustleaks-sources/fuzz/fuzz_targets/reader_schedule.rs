@@ -11,6 +11,7 @@ use rustleaks_sources::{
 use libfuzzer_sys::fuzz_target;
 
 const MAX_INPUT_BYTES: usize = 4 * 1024;
+const MAX_BYTES_PER_SCHEDULED_READ: usize = 15;
 
 struct ScheduledReader {
     schedule: Vec<u8>,
@@ -95,6 +96,11 @@ fuzz_target!(|data: &[u8]| {
             SourceControl::Continue
         })
     });
-    assert!(events <= schedule.len().saturating_add(2));
+    // A valid scheduled read can be buffered and split into one event per
+    // byte, followed by one zero-byte error event for a pending error status.
+    let maximum_events = schedule
+        .len()
+        .saturating_mul(MAX_BYTES_PER_SCHEDULED_READ.saturating_add(1));
+    assert!(events <= maximum_events);
     let _ = black_box(result);
 });
