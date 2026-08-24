@@ -27,6 +27,12 @@ unrelated documentation, dependency, build, and behavior changes. Exclude
 caches, build output, local settings, credentials, raw findings, and temporary
 goal or audit records.
 
+Do not split files required for the commit to build or validate. Favor a small
+number of coherent commits over artificial file-by-file history. Incremental
+branch commits remain useful review and debugging checkpoints even though pull
+requests are squash merged; each checkpoint must still be understandable and
+reviewable.
+
 Do not use `git add .` or `git add -A` unless every affected path was read and
 belongs to the same commit. Stage explicit paths or hunks. Do not discard,
 stash, or overwrite unrelated work.
@@ -68,14 +74,28 @@ maintainer approval.
 Use `<type>(<scope>)!: <description>`. The optional scope and `!` remain inside
 the grammar. The description is imperative and present tense, starts with a
 lowercase word or project identifier as grammar requires, has no final period,
-and is at most 72 characters.
+and is at most 72 characters. Describe the resulting repository state, not the
+activity used to reach it.
 
-Choose the narrowest type: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`,
-`build`, `ci`, `style`, or `chore`. Use `chore` only when no other type fits.
-Choose a stable scope only when useful: `core`, `sources`, `report`, `cli`,
-`compat`, `xtask`, `bazel`, `deps`, `docs`, `ci`, or `release`. Omit a scope
-for a cross-cutting change. Never use a goal, agent, review round, issue number,
-or temporary task as a scope.
+Choose the narrowest type:
+
+- `feat` adds user-visible capability or public behavior;
+- `fix` corrects behavior, compatibility, security, or reliability;
+- `perf` improves measured performance without changing supported behavior;
+- `refactor` changes internal structure without changing behavior;
+- `test` changes tests, corpora, fixtures, or test infrastructure;
+- `docs` changes documentation only;
+- `build` changes Cargo, Bazel, toolchains, packaging, or build inputs;
+- `ci` changes automation workflows or CI configuration;
+- `style` applies formatting only without semantic change; and
+- `chore` is narrow maintenance that fits no more specific type.
+
+Use the standard Git-generated `Revert "..."` subject only for a real revert
+and preserve its explanation of the reverted commit. Choose a stable scope only
+when useful: `core`, `sources`, `report`, `cli`, `compat`, `xtask`, `bazel`,
+`deps`, `docs`, `ci`, or `release`. Omit a scope for a cross-cutting change.
+Never use a goal, agent, review round, issue number, or temporary task as a
+scope.
 
 These subjects use verified repository history and boundaries:
 
@@ -88,9 +108,10 @@ docs(security): record hosted repository controls
 Use `!` only for an intentional breaking change and add a
 `BREAKING CHANGE: ...` footer that explains the affected API and migration.
 Use a body for lasting reasons, compatibility effects, security constraints,
-or non-obvious decisions. Add only true trailers. Do not invent issue links,
-signoffs, co-authors, or reviews; prefer issue-closing references in the pull
-request.
+or non-obvious decisions. Do not include goal status, agent narration, review
+history, raw command logs, or post-goal planning references. Add only true
+trailers. Do not invent issue links, signoffs, co-authors, or reviews; prefer
+issue-closing references in the pull request.
 
 ## Commit and verify
 
@@ -104,4 +125,7 @@ git status --short
 ```
 
 Confirm the commit contains the intended group and the remaining tree contains
-only understood work.
+only understood work. When validation applies to the finalized staged tree and
+there are no unstaged tracked changes, record `git write-tree` before the
+commit and confirm it equals `git rev-parse HEAD^{tree}` afterward; a matching
+tree does not need retesting solely because the commit identifier changed.
