@@ -2086,27 +2086,24 @@ mod tests {
         );
 
         assert_eq!(GitSource::new("").arguments()[1].to_string_lossy(), ".");
+        let arguments = GitSource::new("repo space/é")
+            .mode(GitMode::LogArguments(vec![
+                OsString::from("-U3"),
+                OsString::from("--pretty=short"),
+                OsString::from("--no-patch"),
+            ]))
+            .arguments();
+        assert_eq!(arguments[0], "-C");
         assert_eq!(
-            GitSource::new("repo space/é")
-                .mode(GitMode::LogArguments(vec![
-                    OsString::from("-U3"),
-                    OsString::from("--pretty=short"),
-                    OsString::from("--no-patch"),
-                ]))
-                .arguments()
+            PathBuf::from(arguments[1].as_os_str()),
+            PathBuf::from("repo space/é")
+        );
+        assert_eq!(
+            arguments[2..]
                 .iter()
                 .map(|value| value.to_string_lossy())
                 .collect::<Vec<_>>(),
-            [
-                "-C",
-                "repo space/é",
-                "log",
-                "-p",
-                "-U0",
-                "-U3",
-                "--pretty=short",
-                "--no-patch",
-            ]
+            ["log", "-p", "-U0", "-U3", "--pretty=short", "--no-patch"]
         );
 
         let explicit = GitSource::new("repo").mode(GitMode::LogArguments(vec![

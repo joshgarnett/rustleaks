@@ -1887,7 +1887,8 @@ mod tests {
 
     #[test]
     fn cleans_member_names_without_touching_the_filesystem() {
-        assert_eq!(clean_member_name(b"a/./b/../c"), b"a/c");
+        let cleaned = if cfg!(windows) { b"a\\c" } else { b"a/c" };
+        assert_eq!(clean_member_name(b"a/./b/../c"), cleaned);
         assert_eq!(clean_member_name(b"../../a"), b"../../a");
     }
 
