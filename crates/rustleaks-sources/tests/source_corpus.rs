@@ -867,9 +867,14 @@ fn compare_fragments(
     let actual = actual.iter().map(comparable).collect::<Vec<_>>();
     let expected = expected
         .iter()
-        .map(comparable)
-        .map(|mut wire| {
-            if cfg!(windows) {
+        .map(|source| {
+            // Upstream yields a zero-byte read-error fragment before reaching
+            // its Windows path-projection branch.
+            let path_projected = !source.bytes_nil
+                || !decode(&source.raw_base64).is_empty()
+                || source.start_line != 0;
+            let mut wire = comparable(source);
+            if cfg!(windows) && path_projected {
                 // The oracle outcome is Darwin-native. Derive upstream's
                 // Windows FilePath/WindowsFilePath pair exactly: FilePath is
                 // slash-normalized, completed archive segments stay
@@ -1047,6 +1052,26 @@ fn corpus_comparators_reject_material_mutations() {
     assert_eq!(
         windows_archive_path(b"tree/outer.zip!middle/archive.tar!leaf/value"),
         br"tree/outer.zip!middle/archive.tar!leaf\value"
+    );
+
+    let read_error = FragmentWire {
+        raw_base64: String::new(),
+        bytes_base64: String::new(),
+        bytes_nil: true,
+        file_base64: encode(b"error.txt"),
+        windows_file_base64: String::new(),
+        symlink_file_base64: String::new(),
+        commit_base64: String::new(),
+        start_line: 0,
+        inherited_from_finding: false,
+    };
+    assert!(
+        compare_fragments(
+            std::slice::from_ref(&read_error),
+            std::slice::from_ref(&read_error),
+            false
+        )
+        .is_ok()
     );
 
     let wire = FragmentWire {
