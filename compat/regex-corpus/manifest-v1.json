@@ -3,7 +3,7 @@
   "protocol_version": 1,
   "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
-  "go_version": "go1.25.0",
+  "go_version": "go1.26.7",
   "unicode_version": "15.0.0",
   "expression_occurrence_count": 436,
   "default_expression_occurrence_count": 306,
@@ -31,7 +31,7 @@
       "records": 3618
     },
     "outcomes-v1.jsonl": {
-      "sha256": "a8e3ca94a0d1a7210b9260d738b35a623bad9b98f521688770dbce1130a0c394",
+      "sha256": "c2f83c069cd03b870483480fb287ebce640d55696c4c991b7a9baa5ae2b51a36",
       "records": 3618
     }
   }

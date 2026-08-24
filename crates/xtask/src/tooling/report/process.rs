@@ -122,9 +122,9 @@ fn selected_runtime(upstream: &Path, temporary: &TempDir) -> Result<(String, Str
     if fields.len() != 3 {
         return Err("selected Go runtime provenance was incomplete".into());
     }
-    if !go_1_25(fields[0]) {
+    if !go_1_26(fields[0]) {
         return Err(format!(
-            "selected Go toolchain {} is not pinned to Go 1.25",
+            "selected Go toolchain {} is not pinned to Go 1.26",
             fields[0]
         ));
     }
@@ -228,9 +228,9 @@ fn strip_runtime_provenance(
     Ok(normalized)
 }
 
-fn go_1_25(version: &str) -> bool {
-    version == "go1.25"
-        || version.strip_prefix("go1.25.").is_some_and(|patch| {
+fn go_1_26(version: &str) -> bool {
+    version == "go1.26"
+        || version.strip_prefix("go1.26.").is_some_and(|patch| {
             !patch.is_empty() && patch.bytes().all(|byte| byte.is_ascii_digit())
         })
 }
@@ -244,26 +244,26 @@ fn platform_component(component: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{go_1_25, platform_component, strip_runtime_provenance};
+    use super::{go_1_26, platform_component, strip_runtime_provenance};
 
     #[test]
     fn provenance_normalization_preserves_all_other_bytes() {
-        let raw = b"{\"a\":1,\"go_version\":\"go1.25.1\",\"platform\":\"darwin/arm64\",\"z\":2}\n";
+        let raw = b"{\"a\":1,\"go_version\":\"go1.26.1\",\"platform\":\"darwin/arm64\",\"z\":2}\n";
         assert_eq!(
-            strip_runtime_provenance(raw, "go1.25.1", "darwin/arm64").unwrap(),
+            strip_runtime_provenance(raw, "go1.26.1", "darwin/arm64").unwrap(),
             b"{\"a\":1,\"z\":2}\n"
         );
-        assert!(strip_runtime_provenance(raw, "go1.25.2", "darwin/arm64").is_err());
-        let duplicate = b"{\"a\":0,\"go_version\":\"go1.25\",\"platform\":\"x/y\",\"x\":1,\"go_version\":\"go1.25\",\"platform\":\"x/y\"}\n";
-        assert!(strip_runtime_provenance(duplicate, "go1.25", "x/y").is_err());
+        assert!(strip_runtime_provenance(raw, "go1.26.2", "darwin/arm64").is_err());
+        let duplicate = b"{\"a\":0,\"go_version\":\"go1.26\",\"platform\":\"x/y\",\"x\":1,\"go_version\":\"go1.26\",\"platform\":\"x/y\"}\n";
+        assert!(strip_runtime_provenance(duplicate, "go1.26", "x/y").is_err());
     }
 
     #[test]
     fn runtime_values_fail_closed() {
-        assert!(go_1_25("go1.25"));
-        assert!(go_1_25("go1.25.3"));
-        assert!(!go_1_25("go1.26"));
-        assert!(!go_1_25("go1.25rc1"));
+        assert!(go_1_26("go1.26"));
+        assert!(go_1_26("go1.26.3"));
+        assert!(!go_1_26("go1.25"));
+        assert!(!go_1_26("go1.26rc1"));
         assert!(platform_component("arm64"));
         assert!(!platform_component("arm-64"));
     }

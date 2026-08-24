@@ -120,9 +120,9 @@ fn selected_runtime(upstream: &Path, temporary: &TempDir) -> Result<String, Stri
     let version = std::str::from_utf8(&output)
         .map_err(|error| format!("go env returned non-UTF-8 output: {error}"))?
         .trim();
-    if !go_1_25(version) {
+    if !go_1_26(version) {
         return Err(format!(
-            "selected Go toolchain {version} is not pinned to Go 1.25"
+            "selected Go toolchain {version} is not pinned to Go 1.26"
         ));
     }
     Ok(version.to_owned())
@@ -194,22 +194,22 @@ pub(super) fn capture(
     Ok(output)
 }
 
-fn go_1_25(version: &str) -> bool {
-    version == "go1.25"
-        || version.strip_prefix("go1.25.").is_some_and(|patch| {
+fn go_1_26(version: &str) -> bool {
+    version == "go1.26"
+        || version.strip_prefix("go1.26.").is_some_and(|patch| {
             !patch.is_empty() && patch.bytes().all(|byte| byte.is_ascii_digit())
         })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::go_1_25;
+    use super::go_1_26;
 
     #[test]
     fn runtime_pin_rejects_other_release_shapes() {
-        assert!(go_1_25("go1.25"));
-        assert!(go_1_25("go1.25.0"));
-        assert!(!go_1_25("go1.26"));
-        assert!(!go_1_25("go1.25rc1"));
+        assert!(go_1_26("go1.26"));
+        assert!(go_1_26("go1.26.0"));
+        assert!(!go_1_26("go1.25"));
+        assert!(!go_1_26("go1.26rc1"));
     }
 }

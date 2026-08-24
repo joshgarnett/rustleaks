@@ -1097,8 +1097,8 @@ pub fn fuzz_parse_patch(
     input: &[u8],
     limits: GitLimits,
     cancellation: &dyn Cancellation,
-) -> Result<(usize, usize), ()> {
-    let files = parse_patch(input, limits, cancellation).map_err(|_| ())?;
+) -> Option<(usize, usize)> {
+    let files = parse_patch(input, limits, cancellation).ok()?;
     let mut hunks = 0_usize;
     for file in &files {
         assert!(
@@ -1117,7 +1117,7 @@ pub fn fuzz_parse_patch(
         hunks <= limits.hunks(),
         "successful Git patch hunk count exceeded its parser limit"
     );
-    Ok((files.len(), hunks))
+    Some((files.len(), hunks))
 }
 
 fn parse_commit_header(
@@ -1567,7 +1567,7 @@ fn git_date_to_rfc3339(value: &[u8], limit: usize) -> PatchResult<Option<Vec<u8>
     let zone = zone_text.as_bytes();
     if zone.len() != 5
         || !matches!(zone[0], b'+' | b'-')
-        || !zone[1..].iter().all(|byte| byte.is_ascii_digit())
+        || !zone[1..].iter().all(u8::is_ascii_digit)
     {
         return Ok(None);
     }

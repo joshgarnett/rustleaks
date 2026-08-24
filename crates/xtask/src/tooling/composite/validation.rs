@@ -101,7 +101,7 @@ pub(super) fn validate(canonical: &Canonical, observed: &Observed) -> Result<Sum
         }
         if !outcome["go_version"]
             .as_str()
-            .is_some_and(|version| version.starts_with("go1.25."))
+            .is_some_and(|version| version.starts_with("go1.26."))
         {
             return Err(format!("{id}: fresh composite Go version changed"));
         }

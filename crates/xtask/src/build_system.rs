@@ -368,10 +368,6 @@ fn check_profiles(root: &Path) -> Result<(), String> {
                 "rustc_1_51",
             ][..],
         ),
-        (
-            "rustleaks-compcol",
-            &["default", "alloc", "rar2", "rar3", "rar5"][..],
-        ),
         ("rustleaks-sevenz", &["minimal"][..]),
         ("rustleaks-sources", &["fuzzing", "minimal"][..]),
     ];
@@ -406,19 +402,6 @@ fn check_profiles(root: &Path) -> Result<(), String> {
         require_contains(&bzip2, closure, "rustleaks-bzip2 feature closure")?;
     }
 
-    let compcol = fs::read_to_string(root.join("crates/rustleaks-compcol/BUILD.bazel"))
-        .map_err(|error| format!("cannot read rustleaks-compcol BUILD file: {error}"))?;
-    require_not_contains(
-        named_call(&compcol, "rustleaks_library", "compcol")?,
-        "crate_features",
-        "rustleaks-compcol default target",
-    )?;
-    require_contains(
-        &compcol,
-        r#""rar2": ["alloc", "rar2"]"#,
-        "rustleaks-compcol rar2 feature closure",
-    )?;
-
     let sources = fs::read_to_string(root.join("crates/rustleaks-sources/BUILD.bazel"))
         .map_err(|error| format!("cannot read rustleaks-sources BUILD file: {error}"))?;
     require_not_contains(
@@ -437,12 +420,6 @@ fn check_profiles(root: &Path) -> Result<(), String> {
         "deps = _ARCHIVE_DEPS",
         "rustleaks-sources archives dependencies",
     )?;
-    require_contains(
-        &sources,
-        "//crates/rustleaks-compcol:profile_rar2",
-        "rustleaks-sources archives dependency feature",
-    )?;
-
     let cli = fs::read_to_string(root.join("crates/rustleaks-cli/BUILD.bazel"))
         .map_err(|error| format!("cannot read rustleaks-cli BUILD file: {error}"))?;
     require_contains(
@@ -557,6 +534,10 @@ fn check_interface(root: &Path) -> Result<(), String> {
         )?;
     }
 
+    check_just_interface(root)
+}
+
+fn check_just_interface(root: &Path) -> Result<(), String> {
     let justfile = fs::read_to_string(root.join("justfile"))
         .map_err(|error| format!("cannot read justfile: {error}"))?;
     require_contains(&justfile, "set default-list", "read-only default recipe")?;

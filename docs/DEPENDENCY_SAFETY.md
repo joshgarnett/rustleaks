@@ -16,7 +16,7 @@ higher-layer or owned codec dependencies in core, common native build helpers,
 native `-sys` crates, and any resolved package declaring Cargo's `links` key.
 Warning-denied target compilation remains separate evidence.
 
-The enforced cargo-geiger signal requires used unsafe constructs in these 25
+The enforced cargo-geiger signal requires used unsafe constructs in these 23
 package/version identities on every checked host:
 
 ```text
@@ -29,8 +29,7 @@ const-oid@0.10.2
 hybrid-array@0.4.14
 itoa@1.0.18
 lz4_flex@0.14.0
-lzma-rust2@0.16.5
-lzma-rust2@0.19.0
+lzma-rust2@0.20.0
 memchr@2.8.3
 proc-macro2@1.0.107
 regex-automata@0.4.7
@@ -38,11 +37,10 @@ semver@1.0.28
 serde_core@1.0.229
 serde_json@1.0.151
 sha2@0.11.0
-syn@3.0.3
+syn@3.0.4
 toml_parser@1.1.3+spec-1.1.0
 twox-hash@2.1.3
 unicode-ident@1.0.24
-winnow@0.7.15
 winnow@1.0.4
 zmij@1.0.23
 ```
@@ -66,9 +64,11 @@ The publishable core's relevant unsafe-bearing boundary is narrow:
   runtime library.
 
 The unpublished archive feature adds pure-Rust compression and container
-decoders. `lzma-rust2` has optimization disabled, `lz4_flex` selects checked
-and safe encode/decode features, and the in-tree bzip2, RAR, RAR2, and 7z forks
-forbid owned unsafe. XZ checksums retain exact-pinned `sha2`; its selected
+decoders. `lzma-rust2 0.20.0` has optimization disabled, `lz4_flex` selects
+checked and safe encode/decode features, and the retained in-tree bzip2, RAR,
+and 7z forks forbid owned unsafe. RAR2 uses upstream `compcol 0.3.1` with only
+`alloc` and `rar2`; its selected source matches the previously owned RAR2
+implementation. XZ checksums retain exact-pinned `sha2`; its selected
 portable/hardware dispatch is the principal intentional archive dependency
 unsafe boundary. Archive inputs are additionally constrained by depth, entry,
 member, cumulative, and spool limits and are covered by hostile-input harnesses.

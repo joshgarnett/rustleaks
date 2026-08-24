@@ -256,7 +256,7 @@ status = "implemented"
 
 [[behavior]]
 id = "REGEX-GOREGEX-005"
-description = "The private GoRegex frontend preserves Go 1.25 regexp compilation, Unicode-15 simple folding/classes, ASCII shorthands and boundaries, leftmost-first captures, empty iteration, malformed-UTF-8 RuneError behavior, and original byte spans behind an exact-pinned direct PikeVM backend."
+description = "The private GoRegex frontend preserves Go 1.26 regexp compilation, Unicode-15 simple folding/classes, ASCII shorthands and boundaries, leftmost-first captures, empty iteration, malformed-UTF-8 RuneError behavior, and original byte spans behind an exact-pinned direct PikeVM backend."
 go_evidence = "crates/rustleaks-compat/oracle; compat/regex-corpus"
 rust_evidence = "crates/rustleaks-core/src/regex; cargo xtask regex-check"
 status = "implemented"

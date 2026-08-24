@@ -56,8 +56,7 @@ fn rustleaks_executable() -> PathBuf {
 
 fn git_executable() -> PathBuf {
     let runfile = std::env::var_os("RUSTLEAKS_TEST_GIT_RUNFILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("git"));
+        .map_or_else(|| PathBuf::from("git"), PathBuf::from);
     resolve_runfile(runfile, "Git")
 }
 
@@ -91,7 +90,7 @@ fn resolve_runfile(runfile: PathBuf, label: &str) -> PathBuf {
     if runfile == Path::new("git") {
         return runfile;
     }
-    panic!("cannot resolve {label} runfile {runfile:?}");
+    panic!("cannot resolve {label} runfile {}", runfile.display());
 }
 
 fn output(cwd: &Path, arguments: &[&str]) -> Output {

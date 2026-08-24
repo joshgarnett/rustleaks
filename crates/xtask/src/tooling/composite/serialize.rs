@@ -52,7 +52,7 @@ pub(super) fn template(value: &Value) -> Result<Template, String> {
     }
     let go_version = value["go_version"]
         .as_str()
-        .filter(|version| version.starts_with("go1.25."))
+        .filter(|version| version.starts_with("go1.26."))
         .ok_or("fresh composite template Go version changed")?
         .to_owned();
     Ok(Template { go_version })

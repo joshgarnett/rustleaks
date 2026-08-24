@@ -9,7 +9,6 @@ _ARCHIVE_FEATURES = ["archives"]
 _FUZZING_FEATURES = ["fuzzing"]
 _ARCHIVE_DEPS = [
     "//crates/rustleaks-bzip2:rustleaks_bzip2",
-    "//crates/rustleaks-compcol:profile_rar2",
     "//crates/rustleaks-core:rustleaks_core",
     "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
     "//crates/rustleaks-sevenz:rustleaks_sevenz",

@@ -1,7 +1,7 @@
 # Go direct-detector corpus
 
 This directory freezes raw direct-fragment behavior from Gitleaks
-commit `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and Go 1.25.0. Generate it with:
+commit `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and Go 1.26.7. Generate it with:
 
 ```sh
 cargo xtask generate detect

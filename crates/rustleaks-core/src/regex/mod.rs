@@ -37,7 +37,7 @@ pub(crate) const fn backend_version() -> &'static str {
     BACKEND_VERSION
 }
 
-// Operational script names from Go 1.25's Unicode 15.0 regexp parser. Go
+// Operational script names from Go 1.26's Unicode 15.0 regexp parser. Go
 // canonicalizes an input name before looking it up in `unicode.Scripts`, whose
 // multiword keys retain underscores; those keys are consequently unresolvable
 // and must not be accepted here.

@@ -1,8 +1,9 @@
 module rustleaks-oracle
 
-go 1.24.11
+go 1.25.0
 
 require (
+	github.com/fatih/semgroup v1.2.0
 	github.com/spf13/viper v1.19.0
 	github.com/zricethezav/gitleaks/v8 v8.0.0
 )
@@ -21,7 +22,6 @@ require (
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/charmbracelet/lipgloss v0.5.0 // indirect
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
-	github.com/fatih/semgroup v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/gitleaks/go-gitdiff v0.9.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -65,11 +65,11 @@ require (
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
-	golang.org/x/crypto v0.35.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

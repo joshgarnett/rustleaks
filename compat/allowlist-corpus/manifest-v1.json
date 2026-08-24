@@ -4,7 +4,7 @@
   "oracle_mode": "allowlist",
   "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
-  "go_version": "go1.25.0",
+  "go_version": "go1.26.7",
   "scope": [
     "compiled-allowlist-methods",
     "raw-direct-fragment-allowlists",
@@ -34,7 +34,7 @@
       "records": 188
     },
     "outcomes-v1.jsonl": {
-      "sha256": "9cb2cf7bb909e137d9802f569dccd7f004610decfa2cf7e43d0676e5b14e72a3",
+      "sha256": "fb08622d6a9dba14b077fcc7d6d8c7051b55386c1425f6372f2f28f12962e8cd",
       "records": 188
     },
     "request-metadata-v1.jsonl": {

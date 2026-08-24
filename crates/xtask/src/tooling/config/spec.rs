@@ -15,14 +15,14 @@ pub(super) const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 pub(super) const CONFIG_SHA256: &str =
     "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 pub(super) const OUTCOMES_SHA256: &str =
-    "1548a91af225e4e28523804590e81629c24cfa3a28270c84decd2bbeceecb6e4";
+    "6a82a1466c54421b9997d07243fdbbc2b6cee7273fcf172090d8aa9e14be578a";
 pub(super) const INPUTS_SHA256: &str =
     "8c187d3d7942cf2ac11c1d27043c44b7923f6f311c2008c7dade62f559e5da7a";
 pub(super) const REQUESTS_SHA256: &str =
     "91efa888f8fb2a875892f61629b561ceeb52c82bd503fdf6d25de59b5b6373bb";
 pub(super) const SCHEMA_SHA256: &str =
     "8fe48dbcc0e67b94c06437ce2e4cc29322c28355cd810f22ef1901ed60b194f1";
-const MANIFEST_SHA256: &str = "b99961ce243231399d631100814851012dff6d97e3d647ca061cb1f69437ca83";
+const MANIFEST_SHA256: &str = "ee1896d06dd855d1c0711a8b4d3e52ad3866b05f3cbe17e60043e21867800307";
 pub(super) const ORACLE_MAIN_SHA256: &str =
     "8e2482a757fe49eece06694c1c8300c09b5752b9625ece8eee9fac18d39c1266";
 pub(super) const ORACLE_TEST_SHA256: &str =

@@ -722,7 +722,10 @@ fn extract_core_package(staging: &Path) -> Result<PathBuf, String> {
         .find(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("rustleaks-core-") && name.ends_with(".crate"))
+                .is_some_and(|name| name.starts_with("rustleaks-core-"))
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension == "crate")
         })
         .ok_or_else(|| {
             format!(
@@ -1140,8 +1143,7 @@ fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
         "hybrid-array@0.4.14",
         "itoa@1.0.18",
         "lz4_flex@0.14.0",
-        "lzma-rust2@0.16.5",
-        "lzma-rust2@0.19.0",
+        "lzma-rust2@0.20.0",
         "memchr@2.8.3",
         "proc-macro2@1.0.107",
         "regex-automata@0.4.7",
@@ -1149,11 +1151,10 @@ fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
         "serde_core@1.0.229",
         "serde_json@1.0.151",
         "sha2@0.11.0",
-        "syn@3.0.3",
+        "syn@3.0.4",
         "toml_parser@1.1.3+spec-1.1.0",
         "twox-hash@2.1.3",
         "unicode-ident@1.0.24",
-        "winnow@0.7.15",
         "winnow@1.0.4",
         "zmij@1.0.23",
     ]
@@ -1254,8 +1255,7 @@ fn unsafe_inventory_check() -> Result<(), String> {
     }
     let (common_count, selected_target_specific) = validate_unsafe_package_set(&unsafe_packages)?;
     println!(
-        "cargo-geiger matched the reviewed {}-package common unsafe-bearing inventory plus {selected_target_specific} target-specific packages; owned packages remain zero-unsafe",
-        common_count
+        "cargo-geiger matched the reviewed {common_count}-package common unsafe-bearing inventory plus {selected_target_specific} target-specific packages; owned packages remain zero-unsafe"
     );
     Ok(())
 }
@@ -1368,7 +1368,6 @@ fn owned_safety_check() -> Result<(), String> {
         "crates/rustleaks-bzip2/src/lib.rs",
         "crates/rustleaks-cli/src/lib.rs",
         "crates/rustleaks-cli/src/main.rs",
-        "crates/rustleaks-compcol/src/lib.rs",
         "crates/rustleaks-compat/src/lib.rs",
         "crates/rustleaks-compat/src/bin/rustleaks-perf.rs",
         "crates/rustleaks-core/src/lib.rs",
@@ -2856,10 +2855,10 @@ mod tests {
     #[test]
     fn unsafe_inventory_accepts_only_reviewed_target_variance() {
         let (common, target_specific) = reviewed_unsafe_packages();
-        assert_eq!(validate_unsafe_package_set(&common).unwrap(), (25, 0));
+        assert_eq!(validate_unsafe_package_set(&common).unwrap(), (23, 0));
 
         let union = common.union(&target_specific).cloned().collect();
-        assert_eq!(validate_unsafe_package_set(&union).unwrap(), (25, 2));
+        assert_eq!(validate_unsafe_package_set(&union).unwrap(), (23, 2));
 
         let missing = common.iter().skip(1).cloned().collect::<BTreeSet<_>>();
         assert!(validate_unsafe_package_set(&missing).is_err());
