@@ -8,16 +8,15 @@ the project remains unpublished. Older snapshots are not supported.
 ## Reporting
 
 Do not include real credentials, exploit payloads, or non-public vulnerability
-details in a public issue. The intended intake route is GitHub private
-vulnerability reporting. It has not been enabled and tested, so this policy
-does not yet provide a verified private advisory endpoint. The route must be
-enabled, tested, and recorded here before any public package release. Until
-then, publication remains blocked.
+details in a public issue. Use [GitHub private vulnerability
+reporting](https://github.com/joshgarnett/rustleaks/security/advisories/new).
+The route was enabled and verified through the authenticated repository API on
+2026-08-24. Setup did not submit a live vulnerability report.
 
-When a private report route is available, maintainers should acknowledge a
-report within three business days, provide an initial assessment within seven
-business days, coordinate disclosure with the reporter, and avoid publishing
-details before a fix or agreed disclosure date.
+Maintainers should acknowledge a private report within three business days,
+provide an initial assessment within seven business days, coordinate
+disclosure with the reporter, and avoid publishing details before a fix or
+agreed disclosure date.
 
 ## Security expectations
 

@@ -83,7 +83,7 @@ unexplained fuzz, sanitizer, advisory, provenance, or integrity failure.
 - Exercise this procedure before the first public release and after a material
   reporting, CI, release, or ownership change.
 
-The repository currently has no verified private intake endpoint documented in
-`SECURITY.md`. Do not send vulnerability details to a public issue. Enabling
-GitHub private vulnerability reporting and recording the tested route are
-release blockers for the hosted repository setup.
+The verified private intake endpoint is documented in `SECURITY.md`. Do not
+send vulnerability details to a public issue. Setup verified that the route is
+enabled without submitting a live report. Exercise the reporting and response
+procedure before the first public release.
