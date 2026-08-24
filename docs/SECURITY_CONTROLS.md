@@ -80,8 +80,9 @@ is a separate trust decision and requires explicit maintainer review.
 The exact normal dependency graph, direct build scripts, native code, and safe
 API reasoning are documented in [`DEPENDENCY_SAFETY.md`](DEPENDENCY_SAFETY.md)
 and [`DEPENDENCIES.md`](DEPENDENCIES.md). `cargo-geiger` is used only as a
-dependency-delta inventory. Its current exact unsafe-bearing package set is
-enforced by `xtask`; it is not a security conclusion.
+dependency-delta inventory. Its common unsafe-bearing package set and reviewed
+target-specific additions are enforced by `xtask`; it is not a security
+conclusion.
 
 The public API snapshot is the pre-publication SemVer baseline. Before a
 release candidate, maintainers must run `cargo-semver-checks` for every public crate

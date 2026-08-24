@@ -1119,6 +1119,68 @@ fn unsafe_count(value: &serde_json::Value) -> u64 {
     }
 }
 
+fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
+    let common = [
+        "aho-corasick@1.1.5",
+        "alloc-no-stdlib@2.0.4",
+        "alloc-stdlib@0.2.4",
+        "block-buffer@0.12.1",
+        "brotli-decompressor@5.0.3",
+        "const-oid@0.10.2",
+        "hybrid-array@0.4.14",
+        "itoa@1.0.18",
+        "lz4_flex@0.14.0",
+        "lzma-rust2@0.16.5",
+        "lzma-rust2@0.19.0",
+        "memchr@2.8.3",
+        "proc-macro2@1.0.107",
+        "regex-automata@0.4.7",
+        "semver@1.0.28",
+        "serde_core@1.0.229",
+        "serde_json@1.0.151",
+        "sha2@0.11.0",
+        "syn@3.0.3",
+        "toml_parser@1.1.3+spec-1.1.0",
+        "twox-hash@2.1.3",
+        "unicode-ident@1.0.24",
+        "winnow@0.7.15",
+        "winnow@1.0.4",
+        "zmij@1.0.23",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    let target_specific = ["cpufeatures@0.3.0", "libc@0.2.189"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    (common, target_specific)
+}
+
+fn validate_unsafe_package_set(
+    unsafe_packages: &BTreeSet<String>,
+) -> Result<(usize, usize), String> {
+    let (common, target_specific) = reviewed_unsafe_packages();
+    let missing = common
+        .difference(unsafe_packages)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let unexpected = unsafe_packages
+        .difference(&common)
+        .filter(|package| !target_specific.contains(*package))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        return Err(format!(
+            "cargo-geiger unsafe-bearing package set changed: missing common {missing:?}, unexpected {unexpected:?}, got {unsafe_packages:?}"
+        ));
+    }
+    Ok((
+        common.len(),
+        unsafe_packages.intersection(&target_specific).count(),
+    ))
+}
+
 fn unsafe_inventory_check() -> Result<(), String> {
     let root = workspace_root()?;
     require_exact_tool_version(
@@ -1180,46 +1242,10 @@ fn unsafe_inventory_check() -> Result<(), String> {
             unsafe_packages.insert(format!("{name}@{version}"));
         }
     }
-    let expected = [
-        "aho-corasick@1.1.5",
-        "alloc-no-stdlib@2.0.4",
-        "alloc-stdlib@0.2.4",
-        "block-buffer@0.12.1",
-        "brotli-decompressor@5.0.3",
-        "const-oid@0.10.2",
-        "cpufeatures@0.3.0",
-        "hybrid-array@0.4.14",
-        "itoa@1.0.18",
-        "libc@0.2.189",
-        "lz4_flex@0.14.0",
-        "lzma-rust2@0.16.5",
-        "lzma-rust2@0.19.0",
-        "memchr@2.8.3",
-        "proc-macro2@1.0.107",
-        "regex-automata@0.4.7",
-        "semver@1.0.28",
-        "serde_core@1.0.229",
-        "serde_json@1.0.151",
-        "sha2@0.11.0",
-        "syn@3.0.3",
-        "toml_parser@1.1.3+spec-1.1.0",
-        "twox-hash@2.1.3",
-        "unicode-ident@1.0.24",
-        "winnow@0.7.15",
-        "winnow@1.0.4",
-        "zmij@1.0.23",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<BTreeSet<_>>();
-    if unsafe_packages != expected {
-        return Err(format!(
-            "cargo-geiger unsafe-bearing package set changed: expected {expected:?}, got {unsafe_packages:?}"
-        ));
-    }
+    let (common_count, selected_target_specific) = validate_unsafe_package_set(&unsafe_packages)?;
     println!(
-        "cargo-geiger matched the reviewed {}-package unsafe-bearing inventory; owned packages remain zero-unsafe",
-        expected.len()
+        "cargo-geiger matched the reviewed {}-package common unsafe-bearing inventory plus {selected_target_specific} target-specific packages; owned packages remain zero-unsafe",
+        common_count
     );
     Ok(())
 }
@@ -2782,6 +2808,7 @@ fn full_parity() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::Path;
     use std::thread;
@@ -2790,15 +2817,31 @@ mod tests {
     use super::{
         CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, build_system,
         composite_test_executable_from_messages, normalize_workspace_dependency_tree,
-        parse_civil_day, resource_test_command, run_resource_test,
+        parse_civil_day, resource_test_command, reviewed_unsafe_packages, run_resource_test,
         validate_core_repository_metadata, validate_perf_budget, validate_perf_records,
         validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
-        workspace_root,
+        validate_unsafe_package_set, workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
     const TIMEOUT_PROBE_TEST: &str = "tests::resource_launcher_timeout_probe_child";
     const RESOURCE_SELECTOR: &str = "RUSTLEAKS_BOUNDED_RESOURCE_TEST";
+
+    #[test]
+    fn unsafe_inventory_accepts_only_reviewed_target_variance() {
+        let (common, target_specific) = reviewed_unsafe_packages();
+        assert_eq!(validate_unsafe_package_set(&common).unwrap(), (25, 0));
+
+        let union = common.union(&target_specific).cloned().collect();
+        assert_eq!(validate_unsafe_package_set(&union).unwrap(), (25, 2));
+
+        let missing = common.iter().skip(1).cloned().collect::<BTreeSet<_>>();
+        assert!(validate_unsafe_package_set(&missing).is_err());
+
+        let mut unexpected = common;
+        unexpected.insert("unreviewed@1.0.0".into());
+        assert!(validate_unsafe_package_set(&unexpected).is_err());
+    }
 
     #[test]
     fn civil_dates_reject_impossible_exemption_deadlines() {
