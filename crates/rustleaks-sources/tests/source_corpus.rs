@@ -183,6 +183,7 @@ fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions(
     let mut unobservable_reader_fragment_dispositions = 0_usize;
 
     for request in requests {
+        let _context = RequestContext(&request.id);
         let expected = outcomes.get(&request.id).expect("matching outcome");
         if cfg!(windows) && windows_platform_disposition(&request) {
             // The frozen outcomes are Darwin-native. Upstream applies the
@@ -219,6 +220,16 @@ fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions(
     assert_eq!(replayed + dispositions, request_count);
     assert_eq!(dispositions, if cfg!(windows) { 10 } else { 1 });
     assert_eq!(unobservable_reader_fragment_dispositions, 9);
+}
+
+struct RequestContext<'a>(&'a str);
+
+impl Drop for RequestContext<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("source corpus request failed: {}", self.0);
+        }
+    }
 }
 
 fn windows_platform_disposition(request: &Request) -> bool {
@@ -831,11 +842,15 @@ fn detect(
 }
 
 fn assert_fragments(request: &Request, actual: &[FragmentWire], expected: &[FragmentWire]) {
-    compare_fragments(actual, expected)
+    compare_fragments(actual, expected, request.operation == "files")
         .unwrap_or_else(|message| panic!("{} {message}", request.id));
 }
 
-fn compare_fragments(actual: &[FragmentWire], expected: &[FragmentWire]) -> Result<(), String> {
+fn compare_fragments(
+    actual: &[FragmentWire],
+    expected: &[FragmentWire],
+    native_outer_path: bool,
+) -> Result<(), String> {
     let comparable = |wire: &FragmentWire| FragmentWire {
         raw_base64: wire.raw_base64.clone(),
         bytes_base64: wire.raw_base64.clone(),
@@ -866,7 +881,7 @@ fn compare_fragments(actual: &[FragmentWire], expected: &[FragmentWire]) -> Resu
                     .collect::<Vec<_>>();
                 wire.file_base64 = encode(&normalized);
                 if wire.windows_file_base64.is_empty() {
-                    let windows = if normalized.contains(&b'!') {
+                    let windows = if normalized.contains(&b'!') || native_outer_path {
                         windows_archive_path(&normalized)
                     } else {
                         original
@@ -1051,11 +1066,11 @@ fn corpus_comparators_reject_material_mutations() {
     };
     let mut changed_directory = wire.clone();
     changed_directory.file_base64 = encode(b"tree/b");
-    assert!(compare_fragments(&[changed_directory], std::slice::from_ref(&wire)).is_err());
+    assert!(compare_fragments(&[changed_directory], std::slice::from_ref(&wire), true).is_err());
 
     let mut changed_windows = wire.clone();
     changed_windows.windows_file_base64 = encode(br"tree\wrong");
-    assert!(compare_fragments(&[changed_windows], std::slice::from_ref(&wire)).is_err());
+    assert!(compare_fragments(&[changed_windows], std::slice::from_ref(&wire), true).is_err());
 
     let second = FragmentWire {
         raw_base64: encode(b"second"),
@@ -1072,7 +1087,8 @@ fn corpus_comparators_reject_material_mutations() {
     assert!(
         compare_fragments(
             &[wire.clone(), changed_second.clone()],
-            &[wire.clone(), second]
+            &[wire.clone(), second],
+            true
         )
         .is_err()
     );
