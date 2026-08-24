@@ -83,6 +83,9 @@ The description is imperative and present tense, starts with a lowercase word
 or project identifier as grammar requires, has no final period, and is at most
 72 characters. `!` requires a `BREAKING CHANGE: ...` footer.
 
+Use the standard Git-generated `Revert "..."` subject only for a real revert,
+and preserve its explanation of the reverted commit.
+
 Use the narrowest type: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`,
 `build`, `ci`, `style`, or `chore`. Use `chore` only when no other type fits.
 When useful, choose the narrowest stable scope: `core`, `sources`, `report`,
