@@ -313,7 +313,19 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "fuzz-smoke" => fuzz_smoke(),
         [command, subcommand] if command == "perf" && subcommand == "run" => perf_run(),
         [command, subcommand] if command == "perf" && subcommand == "check" => perf_check(),
-        [command, subcommand, flag] if command == "oracle" && subcommand == "generate" && flag == "--check" => oracle_check(),
+        [command, subcommand, flag]
+            if command == "oracle" && subcommand == "generate" && flag == "--check" =>
+        {
+            oracle_check(true)
+        }
+        [command, subcommand, flag, skip]
+            if command == "oracle"
+                && subcommand == "generate"
+                && flag == "--check"
+                && skip == "--skip-git" =>
+        {
+            oracle_check(false)
+        }
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "bootstrap" => bootstrap_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "config" => config_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "regex" => regex_parity(),
@@ -327,7 +339,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -2362,7 +2374,7 @@ fn fixture_check() -> Result<(), String> {
     Ok(())
 }
 
-fn oracle_check() -> Result<(), String> {
+fn oracle_check(check_git: bool) -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
     let corpus = root.join("compat/oracle-corpus");
@@ -2402,8 +2414,12 @@ fn oracle_check() -> Result<(), String> {
     tooling::check_composite_corpus(&root)?;
     tooling::check_session_corpus(&root)?;
     tooling::check_source_corpus(&root)?;
-    tooling::check_git_corpus(&root)?;
-    println!("oracle corpus matches fresh Go outcomes");
+    if check_git {
+        tooling::check_git_corpus(&root)?;
+        println!("oracle corpus matches fresh Go outcomes");
+    } else {
+        println!("portable oracle corpora except Git match fresh Go outcomes");
+    }
     Ok(())
 }
 

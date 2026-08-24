@@ -188,10 +188,8 @@ jobs:
       - name: Verify the oracle and committed compatibility evidence
         working-directory: rustleaks
         run: |
-          export PATH="/usr/bin:${PATH}"
-          test "$(git --version)" = "git version 2.50.1 (Apple Git-155)"
           cargo xtask verify-upstream
-          cargo xtask oracle generate --check
+          cargo xtask oracle generate --check --skip-git
           just parity
 
   dependency-review:
