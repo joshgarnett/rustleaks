@@ -374,11 +374,11 @@ jobs:
           EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
           HOST_PLATFORM: ${{ matrix.host_platform }}
         run: |
-          bazelisk --output_user_root=C:/b build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build //:docs
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build //:docs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b test --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   required:
