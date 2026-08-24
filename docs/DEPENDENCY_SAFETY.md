@@ -5,30 +5,16 @@ rejects owned production `unsafe`. That statement does not extend to the
 complete dependency graph: selected registry dependencies contain internal
 unsafe code.
 
-The reviewed normal-runtime graphs at `0.1.0-alpha.1` are identified by these
-normalized `cargo tree --locked --edges normal --prefix none --target all`
-SHA-256 values. Normalization removes only the absolute workspace checkout
-path; external path identities remain part of the digest.
-The all-target union fails closed on target-specific dependency changes even
-when the release gate runs on macOS; warning-denied target compilation remains
-separate evidence and native Linux/Windows execution remains follow-up work.
+Dependency review uses the locked Cargo and Bazel resolutions, cargo-deny,
+cargo-vet, RustSec, and the unsafe inventory. It does not fingerprint complete
+dependency trees. Exact tree digests changed for every routine version update
+without identifying whether the change crossed a security boundary.
 
-| Root and features | Tree SHA-256 |
-| --- | --- |
-| `rustleaks-core` | `d58ae3874c4c31586e859cab2ac5659608b55c07e7c771991b37700d56faadc1` |
-| `rustleaks-report` | `31d643c37aef98750509103e02a81c8a54c36593899db6f237ce8b4aa21c6b88` |
-| `rustleaks-sources` | `8bb90a9651d9f074b2362f23efbfb0dde8edfd12f82a76a606e5048d102232d9` |
-| `rustleaks-sources --all-features` | `507c513d16c3667a362f7f1f62b43c81e0b6bd6bf27d73fe38f85bc961f44b32` |
-| `rustleaks-cli --all-features` | `abf38e45586827bbc0320814a8dcb7a5a5bafdea44f65f5bf7772b2426116877` |
-
-The workspace-wide locked resolution contains custom build targets in
-`crc32fast 1.5.1`, `libc 0.2.189`, `proc-macro2 1.0.107`, `quote 1.0.47`,
-`rustix 1.1.4`, `serde 1.0.229`, `serde_core 1.0.229`, `serde_json 1.0.151`,
-`thiserror 2.0.20`, and `zmij 1.0.23`. No resolved package declares Cargo's
-native `links` key, and the selected normal all-feature source graph contains
-no `cc`, `cmake`, `bindgen`, `pkg-config`, `vcpkg`, or native `-sys` crate.
-Several listed build targets belong only to target-specific development tools;
-the exact normal-runtime graph hashes above remain the publication boundary.
+The targeted dependency gate evaluates the all-target normal graph for
+`rustleaks-core` and the all-feature graph for `rustleaks-sources`. It rejects
+higher-layer or owned codec dependencies in core, common native build helpers,
+native `-sys` crates, and any resolved package declaring Cargo's `links` key.
+Warning-denied target compilation remains separate evidence.
 
 The enforced cargo-geiger signal requires used unsafe constructs in these 25
 package/version identities on every checked host:
