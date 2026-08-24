@@ -509,6 +509,9 @@ struct Translator<'a> {
     pending_flag_directives: String,
     current_operand_start: Option<usize>,
     current_operand_swap_greed: bool,
+    expression_repeat_product: u32,
+    current_operand_repeat_product: u32,
+    group_repeat_products: Vec<u32>,
     repeat_wrap_start: Option<usize>,
 }
 
@@ -531,6 +534,9 @@ impl<'a> Translator<'a> {
             pending_flag_directives: String::new(),
             current_operand_start: None,
             current_operand_swap_greed: false,
+            expression_repeat_product: 0,
+            current_operand_repeat_product: 0,
+            group_repeat_products: Vec::new(),
             repeat_wrap_start: None,
         }
     }
@@ -579,6 +585,11 @@ impl<'a> Translator<'a> {
                     }
                     self.current_operand_start = self.group_output_starts.pop();
                     self.current_operand_swap_greed = self.flags.swap_greed;
+                    if let Some(outer_product) = self.group_repeat_products.pop() {
+                        self.current_operand_repeat_product = self.expression_repeat_product.max(1);
+                        self.expression_repeat_product =
+                            outer_product.max(self.current_operand_repeat_product);
+                    }
                     self.repeat_state = RepeatState::None;
                     self.can_repeat = true;
                 }
@@ -612,6 +623,7 @@ impl<'a> Translator<'a> {
                     self.repeat_state = RepeatState::None;
                     self.can_repeat = false;
                     self.current_operand_start = None;
+                    self.current_operand_repeat_product = 0;
                 }
                 _ => {
                     self.begin_atom();
@@ -647,6 +659,15 @@ impl<'a> Translator<'a> {
         self.flush_pending_flags();
         self.current_operand_start = Some(self.output.len());
         self.current_operand_swap_greed = self.flags.swap_greed;
+        self.current_operand_repeat_product = 1;
+        self.expression_repeat_product = self.expression_repeat_product.max(1);
+    }
+
+    fn begin_group(&mut self) {
+        self.group_repeat_products
+            .push(self.expression_repeat_product);
+        self.expression_repeat_product = 0;
+        self.current_operand_repeat_product = 0;
     }
 
     fn prepare_repetition(&mut self) {
@@ -1039,6 +1060,7 @@ impl<'a> Translator<'a> {
             self.flush_pending_flags();
             let output_start = self.output.len();
             self.begin_capturing_group(start)?;
+            self.begin_group();
             self.output.push('(');
             self.offset += 1;
             self.group_flags.push(self.flags);
@@ -1052,6 +1074,7 @@ impl<'a> Translator<'a> {
             self.repeat_wrap_start = None;
             self.flush_pending_flags();
             let output_start = self.output.len();
+            self.begin_group();
             self.output.push_str("(?:");
             self.offset += 3;
             self.group_flags.push(self.flags);
@@ -1097,6 +1120,7 @@ impl<'a> Translator<'a> {
         }
 
         let index = self.capture_names.len();
+        self.begin_group();
         self.output.push_str("(?P<g");
         self.output.push_str(&index.to_string());
         self.output.push('>');
@@ -1172,6 +1196,7 @@ impl<'a> Translator<'a> {
                         self.repeat_wrap_start = None;
                         self.flush_pending_flags();
                         let output_start = self.output.len();
+                        self.begin_group();
                         self.output.push_str(&directive);
                         self.group_flags.push(self.flags);
                         self.group_capturing.push(false);
@@ -1211,6 +1236,7 @@ impl<'a> Translator<'a> {
                     "invalid repeat count: minimum exceeds maximum",
                 ));
             }
+            self.apply_repeat_product(start, minimum, maximum)?;
             self.prepare_repetition();
             self.output.push_str(&self.source[start..end]);
             if self.repetition_greed_is_inverted() {
@@ -1226,6 +1252,33 @@ impl<'a> Translator<'a> {
             self.repeat_state = RepeatState::None;
             self.can_repeat = true;
         }
+        Ok(())
+    }
+
+    fn apply_repeat_product(
+        &mut self,
+        offset: usize,
+        minimum: u32,
+        maximum: Option<u32>,
+    ) -> Result<(), GoRegexError> {
+        let factor = maximum.unwrap_or(minimum);
+        if (minimum >= 2 || maximum.is_some_and(|value| value >= 2))
+            && factor != 0
+            && self.current_operand_repeat_product > MAX_REPEAT / factor
+        {
+            return Err(Self::syntax(
+                offset,
+                "invalid repeat count: nested repetition exceeds 1000",
+            ));
+        }
+        self.current_operand_repeat_product = if factor == 0 {
+            0
+        } else {
+            self.current_operand_repeat_product * factor
+        };
+        self.expression_repeat_product = self
+            .expression_repeat_product
+            .max(self.current_operand_repeat_product);
         Ok(())
     }
 
@@ -1719,6 +1772,16 @@ mod tests {
             GoRegex::compile(&above_nest_limit),
             Err(GoRegexError::Backend { .. })
         ));
+    }
+
+    #[test]
+    fn enforces_go_nested_repeat_product_limit_before_backend_compilation() {
+        assert!(GoRegex::compile(r"(?:a{0,10}){0,100}").is_ok());
+        assert!(matches!(
+            GoRegex::compile(r"(?:a{0,200}){0,200}"),
+            Err(GoRegexError::Syntax { offset: 12, .. })
+        ));
+        assert!(GoRegex::compile(r"(?:a{1000}){0}").is_ok());
     }
 
     #[test]

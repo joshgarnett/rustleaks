@@ -23,7 +23,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 
 | Surface | Bound or ownership |
 | --- | --- |
-| Regex compile | 1 MiB source, nesting 4,096, compiled NFA 256 MiB; limits are per expression |
+| Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, compiled NFA 256 MiB; limits are per expression |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
