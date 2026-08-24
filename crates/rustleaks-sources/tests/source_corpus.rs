@@ -362,12 +362,16 @@ fn issue_fragment(issue: &SourceIssue, mapping: Option<&PathMapping>) -> Fragmen
         || Fragment::new(Vec::<u8>::new()),
         |path| {
             let logical = LogicalPath::from_native(path);
-            let mut builder =
-                Fragment::builder(Vec::<u8>::new()).file_path(logical.normalized().as_bytes());
-            if let Some(original) = logical.windows_original() {
-                builder = builder.windows_file_path(original.as_bytes());
-            }
-            builder.build()
+            // Upstream constructs error fragments before its successful-read
+            // Windows projection. Preserve the native spelling in FilePath
+            // and leave WindowsFilePath empty, as FileSource::error_fragment
+            // does for observable read errors.
+            let file = logical
+                .windows_original()
+                .unwrap_or_else(|| logical.normalized());
+            Fragment::builder(Vec::<u8>::new())
+                .file_path(file.as_bytes())
+                .build()
         },
     );
     if let Some(mapping) = mapping {
