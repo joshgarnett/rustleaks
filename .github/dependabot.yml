@@ -7,15 +7,16 @@ updates:
       day: monday
       time: "06:00"
       timezone: America/Detroit
-    open-pull-requests-limit: 5
-  - package-ecosystem: bazel
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:15"
-      timezone: America/Detroit
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      rust-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      rust-security-fixes:
+        applies-to: security-updates
+        patterns:
+          - "*"
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:
@@ -31,4 +32,9 @@ updates:
       day: monday
       time: "06:45"
       timezone: America/Detroit
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
