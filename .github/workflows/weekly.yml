@@ -1,0 +1,115 @@
+name: Weekly Security
+
+on:
+  schedule:
+    - cron: "53 5 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
+jobs:
+  miri-and-supply-chain:
+    name: Miri, unsafe, advisory, and vet policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+      - name: Install pinned security tools
+        working-directory: rustleaks
+        run: |
+          cargo install cargo-deny --locked --version 0.19.9
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo install cargo-vet --locked --version 0.10.2
+          cargo install cargo-geiger --locked --version 0.13.0
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
+          cargo +nightly-2026-08-21 miri setup
+      - name: Run the complete local security policy
+        working-directory: rustleaks
+        run: just security
+
+  slower-fuzz:
+    name: Slower archive and large-input fuzzing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-bazelisk: "false"
+      - name: Install pinned fuzz tools
+        working-directory: rustleaks
+        run: |
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
+          cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Hydrate locked fuzz dependencies
+        working-directory: rustleaks
+        run: |
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+      - name: Run slower campaigns
+        working-directory: rustleaks
+        env:
+          RUSTLEAKS_FUZZ_RUNS: "1000000"
+          RUSTLEAKS_FUZZ_MAX_TOTAL_TIME: "600"
+        run: just fuzz-smoke
+
+  coverage:
+    name: Bazel coverage review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.25.0
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
+      - name: Produce the combined Bazel coverage report
+        working-directory: rustleaks
+        run: bazelisk coverage //:test --combined_report=lcov
+      - name: Retain the coverage report for review
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rustleaks-weekly-coverage
+          path: rustleaks/bazel-out/_coverage/_coverage_report.dat
+          if-no-files-found: error
+          retention-days: 7

@@ -298,7 +298,7 @@ fn logical_root_drives_early_pruning_and_emitted_paths_without_changing_traversa
     assert_eq!(fragments[0].file_path().as_bytes(), b"repo/keep");
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 #[test]
 fn file_symlinks_preserve_alias_and_target_and_handle_failures() {
     let tree = TempTree::new("symlinks");
@@ -353,7 +353,7 @@ fn file_symlinks_preserve_alias_and_target_and_handle_failures() {
     assert_eq!(collect(&mut loop_source).1, [SourceIssueKind::SymlinkLoop]);
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 #[test]
 fn directory_symlink_is_never_traversed() {
     let tree = TempTree::new("directory-symlink");
@@ -367,6 +367,40 @@ fn directory_symlink_is_never_traversed() {
     let (fragments, issues) = collect(&mut source);
     assert!(fragments.is_empty());
     assert_eq!(issues, [SourceIssueKind::DirectorySymlink]);
+}
+
+#[cfg(windows)]
+#[test]
+fn zero_length_symlink_metadata_is_filtered_before_resolution() {
+    let tree = TempTree::new("zero-length-symlinks");
+    let outside = TempTree::new("zero-length-symlink-targets");
+    let file_target = outside.path().join("file");
+    let directory_target = outside.path().join("directory");
+    fs::write(&file_target, b"target bytes").expect("write file target");
+    fs::create_dir(&directory_target).expect("create directory target");
+
+    let file_alias = tree.path().join("file-alias");
+    let directory_alias = tree.path().join("directory-alias");
+    create_file_symlink(&file_target, &file_alias);
+    create_directory_symlink(&directory_target, &directory_alias);
+    assert_eq!(
+        fs::symlink_metadata(&file_alias)
+            .expect("file symlink metadata")
+            .len(),
+        0
+    );
+    assert_eq!(
+        fs::symlink_metadata(&directory_alias)
+            .expect("directory symlink metadata")
+            .len(),
+        0
+    );
+
+    let options = DirectoryOptions::default().follow_symlinks(true);
+    let mut source = DirectorySource::with_options(tree.path(), options);
+    let (fragments, issues) = collect(&mut source);
+    assert!(fragments.is_empty());
+    assert!(issues.is_empty());
 }
 
 struct FragmentSource {
@@ -600,9 +634,4 @@ fn create_directory_symlink(target: &Path, alias: &Path) {
 #[cfg(unix)]
 fn resolved_expected(path: &Path) -> PathBuf {
     fs::canonicalize(path).expect("canonical target")
-}
-
-#[cfg(windows)]
-fn resolved_expected(path: &Path) -> PathBuf {
-    path.to_path_buf()
 }

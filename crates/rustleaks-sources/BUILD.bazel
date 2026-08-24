@@ -69,6 +69,18 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+_GIT_TEST_DATA = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": ["@git//:git"],
+})
+
+_GIT_TEST_ENV = select({
+    "@platforms//os:windows": {"RUSTLEAKS_TEST_GIT_RUNFILE": "git"},
+    "//conditions:default": {
+        "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
+    },
+})
+
 rust_binary(
     name = "panic_abort_policy",
     aliases = aliases(),
@@ -89,12 +101,9 @@ rust_binary(
         crate_features = _ARCHIVE_FEATURES,
         data = [
             "//compat:all",
-            "@git//:git",
-        ],
+        ] + _GIT_TEST_DATA,
         deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-        env = {
-            "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
-        },
+        env = _GIT_TEST_ENV,
         srcs = ["tests/support/mod.rs"],
     )
     for test in [

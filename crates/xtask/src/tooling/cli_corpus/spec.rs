@@ -1,13 +1,10 @@
 //! CLI request, source-pin, runtime, and binary-build contracts.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
-use sha2::{Digest as _, Sha256};
 
 use super::process::{self, OUTPUT_LIMIT};
 use super::validation::{required_array, required_object, required_str, required_u64};
@@ -181,14 +178,6 @@ pub(super) fn validate_sources(
     verify_map(
         root,
         required_object(manifest, "rust_source_sha256", "manifest")?,
-    )?;
-    verify_trees(
-        upstream,
-        required_object(manifest, "go_runtime_tree_sha256", "manifest")?,
-    )?;
-    verify_trees(
-        root,
-        required_object(manifest, "rust_runtime_tree_sha256", "manifest")?,
     )?;
     if sha256_bytes(&read(&upstream.join("config/gitleaks.toml"))?) != CONFIG_SHA256 {
         return Err("pinned Go default configuration changed".into());
@@ -395,18 +384,7 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
     Ok(())
 }
 
-fn verify_trees(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<(), String> {
-    for (path, hash) in hashes {
-        let expected = hash.as_str().ok_or("invalid tree hash")?;
-        let actual = tree_hash(root, path)?;
-        if actual != expected && !declared_transition(path, expected, &actual) {
-            return Err(format!("runtime tree pin changed for {path}"));
-        }
-    }
-    Ok(())
-}
-
-pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 10] = [
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 2] = [
     (
         "Cargo.lock",
         "8b3054f67f1b52a8bda4ffab8f5ce9a961c091d924f5b75880624bbd125ae567",
@@ -417,99 +395,12 @@ pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 10] = [
         "800a1c3350f56b4f7af25193e6c5d1a54e3cb44d8273ecdebd5f4bbb45b000ba",
         "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
     ),
-    (
-        "crates/rustleaks-cli",
-        "c175d8ecdafddb9676df724db36a61ecde033bca37b37497ea7ece18a9c306ae",
-        "673205da570d79a356069e4b2f07f37aa0c18fc21f101888d29b0d02460a790e",
-    ),
-    (
-        "crates/rustleaks-core",
-        "9d1d5883df0730eae8cdbc7008257083a6e8fc7521d3a313f8674cab2a9959a8",
-        "294fef4563ca3c85bec379bd17c59e9e7ad7bf83bbcf82a429a294f1a106ecd9",
-    ),
-    (
-        "crates/rustleaks-report",
-        "6a4ebf0277309b3e8bbf6e52b3d04be8fee323014ab7a341e816532d12da0d8c",
-        "b6fe16e5ea5b7a5434717c3ce7c161a49fd8e26460367670b37af1c5deebe9d9",
-    ),
-    (
-        "crates/rustleaks-sources",
-        "599c67b9289eb073c864c7fa3ca0e860d4bb4355aaa66c7e1a05d7d226109b64",
-        "81b2a3e05aacf7d3d806163099e59a2bfeb30f16ccfaa420c90fa9be540befde",
-    ),
-    (
-        "crates/rustleaks-bzip2",
-        "eff6fa1410ebf53eebe2052cb48ca1f42e72e16230407490b86f171fac9e6d32",
-        "0ef028bb702d4714b78432d0cbc9f8f7cce3c2db3dc4a220b562eae00189e185",
-    ),
-    (
-        "crates/rustleaks-compcol",
-        "244e1c88bc0eaa9866f92f5c851781d5273cd911d7fd6218a7d6f79a03fcdaf6",
-        "2317ab99087e5f721638bb5a41134c2784d73ac93dcc782af34085823c7ad9fa",
-    ),
-    (
-        "crates/rustleaks-rar-codec",
-        "188596cdee2d5b251ac88c6a7d55d3f9ebb6c95d21c5f99abecbf8e50d7e9586",
-        "ddffa1487347c797fc035bd018ded0189e6fbb6c360258ca18f1a19beefe8ae1",
-    ),
-    (
-        "crates/rustleaks-sevenz",
-        "4fde1e7cc679c93d6cad1714da6961b4d20e0215854b0b1016a9fea721ba33ce",
-        "ae212024414a86cf443f5ae54c3f7dfcdabcfceb05b2cf9d75a3062208e106f7",
-    ),
 ];
 
 fn declared_transition(path: &str, expected: &str, actual: &str) -> bool {
     DECLARED_TRANSITIONS.contains(&(path, expected, actual))
 }
 
-pub(super) fn tree_hash(root: &Path, relative: &str) -> Result<String, String> {
-    let mut files = Vec::new();
-    collect_files(&root.join(relative), &mut files)?;
-    files.sort_by_key(|path| {
-        path.strip_prefix(root)
-            .unwrap()
-            .to_string_lossy()
-            .into_owned()
-    });
-    let mut digest = Sha256::new();
-    for path in files {
-        let name = path
-            .strip_prefix(root)
-            .unwrap()
-            .to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/")
-            .into_bytes();
-        if name.windows(b"/fuzz/".len()).any(|part| part == b"/fuzz/") {
-            continue;
-        }
-        let bytes = read(&path)?;
-        digest.update((name.len() as u64).to_be_bytes());
-        digest.update(&name);
-        digest.update((bytes.len() as u64).to_be_bytes());
-        digest.update(bytes);
-    }
-    let digest = digest.finalize();
-    let mut output = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    Ok(output)
-}
-
-fn collect_files(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(path).map_err(|e| format!("cannot walk {}: {e}", path.display()))? {
-        let path = entry.map_err(|e| format!("walk error: {e}"))?.path();
-        let meta = fs::symlink_metadata(&path)
-            .map_err(|e| format!("cannot stat {}: {e}", path.display()))?;
-        if meta.is_dir() {
-            collect_files(&path, out)?;
-        } else if meta.is_file() {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }

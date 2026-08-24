@@ -105,11 +105,12 @@ dependency boundary is documented in
 [dependency safety](docs/DEPENDENCY_SAFETY.md). The default core graph has no
 native library, C, C++, archive, Git, report, CLI, or async-runtime dependency.
 
-Native runtime evidence currently covers `aarch64-apple-darwin`. Hermetic
-Bazel cross-compilation covers `x86_64` and `aarch64` for Linux GNU, Linux
-musl, macOS, and Windows MSVC. Compilation does not establish runtime support.
-See the [architecture](docs/ARCHITECTURE.md) and [resource
-contract](docs/RESOURCE_LIMITS.md).
+Native GitHub Actions runtime evidence covers `x86_64` and `aarch64` for Linux
+GNU, Linux musl, macOS, and Windows MSVC. Each lane runs binaries on the
+matching architecture and target runtime, builds the maintained Bazel graph,
+and runs the platform-compatible first-party tests. Cross-compilation remains
+compilation evidence only. See the [architecture](docs/ARCHITECTURE.md) and
+[resource contract](docs/RESOURCE_LIMITS.md).
 
 ## AI-assisted development
 

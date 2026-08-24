@@ -63,12 +63,13 @@ named, bounded Rust dispositions rather than normalized away.
 
 ## Platforms
 
-Complete local runtime evidence currently covers `aarch64-apple-darwin`.
-Hermetic Bazel compile-only evidence covers `x86_64` and `aarch64` for Linux
-GNU, Linux musl, macOS, and Windows MSVC. Native Linux, Windows, Intel macOS,
-and musl replay remains required before those targets can be described as
-supported. The absence of matching-host evidence is not a compatibility
-exception.
+Native GitHub Actions runtime evidence covers `x86_64` and `aarch64` for Linux
+GNU, Linux musl, macOS, and Windows MSVC. Each native lane builds the maintained
+Bazel graph, feature profiles, documentation, and all platform-compatible
+first-party tests. Complete local evidence also covers `aarch64-apple-darwin`.
+Hermetic cross-compilation remains compilation evidence only and is not used to
+make runtime support claims. The absence of native evidence is not a
+compatibility exception.
 
 Run `just parity` for the committed replay. The pinned sibling checkout is
 required separately when regenerating or performing the complete differential

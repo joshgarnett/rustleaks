@@ -600,10 +600,15 @@ fn check_interface(root: &Path) -> Result<(), String> {
         ),
         ("parity", "bazelisk test //:parity"),
         ("check", "bazelisk test //:check"),
-        ("ci", "bazelisk test //:ci"),
+        ("ci", "bazelisk test --jobs=1 //:ci"),
     ] {
         require_contains(&justfile, command, &format!("just {recipe}"))?;
     }
+    require_contains(
+        &justfile,
+        "bazelisk build --build_tests_only //:test",
+        "just ci test prebuild",
+    )?;
     for forbidden in ["cargo build", "cargo clippy", "cargo doc", "cargo test"] {
         require_not_contains(&justfile, forbidden, "normal just recipe")?;
     }

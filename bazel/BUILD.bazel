@@ -15,6 +15,15 @@ cc_import(
     visibility = ["//visibility:public"],
 )
 
+# rustdoc compiles examples as standalone programs. The hermetic Linux linker
+# disables its implicit unwind library, so the doctest runfiles must carry and
+# link the selected LLVM unwind archive explicitly.
+cc_import(
+    name = "llvm_unwind",
+    static_library = "@llvm//runtimes/libunwind:libunwind.static",
+    visibility = ["//visibility:public"],
+)
+
 rust_proc_macro(
     name = "doctest_path_mapper",
     crate_name = "rustleaks_doctest_path_mapper",

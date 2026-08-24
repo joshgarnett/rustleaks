@@ -9,6 +9,7 @@ rustleaks_library(
     crate_name = "rustleaks_core",
     data = ["//compat:all"],
     edition = "2024",
+    unit_test_tags = ["exclusive"],
     version = "0.1.0-alpha.1",
 )
 

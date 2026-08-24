@@ -129,6 +129,12 @@ struct ErrorWire {
 
 #[test]
 fn matrix_n_isolated_platform_fixtures_use_distinct_private_copies() {
+    assert_eq!(windows_git_archive_path(b"main.go.zst"), b"main.go.zst");
+    assert_eq!(
+        windows_git_archive_path(b"outer.tar!middle/archive.zip!leaf/value"),
+        br"outer.tar!middle/archive.zip!leaf\value"
+    );
+
     let first = Sandbox::new("matrix-n");
     let second = Sandbox::new("matrix-n");
     assert_ne!(first.root, second.root);
@@ -413,7 +419,21 @@ fn assert_fragments(id: &str, actual: &[FragmentWire], expected: &[FragmentWire]
         commit_info: wire.commit_info.clone(),
     };
     let actual = actual.iter().map(comparable).collect::<Vec<_>>();
-    let expected = expected.iter().map(comparable).collect::<Vec<_>>();
+    let expected = expected
+        .iter()
+        .map(|source| {
+            // Pinned Git patch fragments carry Raw only; archive-backed file
+            // fragments also populate Bytes and enter the native file path
+            // projection on Windows.
+            let archive_fragment = !source.bytes_nil;
+            let mut wire = comparable(source);
+            if cfg!(windows) && archive_fragment && wire.windows_file_base64.is_empty() {
+                wire.windows_file_base64 =
+                    encode(&windows_git_archive_path(&decode(&wire.file_base64)));
+            }
+            wire
+        })
+        .collect::<Vec<_>>();
     if actual != expected {
         let first = actual
             .iter()
@@ -425,6 +445,20 @@ fn assert_fragments(id: &str, actual: &[FragmentWire], expected: &[FragmentWire]
             expected.len()
         );
     }
+}
+
+fn windows_git_archive_path(value: &[u8]) -> Vec<u8> {
+    let mut result = value.to_vec();
+    let inner_start = result
+        .iter()
+        .rposition(|byte| *byte == b'!')
+        .map_or(result.len(), |index| index + 1);
+    for byte in &mut result[inner_start..] {
+        if *byte == b'/' {
+            *byte = b'\\';
+        }
+    }
+    result
 }
 
 fn assert_findings(id: &str, actual: &[FindingWire], expected: &[FindingWire]) {
@@ -619,4 +653,10 @@ fn fixture_root() -> PathBuf {
 
 fn encode(value: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(value)
+}
+
+fn decode(value: &str) -> Vec<u8> {
+    base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .expect("valid frozen base64")
 }

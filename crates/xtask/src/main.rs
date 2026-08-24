@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 
 mod build_system;
 mod tooling;
+mod workflows;
 
 use tooling::{command_output, command_status_with_timeout, sha256_file};
 
@@ -312,7 +313,19 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "fuzz-smoke" => fuzz_smoke(),
         [command, subcommand] if command == "perf" && subcommand == "run" => perf_run(),
         [command, subcommand] if command == "perf" && subcommand == "check" => perf_check(),
-        [command, subcommand, flag] if command == "oracle" && subcommand == "generate" && flag == "--check" => oracle_check(),
+        [command, subcommand, flag]
+            if command == "oracle" && subcommand == "generate" && flag == "--check" =>
+        {
+            oracle_check(true)
+        }
+        [command, subcommand, flag, skip]
+            if command == "oracle"
+                && subcommand == "generate"
+                && flag == "--check"
+                && skip == "--skip-git" =>
+        {
+            oracle_check(false)
+        }
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "bootstrap" => bootstrap_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "config" => config_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "regex" => regex_parity(),
@@ -326,7 +339,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -840,11 +853,13 @@ rust_binary(
     )
     .map_err(|error| format!("cannot write external Bazel build: {error}"))?;
     command_output(Command::new("bazelisk").current_dir(&root).args([
+        "--ignore_all_rc_files",
         "run",
         "//:consumer",
         "--lockfile_mode=update",
     ]))?;
     command_output(Command::new("bazelisk").current_dir(&root).args([
+        "--ignore_all_rc_files",
         "run",
         "//:consumer",
         "--lockfile_mode=error",
@@ -1116,6 +1131,68 @@ fn unsafe_count(value: &serde_json::Value) -> u64 {
     }
 }
 
+fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
+    let common = [
+        "aho-corasick@1.1.5",
+        "alloc-no-stdlib@2.0.4",
+        "alloc-stdlib@0.2.4",
+        "block-buffer@0.12.1",
+        "brotli-decompressor@5.0.3",
+        "const-oid@0.10.2",
+        "hybrid-array@0.4.14",
+        "itoa@1.0.18",
+        "lz4_flex@0.14.0",
+        "lzma-rust2@0.16.5",
+        "lzma-rust2@0.19.0",
+        "memchr@2.8.3",
+        "proc-macro2@1.0.107",
+        "regex-automata@0.4.7",
+        "semver@1.0.28",
+        "serde_core@1.0.229",
+        "serde_json@1.0.151",
+        "sha2@0.11.0",
+        "syn@3.0.3",
+        "toml_parser@1.1.3+spec-1.1.0",
+        "twox-hash@2.1.3",
+        "unicode-ident@1.0.24",
+        "winnow@0.7.15",
+        "winnow@1.0.4",
+        "zmij@1.0.23",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    let target_specific = ["cpufeatures@0.3.0", "libc@0.2.189"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    (common, target_specific)
+}
+
+fn validate_unsafe_package_set(
+    unsafe_packages: &BTreeSet<String>,
+) -> Result<(usize, usize), String> {
+    let (common, target_specific) = reviewed_unsafe_packages();
+    let missing = common
+        .difference(unsafe_packages)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let unexpected = unsafe_packages
+        .difference(&common)
+        .filter(|package| !target_specific.contains(*package))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        return Err(format!(
+            "cargo-geiger unsafe-bearing package set changed: missing common {missing:?}, unexpected {unexpected:?}, got {unsafe_packages:?}"
+        ));
+    }
+    Ok((
+        common.len(),
+        unsafe_packages.intersection(&target_specific).count(),
+    ))
+}
+
 fn unsafe_inventory_check() -> Result<(), String> {
     let root = workspace_root()?;
     require_exact_tool_version(
@@ -1177,46 +1254,10 @@ fn unsafe_inventory_check() -> Result<(), String> {
             unsafe_packages.insert(format!("{name}@{version}"));
         }
     }
-    let expected = [
-        "aho-corasick@1.1.5",
-        "alloc-no-stdlib@2.0.4",
-        "alloc-stdlib@0.2.4",
-        "block-buffer@0.12.1",
-        "brotli-decompressor@5.0.3",
-        "const-oid@0.10.2",
-        "cpufeatures@0.3.0",
-        "hybrid-array@0.4.14",
-        "itoa@1.0.18",
-        "libc@0.2.189",
-        "lz4_flex@0.14.0",
-        "lzma-rust2@0.16.5",
-        "lzma-rust2@0.19.0",
-        "memchr@2.8.3",
-        "proc-macro2@1.0.107",
-        "regex-automata@0.4.7",
-        "semver@1.0.28",
-        "serde_core@1.0.229",
-        "serde_json@1.0.151",
-        "sha2@0.11.0",
-        "syn@3.0.3",
-        "toml_parser@1.1.3+spec-1.1.0",
-        "twox-hash@2.1.3",
-        "unicode-ident@1.0.24",
-        "winnow@0.7.15",
-        "winnow@1.0.4",
-        "zmij@1.0.23",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<BTreeSet<_>>();
-    if unsafe_packages != expected {
-        return Err(format!(
-            "cargo-geiger unsafe-bearing package set changed: expected {expected:?}, got {unsafe_packages:?}"
-        ));
-    }
+    let (common_count, selected_target_specific) = validate_unsafe_package_set(&unsafe_packages)?;
     println!(
-        "cargo-geiger matched the reviewed {}-package unsafe-bearing inventory; owned packages remain zero-unsafe",
-        expected.len()
+        "cargo-geiger matched the reviewed {}-package common unsafe-bearing inventory plus {selected_target_specific} target-specific packages; owned packages remain zero-unsafe",
+        common_count
     );
     Ok(())
 }
@@ -1275,8 +1316,8 @@ fn dependency_safety_check() -> Result<(), String> {
     for (package, all_features, expected) in graphs {
         let mut command = Command::new("cargo");
         command.current_dir(&root).args([
-            "tree", "--locked", "--edges", "normal", "--prefix", "none", "-p", package, "--target",
-            "all",
+            "tree", "--color", "never", "--locked", "--edges", "normal", "--prefix", "none", "-p",
+            package, "--target", "all",
         ]);
         if all_features {
             command.arg("--all-features");
@@ -1448,6 +1489,7 @@ fn rust_documentation(contents: &str) -> String {
 
 fn docs_check() -> Result<(), String> {
     let root = workspace_root()?;
+    workflows::check(&root)?;
     let mut files = Vec::new();
     collect_documentation(&root, &root, &mut files)?;
     files.sort();
@@ -2127,6 +2169,9 @@ fn fuzz_smoke() -> Result<(), String> {
     let root = workspace_root()?;
     let toolchain = format!("+{FUZZ_TOOLCHAIN}");
     let smoke = ScopedTempDir::new("fuzz-smoke")?;
+    let runs = fuzz_campaign_bound("RUSTLEAKS_FUZZ_RUNS", 16, 1_000_000)?;
+    let max_total_time = fuzz_campaign_bound("RUSTLEAKS_FUZZ_MAX_TOTAL_TIME", 20, 600)?;
+    let campaign_timeout = Duration::from_secs(max_total_time.saturating_add(120));
     let targets = [
         (
             "crates/rustleaks-core/fuzz",
@@ -2201,6 +2246,8 @@ fn fuzz_smoke() -> Result<(), String> {
         }
         let artifact_prefix = format!("{}/", artifacts.display());
         let dictionary = root.join(fuzz_dir).join(dictionary);
+        let runs = format!("-runs={runs}");
+        let max_total_time = format!("-max_total_time={max_total_time}");
         command_status_with_timeout(
             Command::new("cargo")
                 .current_dir(&root)
@@ -2216,20 +2263,35 @@ fn fuzz_smoke() -> Result<(), String> {
                 .arg(&corpus)
                 .arg("--")
                 .args([
-                    "-runs=16",
-                    "-max_total_time=20",
+                    runs.as_str(),
+                    max_total_time.as_str(),
                     "-timeout=5",
                     "-rss_limit_mb=2048",
                 ])
                 .arg(format!("-max_len={max_len}"))
                 .arg(format!("-dict={}", dictionary.display()))
                 .arg(format!("-artifact_prefix={artifact_prefix}")),
-            Duration::from_secs(240),
+            campaign_timeout,
             target,
         )?;
     }
-    println!("all eight bounded fuzz targets compiled and replayed seed smoke campaigns");
+    println!("all eight bounded fuzz targets compiled and replayed seed campaigns");
     Ok(())
+}
+
+fn fuzz_campaign_bound(name: &str, default: u64, maximum: u64) -> Result<u64, String> {
+    let Some(value) = env::var_os(name) else {
+        return Ok(default);
+    };
+    let value = value
+        .to_str()
+        .ok_or_else(|| format!("{name} is not UTF-8"))?
+        .parse::<u64>()
+        .map_err(|error| format!("{name} is not an unsigned integer: {error}"))?;
+    if value == 0 || value > maximum {
+        return Err(format!("{name} must be between 1 and {maximum}"));
+    }
+    Ok(value)
 }
 
 fn fuzz_check() -> Result<(), String> {
@@ -2312,7 +2374,7 @@ fn fixture_check() -> Result<(), String> {
     Ok(())
 }
 
-fn oracle_check() -> Result<(), String> {
+fn oracle_check(check_git: bool) -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
     let corpus = root.join("compat/oracle-corpus");
@@ -2352,8 +2414,12 @@ fn oracle_check() -> Result<(), String> {
     tooling::check_composite_corpus(&root)?;
     tooling::check_session_corpus(&root)?;
     tooling::check_source_corpus(&root)?;
-    tooling::check_git_corpus(&root)?;
-    println!("oracle corpus matches fresh Go outcomes");
+    if check_git {
+        tooling::check_git_corpus(&root)?;
+        println!("oracle corpus matches fresh Go outcomes");
+    } else {
+        println!("portable oracle corpora except Git match fresh Go outcomes");
+    }
     Ok(())
 }
 
@@ -2628,9 +2694,20 @@ fn validate_git_adversarial_matrix(root: &Path) -> Result<(), String> {
     }
     let workflow = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
         .map_err(|error| format!("cannot read CI workflow: {error}"))?;
-    for runner in ["ubuntu-latest", "macos-latest", "windows-latest"] {
-        if !workflow.contains(runner) {
-            return Err(format!("native Git CI runner is missing ({runner})"));
+    for (runner, target) in [
+        ("ubuntu-24.04", "x86_64-unknown-linux-gnu"),
+        ("ubuntu-24.04-arm", "aarch64-unknown-linux-gnu"),
+        ("ubuntu-24.04", "x86_64-unknown-linux-musl"),
+        ("ubuntu-24.04-arm", "aarch64-unknown-linux-musl"),
+        ("macos-15-intel", "x86_64-apple-darwin"),
+        ("macos-15", "aarch64-apple-darwin"),
+        ("windows-2025", "x86_64-pc-windows-msvc"),
+        ("windows-11-arm", "aarch64-pc-windows-msvc"),
+    ] {
+        if !workflow.contains(runner) || !workflow.contains(target) {
+            return Err(format!(
+                "native Git CI matrix is missing {target} on {runner}"
+            ));
         }
     }
     let dispositions = std::fs::read_to_string(root.join("compat/api-dispositions-v1.jsonl"))
@@ -2747,6 +2824,7 @@ fn full_parity() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::Path;
     use std::thread;
@@ -2755,15 +2833,31 @@ mod tests {
     use super::{
         CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, build_system,
         composite_test_executable_from_messages, normalize_workspace_dependency_tree,
-        parse_civil_day, resource_test_command, run_resource_test,
+        parse_civil_day, resource_test_command, reviewed_unsafe_packages, run_resource_test,
         validate_core_repository_metadata, validate_perf_budget, validate_perf_records,
         validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
-        workspace_root,
+        validate_unsafe_package_set, workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
     const TIMEOUT_PROBE_TEST: &str = "tests::resource_launcher_timeout_probe_child";
     const RESOURCE_SELECTOR: &str = "RUSTLEAKS_BOUNDED_RESOURCE_TEST";
+
+    #[test]
+    fn unsafe_inventory_accepts_only_reviewed_target_variance() {
+        let (common, target_specific) = reviewed_unsafe_packages();
+        assert_eq!(validate_unsafe_package_set(&common).unwrap(), (25, 0));
+
+        let union = common.union(&target_specific).cloned().collect();
+        assert_eq!(validate_unsafe_package_set(&union).unwrap(), (25, 2));
+
+        let missing = common.iter().skip(1).cloned().collect::<BTreeSet<_>>();
+        assert!(validate_unsafe_package_set(&missing).is_err());
+
+        let mut unexpected = common;
+        unexpected.insert("unreviewed@1.0.0".into());
+        assert!(validate_unsafe_package_set(&unexpected).is_err());
+    }
 
     #[test]
     fn civil_dates_reject_impossible_exemption_deadlines() {

@@ -38,7 +38,8 @@ check: docs-check
 
 # Run the complete local Bazel acceptance suite.
 ci: docs-check
-    bazelisk test //:ci
+    bazelisk build --build_tests_only //:test
+    bazelisk test --jobs=1 //:ci
 
 # Build every fuzz target without running a campaign.
 fuzz-build:

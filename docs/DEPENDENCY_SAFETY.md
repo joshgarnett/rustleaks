@@ -30,8 +30,8 @@ no `cc`, `cmake`, `bindgen`, `pkg-config`, `vcpkg`, or native `-sys` crate.
 Several listed build targets belong only to target-specific development tools;
 the exact normal-runtime graph hashes above remain the publication boundary.
 
-The enforced cargo-geiger signal currently finds used unsafe constructs in
-exactly these 27 package/version identities:
+The enforced cargo-geiger signal requires used unsafe constructs in these 25
+package/version identities on every checked host:
 
 ```text
 aho-corasick@1.1.5
@@ -40,10 +40,8 @@ alloc-stdlib@0.2.4
 block-buffer@0.12.1
 brotli-decompressor@5.0.3
 const-oid@0.10.2
-cpufeatures@0.3.0
 hybrid-array@0.4.14
 itoa@1.0.18
-libc@0.2.189
 lz4_flex@0.14.0
 lzma-rust2@0.16.5
 lzma-rust2@0.19.0
@@ -63,10 +61,14 @@ winnow@1.0.4
 zmij@1.0.23
 ```
 
+Target selection can additionally expose used unsafe in `cpufeatures@0.3.0`
+and `libc@0.2.189`. The gate permits only those two reviewed target-specific
+additions to the common set.
+
 All first-party packages report zero used unsafe constructs and forbid unsafe
-code. The gate fails if either the dependency set or first-party status
-changes. This inventory is a change detector, not an audit or reachability
-claim.
+code. The gate fails if a common package disappears, an unreviewed package
+appears, or first-party status changes. This inventory is a change detector,
+not an audit or reachability claim.
 
 The publishable core's relevant unsafe-bearing boundary is narrow:
 

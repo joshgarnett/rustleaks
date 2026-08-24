@@ -32,6 +32,7 @@ def rustleaks_library(
         data = [],
         srcs = None,
         unit_test = True,
+        unit_test_tags = [],
         docs = True,
         visibility = ["//visibility:public"]):
     """Defines a first-party library and its Cargo-equivalent unit/doc targets."""
@@ -67,6 +68,7 @@ def rustleaks_library(
             data = data,
             deps = all_crate_deps(normal = True, normal_dev = True) + deps,
             rustc_env = rustc_env,
+            tags = unit_test_tags,
             visibility = visibility,
         )
 
@@ -80,8 +82,12 @@ def rustleaks_library(
         rust_doc_test(
             name = name + "_doc_test",
             crate = ":" + name,
-            deps = ["//bazel:compiler_rt_builtins"],
+            deps = [
+                "//bazel:compiler_rt_builtins",
+                "//bazel:llvm_unwind",
+            ],
             proc_macro_deps = ["//bazel:doctest_path_mapper"],
+            rustdoc_flags = ["-Dwarnings"],
             target_compatible_with = _WINDOWS_INCOMPATIBLE,
             visibility = visibility,
         )

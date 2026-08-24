@@ -11,6 +11,22 @@ _DEPS = [
     "//crates/rustleaks-sources:rustleaks_sources_archives",
 ]
 
+_GIT_TEST_DATA = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": ["@git//:git"],
+})
+
+_GIT_TEST_ENV = select({
+    "@platforms//os:windows": {
+        "CARGO_BIN_EXE_rustleaks": "$(rlocationpath :rustleaks)",
+        "RUSTLEAKS_TEST_GIT_RUNFILE": "git",
+    },
+    "//conditions:default": {
+        "CARGO_BIN_EXE_rustleaks": "$(rlocationpath :rustleaks)",
+        "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
+    },
+})
+
 rustleaks_library(
     name = "rustleaks_cli",
     crate_name = "rustleaks_cli",
@@ -40,13 +56,9 @@ rustleaks_integration_test(
     data = [
         ":rustleaks",
         "//compat:all",
-        "@git//:git",
-    ],
+    ] + _GIT_TEST_DATA,
     deps = _DEPS + [":rustleaks_cli"],
-    env = {
-        "CARGO_BIN_EXE_rustleaks": "$(rlocationpath :rustleaks)",
-        "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
-    },
+    env = _GIT_TEST_ENV,
 )
 
 test_suite(
