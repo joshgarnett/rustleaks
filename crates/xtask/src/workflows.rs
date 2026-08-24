@@ -151,9 +151,14 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
 fn validate_dependabot(root: &Path) -> Result<(), String> {
     let source = fs::read_to_string(root.join(".github/dependabot.yml"))
         .map_err(|error| format!("cannot read Dependabot configuration: {error}"))?;
-    for ecosystem in ["cargo", "bazel", "rust-toolchain", "github-actions"] {
+    for ecosystem in ["cargo", "rust-toolchain", "github-actions"] {
         if !source.contains(&format!("package-ecosystem: {ecosystem}")) {
             return Err(format!("Dependabot omits {ecosystem}"));
+        }
+    }
+    for group in ["rust-dependencies", "rust-security-fixes", "github-actions"] {
+        if !source.contains(&format!("{group}:")) {
+            return Err(format!("Dependabot omits grouped updates for {group}"));
         }
     }
     if source.contains("automerge") {

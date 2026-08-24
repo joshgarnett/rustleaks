@@ -99,11 +99,13 @@ struct BufferedSourceReader {
     inner: Box<dyn SourceReader>,
     buffered: VecDeque<u8>,
     pending: Option<ReadStatus>,
+    overreported: Option<usize>,
 }
 
 enum ByteOutcome {
     Byte(u8),
     Status(ReadStatus),
+    Overreported,
 }
 
 impl BufferedSourceReader {
@@ -112,12 +114,16 @@ impl BufferedSourceReader {
             inner,
             buffered: VecDeque::with_capacity(BUFFERED_READER_CAPACITY),
             pending: None,
+            overreported: None,
         }
     }
 
     fn read(&mut self, output: &mut [u8]) -> ReadOutcome {
         if output.is_empty() {
             return ReadOutcome::new(0, ReadStatus::Continue);
+        }
+        if let Some(count) = self.overreported.take() {
+            return ReadOutcome::new(count, ReadStatus::Continue);
         }
         if !self.buffered.is_empty() {
             let count = drain(&mut self.buffered, output);
@@ -131,6 +137,9 @@ impl BufferedSourceReader {
         }
 
         self.fill();
+        if let Some(count) = self.overreported.take() {
+            return ReadOutcome::new(count, ReadStatus::Continue);
+        }
         if self.buffered.is_empty() {
             return ReadOutcome::new(0, self.pending.take().unwrap_or(ReadStatus::Continue));
         }
@@ -139,11 +148,17 @@ impl BufferedSourceReader {
     }
 
     fn read_byte(&mut self) -> ByteOutcome {
+        if self.overreported.take().is_some() {
+            return ByteOutcome::Overreported;
+        }
         if self.buffered.is_empty() {
             if let Some(status) = self.pending.take() {
                 return ByteOutcome::Status(status);
             }
             self.fill();
+        }
+        if self.overreported.take().is_some() {
+            return ByteOutcome::Overreported;
         }
         if let Some(byte) = self.buffered.pop_front() {
             return ByteOutcome::Byte(byte);
@@ -154,8 +169,11 @@ impl BufferedSourceReader {
     fn fill(&mut self) {
         let mut temporary = [0_u8; BUFFERED_READER_CAPACITY];
         let outcome = self.inner.read_source(&mut temporary);
-        let count = outcome.count.min(temporary.len());
-        self.buffered.extend(&temporary[..count]);
+        if outcome.count > temporary.len() {
+            self.overreported = Some(outcome.count);
+            return;
+        }
+        self.buffered.extend(&temporary[..outcome.count]);
         if !matches!(outcome.status, ReadStatus::Continue) {
             self.pending = Some(outcome.status);
         }
@@ -518,6 +536,14 @@ fn read_until_safe_boundary(
                     "reader made no progress during boundary read",
                 ));
             }
+            ByteOutcome::Overreported => {
+                return Err(SourceIssue::new(
+                    SourceStage::Limit,
+                    SourceIssueKind::Limit,
+                    Some(path.to_path_buf()),
+                    "reader returned more bytes than the supplied buffer",
+                ));
+            }
         }
     }
     Ok(())
@@ -559,6 +585,35 @@ fn count_lf(bytes: &[u8]) -> usize {
 mod tests {
     use super::*;
     use crate::CancellationToken;
+
+    struct OverreportingReader;
+
+    impl SourceReader for OverreportingReader {
+        fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome {
+            ReadOutcome::new(buffer.len().saturating_add(1), ReadStatus::Continue)
+        }
+    }
+
+    struct BurstThenError {
+        emitted: bool,
+    }
+
+    impl SourceReader for BurstThenError {
+        fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome {
+            if self.emitted {
+                return ReadOutcome::new(0, ReadStatus::Eof);
+            }
+            self.emitted = true;
+            buffer[..15].fill(b'x');
+            ReadOutcome::new(
+                15,
+                ReadStatus::Error {
+                    kind: io::ErrorKind::InvalidData,
+                    message: "scheduled reader failure".to_owned(),
+                },
+            )
+        }
+    }
 
     fn fragments(mut source: FileSource) -> Vec<Fragment> {
         let mut result = Vec::new();
@@ -642,6 +697,47 @@ mod tests {
             actual[0].content().len(),
             BUFFERED_READER_CAPACITY + MAX_BOUNDARY_READ_AHEAD
         );
+    }
+
+    #[test]
+    fn buffered_reader_preserves_overreported_count_as_a_limit_issue() {
+        let options = FileOptions::new(1)
+            .expect("positive")
+            .max_boundary_read_ahead(0);
+        let mut source =
+            FileSource::from_source_reader(Box::new(OverreportingReader), "input", options);
+        let mut issues = Vec::new();
+        source
+            .visit(&CancellationToken::new(), &mut |event| {
+                if let SourceEvent::Issue(issue) = event {
+                    issues.push(issue);
+                }
+                Ok(SourceControl::Continue)
+            })
+            .expect("overreport is a recoverable issue");
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].stage(), SourceStage::Limit);
+        assert_eq!(issues[0].kind(), SourceIssueKind::Limit);
+    }
+
+    #[test]
+    fn buffered_data_plus_error_can_emit_sixteen_events() {
+        let options = FileOptions::new(1)
+            .expect("positive")
+            .max_boundary_read_ahead(0);
+        let mut source = FileSource::from_source_reader(
+            Box::new(BurstThenError { emitted: false }),
+            "input",
+            options,
+        );
+        let mut events = 0_usize;
+        source
+            .visit(&CancellationToken::new(), &mut |_| {
+                events += 1;
+                Ok(SourceControl::Continue)
+            })
+            .expect("buffered burst is observable");
+        assert_eq!(events, 16);
     }
 
     #[test]
