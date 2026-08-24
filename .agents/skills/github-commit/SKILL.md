@@ -33,6 +33,10 @@ branch commits remain useful review and debugging checkpoints even though pull
 requests are squash merged; each checkpoint must still be understandable and
 reviewable.
 
+When the changes are associated with a real issue, inspect it with
+`gh issue view <issue-number>` and ensure the commit group is consistent with
+its intent and acceptance criteria. Do not invent linkage.
+
 Do not use `git add .` or `git add -A` unless every affected path was read and
 belongs to the same commit. Stage explicit paths or hunks. Do not discard,
 stash, or overwrite unrelated work.
@@ -57,6 +61,11 @@ maintenance skill. Bazel is authoritative for normal build and test work;
 Cargo does not bypass a failed Bazel action. Report only commands that passed
 against the staged content.
 
+Validation that reads the working tree cannot prove the finalized staged state
+while unstaged tracked changes are present. Preserve unrelated work, but use an
+isolated clean worktree for the staged content or report that validation as not
+established; never silently attribute a mixed-tree result to the staged group.
+
 Inspect the complete staged diff, then run:
 
 ```sh
@@ -67,7 +76,8 @@ git diff --cached --check
 Verify that required tests, generated files, lockfiles, licenses, provenance,
 and attribution are included. Adding or updating dependencies, toolchains,
 `rules_rust`, the Gitleaks pin, or copied default configuration requires prior
-maintainer approval.
+maintainer approval. Never hand-edit generated corpora, inventories,
+snapshots, or lockfiles; use the maintained generator or regeneration command.
 
 ## Write the message
 
@@ -95,7 +105,7 @@ and preserve its explanation of the reverted commit. Choose a stable scope only
 when useful: `core`, `sources`, `report`, `cli`, `compat`, `xtask`, `bazel`,
 `deps`, `docs`, `ci`, or `release`. Omit a scope for a cross-cutting change.
 Never use a goal, agent, review round, issue number, or temporary task as a
-scope.
+scope, and do not use another ticket identifier as one.
 
 These subjects use verified repository history and boundaries:
 
@@ -108,10 +118,11 @@ docs(security): record hosted repository controls
 Use `!` only for an intentional breaking change and add a
 `BREAKING CHANGE: ...` footer that explains the affected API and migration.
 Use a body for lasting reasons, compatibility effects, security constraints,
-or non-obvious decisions. Do not include goal status, agent narration, review
-history, raw command logs, or post-goal planning references. Add only true
-trailers. Do not invent issue links, signoffs, co-authors, or reviews; prefer
-issue-closing references in the pull request.
+or non-obvious decisions, separated from the subject by a blank line. Do not
+include goal status, agent narration, review history, raw command logs, or
+post-goal planning references. Add only true trailers. Do not invent issue
+links, signoffs, co-authors, or reviews; prefer issue-closing references in the
+pull request.
 
 ## Commit and verify
 

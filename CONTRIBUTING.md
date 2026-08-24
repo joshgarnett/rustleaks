@@ -98,6 +98,9 @@ contain no final period, and remain at most 72 characters. Use `!` only for an
 intentional breaking change and add a `BREAKING CHANGE: ...` footer explaining
 the affected API and migration.
 
+Use the standard Git-generated `Revert "..."` subject only for a real revert,
+and preserve its explanation of the reverted commit.
+
 Choose the narrowest type:
 
 | Type | Use |
