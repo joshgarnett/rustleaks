@@ -61,10 +61,9 @@ impl LogicalPath {
         normalized.extend_from_slice(inner);
         #[cfg(windows)]
         let windows_original = {
-            let mut original = self
-                .windows_original
-                .as_ref()
-                .map_or_else(Vec::new, |value| value.as_bytes().to_vec());
+            // Upstream slash-normalizes every completed outer archive path and
+            // retains native separators only for the current inner member.
+            let mut original = self.normalized.as_bytes().to_vec();
             original.extend_from_slice(INNER_PATH_SEPARATOR.as_bytes());
             original.extend_from_slice(_native_inner);
             Some(ByteText::new(original))
@@ -174,6 +173,33 @@ mod tests {
                 .expect("Windows original")
                 .as_bytes(),
             br"C:\work\mixed/path"
+        );
+    }
+
+    #[cfg(all(windows, feature = "archives"))]
+    #[test]
+    fn windows_archive_path_normalizes_completed_outer_segments() {
+        let outer = LogicalPath::from_native(Path::new(r"C:\work\outer.zip"));
+        let inner = outer.joined_archive(b"dir/member.tar", br"dir\member.tar");
+        assert_eq!(
+            inner.normalized().as_bytes(),
+            b"C:/work/outer.zip!dir/member.tar"
+        );
+        assert_eq!(
+            inner
+                .windows_original()
+                .expect("Windows archive path")
+                .as_bytes(),
+            br"C:/work/outer.zip!dir\member.tar"
+        );
+
+        let nested = inner.joined_archive(b"leaf/value", br"leaf\value");
+        assert_eq!(
+            nested
+                .windows_original()
+                .expect("nested Windows archive path")
+                .as_bytes(),
+            br"C:/work/outer.zip!dir/member.tar!leaf\value"
         );
     }
 }

@@ -184,6 +184,16 @@ fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions(
 
     for request in requests {
         let expected = outcomes.get(&request.id).expect("matching outcome");
+        if cfg!(windows) && windows_platform_disposition(&request) {
+            // The frozen outcomes are Darwin-native. Upstream applies the
+            // alias-size gate before symlink resolution, so zero-length
+            // Windows symlink metadata has a different exact disposition.
+            // The permission row depends on Unix mode bits. Focused native
+            // tests retain executable Windows symlink coverage.
+            assert_eq!(request.operation, "files");
+            dispositions += 1;
+            continue;
+        }
         match request.operation.as_str() {
             "reader" | "file" | "files" => {
                 replay(&request, expected);
@@ -207,8 +217,23 @@ fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions(
         }
     }
     assert_eq!(replayed + dispositions, request_count);
-    assert_eq!(dispositions, 1);
+    assert_eq!(dispositions, if cfg!(windows) { 10 } else { 1 });
     assert_eq!(unobservable_reader_fragment_dispositions, 9);
+}
+
+fn windows_platform_disposition(request: &Request) -> bool {
+    matches!(
+        request.id.as_str(),
+        "files-symlink-disabled"
+            | "files-symlink-enabled"
+            | "files-directory-symlink"
+            | "files-chained-symlink"
+            | "files-symlink-alias-size-skip"
+            | "files-symlink-target-size-bypass"
+            | "files-dangling-symlink"
+            | "files-looping-symlink"
+            | "files-permission-denied"
+    )
 }
 
 fn replay(request: &Request, expected: &Outcome) {
@@ -632,15 +657,7 @@ fn remap_path(value: &[u8], mapping: &PathMapping, windows: bool) -> Vec<u8> {
     let mut result = mapping.logical.clone();
     result.extend_from_slice(suffix);
     if windows {
-        let outer_end = result
-            .iter()
-            .position(|byte| *byte == b'!')
-            .unwrap_or(result.len());
-        for byte in &mut result[..outer_end] {
-            if *byte == b'/' {
-                *byte = b'\\';
-            }
-        }
+        result = windows_archive_path(&result);
     }
     result
 }
@@ -837,9 +854,25 @@ fn compare_fragments(actual: &[FragmentWire], expected: &[FragmentWire]) -> Resu
         .iter()
         .map(comparable)
         .map(|mut wire| {
-            if cfg!(windows) && wire.windows_file_base64.is_empty() {
-                wire.windows_file_base64 =
-                    encode(&windows_path_from_normalized(&decode(&wire.file_base64)));
+            if cfg!(windows) {
+                // The oracle outcome is Darwin-native. Derive upstream's
+                // Windows FilePath/WindowsFilePath pair exactly: FilePath is
+                // slash-normalized, completed archive segments stay
+                // normalized, and only the current member is native.
+                let original = windows_representable(&decode(&wire.file_base64));
+                let normalized = original
+                    .iter()
+                    .map(|byte| if *byte == b'\\' { b'/' } else { *byte })
+                    .collect::<Vec<_>>();
+                wire.file_base64 = encode(&normalized);
+                if wire.windows_file_base64.is_empty() {
+                    let windows = if normalized.contains(&b'!') {
+                        windows_archive_path(&normalized)
+                    } else {
+                        original
+                    };
+                    wire.windows_file_base64 = encode(&windows);
+                }
             }
             wire
         })
@@ -871,18 +904,24 @@ fn compare_fragments(actual: &[FragmentWire], expected: &[FragmentWire]) -> Resu
     }
 }
 
-fn windows_path_from_normalized(value: &[u8]) -> Vec<u8> {
+fn windows_archive_path(value: &[u8]) -> Vec<u8> {
     let mut result = value.to_vec();
-    let outer_end = result
+    let inner_start = result
         .iter()
-        .position(|byte| *byte == b'!')
-        .unwrap_or(result.len());
-    for byte in &mut result[..outer_end] {
+        .rposition(|byte| *byte == b'!')
+        .map_or(0, |index| index + 1);
+    for byte in &mut result[inner_start..] {
         if *byte == b'/' {
             *byte = b'\\';
         }
     }
     result
+}
+
+fn windows_representable(value: &[u8]) -> Vec<u8> {
+    // A Windows PathBuf cannot represent the corpus's invalid UTF-8 byte path.
+    // The adapter records the exact replacement-string disposition instead.
+    String::from_utf8_lossy(value).into_owned().into_bytes()
 }
 
 fn fragment_wire(fragment: &Fragment) -> FragmentWire {
@@ -989,6 +1028,12 @@ fn encode(value: &[u8]) -> String {
 
 #[test]
 fn corpus_comparators_reject_material_mutations() {
+    assert_eq!(windows_archive_path(b"tree/a"), br"tree\a");
+    assert_eq!(
+        windows_archive_path(b"tree/outer.zip!middle/archive.tar!leaf/value"),
+        br"tree/outer.zip!middle/archive.tar!leaf\value"
+    );
+
     let wire = FragmentWire {
         raw_base64: encode(b"first"),
         bytes_base64: encode(b"first"),
