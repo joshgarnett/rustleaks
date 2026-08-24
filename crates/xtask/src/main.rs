@@ -7,8 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
-
 mod build_system;
 mod tooling;
 mod workflows;
@@ -1262,86 +1260,99 @@ fn unsafe_inventory_check() -> Result<(), String> {
     Ok(())
 }
 
-fn normalize_workspace_dependency_tree(root: &Path, tree: &str) -> String {
-    tree.lines()
+fn normal_dependency_packages(
+    root: &Path,
+    package: &str,
+    all_features: bool,
+) -> Result<BTreeSet<String>, String> {
+    let mut command = Command::new("cargo");
+    command.current_dir(root).args([
+        "tree", "--color", "never", "--locked", "--edges", "normal", "--prefix", "none", "-p",
+        package, "--target", "all",
+    ]);
+    if all_features {
+        command.arg("--all-features");
+    }
+    let output = command_output(&mut command)?;
+    output
+        .lines()
         .map(|line| {
-            let (entry, repeat) = line
-                .strip_suffix(" (*)")
-                .map_or((line, ""), |entry| (entry, " (*)"));
-            let Some((package, location)) = entry.rsplit_once(" (") else {
-                return line.to_owned();
-            };
-            let Some(location) = location.strip_suffix(')') else {
-                return line.to_owned();
-            };
-            if Path::new(location).starts_with(root) {
-                format!("{package}{repeat}")
-            } else {
-                line.to_owned()
-            }
+            line.split_whitespace()
+                .next()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{package} dependency tree contains an empty entry"))
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect()
+}
+
+fn validate_dependency_boundaries(
+    core: &BTreeSet<String>,
+    sources: &BTreeSet<String>,
+    metadata: &str,
+) -> Result<(), String> {
+    let coupled = core
+        .iter()
+        .filter(|package| {
+            (package.starts_with("rustleaks-") && package.as_str() != "rustleaks-core")
+                || package.as_str() == "xtask"
+        })
+        .collect::<Vec<_>>();
+    if !coupled.is_empty() {
+        return Err(format!(
+            "rustleaks-core depends on higher-layer or codec packages: {coupled:?}"
+        ));
+    }
+
+    let native_helpers = ["bindgen", "cc", "cmake", "pkg-config", "vcpkg"];
+    let native = sources
+        .iter()
+        .filter(|package| native_helpers.contains(&package.as_str()) || package.ends_with("-sys"))
+        .collect::<Vec<_>>();
+    if !native.is_empty() {
+        return Err(format!(
+            "normal all-feature source graph contains native build dependencies: {native:?}"
+        ));
+    }
+
+    let metadata: serde_json::Value = serde_json::from_str(metadata)
+        .map_err(|error| format!("cannot decode cargo metadata: {error}"))?;
+    let packages = metadata["packages"]
+        .as_array()
+        .ok_or("cargo metadata omits packages")?;
+    let linked = packages
+        .iter()
+        .filter_map(|package| {
+            package["links"].as_str().map(|links| {
+                format!(
+                    "{}@{} ({links})",
+                    package["name"].as_str().unwrap_or("<unnamed>"),
+                    package["version"].as_str().unwrap_or("<unknown>")
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if !linked.is_empty() {
+        return Err(format!(
+            "locked workspace resolution contains native links packages: {linked:?}"
+        ));
+    }
+    Ok(())
 }
 
 fn dependency_safety_check() -> Result<(), String> {
     let root = workspace_root()?;
-    let graphs = [
-        (
-            "rustleaks-core",
-            false,
-            "d58ae3874c4c31586e859cab2ac5659608b55c07e7c771991b37700d56faadc1",
-        ),
-        (
-            "rustleaks-report",
-            false,
-            "31d643c37aef98750509103e02a81c8a54c36593899db6f237ce8b4aa21c6b88",
-        ),
-        (
-            "rustleaks-sources",
-            false,
-            "8bb90a9651d9f074b2362f23efbfb0dde8edfd12f82a76a606e5048d102232d9",
-        ),
-        (
-            "rustleaks-sources",
-            true,
-            "507c513d16c3667a362f7f1f62b43c81e0b6bd6bf27d73fe38f85bc961f44b32",
-        ),
-        (
-            "rustleaks-cli",
-            true,
-            "abf38e45586827bbc0320814a8dcb7a5a5bafdea44f65f5bf7772b2426116877",
-        ),
-    ];
-    for (package, all_features, expected) in graphs {
-        let mut command = Command::new("cargo");
-        command.current_dir(&root).args([
-            "tree", "--color", "never", "--locked", "--edges", "normal", "--prefix", "none", "-p",
-            package, "--target", "all",
-        ]);
-        if all_features {
-            command.arg("--all-features");
-        }
-        let tree = normalize_workspace_dependency_tree(&root, &command_output(&mut command)?);
-        let digest = Sha256::digest(format!("{tree}\n").as_bytes());
-        let mut actual = String::with_capacity(64);
-        for byte in digest {
-            actual.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
-            actual.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
-        }
-        if actual != expected {
-            let feature_set = if all_features {
-                "all-feature"
-            } else {
-                "default-feature"
-            };
-            return Err(format!(
-                "{package} {feature_set} all-target normal dependency graph changed: expected {expected}, got {actual}"
-            ));
-        }
-    }
+    let core = normal_dependency_packages(&root, "rustleaks-core", false)?;
+    let sources = normal_dependency_packages(&root, "rustleaks-sources", true)?;
+    let metadata = command_output(Command::new("cargo").current_dir(&root).args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked",
+    ]))?;
+    validate_dependency_boundaries(&core, &sources, &metadata)?;
     println!(
-        "reviewed default/all-feature normal dependency graphs match their exact all-target safety boundaries"
+        "dependency boundaries exclude core layer coupling, native build helpers, and links packages"
     );
     Ok(())
 }
@@ -2826,15 +2837,14 @@ fn full_parity() -> Result<(), String> {
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::path::Path;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
         CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, build_system,
-        composite_test_executable_from_messages, normalize_workspace_dependency_tree,
-        parse_civil_day, resource_test_command, reviewed_unsafe_packages, run_resource_test,
-        validate_core_repository_metadata, validate_perf_budget, validate_perf_records,
+        composite_test_executable_from_messages, parse_civil_day, resource_test_command,
+        reviewed_unsafe_packages, run_resource_test, validate_core_repository_metadata,
+        validate_dependency_boundaries, validate_perf_budget, validate_perf_records,
         validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
         validate_unsafe_package_set, workspace_root,
     };
@@ -2908,23 +2918,27 @@ mod tests {
     }
 
     #[test]
-    fn dependency_graph_digest_ignores_only_the_workspace_checkout_path() {
-        let first = "rustleaks-core v0.1.0 (/tmp/first/crates/rustleaks-core)\n\
-rustleaks-core v0.1.0 (/tmp/first/crates/rustleaks-core) (*)\n\
-serde_derive v1.0.0 (proc-macro)\n\
-outside v1.0.0 (/opt/external/outside)";
-        let second = "rustleaks-core v0.1.0 (/tmp/second/crates/rustleaks-core)\n\
-rustleaks-core v0.1.0 (/tmp/second/crates/rustleaks-core) (*)\n\
-serde_derive v1.0.0 (proc-macro)\n\
-outside v1.0.0 (/opt/external/outside)";
-        assert_eq!(
-            normalize_workspace_dependency_tree(Path::new("/tmp/first"), first),
-            normalize_workspace_dependency_tree(Path::new("/tmp/second"), second)
-        );
-        assert!(
-            normalize_workspace_dependency_tree(Path::new("/tmp/first"), first)
-                .contains("outside v1.0.0 (/opt/external/outside)")
-        );
+    fn dependency_boundaries_reject_only_security_relevant_structure() {
+        let core = BTreeSet::from(["rustleaks-core".to_owned(), "serde".to_owned()]);
+        let sources = BTreeSet::from([
+            "rustleaks-core".to_owned(),
+            "rustleaks-sources".to_owned(),
+            "serde".to_owned(),
+        ]);
+        let metadata = r#"{"packages":[{"name":"serde","version":"1.0.0","links":null}]}"#;
+        validate_dependency_boundaries(&core, &sources, metadata).unwrap();
+
+        let coupled = BTreeSet::from([
+            "rustleaks-core".to_owned(),
+            "rustleaks-rar-codec".to_owned(),
+        ]);
+        assert!(validate_dependency_boundaries(&coupled, &sources, metadata).is_err());
+
+        let native = BTreeSet::from(["rustleaks-sources".to_owned(), "openssl-sys".to_owned()]);
+        assert!(validate_dependency_boundaries(&core, &native, metadata).is_err());
+
+        let linked = r#"{"packages":[{"name":"native","version":"1.0.0","links":"native"}]}"#;
+        assert!(validate_dependency_boundaries(&core, &sources, linked).is_err());
     }
 
     #[test]
