@@ -25,8 +25,8 @@ const BEHAVIOR_IDENTITIES_SHA256: &str =
     "bc76f555aef6e9275826dfa9d9b436410193a48f41288d7d33e5bbf423157dc4";
 const TEST_IDENTITIES_SHA256: &str =
     "67b808a4264df3d3d8c27072325b8248368511ea5a890719a4d84fda8ad68dd8";
+// The executable oracle produces the corpus. Its tests are validation, not corpus provenance.
 const ORACLE_MAIN_SHA256: &str = "8e2482a757fe49eece06694c1c8300c09b5752b9625ece8eee9fac18d39c1266";
-const ORACLE_TEST_SHA256: &str = "a878d3766980e6f4095a38ce727d324bf929b3f03b8ed500ab16c841b14483ef";
 const DETECT_SOURCE_SHA256: &str =
     "2bac563a09f22ff76c56b200c3b9b5dc865c1de699eb0ba2a27cca741fa9bd13";
 const FINDING_SOURCE_SHA256: &str =
@@ -307,10 +307,6 @@ fn validate_sources(root: &Path) -> Result<(), String> {
         (
             root.join("crates/rustleaks-compat/oracle/main.go"),
             ORACLE_MAIN_SHA256,
-        ),
-        (
-            root.join("crates/rustleaks-compat/oracle/main_test.go"),
-            ORACLE_TEST_SHA256,
         ),
         (
             root.parent()

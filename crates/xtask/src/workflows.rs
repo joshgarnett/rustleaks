@@ -31,13 +31,96 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read CI workflow: {error}"))?;
     let weekly = fs::read_to_string(directory.join("weekly.yml"))
         .map_err(|error| format!("cannot read weekly workflow: {error}"))?;
+    let release = fs::read_to_string(directory.join("release-dry-run.yml"))
+        .map_err(|error| format!("cannot read release workflow: {error}"))?;
     validate_ci_matrix(&ci)?;
+    validate_release_workflow(&release)?;
     validate_workflow_efficiency(&ci, &weekly)?;
     validate_dependabot(root)?;
     println!(
         "checked {} least-privilege workflows with immutable action pins and exact runners",
         files.len()
     );
+    Ok(())
+}
+
+fn validate_release_workflow(source: &str) -> Result<(), String> {
+    for required in [
+        "candidate:",
+        "environment: release",
+        "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
+        "test \"${TRIGGER_REF}\" = refs/heads/main",
+        "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
+        "run: just release-dry-run",
+        "cmp \"${first}\" \"${second}\"",
+        "cargo xtask parity --all",
+        "run: just security",
+        "run: just fuzz-smoke",
+        "release-artifact compare",
+        "release-artifact compare-bundles",
+        "release-artifact prepare",
+        "rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks",
+        "rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET/rustleaks.exe",
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
+        "id-token: write",
+        "attestations: write",
+        "gh attestation verify",
+        "--signer-workflow",
+        "--source-digest",
+        "--source-ref refs/heads/main",
+        "--deny-self-hosted-runners",
+        "name: Release candidate required",
+    ] {
+        if !source.contains(required) {
+            return Err(format!(
+                "release workflow omits required boundary {required:?}"
+            ));
+        }
+    }
+    for (required, expected) in [
+        (
+            "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
+            4,
+        ),
+        ("id-token: write", 4),
+        ("attestations: write", 4),
+        ("gh attestation verify", 4),
+        ("steps.attest.outputs.bundle-path", 4),
+        ("release-artifact compare-bundles", 3),
+        ("cargo xtask release-artifact verify", 3),
+    ] {
+        let actual = source.matches(required).count();
+        if actual != expected {
+            return Err(format!(
+                "release workflow contains {actual} instances of {required:?}; expected {expected}"
+            ));
+        }
+    }
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+    ] {
+        if !source.contains(target) {
+            return Err(format!("release workflow omits artifact target {target}"));
+        }
+    }
+    for forbidden in [
+        "cargo publish --execute",
+        "cargo publish --token",
+        "gh release create",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!(
+                "release dry run contains live publication command {forbidden:?}"
+            ));
+        }
+    }
     Ok(())
 }
 

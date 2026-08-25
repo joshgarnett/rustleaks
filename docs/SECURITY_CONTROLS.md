@@ -125,7 +125,7 @@ not execute untrusted pull request code from `pull_request_target`,
 | Pull request | `just ci`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the matching native platform slice. Keep RustSec freshness in a network-enabled secretless job. `just ci` includes committed parity. |
 | Nightly | Longer high-risk fuzz campaigns, increased property cases, batched Go differentials, fresh RustSec, newest-allowed dependency resolution in a noncommitting checkout, and repository self-scan. |
 | Weekly | Scheduled CI supplies pinned Miri, unsafe inventory, cargo-vet, RustSec, and all available native target lanes. The weekly workflow adds slower archive and large-input campaigns plus coverage review; CodeQL remains independently scheduled. |
-| Release candidate | A clean extended campaign with no unresolved crash, timeout, memory, sanitizer, invariant, advisory, vetting, or parity finding; `just security`; `just ci`; `just release-dry-run`; SemVer comparison; exact-target SBOMs reconciled with the Bazel graph; checksums and attestations. The CI gate includes committed parity, and the release dry run includes package consumers. |
+| Release candidate | A protected manual dry run bound to the exact current `main` commit; `just ci`; the complete fresh differential; `just security`; extended AddressSanitizer fuzzing; worktree and history scans; package, external-consumer, docs.rs, and no-upload checks; and twice-built native artifacts with byte comparison, checksums, target SBOMs reconciled with the Bazel graph, provenance, and attestations. |
 
 OSS-Fuzz is not configured. Until eligibility and project ownership are
 reviewed, scheduled CI must run the same targets.

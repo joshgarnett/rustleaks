@@ -57,6 +57,7 @@ fn byte_text_and_ranges_preserve_arbitrary_bytes() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // Keep the complete public disclosure regression adjacent.
 fn public_debug_and_detected_secret_removal_do_not_disclose_finding_bytes() {
     const SECRET: &[u8] = b"synthetic-debug-secret-71f4";
     const REQUIRED_SECRET: &[u8] = b"synthetic-required-secret-9d28";

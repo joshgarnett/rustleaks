@@ -609,16 +609,20 @@ impl Timer {
             return Ok(None);
         }
         let seconds = u64::try_from(seconds).map_err(|_| "--timeout is out of range".to_owned())?;
+        Self::start_after(Duration::from_secs(seconds), cancellation).map(Some)
+    }
+
+    fn start_after(timeout: Duration, cancellation: CancellationToken) -> Result<Self, String> {
         let (done, receiver) = mpsc::channel();
         let handle = thread::Builder::new()
             .name("rustleaks-timeout".to_owned())
             .spawn(move || {
-                if receiver.recv_timeout(Duration::from_secs(seconds)).is_err() {
+                if receiver.recv_timeout(timeout).is_err() {
                     cancellation.cancel();
                 }
             })
             .map_err(|error| format!("could not start timeout helper: {error}"))?;
-        Ok(Some(Self { done, handle }))
+        Ok(Self { done, handle })
     }
 
     fn finish(self) {
@@ -792,10 +796,14 @@ mod tests {
     #[test]
     fn timeout_helper_cancels_and_joins() {
         let token = CancellationToken::new();
-        let timer = Timer::start(1, token.clone()).unwrap().unwrap();
-        std::thread::sleep(Duration::from_millis(1_100));
-        assert!(token.is_cancelled());
+        let timer = Timer::start_after(Duration::from_millis(10), token.clone()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while !token.is_cancelled() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let cancelled = token.is_cancelled();
         timer.finish();
+        assert!(cancelled);
     }
 
     #[test]

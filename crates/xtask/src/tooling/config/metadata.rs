@@ -6,8 +6,8 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::spec::{
-    CONFIG_SHA256, FIXTURE_TREE_SHA256, INPUTS_SHA256, ORACLE_MAIN_SHA256, ORACLE_TEST_SHA256,
-    OUTCOMES_SHA256, REQUESTS_SHA256, REVISION, SCHEMA_SHA256,
+    CONFIG_SHA256, FIXTURE_TREE_SHA256, INPUTS_SHA256, ORACLE_MAIN_SHA256, OUTCOMES_SHA256,
+    REQUESTS_SHA256, REVISION, SCHEMA_SHA256,
 };
 use crate::tooling::support::sha256_bytes;
 
@@ -42,7 +42,6 @@ pub(super) fn validate_manifest(root: &Path, bytes: &[u8]) -> Result<(), String>
         ("default_config_sha256", CONFIG_SHA256),
         ("schema_sha256", SCHEMA_SHA256),
         ("oracle_main_sha256", ORACLE_MAIN_SHA256),
-        ("oracle_test_sha256", ORACLE_TEST_SHA256),
         ("copied_config_tree_sha256", FIXTURE_TREE_SHA256),
         ("inputs_sha256", INPUTS_SHA256),
         ("requests_sha256", REQUESTS_SHA256),
@@ -52,7 +51,6 @@ pub(super) fn validate_manifest(root: &Path, bytes: &[u8]) -> Result<(), String>
     }
     let oracle = root.join("crates/rustleaks-compat/oracle");
     require_file_hash(&oracle.join("main.go"), ORACLE_MAIN_SHA256)?;
-    require_file_hash(&oracle.join("main_test.go"), ORACLE_TEST_SHA256)?;
     let totals = manifest["case_totals"]
         .as_object()
         .ok_or("config manifest case_totals is not an object")?;

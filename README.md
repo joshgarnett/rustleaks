@@ -26,10 +26,10 @@ I already knew and trusted, and I wanted its detection behavior through a
 reusable Rust library. The Rust options I evaluated did not match my embedding,
 target, and dependency constraints, so I started this experimental port.
 
-Kingfisher is a separate Rust secret scanner with published library crates and
-a broader product scope. Rustleaks instead focuses on a small synchronous
-engine and a pinned compatibility profile. This is a difference in project
-scope, not a performance or quality comparison.
+Kingfisher is a separate Rust secret scanner with a broader product scope.
+Rustleaks instead focuses on a small synchronous engine and a pinned
+compatibility profile. This is a difference in project scope, not a performance
+or quality comparison.
 
 ## Library example
 

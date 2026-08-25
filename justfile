@@ -20,6 +20,10 @@ build:
 test:
     bazelisk test //:test
 
+# Run every first-party test ten uncached times to expose nondeterminism.
+flake-check:
+    bazelisk test --nocache_test_results --runs_per_test=10 //:test
+
 # Build warning-denied API documentation through Bazel.
 docs:
     bazelisk build //:docs

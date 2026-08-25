@@ -23,3 +23,15 @@ build:macos-x86_64 --platforms=//platforms:macos_x86_64
 build:macos-aarch64 --platforms=//platforms:macos_aarch64
 build:windows-x86_64-msvc --platforms=//platforms:windows_x86_64_msvc
 build:windows-aarch64-msvc --platforms=//platforms:windows_aarch64_msvc
+
+# Release artifacts use optimized, unstamped builds. Mach-O UUIDs depend on
+# linker state outside the source tree, so omit them before comparing isolated
+# macOS builds. Apple Silicon binaries remain ad-hoc signed by the linker.
+build:release-linux-x86_64-gnu --config=linux-x86_64-gnu --compilation_mode=opt --stamp=no
+build:release-linux-aarch64-gnu --config=linux-aarch64-gnu --compilation_mode=opt --stamp=no
+build:release-linux-x86_64-musl --config=linux-x86_64-musl --compilation_mode=opt --stamp=no
+build:release-linux-aarch64-musl --config=linux-aarch64-musl --compilation_mode=opt --stamp=no
+build:release-macos-x86_64 --config=macos-x86_64 --compilation_mode=opt --stamp=no --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
+build:release-macos-aarch64 --config=macos-aarch64 --compilation_mode=opt --stamp=no --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
+build:release-windows-x86_64-msvc --config=windows-x86_64-msvc --compilation_mode=opt --stamp=no
+build:release-windows-aarch64-msvc --config=windows-aarch64-msvc --compilation_mode=opt --stamp=no

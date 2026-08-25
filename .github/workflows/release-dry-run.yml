@@ -2,24 +2,69 @@ name: Release Dry Run
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full main-branch commit ID to validate without publishing.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-dry-run-${{ github.ref }}
+  group: release-dry-run-${{ inputs.candidate }}
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
 jobs:
-  prepare:
-    name: Prepare non-publishing artifacts
+  approve:
+    name: Approve exact candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 15
     environment: release
     steps:
-      - name: Check out Rustleaks
+      - name: Check out the candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the current protected branch commit
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          TRIGGER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
+          test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
+          test "${TRIGGER_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${CANDIDATE}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "${CANDIDATE}"
+          test -z "$(git status --short)"
+      - name: Confirm no publication credentials are present
+        run: |
+          test -z "${CARGO_REGISTRY_TOKEN:-}"
+          test -z "${CRATES_IO_TOKEN:-}"
+
+  package:
+    name: Package, consumers, and docs.rs
+    needs: approve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
       - name: Set up Go
@@ -32,13 +77,502 @@ jobs:
       - name: Hydrate locked package dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
-      - name: Build optimized local artifacts
-        working-directory: rustleaks
-        run: bazelisk build -c opt //:build
-      - name: Exercise package consumers and no-upload publication
+      - name: Run package consumers and no-upload publication
         working-directory: rustleaks
         run: just release-dry-run
-      - name: Confirm no publication credentials are present
+      - name: Build docs.rs-compatible documentation and examples
+        working-directory: rustleaks
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings
         run: |
-          test -z "${CARGO_REGISTRY_TOKEN:-}"
-          test -z "${CRATES_IO_TOKEN:-}"
+          cargo +1.98.0 doc --locked -p rustleaks-core --all-features --no-deps
+          cargo +1.98.0 test --locked -p rustleaks-core --doc
+      - name: Retain the inspected package archive
+        working-directory: rustleaks
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/package" "${RUNNER_TEMP}/package-repeat"
+          cargo package --locked -p rustleaks-core --target-dir "${RUNNER_TEMP}/package"
+          cargo package --locked -p rustleaks-core --target-dir "${RUNNER_TEMP}/package-repeat"
+          first="${RUNNER_TEMP}/package/package/rustleaks-core-0.1.0-alpha.1.crate"
+          second="${RUNNER_TEMP}/package-repeat/package/rustleaks-core-0.1.0-alpha.1.crate"
+          cmp "${first}" "${second}"
+          digest="$(sha256sum "${first}" | awk '{print $1}')"
+          test "${digest}" = "$(sha256sum "${second}" | awk '{print $1}')"
+          printf 'candidate=%s\nsha256=%s\nbyte_identical=true\n' "${CANDIDATE}" "${digest}" > "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.reproducibility.txt"
+          cargo package --locked -p rustleaks-core --list | tee "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.files.txt"
+      - name: Attest the source package
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/package/package/rustleaks-core-0.1.0-alpha.1.crate
+      - name: Verify and retain the source package attestation
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/package/package/rustleaks-core-0.1.0-alpha.1.crate"
+          gh attestation verify "${archive}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${ATTESTATION_BUNDLE}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.attestation.jsonl"
+      - name: Upload the package candidate
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rustleaks-core-0.1.0-alpha.1-package
+          path: |
+            ${{ runner.temp }}/package/package/rustleaks-core-0.1.0-alpha.1.crate
+            ${{ runner.temp }}/package/rustleaks-core-0.1.0-alpha.1.files.txt
+            ${{ runner.temp }}/package/rustleaks-core-0.1.0-alpha.1.reproducibility.txt
+            ${{ runner.temp }}/package/rustleaks-core-0.1.0-alpha.1.attestation.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
+  extended:
+    name: Extended compatibility and security
+    needs: approve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out the pinned Go oracle
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          cache-dependency-path: gitleaks/go.sum
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+      - name: Install pinned release security and fuzz tools
+        working-directory: rustleaks
+        run: |
+          cargo install cargo-deny --locked --version 0.19.9
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo install cargo-vet --locked --version 0.10.2
+          cargo install cargo-geiger --locked --version 0.13.0
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview --component miri
+          cargo install cargo-fuzz --locked --version 0.13.2
+          cargo +nightly-2026-08-21 miri setup
+      - name: Hydrate locked release dependencies
+        working-directory: rustleaks
+        run: |
+          cargo fetch --locked
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+      - name: Run the authoritative repository gate
+        working-directory: rustleaks
+        run: just ci
+      - name: Replay the complete fresh differential
+        working-directory: rustleaks
+        run: cargo xtask parity --all
+      - name: Run dependency, Miri, and owned-code security policy
+        working-directory: rustleaks
+        run: just security
+      - name: Run extended AddressSanitizer fuzz campaigns
+        working-directory: rustleaks
+        env:
+          RUSTLEAKS_FUZZ_RUNS: "1000000"
+          RUSTLEAKS_FUZZ_MAX_TOTAL_TIME: "120"
+        run: just fuzz-smoke
+      - name: Scan the candidate worktree and complete history
+        working-directory: rustleaks
+        run: |
+          bazelisk build //crates/rustleaks-cli:rustleaks
+          bazel-bin/crates/rustleaks-cli/rustleaks dir . --redact --no-banner --timeout=300
+          bazel-bin/crates/rustleaks-cli/rustleaks git . --redact --no-banner --timeout=600
+
+  native-linux:
+    name: Release artifact ${{ matrix.target }}
+    needs: approve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            target: x86_64-unknown-linux-gnu
+            config: release-linux-x86_64-gnu
+            libc: gnu
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            target: aarch64-unknown-linux-gnu
+            config: release-linux-aarch64-gnu
+            libc: gnu
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            target: x86_64-unknown-linux-musl
+            config: release-linux-x86_64-musl
+            libc: musl
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            target: aarch64-unknown-linux-musl
+            config: release-linux-aarch64-musl
+            libc: musl
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
+      - name: Hydrate locked release dependencies
+        working-directory: rustleaks
+        run: cargo fetch --locked
+      - name: Build twice, smoke test, and prepare evidence
+        working-directory: rustleaks
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+          RELEASE_CONFIG: ${{ matrix.config }}
+          RELEASE_LIBC: ${{ matrix.libc }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+          first_root="${RUNNER_TEMP}/bazel-one"
+          second_root="${RUNNER_TEMP}/bazel-two"
+          work="${RUNNER_TEMP}/release-work"
+          mkdir -p "${work}"
+          bazelisk --output_user_root="${first_root}" build --config="${RELEASE_CONFIG}" //crates/rustleaks-cli:rustleaks
+          bazelisk --output_user_root="${second_root}" build --config="${RELEASE_CONFIG}" //crates/rustleaks-cli:rustleaks
+          first_bin_dir="$(bazelisk --output_user_root="${first_root}" info --config="${RELEASE_CONFIG}" bazel-bin)"
+          second_bin_dir="$(bazelisk --output_user_root="${second_root}" info --config="${RELEASE_CONFIG}" bazel-bin)"
+          install -m 0755 "${first_bin_dir}/crates/rustleaks-cli/rustleaks" "${work}/rustleaks-one"
+          install -m 0755 "${second_bin_dir}/crates/rustleaks-cli/rustleaks" "${work}/rustleaks-two"
+          "${work}/rustleaks-one" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${work}/rustleaks-one" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | tee "${work}/smoke.json"
+          grep -q REDACTED "${work}/smoke.json"
+          if [[ "${RELEASE_LIBC}" = gnu ]]; then
+            glibc="$(readelf --version-info "${work}/rustleaks-one" | sed -n 's/.*Name: \(GLIBC_[0-9.]*\).*/\1/p' | sort -V | tail -n 1)"
+            test -n "${glibc}"
+          else
+            if readelf --program-headers "${work}/rustleaks-one" | grep -q ' INTERP '; then
+              echo "musl release artifact contains a dynamic interpreter" >&2
+              exit 1
+            fi
+            if readelf --dynamic "${work}/rustleaks-one" 2>/dev/null | grep -q '(NEEDED)'; then
+              echo "musl release artifact contains dynamic dependencies" >&2
+              exit 1
+            fi
+            glibc=none
+          fi
+          cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
+          cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" "${glibc}"
+          cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" "${glibc}"
+          cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
+          packaged="${work}/extracted/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks"
+          mkdir -p "${work}/extracted"
+          tar -xzf "${work}/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz" -C "${work}/extracted"
+          "${packaged}" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | grep -q REDACTED
+      - name: Attest the release archive
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
+      - name: Verify and retain the release archive attestation
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz"
+          gh attestation verify "${archive}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${ATTESTATION_BUNDLE}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
+          cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
+      - name: Upload the verified target bundle
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rustleaks-0.1.0-alpha.1-${{ matrix.target }}
+          path: ${{ runner.temp }}/release-work/bundle
+          if-no-files-found: error
+          retention-days: 7
+
+  native-macos:
+    name: Release artifact ${{ matrix.target }}
+    needs: approve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            architecture: x86_64
+            target: x86_64-apple-darwin
+            config: release-macos-x86_64
+          - runner: macos-15
+            architecture: arm64
+            target: aarch64-apple-darwin
+            config: release-macos-aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
+      - name: Hydrate locked release dependencies
+        working-directory: rustleaks
+        run: cargo fetch --locked
+      - name: Build twice, smoke test, and prepare evidence
+        working-directory: rustleaks
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+          RELEASE_CONFIG: ${{ matrix.config }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+          first_root="${RUNNER_TEMP}/bazel-one"
+          second_root="${RUNNER_TEMP}/bazel-two"
+          work="${RUNNER_TEMP}/release-work"
+          mkdir -p "${work}"
+          bazelisk --output_user_root="${first_root}" build --config="${RELEASE_CONFIG}" //crates/rustleaks-cli:rustleaks
+          bazelisk --output_user_root="${second_root}" build --config="${RELEASE_CONFIG}" //crates/rustleaks-cli:rustleaks
+          first_bin_dir="$(bazelisk --output_user_root="${first_root}" info --config="${RELEASE_CONFIG}" bazel-bin)"
+          second_bin_dir="$(bazelisk --output_user_root="${second_root}" info --config="${RELEASE_CONFIG}" bazel-bin)"
+          install -m 0755 "${first_bin_dir}/crates/rustleaks-cli/rustleaks" "${work}/rustleaks-one"
+          install -m 0755 "${second_bin_dir}/crates/rustleaks-cli/rustleaks" "${work}/rustleaks-two"
+          test -z "$(dwarfdump --uuid "${work}/rustleaks-one")"
+          "${work}/rustleaks-one" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${work}/rustleaks-one" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | tee "${work}/smoke.json"
+          grep -q REDACTED "${work}/smoke.json"
+          cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
+          cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" none
+          cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" none
+          cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
+          packaged="${work}/extracted/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks"
+          mkdir -p "${work}/extracted"
+          tar -xzf "${work}/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz" -C "${work}/extracted"
+          "${packaged}" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | grep -q REDACTED
+      - name: Attest the release archive
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
+      - name: Verify and retain the release archive attestation
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz"
+          gh attestation verify "${archive}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${ATTESTATION_BUNDLE}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
+          cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
+      - name: Upload the verified target bundle
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rustleaks-0.1.0-alpha.1-${{ matrix.target }}
+          path: ${{ runner.temp }}/release-work/bundle
+          if-no-files-found: error
+          retention-days: 7
+
+  native-windows:
+    name: Release artifact ${{ matrix.target }}
+    needs: approve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            architecture: X64
+            target: x86_64-pc-windows-msvc
+            config: release-windows-x86_64-msvc
+          - runner: windows-11-arm
+            architecture: Arm64
+            target: aarch64-pc-windows-msvc
+            config: release-windows-aarch64-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.7
+          cache: false
+      - name: Set up maintained tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
+      - name: Hydrate locked release dependencies
+        working-directory: rustleaks
+        run: cargo fetch --locked
+      - name: Build twice, smoke test, and prepare evidence
+        shell: pwsh
+        working-directory: rustleaks
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+          RELEASE_CONFIG: ${{ matrix.config }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actual -ne $env:EXPECTED_ARCHITECTURE) { throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual" }
+          $firstRoot = Join-Path $env:RUNNER_TEMP bazel-one
+          $secondRoot = Join-Path $env:RUNNER_TEMP bazel-two
+          $work = Join-Path $env:RUNNER_TEMP release-work
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          bazelisk --output_user_root=$firstRoot --windows_enable_symlinks build --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //crates/rustleaks-cli:rustleaks
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bazelisk --output_user_root=$secondRoot --windows_enable_symlinks build --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //crates/rustleaks-cli:rustleaks
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $firstBinDir = bazelisk --output_user_root=$firstRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all bazel-bin
+          $secondBinDir = bazelisk --output_user_root=$secondRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all bazel-bin
+          $first = Join-Path $work rustleaks-one.exe
+          $second = Join-Path $work rustleaks-two.exe
+          Copy-Item (Join-Path $firstBinDir crates/rustleaks-cli/rustleaks.exe) $first
+          Copy-Item (Join-Path $secondBinDir crates/rustleaks-cli/rustleaks.exe) $second
+          & $first --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $smoke = Join-Path $work smoke.json
+          $smokeOutput = ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $first stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $smokeOutput | Tee-Object $smoke
+          if (-not (Select-String -Quiet -Pattern REDACTED -Path $smoke)) { throw "redacted smoke finding missing" }
+          cargo xtask release-artifact compare $first $second (Join-Path $work reproducibility.json)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask release-artifact prepare $first $firstRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle) none
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask release-artifact prepare $second $secondRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle-repeat) none
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask release-artifact compare-bundles (Join-Path $work bundle) (Join-Path $work bundle-repeat)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $extract = Join-Path $work extracted
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          tar -xzf (Join-Path $work "bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.tar.gz") -C $extract
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packaged = Join-Path $extract "rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET/rustleaks.exe"
+          & $packaged --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packagedOutput = ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $packaged stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($packagedOutput | Select-String -Quiet -Pattern REDACTED)) { throw "packaged redacted smoke finding missing" }
+      - name: Attest the release archive
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
+      - name: Verify and retain the release archive attestation
+        shell: pwsh
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP "release-work/bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.tar.gz"
+          gh attestation verify $archive --repo $env:GITHUB_REPOSITORY --bundle $env:ATTESTATION_BUNDLE --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release-dry-run.yml" --source-digest $env:CANDIDATE --source-ref refs/heads/main --deny-self-hosted-runners
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item $env:ATTESTATION_BUNDLE (Join-Path $env:RUNNER_TEMP "release-work/bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.attestation.jsonl")
+          cargo xtask release-artifact verify (Join-Path $env:RUNNER_TEMP "release-work/bundle")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload the verified target bundle
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rustleaks-0.1.0-alpha.1-${{ matrix.target }}
+          path: ${{ runner.temp }}/release-work/bundle
+          if-no-files-found: error
+          retention-days: 7
+
+  required:
+    name: Release candidate required
+    if: always()
+    needs:
+      - approve
+      - package
+      - extended
+      - native-linux
+      - native-macos
+      - native-windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every non-publishing boundary
+        env:
+          APPROVE: ${{ needs.approve.result }}
+          PACKAGE: ${{ needs.package.result }}
+          EXTENDED: ${{ needs.extended.result }}
+          NATIVE_LINUX: ${{ needs.native-linux.result }}
+          NATIVE_MACOS: ${{ needs.native-macos.result }}
+          NATIVE_WINDOWS: ${{ needs.native-windows.result }}
+        run: |
+          set -euo pipefail
+          for result in "${APPROVE}" "${PACKAGE}" "${EXTENDED}" "${NATIVE_LINUX}" "${NATIVE_MACOS}" "${NATIVE_WINDOWS}"; do
+            test "${result}" = success
+          done

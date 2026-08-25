@@ -555,6 +555,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "docs",
         "docs-check",
         "doctor",
+        "flake-check",
         "format",
         "fuzz-build",
         "fuzz-smoke",
@@ -574,6 +575,10 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
     for (recipe, command) in [
         ("build", "bazelisk build //:build"),
         ("test", "bazelisk test //:test"),
+        (
+            "flake-check",
+            "bazelisk test --nocache_test_results --runs_per_test=10 //:test",
+        ),
         ("docs", "bazelisk build //:docs"),
         (
             "docs-check",

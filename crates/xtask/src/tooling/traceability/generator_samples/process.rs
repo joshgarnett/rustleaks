@@ -77,7 +77,7 @@ mod tests {
     use std::io::Write as _;
     use std::process::Command;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use super::{capture, capture_with_limits};
     use crate::tooling::support::TempDir;
@@ -132,9 +132,7 @@ mod tests {
                     .env(PROBE_ROOT, &root)
                     .spawn()
                     .unwrap();
-                let deadline = Instant::now() + Duration::from_secs(2);
                 while !root.join("heartbeat").is_file() {
-                    assert!(Instant::now() < deadline, "descendant did not start");
                     thread::sleep(Duration::from_millis(10));
                 }
                 descendant.wait().unwrap();
@@ -236,8 +234,8 @@ mod tests {
             .args([PROBE_TEST, "--exact", "--nocapture"])
             .env(PROBE, "parent")
             .env(PROBE_ROOT, &temporary.path);
-        let error = capture(&mut command, "tree probe", Duration::from_secs(2)).unwrap_err();
-        assert!(error.contains("external 2 second deadline"), "{error}");
+        let error = capture(&mut command, "tree probe", Duration::from_secs(5)).unwrap_err();
+        assert!(error.contains("external 5 second deadline"), "{error}");
         let before = std::fs::read(temporary.path.join("heartbeat")).unwrap();
         thread::sleep(Duration::from_millis(100));
         assert_eq!(

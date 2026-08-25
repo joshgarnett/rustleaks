@@ -7,6 +7,22 @@ license = "MIT AND BSD-3-Clause"
 description = "Byte-first synchronous engine for the independent Rustleaks port"
 readme = "README.md"
 repository.workspace = true
+homepage = "https://github.com/joshgarnett/rustleaks"
+documentation = "https://docs.rs/rustleaks-core"
+keywords = ["gitleaks", "secret-detection", "security", "scanner"]
+categories = ["development-tools"]
+include = [
+    "default/gitleaks.toml",
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "-D", "warnings"]
 
 [dependencies]
 aho-corasick = "1"
