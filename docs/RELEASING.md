@@ -65,7 +65,13 @@ scan smoke tests, and emits:
 - a target-filtered CycloneDX 1.6 SBOM with registry package checksums and an
   exact Cargo-to-Bazel graph reconciliation;
 - an unsigned SLSA v1 dry-run provenance predicate;
+- a GitHub-native signed SLSA provenance attestation for the archive, verified
+  against the exact `main` commit and release workflow;
 - a reproducibility proof and machine-readable release manifest.
+
+The retained source package is generated twice into isolated Cargo target
+directories, compared byte for byte, and receives the same signed provenance
+verification.
 
 GNU manifests record the highest required `GLIBC_X.Y` symbol version measured
 from the exact binary. Musl artifacts must contain no ELF interpreter or
@@ -78,9 +84,9 @@ difference is normalized.
 Before the first publication, the repository still needs:
 
 - one successful protected dry run for the exact accepted candidate, including
-  every native artifact and the independently scheduled CodeQL result;
+  every source and native artifact, its signed provenance attestation, and the
+  independently scheduled CodeQL result;
 - reviewed crates.io trusted publishing for the first package;
-- GitHub-native signed provenance attestations for the retained archives; and
 - the final approval packet described below.
 
 Cross-compilation is not native evidence. A local dry run, package archive, or

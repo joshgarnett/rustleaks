@@ -48,18 +48,46 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
     for required in [
         "candidate:",
         "environment: release",
+        "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
+        "test \"${TRIGGER_REF}\" = refs/heads/main",
         "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
         "run: just release-dry-run",
+        "cmp \"${first}\" \"${second}\"",
         "cargo xtask parity --all",
         "run: just security",
         "run: just fuzz-smoke",
         "release-artifact compare",
         "release-artifact prepare",
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
+        "id-token: write",
+        "attestations: write",
+        "gh attestation verify",
+        "--signer-workflow",
+        "--source-digest",
+        "--source-ref refs/heads/main",
+        "--deny-self-hosted-runners",
         "name: Release candidate required",
     ] {
         if !source.contains(required) {
             return Err(format!(
                 "release workflow omits required boundary {required:?}"
+            ));
+        }
+    }
+    for (required, expected) in [
+        (
+            "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
+            4,
+        ),
+        ("id-token: write", 4),
+        ("attestations: write", 4),
+        ("gh attestation verify", 4),
+        ("steps.attest.outputs.bundle-path", 4),
+    ] {
+        let actual = source.matches(required).count();
+        if actual != expected {
+            return Err(format!(
+                "release workflow contains {actual} instances of {required:?}; expected {expected}"
             ));
         }
     }

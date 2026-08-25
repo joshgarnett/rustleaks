@@ -20,7 +20,7 @@
 - Add exact-candidate package, docs.rs, compatibility, security, fuzz, and
   eight-target release dry runs with twice-built native archives, checksums,
   target CycloneDX SBOMs, Cargo-to-Bazel reconciliation, and dry-run
-  provenance.
+  provenance plus GitHub-native signed attestations.
 
 Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. Publication remains subject to a successful protected run for

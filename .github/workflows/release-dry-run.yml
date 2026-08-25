@@ -35,9 +35,13 @@ jobs:
       - name: Require the current protected branch commit
         env:
           CANDIDATE: ${{ inputs.candidate }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          TRIGGER_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
+          test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
+          test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
           git fetch --no-tags origin main
           test "$(git rev-parse origin/main)" = "${CANDIDATE}"
@@ -52,6 +56,10 @@ jobs:
     needs: approve
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Check out the candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -81,10 +89,40 @@ jobs:
           cargo +1.98.0 test --locked -p rustleaks-core --doc
       - name: Retain the inspected package archive
         working-directory: rustleaks
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
         run: |
-          mkdir -p "${RUNNER_TEMP}/package"
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/package" "${RUNNER_TEMP}/package-repeat"
           cargo package --locked -p rustleaks-core --target-dir "${RUNNER_TEMP}/package"
+          cargo package --locked -p rustleaks-core --target-dir "${RUNNER_TEMP}/package-repeat"
+          first="${RUNNER_TEMP}/package/package/rustleaks-core-0.1.0-alpha.1.crate"
+          second="${RUNNER_TEMP}/package-repeat/package/rustleaks-core-0.1.0-alpha.1.crate"
+          cmp "${first}" "${second}"
+          digest="$(sha256sum "${first}" | awk '{print $1}')"
+          test "${digest}" = "$(sha256sum "${second}" | awk '{print $1}')"
+          printf 'candidate=%s\nsha256=%s\nbyte_identical=true\n' "${CANDIDATE}" "${digest}" > "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.reproducibility.txt"
           cargo package --locked -p rustleaks-core --list | tee "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.files.txt"
+      - name: Attest the source package
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/package/package/rustleaks-core-0.1.0-alpha.1.crate
+      - name: Verify and retain the source package attestation
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/package/package/rustleaks-core-0.1.0-alpha.1.crate"
+          gh attestation verify "${archive}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${ATTESTATION_BUNDLE}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.attestation.jsonl"
       - name: Upload the package candidate
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -92,6 +130,8 @@ jobs:
           path: |
             ${{ runner.temp }}/package/package/rustleaks-core-0.1.0-alpha.1.crate
             ${{ runner.temp }}/package/rustleaks-core-0.1.0-alpha.1.files.txt
+            ${{ runner.temp }}/package/rustleaks-core-0.1.0-alpha.1.reproducibility.txt
+            ${{ runner.temp }}/package/rustleaks-core-0.1.0-alpha.1.attestation.jsonl
           if-no-files-found: error
           retention-days: 7
 
@@ -190,6 +230,10 @@ jobs:
             libc: musl
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Check out the candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -249,6 +293,27 @@ jobs:
           fi
           cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
           cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" "${glibc}"
+      - name: Attest the release archive
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
+      - name: Verify and retain the release archive attestation
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz"
+          gh attestation verify "${archive}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${ATTESTATION_BUNDLE}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
       - name: Upload the verified target bundle
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -274,6 +339,10 @@ jobs:
             config: release-macos-aarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Check out the candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -319,6 +388,27 @@ jobs:
           grep -q REDACTED "${work}/smoke.json"
           cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
           cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" none
+      - name: Attest the release archive
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
+      - name: Verify and retain the release archive attestation
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz"
+          gh attestation verify "${archive}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${ATTESTATION_BUNDLE}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
       - name: Upload the verified target bundle
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -344,6 +434,10 @@ jobs:
             config: release-windows-aarch64-msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Check out the candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -395,6 +489,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo xtask release-artifact prepare $first $firstRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle) none
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Attest the release archive
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
+      - name: Verify and retain the release archive attestation
+        shell: pwsh
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP "release-work/bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.tar.gz"
+          gh attestation verify $archive --repo $env:GITHUB_REPOSITORY --bundle $env:ATTESTATION_BUNDLE --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release-dry-run.yml" --source-digest $env:CANDIDATE --source-ref refs/heads/main --deny-self-hosted-runners
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item $env:ATTESTATION_BUNDLE (Join-Path $env:RUNNER_TEMP "release-work/bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.attestation.jsonl")
       - name: Upload the verified target bundle
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
