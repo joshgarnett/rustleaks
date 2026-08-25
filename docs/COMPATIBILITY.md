@@ -65,11 +65,13 @@ named, bounded Rust dispositions rather than normalized away.
 
 Native GitHub Actions runtime evidence covers `x86_64` and `aarch64` for Linux
 GNU, Linux musl, macOS, and Windows MSVC. Each native lane builds the maintained
-Bazel graph, feature profiles, documentation, and all platform-compatible
-first-party tests. Complete local evidence also covers `aarch64-apple-darwin`.
-Hermetic cross-compilation remains compilation evidence only and is not used to
-make runtime support claims. The absence of native evidence is not a
-compatibility exception.
+Bazel graph, feature profiles, and all platform-compatible first-party tests.
+The Linux musl lanes exclude only stable-channel Bazel doctest runners because
+rules_rust 0.72.0 generates invalid runfiles paths for their LLVM link inputs;
+the authoritative Linux GNU gate runs those same doctests. Complete local
+evidence also covers `aarch64-apple-darwin`. Hermetic cross-compilation remains
+compilation evidence only and is not used to make runtime support claims. The
+absence of native evidence is not a compatibility exception.
 
 Run `just parity` for the committed replay. The pinned sibling checkout is
 required separately when regenerating or performing the complete differential
