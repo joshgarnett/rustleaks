@@ -121,18 +121,21 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         return Err("upstream checkout changed during source generation".into());
     }
 
-    let manifest =
-        validation::render_manifest(&legacy_manifest, &manifest_value, README.as_bytes())?;
+    let (outcome_bytes, outcome_values) = if check {
+        (&legacy_outcomes[..], &legacy_outcome_values[..])
+    } else {
+        (&observed.bytes[..], &observed.values[..])
+    };
+    let manifest = validation::render_manifest(
+        &legacy_manifest,
+        &manifest_value,
+        README.as_bytes(),
+        outcome_bytes,
+        outcome_values,
+    )?;
     let mut tree = GeneratedTree::default();
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert(
-        "outcomes-v1.jsonl",
-        if check {
-            legacy_outcomes
-        } else {
-            observed.bytes
-        },
-    )?;
+    tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("README.md", README.as_bytes())?;
