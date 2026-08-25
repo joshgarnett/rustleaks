@@ -30,6 +30,7 @@ parity replay, and target compilation.
 | Lint, prose, docs, build, and target checks | `just check` |
 | Run one test | `bazelisk test //crates/rustleaks-core:engine_test` |
 | Run all first-party tests | `just test` |
+| Repeat all tests to expose flakes | `just flake-check` |
 | Run the complete local Bazel gate | `just ci` |
 | Replay committed compatibility evidence | `just parity` |
 | Check packages and external consumers | `just package-check` |

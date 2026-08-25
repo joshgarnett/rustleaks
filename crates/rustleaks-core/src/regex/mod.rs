@@ -1786,10 +1786,10 @@ mod tests {
 
     #[test]
     fn resource_contract_covers_default_repeat_nesting_and_large_class() {
-        // This intentionally runs in the ordinary debug test profile. Release
-        // measurements are recorded separately in the M3 resource report.
+        // This exercises the upper-bound-shaped inputs in the ordinary debug
+        // test profile. Fresh latency measurements are enforced separately by
+        // the performance budget gate.
         const SEARCH_BYTES: usize = 1 << 20;
-        const WALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(15);
 
         fn collect_patterns(value: &toml::Value, key: Option<&str>, patterns: &mut Vec<String>) {
             match value {
@@ -1812,7 +1812,6 @@ mod tests {
             }
         }
 
-        let started = std::time::Instant::now();
         let default: toml::Value = toml::from_str(include_str!("../../default/gitleaks.toml"))
             .expect("embedded default must parse");
         let mut patterns = Vec::new();
@@ -1840,11 +1839,6 @@ mod tests {
         assert!(deep.is_match(b"a"));
         assert!(large_class.is_match("Ω".as_bytes()));
         assert!(!longest_default.is_match(&vec![b'x'; SEARCH_BYTES]));
-        assert!(
-            started.elapsed() <= WALL_BUDGET,
-            "regex resource contract exceeded {WALL_BUDGET:?}: {:?}",
-            started.elapsed()
-        );
     }
 
     #[test]

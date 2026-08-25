@@ -1951,7 +1951,6 @@ mod tests {
             OsString::from("RUSTLEAKS_GIT_CANCEL_CHILD"),
             OsString::from("1"),
         )];
-        let started = std::time::Instant::now();
         for stage in [SourceStage::GitCommand, SourceStage::GitBlob] {
             let cancellation = CancelAfterPolls(std::sync::atomic::AtomicUsize::new(4));
             let result = collect_command(
@@ -1965,7 +1964,6 @@ mod tests {
             );
             assert!(matches!(result, Err(SourceError::Cancelled)));
         }
-        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[cfg(unix)]

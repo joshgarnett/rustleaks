@@ -43,6 +43,7 @@ Then run the affected broader command:
 - `just check` for prose, links, formatting, Clippy, Rustdoc, build, and all
   eight declared target compile checks;
 - `just test` for every first-party Bazel test;
+- `just flake-check` for ten uncached executions of every first-party test;
 - `just parity` for the committed compatibility replay;
 - `just package-check` for package contents and external Cargo/Bazel
   consumers; and
@@ -71,6 +72,11 @@ release inputs change. Run both fuzz recipes when parser, matcher, decoder,
 source, report, CLI, resource-limit, or fuzz inputs change. Use
 `cargo xtask parity --all` for a change to supported compatibility behavior or
 generated oracle evidence.
+
+Run `just flake-check` after changing timers, cancellation, subprocesses,
+filesystem traversal, temporary paths, or concurrency. A test must pass all
+ten executions. Keep functional assertions separate from performance budgets;
+the dedicated performance gate measures latency from fresh samples.
 
 Cross-compilation is compile-only evidence. It does not establish native
 runtime support for a target.

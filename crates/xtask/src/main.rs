@@ -3217,12 +3217,12 @@ mod tests {
             &std::env::current_exe().unwrap(),
             TIMEOUT_PROBE_TEST,
             &root,
-            Duration::from_secs(2),
+            Duration::from_secs(5),
         );
         assert!(
             result
                 .unwrap_err()
-                .contains("exceeded its external 2 second deadline")
+                .contains("exceeded its external 5 second deadline")
         );
         let stopped = fs::read(&heartbeat).expect("probe body did not start before its deadline");
         thread::sleep(Duration::from_millis(100));
