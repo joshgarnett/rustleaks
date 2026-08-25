@@ -90,6 +90,25 @@ Before the first publication, the repository still needs:
 - reviewed crates.io trusted publishing for the first package;
 - the final approval packet described below.
 
+The first-publication credential boundary is currently blocked. The crates.io
+[trusted-publishing prerequisites](https://crates.io/docs/trusted-publishing)
+require the crate to exist before its owner can configure a trusted publisher,
+and state that the initial publication requires an API token. Rustleaks has no
+published crate, while this release policy requires trusted publishing and
+forbids a long-lived token fallback. Those conditions cannot both be satisfied.
+
+Goal 9 must stop before crates.io publication until a maintainer explicitly
+approves one of these remediations:
+
+- wait for crates.io to support trusted publishing for an initial publication;
+- approve a narrowly scoped, one-time initial-publication credential exception,
+  its reviewed execution procedure, immediate revocation, and the subsequent
+  trusted-publisher configuration.
+
+The exception option changes the accepted security boundary. It requires a
+separate decision and requalification of the resulting executable runbook. No
+crates.io publication command is authorized while this blocker remains.
+
 Cross-compilation is not native evidence. A local dry run, package archive, or
 successful command does not grant publication approval.
 
