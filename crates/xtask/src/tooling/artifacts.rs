@@ -11,6 +11,7 @@ pub(crate) struct GeneratedTree {
     files: BTreeMap<PathBuf, Vec<u8>>,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct OutcomeBaseline<'a> {
     pub(crate) values: &'a [Value],
     pub(crate) bytes: &'a [u8],
