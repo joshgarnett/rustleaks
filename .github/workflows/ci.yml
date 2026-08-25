@@ -230,13 +230,13 @@ jobs:
             target: x86_64-unknown-linux-musl
             config: linux-x86_64-musl
             host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_musl
+            execution_platform: //platforms:linux_x86_64_gnu
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-musl
             config: linux-aarch64-musl
             host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_musl
+            execution_platform: //platforms:linux_aarch64_gnu
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
