@@ -22,11 +22,10 @@ pub(super) const REQUESTS_SHA256: &str =
     "91efa888f8fb2a875892f61629b561ceeb52c82bd503fdf6d25de59b5b6373bb";
 pub(super) const SCHEMA_SHA256: &str =
     "8fe48dbcc0e67b94c06437ce2e4cc29322c28355cd810f22ef1901ed60b194f1";
-const MANIFEST_SHA256: &str = "ee1896d06dd855d1c0711a8b4d3e52ad3866b05f3cbe17e60043e21867800307";
+const MANIFEST_SHA256: &str = "28339ebce87e7729390355dd13bbeeeb77cc0c26d3df2dcc38ecd0ad2b069ca9";
+// The executable oracle produces the corpus. Its tests are validation, not corpus provenance.
 pub(super) const ORACLE_MAIN_SHA256: &str =
     "8e2482a757fe49eece06694c1c8300c09b5752b9625ece8eee9fac18d39c1266";
-pub(super) const ORACLE_TEST_SHA256: &str =
-    "a878d3766980e6f4095a38ce727d324bf929b3f03b8ed500ab16c841b14483ef";
 pub(super) const FIXTURE_TREE_SHA256: &str =
     "bd9ce06e8db1d3c7711529b53c9dc339b1603e6c7f085e64256db73cb3407dab";
 const INPUT_IDENTITIES_SHA256: &str =
