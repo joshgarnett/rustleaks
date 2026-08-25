@@ -8,7 +8,10 @@ use serde_json::{Map, Value};
 
 use super::controls;
 use super::spec::{CONFIG_SHA256, PROTOCOL_VERSION, REQUEST_COUNT, REVISION};
-use crate::tooling::support::sha256_bytes;
+use crate::tooling::{
+    artifacts::{OutcomeBaseline, compare_json_outcomes},
+    support::sha256_bytes,
+};
 
 const FRAGMENT_KEYS: &[&str] = &[
     "bytes_base64",
@@ -74,7 +77,7 @@ pub(super) fn validate_all(
     root: &Path,
     requests: &[Value],
     outcomes: &[Value],
-    outcome_bytes: &[u8],
+    committed: OutcomeBaseline<'_>,
     coverage: &Value,
     negative: &Value,
     manifest: &Value,
@@ -95,15 +98,53 @@ pub(super) fn validate_all(
             return Err(format!("{id}: outcome order changed"));
         }
     }
+    let committed_go = uniform_string(committed.values, "go_version", "Git")?;
+    let committed_platform = uniform_string(committed.values, "platform", "Git")?;
+    let _committed_git = uniform_string(committed.values, "git_version_base64", "Git")?;
+    for (request, outcome) in requests.iter().zip(committed.values) {
+        validate_envelope(request, outcome, committed_go, committed_platform)?;
+    }
+    if outcomes
+        .iter()
+        .any(|outcome| outcome.get("go_version").and_then(Value::as_str) != Some(committed_go))
+    {
+        return Err(format!(
+            "selected Go version differs from committed Git provenance {committed_go}"
+        ));
+    }
     validate_projection(outcomes)?;
     controls::validate(root, requests, &by_id, coverage, negative)?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
-    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(outcome_bytes)
-        || required_u64(entry, "bytes", "outcomes")? != outcome_bytes.len() as u64
+    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
+        || required_u64(entry, "bytes", "outcomes")? != committed.bytes.len() as u64
     {
-        return Err("fresh Git outcomes differ from the committed manifest".into());
+        return Err("committed Git outcomes differ from their manifest".into());
     }
+    // The committed platform and host Git version remain pinned provenance.
+    // Cross-host replays may differ only in those fields.
+    compare_json_outcomes(
+        committed.values,
+        outcomes,
+        &["platform", "git_version_base64"],
+        "Git",
+    )?;
     Ok(())
+}
+
+fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result<&'a str, String> {
+    let first = outcomes
+        .first()
+        .ok_or_else(|| format!("{label} outcomes are empty"))?;
+    let expected = required_str(first, field, label)?;
+    if outcomes
+        .iter()
+        .any(|outcome| outcome.get(field).and_then(Value::as_str) != Some(expected))
+    {
+        return Err(format!(
+            "committed {label} {field} provenance is inconsistent"
+        ));
+    }
+    Ok(expected)
 }
 
 fn validate_projection(outcomes: &[Value]) -> Result<(), String> {

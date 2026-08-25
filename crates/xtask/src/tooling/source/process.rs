@@ -30,11 +30,9 @@ pub(super) fn observe(
     temporary: &TempDir,
 ) -> Result<Observed, String> {
     let (go_version, platform) = selected_runtime(upstream, temporary)?;
-    if required_str(manifest, "go_version", "manifest")? != go_version
-        || required_str(manifest, "platform", "manifest")? != platform
-    {
+    if required_str(manifest, "go_version", "manifest")? != go_version {
         return Err(format!(
-            "selected Go runtime {go_version} {platform} differs from the source manifest"
+            "selected Go version {go_version} differs from the committed source manifest"
         ));
     }
     let oracle_root = root.join("crates/rustleaks-compat/oracle");
@@ -141,6 +139,8 @@ fn configure_go(command: &mut Command, temporary: &TempDir) {
     command
         .env("GOCACHE", temporary.path.join("go-cache"))
         .env("GOMODCACHE", module_cache)
+        .env("LC_ALL", "C")
+        .env("TZ", "UTC")
         .env(
             "GOMEMLIMIT",
             std::env::var_os("GOMEMLIMIT").unwrap_or_else(|| "512MiB".into()),

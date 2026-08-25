@@ -8,7 +8,10 @@ use serde_json::{Map, Value};
 
 use super::spec::{CONFIG_SHA256, PROTOCOL_VERSION, REQUEST_COUNT, REVISION};
 use super::{controls, controls_archive};
-use crate::tooling::support::sha256_bytes;
+use crate::tooling::{
+    artifacts::{OutcomeBaseline, compare_json_outcomes},
+    support::sha256_bytes,
+};
 
 const FRAGMENT_KEYS: &[&str] = &[
     "bytes_base64",
@@ -57,7 +60,7 @@ pub(super) fn validate_all(
     root: &Path,
     requests: &[Value],
     outcomes: &[Value],
-    outcome_bytes: &[u8],
+    committed: OutcomeBaseline<'_>,
     coverage: &Value,
     negative: &Value,
     manifest: &Value,
@@ -78,16 +81,24 @@ pub(super) fn validate_all(
             return Err(format!("{id}: outcome order changed"));
         }
     }
+    let committed_go = required_str(manifest, "go_version", "manifest")?;
+    let committed_platform = required_str(manifest, "platform", "manifest")?;
+    for (request, outcome) in requests.iter().zip(committed.values) {
+        validate_envelope(request, outcome, committed_go, committed_platform)?;
+    }
     validate_projection(outcomes)?;
     controls::validate(&by_id, outcomes, negative)?;
     controls_archive::validate(root, &by_id)?;
     validate_counts(outcomes, coverage, manifest)?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
-    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(outcome_bytes)
+    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
         || required_u64(entry, "records", "outcomes")? != REQUEST_COUNT as u64
     {
-        return Err("fresh source outcomes differ from the committed manifest".into());
+        return Err("committed source outcomes differ from their manifest".into());
     }
+    // The committed platform remains pinned provenance. Cross-host replays may
+    // differ only in that envelope field; all semantic fields stay exact.
+    compare_json_outcomes(committed.values, outcomes, &["platform"], "source")?;
     Ok(())
 }
 
