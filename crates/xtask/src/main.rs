@@ -1746,34 +1746,7 @@ fn quality_check() -> Result<(), String> {
         ],
         "Rust 1.85 MSRV check",
     )?;
-    for cross_target in [
-        "x86_64-unknown-linux-gnu",
-        "x86_64-pc-windows-gnu",
-        "x86_64-pc-windows-msvc",
-    ] {
-        command_status_with_timeout(
-            Command::new("cargo")
-                .current_dir(&root)
-                .env("CARGO_TARGET_DIR", &target.path)
-                .env("RUSTFLAGS", "-D warnings")
-                .args([
-                    "+1.98.0",
-                    "check",
-                    "--workspace",
-                    "--all-targets",
-                    "--all-features",
-                    "--locked",
-                    "--offline",
-                    "--target",
-                    cross_target,
-                ]),
-            Duration::from_secs(1_200),
-            &format!("warning-denied compile-only {cross_target} check"),
-        )?;
-    }
-    println!(
-        "local quality, MSRV, and compile-only Linux/Windows target checks passed; native runtime remains follow-up"
-    );
+    println!("local quality and MSRV checks passed; Bazel owns the supported target matrix");
     Ok(())
 }
 

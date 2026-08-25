@@ -88,6 +88,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         ("steps.attest.outputs.bundle-path", 4),
         ("release-artifact compare-bundles", 3),
         ("cargo xtask release-artifact verify", 3),
+        ("packaged-smoke.json", 3),
     ] {
         let actual = source.matches(required).count();
         if actual != expected {
@@ -95,6 +96,18 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
                 "release workflow contains {actual} instances of {required:?}; expected {expected}"
             ));
         }
+    }
+    let native_attestation_steps = source
+        .split("- name: Verify and retain the release archive attestation")
+        .skip(1)
+        .filter_map(|tail| tail.split("\n      - name:").next())
+        .collect::<Vec<_>>();
+    if native_attestation_steps.len() != 3
+        || native_attestation_steps
+            .iter()
+            .any(|step| !step.contains("working-directory: rustleaks"))
+    {
+        return Err("each native release attestation verifier must run from the checkout".into());
     }
     for target in [
         "x86_64-unknown-linux-gnu",
@@ -114,6 +127,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "cargo publish --execute",
         "cargo publish --token",
         "gh release create",
+        "--report-path=- | grep -q REDACTED",
     ] {
         if source.contains(forbidden) {
             return Err(format!(
