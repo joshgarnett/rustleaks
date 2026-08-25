@@ -17,7 +17,11 @@
   names while retaining the upstream spellings for backward compatibility.
 - Differentially test the pinned compatibility profile against a bounded Go
   oracle and committed corpora.
+- Add exact-candidate package, docs.rs, compatibility, security, fuzz, and
+  eight-target release dry runs with twice-built native archives, checksums,
+  target CycloneDX SBOMs, Cargo-to-Bazel reconciliation, and dry-run
+  provenance.
 
 Hosted native workflows cover the declared Linux, Windows, macOS, and musl
-target matrix. Fresh evidence for the exact release candidate remains a
-release prerequisite.
+target matrix. Publication remains subject to a successful protected run for
+the exact accepted candidate and a separate explicit decision.

@@ -31,13 +31,63 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read CI workflow: {error}"))?;
     let weekly = fs::read_to_string(directory.join("weekly.yml"))
         .map_err(|error| format!("cannot read weekly workflow: {error}"))?;
+    let release = fs::read_to_string(directory.join("release-dry-run.yml"))
+        .map_err(|error| format!("cannot read release workflow: {error}"))?;
     validate_ci_matrix(&ci)?;
+    validate_release_workflow(&release)?;
     validate_workflow_efficiency(&ci, &weekly)?;
     validate_dependabot(root)?;
     println!(
         "checked {} least-privilege workflows with immutable action pins and exact runners",
         files.len()
     );
+    Ok(())
+}
+
+fn validate_release_workflow(source: &str) -> Result<(), String> {
+    for required in [
+        "candidate:",
+        "environment: release",
+        "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
+        "run: just release-dry-run",
+        "cargo xtask parity --all",
+        "run: just security",
+        "run: just fuzz-smoke",
+        "release-artifact compare",
+        "release-artifact prepare",
+        "name: Release candidate required",
+    ] {
+        if !source.contains(required) {
+            return Err(format!(
+                "release workflow omits required boundary {required:?}"
+            ));
+        }
+    }
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+    ] {
+        if !source.contains(target) {
+            return Err(format!("release workflow omits artifact target {target}"));
+        }
+    }
+    for forbidden in [
+        "cargo publish --execute",
+        "cargo publish --token",
+        "gh release create",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!(
+                "release dry run contains live publication command {forbidden:?}"
+            ));
+        }
+    }
     Ok(())
 }
 

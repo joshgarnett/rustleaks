@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod release_artifact;
 mod tooling;
 mod workflows;
 
@@ -311,6 +312,9 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "build-system-check" => build_system::check(&workspace_root()?),
         [command] if command == "package-check" => package_check(),
         [command] if command == "release-dry-run" => release_dry_run(),
+        [command, arguments @ ..] if command == "release-artifact" => {
+            release_artifact::run(&workspace_root()?, arguments)
+        }
         [command] if command == "security-check" => security_check(),
         [command] if command == "rustsec-check" => rustsec_check(),
         [command] if command == "vet-check" => vet_check(),
@@ -353,7 +357,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -542,6 +546,26 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
             ));
         }
     }
+    let allowed_roots = [
+        ".cargo_vcs_info.json",
+        "Cargo.lock",
+        "Cargo.toml",
+        "Cargo.toml.orig",
+        "LICENSE",
+        "NOTICE",
+        "README.md",
+    ];
+    for path in package_files.lines() {
+        if !allowed_roots.contains(&path)
+            && !["default/", "src/", "tests/"]
+                .iter()
+                .any(|prefix| path.starts_with(prefix))
+        {
+            return Err(format!(
+                "rustleaks-core source package contains unexpected `{path}`"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -556,10 +580,46 @@ fn validate_core_repository_metadata(metadata: &str) -> Result<(), String> {
                 .find(|package| package["name"] == "rustleaks-core")
         })
         .ok_or("cargo metadata omits rustleaks-core")?;
-    if package["repository"].as_str() == Some("https://github.com/gitleaks/gitleaks") {
-        return Err("independent rustleaks-core package claims the upstream repository".into());
+    for (field, expected) in [
+        ("version", RELEASE_VERSION),
+        (
+            "description",
+            "Byte-first synchronous engine for the independent Rustleaks port",
+        ),
+        ("license", "MIT AND BSD-3-Clause"),
+        ("repository", "https://github.com/joshgarnett/rustleaks"),
+        ("homepage", "https://github.com/joshgarnett/rustleaks"),
+        ("documentation", "https://docs.rs/rustleaks-core"),
+        ("readme", "README.md"),
+        ("rust_version", "1.85"),
+    ] {
+        if package[field].as_str() != Some(expected) {
+            return Err(format!(
+                "rustleaks-core package metadata {field} must be {expected:?}"
+            ));
+        }
+    }
+    if package["keywords"] != json_array(&["gitleaks", "secret-detection", "security", "scanner"])
+        || package["categories"] != json_array(&["development-tools"])
+    {
+        return Err("rustleaks-core package keywords or categories changed".into());
+    }
+    let docs = &package["metadata"]["docs"]["rs"];
+    if docs["all-features"] != true
+        || docs["rustdoc-args"] != json_array(&["--cfg", "docsrs", "-D", "warnings"])
+    {
+        return Err("rustleaks-core docs.rs metadata changed".into());
     }
     Ok(())
+}
+
+fn json_array(values: &[&str]) -> serde_json::Value {
+    serde_json::Value::Array(
+        values
+            .iter()
+            .map(|value| serde_json::Value::String((*value).to_owned()))
+            .collect(),
+    )
 }
 
 fn validate_regex_backend_metadata(metadata: &str) -> Result<(), String> {
@@ -797,7 +857,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .max_finding_records(100),
     );
     let outcome = engine.scan_fragment_controlled(
-        &Fragment::new(b"string AWSToken = \"AKIALALEMEL33243OLIB\";"),
+        &Fragment::new(concat!("string AWSToken = \"AKIA", "LALEMEL33243OLIB\";").as_bytes()),
         &ScanOptions::default(),
         &control,
     );
@@ -3224,7 +3284,23 @@ mod tests {
         assert!(validate_core_repository_metadata(inherited).is_err());
 
         let independent = r#"{
-            "packages": [{"name": "rustleaks-core", "repository": null}]
+            "packages": [{
+                "name": "rustleaks-core",
+                "version": "0.1.0-alpha.1",
+                "description": "Byte-first synchronous engine for the independent Rustleaks port",
+                "license": "MIT AND BSD-3-Clause",
+                "repository": "https://github.com/joshgarnett/rustleaks",
+                "homepage": "https://github.com/joshgarnett/rustleaks",
+                "documentation": "https://docs.rs/rustleaks-core",
+                "readme": "README.md",
+                "rust_version": "1.85",
+                "keywords": ["gitleaks", "secret-detection", "security", "scanner"],
+                "categories": ["development-tools"],
+                "metadata": {"docs": {"rs": {
+                    "all-features": true,
+                    "rustdoc-args": ["--cfg", "docsrs", "-D", "warnings"]
+                }}}
+            }]
         }"#;
         assert!(validate_core_repository_metadata(independent).is_ok());
     }

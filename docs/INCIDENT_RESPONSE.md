@@ -87,3 +87,8 @@ The verified private intake endpoint is documented in `SECURITY.md`. Do not
 send vulnerability details to a public issue. Setup verified that the route is
 enabled without submitting a live report. Exercise the reporting and response
 procedure before the first public release.
+
+The 2026-08-24 pre-publication exercise is recorded in
+[`INCIDENT_RESPONSE_EXERCISE.md`](INCIDENT_RESPONSE_EXERCISE.md). It used only
+synthetic release-integrity evidence and did not submit a vulnerability report,
+use a credential, yank a crate, or mutate a public release.
