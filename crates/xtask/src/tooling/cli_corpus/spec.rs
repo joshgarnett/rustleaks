@@ -384,7 +384,7 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
     Ok(())
 }
 
-pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 3] = [
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 4] = [
     (
         "Cargo.toml",
         "1d01e816e7c21c0642e25a468fd2ccba3d460b84e9828891730cce2cdc4e861b",
@@ -399,6 +399,11 @@ pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 3] = [
         "crates/rustleaks-cli/src/output.rs",
         "800a1c3350f56b4f7af25193e6c5d1a54e3cb44d8273ecdebd5f4bbb45b000ba",
         "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
+    ),
+    (
+        "crates/rustleaks-cli/src/run.rs",
+        "ab7393a1020f67cc6c1790912126b429994cbce1b9c84acd1177b646c4943971",
+        "194e6eafc48337ed70c8d5140891bdcf92d4f4461840b8898ea59f15053dcf2f",
     ),
 ];
 

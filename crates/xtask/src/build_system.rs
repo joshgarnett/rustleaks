@@ -453,6 +453,14 @@ fn named_call<'a>(source: &'a str, function: &str, target: &str) -> Result<&'a s
         .ok_or_else(|| format!("BUILD file omits {function} target {target}"))
 }
 
+fn calls<'a>(source: &'a str, function: &str) -> Vec<&'a str> {
+    source
+        .split(&format!("{function}("))
+        .skip(1)
+        .filter_map(|tail| tail.split("\n)").next())
+        .collect()
+}
+
 fn check_module(root: &Path) -> Result<(), String> {
     let module = fs::read_to_string(root.join("MODULE.bazel"))
         .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
@@ -470,10 +478,64 @@ fn check_module(root: &Path) -> Result<(), String> {
     ] {
         require_contains(&module, required, "crate-universe module contract")?;
     }
+    let rust_toolchain = calls(&module, "rust.toolchain")
+        .into_iter()
+        .next()
+        .ok_or_else(|| "MODULE.bazel omits the default Rust toolchain".to_owned())?;
+    let crate_universe = calls(&module, "crate.from_cargo")
+        .into_iter()
+        .next()
+        .ok_or_else(|| "MODULE.bazel omits crate-universe".to_owned())?;
     for target in REQUIRED_TARGETS {
-        if module.matches(&format!("\"{target}\"")).count() != 2 {
+        require_contains(
+            crate_universe,
+            &format!("\"{target}\""),
+            "crate-universe target set",
+        )?;
+        if target.ends_with("-musl") {
+            require_not_contains(
+                rust_toolchain,
+                &format!("\"{target}\""),
+                "unconstrained default Rust toolchain",
+            )?;
+        } else {
+            require_contains(
+                rust_toolchain,
+                &format!("\"{target}\""),
+                "default Rust toolchain target set",
+            )?;
+        }
+    }
+    let repository_sets = calls(&module, "rust.repository_set");
+    for (name, exec_triple) in [
+        ("rust_musl_macos_aarch64", "aarch64-apple-darwin"),
+        ("rust_musl_macos_x86_64", "x86_64-apple-darwin"),
+        ("rust_musl_linux_aarch64", "aarch64-unknown-linux-gnu"),
+        ("rust_musl_linux_x86_64", "x86_64-unknown-linux-gnu"),
+        ("rust_musl_windows_aarch64", "aarch64-pc-windows-msvc"),
+        ("rust_musl_windows_x86_64", "x86_64-pc-windows-msvc"),
+    ] {
+        let declarations = repository_sets
+            .iter()
+            .copied()
+            .filter(|call| call.contains(&format!("name = \"{name}\"")))
+            .collect::<Vec<_>>();
+        if declarations.len() != 2
+            || !declarations
+                .iter()
+                .any(|call| call.contains("target_triple = \"aarch64-unknown-linux-musl\""))
+            || !declarations
+                .iter()
+                .any(|call| call.contains("target_triple = \"x86_64-unknown-linux-musl\""))
+            || !declarations
+                .iter()
+                .all(|call| call.contains("\"//platforms:musl\""))
+            || !declarations
+                .iter()
+                .any(|call| call.contains(&format!("exec_triple = \"{exec_triple}\"")))
+        {
             return Err(format!(
-                "MODULE.bazel must declare {target} once for Rust and once for crate-universe"
+                "MODULE.bazel does not define the complete constrained repository set {name}"
             ));
         }
     }
@@ -500,6 +562,18 @@ fn check_interface(root: &Path) -> Result<(), String> {
         "build:linux-aarch64-gnu --platforms=//platforms:linux_aarch64_gnu",
         "build:linux-x86_64-musl --platforms=//platforms:linux_x86_64_musl",
         "build:linux-aarch64-musl --platforms=//platforms:linux_aarch64_musl",
+        "build:linux-x86_64-musl --extra_toolchains=@rust_musl_linux_aarch64__x86_64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-x86_64-musl --extra_toolchains=@rust_musl_linux_x86_64__x86_64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-x86_64-musl --extra_toolchains=@rust_musl_macos_aarch64__x86_64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-x86_64-musl --extra_toolchains=@rust_musl_macos_x86_64__x86_64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-x86_64-musl --extra_toolchains=@rust_musl_windows_aarch64_x86_64//:toolchain",
+        "build:linux-x86_64-musl --extra_toolchains=@rust_musl_windows_x86_64_x86_64//:toolchain",
+        "build:linux-aarch64-musl --extra_toolchains=@rust_musl_linux_aarch64__aarch64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-aarch64-musl --extra_toolchains=@rust_musl_linux_x86_64__aarch64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-aarch64-musl --extra_toolchains=@rust_musl_macos_aarch64__aarch64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-aarch64-musl --extra_toolchains=@rust_musl_macos_x86_64__aarch64-unknown-linux-musl__stable//:toolchain",
+        "build:linux-aarch64-musl --extra_toolchains=@rust_musl_windows_aarch64_aarch64//:toolchain",
+        "build:linux-aarch64-musl --extra_toolchains=@rust_musl_windows_x86_64_aarch64//:toolchain",
         "build:macos-x86_64 --platforms=//platforms:macos_x86_64",
         "build:macos-aarch64 --platforms=//platforms:macos_aarch64",
         "build:windows-x86_64-msvc --platforms=//platforms:windows_x86_64_msvc",

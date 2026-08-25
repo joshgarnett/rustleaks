@@ -39,7 +39,7 @@
   "parser_usage_byte_count_both_implementations": 19508,
   "stderr_event_count_both_implementations": 884,
   "mutation_control_count": 20,
-  "generator_sha256": "3316962c3f9bccd5dcf19f76cc506981b7566923b0b0dc9da9222a3836bb9c60",
+  "generator_sha256": "357d149b0e65530427c8627126eeacf373d1a81ead5a43b698d6c3644f67ed93",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",
@@ -76,7 +76,7 @@
     "crates/rustleaks-cli/src/lib.rs": "0c0a81f49066b19343765d6076593384b50a5c97e04315115f398daf64a651f2",
     "crates/rustleaks-cli/src/main.rs": "459bd190f5258177fa7099afbd2238e3b082f11b0e0c7b15d55bad4c87af415d",
     "crates/rustleaks-cli/src/output.rs": "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
-    "crates/rustleaks-cli/src/run.rs": "ab7393a1020f67cc6c1790912126b429994cbce1b9c84acd1177b646c4943971",
+    "crates/rustleaks-cli/src/run.rs": "194e6eafc48337ed70c8d5140891bdcf92d4f4461840b8898ea59f15053dcf2f",
     "crates/rustleaks-cli/src/source.rs": "2803d6bde7c68504ac7f3f04ec7bbca5c70f7a95da27bed12b61e91c3351625e"
   },
   "requests_sha256": "32126f7d65e15f526836391b681811809d799eaf79066b5e60f9bb48191eb6c4",

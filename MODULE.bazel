@@ -18,23 +18,125 @@ single_version_override(
 )
 
 register_toolchains("@llvm//toolchain:all")
+register_toolchains(
+    "//platforms:linux_aarch64_musl_test_toolchain",
+    "//platforms:linux_x86_64_musl_test_toolchain",
+)
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+
+# rules_rust intentionally maps Linux GNU and musl triples to the same default
+# CPU and OS constraints. Keep musl out of the default repository set and add
+# it only through explicitly constrained sets so the libc constraint selects
+# the requested Rust standard library.
+rust.repository_set(
+    edition = "2024",
+    exec_triple = "aarch64-apple-darwin",
+    name = "rust_musl_macos_aarch64",
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = ["1.85.0"],
+)
+rust.repository_set(
+    name = "rust_musl_macos_aarch64",
+    target_compatible_with = ["@platforms//cpu:x86_64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "x86_64-unknown-linux-musl",
+)
+rust.repository_set(
+    edition = "2024",
+    exec_triple = "x86_64-apple-darwin",
+    name = "rust_musl_macos_x86_64",
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = ["1.85.0"],
+)
+rust.repository_set(
+    name = "rust_musl_macos_x86_64",
+    target_compatible_with = ["@platforms//cpu:x86_64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "x86_64-unknown-linux-musl",
+)
+rust.repository_set(
+    edition = "2024",
+    exec_triple = "aarch64-unknown-linux-gnu",
+    name = "rust_musl_linux_aarch64",
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = ["1.85.0"],
+)
+rust.repository_set(
+    name = "rust_musl_linux_aarch64",
+    target_compatible_with = ["@platforms//cpu:x86_64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "x86_64-unknown-linux-musl",
+)
+rust.repository_set(
+    edition = "2024",
+    exec_triple = "x86_64-unknown-linux-gnu",
+    name = "rust_musl_linux_x86_64",
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = ["1.85.0"],
+)
+rust.repository_set(
+    name = "rust_musl_linux_x86_64",
+    target_compatible_with = ["@platforms//cpu:x86_64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "x86_64-unknown-linux-musl",
+)
+rust.repository_set(
+    edition = "2024",
+    exec_triple = "aarch64-pc-windows-msvc",
+    name = "rust_musl_windows_aarch64",
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = ["1.85.0"],
+)
+rust.repository_set(
+    name = "rust_musl_windows_aarch64",
+    target_compatible_with = ["@platforms//cpu:x86_64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "x86_64-unknown-linux-musl",
+)
+rust.repository_set(
+    edition = "2024",
+    exec_triple = "x86_64-pc-windows-msvc",
+    name = "rust_musl_windows_x86_64",
+    target_compatible_with = ["@platforms//cpu:aarch64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = ["1.85.0"],
+)
+rust.repository_set(
+    name = "rust_musl_windows_x86_64",
+    target_compatible_with = ["@platforms//cpu:x86_64", "@platforms//os:linux", "//platforms:musl"],
+    target_triple = "x86_64-unknown-linux-musl",
+)
 rust.toolchain(
     edition = "2024",
     extra_target_triples = [
         "aarch64-apple-darwin",
         "aarch64-pc-windows-msvc",
         "aarch64-unknown-linux-gnu",
-        "aarch64-unknown-linux-musl",
         "x86_64-apple-darwin",
         "x86_64-pc-windows-msvc",
         "x86_64-unknown-linux-gnu",
-        "x86_64-unknown-linux-musl",
     ],
     versions = ["1.85.0"],
 )
-use_repo(rust, "rust_toolchains")
+use_repo(
+    rust,
+    "rust_musl_linux_aarch64__aarch64-unknown-linux-musl__stable",
+    "rust_musl_linux_aarch64__x86_64-unknown-linux-musl__stable",
+    "rust_musl_linux_x86_64__aarch64-unknown-linux-musl__stable",
+    "rust_musl_linux_x86_64__x86_64-unknown-linux-musl__stable",
+    "rust_musl_macos_aarch64__aarch64-unknown-linux-musl__stable",
+    "rust_musl_macos_aarch64__x86_64-unknown-linux-musl__stable",
+    "rust_musl_macos_x86_64__aarch64-unknown-linux-musl__stable",
+    "rust_musl_macos_x86_64__x86_64-unknown-linux-musl__stable",
+    "rust_toolchains",
+    # rules_rust compacts Windows repository names. Keep semantic aliases at
+    # the root boundary so build configurations do not depend on those names.
+    rust_musl_windows_aarch64_aarch64 = "rw-909678106",
+    rust_musl_windows_aarch64_x86_64 = "rw-1263212488",
+    rust_musl_windows_x86_64_aarch64 = "rw-139904074",
+    rust_musl_windows_x86_64_x86_64 = "rw-872401912",
+)
 register_toolchains("@rust_toolchains//:all")
 
 crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")

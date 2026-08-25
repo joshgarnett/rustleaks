@@ -88,6 +88,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         ("steps.attest.outputs.bundle-path", 4),
         ("release-artifact compare-bundles", 3),
         ("cargo xtask release-artifact verify", 3),
+        ("packaged-smoke.json", 3),
     ] {
         let actual = source.matches(required).count();
         if actual != expected {
@@ -95,6 +96,18 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
                 "release workflow contains {actual} instances of {required:?}; expected {expected}"
             ));
         }
+    }
+    let native_attestation_steps = source
+        .split("- name: Verify and retain the release archive attestation")
+        .skip(1)
+        .filter_map(|tail| tail.split("\n      - name:").next())
+        .collect::<Vec<_>>();
+    if native_attestation_steps.len() != 3
+        || native_attestation_steps
+            .iter()
+            .any(|step| !step.contains("working-directory: rustleaks"))
+    {
+        return Err("each native release attestation verifier must run from the checkout".into());
     }
     for target in [
         "x86_64-unknown-linux-gnu",
@@ -114,6 +127,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "cargo publish --execute",
         "cargo publish --token",
         "gh release create",
+        "--report-path=- | grep -q REDACTED",
     ] {
         if source.contains(forbidden) {
             return Err(format!(
@@ -218,6 +232,15 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
             return Err(format!("CI omits native target {target} on {runner}"));
         }
     }
+    for (target, execution_platform) in [
+        ("x86_64-unknown-linux-musl", "//platforms:linux_x86_64_gnu"),
+        (
+            "aarch64-unknown-linux-musl",
+            "//platforms:linux_aarch64_gnu",
+        ),
+    ] {
+        validate_target_execution_platform(source, target, execution_platform)?;
+    }
     for required in [
         "run: just ci",
         "run: just security",
@@ -229,6 +252,24 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
         if !source.contains(required) {
             return Err(format!("CI omits required boundary {required:?}"));
         }
+    }
+    Ok(())
+}
+
+fn validate_target_execution_platform(
+    source: &str,
+    target: &str,
+    execution_platform: &str,
+) -> Result<(), String> {
+    let entry = source
+        .split("          - runner: ")
+        .find(|entry| entry.contains(&format!("target: {target}\n")))
+        .ok_or_else(|| format!("CI omits native target {target}"))?;
+    let expected = format!("execution_platform: {execution_platform}\n");
+    if !entry.contains(&expected) {
+        return Err(format!(
+            "CI native target {target} does not use required execution platform {execution_platform}"
+        ));
     }
     Ok(())
 }
@@ -267,7 +308,9 @@ mod tests {
     use std::collections::BTreeSet;
     use std::path::Path;
 
-    use super::{validate_workflow, validate_workflow_efficiency};
+    use super::{
+        validate_target_execution_platform, validate_workflow, validate_workflow_efficiency,
+    };
 
     const PIN: &str = "d23441a48e516b6c34aea4fa41551a30e30af803";
 
@@ -309,5 +352,18 @@ mod tests {
         let error =
             validate_workflow_efficiency("run: bazelisk build //:build //:docs\n", "").unwrap_err();
         assert!(error.contains("duplicates the acceptance gate's API documentation build"));
+    }
+
+    #[test]
+    fn rejects_musl_execution_platform_for_host_tools() {
+        let source = "          - runner: ubuntu-24.04-arm\n            target: aarch64-unknown-linux-musl\n            host_platform: //platforms:linux_aarch64_gnu\n            execution_platform: //platforms:linux_aarch64_musl\n";
+        let error = validate_target_execution_platform(
+            source,
+            "aarch64-unknown-linux-musl",
+            "//platforms:linux_aarch64_gnu",
+        )
+        .unwrap_err();
+        assert!(error.contains("aarch64-unknown-linux-musl"));
+        assert!(error.contains("linux_aarch64_gnu"));
     }
 }

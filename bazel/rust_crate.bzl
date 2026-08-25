@@ -7,8 +7,12 @@ load(
     "rust_test",
 )
 
-_WINDOWS_INCOMPATIBLE = select({
+_DOC_TEST_INCOMPATIBLE = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],
+    # rules_rust 0.72.0's stable-channel doctest writer strips every path
+    # separator when musl's LLVM link inputs contribute an empty artifact
+    # root. The authoritative GNU gate still runs every doctest.
+    "//platforms:musl": ["@platforms//:incompatible"],
     "//conditions:default": [],
 })
 
@@ -88,7 +92,7 @@ def rustleaks_library(
             ],
             proc_macro_deps = ["//bazel:doctest_path_mapper"],
             rustdoc_flags = ["-Dwarnings"],
-            target_compatible_with = _WINDOWS_INCOMPATIBLE,
+            target_compatible_with = _DOC_TEST_INCOMPATIBLE,
             visibility = visibility,
         )
 

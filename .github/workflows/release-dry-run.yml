@@ -296,16 +296,19 @@ jobs:
           cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" "${glibc}"
           cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
           packaged="${work}/extracted/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks"
+          packaged_smoke="${work}/packaged-smoke.json"
           mkdir -p "${work}/extracted"
           tar -xzf "${work}/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz" -C "${work}/extracted"
           "${packaged}" --help
-          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | grep -q REDACTED
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path="${packaged_smoke}"
+          grep -q REDACTED "${packaged_smoke}"
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
       - name: Verify and retain the release archive attestation
+        working-directory: rustleaks
         env:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           CANDIDATE: ${{ inputs.candidate }}
@@ -399,16 +402,19 @@ jobs:
           cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" none
           cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
           packaged="${work}/extracted/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks"
+          packaged_smoke="${work}/packaged-smoke.json"
           mkdir -p "${work}/extracted"
           tar -xzf "${work}/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz" -C "${work}/extracted"
           "${packaged}" --help
-          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | grep -q REDACTED
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path="${packaged_smoke}"
+          grep -q REDACTED "${packaged_smoke}"
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
       - name: Verify and retain the release archive attestation
+        working-directory: rustleaks
         env:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           CANDIDATE: ${{ inputs.candidate }}
@@ -518,11 +524,12 @@ jobs:
           tar -xzf (Join-Path $work "bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.tar.gz") -C $extract
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $packaged = Join-Path $extract "rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET/rustleaks.exe"
+          $packagedSmoke = Join-Path $work packaged-smoke.json
           & $packaged --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $packagedOutput = ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $packaged stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=-
+          ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $packaged stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=$packagedSmoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not ($packagedOutput | Select-String -Quiet -Pattern REDACTED)) { throw "packaged redacted smoke finding missing" }
+          if (-not (Select-String -Quiet -Pattern REDACTED -Path $packagedSmoke)) { throw "packaged redacted smoke finding missing" }
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -530,6 +537,7 @@ jobs:
           subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-0.1.0-alpha.1-${{ matrix.target }}.tar.gz
       - name: Verify and retain the release archive attestation
         shell: pwsh
+        working-directory: rustleaks
         env:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           CANDIDATE: ${{ inputs.candidate }}
