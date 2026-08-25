@@ -8,7 +8,10 @@ use serde_json::{Map, Value};
 
 use super::controls;
 use super::spec::{CONFIG_SHA256, PROTOCOL_VERSION, REQUEST_COUNT, REVISION};
-use crate::tooling::support::sha256_bytes;
+use crate::tooling::{
+    artifacts::{OutcomeBaseline, compare_json_outcomes},
+    support::sha256_bytes,
+};
 
 const FRAGMENT_KEYS: &[&str] = &[
     "bytes_base64",
@@ -74,7 +77,7 @@ pub(super) fn validate_all(
     root: &Path,
     requests: &[Value],
     outcomes: &[Value],
-    outcome_bytes: &[u8],
+    committed: OutcomeBaseline<'_>,
     coverage: &Value,
     negative: &Value,
     manifest: &Value,
@@ -95,15 +98,54 @@ pub(super) fn validate_all(
             return Err(format!("{id}: outcome order changed"));
         }
     }
+    let committed_go = uniform_string(committed.values, "go_version", "Git")?;
+    let committed_platform = uniform_string(committed.values, "platform", "Git")?;
+    let _committed_git = uniform_string(committed.values, "git_version_base64", "Git")?;
+    let _observed_git = uniform_string(outcomes, "git_version_base64", "Git")?;
+    for (request, outcome) in requests.iter().zip(committed.values) {
+        validate_envelope(request, outcome, committed_go, committed_platform)?;
+    }
+    if outcomes
+        .iter()
+        .any(|outcome| outcome.get("go_version").and_then(Value::as_str) != Some(committed_go))
+    {
+        return Err(format!(
+            "selected Go version differs from committed Git provenance {committed_go}"
+        ));
+    }
     validate_projection(outcomes)?;
     controls::validate(root, requests, &by_id, coverage, negative)?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
-    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(outcome_bytes)
-        || required_u64(entry, "bytes", "outcomes")? != outcome_bytes.len() as u64
+    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
+        || required_u64(entry, "bytes", "outcomes")? != committed.bytes.len() as u64
     {
-        return Err("fresh Git outcomes differ from the committed manifest".into());
+        return Err("committed Git outcomes differ from their manifest".into());
     }
+    // The committed platform and host Git version remain pinned provenance.
+    // Cross-host replays may differ only in those fields.
+    compare_json_outcomes(
+        committed.values,
+        outcomes,
+        &["platform", "git_version_base64"],
+        "Git",
+    )?;
     Ok(())
+}
+
+fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result<&'a str, String> {
+    let first = outcomes
+        .first()
+        .ok_or_else(|| format!("{label} outcomes are empty"))?;
+    let expected = required_str(first, field, label)?;
+    if outcomes
+        .iter()
+        .any(|outcome| outcome.get(field).and_then(Value::as_str) != Some(expected))
+    {
+        return Err(format!(
+            "committed {label} {field} provenance is inconsistent"
+        ));
+    }
+    Ok(expected)
 }
 
 fn validate_projection(outcomes: &[Value]) -> Result<(), String> {
@@ -146,7 +188,25 @@ pub(super) fn render_manifest(
     manifest: &Value,
     legacy_readme_len: usize,
     readme: &[u8],
+    outcome_bytes: &[u8],
 ) -> Result<Vec<u8>, String> {
+    let outcome_entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
+    let old_outcome_hash = required_str(outcome_entry, "sha256", "outcomes")?;
+    let old_outcome_bytes = required_u64(outcome_entry, "bytes", "outcomes")?;
+    let old = format!(
+        "\"outcomes-v1.jsonl\": {{\n      \"sha256\": \"{old_outcome_hash}\",\n      \"bytes\": {old_outcome_bytes}\n    }}"
+    );
+    let new = format!(
+        "\"outcomes-v1.jsonl\": {{\n      \"sha256\": \"{}\",\n      \"bytes\": {}\n    }}",
+        sha256_bytes(outcome_bytes),
+        outcome_bytes.len()
+    );
+    let rendered = replace_once(
+        legacy,
+        old.as_bytes(),
+        new.as_bytes(),
+        "outcomes manifest entry",
+    )?;
     let old_hash = required_str(
         &required_object(manifest, "files", "manifest")?["README.md"],
         "sha256",
@@ -161,7 +221,7 @@ pub(super) fn render_manifest(
         readme.len()
     );
     replace_once(
-        legacy,
+        &rendered,
         old.as_bytes(),
         new.as_bytes(),
         "README manifest entry",
@@ -271,7 +331,10 @@ pub(super) fn fragment_bytes(
 
 #[cfg(test)]
 mod tests {
-    use super::replace_once;
+    use serde_json::json;
+
+    use super::{render_manifest, replace_once};
+    use crate::tooling::support::sha256_bytes;
 
     #[test]
     fn manifest_replacement_supports_length_changes() {
@@ -280,5 +343,31 @@ mod tests {
             b"a newer z"
         );
         assert!(replace_once(b"old old", b"old", b"new", "test").is_err());
+    }
+
+    #[test]
+    fn rendered_manifest_tracks_generated_outcome_bytes() {
+        let manifest = json!({
+            "files": {
+                "outcomes-v1.jsonl": {"sha256": "old-outcomes", "bytes": 3},
+                "README.md": {"sha256": "old-readme", "bytes": 3}
+            }
+        });
+        let legacy = br#"{
+    "outcomes-v1.jsonl": {
+      "sha256": "old-outcomes",
+      "bytes": 3
+    },
+    "README.md": {
+      "sha256": "old-readme",
+      "bytes": 3
+    }
+}"#;
+        let rendered = render_manifest(legacy, &manifest, 3, b"readme", b"outcomes").unwrap();
+        let rendered = String::from_utf8(rendered).unwrap();
+        assert!(rendered.contains(&sha256_bytes(b"outcomes")));
+        assert!(rendered.contains("\"bytes\": 8"));
+        assert!(rendered.contains(&sha256_bytes(b"readme")));
+        assert!(rendered.contains("\"bytes\": 6"));
     }
 }

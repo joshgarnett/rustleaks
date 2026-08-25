@@ -8,7 +8,10 @@ use serde_json::{Map, Value};
 
 use super::spec::{CONFIG_SHA256, PROTOCOL_VERSION, REQUEST_COUNT, REVISION};
 use super::{controls, controls_archive};
-use crate::tooling::support::sha256_bytes;
+use crate::tooling::{
+    artifacts::{OutcomeBaseline, compare_json_outcomes},
+    support::sha256_bytes,
+};
 
 const FRAGMENT_KEYS: &[&str] = &[
     "bytes_base64",
@@ -57,7 +60,7 @@ pub(super) fn validate_all(
     root: &Path,
     requests: &[Value],
     outcomes: &[Value],
-    outcome_bytes: &[u8],
+    committed: OutcomeBaseline<'_>,
     coverage: &Value,
     negative: &Value,
     manifest: &Value,
@@ -78,16 +81,24 @@ pub(super) fn validate_all(
             return Err(format!("{id}: outcome order changed"));
         }
     }
+    let committed_go = required_str(manifest, "go_version", "manifest")?;
+    let committed_platform = required_str(manifest, "platform", "manifest")?;
+    for (request, outcome) in requests.iter().zip(committed.values) {
+        validate_envelope(request, outcome, committed_go, committed_platform)?;
+    }
     validate_projection(outcomes)?;
     controls::validate(&by_id, outcomes, negative)?;
     controls_archive::validate(root, &by_id)?;
     validate_counts(outcomes, coverage, manifest)?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
-    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(outcome_bytes)
+    if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
         || required_u64(entry, "records", "outcomes")? != REQUEST_COUNT as u64
     {
-        return Err("fresh source outcomes differ from the committed manifest".into());
+        return Err("committed source outcomes differ from their manifest".into());
     }
+    // The committed platform remains pinned provenance. Cross-host replays may
+    // differ only in that envelope field; all semantic fields stay exact.
+    compare_json_outcomes(committed.values, outcomes, &["platform"], "source")?;
     Ok(())
 }
 
@@ -166,24 +177,60 @@ pub(super) fn render_manifest(
     legacy: &[u8],
     manifest: &Value,
     readme: &[u8],
+    outcome_bytes: &[u8],
+    outcomes: &[Value],
 ) -> Result<Vec<u8>, String> {
+    let old_platform = required_str(manifest, "platform", "manifest")?;
+    let new_platform = uniform_string(outcomes, "platform", "source")?;
+    let old = format!("\"platform\": \"{old_platform}\"");
+    let new = format!("\"platform\": \"{new_platform}\"");
+    let rendered = replace_once(
+        legacy,
+        old.as_bytes(),
+        new.as_bytes(),
+        "platform provenance",
+    )?;
+    let old = required_str(
+        &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"],
+        "sha256",
+        "outcomes",
+    )?;
+    let rendered = replace_once(
+        &rendered,
+        old.as_bytes(),
+        sha256_bytes(outcome_bytes).as_bytes(),
+        "outcome digest",
+    )?;
     let old = required_str(
         &required_object(manifest, "files", "manifest")?["README.md"],
         "sha256",
         "README",
     )?;
     replace_once(
-        legacy,
+        &rendered,
         old.as_bytes(),
         sha256_bytes(readme).as_bytes(),
         "README digest",
     )
 }
 
-fn replace_once(bytes: &[u8], old: &[u8], new: &[u8], label: &str) -> Result<Vec<u8>, String> {
-    if old.len() != new.len() {
-        return Err(format!("cannot replace {label} without changing layout"));
+fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result<&'a str, String> {
+    let first = outcomes
+        .first()
+        .ok_or_else(|| format!("{label} outcomes are empty"))?;
+    let expected = required_str(first, field, label)?;
+    if outcomes
+        .iter()
+        .any(|outcome| outcome.get(field).and_then(Value::as_str) != Some(expected))
+    {
+        return Err(format!(
+            "generated {label} {field} provenance is inconsistent"
+        ));
     }
+    Ok(expected)
+}
+
+fn replace_once(bytes: &[u8], old: &[u8], new: &[u8], label: &str) -> Result<Vec<u8>, String> {
     let positions = bytes
         .windows(old.len())
         .enumerate()
@@ -195,8 +242,11 @@ fn replace_once(bytes: &[u8], old: &[u8], new: &[u8], label: &str) -> Result<Vec
             positions.len()
         ));
     }
-    let mut rendered = bytes.to_vec();
-    rendered[positions[0]..positions[0] + old.len()].copy_from_slice(new);
+    let position = positions[0];
+    let mut rendered = Vec::with_capacity(bytes.len() - old.len() + new.len());
+    rendered.extend_from_slice(&bytes[..position]);
+    rendered.extend_from_slice(new);
+    rendered.extend_from_slice(&bytes[position + old.len()..]);
     Ok(rendered)
 }
 
@@ -290,7 +340,10 @@ pub(super) fn finding_files(
 
 #[cfg(test)]
 mod tests {
-    use super::replace_once;
+    use serde_json::json;
+
+    use super::{render_manifest, replace_once};
+    use crate::tooling::support::sha256_bytes;
 
     #[test]
     fn manifest_replacement_fails_closed() {
@@ -298,7 +351,34 @@ mod tests {
             replace_once(b"old", b"old", b"new", "test").unwrap(),
             b"new"
         );
+        assert_eq!(
+            replace_once(b"a darwin/arm64 z", b"darwin/arm64", b"linux/amd64", "test").unwrap(),
+            b"a linux/amd64 z"
+        );
         assert!(replace_once(b"old old", b"old", b"new", "test").is_err());
         assert!(replace_once(b"none", b"old", b"new", "test").is_err());
+    }
+
+    #[test]
+    fn rendered_manifest_tracks_generated_platform_and_outcomes() {
+        let manifest = json!({
+            "platform": "darwin/arm64",
+            "files": {
+                "outcomes-v1.jsonl": {"sha256": "old-outcomes"},
+                "README.md": {"sha256": "old-readme"}
+            }
+        });
+        let legacy = br#"{
+  "platform": "darwin/arm64",
+  "outcomes": "old-outcomes",
+  "readme": "old-readme"
+}"#;
+        let outcomes = [json!({"platform": "linux/amd64"})];
+        let rendered =
+            render_manifest(legacy, &manifest, b"readme", b"outcomes", &outcomes).unwrap();
+        let rendered = String::from_utf8(rendered).unwrap();
+        assert!(rendered.contains("\"platform\": \"linux/amd64\""));
+        assert!(rendered.contains(&sha256_bytes(b"outcomes")));
+        assert!(rendered.contains(&sha256_bytes(b"readme")));
     }
 }

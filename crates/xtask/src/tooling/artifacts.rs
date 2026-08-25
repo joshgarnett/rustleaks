@@ -4,9 +4,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use serde_json::Value;
+
 #[derive(Default)]
 pub(crate) struct GeneratedTree {
     files: BTreeMap<PathBuf, Vec<u8>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct OutcomeBaseline<'a> {
+    pub(crate) values: &'a [Value],
+    pub(crate) bytes: &'a [u8],
 }
 
 impl GeneratedTree {
@@ -114,6 +122,62 @@ impl GeneratedTree {
     }
 }
 
+pub(crate) fn compare_json_outcomes(
+    committed: &[Value],
+    observed: &[Value],
+    ignored_provenance: &[&str],
+    label: &str,
+) -> Result<(), String> {
+    if committed.len() != observed.len() {
+        return Err(format!(
+            "{label} outcome count changed: expected {}, got {}",
+            committed.len(),
+            observed.len()
+        ));
+    }
+    for (index, (committed, observed)) in committed.iter().zip(observed).enumerate() {
+        let committed_id = outcome_id(committed, label, index)?;
+        let observed_id = outcome_id(observed, label, index)?;
+        if committed_id != observed_id {
+            return Err(format!(
+                "{label} outcome order changed at record {}: expected {committed_id}, got {observed_id}",
+                index + 1
+            ));
+        }
+        let mut committed = committed.clone();
+        let mut observed = observed.clone();
+        for field in ignored_provenance {
+            remove_provenance(&mut committed, field, label, committed_id)?;
+            remove_provenance(&mut observed, field, label, observed_id)?;
+        }
+        if committed != observed {
+            return Err(format!(
+                "fresh {label} outcome {observed_id} differs from the committed semantic outcome"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn outcome_id<'a>(value: &'a Value, label: &str, index: usize) -> Result<&'a str, String> {
+    value
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{label} outcome record {} has no string id", index + 1))
+}
+
+fn remove_provenance(value: &mut Value, field: &str, label: &str, id: &str) -> Result<(), String> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| format!("{label} outcome {id} is not an object"))?;
+    if !object.remove(field).is_some_and(|value| value.is_string()) {
+        return Err(format!(
+            "{label} outcome {id} has no string {field} provenance"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_relative(path: &Path) -> Result<(), String> {
     if path.as_os_str().is_empty()
         || path
@@ -174,7 +238,9 @@ fn artifact_paths(root: &Path) -> Result<BTreeSet<PathBuf>, String> {
 mod tests {
     use std::fs;
 
-    use super::GeneratedTree;
+    use serde_json::json;
+
+    use super::{GeneratedTree, compare_json_outcomes};
     use crate::tooling::support::TempDir;
 
     #[test]
@@ -207,5 +273,39 @@ mod tests {
         assert!(tree.write_or_check(&root, true).is_err());
         assert!(tree.insert("../escape", b"bad".to_vec()).is_err());
         assert!(tree.insert("/absolute", b"bad".to_vec()).is_err());
+    }
+
+    #[test]
+    fn semantic_outcomes_ignore_only_named_provenance() {
+        let committed = [json!({
+            "id": "case",
+            "platform": "darwin/arm64",
+            "ordered": ["first", "second"],
+            "result": {"value": 1}
+        })];
+        let observed = [json!({
+            "result": {"value": 1},
+            "ordered": ["first", "second"],
+            "platform": "linux/amd64",
+            "id": "case"
+        })];
+        compare_json_outcomes(&committed, &observed, &["platform"], "test").unwrap();
+
+        let reordered = [json!({
+            "id": "case",
+            "platform": "linux/amd64",
+            "ordered": ["second", "first"],
+            "result": {"value": 1}
+        })];
+        assert!(compare_json_outcomes(&committed, &reordered, &["platform"], "test").is_err());
+
+        let changed = [json!({
+            "id": "case",
+            "platform": "linux/amd64",
+            "ordered": ["first", "second"],
+            "result": {"value": 2}
+        })];
+        assert!(compare_json_outcomes(&committed, &changed, &["platform"], "test").is_err());
+        assert!(compare_json_outcomes(&committed, &observed, &["missing"], "test").is_err());
     }
 }

@@ -11,7 +11,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::artifacts::GeneratedTree;
+use super::artifacts::{GeneratedTree, OutcomeBaseline};
 use super::support::TempDir;
 
 const README: &str = r"# Git compatibility corpus v1
@@ -41,7 +41,7 @@ pub(crate) fn write_git_corpus(root: &Path, output_root: &Path) -> Result<(), St
 }
 
 fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<(), String> {
-    let generated = generate(root)?;
+    let generated = generate(root, check)?;
     generated.write_or_check(output_root, check)?;
     println!(
         "Git corpus {}: 34 fresh-process cases, 7 intentions, 19 stable behaviors",
@@ -50,16 +50,18 @@ fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<()
     Ok(())
 }
 
-fn generate(root: &Path) -> Result<GeneratedTree, String> {
+fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
     let corpus = root.join("compat/git-corpus");
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
     let coverage = read(&corpus.join("coverage-v1.json"))?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
     let legacy_readme = read(&corpus.join("README.md"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
+    let legacy_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let coverage_value = parse_json(&coverage, "Git coverage")?;
     let negative_value = parse_json(&negative, "Git negative controls")?;
     let manifest_value = parse_json(&legacy_manifest, "Git manifest")?;
+    let legacy_outcome_values = parse_jsonl(&legacy_outcomes, "committed Git outcomes")?;
     let request_values = spec::validate_inputs(
         &requests,
         &coverage,
@@ -97,7 +99,10 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
         root,
         &request_values,
         &observed.values,
-        &observed.bytes,
+        OutcomeBaseline {
+            values: &legacy_outcome_values,
+            bytes: &legacy_outcomes,
+        },
         &coverage_value,
         &negative_value,
         &manifest_value,
@@ -114,16 +119,22 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
         return Err("Git fixture or upstream checkout changed during generation".into());
     }
 
+    let outcome_bytes = if check {
+        &legacy_outcomes[..]
+    } else {
+        &observed.bytes[..]
+    };
     let manifest = validation::render_manifest(
         &legacy_manifest,
         &manifest_value,
         legacy_readme.len(),
         README.as_bytes(),
+        outcome_bytes,
     )?;
     let mut tree = GeneratedTree::default();
     tree.insert("README.md", README.as_bytes())?;
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", observed.bytes)?;
+    tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("manifest-v1.json", manifest)?;
@@ -132,6 +143,17 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
 
 fn parse_json(bytes: &[u8], label: &str) -> Result<Value, String> {
     serde_json::from_slice(bytes).map_err(|error| format!("invalid {label} JSON: {error}"))
+}
+
+fn parse_jsonl(bytes: &[u8], label: &str) -> Result<Vec<Value>, String> {
+    newline_records(bytes, label)?
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            serde_json::from_slice(line)
+                .map_err(|error| format!("invalid {label} record {}: {error}", index + 1))
+        })
+        .collect()
 }
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
