@@ -89,5 +89,16 @@ fuzz_target!(|data: &[u8]| {
         if location.end_line() == location.start_line() {
             assert!(location.end_column() >= location.start_column());
         }
+        if let Some(match_range) = finding.match_range().exact() {
+            assert!(match_range.end() <= fragment.content().len());
+        }
+        if let Some(secret_range) = finding.secret_range().exact() {
+            let match_range = finding
+                .match_range()
+                .exact()
+                .expect("an exact secret range requires an exact match range");
+            assert!(secret_range.start() >= match_range.start());
+            assert!(secret_range.end() <= match_range.end());
+        }
     }
 });

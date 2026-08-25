@@ -225,6 +225,12 @@ pub fn rustleaks_core::config::VirtualResolver::resolve(&self, core::option::Opt
 pub type rustleaks_core::config::AllowlistCondition = rustleaks_core::config::Condition
 pub type rustleaks_core::config::RawAllowlist = rustleaks_core::config::AllowlistSpec
 pub mod rustleaks_core::model
+#[non_exhaustive] pub enum rustleaks_core::model::FindingRange
+pub rustleaks_core::model::FindingRange::Exact(rustleaks_core::model::ByteRange)
+pub rustleaks_core::model::FindingRange::Unavailable
+impl rustleaks_core::model::FindingRange
+pub const fn rustleaks_core::model::FindingRange::exact(self) -> core::option::Option<rustleaks_core::model::ByteRange>
+pub const fn rustleaks_core::model::FindingRange::is_exact(self) -> bool
 #[non_exhaustive] pub enum rustleaks_core::model::ModelError
 pub rustleaks_core::model::ModelError::ByteRangeOverflow
 pub rustleaks_core::model::ModelError::ByteRangeOverflow::len: usize
@@ -297,6 +303,8 @@ pub fn rustleaks_core::model::CommitMetadata::builder() -> rustleaks_core::model
 pub const fn rustleaks_core::model::CommitMetadata::date(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::CommitMetadata::message(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::CommitMetadata::sha(&self) -> &rustleaks_core::model::ByteText
+impl core::fmt::Debug for rustleaks_core::model::CommitMetadata
+pub fn rustleaks_core::model::CommitMetadata::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for rustleaks_core::model::CommitMetadata
 pub fn rustleaks_core::model::CommitMetadata::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct rustleaks_core::model::CommitMetadataBuilder
@@ -307,6 +315,8 @@ pub fn rustleaks_core::model::CommitMetadataBuilder::build(self) -> rustleaks_co
 pub fn rustleaks_core::model::CommitMetadataBuilder::date(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::CommitMetadataBuilder::message(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::CommitMetadataBuilder::sha(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+impl core::fmt::Debug for rustleaks_core::model::CommitMetadataBuilder
+pub fn rustleaks_core::model::CommitMetadataBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::model::Finding
 impl rustleaks_core::model::Finding
 pub fn rustleaks_core::model::Finding::add_required_findings(&mut self, impl core::iter::traits::collect::IntoIterator<Item = rustleaks_core::model::RequiredFinding>)
@@ -323,15 +333,20 @@ pub const fn rustleaks_core::model::Finding::fragment(&self) -> core::option::Op
 pub const fn rustleaks_core::model::Finding::line(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::Finding::link(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::Finding::location(&self) -> rustleaks_core::model::Location
+pub const fn rustleaks_core::model::Finding::match_range(&self) -> rustleaks_core::model::FindingRange
 pub const fn rustleaks_core::model::Finding::match_text(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::Finding::message(&self) -> &rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::Finding::redacted(self, usize) -> Self
 pub fn rustleaks_core::model::Finding::required_findings(&self) -> &[rustleaks_core::model::RequiredFinding]
 pub const fn rustleaks_core::model::Finding::rule_id(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::Finding::secret(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::Finding::secret_range(&self) -> rustleaks_core::model::FindingRange
 pub const fn rustleaks_core::model::Finding::symlink_file(&self) -> &rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::Finding::tags(&self) -> &[rustleaks_core::model::ByteText]
 pub fn rustleaks_core::model::Finding::with_link(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub fn rustleaks_core::model::Finding::without_detected_secrets(self) -> Self
+impl core::fmt::Debug for rustleaks_core::model::Finding
+pub fn rustleaks_core::model::Finding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for rustleaks_core::model::Finding
 pub fn rustleaks_core::model::Finding::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct rustleaks_core::model::FindingBuilder
@@ -349,13 +364,17 @@ pub fn rustleaks_core::model::FindingBuilder::fragment(self, rustleaks_core::mod
 pub fn rustleaks_core::model::FindingBuilder::line(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::FindingBuilder::link(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub const fn rustleaks_core::model::FindingBuilder::location(self, rustleaks_core::model::Location) -> Self
+pub const fn rustleaks_core::model::FindingBuilder::match_range(self, rustleaks_core::model::FindingRange) -> Self
 pub fn rustleaks_core::model::FindingBuilder::match_text(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::FindingBuilder::message(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::FindingBuilder::required_findings(self, impl core::iter::traits::collect::IntoIterator<Item = rustleaks_core::model::RequiredFinding>) -> Self
 pub fn rustleaks_core::model::FindingBuilder::rule_id(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::FindingBuilder::secret(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::FindingBuilder::secret_range(self, rustleaks_core::model::FindingRange) -> Self
 pub fn rustleaks_core::model::FindingBuilder::symlink_file(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::FindingBuilder::tags(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<rustleaks_core::model::ByteText>>) -> Self
+impl core::fmt::Debug for rustleaks_core::model::FindingBuilder
+pub fn rustleaks_core::model::FindingBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::model::Fragment
 impl rustleaks_core::model::Fragment
 pub fn rustleaks_core::model::Fragment::builder(impl core::convert::Into<rustleaks_core::model::ByteText>) -> rustleaks_core::model::FragmentBuilder
@@ -369,6 +388,8 @@ pub const fn rustleaks_core::model::Fragment::start_line(&self) -> usize
 pub const fn rustleaks_core::model::Fragment::symlink_file(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::Fragment::windows_file_path(&self) -> &rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::Fragment::with_source_paths(self, rustleaks_core::model::ByteText, rustleaks_core::model::ByteText, rustleaks_core::model::ByteText) -> Self
+impl core::fmt::Debug for rustleaks_core::model::Fragment
+pub fn rustleaks_core::model::Fragment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for rustleaks_core::model::Fragment
 pub fn rustleaks_core::model::Fragment::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct rustleaks_core::model::FragmentBuilder
@@ -381,6 +402,8 @@ pub const fn rustleaks_core::model::FragmentBuilder::inherited_from_finding(self
 pub const fn rustleaks_core::model::FragmentBuilder::start_line(self, usize) -> Self
 pub fn rustleaks_core::model::FragmentBuilder::symlink_file(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::FragmentBuilder::windows_file_path(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+impl core::fmt::Debug for rustleaks_core::model::FragmentBuilder
+pub fn rustleaks_core::model::FragmentBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::model::Location
 impl rustleaks_core::model::Location
 pub const fn rustleaks_core::model::Location::end_column(self) -> usize
@@ -393,9 +416,13 @@ impl rustleaks_core::model::RequiredFinding
 pub fn rustleaks_core::model::RequiredFinding::builder() -> rustleaks_core::model::RequiredFindingBuilder
 pub const fn rustleaks_core::model::RequiredFinding::line(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::RequiredFinding::location(&self) -> rustleaks_core::model::Location
+pub const fn rustleaks_core::model::RequiredFinding::match_range(&self) -> rustleaks_core::model::FindingRange
 pub const fn rustleaks_core::model::RequiredFinding::match_text(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::RequiredFinding::rule_id(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::RequiredFinding::secret(&self) -> &rustleaks_core::model::ByteText
+pub const fn rustleaks_core::model::RequiredFinding::secret_range(&self) -> rustleaks_core::model::FindingRange
+impl core::fmt::Debug for rustleaks_core::model::RequiredFinding
+pub fn rustleaks_core::model::RequiredFinding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for rustleaks_core::model::RequiredFinding
 pub fn rustleaks_core::model::RequiredFinding::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct rustleaks_core::model::RequiredFindingBuilder
@@ -403,9 +430,13 @@ impl rustleaks_core::model::RequiredFindingBuilder
 pub fn rustleaks_core::model::RequiredFindingBuilder::build(self) -> core::result::Result<rustleaks_core::model::RequiredFinding, rustleaks_core::model::ModelError>
 pub fn rustleaks_core::model::RequiredFindingBuilder::line(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub const fn rustleaks_core::model::RequiredFindingBuilder::location(self, rustleaks_core::model::Location) -> Self
+pub const fn rustleaks_core::model::RequiredFindingBuilder::match_range(self, rustleaks_core::model::FindingRange) -> Self
 pub fn rustleaks_core::model::RequiredFindingBuilder::match_text(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::RequiredFindingBuilder::rule_id(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
 pub fn rustleaks_core::model::RequiredFindingBuilder::secret(self, impl core::convert::Into<rustleaks_core::model::ByteText>) -> Self
+pub const fn rustleaks_core::model::RequiredFindingBuilder::secret_range(self, rustleaks_core::model::FindingRange) -> Self
+impl core::fmt::Debug for rustleaks_core::model::RequiredFindingBuilder
+pub fn rustleaks_core::model::RequiredFindingBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::model::ScanOptions
 impl rustleaks_core::model::ScanOptions
 pub fn rustleaks_core::model::ScanOptions::builder() -> rustleaks_core::model::ScanOptionsBuilder
@@ -435,6 +466,8 @@ impl rustleaks_core::session::AddOutcome
 pub const fn rustleaks_core::session::AddOutcome::fingerprint(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::session::AddOutcome::is_accepted(&self) -> bool
 pub const fn rustleaks_core::session::AddOutcome::suppression_reason(&self) -> core::option::Option<rustleaks_core::session::SuppressionReason>
+impl core::fmt::Debug for rustleaks_core::session::AddOutcome
+pub fn rustleaks_core::session::AddOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum rustleaks_core::session::BaselineLoadError
 pub rustleaks_core::session::BaselineLoadError::Io
 pub rustleaks_core::session::BaselineLoadError::Io::path: std::path::PathBuf
@@ -485,6 +518,8 @@ pub const fn rustleaks_core::session::BaselineFinding::start_column(&self) -> i1
 pub const fn rustleaks_core::session::BaselineFinding::start_line(&self) -> i128
 pub const fn rustleaks_core::session::BaselineFinding::symlink_file(&self) -> &rustleaks_core::model::ByteText
 pub fn rustleaks_core::session::BaselineFinding::tags(&self) -> &[rustleaks_core::model::ByteText]
+impl core::fmt::Debug for rustleaks_core::session::BaselineFinding
+pub fn rustleaks_core::session::BaselineFinding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::session::ClassifiedFinding
 impl rustleaks_core::session::ClassifiedFinding
 pub const fn rustleaks_core::session::ClassifiedFinding::finding(&self) -> &rustleaks_core::model::Finding
@@ -586,6 +621,8 @@ pub fn rustleaks_core::ScanOutcome::into_findings(self) -> alloc::vec::Vec<rustl
 pub const fn rustleaks_core::ScanOutcome::is_complete(&self) -> bool
 pub const fn rustleaks_core::ScanOutcome::termination(&self) -> core::option::Option<&rustleaks_core::ScanTermination>
 pub const fn rustleaks_core::ScanOutcome::usage(&self) -> rustleaks_core::ScanUsage
+impl core::fmt::Debug for rustleaks_core::ScanOutcome
+pub fn rustleaks_core::ScanOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::ScanUsage
 impl rustleaks_core::ScanUsage
 pub const fn rustleaks_core::ScanUsage::decoded_bytes(self) -> usize

@@ -21,7 +21,7 @@ use benchmark_data::{
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG_SHA256};
 use rustleaks_core::model::{Finding, Fragment, Location, ScanOptions};
 use rustleaks_core::session::SessionPolicy;
-use rustleaks_core::{Engine, UPSTREAM_REVISION};
+use rustleaks_core::{Engine, ScanBudget, ScanControl, UPSTREAM_REVISION};
 use rustleaks_report::{JsonReporter, Reporter, SarifReporter};
 use rustleaks_sources::{
     CancellationToken, DEFAULT_CHUNK_SIZE, DirectoryOptions, DirectorySource, SourceRunner,
@@ -68,6 +68,8 @@ keywords = ["token"]
 
 const WORKLOADS: &[&str] = &[
     "default-compile",
+    "default-no-keyword-1-kib",
+    "default-no-keyword-16-kib",
     "default-no-keyword",
     "default-one-keyword",
     "default-many-keywords",
@@ -296,9 +298,19 @@ fn command_line(program: &str, args: &[&str], maximum: usize) -> String {
 fn run_workload(id: &str, iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
     match id {
         "default-compile" => run_default_compile(iterations),
-        "default-no-keyword" => run_default_keyword(iterations, KeywordCase::None),
-        "default-one-keyword" => run_default_keyword(iterations, KeywordCase::One),
-        "default-many-keywords" => run_default_keyword(iterations, KeywordCase::Many),
+        "default-no-keyword-1-kib" => run_default_keyword(iterations, KeywordCase::None, 1_024),
+        "default-no-keyword-16-kib" => {
+            run_default_keyword(iterations, KeywordCase::None, 16 * 1_024)
+        }
+        "default-no-keyword" => {
+            run_default_keyword(iterations, KeywordCase::None, DEFAULT_INPUT_BYTES)
+        }
+        "default-one-keyword" => {
+            run_default_keyword(iterations, KeywordCase::One, DEFAULT_INPUT_BYTES)
+        }
+        "default-many-keywords" => {
+            run_default_keyword(iterations, KeywordCase::Many, DEFAULT_INPUT_BYTES)
+        }
         "default-positive" => run_default_positive(iterations),
         "regex-hostile-miss" => run_scan(
             iterations,
@@ -360,12 +372,13 @@ enum KeywordCase {
 fn run_default_keyword(
     iterations: usize,
     case: KeywordCase,
+    input_bytes: usize,
 ) -> Result<(u128, Metric), Box<dyn Error>> {
     let config = ConfigLoader::new().load_default()?;
     let input = match case {
-        KeywordCase::None => vec![0u8; DEFAULT_INPUT_BYTES],
-        KeywordCase::One => keyword_input(&config, 1)?,
-        KeywordCase::Many => keyword_input(&config, 64)?,
+        KeywordCase::None => vec![0u8; input_bytes],
+        KeywordCase::One => keyword_input(&config, 1, input_bytes)?,
+        KeywordCase::Many => keyword_input(&config, 64, input_bytes)?,
     };
     let matched = config
         .keywords()
@@ -380,15 +393,20 @@ fn run_default_keyword(
     if matched != required {
         return Err(format!("keyword fixture matched {matched}, expected {required}").into());
     }
-    run_scan(
-        iterations,
-        Engine::builder(config).build()?,
-        Fragment::builder(input).build(),
-        ScanOptions::default(),
-    )
+    let detector = Engine::builder(config).build()?;
+    let fragment = Fragment::builder(input).build();
+    if matches!(case, KeywordCase::None) {
+        run_controlled_scan(iterations, detector, fragment, ScanOptions::default())
+    } else {
+        run_scan(iterations, detector, fragment, ScanOptions::default())
+    }
 }
 
-fn keyword_input(config: &CompiledConfig, count: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+fn keyword_input(
+    config: &CompiledConfig,
+    count: usize,
+    input_bytes: usize,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let selected = config
         .keywords()
         .iter()
@@ -409,11 +427,11 @@ fn keyword_input(config: &CompiledConfig, count: usize) -> Result<Vec<u8>, Box<d
         unit.extend_from_slice(keyword.as_bytes());
         unit.push(0);
     }
-    let mut input = Vec::with_capacity(DEFAULT_INPUT_BYTES);
-    while input.len() + unit.len() <= DEFAULT_INPUT_BYTES {
+    let mut input = Vec::with_capacity(input_bytes);
+    while input.len() + unit.len() <= input_bytes {
         input.extend_from_slice(&unit);
     }
-    input.resize(DEFAULT_INPUT_BYTES, 0);
+    input.resize(input_bytes, 0);
     Ok(input)
 }
 
@@ -489,6 +507,38 @@ fn run_scan(
         });
     }
     Ok((start.elapsed().as_nanos(), last.ok_or("no scan iteration")?))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn run_controlled_scan(
+    iterations: usize,
+    detector: Engine,
+    fragment: Fragment,
+    options: ScanOptions,
+) -> Result<(u128, Metric), Box<dyn Error>> {
+    let control = ScanControl::unlimited().with_budget(
+        ScanBudget::unlimited()
+            .max_work_units(1_000_000)
+            .max_finding_records(1_000),
+    );
+    let mut last = None;
+    let start = Instant::now();
+    for _ in 0..iterations {
+        let outcome = detector.scan_fragment_controlled(black_box(&fragment), &options, &control);
+        if !outcome.is_complete() {
+            return Err("controlled performance workload terminated early".into());
+        }
+        last = Some(Metric {
+            logical_bytes: u64::try_from(fragment.content().len())?,
+            result_count: u64::try_from(outcome.findings().len())?,
+            output_bytes: 0,
+            fingerprint: findings_fingerprint(outcome.findings()),
+        });
+    }
+    Ok((
+        start.elapsed().as_nanos(),
+        last.ok_or("no controlled scan iteration")?,
+    ))
 }
 
 fn run_source(iterations: usize, workers: usize) -> Result<(u128, Metric), Box<dyn Error>> {
@@ -892,6 +942,20 @@ fn expected(id: &str) -> Expected {
             0,
             0xbba0_f636_d5a0_2d49,
             "222 compiled default rules",
+        ),
+        "default-no-keyword-1-kib" => Expected::new(
+            1_024,
+            0,
+            0,
+            empty,
+            "1 KiB fragment with zero matched keywords and findings",
+        ),
+        "default-no-keyword-16-kib" => Expected::new(
+            16 * 1_024,
+            0,
+            0,
+            empty,
+            "16 KiB fragment with zero matched keywords and findings",
         ),
         "default-no-keyword" => Expected::new(
             1_048_576,

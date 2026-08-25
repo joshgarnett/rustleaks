@@ -9,6 +9,8 @@
   composites, redaction, fingerprints, baselines, ignores, and sessions.
 - Add controlled scans with cooperative cancellation and explicit work,
   decoded-byte, and finding-record budgets.
+- Add exact or explicitly unavailable finding ranges, content-omitting debug
+  output, and recursive detected-secret removal for embedding callers.
 - Add unpublished Rust source, archive, Git, report, CLI, compatibility, and
   codec workspace crates.
 - Add native Rustleaks config, ignore, flag, environment, and allow-marker
@@ -16,5 +18,6 @@
 - Differentially test the pinned compatibility profile against a bounded Go
   oracle and committed corpora.
 
-Native runtime validation is currently limited to Apple Silicon macOS. Linux,
-Windows, Intel macOS, and musl native validation remain release prerequisites.
+Hosted native workflows cover the declared Linux, Windows, macOS, and musl
+target matrix. Fresh evidence for the exact release candidate remains a
+release prerequisite.

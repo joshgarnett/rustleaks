@@ -20,11 +20,16 @@ explicit maintainer approval for that action.
 Run from a clean clone of the candidate:
 
 ```sh
+cargo fetch --locked
 just ci
 just security
 just fuzz-smoke
 just release-dry-run
 ```
+
+The fetch hydrates the exact locked registry inputs used by the deliberately
+offline package and external-consumer checks. It does not change a manifest or
+lockfile.
 
 `just ci` covers maintained prose and links, Rustdoc, the committed parity
 tests, all first-party tests, and compile-only evidence for the eight declared

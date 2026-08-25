@@ -266,6 +266,41 @@ impl From<ByteRange> for Range<usize> {
     }
 }
 
+/// Exact mapping of a detected finding component into the original
+/// [`Fragment`] content.
+///
+/// A mapping is unavailable when the finding does not originate in fragment
+/// content or when a transform prevents one exact contiguous source range
+/// from representing the detected component. Reporting redaction does not
+/// change this original source mapping. Callers must never approximate an
+/// unavailable mapping when rewriting source content.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum FindingRange {
+    /// No exact contiguous range is available in the original fragment.
+    #[default]
+    Unavailable,
+    /// The detected component maps exactly to this half-open fragment range.
+    Exact(ByteRange),
+}
+
+impl FindingRange {
+    /// Returns the exact range, or `None` when rewriting is unavailable.
+    #[must_use]
+    pub const fn exact(self) -> Option<ByteRange> {
+        match self {
+            Self::Exact(range) => Some(range),
+            Self::Unavailable => None,
+        }
+    }
+
+    /// Returns whether an exact contiguous source range is available.
+    #[must_use]
+    pub const fn is_exact(self) -> bool {
+        matches!(self, Self::Exact(_))
+    }
+}
+
 /// A finding's upstream-compatible line and byte-column coordinates.
 ///
 /// Lines and columns deliberately permit zero. Direct upstream scans start at
@@ -352,13 +387,26 @@ impl Location {
 }
 
 /// Git commit metadata supplied by a source adapter.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct CommitMetadata {
     sha: ByteText,
     author_name: ByteText,
     author_email: ByteText,
     date: ByteText,
     message: ByteText,
+}
+
+impl fmt::Debug for CommitMetadata {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CommitMetadata")
+            .field("sha_len", &self.sha.len())
+            .field("author_name_len", &self.author_name.len())
+            .field("author_email_len", &self.author_email.len())
+            .field("date_len", &self.date.len())
+            .field("message_len", &self.message.len())
+            .finish()
+    }
 }
 
 impl CommitMetadata {
@@ -416,9 +464,18 @@ impl Serialize for CommitMetadata {
 }
 
 /// Builder for [`CommitMetadata`].
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct CommitMetadataBuilder {
     metadata: CommitMetadata,
+}
+
+impl fmt::Debug for CommitMetadataBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CommitMetadataBuilder")
+            .field("metadata", &self.metadata)
+            .finish()
+    }
 }
 
 impl CommitMetadataBuilder {
@@ -465,7 +522,7 @@ impl CommitMetadataBuilder {
 }
 
 /// A byte fragment and optional source metadata presented to the engine.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Fragment {
     content: ByteText,
     file_path: ByteText,
@@ -475,6 +532,22 @@ pub struct Fragment {
     start_line: usize,
     commit_metadata: Option<CommitMetadata>,
     inherited_from_finding: bool,
+}
+
+impl fmt::Debug for Fragment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Fragment")
+            .field("content_len", &self.content.len())
+            .field("file_path_len", &self.file_path.len())
+            .field("symlink_file_len", &self.symlink_file.len())
+            .field("windows_file_path_len", &self.windows_file_path.len())
+            .field("commit_len", &self.commit.len())
+            .field("start_line", &self.start_line)
+            .field("commit_metadata", &self.commit_metadata)
+            .field("inherited_from_finding", &self.inherited_from_finding)
+            .finish()
+    }
 }
 
 impl Fragment {
@@ -582,9 +655,18 @@ impl Serialize for Fragment {
 }
 
 /// Builder for [`Fragment`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct FragmentBuilder {
     fragment: Fragment,
+}
+
+impl fmt::Debug for FragmentBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FragmentBuilder")
+            .field("fragment", &self.fragment)
+            .finish()
+    }
 }
 
 impl FragmentBuilder {
@@ -645,13 +727,30 @@ impl FragmentBuilder {
 }
 
 /// A required-rule match retained with a primary finding.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct RequiredFinding {
     rule_id: ByteText,
     location: Location,
+    match_range: FindingRange,
+    secret_range: FindingRange,
     line: ByteText,
     match_text: ByteText,
     secret: ByteText,
+}
+
+impl fmt::Debug for RequiredFinding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RequiredFinding")
+            .field("rule_id_len", &self.rule_id.len())
+            .field("location", &self.location)
+            .field("match_range", &self.match_range)
+            .field("secret_range", &self.secret_range)
+            .field("line_len", &self.line.len())
+            .field("match_len", &self.match_text.len())
+            .field("secret_len", &self.secret.len())
+            .finish()
+    }
 }
 
 impl RequiredFinding {
@@ -671,6 +770,18 @@ impl RequiredFinding {
     #[must_use]
     pub const fn location(&self) -> Location {
         self.location
+    }
+
+    /// Returns the exact match mapping into the original fragment, if any.
+    #[must_use]
+    pub const fn match_range(&self) -> FindingRange {
+        self.match_range
+    }
+
+    /// Returns the exact secret mapping into the original fragment, if any.
+    #[must_use]
+    pub const fn secret_range(&self) -> FindingRange {
+        self.secret_range
     }
 
     /// Returns the source line bytes.
@@ -695,6 +806,8 @@ impl RequiredFinding {
         Self {
             rule_id: finding.rule_id.clone(),
             location: finding.location,
+            match_range: finding.match_range,
+            secret_range: finding.secret_range,
             line: finding.line.clone(),
             match_text: finding.match_text.clone(),
             secret: finding.secret.clone(),
@@ -720,13 +833,30 @@ impl Serialize for RequiredFinding {
 }
 
 /// Builder for [`RequiredFinding`].
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct RequiredFindingBuilder {
     rule_id: Option<ByteText>,
     location: Option<Location>,
+    match_range: FindingRange,
+    secret_range: FindingRange,
     line: ByteText,
     match_text: ByteText,
     secret: ByteText,
+}
+
+impl fmt::Debug for RequiredFindingBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RequiredFindingBuilder")
+            .field("rule_id_len", &self.rule_id.as_ref().map(ByteText::len))
+            .field("location", &self.location)
+            .field("match_range", &self.match_range)
+            .field("secret_range", &self.secret_range)
+            .field("line_len", &self.line.len())
+            .field("match_len", &self.match_text.len())
+            .field("secret_len", &self.secret.len())
+            .finish()
+    }
 }
 
 impl RequiredFindingBuilder {
@@ -741,6 +871,20 @@ impl RequiredFindingBuilder {
     #[must_use]
     pub const fn location(mut self, value: Location) -> Self {
         self.location = Some(value);
+        self
+    }
+
+    /// Sets the match mapping into the original fragment.
+    #[must_use]
+    pub const fn match_range(mut self, value: FindingRange) -> Self {
+        self.match_range = value;
+        self
+    }
+
+    /// Sets the secret mapping into the original fragment.
+    #[must_use]
+    pub const fn secret_range(mut self, value: FindingRange) -> Self {
+        self.secret_range = value;
         self
     }
 
@@ -781,6 +925,8 @@ impl RequiredFindingBuilder {
                 model: "RequiredFinding",
                 field: "location",
             })?,
+            match_range: self.match_range,
+            secret_range: self.secret_range,
             line: self.line,
             match_text: self.match_text,
             secret: self.secret,
@@ -792,11 +938,13 @@ impl RequiredFindingBuilder {
 ///
 /// Text and metadata remain byte-preserving. Entropy is stored as `f32` so
 /// callers can compare [`f32::to_bits`] with upstream `math.Float32bits`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Finding {
     rule_id: ByteText,
     description: ByteText,
     location: Location,
+    match_range: FindingRange,
+    secret_range: FindingRange,
     line: ByteText,
     match_text: ByteText,
     secret: ByteText,
@@ -813,6 +961,35 @@ pub struct Finding {
     fingerprint: ByteText,
     fragment: Option<Fragment>,
     required_findings: Vec<RequiredFinding>,
+}
+
+impl fmt::Debug for Finding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Finding")
+            .field("rule_id_len", &self.rule_id.len())
+            .field("description_len", &self.description.len())
+            .field("location", &self.location)
+            .field("match_range", &self.match_range)
+            .field("secret_range", &self.secret_range)
+            .field("line_len", &self.line.len())
+            .field("match_len", &self.match_text.len())
+            .field("secret_len", &self.secret.len())
+            .field("file_len", &self.file.len())
+            .field("symlink_file_len", &self.symlink_file.len())
+            .field("commit_len", &self.commit.len())
+            .field("link_len", &self.link.len())
+            .field("entropy", &self.entropy)
+            .field("author_len", &self.author.len())
+            .field("email_len", &self.email.len())
+            .field("date_len", &self.date.len())
+            .field("message_len", &self.message.len())
+            .field("tag_count", &self.tags.len())
+            .field("fingerprint_len", &self.fingerprint.len())
+            .field("has_fragment", &self.fragment.is_some())
+            .field("required_finding_count", &self.required_findings.len())
+            .finish()
+    }
 }
 
 impl Finding {
@@ -838,6 +1015,18 @@ impl Finding {
     #[must_use]
     pub const fn location(&self) -> Location {
         self.location
+    }
+
+    /// Returns the exact match mapping into the original fragment, if any.
+    #[must_use]
+    pub const fn match_range(&self) -> FindingRange {
+        self.match_range
+    }
+
+    /// Returns the exact secret mapping into the original fragment, if any.
+    #[must_use]
+    pub const fn secret_range(&self) -> FindingRange {
+        self.secret_range
     }
 
     /// Returns the source line bytes.
@@ -974,6 +1163,75 @@ impl Finding {
         );
         self.secret = replacement.into();
         self
+    }
+
+    /// Removes every detected secret byte sequence from retained finding data.
+    ///
+    /// This transform recursively handles required findings and drops the
+    /// optional originating fragment. It preserves coordinates, exact source
+    /// mappings, entropy, and collection structure, but it does not establish
+    /// that other source-derived metadata is safe to disclose. Use a
+    /// caller-owned projection when only approved metadata may cross a trust
+    /// boundary.
+    #[must_use]
+    pub fn without_detected_secrets(mut self) -> Self {
+        let mut secrets = self
+            .required_findings
+            .iter()
+            .map(|finding| finding.secret.as_bytes().to_vec())
+            .chain(std::iter::once(self.secret.as_bytes().to_vec()))
+            .filter(|secret| !secret.is_empty())
+            .collect::<Vec<_>>();
+        secrets.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+        secrets.dedup();
+
+        for value in [
+            &mut self.rule_id,
+            &mut self.description,
+            &mut self.line,
+            &mut self.match_text,
+            &mut self.secret,
+            &mut self.file,
+            &mut self.symlink_file,
+            &mut self.commit,
+            &mut self.link,
+            &mut self.author,
+            &mut self.email,
+            &mut self.date,
+            &mut self.message,
+            &mut self.fingerprint,
+        ] {
+            remove_detected_secrets(value, &secrets);
+        }
+        for tag in &mut self.tags {
+            remove_detected_secrets(tag, &secrets);
+        }
+        for finding in &mut self.required_findings {
+            finding.remove_detected_secrets(&secrets);
+        }
+        self.secret = ByteText::default();
+        self.fragment = None;
+        self
+    }
+}
+
+impl RequiredFinding {
+    fn remove_detected_secrets(&mut self, secrets: &[Vec<u8>]) {
+        for value in [
+            &mut self.rule_id,
+            &mut self.line,
+            &mut self.match_text,
+            &mut self.secret,
+        ] {
+            remove_detected_secrets(value, secrets);
+        }
+        self.secret = ByteText::default();
+    }
+}
+
+fn remove_detected_secrets(value: &mut ByteText, secrets: &[Vec<u8>]) {
+    for secret in secrets {
+        *value = replace_all_bytes(value.as_bytes(), secret, b"");
     }
 }
 
@@ -1169,11 +1427,13 @@ impl Serialize for Finding {
 }
 
 /// Builder for [`Finding`].
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct FindingBuilder {
     rule_id: Option<ByteText>,
     description: ByteText,
     location: Option<Location>,
+    match_range: FindingRange,
+    secret_range: FindingRange,
     line: ByteText,
     match_text: ByteText,
     secret: ByteText,
@@ -1190,6 +1450,35 @@ pub struct FindingBuilder {
     fingerprint: ByteText,
     fragment: Option<Fragment>,
     required_findings: Vec<RequiredFinding>,
+}
+
+impl fmt::Debug for FindingBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FindingBuilder")
+            .field("rule_id_len", &self.rule_id.as_ref().map(ByteText::len))
+            .field("description_len", &self.description.len())
+            .field("location", &self.location)
+            .field("match_range", &self.match_range)
+            .field("secret_range", &self.secret_range)
+            .field("line_len", &self.line.len())
+            .field("match_len", &self.match_text.len())
+            .field("secret_len", &self.secret.len())
+            .field("file_len", &self.file.len())
+            .field("symlink_file_len", &self.symlink_file.len())
+            .field("commit_len", &self.commit.len())
+            .field("link_len", &self.link.len())
+            .field("entropy", &self.entropy)
+            .field("author_len", &self.author.len())
+            .field("email_len", &self.email.len())
+            .field("date_len", &self.date.len())
+            .field("message_len", &self.message.len())
+            .field("tag_count", &self.tags.len())
+            .field("fingerprint_len", &self.fingerprint.len())
+            .field("has_fragment", &self.fragment.is_some())
+            .field("required_finding_count", &self.required_findings.len())
+            .finish()
+    }
 }
 
 impl FindingBuilder {
@@ -1211,6 +1500,20 @@ impl FindingBuilder {
     #[must_use]
     pub const fn location(mut self, value: Location) -> Self {
         self.location = Some(value);
+        self
+    }
+
+    /// Sets the match mapping into the original fragment.
+    #[must_use]
+    pub const fn match_range(mut self, value: FindingRange) -> Self {
+        self.match_range = value;
+        self
+    }
+
+    /// Sets the secret mapping into the original fragment.
+    #[must_use]
+    pub const fn secret_range(mut self, value: FindingRange) -> Self {
+        self.secret_range = value;
         self
     }
 
@@ -1343,6 +1646,8 @@ impl FindingBuilder {
                 model: "Finding",
                 field: "location",
             })?,
+            match_range: self.match_range,
+            secret_range: self.secret_range,
             line: self.line,
             match_text: self.match_text,
             secret: self.secret,

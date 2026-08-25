@@ -1,9 +1,15 @@
 //! Golden tests for byte-preserving core models.
 
+use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
+
+use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{
-    ByteRange, ByteText, CommitMetadata, Finding, Fragment, Location, ModelError, RequiredFinding,
-    ScanOptions,
+    ByteRange, ByteText, CommitMetadata, Finding, FindingRange, Fragment, Location, ModelError,
+    RequiredFinding, ScanOptions,
 };
+use rustleaks_core::session::{Baseline, ScanSession, SessionPolicy};
+use rustleaks_core::{Engine, ScanControl};
 
 fn assert_send_sync<T: Send + Sync>() {}
 
@@ -27,6 +33,11 @@ fn byte_text_and_ranges_preserve_arbitrary_bytes() {
     assert_eq!(range.len(), 3);
     assert_eq!(&raw[range.as_range()], [0x00, 0xff, 0x80]);
     assert_eq!(RangeLike::from(range).0, 1..4);
+    let exact = FindingRange::Exact(range);
+    assert!(exact.is_exact());
+    assert_eq!(exact.exact(), Some(range));
+    assert!(!FindingRange::Unavailable.is_exact());
+    assert_eq!(FindingRange::Unavailable.exact(), None);
     assert!(ByteRange::new(3, 3).expect("empty range").is_empty());
     assert_eq!(
         ByteRange::new(4, 3),
@@ -43,6 +54,165 @@ fn byte_text_and_ranges_preserve_arbitrary_bytes() {
     let fragment = Fragment::new(raw);
     assert_eq!(fragment.content().as_bytes(), raw);
     assert_eq!(fragment.start_line(), 0);
+}
+
+#[test]
+fn public_debug_and_detected_secret_removal_do_not_disclose_finding_bytes() {
+    const SECRET: &[u8] = b"synthetic-debug-secret-71f4";
+    const REQUIRED_SECRET: &[u8] = b"synthetic-required-secret-9d28";
+    const SENSITIVE: &[&[u8]] = &[SECRET, REQUIRED_SECRET];
+    const COMPOSITE: &[u8] =
+        b"PRIMARY=synthetic-debug-secret-71f4 AUX=synthetic-required-secret-9d28";
+    let location = Location::new(2, 2, 3, 31).unwrap();
+    let range = FindingRange::Exact(ByteRange::new(4, 31).unwrap());
+
+    let metadata_builder = CommitMetadata::builder()
+        .sha(SECRET)
+        .author_name(SECRET)
+        .author_email(SECRET)
+        .date(SECRET)
+        .message(SECRET);
+    assert_debug_omits_all(&metadata_builder, SENSITIVE);
+    let metadata = metadata_builder.build();
+    assert_debug_omits_all(&metadata, SENSITIVE);
+
+    let fragment_builder = Fragment::builder(SECRET)
+        .file_path(SECRET)
+        .symlink_file(SECRET)
+        .windows_file_path(SECRET)
+        .commit(SECRET)
+        .commit_metadata(metadata);
+    assert_debug_omits_all(&fragment_builder, SENSITIVE);
+    let fragment = fragment_builder.build();
+    assert_debug_omits_all(&fragment, SENSITIVE);
+
+    let required_builder = RequiredFinding::builder()
+        .rule_id(REQUIRED_SECRET)
+        .location(location)
+        .match_range(range)
+        .secret_range(range)
+        .line(REQUIRED_SECRET)
+        .match_text(REQUIRED_SECRET)
+        .secret(REQUIRED_SECRET);
+    assert_debug_omits_all(&required_builder, SENSITIVE);
+    let required = required_builder.build().unwrap();
+    assert_debug_omits_all(&required, SENSITIVE);
+
+    let finding_builder = Finding::builder()
+        .rule_id(SECRET)
+        .description(SECRET)
+        .location(location)
+        .match_range(range)
+        .secret_range(range)
+        .line(SECRET)
+        .match_text(SECRET)
+        .secret(SECRET)
+        .file(SECRET)
+        .symlink_file(SECRET)
+        .commit(SECRET)
+        .link(SECRET)
+        .author(SECRET)
+        .email(SECRET)
+        .date(SECRET)
+        .message(SECRET)
+        .tags([SECRET])
+        .fingerprint(SECRET)
+        .fragment(fragment)
+        .required_findings([required]);
+    assert_debug_omits_all(&finding_builder, SENSITIVE);
+    let finding = finding_builder.build().unwrap();
+    assert_debug_omits_all(&finding, SENSITIVE);
+
+    let baseline = Baseline::from_findings(std::slice::from_ref(&finding));
+    assert_debug_omits_all(&baseline, SENSITIVE);
+    assert_debug_omits_all(&baseline.entries()[0], SENSITIVE);
+    let policy_builder = SessionPolicy::builder().baseline(baseline);
+    assert_debug_omits_all(&policy_builder, SENSITIVE);
+    let policy = policy_builder.build();
+    assert_debug_omits_all(&policy, SENSITIVE);
+    let classified = policy.classify(finding.clone());
+    assert_debug_omits_all(&classified, SENSITIVE);
+    assert_debug_omits_all(classified.outcome(), SENSITIVE);
+    let mut batch = policy.new_batch();
+    batch.add_finding(finding.clone());
+    assert_debug_omits_all(&batch, SENSITIVE);
+    let mut session = ScanSession::new(policy);
+    session.add_finding(finding.clone());
+    assert_debug_omits_all(&session, SENSITIVE);
+
+    let engine = Engine::builder(
+        ConfigLoader::new()
+            .load_toml(
+                r#"
+[[rules]]
+id = "primary"
+regex = '''PRIMARY=(synthetic-debug-secret-71f4)'''
+secretGroup = 1
+  [[rules.required]]
+  id = "required"
+
+[[rules]]
+id = "required"
+regex = '''AUX=(synthetic-required-secret-9d28)'''
+secretGroup = 1
+skipReport = true
+"#,
+            )
+            .unwrap(),
+    )
+    .build()
+    .unwrap();
+    let complete = engine.scan_fragment(&Fragment::new(COMPOSITE), &ScanOptions::default());
+    assert_eq!(complete.findings()[0].required_findings().len(), 1);
+    assert_debug_omits_all(&complete, SENSITIVE);
+    let cancelled = AtomicBool::new(true);
+    let partial = engine.scan_fragment_controlled(
+        &Fragment::new(COMPOSITE),
+        &ScanOptions::default(),
+        &ScanControl::cancellable(&cancelled),
+    );
+    assert!(!partial.is_complete());
+    assert_debug_omits_all(&partial, SENSITIVE);
+
+    let sanitized = finding.without_detected_secrets();
+    assert!(sanitized.secret().is_empty());
+    assert!(sanitized.fragment().is_none());
+    assert!(
+        sanitized
+            .required_findings()
+            .iter()
+            .all(|finding| finding.secret().is_empty())
+    );
+    let serialized = serde_json::to_vec(&sanitized).unwrap();
+    assert!(!contains_bytes(&serialized, SECRET));
+    assert!(!contains_bytes(&serialized, REQUIRED_SECRET));
+    assert_debug_omits_all(&sanitized, SENSITIVE);
+}
+
+fn assert_debug_omits_all(value: &impl Debug, sensitive_values: &[&[u8]]) {
+    for sensitive in sensitive_values {
+        assert_debug_omits(value, sensitive);
+    }
+}
+
+fn assert_debug_omits(value: &impl Debug, sensitive: &[u8]) {
+    let debug = format!("{value:?}");
+    let text = std::str::from_utf8(sensitive).unwrap();
+    let byte_debug = format!("{sensitive:?}");
+    assert!(
+        !debug.contains(text),
+        "Debug output contains sensitive text"
+    );
+    assert!(
+        !debug.contains(&byte_debug),
+        "Debug output contains sensitive byte values"
+    );
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 struct RangeLike(std::ops::Range<usize>);
@@ -235,9 +405,12 @@ fn findings_preserve_coordinates_entropy_tags_metadata_and_duplicates() {
 #[test]
 fn finding_redaction_uses_go_bytes_round_to_even_and_keeps_auxiliaries() {
     let location = Location::new(0, 0, 1, 1).unwrap();
+    let range = FindingRange::Exact(ByteRange::new(0, 6).unwrap());
     let auxiliary = RequiredFinding::builder()
         .rule_id("auxiliary")
         .location(location)
+        .match_range(range)
+        .secret_range(range)
         .line("aux-secret")
         .match_text("aux-secret")
         .secret("aux-secret")
@@ -246,6 +419,8 @@ fn finding_redaction_uses_go_bytes_round_to_even_and_keeps_auxiliaries() {
     let finding = Finding::builder()
         .rule_id("primary")
         .location(location)
+        .match_range(range)
+        .secret_range(range)
         .line("secret and secret")
         .match_text("secret")
         .secret("secret")
@@ -260,10 +435,14 @@ fn finding_redaction_uses_go_bytes_round_to_even_and_keeps_auxiliaries() {
     ] {
         let redacted = finding.clone().redacted(percent);
         assert_eq!(redacted.secret().as_bytes(), expected);
+        assert_eq!(redacted.match_range(), range);
+        assert_eq!(redacted.secret_range(), range);
         assert_eq!(
             redacted.required_findings()[0].secret().as_bytes(),
             b"aux-secret"
         );
+        assert_eq!(redacted.required_findings()[0].match_range(), range);
+        assert_eq!(redacted.required_findings()[0].secret_range(), range);
     }
     let fully = finding.redacted(1_000);
     assert_eq!(fully.secret().as_bytes(), b"REDACTED");
@@ -335,6 +514,7 @@ fn scan_options_preserve_upstream_domain_and_models_are_send_sync() {
 
     assert_send_sync::<ByteText>();
     assert_send_sync::<ByteRange>();
+    assert_send_sync::<FindingRange>();
     assert_send_sync::<Fragment>();
     assert_send_sync::<CommitMetadata>();
     assert_send_sync::<Location>();

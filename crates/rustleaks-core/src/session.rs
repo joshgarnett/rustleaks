@@ -224,7 +224,7 @@ const fn is_go_space(value: u32) -> bool {
 }
 
 /// A permissive report entry retained from a Go-compatible baseline.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct BaselineFinding {
     rule_id: ByteText,
     description: ByteText,
@@ -245,6 +245,33 @@ pub struct BaselineFinding {
     message: ByteText,
     tags: Vec<ByteText>,
     fingerprint: ByteText,
+}
+
+impl fmt::Debug for BaselineFinding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BaselineFinding")
+            .field("rule_id_len", &self.rule_id.len())
+            .field("description_len", &self.description.len())
+            .field("start_line", &self.start_line)
+            .field("end_line", &self.end_line)
+            .field("start_column", &self.start_column)
+            .field("end_column", &self.end_column)
+            .field("match_len", &self.match_text.len())
+            .field("secret_len", &self.secret.len())
+            .field("file_len", &self.file.len())
+            .field("symlink_file_len", &self.symlink_file.len())
+            .field("commit_len", &self.commit.len())
+            .field("link_len", &self.link.len())
+            .field("entropy", &self.entropy)
+            .field("author_len", &self.author.len())
+            .field("email_len", &self.email.len())
+            .field("date_len", &self.date.len())
+            .field("message_len", &self.message.len())
+            .field("tag_count", &self.tags.len())
+            .field("fingerprint_len", &self.fingerprint.len())
+            .finish()
+    }
 }
 
 impl BaselineFinding {
@@ -550,7 +577,7 @@ pub enum SuppressionReason {
 }
 
 /// The result of assigning and filtering one finding.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum AddOutcome {
     /// The finding was retained under this assigned fingerprint.
     Accepted {
@@ -564,6 +591,25 @@ pub enum AddOutcome {
         /// The first matching suppression stage.
         reason: SuppressionReason,
     },
+}
+
+impl fmt::Debug for AddOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Accepted { fingerprint } => formatter
+                .debug_struct("Accepted")
+                .field("fingerprint_len", &fingerprint.len())
+                .finish(),
+            Self::Suppressed {
+                fingerprint,
+                reason,
+            } => formatter
+                .debug_struct("Suppressed")
+                .field("fingerprint_len", &fingerprint.len())
+                .field("reason", reason)
+                .finish(),
+        }
+    }
 }
 
 impl AddOutcome {

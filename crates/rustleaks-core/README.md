@@ -32,6 +32,21 @@ decoded-byte, work-unit, and finding-record budgets. The ordinary
 wrapper. Partial outcomes carry structured termination and usage, and never
 include candidates from an unfinished top-level rule.
 
+Finding match and secret mappings are exact half-open ranges into the original
+fragment when no transform intervenes. Decoded, path-only, nonparticipating,
+and otherwise inexact mappings are explicitly unavailable and must not be
+approximated for rewriting.
+
+Budgets cover one fragment scan. A caller scanning multiple fields or leaves
+owns aggregate input-byte, finding, work, cancellation, and elapsed-time
+limits for the complete operation. Findings and fragments retain ordinary
+owned byte buffers, may be cloned, and are not zeroized on drop. Compatibility
+serialization intentionally preserves raw fields. `Debug` output omits their
+contents, while `Finding::without_detected_secrets` removes detected secret
+byte sequences recursively and drops a retained fragment. Neither mechanism
+proves that unrelated or undetected source-derived metadata is safe to
+disclose; use a narrow caller-owned projection across trust boundaries.
+
 ## Licensing and attribution
 
 The independent Rust implementation is MIT licensed. Copied or adapted

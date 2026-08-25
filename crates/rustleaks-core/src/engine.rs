@@ -15,7 +15,9 @@ use crate::decoder::{
     tags as decoder_tags,
 };
 use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes};
-use crate::model::{Finding, Fragment, Location, RequiredFinding, ScanOptions};
+use crate::model::{
+    ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
+};
 use crate::regex::{ByteSpan, GoRegex};
 
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
@@ -650,7 +652,9 @@ impl Engine {
     ) -> Option<Finding> {
         let original_raw = fragment.content().as_bytes();
         let matched = pass.current_raw.get(whole.start..whole.end)?;
-        let trimmed = trim_newlines(matched);
+        let (trimmed_offset, trimmed) = trim_newlines(matched);
+        let direct_match_start = whole.start.checked_add(trimmed_offset)?;
+        let direct_match_end = direct_match_start.checked_add(trimmed.len())?;
         let (adjusted_start, adjusted_end, decoded_line, meta_tags) =
             if pass.encoded_segments.is_empty() {
                 (
@@ -687,7 +691,8 @@ impl Engine {
             return None;
         }
 
-        let secret = extract_secret(regex, trimmed, rule.secret_group)?;
+        let extracted_secret = extract_secret(regex, trimmed, rule.secret_group)?;
+        let secret = extracted_secret.bytes;
         let entropy = shannon_entropy(secret);
         if rule.entropy != 0.0 && entropy <= rule.entropy {
             return None;
@@ -707,10 +712,27 @@ impl Engine {
         );
         let mut finding_tags = rule.tags.clone();
         finding_tags.extend(meta_tags);
+        let (match_range, secret_range) = if pass.encoded_segments.is_empty() {
+            let match_range =
+                FindingRange::Exact(ByteRange::new(direct_match_start, direct_match_end).ok()?);
+            let secret_range = match extracted_secret.span {
+                Some(span) => {
+                    let start = direct_match_start.checked_add(span.start)?;
+                    let end = direct_match_start.checked_add(span.end)?;
+                    FindingRange::Exact(ByteRange::new(start, end).ok()?)
+                }
+                None => FindingRange::Unavailable,
+            };
+            (match_range, secret_range)
+        } else {
+            (FindingRange::Unavailable, FindingRange::Unavailable)
+        };
         let mut builder = Finding::builder()
             .rule_id(rule.id.as_str())
             .description(rule.description.as_str())
             .location(location)
+            .match_range(match_range)
+            .secret_range(secret_range)
             .line(line)
             .match_text(trimmed)
             .secret(secret)
@@ -980,11 +1002,22 @@ impl EngineBuilder {
 /// Equality is structural: findings, measured usage, and termination must all
 /// match. This prevents a partial scan from comparing equal to a complete scan
 /// that happened to retain the same findings.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ScanOutcome {
     findings: Vec<Finding>,
     usage: ScanUsage,
     termination: Option<ScanTermination>,
+}
+
+impl fmt::Debug for ScanOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ScanOutcome")
+            .field("finding_count", &self.findings.len())
+            .field("usage", &self.usage)
+            .field("termination", &self.termination)
+            .finish()
+    }
 }
 
 impl ScanOutcome {
@@ -1122,45 +1155,81 @@ fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -
     location
 }
 
-fn trim_newlines(mut bytes: &[u8]) -> &[u8] {
+fn trim_newlines(mut bytes: &[u8]) -> (usize, &[u8]) {
+    let mut start = 0;
     while bytes.first() == Some(&b'\n') {
         bytes = &bytes[1..];
+        start += 1;
     }
     while bytes.last() == Some(&b'\n') {
         bytes = &bytes[..bytes.len() - 1];
     }
-    bytes
+    (start, bytes)
 }
 
-fn extract_secret<'a>(regex: &GoRegex, matched: &'a [u8], secret_group: i64) -> Option<&'a [u8]> {
+struct ExtractedSecret<'a> {
+    bytes: &'a [u8],
+    span: Option<ByteSpan>,
+}
+
+fn extract_secret<'a>(
+    regex: &GoRegex,
+    matched: &'a [u8],
+    secret_group: i64,
+) -> Option<ExtractedSecret<'a>> {
     let Some(captures) = regex.captures_all(matched).into_iter().next() else {
         // Trimming leading/trailing newlines can make an anchored full-match
         // expression stop matching. Go leaves the already-trimmed secret
         // unchanged when FindStringSubmatch consequently returns nil.
-        return Some(matched);
+        return Some(ExtractedSecret {
+            bytes: matched,
+            span: Some(ByteSpan {
+                start: 0,
+                end: matched.len(),
+            }),
+        });
     };
     if captures.spans().len() < 2 {
-        return Some(matched);
+        return Some(ExtractedSecret {
+            bytes: matched,
+            span: Some(ByteSpan {
+                start: 0,
+                end: matched.len(),
+            }),
+        });
     }
     if secret_group > 0 {
         let index = usize::try_from(secret_group).ok()?;
         let span = captures.spans().get(index)?;
         return match span {
-            Some(span) => matched.get(span.start..span.end),
+            Some(span) => Some(ExtractedSecret {
+                bytes: matched.get(span.start..span.end)?,
+                span: Some(*span),
+            }),
             // FindStringSubmatch represents a nonparticipating group as an
             // empty string, which is observably different from an invalid
             // group index (the latter suppresses the finding).
-            None => matched.get(..0),
+            None => Some(ExtractedSecret {
+                bytes: matched.get(..0)?,
+                span: None,
+            }),
         };
     }
-    captures
+    let span = captures
         .spans()
         .iter()
         .skip(1)
         .flatten()
         .find(|span| span.start != span.end)
-        .and_then(|span| matched.get(span.start..span.end))
-        .or(Some(matched))
+        .copied()
+        .unwrap_or(ByteSpan {
+            start: 0,
+            end: matched.len(),
+        });
+    Some(ExtractedSecret {
+        bytes: matched.get(span.start..span.end)?,
+        span: Some(span),
+    })
 }
 
 fn shannon_entropy(bytes: &[u8]) -> f64 {

@@ -30,6 +30,8 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 const PUBLIC_API_SNAPSHOT: &str = "compat/public-api/rustleaks-core-0.1.0-alpha.1.txt";
 const PERF_WORKLOADS: &[&str] = &[
     "default-compile",
+    "default-no-keyword-1-kib",
+    "default-no-keyword-16-kib",
     "default-no-keyword",
     "default-one-keyword",
     "default-many-keywords",
@@ -68,6 +70,20 @@ const PERF_INVARIANTS: &[PerfInvariant] = &[
         result_count: 222,
         output_bytes: 0,
         outcome_fnv1a64: "bba0f636d5a02d49",
+    },
+    PerfInvariant {
+        workload: "default-no-keyword-1-kib",
+        logical_bytes: 1_024,
+        result_count: 0,
+        output_bytes: 0,
+        outcome_fnv1a64: "a8c7f832281a39c5",
+    },
+    PerfInvariant {
+        workload: "default-no-keyword-16-kib",
+        logical_bytes: 16 * 1_024,
+        result_count: 0,
+        output_bytes: 0,
+        outcome_fnv1a64: "a8c7f832281a39c5",
     },
     PerfInvariant {
         workload: "default-no-keyword",
@@ -677,6 +693,16 @@ fn validate_publish_policy(metadata: &str) -> Result<(), String> {
 
 fn package_check() -> Result<(), String> {
     let root = workspace_root()?;
+    command_output(Command::new("cargo").current_dir(&root).args([
+        "fetch",
+        "--locked",
+        "--offline",
+    ]))
+    .map_err(|error| {
+        format!(
+            "locked dependency cache is incomplete; run `cargo fetch --locked` before the offline package check: {error}"
+        )
+    })?;
     let metadata = command_output(Command::new("cargo").current_dir(&root).args([
         "metadata",
         "--no-deps",
@@ -760,14 +786,20 @@ fn extract_core_package(staging: &Path) -> Result<PathBuf, String> {
 fn consumer_source() -> &'static str {
     r#"use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{Fragment, ScanOptions};
-use rustleaks_core::Engine;
+use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ConfigLoader::new().load_default()?;
     let engine = Engine::builder(config).build()?;
-    let outcome = engine.scan_fragment(
+    let control = ScanControl::unlimited().with_budget(
+        ScanBudget::unlimited()
+            .max_work_units(10_000)
+            .max_finding_records(100),
+    );
+    let outcome = engine.scan_fragment_controlled(
         &Fragment::new(b"string AWSToken = \"AKIALALEMEL33243OLIB\";"),
         &ScanOptions::default(),
+        &control,
     );
     assert!(outcome.is_complete());
     assert_eq!(outcome.findings()[0].rule_id().as_str()?, "aws-access-token");
