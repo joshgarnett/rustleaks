@@ -1,10 +1,18 @@
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+load(":execution_tool.bzl", "execution_tool")
 
 exports_files([
+    "execution_tool.bzl",
     "platform_matrix.bzl",
     "rust_crate.bzl",
 ])
+
+execution_tool(
+    name = "git",
+    tool = "@git//:git",
+    visibility = ["//visibility:public"],
+)
 
 # rules_rust's stable-channel doctest runner executes from runfiles. Wrapping
 # the selected LLVM builtins archive in CcInfo lets it remap that generated

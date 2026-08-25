@@ -70,13 +70,13 @@ filegroup(
 
 _GIT_TEST_DATA = select({
     "@platforms//os:windows": [],
-    "//conditions:default": ["@git//:git"],
+    "//conditions:default": ["//bazel:git"],
 })
 
 _GIT_TEST_ENV = select({
     "@platforms//os:windows": {"RUSTLEAKS_TEST_GIT_RUNFILE": "git"},
     "//conditions:default": {
-        "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath @git//:git)",
+        "RUSTLEAKS_TEST_GIT_RUNFILE": "$(rlocationpath //bazel:git)",
     },
 })
 
