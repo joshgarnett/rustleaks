@@ -1,10 +1,10 @@
 # Reviewed synthetic AWS compatibility examples and source assertions.
-README.md:aws-access-token:46
+README.md:aws-access-token:47
 crates/rustleaks-core/src/lib.rs:aws-access-token:14
 crates/rustleaks-compat/oracle/main_test.go:aws-access-token:504
 crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:131
 crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:205
-crates/xtask/src/main.rs:aws-access-token:768
+crates/xtask/src/main.rs:aws-access-token:800
 crates/xtask/src/tooling/cli_corpus/fixture.rs:aws-access-token:109
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:287
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:289
@@ -22,9 +22,9 @@ crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:864
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:868
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
-crates/rustleaks-core/tests/engine.rs:generic-api-key:226
-crates/rustleaks-core/tests/engine.rs:generic-api-key:236
-crates/rustleaks-core/tests/engine.rs:generic-api-key:281
+crates/rustleaks-core/tests/engine.rs:generic-api-key:289
+crates/rustleaks-core/tests/engine.rs:generic-api-key:299
+crates/rustleaks-core/tests/engine.rs:generic-api-key:346
 
 # Reviewed synthetic private-key compatibility fixtures.
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
@@ -40,6 +40,9 @@ crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
 4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_source_corpus.rb:aws-access-token:301
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:129
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:203
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/tests/engine.rs:generic-api-key:226
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/tests/engine.rs:generic-api-key:236
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/tests/engine.rs:generic-api-key:281
 4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_detect_corpus.rb:discord-api-token:183
 4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_allowlist_corpus.rb:generic-api-key:242
 4e1cf3fb09e60301d930564467bf2749c071c7ea:compat/generate_decoder_corpus.rb:generic-api-key:36

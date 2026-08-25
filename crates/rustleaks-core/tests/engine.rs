@@ -2,7 +2,7 @@
 
 use rustleaks_core::Engine;
 use rustleaks_core::config::{ConfigLoader, ConfigOrigin, VirtualResolver};
-use rustleaks_core::model::{ByteText, Fragment, ScanOptions};
+use rustleaks_core::model::{ByteRange, ByteText, FindingRange, Fragment, ScanOptions};
 
 fn assert_send_sync<T: Send + Sync>() {}
 
@@ -37,6 +37,14 @@ tags = ["credential"]
     assert_eq!(finding.location().end_line(), 1);
     assert_eq!(finding.location().start_column(), 3);
     assert_eq!(finding.location().end_column(), 16);
+    assert_eq!(
+        finding.match_range(),
+        FindingRange::Exact(ByteRange::new(8, 22).unwrap())
+    );
+    assert_eq!(
+        finding.secret_range(),
+        FindingRange::Exact(ByteRange::new(15, 21).unwrap())
+    );
     assert_eq!(finding.tags()[0].as_bytes(), b"credential");
     assert!(finding.entropy() > 2.0);
 }
@@ -71,6 +79,14 @@ keywords = ["key"]
     let ignore_marker = ScanOptions::builder().honor_gitleaks_allow(false).build();
     let findings = engine.scan_fragment(&allowed, &ignore_marker);
     assert_eq!(findings.findings()[0].secret().as_bytes(), b"AB12");
+    assert_eq!(
+        findings.findings()[0].match_range(),
+        FindingRange::Exact(ByteRange::new(0, 8).unwrap())
+    );
+    assert_eq!(
+        findings.findings()[0].secret_range(),
+        FindingRange::Exact(ByteRange::new(4, 8).unwrap())
+    );
     let findings = engine.scan_fragment(&native_allowed, &ignore_marker);
     assert_eq!(findings.findings()[0].secret().as_bytes(), b"AB12");
 
@@ -94,6 +110,10 @@ secretGroup = 2
     );
     let finding = unmatched.scan_fragment(&raw, &ScanOptions::default());
     assert_eq!(finding.findings()[0].secret().as_bytes(), b"");
+    assert_eq!(
+        finding.findings()[0].secret_range(),
+        FindingRange::Unavailable
+    );
 
     let trimmed = build_engine(
         r#"
@@ -105,6 +125,14 @@ regex = '''\nkey=AB12\n'''
     let finding = trimmed.scan_fragment(&Fragment::new(b"\nkey=AB12\n"), &ScanOptions::default());
     assert_eq!(finding.findings()[0].match_text().as_bytes(), b"key=AB12");
     assert_eq!(finding.findings()[0].secret().as_bytes(), b"key=AB12");
+    assert_eq!(
+        finding.findings()[0].match_range(),
+        FindingRange::Exact(ByteRange::new(1, 9).unwrap())
+    );
+    assert_eq!(
+        finding.findings()[0].secret_range(),
+        FindingRange::Exact(ByteRange::new(1, 9).unwrap())
+    );
 }
 
 #[test]
@@ -125,6 +153,14 @@ path = '''(?i)secret\.txt$'''
     assert_eq!(
         findings.findings()[0].match_text().as_bytes(),
         b"file detected: src/public.txt"
+    );
+    assert_eq!(
+        findings.findings()[0].match_range(),
+        FindingRange::Unavailable
+    );
+    assert_eq!(
+        findings.findings()[0].secret_range(),
+        FindingRange::Unavailable
     );
 
     let both = build_engine(
@@ -212,6 +248,33 @@ regex = '''(?s:.*?)'''
 }
 
 #[test]
+fn exact_ranges_preserve_invalid_source_bytes() {
+    let engine = build_engine(
+        r#"
+[[rules]]
+id = "invalid-bytes"
+regex = '''(?s:token=(.+))'''
+secretGroup = 1
+keywords = ["token"]
+"#,
+    );
+    let raw = b"token=\xffA";
+    let outcome = engine.scan_fragment(&Fragment::new(raw), &ScanOptions::default());
+    let finding = &outcome.findings()[0];
+
+    assert_eq!(finding.match_text().as_bytes(), raw);
+    assert_eq!(finding.secret().as_bytes(), b"\xffA");
+    assert_eq!(
+        finding.match_range(),
+        FindingRange::Exact(ByteRange::new(0, 8).unwrap())
+    );
+    assert_eq!(
+        finding.secret_range(),
+        FindingRange::Exact(ByteRange::new(6, 8).unwrap())
+    );
+}
+
+#[test]
 fn decoded_findings_keep_decoded_text_and_original_location() {
     let engine = build_engine(
         r#"
@@ -238,6 +301,8 @@ tags = ["credential"]
     assert_eq!(finding.location().end_line(), 1);
     assert_eq!(finding.location().start_column(), 2);
     assert_eq!(finding.location().end_column(), 28);
+    assert_eq!(finding.match_range(), FindingRange::Unavailable);
+    assert_eq!(finding.secret_range(), FindingRange::Unavailable);
     assert_eq!(
         finding
             .tags()
@@ -347,6 +412,14 @@ skipReport = true
             .rule_id()
             .as_bytes(),
         b"auxiliary"
+    );
+    assert_eq!(
+        projected.findings()[0].match_range(),
+        FindingRange::Exact(ByteRange::new(0, 13).unwrap())
+    );
+    assert_eq!(
+        projected.findings()[0].required_findings()[0].match_range(),
+        FindingRange::Exact(ByteRange::new(14, 29).unwrap())
     );
 
     let inherited = Fragment::builder(b"%41UXILIARY-VALUE")

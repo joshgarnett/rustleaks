@@ -13,6 +13,11 @@ Budgets are inclusive and aggregate across one fragment scan:
 - finding records count materialized primary, auxiliary, and projected
   required findings.
 
+A structured operation split across multiple fragments is outside that
+aggregate. Its caller must additionally cap total original bytes, fragments,
+findings, work, cancellation, and elapsed time. Reusing one per-fragment
+budget does not create an operation-wide limit.
+
 Cancellation is cooperative. It is polled between bounded owned work units,
 including between decoder candidates and encoding transforms; one regex
 backend evaluation or individual transform remains indivisible. A partial
@@ -40,6 +45,13 @@ Many ordinary Rust allocations remain infallible; out-of-memory may abort.
 The CLI timeout is cooperative, not a hard wall-clock deadline. Streaming
 sources and reports are intentionally open-ended unless their caller installs
 the relevant outer policy.
+
+The unpublished compatibility performance runner measures packaged default
+engine construction and no-keyword scans at 1 KiB, 16 KiB, and 1 MiB. Those
+workloads provide reproducible inputs and exact outcome invariants, not
+portable latency guarantees. Callers deciding whether to move synchronous
+scans off an async executor must measure their own target, runtime,
+configuration, and request distribution.
 
 Compressed RAR3/RAR5 and 7z dependency calls rely on unwind containment for
 malformed-input panics. The 7z boundary contains both reader construction and

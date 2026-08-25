@@ -27,6 +27,11 @@ failure can still abort, cancellation is cooperative rather than a hard
 deadline, and dependency code may contain narrowly reviewed unsafe internals;
 see `docs/RESOURCE_LIMITS.md` and `docs/DEPENDENCY_SAFETY.md`.
 
+Finding, baseline, and fragment `Debug` output omits retained byte contents.
+Compatibility serialization and reporting intentionally preserve raw fields.
+Owned buffers are not zeroized, and removing detected secret byte sequences
+does not prove that remaining source-derived metadata is safe to disclose.
+
 Dependency advisories, licenses, versions, and source origins are governed by
 `deny.toml`. Temporary exceptions must be recorded in
 `supply-chain-exceptions.toml` with an owner, rationale, affected package,

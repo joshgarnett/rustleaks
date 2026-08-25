@@ -26,7 +26,7 @@ locked boundary and fail when that boundary changes.
 
 | Boundary | Implementation | Controls and limits | Evidence | Remaining limitations |
 | --- | --- | --- | --- | --- |
-| Engine and findings | `rustleaks-core/src/engine.rs`, `model.rs` | Byte-oriented input; checked spans and locations; aggregate decoded-byte, work-unit, and finding-record budgets; cooperative cancellation; caller-selected per-target size | Engine, model, controlled-scan, corpus, property, parity, and `fragment_scan` fuzz tests | One regex evaluation or transform is indivisible. Many Rust allocations may still abort on exhaustion. The compatibility wrapper is unlimited by design. |
+| Engine and findings | `rustleaks-core/src/engine.rs`, `model.rs` | Byte-oriented input; checked locations; exact or explicitly unavailable source ranges; content-omitting `Debug`; recursive detected-secret removal; aggregate decoded-byte, work-unit, and finding-record budgets; cooperative cancellation; caller-selected per-target size | Engine, model, controlled-scan, disclosure, corpus, property, parity, and `fragment_scan` fuzz tests | One regex evaluation or transform is indivisible. Many Rust allocations may still abort on exhaustion. The compatibility wrapper is unlimited by design. Raw buffers are not zeroized, and detected-secret removal does not classify unrelated metadata. |
 | Configuration and rules | `rustleaks-core/src/config/`, `rustleaks-core/src/regex/` | Individual regex source 1 MiB, nesting 4,096, compiled NFA 256 MiB, extension depth 2, at most 4,096 selected rules and 8 MiB selected-rule source; structured parse and compile errors | Configuration, rule-extension, regex corpus, Go differential, property, `config`, and `go_regex` fuzz tests | Regex limits apply per expression. The caller owns aggregate configuration input and file resolution outside the loader's bounded operations. |
 | Decoders and locations | `rustleaks-core/src/decoder/`, `rustleaks-core/src/model.rs` | Caller-selected decode depth; output and work charged to aggregate scan budgets; checked offset and range composition | Decoder, arbitrary-byte, location, range-composition, parity, and `fragment_scan` fuzz tests | Cancellation is observed between decode work units, not within an individual transform. |
 | Files and directories | `rustleaks-sources/src/file.rs`, `directory.rs`, `path.rs`, `runner.rs` | Bounded chunks and queue; optional file-size cap; symlink hop limit 64; virtual path normalization; bounded workers; every worker joined | File, directory, path, symlink escape, chunk partition, cancellation, and source corpus tests | Files can change during a scan. Caller-selected streaming policies can remain open-ended if no outer bound is installed. |
@@ -45,11 +45,24 @@ in [`DEPENDENCY_SAFETY.md`](DEPENDENCY_SAFETY.md).
 ## Secret handling
 
 The engine returns the matched secret because that is its documented API.
-Callers must treat findings as sensitive and apply `Finding::redacted` before
-logging, displaying, or attaching them to an issue. The CLI applies
-`--redact` before verbose and report output. Supplying a report destination or
-`--verbose` is an explicit request to disclose finding fields; use
-`--redact` for routine use and automation.
+Callers must treat findings, baselines, fragments, and serialized reports as
+sensitive. Their content-omitting `Debug` implementations expose structure,
+lengths, locations, and counts without traversing retained bytes. Callers must
+still decide whether that metadata is appropriate for a particular sink.
+`Finding::redacted` preserves upstream report behavior and intentionally does
+not redact required findings, so it is not a disclosure-safe transform.
+`Finding::without_detected_secrets` recursively removes detected secret byte
+sequences and drops a retained fragment, but remaining metadata can still
+contain unrelated or undetected sensitive content. Trust boundaries should
+receive a narrow caller-owned projection. The CLI applies `--redact` before
+verbose and report output. Supplying a report destination or `--verbose` is an
+explicit request to disclose finding fields; use `--redact` for routine use
+and automation.
+
+Finding and fragment buffers use ordinary Rust ownership. Cloning duplicates
+their bytes, and dropping them does not guarantee memory zeroization. Keep raw
+values in the narrowest practical scope and do not claim process-memory
+erasure.
 
 Errors, warnings, summaries, dependency output, fuzz artifacts, and crash
 reproducers must not contain real credentials. Fuzz seeds and regressions use

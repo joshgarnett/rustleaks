@@ -37,14 +37,25 @@ This example loads the packaged default rules and scans one in-memory byte
 slice. The value is synthetic compatibility-test data, not a credential.
 
 ```rust
+use std::sync::atomic::AtomicBool;
 use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{Fragment, ScanOptions};
-use rustleaks_core::Engine;
+use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
 let config = ConfigLoader::new().load_default()?;
 let engine = Engine::builder(config).build()?;
 let input = b"string AWSToken = \"AKIALALEMEL33243OLIB\";";
-let outcome = engine.scan_fragment(&Fragment::new(input), &ScanOptions::default());
+let cancelled = AtomicBool::new(false);
+let control = ScanControl::cancellable(&cancelled).with_budget(
+    ScanBudget::unlimited()
+        .max_work_units(10_000)
+        .max_finding_records(100),
+);
+let outcome = engine.scan_fragment_controlled(
+    &Fragment::new(input),
+    &ScanOptions::default(),
+    &control,
+);
 
 assert!(outcome.is_complete());
 assert_eq!(outcome.findings()[0].rule_id().as_str()?, "aws-access-token");
@@ -56,6 +67,13 @@ does not read the environment, log, access the file system, create background
 threads, or require an async runtime. `Engine` is `Send + Sync`. Controlled
 scans add cooperative cancellation and explicit work, decoded-byte, and
 finding-record budgets.
+
+Budgets apply to one fragment scan. Callers that split a structured operation
+across multiple fragments must also enforce aggregate byte, finding, work, and
+elapsed-time limits. Finding values preserve source bytes and are not
+zeroized. Their compatibility serialization is an explicit disclosure
+surface; routine diagnostics should use the content-omitting `Debug` output or
+a caller-owned metadata projection.
 
 ## CLI example
 

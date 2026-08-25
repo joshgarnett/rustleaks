@@ -7,12 +7,21 @@
 //! ```
 //! use rustleaks_core::config::ConfigLoader;
 //! use rustleaks_core::model::{Fragment, ScanOptions};
-//! use rustleaks_core::Engine;
+//! use rustleaks_core::{Engine, ScanBudget, ScanControl};
 //!
 //! let config = ConfigLoader::new().load_default()?;
 //! let engine = Engine::builder(config).build()?;
 //! let input = b"string AWSToken = \"AKIALALEMEL33243OLIB\";";
-//! let outcome = engine.scan_fragment(&Fragment::new(input), &ScanOptions::default());
+//! let control = ScanControl::unlimited().with_budget(
+//!     ScanBudget::unlimited()
+//!         .max_work_units(10_000)
+//!         .max_finding_records(100),
+//! );
+//! let outcome = engine.scan_fragment_controlled(
+//!     &Fragment::new(input),
+//!     &ScanOptions::default(),
+//!     &control,
+//! );
 //!
 //! assert!(outcome.is_complete());
 //! assert_eq!(outcome.findings()[0].rule_id().as_str()?, "aws-access-token");
