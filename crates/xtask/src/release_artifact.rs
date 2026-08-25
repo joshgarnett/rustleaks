@@ -63,7 +63,7 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
                 glibc,
             )
         }
-        [command, output] if command == "verify" => verify(Path::new(output)),
+        [command, output] if command == "verify" => verify(root, Path::new(output)),
         _ => Err("usage: cargo xtask release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>".into()),
     }
 }
@@ -231,7 +231,7 @@ fn prepare(
     let archive_sha256 = sha256_file(&archive)?;
     let sbom_name = format!("{stem}.cdx.json");
     let sbom_path = output.join(&sbom_name);
-    let lock_digests = lock_digests(root)?;
+    let lock_digests = lock_digests(root, commit)?;
     let package_checksums = cargo_lock_checksums(root)?;
     let evidence = ReleaseEvidence {
         target,
@@ -303,7 +303,7 @@ fn prepare(
         },
     });
     write_json(&output.join("manifest.json"), &manifest)?;
-    verify(output)?;
+    verify(root, output)?;
     println!("prepared and verified non-publishing release bundle {archive_name}");
     Ok(())
 }
@@ -332,8 +332,14 @@ fn prepare_output_directory(output: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn verify(output: &Path) -> Result<(), String> {
+fn verify(root: &Path, output: &Path) -> Result<(), String> {
     let manifest = read_json(&output.join("manifest.json"))?;
+    let commit = required_pointer(&manifest, "/release/sourceCommit")?;
+    validate_commit(commit)?;
+    let committed_lock_digests = lock_digests(root, commit)?;
+    if manifest.pointer("/build/lockfiles") != Some(&committed_lock_digests) {
+        return Err("release manifest lockfile digests do not match the committed sources".into());
+    }
     let artifact_name = required_pointer(&manifest, "/artifact/file")?;
     let artifact_sha256 = required_pointer(&manifest, "/artifact/sha256")?;
     let sbom_name = required_pointer(&manifest, "/sbom/file")?;
@@ -876,12 +882,28 @@ fn validate_archive(path: &Path, archive_name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn lock_digests(root: &Path) -> Result<Value, String> {
+fn lock_digests(root: &Path, commit: &str) -> Result<Value, String> {
     Ok(json!({
-        "Cargo.lock": sha256_file(&root.join("Cargo.lock"))?,
-        "cargo-bazel-lock.json": sha256_file(&root.join("cargo-bazel-lock.json"))?,
-        "MODULE.bazel.lock": sha256_file(&root.join("MODULE.bazel.lock"))?,
+        "Cargo.lock": committed_file_sha256(root, commit, "Cargo.lock")?,
+        "cargo-bazel-lock.json": committed_file_sha256(root, commit, "cargo-bazel-lock.json")?,
+        "MODULE.bazel.lock": committed_file_sha256(root, commit, "MODULE.bazel.lock")?,
     }))
+}
+
+fn committed_file_sha256(root: &Path, commit: &str, path: &str) -> Result<String, String> {
+    let object = format!("{commit}:{path}");
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["cat-file", "blob", &object])
+        .output()
+        .map_err(|error| format!("failed to read committed release input {object}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git cat-file failed for committed release input {object}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(sha256_bytes(&output.stdout))
 }
 
 fn cargo_lock_checksums(root: &Path) -> Result<BTreeMap<(String, String), String>, String> {
@@ -1163,12 +1185,15 @@ fn required_pointer<'a>(value: &'a Value, pointer: &str) -> Result<&'a str, Stri
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::fs;
+    use std::process::Command;
 
     use serde_json::json;
 
     use super::{
         active_optional_dependencies, bazel_mentions, compare_bundle_maps, dependency_is_selected,
-        percent_encode, target_config, validate_commit, validate_glibc,
+        lock_digests, percent_encode, sha256_bytes, sha256_file, target_config, validate_commit,
+        validate_glibc,
     };
 
     #[test]
@@ -1223,6 +1248,74 @@ mod tests {
             ("rustleaks.tar.gz".to_owned(), b"changed".to_vec()),
         ]);
         assert!(compare_bundle_maps(&first, &changed).is_err());
+    }
+
+    #[test]
+    fn committed_lock_digests_ignore_worktree_line_endings() {
+        let root = std::env::temp_dir().join(format!(
+            "rustleaks-release-lock-digests-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        fs::create_dir(&root).unwrap();
+        let git = |arguments: &[&str]| {
+            let output = Command::new("git")
+                .current_dir(&root)
+                .args(arguments)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {arguments:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        };
+        git(&["init", "--quiet"]);
+        git(&["config", "core.autocrlf", "false"]);
+        git(&["config", "user.name", "Rustleaks test"]);
+        git(&["config", "user.email", "rustleaks-test@example.invalid"]);
+
+        let committed = [
+            ("Cargo.lock", b"cargo\nlock\n".as_slice()),
+            (
+                "cargo-bazel-lock.json",
+                b"{\n  \"lock\": true\n}\n".as_slice(),
+            ),
+            (
+                "MODULE.bazel.lock",
+                b"{\n  \"module\": true\n}\n".as_slice(),
+            ),
+        ];
+        for (path, bytes) in committed {
+            fs::write(root.join(path), bytes).unwrap();
+        }
+        git(&[
+            "add",
+            "Cargo.lock",
+            "cargo-bazel-lock.json",
+            "MODULE.bazel.lock",
+        ]);
+        git(&["commit", "--quiet", "-m", "test committed inputs"]);
+        let commit = String::from_utf8(git(&["rev-parse", "HEAD"]))
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        for (path, bytes) in committed {
+            let crlf = String::from_utf8_lossy(bytes).replace('\n', "\r\n");
+            fs::write(root.join(path), crlf).unwrap();
+        }
+
+        let digests = lock_digests(&root, &commit).unwrap();
+        for (path, bytes) in committed {
+            let expected = sha256_bytes(bytes);
+            assert_eq!(digests[path].as_str(), Some(expected.as_str()));
+            assert_ne!(sha256_file(&root.join(path)).unwrap(), expected);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
