@@ -35,10 +35,11 @@ handling, and any provider-side containment appropriate to its facts.
 ## Recovery proof
 
 The two isolated optimized builds were repeated with the release setting. The
-resulting binaries were byte-identical. The release tool then created a
-deterministic archive and verified its checksum list, target CycloneDX SBOM,
-Cargo-to-Bazel dependency reconciliation, SLSA v1 dry-run provenance predicate,
-reproducibility proof, and exact archive contents.
+resulting binaries were byte-identical. The release tool then independently
+created and compared complete bundles, including each archive, checksum list,
+target CycloneDX SBOM, Cargo-to-Bazel dependency reconciliation, SLSA v1
+dry-run provenance predicate, reproducibility proof, and exact archive
+contents.
 
 The regression is enforced by the protected release workflow, which builds
 every native target twice and fails before artifact upload when bytes differ.

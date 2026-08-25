@@ -57,8 +57,9 @@ crates.io token variable is present.
 The workflow runs the package consumers, docs.rs build, full fresh differential,
 security policy, extended AddressSanitizer fuzzing, worktree and history scans,
 and native artifact matrix. Every native job builds the CLI twice with isolated
-Bazel output roots, requires byte-identical binaries, runs help and redacted
-scan smoke tests, and emits:
+Bazel output roots, requires byte-identical binaries and independently prepared
+bundles, then extracts each archive and runs help plus a redacted scan smoke
+test from the packaged executable. Each job emits:
 
 - `rustleaks-0.1.0-alpha.1-<target>.tar.gz`;
 - `SHA256SUMS` for the archive, SBOM, and provenance predicate;

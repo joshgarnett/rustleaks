@@ -293,6 +293,13 @@ jobs:
           fi
           cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
           cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" "${glibc}"
+          cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" "${glibc}"
+          cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
+          packaged="${work}/extracted/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks"
+          mkdir -p "${work}/extracted"
+          tar -xzf "${work}/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz" -C "${work}/extracted"
+          "${packaged}" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | grep -q REDACTED
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -314,6 +321,7 @@ jobs:
             --source-ref refs/heads/main \
             --deny-self-hosted-runners
           cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
+          cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
       - name: Upload the verified target bundle
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -388,6 +396,13 @@ jobs:
           grep -q REDACTED "${work}/smoke.json"
           cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
           cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" none
+          cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" none
+          cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
+          packaged="${work}/extracted/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks"
+          mkdir -p "${work}/extracted"
+          tar -xzf "${work}/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.tar.gz" -C "${work}/extracted"
+          "${packaged}" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | grep -q REDACTED
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -409,6 +424,7 @@ jobs:
             --source-ref refs/heads/main \
             --deny-self-hosted-runners
           cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
+          cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
       - name: Upload the verified target bundle
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -483,12 +499,30 @@ jobs:
           Copy-Item (Join-Path $firstBinDir crates/rustleaks-cli/rustleaks.exe) $first
           Copy-Item (Join-Path $secondBinDir crates/rustleaks-cli/rustleaks.exe) $second
           & $first --help
-          ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $first stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | Tee-Object (Join-Path $work smoke.json)
-          if (-not (Select-String -Quiet -Pattern REDACTED -Path (Join-Path $work smoke.json))) { throw "redacted smoke finding missing" }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $smoke = Join-Path $work smoke.json
+          $smokeOutput = ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $first stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $smokeOutput | Tee-Object $smoke
+          if (-not (Select-String -Quiet -Pattern REDACTED -Path $smoke)) { throw "redacted smoke finding missing" }
           cargo xtask release-artifact compare $first $second (Join-Path $work reproducibility.json)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo xtask release-artifact prepare $first $firstRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle) none
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask release-artifact prepare $second $secondRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle-repeat) none
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask release-artifact compare-bundles (Join-Path $work bundle) (Join-Path $work bundle-repeat)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $extract = Join-Path $work extracted
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          tar -xzf (Join-Path $work "bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.tar.gz") -C $extract
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packaged = Join-Path $extract "rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET/rustleaks.exe"
+          & $packaged --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packagedOutput = ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $packaged stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=-
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($packagedOutput | Select-String -Quiet -Pattern REDACTED)) { throw "packaged redacted smoke finding missing" }
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -506,6 +540,8 @@ jobs:
           gh attestation verify $archive --repo $env:GITHUB_REPOSITORY --bundle $env:ATTESTATION_BUNDLE --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release-dry-run.yml" --source-digest $env:CANDIDATE --source-ref refs/heads/main --deny-self-hosted-runners
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item $env:ATTESTATION_BUNDLE (Join-Path $env:RUNNER_TEMP "release-work/bundle/rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET.attestation.jsonl")
+          cargo xtask release-artifact verify (Join-Path $env:RUNNER_TEMP "release-work/bundle")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload the verified target bundle
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:

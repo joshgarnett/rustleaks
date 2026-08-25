@@ -46,6 +46,9 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         [command, left, right, proof] if command == "compare" => {
             compare(Path::new(left), Path::new(right), Path::new(proof))
         }
+        [command, left, right] if command == "compare-bundles" => {
+            compare_bundles(Path::new(left), Path::new(right))
+        }
         [command, binary, bazel_output_root, target, commit, proof, output, glibc]
             if command == "prepare" =>
         {
@@ -61,8 +64,87 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
             )
         }
         [command, output] if command == "verify" => verify(Path::new(output)),
-        _ => Err("usage: cargo xtask release-artifact <compare LEFT RIGHT PROOF|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>".into()),
+        _ => Err("usage: cargo xtask release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>".into()),
     }
+}
+
+fn compare_bundles(left: &Path, right: &Path) -> Result<(), String> {
+    let left_files = read_bundle_files(left)?;
+    let right_files = read_bundle_files(right)?;
+    compare_bundle_maps(&left_files, &right_files)?;
+    println!(
+        "isolated release bundles are byte-identical: {} files",
+        left_files.len()
+    );
+    Ok(())
+}
+
+fn compare_bundle_maps(
+    left_files: &BTreeMap<String, Vec<u8>>,
+    right_files: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), String> {
+    if left_files.keys().ne(right_files.keys()) {
+        return Err(format!(
+            "isolated release bundle paths differ: first has {:?}, second has {:?}",
+            left_files.keys().collect::<Vec<_>>(),
+            right_files.keys().collect::<Vec<_>>()
+        ));
+    }
+    for (name, left_bytes) in left_files {
+        let right_bytes = right_files
+            .get(name)
+            .ok_or("second bundle lost a path after comparison")?;
+        if left_bytes != right_bytes {
+            let offset = left_bytes
+                .iter()
+                .zip(right_bytes)
+                .position(|(left, right)| left != right)
+                .unwrap_or(left_bytes.len().min(right_bytes.len()));
+            return Err(format!(
+                "isolated release bundle file {name} differs at byte {offset}: first has {} bytes, second has {} bytes",
+                left_bytes.len(),
+                right_bytes.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn read_bundle_files(directory: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let mut files = BTreeMap::new();
+    for entry in fs::read_dir(directory).map_err(|error| {
+        format!(
+            "cannot read release bundle {}: {error}",
+            directory.display()
+        )
+    })? {
+        let entry = entry.map_err(|error| {
+            format!(
+                "cannot inspect release bundle {}: {error}",
+                directory.display()
+            )
+        })?;
+        if !entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect release bundle entry: {error}"))?
+            .is_file()
+        {
+            return Err(format!(
+                "release bundle contains a non-file entry: {}",
+                entry.path().display()
+            ));
+        }
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "release bundle contains a non-UTF-8 file name".to_owned())?;
+        let bytes = fs::read(entry.path())
+            .map_err(|error| format!("cannot read release bundle file {name}: {error}"))?;
+        if files.insert(name.clone(), bytes).is_some() {
+            return Err(format!("release bundle repeats file {name}"));
+        }
+    }
+    Ok(files)
 }
 
 fn compare(left: &Path, right: &Path, proof: &Path) -> Result<(), String> {
@@ -258,6 +340,7 @@ fn verify(output: &Path) -> Result<(), String> {
     let sbom_sha256 = required_pointer(&manifest, "/sbom/sha256")?;
     let provenance_name = required_pointer(&manifest, "/provenance/file")?;
     let provenance_sha256 = required_pointer(&manifest, "/provenance/sha256")?;
+    validate_output_directory(output, artifact_name, sbom_name, provenance_name)?;
     for (name, expected) in [
         (artifact_name, artifact_sha256),
         (sbom_name, sbom_sha256),
@@ -321,6 +404,43 @@ fn verify(output: &Path) -> Result<(), String> {
         return Err("release reproducibility proof is invalid".into());
     }
     println!("verified release bundle checksums, SBOM, provenance, and archive contents");
+    Ok(())
+}
+
+fn validate_output_directory(
+    output: &Path,
+    artifact_name: &str,
+    sbom_name: &str,
+    provenance_name: &str,
+) -> Result<(), String> {
+    let stem = artifact_name
+        .strip_suffix(".tar.gz")
+        .ok_or("release archive name must end in .tar.gz")?;
+    let attestation_name = format!("{stem}.attestation.jsonl");
+    let files = read_bundle_files(output)?;
+    let mut expected = [
+        artifact_name,
+        sbom_name,
+        provenance_name,
+        "manifest.json",
+        "reproducibility.json",
+        "SHA256SUMS",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    if files.contains_key(&attestation_name) {
+        expected.insert(attestation_name);
+    }
+    let actual = files.keys().cloned().collect::<BTreeSet<_>>();
+    if actual != expected {
+        return Err(format!(
+            "release bundle paths differ: expected {expected:?}, got {actual:?}"
+        ));
+    }
+    if files.values().any(Vec::is_empty) {
+        return Err("release bundle contains an empty file".into());
+    }
     Ok(())
 }
 
@@ -1042,11 +1162,13 @@ fn required_pointer<'a>(value: &'a Value, pointer: &str) -> Result<&'a str, Stri
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use serde_json::json;
 
     use super::{
-        active_optional_dependencies, bazel_mentions, dependency_is_selected, percent_encode,
-        target_config, validate_commit, validate_glibc,
+        active_optional_dependencies, bazel_mentions, compare_bundle_maps, dependency_is_selected,
+        percent_encode, target_config, validate_commit, validate_glibc,
     };
 
     #[test]
@@ -1083,6 +1205,24 @@ mod tests {
     #[test]
     fn encodes_package_url_segments() {
         assert_eq!(percent_encode("1.1.4+spec-1.1.0"), "1.1.4%2Bspec-1.1.0");
+    }
+
+    #[test]
+    fn complete_bundle_comparison_rejects_path_and_byte_differences() {
+        let first = BTreeMap::from([
+            ("manifest.json".to_owned(), b"same".to_vec()),
+            ("rustleaks.tar.gz".to_owned(), b"archive".to_vec()),
+        ]);
+        assert!(compare_bundle_maps(&first, &first).is_ok());
+
+        let missing = BTreeMap::from([("manifest.json".to_owned(), b"same".to_vec())]);
+        assert!(compare_bundle_maps(&first, &missing).is_err());
+
+        let changed = BTreeMap::from([
+            ("manifest.json".to_owned(), b"same".to_vec()),
+            ("rustleaks.tar.gz".to_owned(), b"changed".to_vec()),
+        ]);
+        assert!(compare_bundle_maps(&first, &changed).is_err());
     }
 
     #[test]

@@ -57,7 +57,10 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "run: just security",
         "run: just fuzz-smoke",
         "release-artifact compare",
+        "release-artifact compare-bundles",
         "release-artifact prepare",
+        "rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}/rustleaks",
+        "rustleaks-0.1.0-alpha.1-$env:RELEASE_TARGET/rustleaks.exe",
         "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
         "id-token: write",
         "attestations: write",
@@ -83,6 +86,8 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         ("attestations: write", 4),
         ("gh attestation verify", 4),
         ("steps.attest.outputs.bundle-path", 4),
+        ("release-artifact compare-bundles", 3),
+        ("cargo xtask release-artifact verify", 3),
     ] {
         let actual = source.matches(required).count();
         if actual != expected {
