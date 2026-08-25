@@ -104,7 +104,7 @@ fn compare(left: &Path, right: &Path, proof: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Keep bundle generation as one fail-closed transaction.
 fn prepare(
     root: &Path,
     binary: &Path,
@@ -128,27 +128,7 @@ fn prepare(
     graph.reconcile_bazel(&graph_text)?;
     validate_workspace_versions(root)?;
 
-    if output.exists() {
-        let mut entries = fs::read_dir(output).map_err(|error| {
-            format!(
-                "cannot inspect release output {}: {error}",
-                output.display()
-            )
-        })?;
-        if entries.next().is_some() {
-            return Err(format!(
-                "release output directory is not empty: {}",
-                output.display()
-            ));
-        }
-    } else {
-        fs::create_dir_all(output).map_err(|error| {
-            format!(
-                "cannot create release output directory {}: {error}",
-                output.display()
-            )
-        })?;
-    }
+    prepare_output_directory(output)?;
 
     let stem = format!("rustleaks-{RELEASE_VERSION}-{target}");
     let archive_name = format!("{stem}.tar.gz");
@@ -213,7 +193,7 @@ fn prepare(
         "build": {
             "target": target,
             "bazelConfig": bazel_config,
-            "bazelVersion": read_trimmed(root.join(".bazelversion"))?,
+            "bazelVersion": read_trimmed(&root.join(".bazelversion"))?,
             "rustVersion": BAZEL_RUST_VERSION,
             "rulesRustVersion": RULES_RUST_VERSION,
             "features": ["archives"],
@@ -243,6 +223,30 @@ fn prepare(
     write_json(&output.join("manifest.json"), &manifest)?;
     verify(output)?;
     println!("prepared and verified non-publishing release bundle {archive_name}");
+    Ok(())
+}
+
+fn prepare_output_directory(output: &Path) -> Result<(), String> {
+    if !output.exists() {
+        return fs::create_dir_all(output).map_err(|error| {
+            format!(
+                "cannot create release output directory {}: {error}",
+                output.display()
+            )
+        });
+    }
+    let mut entries = fs::read_dir(output).map_err(|error| {
+        format!(
+            "cannot inspect release output {}: {error}",
+            output.display()
+        )
+    })?;
+    if entries.next().is_some() {
+        return Err(format!(
+            "release output directory is not empty: {}",
+            output.display()
+        ));
+    }
     Ok(())
 }
 
@@ -808,7 +812,7 @@ fn validate_workspace_versions(root: &Path) -> Result<(), String> {
             ));
         }
     }
-    if read_trimmed(root.join(".bazelversion"))? != BAZEL_VERSION {
+    if read_trimmed(&root.join(".bazelversion"))? != BAZEL_VERSION {
         return Err(format!("release Bazel version must be {BAZEL_VERSION}"));
     }
     Ok(())
@@ -961,11 +965,7 @@ fn active_optional_dependencies(package: &Value, node: &Value) -> Result<BTreeSe
             if let Some(dependency) = value.strip_prefix("dep:") {
                 active.insert(normalize_dependency_name(dependency));
             } else if let Some((dependency, _)) = value.split_once('/') {
-                if let Some(dependency) = dependency.strip_suffix('?') {
-                    if active.contains(&normalize_dependency_name(dependency)) {
-                        continue;
-                    }
-                } else {
+                if dependency.strip_suffix('?').is_none() {
                     active.insert(normalize_dependency_name(dependency));
                 }
             } else if features.contains_key(value) {
@@ -1027,8 +1027,8 @@ fn read_json(path: &Path) -> Result<Value, String> {
         .map_err(|error| format!("cannot decode JSON file {}: {error}", path.display()))
 }
 
-fn read_trimmed(path: PathBuf) -> Result<String, String> {
-    fs::read_to_string(&path)
+fn read_trimmed(path: &Path) -> Result<String, String> {
+    fs::read_to_string(path)
         .map(|value| value.trim().to_owned())
         .map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
