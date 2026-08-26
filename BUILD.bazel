@@ -31,6 +31,7 @@ filegroup(
         ".bazelignore",
         ".bazelrc",
         ".bazelversion",
+        ".go-version",
         "BUILD.bazel",
         "Cargo.lock",
         "Cargo.toml",

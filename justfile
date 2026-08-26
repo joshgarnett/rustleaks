@@ -7,6 +7,7 @@ doctor:
     bazelisk version
     cargo --version
     rustc --version
+    go version
 
 # Check Rust formatting through the authoritative Bazel graph.
 format:

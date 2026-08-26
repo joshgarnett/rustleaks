@@ -552,6 +552,14 @@ fn check_interface(root: &Path) -> Result<(), String> {
         return Err(format!("Bazelisk version must be 9.2.0, got {version:?}"));
     }
 
+    let go_version = fs::read_to_string(root.join(".go-version"))
+        .map_err(|error| format!("cannot read .go-version: {error}"))?;
+    if go_version.trim() != "1.26.7" {
+        return Err(format!(
+            "Go maintenance version must be 1.26.7, got {go_version:?}"
+        ));
+    }
+
     let bazelrc = fs::read_to_string(root.join(".bazelrc"))
         .map_err(|error| format!("cannot read .bazelrc: {error}"))?;
     for required in [
@@ -669,6 +677,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "bazelisk build --build_tests_only //:test",
         "just ci test prebuild",
     )?;
+    require_contains(&justfile, "go version", "just doctor Go version")?;
     for forbidden in ["cargo build", "cargo clippy", "cargo doc", "cargo test"] {
         require_not_contains(&justfile, forbidden, "normal just recipe")?;
     }
