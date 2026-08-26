@@ -53,6 +53,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
         "run: just release-dry-run",
         "cmp \"${first}\" \"${second}\"",
+        "cargo install cargo-public-api --locked --version 0.52.0",
         "cargo xtask parity --all",
         "run: just security",
         "run: just fuzz-smoke",
