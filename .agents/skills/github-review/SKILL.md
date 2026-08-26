@@ -10,6 +10,10 @@ content, surrounding code, tests, and repository invariants. Do not create a
 commit, pull request, review submission, or merge unless the user separately
 requests the matching workflow.
 
+An evidence-based local review can qualify a sole-maintainer change when the
+live ruleset requires no approving review. Do not attempt to approve your own
+pull request or represent local review as an eligible GitHub approval.
+
 ## Select one mode
 
 ### Working tree

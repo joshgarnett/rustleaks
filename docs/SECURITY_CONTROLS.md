@@ -85,11 +85,12 @@ dependency-delta inventory. Its common unsafe-bearing package set and reviewed
 target-specific additions are enforced by `xtask`; it is not a security
 conclusion.
 
-The public API snapshot is the pre-publication SemVer baseline. Before a
-release candidate, maintainers must run `cargo-semver-checks` for every public crate
-and supported feature profile against an actual prior release when one exists,
-then require manual API review. A snapshot alone cannot compare to a release
-that has not been published.
+The committed public API snapshot is the exact workspace baseline. For every
+release candidate, maintainers must run `cargo-semver-checks` for each public
+crate and supported feature profile against the latest published release when
+one exists, then perform manual API review. Before the first publication, the
+snapshot provides the only release baseline; afterward it does not replace the
+comparison with the registry version.
 
 ## Repository self-scan
 

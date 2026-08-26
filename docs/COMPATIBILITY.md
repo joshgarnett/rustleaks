@@ -1,8 +1,9 @@
 # Compatibility profile
 
-Rustleaks `0.1.0-alpha.1` targets selected library and CLI behavior from
-Gitleaks commit `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b`. The embedded
-upstream default configuration has SHA-256
+The current Rustleaks compatibility profile targets selected library and CLI
+behavior from Gitleaks commit
+`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b`. The embedded upstream default
+configuration has SHA-256
 `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
 
 The upstream name identifies the backward-compatibility target. It does not
@@ -16,8 +17,9 @@ identify Rustleaks as an official release or imply endorsement.
 | P1 | Readers, files, directories, symlinks, archives, Git, and remote links | Implemented in workspace crates and differentially tested |
 | P2 | CLI precedence, diagnostics, exits, JSON, CSV, JUnit, SARIF, and restricted templates | Implemented in workspace crates and differentially tested |
 
-Only `rustleaks-core` is in the initial publishable boundary. P1 and P2 are
-repository evidence, not claims that those packages are published.
+Only `rustleaks-core` is in the current public package boundary. P1 and P2 are
+repository evidence and do not make the corresponding workspace crates public
+packages.
 
 ## Native and legacy names
 

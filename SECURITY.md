@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-Security fixes are prepared only for the latest `0.1.0-alpha.x` source while
-the project remains unpublished. Older snapshots are not supported.
+Security fixes target the current development line and the latest published
+release. Older prereleases and source snapshots are not supported unless a
+release advisory states otherwise.
 
 ## Reporting
 

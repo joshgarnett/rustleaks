@@ -8,9 +8,9 @@ Gitleaks in config fields, `.gitleaksignore`, and copied assets are retained
 only for backward compatibility and attribution. Rustleaks is independent and
 is not affiliated with or endorsed by the upstream project.
 
-The initial supported package is `0.1.0-alpha.1`. Its public API is guarded by
-an exact first-release snapshot; changes remain possible during the alpha
-series but require an explicit reviewed baseline update.
+The crate is on an alpha development line. Its public API is guarded by an
+exact snapshot; changes remain possible during the alpha series but require an
+explicit reviewed baseline update.
 
 Regular-expression execution is hidden behind a private Go-compatible
 frontend and an exact-pinned Unicode-15 direct PikeVM. No backend type is part

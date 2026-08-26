@@ -12,9 +12,13 @@ project and is not affiliated with or endorsed by Gitleaks or its maintainers.
 
 ## Current status
 
-Version `0.1.0-alpha.1` has not been published. Only `rustleaks-core` is in the
-initial publishable package boundary. The source, report, CLI, compatibility,
-and codec crates are tested workspace components, not registry promises.
+Rustleaks is in alpha development. Only `rustleaks-core` is in the public
+package boundary. The source, report, CLI, compatibility, and codec crates are
+tested workspace components, not registry promises.
+
+The workspace manifest and changelog identify the current release candidate.
+Availability of a version is established by its crates.io entry and matching
+GitHub release, not by version text in this README.
 
 Platform evidence and its limitations are summarized below. Rustleaks is not
 described as production-ready.

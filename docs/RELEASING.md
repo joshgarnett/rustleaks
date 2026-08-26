@@ -1,15 +1,15 @@
 # Release process
 
-Rustleaks has not published a crate or release. This document defines the
-maintained local qualification boundary and the conditions that must exist
-before publication. It does not authorize a release.
+This document defines the maintained qualification and publication boundary
+for Rustleaks releases. It does not authorize a release.
 
 ## Candidate identity
 
 One candidate must have an approved version, exact commit and tree, clean
 worktree, matching workspace manifests and changelog, and one consistent
 Gitleaks revision and default-config hash across the package and compatibility
-evidence. Only `rustleaks-core` is currently publishable.
+evidence. The workspace manifest and changelog identify the candidate version.
+Only `rustleaks-core` is currently publishable.
 
 Selecting a version, creating a GitHub release, publishing a crate, changing a
 release setting, enabling trusted publishing, or using a credential requires
@@ -61,7 +61,7 @@ Bazel output roots, requires byte-identical binaries and independently prepared
 bundles, then extracts each archive and runs help plus a redacted scan smoke
 test from the packaged executable. Each job emits:
 
-- `rustleaks-0.1.0-alpha.1-<target>.tar.gz`;
+- `rustleaks-<version>-<target>.tar.gz`;
 - `SHA256SUMS` for the archive, SBOM, and provenance predicate;
 - a target-filtered CycloneDX 1.6 SBOM with registry package checksums and an
   exact Cargo-to-Bazel graph reconciliation;
@@ -80,34 +80,25 @@ dynamic `NEEDED` entry. macOS release builds omit nondeterministic Mach-O UUIDs
 before the linker creates any required ad-hoc signature. No other artifact
 difference is normalized.
 
-## External evidence and blockers
+## External evidence and publication paths
 
-Before the first publication, the repository still needs:
+Before publishing any candidate, require:
 
-- one successful protected dry run for the exact accepted candidate, including
+- a successful protected dry run for the exact accepted candidate, including
   every source and native artifact, its signed provenance attestation, and the
   independently scheduled CodeQL result;
-- reviewed crates.io trusted publishing for the first package;
+- an approved crates.io publication method for each selected package; and
 - the final approval packet described below.
 
-The first-publication credential boundary is currently blocked. The crates.io
+The crates.io
 [trusted-publishing prerequisites](https://crates.io/docs/trusted-publishing)
-require the crate to exist before its owner can configure a trusted publisher,
-and state that the initial publication requires an API token. Rustleaks has no
-published crate, while this release policy requires trusted publishing and
-forbids a long-lived token fallback. Those conditions cannot both be satisfied.
-
-Goal 9 must stop before crates.io publication until a maintainer explicitly
-approves one of these remediations:
-
-- wait for crates.io to support trusted publishing for an initial publication;
-- approve a narrowly scoped, one-time initial-publication credential exception,
-  its reviewed execution procedure, immediate revocation, and the subsequent
-  trusted-publisher configuration.
-
-The exception option changes the accepted security boundary. It requires a
-separate decision and requalification of the resulting executable runbook. No
-crates.io publication command is authorized while this blocker remains.
+require a crate to exist before its owner can configure a trusted publisher.
+The initial publication of a crate therefore requires either future registry
+support for bootstrapping trusted publishing or an explicitly approved,
+short-lived API token limited to creating that package. Revoke the token after
+publication and configure trusted publishing before the next release. Never
+store a registry token in the repository, workflow configuration, artifacts,
+or logs.
 
 Cross-compilation is not native evidence. A local dry run, package archive, or
 successful command does not grant publication approval.
@@ -116,18 +107,20 @@ The incident procedure was exercised without a live report or credential on
 2026-08-24. The record is in
 [`INCIDENT_RESPONSE_EXERCISE.md`](INCIDENT_RESPONSE_EXERCISE.md).
 
-## Exact publication and rollback plan
+## Publication and rollback plan
 
-The first publication contains one crate, `rustleaks-core 0.1.0-alpha.1`, so
-there is no inter-crate publication ordering. After explicit publication
-approval, the intended tag is `v0.1.0-alpha.1` and the GitHub release name is
-`Rustleaks 0.1.0-alpha.1`. The release attaches the eight target archives,
-their checksum files, CycloneDX SBOMs, reproducibility proofs, manifests, and
-verified GitHub provenance attestations from the approved candidate run.
+The current public package boundary contains one crate, `rustleaks-core`, so
+there is no inter-crate publication ordering. For an approved `<version>`, the
+tag is `v<version>` and the GitHub release name is `Rustleaks <version>`. The
+release attaches the eight target archives, their checksum files, CycloneDX
+SBOMs, reproducibility proofs, manifests, and verified GitHub provenance
+attestations from the approved candidate run.
 
-Publication must use a reviewed crates.io trusted-publishing configuration in
-the protected `release` environment. Do not add a long-lived registry token as
-a fallback. Immediately after publication, verify the registry owner and
+For an existing crate, publication must use the reviewed crates.io
+trusted-publishing configuration in the protected `release` environment. An
+initial crate publication may use only the separately approved short-lived
+bootstrap procedure above. Do not add a long-lived registry token as a
+fallback. Immediately after publication, verify the registry owner and
 metadata, download and hash the `.crate`, build the documented external Cargo
 and Bazel consumers against the registry version, verify every GitHub artifact
 attestation and checksum, install the CLI archives on their native targets,
