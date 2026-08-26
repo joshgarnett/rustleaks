@@ -21,6 +21,7 @@ const MARKER: &[u8] = b"CLI_CORPUS_DISCLOSURE_MARKER_8F20C3";
 pub(super) struct Observation {
     pub(super) json: String,
     exit: String,
+    finding_count: Option<usize>,
     stdout: String,
     event_projection: String,
     usage: String,
@@ -144,6 +145,7 @@ pub(super) fn observe(
     Ok(Observation {
         json,
         exit,
+        finding_count: findings.as_ref().map(Vec::len),
         stdout: quote(&stdout_b64),
         event_projection: format!("[{}]", event_projection.join(",")),
         usage: usage_json,
@@ -202,6 +204,11 @@ pub(super) fn row_json(
     for spec in required_array(row, "variants", case_id)? {
         let variant_id = required_str(spec, "id", case_id)?;
         if native_followup(spec) {
+            if validate_linux_followup(spec) {
+                let go = observe(go_binary, "go", case_id, spec, go_binary)?;
+                let rust = observe(rust_binary, "rust", case_id, spec, go_binary)?;
+                validate_omitted_native_pair(case_id, variant_id, spec, &go, &rust)?;
+            }
             variants.push(format!(
                 "{{\"id\":{},\"status\":\"native-runtime-followup\",\"disposition\":\"FOLLOWUP-NATIVE-M11-001\"}}",
                 quote(variant_id)
@@ -337,10 +344,60 @@ fn reap_if_alive(pid: u32) -> bool {
 }
 
 fn native_followup(spec: &Value) -> bool {
+    native_followup_for_target(spec, cfg!(windows))
+}
+
+fn native_followup_for_target(spec: &Value, windows: bool) -> bool {
     let expected = spec.get("expectation").unwrap_or(&Value::Null);
-    expected.get("unix_only").and_then(Value::as_bool) == Some(true) && cfg!(windows)
+    expected.get("unix_only").and_then(Value::as_bool) == Some(true) && windows
         || expected.get("linux_only").and_then(Value::as_bool) == Some(true)
-            && !cfg!(target_os = "linux")
+}
+
+fn validate_linux_followup(spec: &Value) -> bool {
+    validate_linux_followup_for_target(spec, cfg!(target_os = "linux"))
+}
+
+fn validate_linux_followup_for_target(spec: &Value, linux: bool) -> bool {
+    linux
+        && spec
+            .pointer("/expectation/linux_only")
+            .and_then(Value::as_bool)
+            == Some(true)
+}
+
+fn validate_omitted_native_pair(
+    case_id: &str,
+    variant_id: &str,
+    spec: &Value,
+    go: &Observation,
+    rust: &Observation,
+) -> Result<(), String> {
+    let label = format!("{case_id}/{variant_id}");
+    let expected = spec.get("expectation").unwrap_or(&Value::Null);
+    if let Some(exit) = expected.get("exit").and_then(Value::as_i64) {
+        let exit = exit.to_string();
+        if go.exit != exit || rust.exit != exit {
+            return Err(format!("{label}: omitted native exit changed"));
+        }
+    }
+    if let Some(findings) = expected.get("findings").and_then(Value::as_u64) {
+        let findings = usize::try_from(findings)
+            .map_err(|_| format!("{label}: native finding expectation is too large"))?;
+        if go.finding_count != Some(findings) || rust.finding_count != Some(findings) {
+            return Err(format!("{label}: omitted native finding count changed"));
+        }
+    }
+    if go.exit != rust.exit
+        || go.stdout != rust.stdout
+        || go.event_projection != rust.event_projection
+        || go.usage != rust.usage
+        || go.report != rust.report
+        || go.findings != rust.findings
+        || go.child != rust.child
+    {
+        return Err(format!("{label}: omitted native comparison changed"));
+    }
+    Ok(())
 }
 
 fn event_projection_json(event: &Event) -> String {
@@ -378,4 +435,26 @@ fn quote(value: &str) -> String {
         .replace("\\u0026", "&")
         .replace("\\u003c", "<")
         .replace("\\u003e", ">")
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{native_followup_for_target, validate_linux_followup_for_target};
+
+    #[test]
+    fn linux_native_observation_is_validated_but_omitted() {
+        let spec = json!({"expectation": {"linux_only": true}});
+        assert!(native_followup_for_target(&spec, false));
+        assert!(validate_linux_followup_for_target(&spec, true));
+        assert!(!validate_linux_followup_for_target(&spec, false));
+    }
+
+    #[test]
+    fn unix_observation_is_only_omitted_on_windows() {
+        let spec = json!({"expectation": {"unix_only": true}});
+        assert!(!native_followup_for_target(&spec, false));
+        assert!(native_followup_for_target(&spec, true));
+    }
 }

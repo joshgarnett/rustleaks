@@ -165,6 +165,20 @@ fn validate_workflow(
             ));
         }
     }
+    if source.contains("actions/setup-go@") {
+        if source.contains("go-version:") {
+            return Err(format!(
+                "{} hard-codes Go instead of using .go-version",
+                path.display()
+            ));
+        }
+        if !source.contains("go-version-file: rustleaks/.go-version") {
+            return Err(format!(
+                "{} sets up Go without the repository version file",
+                path.display()
+            ));
+        }
+    }
     let permissions = source
         .find("permissions:\n  contents: read")
         .ok_or_else(|| format!("{} omits top-level read-only permissions", path.display()))?;
@@ -338,6 +352,22 @@ mod tests {
         let error =
             validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap_err();
         assert!(error.contains("pull_request_target"));
+    }
+
+    #[test]
+    fn requires_the_repository_go_version_file() {
+        let source = format!(
+            "name: Test\non:\n  push:\npermissions:\n  contents: read\njobs:\n  test:\n    steps:\n      - uses: actions/setup-go@{PIN} # v6\n        with:\n          go-version: 1.26.7\n"
+        );
+        let error =
+            validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap_err();
+        assert!(error.contains("hard-codes Go"));
+
+        let source = source.replace(
+            "go-version: 1.26.7",
+            "go-version-file: rustleaks/.go-version",
+        );
+        validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap();
     }
 
     #[test]

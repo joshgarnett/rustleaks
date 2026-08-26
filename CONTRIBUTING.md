@@ -23,9 +23,9 @@ Install Bazelisk and Just 1.58.0. The Justfile uses syntax that older releases
 can reject before `just doctor` starts. Use the Rust toolchain selected by
 `rust-toolchain.toml`; the repository pins Bazel in `.bazelversion`. `just
 doctor` reports the selected versions without installing or changing anything.
-Full differential checks also require Go and the exact pinned Gitleaks checkout
-at `../gitleaks`. Security checks require the exact tools listed in [the
-security controls](docs/SECURITY_CONTROLS.md).
+Full differential checks use the Go version in `.go-version` and require the
+exact pinned Gitleaks checkout at `../gitleaks`. Security checks require the
+exact tools listed in [the security controls](docs/SECURITY_CONTROLS.md).
 
 Just is the public command interface, and Bazel is the build authority. Use
 `just --list` to see maintained recipes. Start with a focused Bazel target:
