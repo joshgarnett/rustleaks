@@ -54,6 +54,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "run: just release-dry-run",
         "cmp \"${first}\" \"${second}\"",
         "cargo install cargo-public-api --locked --version 0.52.0",
+        "rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview --component miri",
         "cargo xtask parity --all",
         "run: just security",
         "run: just fuzz-smoke",
