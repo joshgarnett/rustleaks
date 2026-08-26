@@ -1,0 +1,134 @@
+name: Publish Crate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full current main-branch commit ID to publish.
+        required: true
+        type: string
+      dry_run_id:
+        description: Successful protected Release Dry Run workflow run ID.
+        required: true
+        type: string
+      version:
+        description: Exact rustleaks-core version to publish.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-rustleaks-core-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
+jobs:
+  publish:
+    name: Publish rustleaks-core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the current protected branch version
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          TRIGGER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
+          test "${TRIGGER_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${CANDIDATE}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "${CANDIDATE}"
+          test -z "$(git status --short)"
+          actual_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "rustleaks-core") | .version')"
+          test "${actual_version}" = "${EXPECTED_VERSION}"
+      - name: Confirm no static publication credentials are present
+        run: |
+          test -z "${CARGO_REGISTRY_TOKEN:-}"
+          test -z "${CRATES_IO_TOKEN:-}"
+      - name: Require the protected dry run
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${DRY_RUN_ID}" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}")"
+          test "$(jq -r '.path' <<<"${run_json}")" = ".github/workflows/release-dry-run.yml"
+          test "$(jq -r '.event' <<<"${run_json}")" = "workflow_dispatch"
+          test "$(jq -r '.head_sha' <<<"${run_json}")" = "${CANDIDATE}"
+          test "$(jq -r '.status' <<<"${run_json}")" = "completed"
+          test "$(jq -r '.conclusion' <<<"${run_json}")" = "success"
+          artifacts="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}/artifacts" -f per_page=100)"
+          jq -e --arg name "rustleaks-core-${EXPECTED_VERSION}-package" \
+            '.artifacts | any(.name == $name and .expired == false)' <<<"${artifacts}" >/dev/null
+      - name: Set up maintained tools
+        uses: ./.github/actions/setup
+      - name: Compare the package with the protected artifact
+        id: package
+        env:
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          approved="${RUNNER_TEMP}/approved-package"
+          current="${RUNNER_TEMP}/current-package"
+          gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-core-${EXPECTED_VERSION}-package" --dir "${approved}"
+          cargo package --locked -p rustleaks-core --target-dir "${current}"
+          approved_crate="${approved}/package/rustleaks-core-${EXPECTED_VERSION}.crate"
+          current_crate="${current}/package/rustleaks-core-${EXPECTED_VERSION}.crate"
+          cmp "${approved_crate}" "${current_crate}"
+          checksum="$(sha256sum "${current_crate}" | awk '{print $1}')"
+          printf 'checksum=%s\n' "${checksum}" >> "${GITHUB_OUTPUT}"
+      - name: Authenticate to crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - name: Publish rustleaks-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked -p rustleaks-core
+      - name: Verify the published registry package
+        env:
+          EXPECTED_CHECKSUM: ${{ steps.package.outputs.checksum }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          metadata="${RUNNER_TEMP}/registry-version.json"
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --location \
+              --user-agent rustleaks-release-verifier/0.1 \
+              "https://crates.io/api/v1/crates/rustleaks-core/${EXPECTED_VERSION}" \
+              --output "${metadata}"; then
+              break
+            fi
+            test "${attempt}" -lt 20
+            sleep 3
+          done
+          test "$(jq -r '.version.crate' "${metadata}")" = "rustleaks-core"
+          test "$(jq -r '.version.num' "${metadata}")" = "${EXPECTED_VERSION}"
+          test "$(jq -r '.version.checksum' "${metadata}")" = "${EXPECTED_CHECKSUM}"
+          test "$(jq -r '.version.yanked' "${metadata}")" = "false"

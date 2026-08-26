@@ -33,14 +33,102 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read weekly workflow: {error}"))?;
     let release = fs::read_to_string(directory.join("release-dry-run.yml"))
         .map_err(|error| format!("cannot read release workflow: {error}"))?;
+    let publish = fs::read_to_string(directory.join("publish.yml"))
+        .map_err(|error| format!("cannot read publication workflow: {error}"))?;
+    let scorecard = fs::read_to_string(directory.join("scorecard.yml"))
+        .map_err(|error| format!("cannot read Scorecard workflow: {error}"))?;
     validate_ci_matrix(&ci)?;
     validate_release_workflow(&release)?;
+    validate_publish_workflow(&publish)?;
+    validate_scorecard_workflow(&scorecard)?;
     validate_workflow_efficiency(&ci, &weekly)?;
     validate_dependabot(root)?;
     println!(
         "checked {} least-privilege workflows with immutable action pins and exact runners",
         files.len()
     );
+    Ok(())
+}
+
+fn validate_publish_workflow(source: &str) -> Result<(), String> {
+    for forbidden in [
+        "pull_request:",
+        "pull_request_target:",
+        "push:",
+        "schedule:",
+        "workflow_run:",
+        "cargo publish --token",
+        "CRATES_IO_TOKEN: ${{",
+        "${{ secrets.",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!(
+                "publication workflow contains forbidden trigger or credential {forbidden:?}"
+            ));
+        }
+    }
+    for required in [
+        "candidate:",
+        "dry_run_id:",
+        "version:",
+        "environment: release",
+        "actions: read",
+        "id-token: write",
+        "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
+        "test \"${TRIGGER_REF}\" = refs/heads/main",
+        "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
+        ".github/workflows/release-dry-run.yml",
+        "rustleaks-core-${EXPECTED_VERSION}-package",
+        "cmp \"${approved_crate}\" \"${current_crate}\"",
+        "rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5",
+        "CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}",
+        "run: cargo publish --locked -p rustleaks-core",
+        "https://crates.io/api/v1/crates/rustleaks-core/${EXPECTED_VERSION}",
+    ] {
+        if !source.contains(required) {
+            return Err(format!(
+                "publication workflow omits required boundary {required:?}"
+            ));
+        }
+    }
+    for (required, expected) in [
+        ("rust-lang/crates-io-auth-action@", 1),
+        ("cargo publish", 1),
+        ("CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}", 1),
+        ("id-token: write", 1),
+    ] {
+        let actual = source.matches(required).count();
+        if actual != expected {
+            return Err(format!(
+                "publication workflow contains {actual} instances of {required:?}; expected {expected}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
+    if source.contains("${{ secrets.") {
+        return Err("Scorecard workflow must not use repository secrets".into());
+    }
+    for required in [
+        "push:",
+        "schedule:",
+        "runs-on: ubuntu-24.04",
+        "actions: read",
+        "contents: read",
+        "id-token: write",
+        "security-events: write",
+        "ossf/scorecard-action@08b4669551908b1024bb425080c797723083c031 # v2.2.0",
+        "publish_results: true",
+        "github/codeql-action/upload-sarif@4c0873ef8656cb3c50b3f42fb63bc1ade0cfa827 # v4",
+    ] {
+        if !source.contains(required) {
+            return Err(format!(
+                "Scorecard workflow omits required boundary {required:?}"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -303,7 +391,13 @@ fn validate_workflow_efficiency(ci: &str, weekly: &str) -> Result<(), String> {
 fn validate_dependabot(root: &Path) -> Result<(), String> {
     let source = fs::read_to_string(root.join(".github/dependabot.yml"))
         .map_err(|error| format!("cannot read Dependabot configuration: {error}"))?;
-    for ecosystem in ["cargo", "gomod", "rust-toolchain", "github-actions"] {
+    for ecosystem in [
+        "cargo",
+        "gomod",
+        "rust-toolchain",
+        "bazel",
+        "github-actions",
+    ] {
         if !source.contains(&format!("package-ecosystem: {ecosystem}")) {
             return Err(format!("Dependabot omits {ecosystem}"));
         }
@@ -325,7 +419,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        validate_target_execution_platform, validate_workflow, validate_workflow_efficiency,
+        validate_publish_workflow, validate_scorecard_workflow, validate_target_execution_platform,
+        validate_workflow, validate_workflow_efficiency,
     };
 
     const PIN: &str = "d23441a48e516b6c34aea4fa41551a30e30af803";
@@ -397,5 +492,17 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("aarch64-unknown-linux-musl"));
         assert!(error.contains("linux_aarch64_gnu"));
+    }
+
+    #[test]
+    fn rejects_token_fallback_in_publication_workflow() {
+        let error = validate_publish_workflow("cargo publish --token").unwrap_err();
+        assert!(error.contains("forbidden trigger or credential"));
+    }
+
+    #[test]
+    fn rejects_secret_backed_scorecard_workflow() {
+        let error = validate_scorecard_workflow("${{ secrets.SCORECARD_TOKEN }}").unwrap_err();
+        assert!(error.contains("must not use repository secrets"));
     }
 }
