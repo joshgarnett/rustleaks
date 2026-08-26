@@ -61,23 +61,41 @@ fn visit(
 #[cfg(unix)]
 fn permission_mode(metadata: &fs::Metadata) -> u32 {
     use std::os::unix::fs::PermissionsExt as _;
-    metadata.permissions().mode() & 0o7777
+    portable_permission_mode(
+        metadata.file_type().is_symlink(),
+        metadata.permissions().mode() & 0o7777,
+    )
 }
 
 #[cfg(not(unix))]
 fn permission_mode(metadata: &fs::Metadata) -> u32 {
-    if metadata.permissions().readonly() {
+    let mode = if metadata.permissions().readonly() {
         0o444
     } else {
         0o666
-    }
+    };
+    portable_permission_mode(metadata.file_type().is_symlink(), mode)
+}
+
+fn portable_permission_mode(is_symlink: bool, mode: u32) -> u32 {
+    // Symlink permission bits are not portable or chmod-controlled. The link
+    // type and target remain in the fingerprint, while the accepted fixture
+    // projection uses one stable value on every host.
+    if is_symlink { 0o755 } else { mode }
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
 
-    use super::tree_fingerprint;
+    use super::{portable_permission_mode, tree_fingerprint};
+
+    #[test]
+    fn normalizes_host_symlink_permission_bits() {
+        assert_eq!(portable_permission_mode(true, 0o755), 0o755);
+        assert_eq!(portable_permission_mode(true, 0o777), 0o755);
+        assert_eq!(portable_permission_mode(false, 0o644), 0o644);
+    }
 
     #[test]
     fn fingerprints_spaces_unicode_and_bytes() {
