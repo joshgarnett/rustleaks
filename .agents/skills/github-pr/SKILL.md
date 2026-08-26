@@ -63,9 +63,12 @@ issue; use `Refs #<issue-number>` otherwise. Do not invent issue linkage.
 
 ## Respect authority and verify
 
-Read-only inspection and a local draft do not authorize a push, pull request
-creation, or pull request edit. Require the current user request to authorize
-each exact GitHub mutation before running it. Then prefer:
+Read-only inspection and a local draft do not authorize a push or pull request
+mutation. A request to create or update a pull request, or to take a named
+change through an end-to-end pull request workflow, authorizes the ordinary
+push and pull request create or edit operations needed for that workflow. It
+does not authorize a force-push, protection bypass, unrelated edit, or remote
+branch deletion. Prefer:
 
 ```sh
 git push --set-upstream origin <branch>
@@ -81,7 +84,7 @@ gh pr view <pr-number>
 gh pr checks <pr-number>
 ```
 
-For `main`, reconcile the strict required contexts `Required`,
-`Analyze (rust)`, and `Analyze (actions)`. `Required` aggregates the maintained
-CI jobs and eight native target lanes. Report missing, pending, stale, or
-failing checks as such, not as completed validation.
+For `main`, reconcile every context required by the live ruleset and confirm
+that the maintained CI and native target lanes expected for the changed
+boundary ran. Report missing, pending, stale, or failing checks as such, not as
+completed validation.

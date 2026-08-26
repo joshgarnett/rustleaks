@@ -1,6 +1,6 @@
 # Contributing
 
-Rustleaks is an unpublished alpha. Contributions must preserve the pinned
+Rustleaks is in alpha development. Contributions must preserve the pinned
 compatibility profile and the boundaries between the core engine, source
 adapters, reports, compatibility tools, and CLI.
 
@@ -157,5 +157,5 @@ validation, and run `git diff --cached --check`.
 Explain the resulting behavior, rationale, exact validation, compatibility or
 security impact, and real issue linkage in the pull request template. The pull
 request title follows the commit subject grammar because pull requests are
-squash merged. Do not merge while required checks, reviews, or conversations
-are incomplete.
+squash merged. Do not merge while required checks, required reviews, or
+blocking review conversations are incomplete.

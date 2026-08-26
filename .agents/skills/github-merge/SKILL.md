@@ -5,9 +5,12 @@ description: Assess final Rustleaks pull request readiness and perform an explic
 
 # Rustleaks merges
 
-Merge only a fully qualified pull request and only with an explicit current
-request to merge that exact pull request. Readiness inspection is read-only;
-it does not authorize the merge or remote branch deletion.
+Merge only a fully qualified pull request with explicit user authorization.
+Authorization may name the exact pull request or cover a named change being
+taken through an end-to-end pull request workflow. It remains valid while
+checks run if the head diff, target branch, and requested scope do not
+materially change. Readiness inspection alone does not authorize a merge, and
+merge authorization does not authorize remote branch deletion.
 
 ## Prove readiness
 
@@ -27,12 +30,12 @@ condition:
 - the pull request is open, is not a draft, and targets `main`;
 - the complete change matches its title, body, and linked issue intent;
 - the title satisfies the `github-commit` Conventional Commit grammar;
-- the strict `main` contexts `Required`, `Analyze (rust)`, and
-  `Analyze (actions)` are present and successful, with no required job pending,
-  skipped unexpectedly, cancelled, stale, or failing;
-- at least one eligible approving review exists and required review policy is
-  satisfied;
-- every review conversation is resolved;
+- every check required by the live ruleset is present and successful, with no
+  required job pending, skipped unexpectedly, cancelled, stale, or failing;
+- an eligible approving review exists when the live ruleset requires one or
+  the maintainer explicitly requested independent review;
+- every blocking review conversation is resolved, along with any conversation
+  whose resolution is required by the live ruleset;
 - GitHub reports the pull request mergeable and not conflicted or blocked;
 - issue-closing references are correct;
 - `just ci`, `just security`, and every boundary-specific final validation
@@ -40,18 +43,19 @@ condition:
 - no branch protection, check, review, conversation, or other requirement is
   being bypassed.
 
-Refuse to merge when any evidence is missing or uncertain. In particular,
-refuse a draft, behind-base, failing, pending, unreviewed, unresolved, stale,
-closed, conflicted, blocked, or unmergeable pull request. The live ruleset's
-current zero-approval and optional-conversation settings do not weaken these
-requirements. Report each unmet condition and the evidence needed to clear it.
-Do not use the repository owner's bypass, auto-merge, force, or a local merge
-as a substitute.
+Refuse to merge when required evidence is missing or uncertain. In particular,
+refuse a draft, failing, pending, stale, closed, conflicted, blocked, or
+unmergeable pull request. A branch being behind its base blocks the merge only
+when the live ruleset requires an update or intervening base changes invalidate
+the reviewed result. Do not invent an approving review or require one when the
+live ruleset allows a sole-maintainer merge. Report each unmet condition and
+the evidence needed to clear it. Do not use the repository owner's bypass,
+force, or a local merge as a substitute for a failed requirement.
 
 ## Merge only by squash
 
-After every condition passes and the current user explicitly authorizes the
-exact merge, the only permitted merge command is:
+After every condition passes and the user authorization still covers the
+unchanged candidate, the permitted merge command is:
 
 ```sh
 gh pr merge <pr-number> --squash

@@ -1,8 +1,8 @@
 # Threat model
 
-This model covers the unpublished `0.1.0-alpha.1` workspace at the pinned
-compatibility revision. Review it whenever a public input, feature, dependency,
-build rule, workflow, or release path changes.
+This model covers the current workspace at the pinned compatibility revision.
+Review it whenever a public input, feature, dependency, build rule, workflow,
+or release path changes.
 
 ## Assets and trust
 
@@ -36,7 +36,7 @@ locked boundary and fail when that boundary changes.
 | Dependencies | `Cargo.lock`, `deny.toml`, `supply-chain/`, `supply-chain-exceptions.toml`, dependency documentation | Locked versions and sources; license, advisory, ban, source, build-script, native-code, unsafe, graph, and vet policy; dated cargo-vet bootstrap reviews | `just security`, targeted dependency-boundary checks, cargo-deny, fresh RustSec audit, cargo-vet, cargo-geiger, Miri, and owned-unsafe checks | A vet exemption is not an audit. The 61 bootstrap exemptions require review by 2026-11-23 and must decrease as source audits are completed. Dependency unsafe code remains within the documented safe-API boundary. |
 | Bazel and local automation | `MODULE.bazel`, `MODULE.bazel.lock`, `cargo-bazel-lock.json`, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned Bazel and Rust repositories; lockfiles; declared inputs; sandbox-compatible actions; exact tool versions; Bazel-backed public recipes | `just ci`, build-system contract tests, package consumers, target compile matrix, and lock consistency checks | Local caches are not a trust boundary for release provenance. Remote cache and untrusted CI execution policy remain release requirements. |
 | Hosted CI | `.github/workflows/` and `.github/actions/setup/` | Top-level read-only permissions; minimum job grants; reviewed full-SHA action pins; secretless pull request jobs; separate oracle and release contexts | Pull request and default-branch CI, CodeQL, dependency review, native target, nightly, weekly, and non-publishing release runs on GitHub Actions | Only protected exact-candidate release jobs receive scoped identity and attestation permissions. Publication permissions and trusted publishing remain separate. |
-| Releases | Package metadata, release-only Bazel configurations, `.github/workflows/release-dry-run.yml`, protected `release` environment, and local release checks | Package normalization, public API snapshot, MSRV and docs.rs checks, clean external consumers, exact-main approval, isolated repeat builds, byte comparison, deterministic archives, checksums, Cargo-to-Bazel CycloneDX reconciliation, unsigned dry-run predicates, and GitHub-native signed provenance | `just release-dry-run`, exact-candidate hosted qualification, native smoke tests, offline attestation verification, bundle verification, and GitHub environment settings | No package has been published. The exact candidate still needs a successful hosted run, reviewed trusted publishing, and an explicit publication decision. |
+| Releases | Package metadata, release-only Bazel configurations, `.github/workflows/release-dry-run.yml`, protected `release` environment, and local release checks | Package normalization, public API snapshot, MSRV and docs.rs checks, clean external consumers, exact-main approval, isolated repeat builds, byte comparison, deterministic archives, checksums, Cargo-to-Bazel CycloneDX reconciliation, unsigned dry-run predicates, and GitHub-native signed provenance | `just release-dry-run`, exact-candidate hosted qualification, native smoke tests, offline attestation verification, bundle verification, and GitHub environment settings | Each candidate still requires a successful hosted run, an approved publication path, and an explicit publication decision. |
 
 Exact numeric limits and caller ownership are maintained in
 [`RESOURCE_LIMITS.md`](RESOURCE_LIMITS.md). Dependency reasoning is maintained

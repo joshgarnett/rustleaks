@@ -126,9 +126,10 @@ pull request.
 
 ## Commit and verify
 
-Create the commit only when requested. Do not amend, rebase, force-push, or
-rewrite published or shared history without explicit permission. After the
-commit, inspect:
+Create the commit when the user requests a commit or asks to take the change
+through a pull request or merge. Do not amend, rebase, force-push, or rewrite
+published or shared history without explicit permission. After the commit,
+inspect:
 
 ```sh
 git show --stat --oneline HEAD

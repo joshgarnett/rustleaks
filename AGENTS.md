@@ -104,8 +104,11 @@ co-authors, or reviews.
 Before committing, inspect status, all diffs, and untracked files; stage
 explicit paths; inspect the complete staged diff; run the relevant gate and
 `git diff --cached --check`. Pull request titles follow the same grammar
-because pull requests are squash merged. Do not merge with incomplete checks,
-reviews, or conversations.
+because pull requests are squash merged. Do not merge with incomplete required
+checks, required reviews, or blocking review conversations. An approving
+review is required only when live repository protection requires one or the
+maintainer explicitly requests independent review. Do not manufacture a
+self-approval for a sole-maintainer pull request.
 
 ## Approval boundaries
 

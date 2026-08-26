@@ -43,15 +43,19 @@ does not produce.
 ## Reconcile artifacts
 
 For every actual release artifact, record its target, inputs, build command,
-toolchain, features, size, and SHA-256 checksum. The repository does not yet
-have maintained checksum, SBOM, provenance, or attestation generation. Report
-that as a release blocker until a reviewed workflow exists. Reconcile and
-verify only artifacts and metadata produced by that workflow. Keep signing keys
-and tokens out of the repository and logs.
+toolchain, features, size, and SHA-256 checksum. Reconcile the maintained
+checksum files, CycloneDX SBOMs, Cargo-to-Bazel graph evidence, reproducibility
+proofs, provenance predicates, and GitHub attestations produced by the exact
+candidate workflow. Verify only artifacts and metadata produced by that run.
+Keep signing keys and tokens out of the repository and logs.
 
 Stop before publication and present an approval packet containing the exact
 commit and tree, version, packages and artifacts, native evidence, gate
 results, compatibility and security risks, checksums, SBOM reconciliation,
 provenance, proposed external actions, and rollback or yanking plan. Publish
 only the specifically approved package or release through the reviewed
-workflow. Verify the public result without modifying unrelated GitHub state.
+workflow. Existing crates use trusted publishing. Because crates.io cannot
+bootstrap trusted publishing for a new crate, an initial publication may use
+only an explicitly approved short-lived token procedure followed by immediate
+revocation and trusted-publisher configuration. Verify the public result
+without modifying unrelated GitHub state.
