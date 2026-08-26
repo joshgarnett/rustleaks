@@ -23,6 +23,7 @@ const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
 const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
 const CARGO_PUBLIC_API_VERSION: &str = "cargo-public-api 0.52.0";
+const PUBLIC_API_TOOLCHAIN: &str = "nightly-2026-08-21";
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
 const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
 const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
@@ -681,23 +682,18 @@ fn require_exact_tool_version(
 
 fn public_api_check() -> Result<(), String> {
     let root = workspace_root()?;
+    let mut version_command = public_api_command();
+    version_command.arg("--version");
     require_exact_tool_version(
-        Command::new("cargo").args(["public-api", "--version"]),
+        &mut version_command,
         CARGO_PUBLIC_API_VERSION,
         "cargo-public-api",
     )?;
-    let actual = command_output(
-        Command::new("cargo")
-            .args([
-                "public-api",
-                "-p",
-                "rustleaks-core",
-                "-sss",
-                "--color",
-                "never",
-            ])
-            .current_dir(&root),
-    )?;
+    let mut command = public_api_command();
+    command
+        .args(["-p", "rustleaks-core", "-sss", "--color", "never"])
+        .current_dir(&root);
+    let actual = command_output(&mut command)?;
     let expected = std::fs::read_to_string(root.join(PUBLIC_API_SNAPSHOT))
         .map_err(|error| format!("cannot read public API snapshot: {error}"))?;
     if actual.trim_end() != expected.trim_end() {
@@ -707,6 +703,14 @@ fn public_api_check() -> Result<(), String> {
     }
     println!("rustleaks-core public API matches the supported alpha snapshot");
     Ok(())
+}
+
+fn public_api_command() -> Command {
+    let mut command = Command::new("cargo");
+    command
+        .arg(format!("+{PUBLIC_API_TOOLCHAIN}"))
+        .arg("public-api");
+    command
 }
 
 fn validate_publish_policy(metadata: &str) -> Result<(), String> {
@@ -2905,17 +2909,30 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        CONFIG_SHA256, PERF_INVARIANTS, PerfBudget, RELEASE_VERSION, REVISION, build_system,
-        composite_test_executable_from_messages, parse_civil_day, resource_test_command,
-        reviewed_unsafe_packages, run_resource_test, validate_core_repository_metadata,
-        validate_dependency_boundaries, validate_perf_budget, validate_perf_records,
-        validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
-        validate_unsafe_package_set, workspace_root,
+        CONFIG_SHA256, PERF_INVARIANTS, PUBLIC_API_TOOLCHAIN, PerfBudget, RELEASE_VERSION,
+        REVISION, build_system, composite_test_executable_from_messages, parse_civil_day,
+        public_api_command, resource_test_command, reviewed_unsafe_packages, run_resource_test,
+        validate_core_repository_metadata, validate_dependency_boundaries, validate_perf_budget,
+        validate_perf_records, validate_publish_policy, validate_regex_backend_metadata,
+        validate_supply_chain_exceptions, validate_unsafe_package_set, workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
     const TIMEOUT_PROBE_TEST: &str = "tests::resource_launcher_timeout_probe_child";
     const RESOURCE_SELECTOR: &str = "RUSTLEAKS_BOUNDED_RESOURCE_TEST";
+
+    #[test]
+    fn public_api_uses_the_pinned_nightly_toolchain() {
+        let command = public_api_command();
+        assert_eq!(command.get_program(), "cargo");
+        assert_eq!(
+            command
+                .get_args()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            [format!("+{PUBLIC_API_TOOLCHAIN}"), "public-api".to_owned()]
+        );
+    }
 
     #[test]
     fn unsafe_inventory_accepts_only_reviewed_target_variance() {
