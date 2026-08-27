@@ -1,0 +1,246 @@
+name: Publish GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full current main-branch commit ID to release.
+        required: true
+        type: string
+      dry_run_id:
+        description: Successful Release Dry Run workflow run ID.
+        required: true
+        type: string
+      version:
+        description: Exact prerelease version to publish.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
+jobs:
+  release:
+    name: Publish verified GitHub prerelease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc -vV
+          cargo -vV
+      - name: Require the current protected branch version
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          TRIGGER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]
+          test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
+          test "${TRIGGER_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${CANDIDATE}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "${CANDIDATE}"
+          test -z "$(git status --short)"
+          actual_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "rustleaks-core") | .version')"
+          test "${actual_version}" = "${EXPECTED_VERSION}"
+      - name: Require the successful dry run and artifact set
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${DRY_RUN_ID}" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}")"
+          test "$(jq -r '.path' <<<"${run_json}")" = ".github/workflows/release-dry-run.yml"
+          test "$(jq -r '.event' <<<"${run_json}")" = workflow_dispatch
+          test "$(jq -r '.head_sha' <<<"${run_json}")" = "${CANDIDATE}"
+          test "$(jq -r '.status' <<<"${run_json}")" = completed
+          test "$(jq -r '.conclusion' <<<"${run_json}")" = success
+          artifacts="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}/artifacts" -f per_page=100)"
+          required=(
+            "rustleaks-core-${EXPECTED_VERSION}-package"
+            "rustleaks-${EXPECTED_VERSION}-x86_64-unknown-linux-gnu"
+            "rustleaks-${EXPECTED_VERSION}-aarch64-unknown-linux-gnu"
+            "rustleaks-${EXPECTED_VERSION}-x86_64-unknown-linux-musl"
+            "rustleaks-${EXPECTED_VERSION}-aarch64-unknown-linux-musl"
+            "rustleaks-${EXPECTED_VERSION}-x86_64-apple-darwin"
+            "rustleaks-${EXPECTED_VERSION}-aarch64-apple-darwin"
+            "rustleaks-${EXPECTED_VERSION}-x86_64-pc-windows-msvc"
+            "rustleaks-${EXPECTED_VERSION}-aarch64-pc-windows-msvc"
+          )
+          for name in "${required[@]}"; do
+            jq -e --arg name "${name}" \
+              '.artifacts | any(.name == $name and .expired == false)' <<<"${artifacts}" >/dev/null
+          done
+      - name: Download the approved artifact set
+        env:
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts="${RUNNER_TEMP}/approved-artifacts"
+          targets=(
+            x86_64-unknown-linux-gnu
+            aarch64-unknown-linux-gnu
+            x86_64-unknown-linux-musl
+            aarch64-unknown-linux-musl
+            x86_64-apple-darwin
+            aarch64-apple-darwin
+            x86_64-pc-windows-msvc
+            aarch64-pc-windows-msvc
+          )
+          gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-core-${EXPECTED_VERSION}-package" \
+            --dir "${artifacts}/rustleaks-core-${EXPECTED_VERSION}-package"
+          for target in "${targets[@]}"; do
+            name="rustleaks-${EXPECTED_VERSION}-${target}"
+            gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+              --name "${name}" --dir "${artifacts}/${name}"
+          done
+      - name: Verify provenance, checksums, SBOMs, and manifests
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          artifacts="${RUNNER_TEMP}/approved-artifacts"
+          package="${artifacts}/rustleaks-core-${EXPECTED_VERSION}-package"
+          crate="${package}/package/rustleaks-core-${EXPECTED_VERSION}.crate"
+          package_attestation="${package}/rustleaks-core-${EXPECTED_VERSION}.attestation.jsonl"
+          package_proof="${package}/rustleaks-core-${EXPECTED_VERSION}.reproducibility.txt"
+          expected_package_sha="$(sed -n 's/^sha256=//p' "${package_proof}")"
+          test "$(sha256sum "${crate}" | awk '{print $1}')" = "${expected_package_sha}"
+          gh attestation verify "${crate}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${package_attestation}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          targets=(
+            x86_64-unknown-linux-gnu
+            aarch64-unknown-linux-gnu
+            x86_64-unknown-linux-musl
+            aarch64-unknown-linux-musl
+            x86_64-apple-darwin
+            aarch64-apple-darwin
+            x86_64-pc-windows-msvc
+            aarch64-pc-windows-msvc
+          )
+          for target in "${targets[@]}"; do
+            stem="rustleaks-${EXPECTED_VERSION}-${target}"
+            bundle="${artifacts}/${stem}"
+            cargo xtask release-artifact verify "${bundle}"
+            gh attestation verify "${bundle}/${stem}.tar.gz" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --bundle "${bundle}/${stem}.attestation.jsonl" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+              --source-digest "${CANDIDATE}" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done
+      - name: Assemble uniquely named release assets and notes
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          artifacts="${RUNNER_TEMP}/approved-artifacts"
+          assets="${RUNNER_TEMP}/release-assets"
+          mkdir -p "${assets}"
+          package="${artifacts}/rustleaks-core-${EXPECTED_VERSION}-package"
+          install -m 0644 "${package}/package/rustleaks-core-${EXPECTED_VERSION}.crate" "${assets}/"
+          install -m 0644 "${package}/rustleaks-core-${EXPECTED_VERSION}.files.txt" "${assets}/"
+          install -m 0644 "${package}/rustleaks-core-${EXPECTED_VERSION}.reproducibility.txt" "${assets}/"
+          install -m 0644 "${package}/rustleaks-core-${EXPECTED_VERSION}.attestation.jsonl" "${assets}/"
+          targets=(
+            x86_64-unknown-linux-gnu
+            aarch64-unknown-linux-gnu
+            x86_64-unknown-linux-musl
+            aarch64-unknown-linux-musl
+            x86_64-apple-darwin
+            aarch64-apple-darwin
+            x86_64-pc-windows-msvc
+            aarch64-pc-windows-msvc
+          )
+          for target in "${targets[@]}"; do
+            stem="rustleaks-${EXPECTED_VERSION}-${target}"
+            bundle="${artifacts}/${stem}"
+            install -m 0644 "${bundle}/${stem}.tar.gz" "${assets}/"
+            install -m 0644 "${bundle}/${stem}.cdx.json" "${assets}/"
+            install -m 0644 "${bundle}/${stem}.provenance.json" "${assets}/"
+            install -m 0644 "${bundle}/${stem}.attestation.jsonl" "${assets}/"
+            install -m 0644 "${bundle}/SHA256SUMS" "${assets}/${stem}.SHA256SUMS"
+            install -m 0644 "${bundle}/reproducibility.json" "${assets}/${stem}.reproducibility.json"
+            install -m 0644 "${bundle}/manifest.json" "${assets}/${stem}.manifest.json"
+          done
+          awk -v heading="## [${EXPECTED_VERSION}]" '
+            index($0, heading) == 1 { found = 1; print; next }
+            found && /^## / { exit }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md > "${RUNNER_TEMP}/release-notes.md"
+      - name: Publish the exact tag and GitHub prerelease
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${EXPECTED_VERSION}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists" >&2
+            exit 1
+          fi
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release ${tag} already exists" >&2
+            exit 1
+          fi
+          assets="${RUNNER_TEMP}/release-assets"
+          test "$(find "${assets}" -maxdepth 1 -type f | wc -l | tr -d ' ')" = 60
+          gh release create "${tag}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${CANDIDATE}" \
+            --title "Rustleaks ${EXPECTED_VERSION}" \
+            --notes-file "${RUNNER_TEMP}/release-notes.md" \
+            --prerelease \
+            "${RUNNER_TEMP}/release-assets/"*
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
+          test "$(jq -r '.tag_name' <<<"${release_json}")" = "${tag}"
+          test "$(jq -r '.target_commitish' <<<"${release_json}")" = "${CANDIDATE}"
+          test "$(jq -r '.draft' <<<"${release_json}")" = false
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = true
+          test "$(jq '.assets | length' <<<"${release_json}")" = 60
+          for asset in "${assets}/"*; do
+            jq -e --arg name "$(basename "${asset}")" \
+              '.assets | any(.name == $name)' <<<"${release_json}" >/dev/null
+          done
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}")"
+          test "$(jq -r '.object.sha' <<<"${ref_json}")" = "${CANDIDATE}"

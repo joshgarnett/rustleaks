@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       dry_run_id:
-        description: Successful protected Release Dry Run workflow run ID.
+        description: Successful Release Dry Run workflow run ID.
         required: true
         type: string
       version:
@@ -44,6 +44,13 @@ jobs:
           ref: ${{ inputs.candidate }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc -vV
+          cargo -vV
       - name: Require the current protected branch version
         env:
           CANDIDATE: ${{ inputs.candidate }}
@@ -84,8 +91,6 @@ jobs:
           artifacts="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}/artifacts" -f per_page=100)"
           jq -e --arg name "rustleaks-core-${EXPECTED_VERSION}-package" \
             '.artifacts | any(.name == $name and .expired == false)' <<<"${artifacts}" >/dev/null
-      - name: Set up maintained tools
-        uses: ./.github/actions/setup
       - name: Compare the package with the protected artifact
         id: package
         env:

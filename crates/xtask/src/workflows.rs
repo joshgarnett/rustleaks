@@ -31,14 +31,17 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read CI workflow: {error}"))?;
     let weekly = fs::read_to_string(directory.join("weekly.yml"))
         .map_err(|error| format!("cannot read weekly workflow: {error}"))?;
-    let release = fs::read_to_string(directory.join("release-dry-run.yml"))
-        .map_err(|error| format!("cannot read release workflow: {error}"))?;
+    let dry_run = fs::read_to_string(directory.join("release-dry-run.yml"))
+        .map_err(|error| format!("cannot read release dry-run workflow: {error}"))?;
+    let release = fs::read_to_string(directory.join("release.yml"))
+        .map_err(|error| format!("cannot read GitHub release workflow: {error}"))?;
     let publish = fs::read_to_string(directory.join("publish.yml"))
         .map_err(|error| format!("cannot read publication workflow: {error}"))?;
     let scorecard = fs::read_to_string(directory.join("scorecard.yml"))
         .map_err(|error| format!("cannot read Scorecard workflow: {error}"))?;
     validate_ci_matrix(&ci)?;
-    validate_release_workflow(&release)?;
+    validate_release_workflow(&dry_run)?;
+    validate_github_release_workflow(&release)?;
     validate_publish_workflow(&publish)?;
     validate_scorecard_workflow(&scorecard)?;
     validate_workflow_efficiency(&ci, &weekly)?;
@@ -60,6 +63,10 @@ fn validate_publish_workflow(source: &str) -> Result<(), String> {
         "cargo publish --token",
         "CRATES_IO_TOKEN: ${{",
         "${{ secrets.",
+        "uses: ./.github/actions/setup",
+        "bazelisk",
+        "actions/setup-go@",
+        "run: just ",
     ] {
         if source.contains(forbidden) {
             return Err(format!(
@@ -74,6 +81,8 @@ fn validate_publish_workflow(source: &str) -> Result<(), String> {
         "environment: release",
         "actions: read",
         "id-token: write",
+        "rustup toolchain install 1.88.0 --profile minimal",
+        "rustup default 1.88.0",
         "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
         "test \"${TRIGGER_REF}\" = refs/heads/main",
         "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
@@ -101,6 +110,86 @@ fn validate_publish_workflow(source: &str) -> Result<(), String> {
         if actual != expected {
             return Err(format!(
                 "publication workflow contains {actual} instances of {required:?}; expected {expected}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_github_release_workflow(source: &str) -> Result<(), String> {
+    for forbidden in [
+        "pull_request:",
+        "pull_request_target:",
+        "push:",
+        "schedule:",
+        "workflow_run:",
+        "cargo publish",
+        "CRATES_IO_TOKEN",
+        "CARGO_REGISTRY_TOKEN",
+        "${{ secrets.",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!(
+                "GitHub release workflow contains forbidden trigger or credential {forbidden:?}"
+            ));
+        }
+    }
+    for required in [
+        "candidate:",
+        "dry_run_id:",
+        "version:",
+        "environment: release",
+        "actions: read",
+        "contents: write",
+        "rustup toolchain install 1.88.0 --profile minimal",
+        "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
+        "test \"${TRIGGER_REF}\" = refs/heads/main",
+        "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
+        ".github/workflows/release-dry-run.yml",
+        "rustleaks-core-${EXPECTED_VERSION}-package",
+        "cargo xtask release-artifact verify",
+        "gh attestation verify",
+        "--signer-workflow",
+        "--source-digest",
+        "--source-ref refs/heads/main",
+        "--deny-self-hosted-runners",
+        "gh release create \"${tag}\"",
+        "--target \"${CANDIDATE}\"",
+        "--prerelease",
+        "test \"$(jq '.assets | length' <<<\"${release_json}\")\" = 60",
+        "test \"$(jq -r '.object.sha' <<<\"${ref_json}\")\" = \"${CANDIDATE}\"",
+    ] {
+        if !source.contains(required) {
+            return Err(format!(
+                "GitHub release workflow omits required boundary {required:?}"
+            ));
+        }
+    }
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+    ] {
+        if !source.contains(target) {
+            return Err(format!(
+                "GitHub release workflow omits artifact target {target}"
+            ));
+        }
+    }
+    for (required, expected) in [
+        ("environment: release", 1),
+        ("contents: write", 1),
+        ("gh release create", 1),
+    ] {
+        let actual = source.matches(required).count();
+        if actual != expected {
+            return Err(format!(
+                "GitHub release workflow contains {actual} instances of {required:?}; expected {expected}"
             ));
         }
     }
@@ -135,22 +224,22 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
 fn validate_release_workflow(source: &str) -> Result<(), String> {
     for required in [
         "candidate:",
-        "environment: release",
+        "version:",
         "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
         "test \"${TRIGGER_REF}\" = refs/heads/main",
         "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
         "run: just release-dry-run",
         "cmp \"${first}\" \"${second}\"",
         "cargo install cargo-public-api --locked --version 0.52.0",
-        "rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview --component miri",
+        "rustup toolchain install nightly-2026-08-21 --profile minimal --component miri",
         "cargo xtask parity --all",
         "run: just security",
         "run: just fuzz-smoke",
         "release-artifact compare",
         "release-artifact compare-bundles",
         "release-artifact prepare",
-        "rustleaks-0.1.0-alpha.2-${RELEASE_TARGET}/rustleaks",
-        "rustleaks-0.1.0-alpha.2-$env:RELEASE_TARGET/rustleaks.exe",
+        "rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}/rustleaks",
+        "rustleaks-$env:EXPECTED_VERSION-$env:RELEASE_TARGET/rustleaks.exe",
         "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
         "id-token: write",
         "attestations: write",
@@ -160,6 +249,16 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "--source-ref refs/heads/main",
         "--deny-self-hosted-runners",
         "name: Release candidate required",
+        "  acceptance:",
+        "  differential:",
+        "  security:",
+        "  fuzz:",
+        "  self-scan:",
+        "      - acceptance",
+        "      - differential",
+        "      - security",
+        "      - fuzz",
+        "      - self-scan",
     ] {
         if !source.contains(required) {
             return Err(format!(
@@ -214,6 +313,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         }
     }
     for forbidden in [
+        "environment: release",
         "cargo publish --execute",
         "cargo publish --token",
         "gh release create",
@@ -419,8 +519,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        validate_publish_workflow, validate_scorecard_workflow, validate_target_execution_platform,
-        validate_workflow, validate_workflow_efficiency,
+        validate_github_release_workflow, validate_publish_workflow, validate_scorecard_workflow,
+        validate_target_execution_platform, validate_workflow, validate_workflow_efficiency,
     };
 
     const PIN: &str = "d23441a48e516b6c34aea4fa41551a30e30af803";
@@ -497,6 +597,18 @@ mod tests {
     #[test]
     fn rejects_token_fallback_in_publication_workflow() {
         let error = validate_publish_workflow("cargo publish --token").unwrap_err();
+        assert!(error.contains("forbidden trigger or credential"));
+    }
+
+    #[test]
+    fn rejects_full_build_setup_in_publication_workflow() {
+        let error = validate_publish_workflow("uses: ./.github/actions/setup").unwrap_err();
+        assert!(error.contains("forbidden trigger or credential"));
+    }
+
+    #[test]
+    fn rejects_crate_publication_in_github_release_workflow() {
+        let error = validate_github_release_workflow("cargo publish").unwrap_err();
         assert!(error.contains("forbidden trigger or credential"));
     }
 

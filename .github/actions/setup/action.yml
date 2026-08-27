@@ -72,7 +72,13 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        go install github.com/bazelbuild/bazelisk@v1.29.0
+        for attempt in 1 2 3; do
+          if go install github.com/bazelbuild/bazelisk@v1.29.0; then
+            break
+          fi
+          test "${attempt}" -lt 3
+          sleep "$((attempt * 2))"
+        done
         go_bin="$(go env GOPATH)/bin"
         printf '%s\n' "${go_bin}" >> "${GITHUB_PATH}"
         "${go_bin}/bazelisk" --version
