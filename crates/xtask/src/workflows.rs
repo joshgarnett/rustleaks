@@ -291,6 +291,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
 }
 
 fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
+    validate_release_differential_setup(source)?;
     let native_attestation_steps = source
         .split("- name: Verify and retain the release archive attestation")
         .skip(1)
@@ -327,6 +328,26 @@ fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
         if source.contains(forbidden) {
             return Err(format!(
                 "release dry run contains live publication command {forbidden:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_release_differential_setup(source: &str) -> Result<(), String> {
+    let differential = source
+        .split("\n  differential:\n")
+        .nth(1)
+        .and_then(|tail| tail.split("\n  security:\n").next())
+        .ok_or("release workflow omits the differential job")?;
+    for required in [
+        "rustup toolchain install nightly-2026-08-21 --profile minimal --component miri",
+        "cargo +nightly-2026-08-21 miri setup",
+        "cargo xtask parity --all",
+    ] {
+        if !differential.contains(required) {
+            return Err(format!(
+                "release differential job omits required setup {required:?}"
             ));
         }
     }
@@ -524,7 +545,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        validate_github_release_workflow, validate_publish_workflow, validate_scorecard_workflow,
+        validate_github_release_workflow, validate_publish_workflow,
+        validate_release_differential_setup, validate_scorecard_workflow,
         validate_target_execution_platform, validate_workflow, validate_workflow_efficiency,
     };
 
@@ -584,6 +606,19 @@ mod tests {
         let error =
             validate_workflow_efficiency("run: bazelisk build //:build //:docs\n", "").unwrap_err();
         assert!(error.contains("duplicates the acceptance gate's API documentation build"));
+    }
+
+    #[test]
+    fn requires_miri_setup_in_the_release_differential_job() {
+        let source = "\n  differential:\n    steps:\n      - run: cargo xtask parity --all\n  security:\n    steps:\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n";
+        let error = validate_release_differential_setup(source).unwrap_err();
+        assert!(error.contains("release differential job"));
+
+        let source = source.replace(
+            "      - run: cargo xtask parity --all",
+            "      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo xtask parity --all",
+        );
+        validate_release_differential_setup(&source).unwrap();
     }
 
     #[test]

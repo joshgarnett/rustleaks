@@ -199,6 +199,11 @@ jobs:
           cache-dependency-path: gitleaks/go.sum
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
+      - name: Install the pinned Miri toolchain
+        working-directory: rustleaks
+        run: |
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
+          cargo +nightly-2026-08-21 miri setup
       - name: Hydrate locked dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
