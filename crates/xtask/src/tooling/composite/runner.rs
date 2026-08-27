@@ -7,7 +7,8 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use crate::tooling::support::{command_status_with_timeout, diagnostic_tail};
+use super::spec::REVISION;
+use crate::tooling::support::{command_status_with_timeout, diagnostic_tail, go_module_cache};
 
 const DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 
@@ -27,13 +28,7 @@ impl Runner {
     pub(super) fn go_env(&self, command: &mut Command) {
         command
             .env("GOCACHE", self.workspace.join("go cache ü"))
-            .env(
-                "GOMODCACHE",
-                std::env::var_os("GOMODCACHE").map_or_else(
-                    || std::env::temp_dir().join("rustleaks-go-mod-cache"),
-                    PathBuf::from,
-                ),
-            )
+            .env("GOMODCACHE", go_module_cache(REVISION))
             .env("GOMAXPROCS", "2")
             .env("LC_ALL", "C")
             .env("TZ", "UTC");

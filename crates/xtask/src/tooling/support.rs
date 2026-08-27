@@ -25,6 +25,13 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(sha256_bytes(&bytes))
 }
 
+pub(crate) fn go_module_cache(revision: &str) -> PathBuf {
+    std::env::var_os("GOMODCACHE").map_or_else(
+        || std::env::temp_dir().join(format!("rustleaks-go-mod-cache-{revision}")),
+        PathBuf::from,
+    )
+}
+
 /// Hashes a sorted Rust source tree as portable `path\0content-hash\n` records.
 pub(crate) fn source_tree_sha256(root: &Path, directory: &Path) -> Result<String, String> {
     let mut files = Vec::new();
