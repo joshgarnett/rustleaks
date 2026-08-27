@@ -166,7 +166,7 @@ cli_generator_command = "cargo xtask generate cli"
 generator_samples_generator_sha256 = "651b91d8b373dc49920e67b2fc8e04fea0c4182f16f93adacca71e56ea0bc610"
 generator_samples_generator_source = "crates/xtask/src/tooling/traceability/generator_samples"
 generator_samples_generator_command = "cargo xtask generate generator-samples"
-inventory_generator_sha256 = "0819ecf4966c25476dc997cfb4ff8a22af7408179d90f6592526a1fed24da6b2"
+inventory_generator_sha256 = "8ec0aee33397c70dbae120ed7558bae0007405d7499b4a26efba07a942f9fb34"
 inventory_generator_source = "crates/xtask/src/tooling/inventory"
 inventory_generator_command = "cargo xtask generate inventory"
 [[api_package]]
