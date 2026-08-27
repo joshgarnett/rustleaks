@@ -224,6 +224,37 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
         return Err("isolated write escaped into sibling upstream checkout".into());
     }
     fs::remove_file(&probe).map_err(|error| format!("cannot remove isolation probe: {error}"))?;
+    capture(
+        configured_go(
+            Command::new("go")
+                .current_dir(&isolated)
+                .args(["mod", "download"]),
+            temporary,
+        ),
+        temporary,
+        "go-mod-download",
+        Duration::from_secs(300),
+    )?;
+    capture(
+        configured_go(
+            Command::new("go")
+                .current_dir(&isolated)
+                .args(["mod", "verify"]),
+            temporary,
+        ),
+        temporary,
+        "go-mod-verify",
+        Duration::from_secs(120),
+    )?;
+    let status = git_capture(
+        &isolated,
+        temporary,
+        "isolated-status-after-download",
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    )?;
+    if !status.is_empty() {
+        return Err("downloading isolated oracle modules changed the checkout".into());
+    }
     let output = capture(
         configured_go(
             Command::new("go")
@@ -284,7 +315,7 @@ fn go_packages(upstream: &Path, temporary: &TempDir) -> Result<Vec<String>, Stri
 
 fn configured_go<'a>(command: &'a mut Command, temporary: &TempDir) -> &'a mut Command {
     let module_cache = std::env::var_os("GOMODCACHE").map_or_else(
-        || std::env::temp_dir().join("rustleaks-go-mod-cache"),
+        || std::env::temp_dir().join(format!("rustleaks-go-mod-cache-{REVISION}")),
         Into::into,
     );
     command
