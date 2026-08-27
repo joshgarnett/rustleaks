@@ -1,16 +1,16 @@
 //! Fresh, bounded execution of every declarative source request.
 
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use serde_json::Value;
 
-use super::spec::REQUEST_COUNT;
+use super::spec::{REQUEST_COUNT, REVISION};
 use super::validation::{required_str, validate_envelope};
 use super::{TempDir, newline_records, read};
-use crate::tooling::support::{command_status_with_timeout, diagnostic_tail};
+use crate::tooling::support::{command_status_with_timeout, diagnostic_tail, go_module_cache};
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(15);
 const BUILD_TIMEOUT: Duration = Duration::from_secs(180);
@@ -132,13 +132,9 @@ fn selected_runtime(upstream: &Path, temporary: &TempDir) -> Result<(String, Str
 }
 
 fn configure_go(command: &mut Command, temporary: &TempDir) {
-    let module_cache = std::env::var_os("GOMODCACHE").map_or_else(
-        || std::env::temp_dir().join("rustleaks-go-mod-cache"),
-        PathBuf::from,
-    );
     command
         .env("GOCACHE", temporary.path.join("go-cache"))
-        .env("GOMODCACHE", module_cache)
+        .env("GOMODCACHE", go_module_cache(REVISION))
         .env("LC_ALL", "C")
         .env("TZ", "UTC")
         .env(

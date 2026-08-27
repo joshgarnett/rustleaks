@@ -124,7 +124,7 @@ fn replace_first_hash(text: &str) -> Result<String, String> {
             .ok_or_else(|| "generated manifest has no fixture SHA-256".to_owned())?;
     let value = start + "\nsha256 = \"".len();
     let end = value + 64;
-    if text.get(end..end + 1) != Some("\"") {
+    if text.get(end..=end) != Some("\"") {
         return Err("first SHA-256 field is malformed".into());
     }
     let mut output = text.to_owned();

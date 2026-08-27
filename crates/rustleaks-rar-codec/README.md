@@ -7,7 +7,7 @@ The explicit upstream `COPYING` file is retained verbatim.
 
 The package is isolated because the upstream crate requires Rust 1.87 and
 also brings archive writing, encryption, recovery, parallelism, and filesystem
-features that the source library does not need. This fork targets Rust 1.85,
+features that the source library does not need. This fork targets Rust 1.88,
 forbids unsafe code, and has no dependencies. The codec files retain upstream
 encoder helpers so the fork remains mechanically comparable, but
 `rustleaks-sources` calls only the RAR3 and RAR5 decoder state machines. The

@@ -393,12 +393,12 @@ pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 4] = [
     (
         "Cargo.toml",
         "bc2bdfa222a06e6f77bbea3f8b23a581369142aa6a786203a64fdcd3d2035489",
-        "5a7612a96843d802998f76397160385dfa870be14170645ce81d0ad8561a3a96",
+        "7a3c9b9d1802ee4c76f10395b7b9aef5cc38833ee1b783f73571e6826c1174b2",
     ),
     (
         "Cargo.lock",
         "c40a3695cb4d6d3bea29cd6ea74a89ef0ae9db207f6282e60a941dbbc5767e6b",
-        "6efbe427cd8a79847e44256f4c477f2858b1a9d039396498a13585194b0b3678",
+        "693e0834d122c0f611f9a4a344770fcad9fd49bf476307f679fae038b13be7ed",
     ),
     (
         "crates/rustleaks-cli/Cargo.toml",

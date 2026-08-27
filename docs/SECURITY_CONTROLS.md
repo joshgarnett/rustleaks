@@ -25,7 +25,7 @@ lockfiles unchanged.
 - Miri from `nightly-2026-08-21`
 
 Fuzz commands require `cargo-fuzz 0.13.2`. The repository's ordinary Rust
-toolchain is pinned in `rust-toolchain.toml`; the declared MSRV is Rust 1.85.
+toolchain is pinned in `rust-toolchain.toml`; the declared MSRV is Rust 1.88.
 The security gate checks exact tool versions and fails on drift.
 
 The RustSec check intentionally updates its advisory database. It is not an

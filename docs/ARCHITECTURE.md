@@ -47,7 +47,7 @@ schedule them, but it submits only complete fragment outcomes to a session.
 | `xtask` | Repository validation and release-policy checks | Workspace only |
 | `rustleaks-bzip2`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Retained internal safe archive decoder forks | Workspace only |
 
-RAR2 decoding uses the upstream `compcol 0.3.1` crate privately through
+RAR2 decoding uses the upstream `compcol 0.6.10` crate privately through
 `rustleaks-sources`. No `compcol` type crosses the source API.
 
 The dependency direction is core to sources and reports, then into the CLI.

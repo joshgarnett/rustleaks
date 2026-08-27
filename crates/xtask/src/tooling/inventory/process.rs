@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use crate::tooling::support::{TempDir, command_status_with_timeout};
+use crate::tooling::support::{TempDir, command_status_with_timeout, diagnostic_tail};
 
 pub(super) fn capture(
     command: &mut Command,
@@ -31,10 +31,13 @@ pub(super) fn capture(
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
     if let Err(error) = command_status_with_timeout(command, timeout, label) {
-        let diagnostics = fs::read(&stderr_path).unwrap_or_default();
+        const DIAGNOSTIC_LIMIT: usize = 16 * 1024;
+        let stdout_diagnostics = fs::read(&stdout_path).unwrap_or_default();
+        let stderr_diagnostics = fs::read(&stderr_path).unwrap_or_default();
         return Err(format!(
-            "{error}\nstderr:\n{}",
-            String::from_utf8_lossy(&diagnostics)
+            "{error}\nstdout:\n{}\nstderr:\n{}",
+            diagnostic_tail(&stdout_diagnostics, DIAGNOSTIC_LIMIT),
+            diagnostic_tail(&stderr_diagnostics, DIAGNOSTIC_LIMIT),
         ));
     }
     fs::read(&stdout_path)

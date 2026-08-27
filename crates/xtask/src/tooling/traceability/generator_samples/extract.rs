@@ -10,7 +10,7 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::{CONFIG_SHA256, REVISION, json as corpus_json, observer, process};
-use crate::tooling::support::TempDir;
+use crate::tooling::support::{TempDir, go_module_cache};
 
 pub(super) fn observations(upstream: &Path, inventory: &[Value]) -> Result<Vec<Value>, String> {
     let by_name: BTreeMap<String, &Value> = inventory
@@ -31,16 +31,12 @@ pub(super) fn observations(upstream: &Path, inventory: &[Value]) -> Result<Vec<V
         || std::env::temp_dir().join("rustleaks-go-cache"),
         Into::into,
     );
-    let module_cache = std::env::var_os("GOMODCACHE").map_or_else(
-        || std::env::temp_dir().join("rustleaks-go-mod-cache"),
-        Into::into,
-    );
     let mut go = Command::new("go");
     go.current_dir(temporary.path.join("cmd/generate/config"))
         .args(["run", "."])
         .arg(&generated)
         .env("GOCACHE", go_cache)
-        .env("GOMODCACHE", module_cache)
+        .env("GOMODCACHE", go_module_cache(REVISION))
         .env("RUSTLEAKS_GENERATOR_SAMPLE_LOG", &log);
     process::status_with_limits(
         &mut go,

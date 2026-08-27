@@ -22,13 +22,13 @@ fn prefix(data: &[u8], expected: &[u8]) -> bool {
 
 fn application(data: &[u8]) -> bool {
     let wasm = data.len() >= 8 && prefix(data, b"\0asm\x01\0\0\0");
-    let dex = data.len() > 36 && prefix(data, b"dex\n") && data[36] == 0x70;
-    let dey = data.len() > 100
+    let dex_file = data.len() > 36 && prefix(data, b"dex\n") && data[36] == 0x70;
+    let optimized_dex_file = data.len() > 100
         && prefix(data, b"dey\n")
         && data[40..].len() > 36
         && prefix(&data[40..], b"dex\n")
         && data[76] == 0x70;
-    wasm || dex || dey
+    wasm || dex_file || optimized_dex_file
 }
 
 fn image(data: &[u8]) -> bool {
@@ -81,11 +81,11 @@ fn heif(data: &[u8]) -> bool {
 }
 
 fn video(data: &[u8]) -> bool {
-    let m4v = data.len() > 10 && &data[4..11] == b"ftypM4V";
+    let m4v_brand = data.len() > 10 && &data[4..11] == b"ftypM4V";
     let matroska = data.len() > 3
         && prefix(data, b"\x1a\x45\xdf\xa3")
         && (contains_ebml_type(data, b"matroska") || contains_ebml_type(data, b"webm"));
-    let mov = data.len() > 15
+    let quicktime_container = data.len() > 15
         && ((prefix(data, b"\0\0\0\x14") && &data[4..8] == b"ftyp")
             || &data[4..8] == b"moov"
             || &data[4..8] == b"mdat"
@@ -128,7 +128,7 @@ fn video(data: &[u8]) -> bool {
                 | b"F4V "
                 | b"F4P "
         );
-    m4v || matroska || mov || avi || wmv || mpeg || flv || three_gp || mp4
+    m4v_brand || matroska || quicktime_container || avi || wmv || mpeg || flv || three_gp || mp4
 }
 
 fn contains_ebml_type(data: &[u8], kind: &[u8]) -> bool {

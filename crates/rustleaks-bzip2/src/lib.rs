@@ -7,7 +7,7 @@
 //!
 //! ## Features
 //!
-//! All feature profiles use the workspace MSRV, Rust 1.85. The retained
+//! All feature profiles use the workspace MSRV, Rust 1.88. The retained
 //! `rustc_1_37`, `rustc_1_40`, and `rustc_1_51` names preserve the forked
 //! crate's feature interface; they do not lower the supported compiler.
 //! `nightly` selects the fixed-array decoder path without changing the

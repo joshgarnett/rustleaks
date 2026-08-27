@@ -121,7 +121,7 @@ normal Bazel build/test input or a runtime dependency of any Rustleaks package.
 
 ## Platform and dependency evidence
 
-The declared MSRV is Rust 1.85. Owned crate roots forbid unsafe code. This does
+The declared MSRV is Rust 1.88. Owned crate roots forbid unsafe code. This does
 not mean every dependency is implemented without unsafe code; the reviewed
 dependency boundary is documented in
 [dependency safety](docs/DEPENDENCY_SAFETY.md). The default core graph has no

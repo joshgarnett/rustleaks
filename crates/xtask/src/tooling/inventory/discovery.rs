@@ -11,7 +11,7 @@ use super::model::{
     TestFile,
 };
 use super::process::{capture, git_capture};
-use crate::tooling::support::{TempDir, sha256_bytes, sha256_file};
+use crate::tooling::support::{TempDir, go_module_cache, sha256_bytes, sha256_file};
 
 const EXPECTED_FIXTURE_RECORD_SHA256: &str =
     "a29bcb807fc5466fb38bba0134fe6d5f41364e9efeae4980225cc21524fd4ed1";
@@ -224,6 +224,37 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
         return Err("isolated write escaped into sibling upstream checkout".into());
     }
     fs::remove_file(&probe).map_err(|error| format!("cannot remove isolation probe: {error}"))?;
+    capture(
+        configured_go(
+            Command::new("go")
+                .current_dir(&isolated)
+                .args(["mod", "download"]),
+            temporary,
+        ),
+        temporary,
+        "go-mod-download",
+        Duration::from_secs(300),
+    )?;
+    capture(
+        configured_go(
+            Command::new("go")
+                .current_dir(&isolated)
+                .args(["mod", "verify"]),
+            temporary,
+        ),
+        temporary,
+        "go-mod-verify",
+        Duration::from_secs(120),
+    )?;
+    let status = git_capture(
+        &isolated,
+        temporary,
+        "isolated-status-after-download",
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    )?;
+    if !status.is_empty() {
+        return Err("downloading isolated oracle modules changed the checkout".into());
+    }
     let output = capture(
         configured_go(
             Command::new("go")
@@ -283,13 +314,9 @@ fn go_packages(upstream: &Path, temporary: &TempDir) -> Result<Vec<String>, Stri
 }
 
 fn configured_go<'a>(command: &'a mut Command, temporary: &TempDir) -> &'a mut Command {
-    let module_cache = std::env::var_os("GOMODCACHE").map_or_else(
-        || std::env::temp_dir().join("rustleaks-go-mod-cache"),
-        Into::into,
-    );
     command
         .env("GOCACHE", temporary.path.join("go cache space Ω"))
-        .env("GOMODCACHE", module_cache)
+        .env("GOMODCACHE", go_module_cache(REVISION))
 }
 
 fn constructors(upstream: &Path) -> Result<Vec<Constructor>, String> {

@@ -39,7 +39,7 @@ serde_json@1.0.151
 sha2@0.11.0
 syn@3.0.4
 toml_parser@1.1.3+spec-1.1.0
-twox-hash@2.1.3
+twox-hash@2.1.4
 unicode-ident@1.0.24
 winnow@1.0.4
 zmij@1.0.23
@@ -66,9 +66,12 @@ The publishable core's relevant unsafe-bearing boundary is narrow:
 The unpublished archive feature adds pure-Rust compression and container
 decoders. `lzma-rust2 0.20.0` has optimization disabled, `lz4_flex` selects
 checked and safe encode/decode features, and the retained in-tree bzip2, RAR,
-and 7z forks forbid owned unsafe. RAR2 uses upstream `compcol 0.3.1` with only
-`alloc` and `rar2`; its selected source matches the previously owned RAR2
-implementation. XZ checksums retain exact-pinned `sha2`; its selected
+and 7z forks forbid owned unsafe. RAR2 uses upstream `compcol 0.6.10` with only
+`alloc` and `rar2`. The selected graph has no normal transitive dependencies,
+build script, native code, or unsafe Rust. Its reviewed RAR2 delta contains
+checked decoder-copy and Huffman lookup optimizations; upstream and Rustleaks
+hostile-input evidence covers this selected decoder. XZ checksums retain
+exact-pinned `sha2`; its selected
 portable/hardware dispatch is the principal intentional archive dependency
 unsafe boundary. Archive inputs are additionally constrained by depth, entry,
 member, cumulative, and spool limits and are covered by hostile-input harnesses.

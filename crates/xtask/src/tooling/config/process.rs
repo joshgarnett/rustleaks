@@ -7,7 +7,9 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use super::spec::{Canonical, REVISION};
-use crate::tooling::support::{TempDir, command_status_with_timeout, diagnostic_tail};
+use crate::tooling::support::{
+    TempDir, command_status_with_timeout, diagnostic_tail, go_module_cache,
+};
 
 const BUILD_TIMEOUT: Duration = Duration::from_secs(180);
 const CASE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -103,13 +105,7 @@ fn build_oracle(root: &Path, temporary: &TempDir, workspace: &Path) -> Result<Pa
         .arg(&binary)
         .arg(".")
         .env("GOCACHE", temporary.path.join("go cache ü"))
-        .env(
-            "GOMODCACHE",
-            std::env::var_os("GOMODCACHE").map_or_else(
-                || std::env::temp_dir().join("rustleaks-go-mod-cache"),
-                PathBuf::from,
-            ),
-        )
+        .env("GOMODCACHE", go_module_cache(REVISION))
         .env("GOMEMLIMIT", "768MiB")
         .env("GOMAXPROCS", "2")
         .env("LC_ALL", "C")

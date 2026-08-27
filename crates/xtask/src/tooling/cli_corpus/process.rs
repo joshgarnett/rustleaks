@@ -2,13 +2,14 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use super::TempDir;
-use crate::tooling::support::diagnostic_tail;
+use super::spec::REVISION;
+use crate::tooling::support::{diagnostic_tail, go_module_cache};
 
 pub(super) const CASE_TIMEOUT: Duration = Duration::from_secs(15);
 pub(super) const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
@@ -213,11 +214,7 @@ pub(super) fn default_go_env(temporary: &TempDir) -> BTreeMap<String, Vec<u8>> {
         ),
         (
             "GOMODCACHE".into(),
-            std::env::var_os("GOMODCACHE")
-                .map_or_else(
-                    || std::env::temp_dir().join("rustleaks-go-mod-cache"),
-                    PathBuf::from,
-                )
+            go_module_cache(REVISION)
                 .to_string_lossy()
                 .into_owned()
                 .into_bytes(),
