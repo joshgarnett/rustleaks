@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Permit `regex-automata ^0.4.12` and `regex-syntax ^0.8.5` so downstream
+  applications can resolve the maintained dependency lines without conflicting
+  with Rustleaks exact pins.
+- Accept post-Unicode-15 property and case-fold additions from compatible regex
+  backend releases while retaining the Go property namespace and generated
+  lowercase helpers.
+
 ## [0.1.0-alpha.1] - 2026-08-26
 
 - Add the publishable `rustleaks-core` package with a synchronous, byte-first

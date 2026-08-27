@@ -636,25 +636,27 @@ fn validate_regex_backend_metadata(metadata: &str) -> Result<(), String> {
     let dependencies = core["dependencies"]
         .as_array()
         .ok_or("cargo metadata omits rustleaks-core dependencies")?;
-    for (name, requirement) in [("regex-automata", "=0.4.7"), ("regex-syntax", "=0.8.4")] {
+    for (name, requirement) in [("regex-automata", "^0.4.12"), ("regex-syntax", "^0.8.5")] {
         let dependency = dependencies
             .iter()
             .find(|dependency| dependency["name"] == name)
-            .ok_or_else(|| format!("rustleaks-core omits exact {name} backend dependency"))?;
+            .ok_or_else(|| format!("rustleaks-core omits compatible {name} backend dependency"))?;
         if dependency["req"].as_str() != Some(requirement) {
             return Err(format!(
                 "rustleaks-core {name} requirement must be {requirement}"
             ));
         }
+        let requirement = semver::VersionReq::parse(requirement)
+            .map_err(|error| format!("invalid maintained {name} requirement: {error}"))?;
         let resolved = packages.iter().any(|package| {
             package["name"] == name
-                && package["version"].as_str() == Some(requirement.trim_start_matches('='))
+                && package["version"]
+                    .as_str()
+                    .and_then(|version| semver::Version::parse(version).ok())
+                    .is_some_and(|version| requirement.matches(&version))
         });
         if !resolved {
-            return Err(format!(
-                "resolved Cargo graph omits exact {name} {}",
-                requirement.trim_start_matches('=')
-            ));
+            return Err(format!("resolved Cargo graph omits compatible {name}"));
         }
     }
     if dependencies
@@ -877,7 +879,7 @@ fn write_external_consumer(root: &Path, package: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot create external consumer: {error}"))?;
     let path = package.to_string_lossy().replace('\\', "/");
     let manifest = format!(
-        "[package]\nname = \"rustleaks-external-consumer\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[dependencies]\nrustleaks-core = {{ path = {} }}\n",
+        "[package]\nname = \"rustleaks-external-consumer\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n[dependencies]\nregex-automata = \"^0.4.12\"\nregex-syntax = \"^0.8.5\"\nrustleaks-core = {{ path = {} }}\n",
         serde_json::to_string(&path)
             .map_err(|error| format!("cannot quote package path: {error}"))?
     );
@@ -885,6 +887,44 @@ fn write_external_consumer(root: &Path, package: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot write external Cargo manifest: {error}"))?;
     std::fs::write(root.join("src/main.rs"), consumer_source())
         .map_err(|error| format!("cannot write external consumer source: {error}"))?;
+    Ok(())
+}
+
+fn validate_external_regex_resolution(root: &Path) -> Result<(), String> {
+    let metadata = command_output(Command::new("cargo").current_dir(root).args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline",
+    ]))?;
+    let document: serde_json::Value = serde_json::from_str(&metadata)
+        .map_err(|error| format!("cannot parse external consumer cargo metadata: {error}"))?;
+    let packages = document["packages"]
+        .as_array()
+        .ok_or("external consumer cargo metadata has no packages array")?;
+
+    for (name, requirement) in [("regex-automata", "^0.4.12"), ("regex-syntax", "^0.8.5")] {
+        let versions = packages
+            .iter()
+            .filter(|package| package["name"].as_str() == Some(name))
+            .filter_map(|package| package["version"].as_str())
+            .collect::<Vec<_>>();
+        if versions.len() != 1 {
+            return Err(format!(
+                "external consumer must resolve one shared {name} version satisfying {requirement}, got {versions:?}"
+            ));
+        }
+        let version = semver::Version::parse(versions[0])
+            .map_err(|error| format!("invalid {name} version {}: {error}", versions[0]))?;
+        let requirement = semver::VersionReq::parse(requirement)
+            .map_err(|error| format!("invalid {name} requirement {requirement}: {error}"))?;
+        if !requirement.matches(&version) {
+            return Err(format!(
+                "external consumer resolved {name} {version}, which does not satisfy {requirement}"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -896,6 +936,7 @@ fn run_external_cargo_consumer(staging: &Path, package: &Path) -> Result<(), Str
             .current_dir(&root)
             .args(["generate-lockfile", "--offline"]),
     )?;
+    validate_external_regex_resolution(&root)?;
     command_output(Command::new("cargo").current_dir(&root).args([
         "run",
         "--locked",
@@ -912,6 +953,7 @@ fn run_external_bazel_consumer(staging: &Path, package: &Path) -> Result<(), Str
             .current_dir(&root)
             .args(["generate-lockfile", "--offline"]),
     )?;
+    validate_external_regex_resolution(&root)?;
     std::fs::write(
         root.join("MODULE.bazel"),
         r#"module(name = "rustleaks_external_consumer")
@@ -1242,7 +1284,7 @@ fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
         "lzma-rust2@0.20.0",
         "memchr@2.8.3",
         "proc-macro2@1.0.107",
-        "regex-automata@0.4.7",
+        "regex-automata@0.4.18",
         "semver@1.0.28",
         "serde_core@1.0.229",
         "serde_json@1.0.151",
@@ -3296,26 +3338,26 @@ mod tests {
     }
 
     #[test]
-    fn resolved_metadata_requires_the_exact_unicode_15_backend() {
-        let exact = r#"{
+    fn resolved_metadata_requires_compatible_regex_backend_ranges() {
+        let compatible = r#"{
             "packages": [
                 {"name":"rustleaks-core","dependencies":[
-                    {"name":"regex-automata","req":"=0.4.7"},
-                    {"name":"regex-syntax","req":"=0.8.4"}
+                    {"name":"regex-automata","req":"^0.4.12"},
+                    {"name":"regex-syntax","req":"^0.8.5"}
                 ]},
-                {"name":"regex-automata","version":"0.4.7"},
-                {"name":"regex-syntax","version":"0.8.4"}
+                {"name":"regex-automata","version":"0.4.18"},
+                {"name":"regex-syntax","version":"0.8.11"}
             ]
         }"#;
-        assert!(validate_regex_backend_metadata(exact).is_ok());
+        assert!(validate_regex_backend_metadata(compatible).is_ok());
 
-        let mut current = exact.replace("=0.4.7", "^0.4.7");
+        let mut current = compatible.replace("^0.4.12", "=0.4.12");
         assert!(validate_regex_backend_metadata(&current).is_err());
-        current = exact.replace("0.8.4", "0.8.11");
+        current = compatible.replace("^0.8.5", "^0.8.4");
         assert!(validate_regex_backend_metadata(&current).is_err());
-        current = exact.replace(
-            r#"{"name":"regex-syntax","req":"=0.8.4"}"#,
-            r#"{"name":"regex-syntax","req":"=0.8.4"},{"name":"regex","req":"^1"}"#,
+        current = compatible.replace(
+            r#"{"name":"regex-syntax","req":"^0.8.5"}"#,
+            r#"{"name":"regex-syntax","req":"^0.8.5"},{"name":"regex","req":"^1"}"#,
         );
         assert!(validate_regex_backend_metadata(&current).is_err());
     }

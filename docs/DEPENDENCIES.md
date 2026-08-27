@@ -14,13 +14,15 @@
   waived only with a time-bounded, evidence-backed entry in
   `supply-chain-exceptions.toml`; it may not be hidden by removing the check.
 - Publishable dependencies normally use MSRV-compatible semver ranges.
-  `regex-syntax 0.8.4` and `regex-automata 0.4.7` are exact-pinned because
-  their Unicode-15 tables are observable Go compatibility data. The newer
-  `regex-syntax 0.8.5` through `0.8.11` releases use Unicode 16 tables, and
-  `regex-automata 0.4.18` requires at least `regex-syntax 0.8.5`; their
-  U+105C0 behavior fails the pinned regex oracle. Updates require the complete
-  regex oracle and security review. Development uses the pinned toolchain; CI
-  also builds the declared MSRV and current native platform lanes.
+  `regex-syntax` requires `^0.8.5` and `regex-automata` requires `^0.4.12` so
+  downstream applications can unify the maintained 0.8 and 0.4 release lines.
+  These minima use Unicode 16 tables, making post-Unicode-15 property and case
+  data an explicit compatibility difference from the pinned Go oracle. The
+  private frontend still limits accepted property names to the Go namespace,
+  and generated Go simple-lowercase tables used outside regular expressions
+  remain pinned to Unicode 15. Dependency updates require the complete regex
+  oracle and security review. Development uses the pinned toolchain; CI also
+  builds the declared MSRV and current native platform lanes.
 - `serde_json` is a core runtime dependency because the upstream baseline file
   is a JSON report. The session parser wraps its tokenizer with a private
   compatibility visitor for Go field matching, null/duplicate handling,

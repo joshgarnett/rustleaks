@@ -32,7 +32,7 @@ lz4_flex@0.14.0
 lzma-rust2@0.20.0
 memchr@2.8.3
 proc-macro2@1.0.107
-regex-automata@0.4.7
+regex-automata@0.4.18
 semver@1.0.28
 serde_core@1.0.229
 serde_json@1.0.151

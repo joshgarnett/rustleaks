@@ -63,6 +63,15 @@ uses the standard Go regular-expression implementation from an ordinary build.
 Host-capable template helpers and unsafe panic behavior are replaced with
 named, bounded Rust dispositions rather than normalized away.
 
+The public core permits `regex-automata ^0.4.12` and `regex-syntax ^0.8.5` so
+applications can unify those maintained dependency lines. Their Unicode tables
+include additions after the pinned Go Unicode 15 baseline. Consequently,
+Unicode properties and case folding can differ for newly assigned or
+reclassified code points; for example, U+105C0 is a letter in the compatible
+backend but unassigned in the pinned oracle. The accepted property-name
+namespace, ASCII behavior, byte spans, and generated lowercase helpers remain
+under the existing compatibility boundaries.
+
 ## Platforms
 
 Native GitHub Actions runtime evidence covers `x86_64` and `aarch64` for Linux
