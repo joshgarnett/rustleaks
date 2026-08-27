@@ -120,7 +120,7 @@ def rustleaks_integration_test(
         env = env,
         rustc_env = {
             "CARGO_MANIFEST_DIR": native.package_name(),
-            "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+            "CARGO_PKG_VERSION": "0.1.0-alpha.2",
         },
         srcs = [src] + srcs,
         visibility = ["//visibility:public"],

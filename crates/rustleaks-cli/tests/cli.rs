@@ -364,7 +364,7 @@ fn embedded_default_emits_the_pinned_minimum_version_warning() {
     assert!(result.stdout.is_empty());
     assert!(
         String::from_utf8_lossy(&result.stderr).contains(
-            "warn config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.1 config path=<embedded-default>"
+            "warn config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.2 config path=<embedded-default>"
         )
     );
 }

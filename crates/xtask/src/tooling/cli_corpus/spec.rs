@@ -16,7 +16,8 @@ pub(super) const VARIANT_COUNT: usize = 119;
 pub(super) const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 pub(super) const CONFIG_SHA256: &str =
     "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
-pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.1";
+pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.1";
+pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.2";
 
 pub(super) struct Binaries {
     pub(super) go: PathBuf,
@@ -41,7 +42,11 @@ pub(super) fn validate_inputs(
         || required_u64(manifest, "protocol_version", "manifest")? != 1
         || required_str(manifest, "upstream_revision", "manifest")? != REVISION
         || required_str(manifest, "default_config_sha256", "manifest")? != CONFIG_SHA256
-        || required_str(manifest, "build_version", "manifest")? != BUILD_VERSION
+        || ![LEGACY_BUILD_VERSION, BUILD_VERSION].contains(&required_str(
+            manifest,
+            "build_version",
+            "manifest",
+        )?)
         || required_u64(manifest, "case_count", "manifest")? != CASE_COUNT as u64
         || required_u64(manifest, "variant_count", "manifest")? != VARIANT_COUNT as u64
         || required_str(manifest, "requests_sha256", "manifest")? != sha256_bytes(requests)
@@ -387,23 +392,23 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
 pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 4] = [
     (
         "Cargo.toml",
-        "1d01e816e7c21c0642e25a468fd2ccba3d460b84e9828891730cce2cdc4e861b",
         "bc2bdfa222a06e6f77bbea3f8b23a581369142aa6a786203a64fdcd3d2035489",
+        "5a7612a96843d802998f76397160385dfa870be14170645ce81d0ad8561a3a96",
     ),
     (
         "Cargo.lock",
-        "637be2cbd6135428d7513ebea67088ae85654f8a733775ba1c1621d57d2a2923",
         "c40a3695cb4d6d3bea29cd6ea74a89ef0ae9db207f6282e60a941dbbc5767e6b",
+        "6efbe427cd8a79847e44256f4c477f2858b1a9d039396498a13585194b0b3678",
     ),
     (
-        "crates/rustleaks-cli/src/output.rs",
-        "800a1c3350f56b4f7af25193e6c5d1a54e3cb44d8273ecdebd5f4bbb45b000ba",
-        "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
+        "crates/rustleaks-cli/Cargo.toml",
+        "234894cd76d39c099b3894a8a056d1c59e977615eddab9473616a4bc9e57eb95",
+        "b7315db74ada15efc2eead6e2be517cc77110f811fe570a9c61e4afb1dd17483",
     ),
     (
-        "crates/rustleaks-cli/src/run.rs",
-        "ab7393a1020f67cc6c1790912126b429994cbce1b9c84acd1177b646c4943971",
-        "194e6eafc48337ed70c8d5140891bdcf92d4f4461840b8898ea59f15053dcf2f",
+        "crates/rustleaks-cli/src/config.rs",
+        "adfc1656cb7b1b625c8e9de92424b3a71100338c4db83351089e9441700ed984",
+        "ccabcea38b0fdbedcd8f88fa34686215b2840b67a8d5e691554f2a47969349ec",
     ),
 ];
 

@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 
 use crate::tooling::{command_output, sha256_file};
 
-const RELEASE_VERSION: &str = "0.1.0-alpha.1";
+const RELEASE_VERSION: &str = "0.1.0-alpha.2";
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
 const BAZEL_VERSION: &str = "9.2.0";
 const RULES_RUST_VERSION: &str = "0.72.0";

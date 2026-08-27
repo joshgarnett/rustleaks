@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn embedded_default_warns_against_the_workspace_version() {
-        assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0-alpha.1");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0-alpha.2");
         let root = temporary_directory("default-version");
         let invocation = Invocation {
             command: CommandKind::Stdin,
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(
             assembly.warnings,
             [
-                "config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.1 config path=<embedded-default>"
+                "config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.2 config path=<embedded-default>"
             ]
         );
         std::fs::remove_dir_all(root).unwrap();

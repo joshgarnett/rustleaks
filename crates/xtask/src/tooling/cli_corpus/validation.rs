@@ -5,13 +5,15 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::spec::{CASE_COUNT, DECLARED_TRANSITIONS, VARIANT_COUNT};
+use super::spec::{
+    BUILD_VERSION, CASE_COUNT, DECLARED_TRANSITIONS, LEGACY_BUILD_VERSION, VARIANT_COUNT,
+};
 use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
-    "d512a3bdb2ed2db120b36f576bd803dbe5dd5f99a6ccab44d6bae2103997cf24",
     "4af1226379152724d5b3bc756aca5b2fbbea7a75a492225d70058a1f3f2ab3bf",
+    "df7ad24ae9ef4cf00d90ef9341d2f5a5a6c7ef3e6b6e5021d964d2ad879d4cdb",
 );
 
 pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), String> {
@@ -101,6 +103,12 @@ pub(super) fn render_manifest(
         old.as_bytes(),
         generator_hash.as_bytes(),
         "generator provenance",
+    )?;
+    rendered = replace_declared_transition(
+        &rendered,
+        LEGACY_BUILD_VERSION.as_bytes(),
+        BUILD_VERSION.as_bytes(),
+        "CLI build version transition",
     )?;
     for (path, expected, actual) in DECLARED_TRANSITIONS {
         rendered = replace_declared_transition(
