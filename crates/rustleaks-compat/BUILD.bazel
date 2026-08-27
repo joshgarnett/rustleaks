@@ -16,7 +16,7 @@ rustleaks_library(
     crate_name = "rustleaks_compat",
     deps = _DEPS,
     edition = "2024",
-    version = "0.1.0-alpha.2",
+    version = "0.1.0-alpha.3",
 )
 
 rust_binary(
@@ -29,7 +29,7 @@ rust_binary(
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.2",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.3",
     },
     srcs = glob(["src/**/*.rs"]),
     visibility = ["//visibility:public"],
