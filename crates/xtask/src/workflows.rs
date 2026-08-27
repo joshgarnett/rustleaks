@@ -119,7 +119,7 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
         "contents: read",
         "id-token: write",
         "security-events: write",
-        "ossf/scorecard-action@08b4669551908b1024bb425080c797723083c031 # v2.2.0",
+        "ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4",
         "publish_results: true",
         "github/codeql-action/upload-sarif@4c0873ef8656cb3c50b3f42fb63bc1ade0cfa827 # v4",
     ] {
