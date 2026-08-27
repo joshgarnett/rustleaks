@@ -12,6 +12,13 @@ commit. Selecting a version, creating a release, publishing a crate, changing
 release settings, or using a credential requires explicit maintainer approval.
 A dry run does not grant publication approval.
 
+Choose the mode before running gates:
+
+- **Candidate qualification** establishes release evidence for a new commit,
+  version, or changed release input.
+- **Publication revalidation** reuses a successful protected dry run for the
+  exact unchanged candidate immediately before an approved external action.
+
 ## Qualify the candidate
 
 Confirm that the worktree and index are clean, version fields and changelog
@@ -40,6 +47,22 @@ promote compile-only target results to support. Do not invent an artifact,
 checksum, SBOM, attestation, or native result that the current release workflow
 does not produce.
 
+## Revalidate for publication
+
+When the exact candidate already has a successful protected dry run, do not
+repeat the complete qualification suite solely because publication is next.
+Confirm the candidate is still the clean current `main` commit, the version and
+tree are unchanged, required branch checks remain successful, the dry-run
+artifacts are available, and the freshly generated package is byte-identical
+to the retained package. Refresh only evidence that can become stale without a
+source change when the release document requires it.
+
+Start qualification again if the candidate, version, lockfiles, workflow
+definitions, package bytes, release inputs, or required evidence changed, or
+if a retained artifact expired. Remember that Cargo embeds the worktree commit
+in `.cargo_vcs_info.json`: package bytes from a topic branch do not qualify the
+different squash-merge commit on `main`.
+
 ## Reconcile artifacts
 
 For every actual release artifact, record its target, inputs, build command,
@@ -59,3 +82,9 @@ bootstrap trusted publishing for a new crate, an initial publication may use
 only an explicitly approved short-lived token procedure followed by immediate
 revocation and trusted-publisher configuration. Verify the public result
 without modifying unrelated GitHub state.
+
+Make each approval request machine-checkable by naming the version, candidate,
+protected dry-run run ID, and external action. Once the maintainer approves
+that exact unchanged action, proceed without requesting duplicate approval.
+Require new approval when any named value or the scope changes. Treat crates.io
+publication and GitHub tag or release creation as separate external actions.
