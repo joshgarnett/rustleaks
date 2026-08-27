@@ -47,9 +47,11 @@ Refuse to merge when required evidence is missing or uncertain. In particular,
 refuse a draft, failing, pending, stale, closed, conflicted, blocked, or
 unmergeable pull request. A branch being behind its base blocks the merge only
 when the live ruleset requires an update or intervening base changes invalidate
-the reviewed result. Do not invent an approving review or require one when the
-live ruleset allows a sole-maintainer merge. Report each unmet condition and
-the evidence needed to clear it. Do not use the repository owner's bypass,
+the reviewed result. When the live ruleset permits a sole-maintainer merge and
+the maintainer did not request independent review, an empty review list is
+positive evidence that no review gate applies, not a missing approval. Do not
+pause to solicit or invent a self-review. Report each actual unmet condition
+and the evidence needed to clear it. Do not use the repository owner's bypass,
 force, or a local merge as a substitute for a failed requirement.
 
 ## Merge only by squash

@@ -16,8 +16,8 @@ Choose the mode before running gates:
 
 - **Candidate qualification** establishes release evidence for a new commit,
   version, or changed release input.
-- **Publication revalidation** reuses a successful protected dry run for the
-  exact unchanged candidate immediately before an approved external action.
+- **Publication revalidation** reuses a successful exact-candidate dry run for
+  the exact unchanged candidate immediately before an approved external action.
 
 ## Qualify the candidate
 
@@ -49,7 +49,7 @@ does not produce.
 
 ## Revalidate for publication
 
-When the exact candidate already has a successful protected dry run, do not
+When the exact candidate already has a successful hosted dry run, do not
 repeat the complete qualification suite solely because publication is next.
 Confirm the candidate is still the clean current `main` commit, the version and
 tree are unchanged, required branch checks remain successful, the dry-run
@@ -84,7 +84,12 @@ revocation and trusted-publisher configuration. Verify the public result
 without modifying unrelated GitHub state.
 
 Make each approval request machine-checkable by naming the version, candidate,
-protected dry-run run ID, and external action. Once the maintainer approves
-that exact unchanged action, proceed without requesting duplicate approval.
+dry-run run ID, and external action. Candidate qualification is secretless and
+nonpublishing, so do not request environment approval for it. Once the
+maintainer approves that exact unchanged action, proceed without requesting
+duplicate approval.
 Require new approval when any named value or the scope changes. Treat crates.io
 publication and GitHub tag or release creation as separate external actions.
+Use `publish.yml` for the former and `release.yml` for the latter. Both use the
+protected `release` environment and must reuse, not rebuild, the exact approved
+dry-run artifact set.

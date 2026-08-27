@@ -126,7 +126,7 @@ not execute untrusted pull request code from `pull_request_target`,
 | Pull request | `just ci`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the matching native platform slice. Keep RustSec freshness in a network-enabled secretless job. `just ci` includes committed parity. |
 | Nightly | Longer high-risk fuzz campaigns, increased property cases, batched Go differentials, fresh RustSec, newest-allowed dependency resolution in a noncommitting checkout, and repository self-scan. |
 | Weekly | Scheduled CI supplies pinned Miri, unsafe inventory, cargo-vet, RustSec, and all available native target lanes. The weekly workflow adds slower archive and large-input campaigns plus coverage review; CodeQL and OpenSSF Scorecard remain independently scheduled. |
-| Release candidate | A protected manual dry run bound to the exact current `main` commit; `just ci`; the complete fresh differential; `just security`; extended AddressSanitizer fuzzing; worktree and history scans; package, external-consumer, docs.rs, and no-upload checks; and twice-built native artifacts with byte comparison, checksums, target SBOMs reconciled with the Bazel graph, provenance, and attestations. |
+| Release candidate | A secretless manual dry run bound to the exact current `main` commit and version; parallel `just ci`, complete fresh differential, `just security`, extended AddressSanitizer fuzzing, and worktree and history scans; package, external-consumer, docs.rs, and no-upload checks; and twice-built native artifacts with byte comparison, checksums, target SBOMs reconciled with the Bazel graph, provenance, and attestations. |
 
 The protected publication workflow accepts only a current `main` commit, a
 matching version, and a successful retained release dry run. It compares the
@@ -145,7 +145,7 @@ targets.
 
 ## Protected files
 
-Hosted ownership rules must require review for changes to at least:
+Hosted ownership and required-check rules must cover changes to at least:
 
 - `.github/workflows/`, release configuration, and `CODEOWNERS`;
 - `Cargo.toml`, `Cargo.lock`, every crate manifest, `rust-toolchain.toml`, and
@@ -158,6 +158,13 @@ Hosted ownership rules must require review for changes to at least:
   compatibility profile, public API
   snapshots, corpora, generators, and fixture inventories; and
 - package, release, checksum, SBOM, provenance, and attestation inputs.
+
+An eligible independent approval is required only when the live ruleset or the
+maintainer explicitly requires one. A sole-maintainer ruleset may omit a
+mandatory approving review because GitHub does not allow authors to approve
+their own pull requests. The complete branch diff, required checks, unresolved
+conversations, mergeability, and boundary-specific evidence remain mandatory;
+repository-owner bypass is not a substitute for any of them.
 
 GitHub secret scanning, push protection, private vulnerability reporting,
 branch protection, protected release environments, trusted publishing, and
