@@ -38,8 +38,8 @@ external Cargo and Bazel consumers, and the locked no-upload Cargo publication
 check.
 
 The publishable package metadata also selects docs.rs-compatible warning-denied
-documentation for all features. The protected hosted dry run repeats that
-interface and retains the exact `.crate` archive plus its file list.
+documentation for all features. The hosted dry run repeats that interface and
+retains the exact `.crate` archive plus its file list.
 
 Run `cargo xtask parity --all` with the exact pinned Gitleaks checkout at
 `../gitleaks` when compatibility inputs or behavior changed. Complete SemVer
@@ -56,17 +56,19 @@ boundary.
 ## Non-publishing release candidate
 
 After a candidate is merged to `main`, dispatch `Release Dry Run` with the full
-40-character candidate commit. The protected `release` environment first
-requires approval and rejects any commit other than the current `origin/main`.
-The workflow does not receive a registry token and fails if either conventional
-crates.io token variable is present.
+40-character candidate commit and matching version. This nonpublishing workflow
+does not use a protected environment. It rejects any commit other than the
+current `origin/main`, receives no registry token, and fails if either
+conventional crates.io token variable is present. Qualification can therefore
+start without spending an approval that protects a later external mutation.
 
-The workflow runs the package consumers, docs.rs build, full fresh differential,
-security policy, extended AddressSanitizer fuzzing, worktree and history scans,
-and native artifact matrix. Every native job builds the CLI twice with isolated
-Bazel output roots, requires byte-identical binaries and independently prepared
-bundles, then extracts each archive and runs help plus a redacted scan smoke
-test from the packaged executable. Each job emits:
+The package and native matrix run alongside separate acceptance, fresh
+differential, security, extended AddressSanitizer fuzz, and worktree and history
+self-scan jobs. The required summary accepts the candidate only when every job
+succeeds. Every native job builds the CLI twice with isolated Bazel output
+roots, requires byte-identical binaries and independently prepared bundles,
+then extracts each archive and runs help plus a redacted scan smoke test from
+the packaged executable. Each job emits:
 
 - `rustleaks-<version>-<target>.tar.gz`;
 - `SHA256SUMS` for the archive, SBOM, and provenance predicate;
@@ -88,7 +90,7 @@ accepted candidate instead of repeating qualification. Confirm that:
 
 - the exact candidate is still the clean current `main` commit and has the
   approved version;
-- the protected dry run completed successfully for that commit and its
+- the dry run completed successfully for that commit and its
   required artifacts have not expired;
 - every required branch check remains successful for the candidate;
 - the current package is byte-identical to the retained source package; and
@@ -98,7 +100,7 @@ accepted candidate instead of repeating qualification. Confirm that:
 The publication workflow performs the identity, dry-run, artifact-retention,
 and package-byte checks again before requesting a crates.io credential. If the
 candidate, version, workflow definition, package bytes, release inputs, or
-required evidence changes, stop and run a new protected dry run. An expired or
+required evidence changes, stop and run a new dry run. An expired or
 missing retained artifact also requires a new dry run.
 
 Cargo includes `.cargo_vcs_info.json` in a package made from a Git worktree.
@@ -117,7 +119,7 @@ difference is normalized.
 
 Before publishing any candidate, require:
 
-- a successful protected dry run for the exact accepted candidate, including
+- a successful dry run for the exact accepted candidate, including
   every source and native artifact, its signed provenance attestation, and the
   independently scheduled CodeQL result;
 - an approved crates.io publication method for each selected package; and
@@ -150,11 +152,12 @@ SBOMs, reproducibility proofs, manifests, and verified GitHub provenance
 attestations from the approved candidate run.
 
 For an existing crate, dispatch `Publish Crate` from `main` with the exact
-candidate commit, matching version, and successful protected `Release Dry Run`
-run ID. The workflow verifies that the candidate is current `main`, downloads
-the retained source artifact, requires a byte-identical package, and then uses
-crates.io Trusted Publishing in the protected `release` environment. The
-trusted-publisher entry for `rustleaks-core` is:
+candidate commit, matching version, and successful `Release Dry Run` run ID.
+The workflow verifies that the candidate is current `main`, downloads the
+retained source artifact, requires a byte-identical package, and then uses
+crates.io Trusted Publishing in the protected `release` environment. Its setup
+installs only the pinned Rust toolchain; it does not install Go, Just, or Bazel.
+The trusted-publisher entry for `rustleaks-core` is:
 
 - repository owner `joshgarnett`;
 - repository `rustleaks`;
@@ -165,6 +168,15 @@ The workflow grants `id-token: write` only to the publication job, obtains a
 temporary token through the official crates.io authentication action, and does
 not read a registry secret. Its post step revokes the temporary token. Require
 trusted publishing for the crate after the configuration has been verified.
+
+For the matching GitHub prerelease, dispatch `Publish GitHub Release` from
+`release.yml` with the same candidate, version, and dry-run run ID. Its
+protected `release` job downloads all nine retained artifacts, rechecks package
+and native checksums, manifests, SBOMs, provenance, and GitHub attestations,
+then creates `v<version>` and `Rustleaks <version>` as a prerelease. It attaches
+the source package evidence and uniquely named evidence for all eight native
+targets. It does not rebuild release assets. Publication and GitHub release
+creation are separate protected jobs and require separate exact approvals.
 
 An initial crate publication may use only the separately approved short-lived
 bootstrap procedure above. Do not add a long-lived registry token as a
@@ -197,4 +209,6 @@ approval request. Approval remains valid for that unchanged action while its
 checks run; do not request the same approval again. A changed value, expanded
 scope, or materially different retry requires new approval. Crates.io
 publication and GitHub tag or release creation remain separate external
-actions and must each be named by the approval that authorizes it.
+actions and must each be named by the approval that authorizes it. Candidate
+qualification needs no approval because it cannot publish, create a tag, or use
+a registry credential.

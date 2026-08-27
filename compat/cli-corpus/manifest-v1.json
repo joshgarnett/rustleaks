@@ -3,7 +3,7 @@
   "protocol_version": 1,
   "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
-  "build_version": "0.1.0-alpha.2",
+  "build_version": "0.1.0-alpha.3",
   "case_count": 34,
   "variant_count": 119,
   "paired_observation_pair_count": 118,
@@ -39,7 +39,7 @@
   "parser_usage_byte_count_both_implementations": 19508,
   "stderr_event_count_both_implementations": 884,
   "mutation_control_count": 20,
-  "generator_sha256": "bd54897c3c6c4515062cb5b134ccf114734d9d02b4e74e0423c5286e6ab13d85",
+  "generator_sha256": "56494d142fcb74bd8f93a8161333fc6ea9dd09624b6cdd7123f810fe6d66fe53",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",
@@ -68,11 +68,11 @@
     "go.sum": "4bab2153d86f2a4f6b7a1146720f82e374fbd84931fe95798009be31c90d4162"
   },
   "rust_source_sha256": {
-    "Cargo.toml": "7a3c9b9d1802ee4c76f10395b7b9aef5cc38833ee1b783f73571e6826c1174b2",
-    "Cargo.lock": "693e0834d122c0f611f9a4a344770fcad9fd49bf476307f679fae038b13be7ed",
-    "crates/rustleaks-cli/Cargo.toml": "b7315db74ada15efc2eead6e2be517cc77110f811fe570a9c61e4afb1dd17483",
+    "Cargo.toml": "7a4da4825aee1dd319e5450233c25bfc5a5e9a953bf502b4a6cc491fabba3730",
+    "Cargo.lock": "e3c24453ec42115d43dd5b2b679e43cdb6e1b0802393932d3ae199db2e502d82",
+    "crates/rustleaks-cli/Cargo.toml": "1b8c67bcb3bb8cb4567295e665bea6b77aefae5dcfde48012c7e9ecd51dd17fb",
     "crates/rustleaks-cli/src/args.rs": "efc406db5eb453e2e0fb16ea90e7f90f3ddb94f880e51fa03bdb6a73488fdbe2",
-    "crates/rustleaks-cli/src/config.rs": "ccabcea38b0fdbedcd8f88fa34686215b2840b67a8d5e691554f2a47969349ec",
+    "crates/rustleaks-cli/src/config.rs": "6a083b4e5647f7899d2a13f03624fc91f0e1f0816bfaba200a142811ca320442",
     "crates/rustleaks-cli/src/lib.rs": "0c0a81f49066b19343765d6076593384b50a5c97e04315115f398daf64a651f2",
     "crates/rustleaks-cli/src/main.rs": "459bd190f5258177fa7099afbd2238e3b082f11b0e0c7b15d55bad4c87af415d",
     "crates/rustleaks-cli/src/output.rs": "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
@@ -80,7 +80,7 @@
     "crates/rustleaks-cli/src/source.rs": "2803d6bde7c68504ac7f3f04ec7bbca5c70f7a95da27bed12b61e91c3351625e"
   },
   "requests_sha256": "32126f7d65e15f526836391b681811809d799eaf79066b5e60f9bb48191eb6c4",
-  "outcomes_sha256": "df7ad24ae9ef4cf00d90ef9341d2f5a5a6c7ef3e6b6e5021d964d2ad879d4cdb",
+  "outcomes_sha256": "2d1f1f679ca552f7563e4c3313e4215c0d7e89317304db723a4c6d2321b2a791",
   "negative_controls_sha256": "fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152",
   "runtime_provenance_policy": "independently-validated-then-omitted",
   "native_runtime_evidence": {

@@ -7,9 +7,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.2" }
-rustleaks-report = { path = "../rustleaks-report", version = "=0.1.0-alpha.2" }
-rustleaks-sources = { path = "../rustleaks-sources", version = "=0.1.0-alpha.2", features = ["archives"] }
+rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.3" }
+rustleaks-report = { path = "../rustleaks-report", version = "=0.1.0-alpha.3" }
+rustleaks-sources = { path = "../rustleaks-sources", version = "=0.1.0-alpha.3", features = ["archives"] }
 
 [lints]
 workspace = true

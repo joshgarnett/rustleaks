@@ -12,8 +12,8 @@ use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
-    "4af1226379152724d5b3bc756aca5b2fbbea7a75a492225d70058a1f3f2ab3bf",
     "df7ad24ae9ef4cf00d90ef9341d2f5a5a6c7ef3e6b6e5021d964d2ad879d4cdb",
+    "2d1f1f679ca552f7563e4c3313e4215c0d7e89317304db723a4c6d2321b2a791",
 );
 
 pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), String> {

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.3] - 2026-08-27
+
+- Require Rust 1.88 and use that toolchain consistently in Cargo, Bazel, CI,
+  package, and release validation.
+- Update the optional RAR2 implementation to `compcol 0.6.10` after auditing
+  its dependency, unsafe-code, build-script, native-code, and resource-limit
+  boundaries.
+- Update maintained GitHub Actions to reviewed immutable revisions.
+- Run nonpublishing release qualification without an environment approval,
+  execute independent compatibility, security, fuzz, and self-scan gates in
+  parallel, and reuse the verified artifacts in protected crates.io and GitHub
+  release workflows.
+
 ## [0.1.0-alpha.2] - 2026-08-27
 
 - Permit `regex-automata ^0.4.12` and `regex-syntax ^0.8.5` so downstream
@@ -39,3 +52,4 @@ version and exact source commit.
 
 [0.1.0-alpha.1]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
+[0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3

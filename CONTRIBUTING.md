@@ -158,4 +158,7 @@ Explain the resulting behavior, rationale, exact validation, compatibility or
 security impact, and real issue linkage in the pull request template. The pull
 request title follows the commit subject grammar because pull requests are
 squash merged. Do not merge while required checks, required reviews, or
-blocking review conversations are incomplete.
+blocking review conversations are incomplete. An approving review is required
+only when the live repository ruleset requires one or the maintainer explicitly
+requests independent review; absence of a self-approval is not a blocker for a
+sole-maintainer pull request.

@@ -161,7 +161,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rustleaks-core"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "aho-corasick",
  "base64",
@@ -176,7 +176,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-report"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "rustleaks-core",
  "serde_json",

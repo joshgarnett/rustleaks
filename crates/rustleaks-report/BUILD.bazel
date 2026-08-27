@@ -8,7 +8,7 @@ rustleaks_library(
     crate_name = "rustleaks_report",
     deps = ["//crates/rustleaks-core:rustleaks_core"],
     edition = "2024",
-    version = "0.1.0-alpha.2",
+    version = "0.1.0-alpha.3",
 )
 
 [

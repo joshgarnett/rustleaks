@@ -41,14 +41,14 @@ target CycloneDX SBOM, Cargo-to-Bazel dependency reconciliation, SLSA v1
 dry-run provenance predicate, reproducibility proof, and exact archive
 contents.
 
-The regression is enforced by the protected release workflow, which builds
+The regression is enforced by the exact-candidate release dry run, which builds
 every native target twice and fails before artifact upload when bytes differ.
 macOS jobs also require the release binary to omit a Mach-O UUID. The workflow
 contains no publication command or registry credential.
 
 ## Follow-up
 
-- Run the protected workflow against the final accepted candidate on all eight
+- Run the release dry run against the final accepted candidate on all eight
   native targets.
 - Verify GitHub-native signed provenance before publication approval.
 - Rehearse registry metadata verification and yanking decisions against the
