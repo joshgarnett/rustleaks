@@ -286,6 +286,11 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
             ));
         }
     }
+    validate_release_evidence_boundaries(source)?;
+    Ok(())
+}
+
+fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
     let native_attestation_steps = source
         .split("- name: Verify and retain the release archive attestation")
         .skip(1)
