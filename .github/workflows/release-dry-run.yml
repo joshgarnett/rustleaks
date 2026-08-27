@@ -27,7 +27,7 @@ jobs:
     environment: release
     steps:
       - name: Check out the candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.candidate }}
           fetch-depth: 0
@@ -62,13 +62,13 @@ jobs:
       attestations: write
     steps:
       - name: Check out the candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: rustleaks/.go-version
           cache: false
@@ -124,7 +124,7 @@ jobs:
             --deny-self-hosted-runners
           cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/package/rustleaks-core-0.1.0-alpha.1.attestation.jsonl"
       - name: Upload the package candidate
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rustleaks-core-0.1.0-alpha.1-package
           path: |
@@ -142,21 +142,21 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Check out the candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           fetch-depth: 0
           persist-credentials: false
       - name: Check out the pinned Go oracle
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: gitleaks/gitleaks
           ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
           path: gitleaks
           persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: rustleaks/.go-version
           cache-dependency-path: gitleaks/go.sum
@@ -237,13 +237,13 @@ jobs:
       attestations: write
     steps:
       - name: Check out the candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: rustleaks/.go-version
           cache: false
@@ -327,7 +327,7 @@ jobs:
           cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
           cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
       - name: Upload the verified target bundle
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rustleaks-0.1.0-alpha.1-${{ matrix.target }}
           path: ${{ runner.temp }}/release-work/bundle
@@ -357,13 +357,13 @@ jobs:
       attestations: write
     steps:
       - name: Check out the candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: rustleaks/.go-version
           cache: false
@@ -433,7 +433,7 @@ jobs:
           cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-0.1.0-alpha.1-${RELEASE_TARGET}.attestation.jsonl"
           cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
       - name: Upload the verified target bundle
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rustleaks-0.1.0-alpha.1-${{ matrix.target }}
           path: ${{ runner.temp }}/release-work/bundle
@@ -463,13 +463,13 @@ jobs:
       attestations: write
     steps:
       - name: Check out the candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: rustleaks/.go-version
           cache: false
@@ -552,7 +552,7 @@ jobs:
           cargo xtask release-artifact verify (Join-Path $env:RUNNER_TEMP "release-work/bundle")
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload the verified target bundle
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rustleaks-0.1.0-alpha.1-${{ matrix.target }}
           path: ${{ runner.temp }}/release-work/bundle
