@@ -199,6 +199,9 @@ jobs:
           cache-dependency-path: gitleaks/go.sum
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
+      - name: Install the pinned public API tool
+        working-directory: rustleaks
+        run: cargo install cargo-public-api --locked --version 0.52.0
       - name: Install the pinned Miri toolchain
         working-directory: rustleaks
         run: |
