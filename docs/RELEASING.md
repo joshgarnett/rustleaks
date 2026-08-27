@@ -116,9 +116,24 @@ release attaches the eight target archives, their checksum files, CycloneDX
 SBOMs, reproducibility proofs, manifests, and verified GitHub provenance
 attestations from the approved candidate run.
 
-For an existing crate, publication must use the reviewed crates.io
-trusted-publishing configuration in the protected `release` environment. An
-initial crate publication may use only the separately approved short-lived
+For an existing crate, dispatch `Publish Crate` from `main` with the exact
+candidate commit, matching version, and successful protected `Release Dry Run`
+run ID. The workflow verifies that the candidate is current `main`, downloads
+the retained source artifact, requires a byte-identical package, and then uses
+crates.io Trusted Publishing in the protected `release` environment. The
+trusted-publisher entry for `rustleaks-core` is:
+
+- repository owner `joshgarnett`;
+- repository `rustleaks`;
+- workflow `publish.yml`; and
+- environment `release`.
+
+The workflow grants `id-token: write` only to the publication job, obtains a
+temporary token through the official crates.io authentication action, and does
+not read a registry secret. Its post step revokes the temporary token. Require
+trusted publishing for the crate after the configuration has been verified.
+
+An initial crate publication may use only the separately approved short-lived
 bootstrap procedure above. Do not add a long-lived registry token as a
 fallback. Immediately after publication, verify the registry owner and
 metadata, download and hash the `.crate`, build the documented external Cargo

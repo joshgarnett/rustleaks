@@ -125,11 +125,23 @@ not execute untrusted pull request code from `pull_request_target`,
 | --- | --- |
 | Pull request | `just ci`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the matching native platform slice. Keep RustSec freshness in a network-enabled secretless job. `just ci` includes committed parity. |
 | Nightly | Longer high-risk fuzz campaigns, increased property cases, batched Go differentials, fresh RustSec, newest-allowed dependency resolution in a noncommitting checkout, and repository self-scan. |
-| Weekly | Scheduled CI supplies pinned Miri, unsafe inventory, cargo-vet, RustSec, and all available native target lanes. The weekly workflow adds slower archive and large-input campaigns plus coverage review; CodeQL remains independently scheduled. |
+| Weekly | Scheduled CI supplies pinned Miri, unsafe inventory, cargo-vet, RustSec, and all available native target lanes. The weekly workflow adds slower archive and large-input campaigns plus coverage review; CodeQL and OpenSSF Scorecard remain independently scheduled. |
 | Release candidate | A protected manual dry run bound to the exact current `main` commit; `just ci`; the complete fresh differential; `just security`; extended AddressSanitizer fuzzing; worktree and history scans; package, external-consumer, docs.rs, and no-upload checks; and twice-built native artifacts with byte comparison, checksums, target SBOMs reconciled with the Bazel graph, provenance, and attestations. |
 
-OSS-Fuzz is not configured. Until eligibility and project ownership are
-reviewed, scheduled CI must run the same targets.
+The protected publication workflow accepts only a current `main` commit, a
+matching version, and a successful retained release dry run. It compares the
+source package byte for byte before requesting a crates.io OIDC token. No
+long-lived registry token belongs in GitHub Actions or local release
+configuration.
+
+Rustleaks does not currently apply to OSS-Fuzz. OSS-Fuzz accepts established
+projects based in part on remote attack exposure and the number of users or
+dependent projects. Rustleaks processes untrusted input but, as an initial
+alpha release, does not yet have evidence that it meets the established-project
+criterion. Continue the maintained scheduled fuzzing and reassess eligibility
+after adoption evidence exists. Submitting to OSS-Fuzz remains a separately
+approved external action. Until then, scheduled CI runs the maintained fuzz
+targets.
 
 ## Protected files
 

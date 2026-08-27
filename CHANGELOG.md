@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-alpha.1 - unreleased
+## [0.1.0-alpha.1] - 2026-08-26
 
 - Add the publishable `rustleaks-core` package with a synchronous, byte-first
   configuration and detection API.
@@ -23,5 +23,7 @@
   provenance plus GitHub-native signed attestations.
 
 Hosted native workflows cover the declared Linux, Windows, macOS, and musl
-target matrix. Publication remains subject to a successful protected run for
-the exact accepted candidate and a separate explicit decision.
+target matrix. The crates.io package and GitHub release identify the published
+version and exact source commit.
+
+[0.1.0-alpha.1]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.1
