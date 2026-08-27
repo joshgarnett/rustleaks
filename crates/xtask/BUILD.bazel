@@ -14,7 +14,7 @@ rust_binary(
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/xtask",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.2",
     },
     srcs = glob(["src/**/*.rs"]),
     visibility = ["//visibility:public"],
@@ -39,7 +39,7 @@ rust_test(
     deps = all_crate_deps(normal = True, normal_dev = True),
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/xtask",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.1",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.2",
     },
     visibility = ["//visibility:public"],
 )

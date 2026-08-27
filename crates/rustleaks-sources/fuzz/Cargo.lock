@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-core"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "aho-corasick",
  "base64",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-sources"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "brotli-decompressor",
  "compcol",

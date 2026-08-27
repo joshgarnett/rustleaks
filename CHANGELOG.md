@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.2] - 2026-08-27
+
 - Permit `regex-automata ^0.4.12` and `regex-syntax ^0.8.5` so downstream
   applications can resolve the maintained dependency lines without conflicting
   with Rustleaks exact pins.
@@ -36,3 +38,4 @@ target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
 [0.1.0-alpha.1]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.1
+[0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
