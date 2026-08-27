@@ -46,6 +46,13 @@ Run `cargo xtask parity --all` with the exact pinned Gitleaks checkout at
 comparison against the latest published release is required once a prior
 release exists.
 
+Qualification evidence is bound to the candidate commit and tree. Reuse a
+successful result when the commit, version, lockfiles, workflow definitions,
+and release inputs are unchanged. Do not rerun the complete local suite only
+because the candidate is moving from qualification to publication. A changed
+candidate or release input requires new qualification for the affected
+boundary.
+
 ## Non-publishing release candidate
 
 After a candidate is merged to `main`, dispatch `Release Dry Run` with the full
@@ -73,6 +80,32 @@ test from the packaged executable. Each job emits:
 The retained source package is generated twice into isolated Cargo target
 directories, compared byte for byte, and receives the same signed provenance
 verification.
+
+## Publication revalidation
+
+Before dispatching a publication workflow, perform a short revalidation of the
+accepted candidate instead of repeating qualification. Confirm that:
+
+- the exact candidate is still the clean current `main` commit and has the
+  approved version;
+- the protected dry run completed successfully for that commit and its
+  required artifacts have not expired;
+- every required branch check remains successful for the candidate;
+- the current package is byte-identical to the retained source package; and
+- freshness evidence that can change without a source edit, such as the
+  advisory database result, has not become stale under the release policy.
+
+The publication workflow performs the identity, dry-run, artifact-retention,
+and package-byte checks again before requesting a crates.io credential. If the
+candidate, version, workflow definition, package bytes, release inputs, or
+required evidence changes, stop and run a new protected dry run. An expired or
+missing retained artifact also requires a new dry run.
+
+Cargo includes `.cargo_vcs_info.json` in a package made from a Git worktree.
+Consequently, a squash merge changes the package bytes and checksum even when
+the source diff is unchanged. Treat the package produced from the final
+accepted `main` commit as the release package; branch package bytes are not a
+substitute for that final artifact.
 
 GNU manifests record the highest required `GLIBC_X.Y` symbol version measured
 from the exact binary. Musl artifacts must contain no ELF interpreter or
@@ -158,3 +191,10 @@ results, public API comparison, compatibility and security risks, checksums,
 SBOM reconciliation, provenance, requested external actions, and rollback or
 yanking plan. Stop when a required gate is missing, failing, pending, stale, or
 unexplained.
+
+Record the exact version, candidate, dry-run run ID, and external action in the
+approval request. Approval remains valid for that unchanged action while its
+checks run; do not request the same approval again. A changed value, expanded
+scope, or materially different retry requires new approval. Crates.io
+publication and GitHub tag or release creation remain separate external
+actions and must each be named by the approval that authorizes it.
