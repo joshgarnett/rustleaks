@@ -205,14 +205,23 @@ jobs:
       - name: Install the pinned dependency policy tool
         working-directory: rustleaks
         run: cargo install cargo-deny --locked --version 0.19.9
+      - name: Install the pinned fuzz toolchain
+        working-directory: rustleaks
+        run: |
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
+          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
       - name: Install the pinned Miri toolchain
         working-directory: rustleaks
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
           cargo +nightly-2026-08-21 miri setup
-      - name: Hydrate locked dependencies
+      - name: Hydrate locked parity dependencies
         working-directory: rustleaks
-        run: cargo fetch --locked
+        run: |
+          cargo fetch --locked
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
+          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
       - name: Replay the complete fresh differential
         working-directory: rustleaks
         run: cargo xtask parity --all

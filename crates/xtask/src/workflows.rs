@@ -343,8 +343,13 @@ fn validate_release_differential_setup(source: &str) -> Result<(), String> {
     for required in [
         "cargo install cargo-public-api --locked --version 0.52.0",
         "cargo install cargo-deny --locked --version 0.19.9",
+        "rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview",
+        "cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2",
         "rustup toolchain install nightly-2026-08-21 --profile minimal --component miri",
         "cargo +nightly-2026-08-21 miri setup",
+        "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml",
+        "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml",
+        "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml",
         "cargo xtask parity --all",
     ] {
         if !differential.contains(required) {
@@ -612,15 +617,25 @@ mod tests {
 
     #[test]
     fn requires_parity_tools_in_the_release_differential_job() {
-        let source = "\n  differential:\n    steps:\n      - run: cargo xtask parity --all\n  security:\n    steps:\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n";
+        let source = "\n  differential:\n    steps:\n      - run: cargo xtask parity --all\n  security:\n    steps:\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview\n      - run: cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml\n";
         let error = validate_release_differential_setup(source).unwrap_err();
         assert!(error.contains("release differential job"));
 
         let source = source.replace(
             "      - run: cargo xtask parity --all",
-            "      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo xtask parity --all",
+            "      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview\n      - run: cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml\n      - run: cargo xtask parity --all",
         );
         validate_release_differential_setup(&source).unwrap();
+        for required in [
+            "cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2",
+            "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml",
+            "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml",
+            "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml",
+        ] {
+            let error = validate_release_differential_setup(&source.replace(required, "missing"))
+                .unwrap_err();
+            assert!(error.contains(required));
+        }
     }
 
     #[test]
