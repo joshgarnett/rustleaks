@@ -1,5 +1,5 @@
 {
-  "checksum": "2d38e8ce2528a7ecec8b897bde0feae8be6ec2c167b7e5ac20c96dc898825355",
+  "checksum": "49fc8bbf3aa4ab366d7e856749c00f5fc258adddb9e279f5a50d7b7a899fd229",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -1791,14 +1791,14 @@
       ],
       "license_file": "LICENSE.txt"
     },
-    "regex-automata 0.4.7": {
+    "regex-automata 0.4.18": {
       "name": "regex-automata",
-      "version": "0.4.7",
-      "package_url": "https://github.com/rust-lang/regex/tree/master/regex-automata",
+      "version": "0.4.18",
+      "package_url": "https://github.com/rust-lang/regex",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/regex-automata/0.4.7/download",
-          "sha256": "38caf58cc5ef2fed281f89292ef23f6365465ed9a41b7a7754eb4e26496c92df"
+          "url": "https://static.crates.io/crates/regex-automata/0.4.18/download",
+          "sha256": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
         }
       },
       "targets": [
@@ -1842,14 +1842,14 @@
         "deps": {
           "common": [
             {
-              "id": "regex-syntax 0.8.4",
+              "id": "regex-syntax 0.8.11",
               "target": "regex_syntax"
             }
           ],
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.4.7"
+        "version": "0.4.18"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -1858,14 +1858,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "regex-syntax 0.8.4": {
+    "regex-syntax 0.8.11": {
       "name": "regex-syntax",
-      "version": "0.8.4",
-      "package_url": "https://github.com/rust-lang/regex/tree/master/regex-syntax",
+      "version": "0.8.11",
+      "package_url": "https://github.com/rust-lang/regex",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/regex-syntax/0.8.4/download",
-          "sha256": "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
+          "url": "https://static.crates.io/crates/regex-syntax/0.8.11/download",
+          "sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
         }
       },
       "targets": [
@@ -1903,7 +1903,7 @@
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.8.4"
+        "version": "0.8.11"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -2219,11 +2219,11 @@
               "target": "base64"
             },
             {
-              "id": "regex-automata 0.4.7",
+              "id": "regex-automata 0.4.18",
               "target": "regex_automata"
             },
             {
-              "id": "regex-syntax 0.8.4",
+              "id": "regex-syntax 0.8.11",
               "target": "regex_syntax"
             },
             {
@@ -3988,6 +3988,10 @@
               "target": "flate2"
             },
             {
+              "id": "semver 1.0.28",
+              "target": "semver"
+            },
+            {
               "id": "serde_json 1.0.151",
               "target": "serde_json"
             },
@@ -4235,8 +4239,8 @@
     "lzma-rust2 0.20.0",
     "miniz_oxide 0.9.1",
     "rawzip 0.5.1",
-    "regex-automata 0.4.7",
-    "regex-syntax 0.8.4",
+    "regex-automata 0.4.18",
+    "regex-syntax 0.8.11",
     "semver 1.0.28",
     "serde 1.0.229",
     "serde_json 1.0.151",

@@ -30,9 +30,9 @@ const GO_CAPTURE_NEST_LIMIT: usize = 999;
 const MAX_REPEAT: u32 = 1_000;
 const DEEP_COMPILE_THRESHOLD: usize = 200;
 const DEEP_COMPILE_STACK_SIZE: usize = 32 << 20;
-const BACKEND_VERSION: &str = "regex-automata-pikevm/0.4.7;unicode/15.0.0";
+const BACKEND_VERSION: &str = "regex-automata-pikevm/^0.4.12;regex-syntax/^0.8.5";
 
-/// Exact private backend identity retained for compatibility traceability.
+/// Private backend requirements retained for compatibility traceability.
 pub(crate) const fn backend_version() -> &'static str {
     BACKEND_VERSION
 }
@@ -40,7 +40,8 @@ pub(crate) const fn backend_version() -> &'static str {
 // Operational script names from Go 1.26's Unicode 15.0 regexp parser. Go
 // canonicalizes an input name before looking it up in `unicode.Scripts`, whose
 // multiword keys retain underscores; those keys are consequently unresolvable
-// and must not be accepted here.
+// and must not be accepted here. General categories and case folding use the
+// compatible regex-syntax backend and can include later Unicode additions.
 const GO_UNICODE_SCRIPTS: &str = "
 Adlam Ahom Arabic Armenian Avestan Balinese Bamum Batak Bengali Bhaiksuki Bopomofo
 Brahmi Braille Buginese Buhid Carian Chakma Cham Cherokee Chorasmian Common Coptic
@@ -1376,7 +1377,7 @@ impl<'a> Translator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Write as _;
 
     use super::{ByteSpan, GoRegex, GoRegexError, NormalizedHaystack, Translator, backend_version};
@@ -1427,6 +1428,34 @@ mod tests {
         *classes.entry(class).or_default() += 1;
         if details.len() < 50 {
             details.push(format!("{id}: {class}: {}", detail.into()));
+        }
+    }
+
+    fn record_match_outcome_mismatch(
+        classes: &mut BTreeMap<&'static str, usize>,
+        details: &mut Vec<String>,
+        approved_divergences: &mut BTreeSet<(String, &'static str)>,
+        class: &'static str,
+        id: &str,
+        outcome: (usize, usize),
+        detail: impl Into<String>,
+    ) {
+        let is_approved_unicode_16_divergence = matches!(
+            (id, class, outcome),
+            (
+                "adversarial/unicode15-u105c0-letter",
+                "match-exists" | "match-count",
+                (1, 0)
+            ) | (
+                "adversarial/unicode15-u105c0-not-letter",
+                "match-exists" | "match-count",
+                (0, 1)
+            )
+        );
+        if is_approved_unicode_16_divergence {
+            approved_divergences.insert((id.to_owned(), class));
+        } else {
+            record_mismatch(classes, details, class, id, detail);
         }
     }
 
@@ -1524,6 +1553,7 @@ mod tests {
         expected: &CorpusOutcome,
         classes: &mut BTreeMap<&'static str, usize>,
         details: &mut Vec<String>,
+        approved_divergences: &mut BTreeSet<(String, &'static str)>,
     ) {
         if regex.capture_count() != expected.compile.capture_count {
             record_mismatch(
@@ -1556,11 +1586,16 @@ mod tests {
             );
         }
         if regex.is_match(input) != expected.match_exists {
-            record_mismatch(
+            record_match_outcome_mismatch(
                 classes,
                 details,
+                approved_divergences,
                 "match-exists",
                 id,
+                (
+                    usize::from(regex.is_match(input)),
+                    usize::from(expected.match_exists),
+                ),
                 format!(
                     "Rust {} != Go {}",
                     regex.is_match(input),
@@ -1571,11 +1606,13 @@ mod tests {
 
         let actual_matches = regex.captures_all(input);
         if actual_matches.len() != expected.matches.len() {
-            record_mismatch(
+            record_match_outcome_mismatch(
                 classes,
                 details,
+                approved_divergences,
                 "match-count",
                 id,
+                (actual_matches.len(), expected.matches.len()),
                 format!(
                     "Rust {} != Go {}",
                     actual_matches.len(),
@@ -1609,10 +1646,10 @@ mod tests {
     }
 
     #[test]
-    fn identifies_the_private_backend_exactly() {
+    fn identifies_the_private_backend_requirements() {
         assert_eq!(
             backend_version(),
-            "regex-automata-pikevm/0.4.7;unicode/15.0.0"
+            "regex-automata-pikevm/^0.4.12;regex-syntax/^0.8.5"
         );
     }
 
@@ -2031,9 +2068,9 @@ mod tests {
     }
 
     #[test]
-    fn unicode_properties_use_the_pinned_unicode_15_tables() {
+    fn unicode_properties_use_the_compatible_backend_tables() {
         assert!(
-            !GoRegex::compile(r"\pL")
+            GoRegex::compile(r"\pL")
                 .unwrap()
                 .is_match("\u{105c0}".as_bytes())
         );
@@ -2149,7 +2186,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_go_regex_corpus_matches_all_manifest_outcomes() {
+    fn canonical_go_regex_corpus_matches_except_approved_unicode_16_edges() {
         const MANIFEST: &str = include_str!("../../../../compat/regex-corpus/manifest-v1.json");
         const REQUESTS: &str = include_str!("../../../../compat/regex-corpus/requests-v1.jsonl");
         const OUTCOMES: &str = include_str!("../../../../compat/regex-corpus/outcomes-v1.jsonl");
@@ -2165,6 +2202,7 @@ mod tests {
 
         let mut classes = BTreeMap::new();
         let mut details = Vec::new();
+        let mut approved_divergences = BTreeSet::new();
         let mut expected_compile_failures = 0;
 
         for (request_line, outcome_line) in requests.into_iter().zip(outcomes) {
@@ -2210,10 +2248,30 @@ mod tests {
                 &outcome,
                 &mut classes,
                 &mut details,
+                &mut approved_divergences,
             );
         }
 
         assert_eq!(expected_compile_failures, compile_error_count);
+        let expected_divergences = BTreeSet::from([
+            (
+                "adversarial/unicode15-u105c0-letter".to_owned(),
+                "match-count",
+            ),
+            (
+                "adversarial/unicode15-u105c0-letter".to_owned(),
+                "match-exists",
+            ),
+            (
+                "adversarial/unicode15-u105c0-not-letter".to_owned(),
+                "match-count",
+            ),
+            (
+                "adversarial/unicode15-u105c0-not-letter".to_owned(),
+                "match-exists",
+            ),
+        ]);
+        assert_eq!(approved_divergences, expected_divergences);
         assert!(
             classes.is_empty(),
             "GoRegex corpus mismatches by class: {classes:?}\n{}",
