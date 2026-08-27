@@ -40,7 +40,7 @@ jobs:
         working-directory: rustleaks
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo install cargo-fuzz --locked --version 0.13.2
+          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
       - name: Hydrate locked fuzz dependencies
         working-directory: rustleaks
         run: |

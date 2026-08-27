@@ -171,7 +171,7 @@ jobs:
           cargo install cargo-vet --locked --version 0.10.2
           cargo install cargo-geiger --locked --version 0.13.0
           rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview --component miri
-          cargo install cargo-fuzz --locked --version 0.13.2
+          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
           cargo +nightly-2026-08-21 miri setup
       - name: Hydrate locked release dependencies
         working-directory: rustleaks
