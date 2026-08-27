@@ -341,6 +341,7 @@ fn validate_release_differential_setup(source: &str) -> Result<(), String> {
         .and_then(|tail| tail.split("\n  security:\n").next())
         .ok_or("release workflow omits the differential job")?;
     for required in [
+        "cargo install cargo-public-api --locked --version 0.52.0",
         "rustup toolchain install nightly-2026-08-21 --profile minimal --component miri",
         "cargo +nightly-2026-08-21 miri setup",
         "cargo xtask parity --all",
@@ -609,14 +610,14 @@ mod tests {
     }
 
     #[test]
-    fn requires_miri_setup_in_the_release_differential_job() {
-        let source = "\n  differential:\n    steps:\n      - run: cargo xtask parity --all\n  security:\n    steps:\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n";
+    fn requires_parity_tools_in_the_release_differential_job() {
+        let source = "\n  differential:\n    steps:\n      - run: cargo xtask parity --all\n  security:\n    steps:\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n";
         let error = validate_release_differential_setup(source).unwrap_err();
         assert!(error.contains("release differential job"));
 
         let source = source.replace(
             "      - run: cargo xtask parity --all",
-            "      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo xtask parity --all",
+            "      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo xtask parity --all",
         );
         validate_release_differential_setup(&source).unwrap();
     }
