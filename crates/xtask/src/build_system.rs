@@ -678,6 +678,16 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "just ci test prebuild",
     )?;
     require_contains(&justfile, "go version", "just doctor Go version")?;
+    require_contains(
+        &justfile,
+        "go env GOVERSION",
+        "just doctor selected Go version",
+    )?;
+    require_contains(
+        &justfile,
+        "Go version mismatch: expected",
+        "just doctor exact Go version failure",
+    )?;
     for forbidden in ["cargo build", "cargo clippy", "cargo doc", "cargo test"] {
         require_not_contains(&justfile, forbidden, "normal just recipe")?;
     }

@@ -1,13 +1,25 @@
 set default-list
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
-# Report required tools and their selected versions without changing the workspace.
+# Report required tools and enforce the pinned Go version without changing the workspace.
+[unix]
 doctor:
     just --version
     bazelisk version
     cargo --version
     rustc --version
     go version
+    expected_go="$(tr -d '\r\n' < .go-version)"; actual_go="$(go env GOVERSION)"; test "$actual_go" = "go$expected_go" || { echo "Go version mismatch: expected go$expected_go, got $actual_go" >&2; exit 1; }
+
+# Report required tools and enforce the pinned Go version without changing the workspace.
+[windows]
+doctor:
+    just --version
+    bazelisk version
+    cargo --version
+    rustc --version
+    go version
+    $expectedGo = (Get-Content -Raw .go-version).Trim(); $actualGo = (go env GOVERSION).Trim(); if ($actualGo -ne "go$expectedGo") { throw "Go version mismatch: expected go$expectedGo, got $actualGo" }
 
 # Check Rust formatting through the authoritative Bazel graph.
 format:
