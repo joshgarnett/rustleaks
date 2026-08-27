@@ -2,7 +2,7 @@
 name = "rustleaks-rar-codec"
 version = "0.9.3-rustleaks.1"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 license-file = "COPYING"
 description = "Safe decode-only RAR3 and RAR5 codecs for rustleaks"
 publish = false

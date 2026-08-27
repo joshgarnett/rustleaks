@@ -5,7 +5,7 @@ inputs:
   rust-toolchain:
     description: Rust toolchain to make active.
     required: false
-    default: "1.98.0"
+    default: "1.88.0"
   rust-components:
     description: Comma-separated rustup components.
     required: false

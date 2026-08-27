@@ -18,7 +18,7 @@ const RELEASE_VERSION: &str = "0.1.0-alpha.2";
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
 const BAZEL_VERSION: &str = "9.2.0";
 const RULES_RUST_VERSION: &str = "0.72.0";
-const BAZEL_RUST_VERSION: &str = "1.85.0";
+const BAZEL_RUST_VERSION: &str = "1.88.0";
 
 const TARGETS: &[(&str, &str)] = &[
     ("x86_64-unknown-linux-gnu", "release-linux-x86_64-gnu"),

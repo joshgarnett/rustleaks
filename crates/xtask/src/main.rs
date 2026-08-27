@@ -592,7 +592,7 @@ fn validate_core_repository_metadata(metadata: &str) -> Result<(), String> {
         ("homepage", "https://github.com/joshgarnett/rustleaks"),
         ("documentation", "https://docs.rs/rustleaks-core"),
         ("readme", "README.md"),
-        ("rust_version", "1.85"),
+        ("rust_version", "1.88"),
     ] {
         if package[field].as_str() != Some(expected) {
             return Err(format!(
@@ -960,7 +960,7 @@ fn run_external_bazel_consumer(staging: &Path, package: &Path) -> Result<(), Str
 bazel_dep(name = "rules_rust", version = "0.72.0")
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
-rust.toolchain(edition = "2024", versions = ["1.85.0"])
+rust.toolchain(edition = "2024", versions = ["1.88.0"])
 use_repo(rust, "rust_toolchains")
 register_toolchains("@rust_toolchains//:all")
 
@@ -1291,7 +1291,7 @@ fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
         "sha2@0.11.0",
         "syn@3.0.4",
         "toml_parser@1.1.3+spec-1.1.0",
-        "twox-hash@2.1.3",
+        "twox-hash@2.1.4",
         "unicode-ident@1.0.24",
         "winnow@1.0.4",
         "zmij@1.0.23",
@@ -1782,7 +1782,7 @@ fn quality_check() -> Result<(), String> {
         &root,
         &target,
         &[
-            "+1.85.0",
+            "+1.88.0",
             "check",
             "--workspace",
             "--all-targets",
@@ -1790,7 +1790,7 @@ fn quality_check() -> Result<(), String> {
             "--locked",
             "--offline",
         ],
-        "Rust 1.85 MSRV check",
+        "Rust 1.88 MSRV check",
     )?;
     println!("local quality and MSRV checks passed; Bazel owns the supported target matrix");
     Ok(())
@@ -3325,7 +3325,7 @@ mod tests {
                 "homepage": "https://github.com/joshgarnett/rustleaks",
                 "documentation": "https://docs.rs/rustleaks-core",
                 "readme": "README.md",
-                "rust_version": "1.85",
+                "rust_version": "1.88",
                 "keywords": ["gitleaks", "secret-detection", "security", "scanner"],
                 "categories": ["development-tools"],
                 "metadata": {"docs": {"rs": {

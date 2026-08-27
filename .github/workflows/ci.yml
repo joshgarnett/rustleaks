@@ -62,7 +62,7 @@ jobs:
         working-directory: rustleaks
         run: |
           rustup toolchain install stable --profile minimal
-          rustup toolchain install 1.85.0 --profile minimal
+          rustup toolchain install 1.88.0 --profile minimal
       - name: Check current stable feature profiles
         working-directory: rustleaks
         run: |
@@ -71,7 +71,7 @@ jobs:
           cargo +stable check --workspace --all-targets --no-default-features --locked
       - name: Check the declared MSRV
         working-directory: rustleaks
-        run: cargo +1.85.0 check --workspace --all-targets --all-features --locked
+        run: cargo +1.88.0 check --workspace --all-targets --all-features --locked
 
   security:
     name: Security policy

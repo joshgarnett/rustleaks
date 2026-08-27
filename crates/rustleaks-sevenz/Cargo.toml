@@ -2,7 +2,7 @@
 name = "rustleaks-sevenz"
 version = "0.20.2-rustleaks.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "Apache-2.0"
 description = "Safe bounded 7z decoder for rustleaks"
 publish = false

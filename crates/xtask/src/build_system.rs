@@ -474,7 +474,7 @@ fn check_module(root: &Path) -> Result<(), String> {
         "manifests = [\"//:Cargo.toml\"]",
         "patches = [\"//bazel:git_macos_no_fsmonitor.patch\"]",
         "regen_command = \"just deps-repin\"",
-        "versions = [\"1.85.0\"]",
+        "versions = [\"1.88.0\"]",
     ] {
         require_contains(&module, required, "crate-universe module contract")?;
     }

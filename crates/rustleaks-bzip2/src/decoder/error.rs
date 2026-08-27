@@ -20,8 +20,8 @@ pub enum DecoderError {
 impl Display for DecoderError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            DecoderError::Header(err) => write!(f, "header: {}", err),
-            DecoderError::Block(err) => write!(f, "block: {}", err),
+            DecoderError::Header(err) => write!(f, "header: {err}"),
+            DecoderError::Block(err) => write!(f, "block: {err}"),
         }
     }
 }
