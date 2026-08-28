@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -132,6 +133,13 @@ func TestSourceProtocolTraversalAndSymlinkMetadata(t *testing.T) {
 			{Path: "link.txt", Kind: "symlink", Target: "target.txt"},
 		},
 	})
+	if runtime.GOOS == "windows" {
+		if result.Error != nil || len(result.Fragments) != 1 ||
+			result.Fragments[0].FileBase64 != b64("tree/target.txt") || result.Fragments[0].SymlinkFileBase64 != "" {
+			t.Fatalf("Windows symlink filtering changed: %#v", result)
+		}
+		return
+	}
 	if result.Error != nil || len(result.Fragments) != 2 {
 		t.Fatalf("symlink traversal changed: %#v", result)
 	}
