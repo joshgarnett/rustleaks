@@ -27,8 +27,8 @@ from empty byte slices. Archive requests use provenance-tracked copies under
 `compat/fixtures/upstream`, whose hashes are frozen in `coverage-v1.json`.
 `coverage-v1.json` embeds the authoritative definition for every `SRC-001`
 through `SRC-030`, material assertions aligned to those definitions, and an
-explicit per-ID gap list where native or Rust implementation evidence is still
-mandatory.
+explicit per-ID gap list for unresolved behavior that still needs separately
+controlled evidence.
 
 Regenerate or verify from the repository root:
 
@@ -37,8 +37,9 @@ cargo xtask generate source
 cargo xtask generate source --check
 ```
 
-Outcomes record the generating GOOS/GOARCH. Windows symlink behavior and native
-separator metadata require native Windows CI confirmation rather than emulation.
+Outcomes record the generating GOOS/GOARCH. Native Linux and Windows workflows
+replay the pinned source oracle and target-specific Bazel tests; the Windows
+suite directly checks raw and slash-normalized path matching.
 ";
 
 pub(crate) fn check_source_corpus(root: &Path) -> Result<(), String> {
@@ -64,7 +65,8 @@ struct Generated {
 fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     let corpus = root.join("compat/source-corpus");
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
-    let coverage = read(&corpus.join("coverage-v1.json"))?;
+    let legacy_coverage = read(&corpus.join("coverage-v1.json"))?;
+    let coverage = transition_coverage(&legacy_coverage)?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
     let legacy_readme = read(&corpus.join("README.md"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
@@ -130,6 +132,7 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         &legacy_manifest,
         &manifest_value,
         README.as_bytes(),
+        &coverage,
         outcome_bytes,
         outcome_values,
     )?;
@@ -141,6 +144,60 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     tree.insert("README.md", README.as_bytes())?;
     tree.insert("manifest-v1.json", manifest.clone())?;
     Ok(Generated { tree, manifest })
+}
+
+fn transition_coverage(legacy: &[u8]) -> Result<Vec<u8>, String> {
+    let mut rendered = replace_text_transition(
+        legacy,
+        "  \"platform_contract\": \"host GOOS/GOARCH is recorded; Windows symlink creation/metadata remains a native CI lane obligation\",\n",
+        "  \"platform_contract\": \"host GOOS/GOARCH is recorded; native Linux and Windows workflows replay pinned oracle generation and target-specific Bazel tests\",\n",
+        "source platform contract",
+    )?;
+    rendered = replace_text_transition(
+        &rendered,
+        "    \"SRC-012\": \"native Unix permission denial is covered; metadata TOCTOU still requires deterministic filesystem fault injection\",\n    \"SRC-013\": \"Windows raw-plus-slash allowlist fallback requires native Windows\",\n    \"SRC-016\": \"chained, dangling, and looping links are covered; an escaping-but-valid target requires a separately controlled parent fixture\",\n    \"SRC-017\": \"NFC/NFD and Windows drive/UNC/extended/mixed spellings are generated natively; Windows evidence requires the declared native workflow to run\",\n",
+        "    \"SRC-012\": \"native Unix permission denial is covered; metadata TOCTOU still requires deterministic filesystem fault injection\",\n    \"SRC-016\": \"chained, dangling, and looping links are covered; an escaping-but-valid target requires a separately controlled parent fixture\",\n",
+        "resolved Windows source gaps",
+    )?;
+    replace_text_transition(
+        &rendered,
+        "    \"SRC-029\": \"Go size/depth gates are covered; Rust checked-overflow, expansion, entry, and spool limits are implementation obligations\",\n    \"SRC-030\": \"native path and permission overlays carry platform provenance; safe Rust crate boundaries and dependency audits are implementation evidence\"\n",
+        "    \"SRC-029\": \"Go size/depth gates are covered; Rust checked-overflow, expansion, entry, and spool limits are implementation obligations\"\n",
+        "resolved native source workflow gap",
+    )
+}
+
+fn replace_text_transition(
+    bytes: &[u8],
+    old: &str,
+    new: &str,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let old_count = bytes
+        .windows(old.len())
+        .filter(|value| *value == old.as_bytes())
+        .count();
+    let new_count = bytes
+        .windows(new.len())
+        .filter(|value| *value == new.as_bytes())
+        .count();
+    match (old_count, new_count) {
+        (1, 0) => {
+            let start = bytes
+                .windows(old.len())
+                .position(|value| value == old.as_bytes())
+                .expect("counted transition");
+            let mut result = Vec::with_capacity(bytes.len() - old.len() + new.len());
+            result.extend_from_slice(&bytes[..start]);
+            result.extend_from_slice(new.as_bytes());
+            result.extend_from_slice(&bytes[start + old.len()..]);
+            Ok(result)
+        }
+        (0, 1) => Ok(bytes.to_vec()),
+        _ => Err(format!(
+            "expected exactly one old or current {label}, found {old_count}/{new_count}"
+        )),
+    }
 }
 
 fn parse_json(bytes: &[u8], label: &str) -> Result<Value, String> {

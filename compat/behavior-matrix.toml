@@ -216,8 +216,8 @@ status = "implemented"
 id = "GIT-022"
 description = "Owned Git code forbids unsafe and uses portable native Rust across macOS, Linux, and Windows."
 go_evidence = "sources"
-rust_evidence = "crates/rustleaks-sources/src/lib.rs; .github/workflows/ci.yml"
-status = "implemented-native-linux-windows-runtime-follow-up"
+rust_evidence = "crates/rustleaks-sources/src/lib.rs; crates/rustleaks-sources/tests/git_sources.rs; crates/rustleaks-sources/tests/git_corpus.rs; .github/workflows/ci.yml native jobs and pinned oracle replay"
+status = "implemented"
 
 [[behavior]]
 id = "GIT-023"
@@ -727,8 +727,8 @@ status = "implemented-safe-boundary"
 id = "SRC-013"
 description = "Global path allowlists prune directories early and skip discovered files or aliases, with Windows raw-plus-slash checks."
 go_evidence = "sources/files.go; compat/source-corpus"
-rust_evidence = "crates/rustleaks-core/src/config/compiled.rs; crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/archive_sources.rs"
-status = "implemented-pending-native-windows"
+rust_evidence = "crates/rustleaks-core/src/config/compiled.rs; crates/rustleaks-sources/src/directory.rs; crates/rustleaks-sources/tests/archive_sources.rs; crates/rustleaks-sources/tests/native_sources.rs; .github/workflows/ci.yml native Windows jobs"
+status = "implemented"
 
 [[behavior]]
 id = "SRC-014"
@@ -755,8 +755,8 @@ status = "implemented-safe-boundary"
 id = "SRC-017"
 description = "Physical paths stay as PathBuf; logical fragment paths reproduce host Go cleaning and Windows slash/original dual fields without Unicode normalization."
 go_evidence = "sources/file.go; sources/files.go; compat/source-corpus"
-rust_evidence = "crates/rustleaks-sources/src/path.rs; crates/rustleaks-sources/tests/native_sources.rs"
-status = "implemented-pending-native-windows"
+rust_evidence = "crates/rustleaks-sources/src/path.rs; crates/rustleaks-sources/tests/native_sources.rs; .github/workflows/ci.yml native Windows jobs"
+status = "implemented"
 
 [[behavior]]
 id = "SRC-018"
@@ -846,15 +846,15 @@ status = "implemented-safe-boundary"
 id = "SRC-030"
 description = "rustleaks-sources and its archive feature are safe, synchronous, native macOS/Linux/Windows Rust and keep all source, archive, and scheduler dependencies out of rustleaks-core."
 go_evidence = "sources; compat/source-corpus"
-rust_evidence = ".github/workflows/ci.yml; crates/rustleaks-sources/src/lib.rs; docs/DEPENDENCIES.md"
-status = "implemented-pending-native-ci"
+rust_evidence = ".github/workflows/ci.yml native jobs and pinned oracle replay; crates/rustleaks-sources/src/lib.rs; docs/DEPENDENCIES.md"
+status = "implemented"
 
 [[behavior]]
 id = "REPORT-001"
 description = "Reusable synchronous reporters preserve finding order and duplicates, return structured errors, and never close, flush, log, panic, or interpret finding paths."
 go_evidence = "report; compat/report-corpus"
-rust_evidence = "crates/rustleaks-report/src/lib.rs; crates/rustleaks-report/tests/report_corpus.rs; cargo xtask report-check; .github/workflows/ci.yml"
-status = "implemented-native-linux-windows-runtime-follow-up"
+rust_evidence = "crates/rustleaks-report/src/lib.rs; crates/rustleaks-report/tests/report_corpus.rs; cargo xtask generate report --check; .github/workflows/ci.yml native jobs"
+status = "implemented"
 
 [[behavior]]
 id = "REPORT-002"
@@ -1028,8 +1028,8 @@ status = "implemented-safe-error-dispositions"
 id = "CLI-015"
 description = "CLI orchestration uses native Path/OsStr/process arguments, injected cwd/environment and I/O, no shell or global context mutation, and safe synchronous Rust across the three first-class target families."
 go_evidence = "cmd; sources"
-rust_evidence = "crates/rustleaks-cli/src/lib.rs; crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/src/source.rs; .github/workflows/ci.yml"
-status = "implemented-native-linux-windows-runtime-follow-up"
+rust_evidence = "crates/rustleaks-cli/src/lib.rs; crates/rustleaks-cli/src/run.rs; crates/rustleaks-cli/src/source.rs; compat/cli-corpus/native-linux-v1.json; .github/workflows/ci.yml native jobs"
+status = "implemented"
 
 [[behavior]]
 id = "CLI-SAFE-001"

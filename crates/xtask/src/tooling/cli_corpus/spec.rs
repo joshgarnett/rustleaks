@@ -119,28 +119,34 @@ fn validate_variant(value: &Value, label: &str) -> Result<(), String> {
 
 fn validate_accounting(manifest: &Value) -> Result<(), String> {
     for (field, value) in [
-        ("paired_observation_pair_count", 118),
-        ("paired_observation_process_count", 236),
+        ("paired_observation_pair_count", 119),
+        ("paired_observation_process_count", 238),
         ("auxiliary_cli_process_count", 4),
-        ("fresh_cli_process_count", 240),
-        ("exact_variant_count", 100),
-        ("versioned_disposition_variant_count", 19),
+        ("fresh_cli_process_count", 242),
+        ("exact_variant_count", 101),
+        ("versioned_disposition_variant_count", 18),
         (
             "complete_duplicate_preserving_finding_count_both_implementations",
-            100,
+            102,
         ),
-        ("raw_report_byte_count_both_implementations", 48_732),
+        ("raw_report_byte_count_both_implementations", 49_540),
         ("parser_usage_byte_count_both_implementations", 19_508),
-        ("stderr_event_count_both_implementations", 884),
+        ("stderr_event_count_both_implementations", 888),
         ("mutation_control_count", 20),
     ] {
         if required_u64(manifest, field, "manifest")? != value {
             return Err(format!("CLI manifest {field} changed"));
         }
     }
-    if required_str(manifest, "runtime_provenance_policy", "manifest")?
-        != "independently-validated-then-omitted"
-    {
+    if ![
+        "independently-validated-then-omitted",
+        "independently-validated-with-native-linux-record",
+    ]
+    .contains(&required_str(
+        manifest,
+        "runtime_provenance_policy",
+        "manifest",
+    )?) {
         return Err("CLI runtime provenance policy changed".into());
     }
     Ok(())

@@ -11,6 +11,8 @@ use rustleaks_core::Engine;
 use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{ByteText, Fragment, ScanOptions};
 use rustleaks_core::session::{IgnoreSet, SessionPolicy};
+#[cfg(windows)]
+use rustleaks_sources::LogicalPath;
 use rustleaks_sources::{
     CallbackError, Cancellation, CancellationToken, DirectoryOptions, DirectorySource, FileOptions,
     FileSource, ReadOutcome, ReadStatus, Source, SourceControl, SourceError, SourceEvent,
@@ -241,6 +243,42 @@ fn directory_source_preserves_invalid_unix_filename_bytes() {
             .ends_with(b"invalid-\xff-name")
     );
     assert!(issues.is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_native_paths_retain_raw_spelling_and_match_both_forms() {
+    let logical = LogicalPath::from_native(Path::new(r"C:\work\mixed/path"));
+    assert_eq!(logical.normalized().as_bytes(), b"C:/work/mixed/path");
+    let original = logical
+        .windows_original()
+        .expect("Windows path retains its native spelling");
+    assert_eq!(original.as_bytes(), br"C:\work\mixed/path");
+
+    for (pattern, matches_normalized) in [
+        (r"^C:/work/mixed/path$", true),
+        (r"^C:\\work\\mixed/path$", false),
+    ] {
+        let config = ConfigLoader::new()
+            .load_toml(&format!(
+                r#"
+                [[rules]]
+                id = "unused"
+                regex = '''never-match'''
+
+                [[allowlists]]
+                paths = ['''{pattern}''']
+                "#,
+            ))
+            .expect("compile Windows path allowlist");
+        assert_eq!(
+            config.source_path_allowed(logical.normalized().as_bytes(), None),
+            matches_normalized,
+        );
+        assert!(
+            config.source_path_allowed(logical.normalized().as_bytes(), Some(original.as_bytes()),)
+        );
+    }
 }
 
 #[test]

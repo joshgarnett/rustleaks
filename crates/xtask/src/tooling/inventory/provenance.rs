@@ -10,6 +10,9 @@ pub(super) fn transition(root: &Path, canonical: &str) -> Result<String, String>
         return Err("test manifest has an unknown generator header".into());
     }
     let mut output = canonical.to_owned();
+    ensure_cli_native_linux_field(root, &mut output)?;
+    ensure_cli_unix_path_field(root, &mut output)?;
+    transition_cli_native_metrics(&mut output)?;
     refresh_artifact_hashes(root, &mut output)?;
     let generators = [
         (
@@ -68,6 +71,69 @@ pub(super) fn transition(root: &Path, canonical: &str) -> Result<String, String>
     additions.push("inventory_generator_command = \"cargo xtask generate inventory\"".into());
     insert_at_end_of_table(&mut output, "traceability_corpora", &additions)?;
     Ok(output)
+}
+
+fn ensure_cli_unix_path_field(root: &Path, output: &mut String) -> Result<(), String> {
+    if output.contains("cli_unix_path_sha256 = ") {
+        return Ok(());
+    }
+    let marker = "cli_native_linux_sha256 = \"";
+    let start = output
+        .find(marker)
+        .ok_or("test manifest lacks cli_native_linux_sha256")?;
+    let end = start
+        + output[start..]
+            .find('\n')
+            .ok_or("test manifest has malformed cli_native_linux_sha256")?
+        + 1;
+    let hash = sha256_file(&root.join("compat/cli-corpus/unix-path-v1.json"))?;
+    output.insert_str(end, &format!("cli_unix_path_sha256 = \"{hash}\"\n"));
+    Ok(())
+}
+
+fn transition_cli_native_metrics(output: &mut String) -> Result<(), String> {
+    for (key, old, new) in [
+        ("cli_fresh_processes", "240", "242"),
+        ("cli_exact_variants", "100", "101"),
+        ("cli_disposition_variants", "19", "18"),
+        ("cli_findings_both", "100", "102"),
+        ("cli_report_bytes_both", "48732", "49540"),
+        ("cli_stderr_events_both", "884", "888"),
+    ] {
+        let old_line = format!("{key} = {old}\n");
+        let new_line = format!("{key} = {new}\n");
+        match (
+            output.matches(&old_line).count(),
+            output.matches(&new_line).count(),
+        ) {
+            (1, 0) => *output = output.replacen(&old_line, &new_line, 1),
+            (0, 1) => {}
+            (old_count, new_count) => {
+                return Err(format!(
+                    "expected one old or current {key}, found {old_count}/{new_count}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_cli_native_linux_field(root: &Path, output: &mut String) -> Result<(), String> {
+    if output.contains("cli_native_linux_sha256 = ") {
+        return Ok(());
+    }
+    let marker = "cli_readme_sha256 = \"";
+    let start = output
+        .find(marker)
+        .ok_or("test manifest lacks cli_readme_sha256")?;
+    let end = start
+        + output[start..]
+            .find('\n')
+            .ok_or("test manifest has malformed cli_readme_sha256")?
+        + 1;
+    let hash = sha256_file(&root.join("compat/cli-corpus/native-linux-v1.json"))?;
+    output.insert_str(end, &format!("cli_native_linux_sha256 = \"{hash}\"\n"));
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)] // The path-to-field authority is intentionally adjacent and reviewable.
@@ -249,6 +315,14 @@ fn refresh_artifact_hashes(root: &Path, output: &mut String) -> Result<(), Strin
         ),
         ("cli_manifest_sha256", "compat/cli-corpus/manifest-v1.json"),
         ("cli_readme_sha256", "compat/cli-corpus/README.md"),
+        (
+            "cli_native_linux_sha256",
+            "compat/cli-corpus/native-linux-v1.json",
+        ),
+        (
+            "cli_unix_path_sha256",
+            "compat/cli-corpus/unix-path-v1.json",
+        ),
     ] {
         let path = root.join(relative);
         if !path.is_file() {

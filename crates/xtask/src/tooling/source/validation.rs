@@ -177,6 +177,7 @@ pub(super) fn render_manifest(
     legacy: &[u8],
     manifest: &Value,
     readme: &[u8],
+    coverage: &[u8],
     outcome_bytes: &[u8],
     outcomes: &[Value],
 ) -> Result<Vec<u8>, String> {
@@ -200,6 +201,17 @@ pub(super) fn render_manifest(
         old.as_bytes(),
         sha256_bytes(outcome_bytes).as_bytes(),
         "outcome digest",
+    )?;
+    let old = required_str(
+        &required_object(manifest, "files", "manifest")?["coverage-v1.json"],
+        "sha256",
+        "coverage",
+    )?;
+    let rendered = replace_once(
+        &rendered,
+        old.as_bytes(),
+        sha256_bytes(coverage).as_bytes(),
+        "coverage digest",
     )?;
     let old = required_str(
         &required_object(manifest, "files", "manifest")?["README.md"],
@@ -365,20 +377,30 @@ mod tests {
             "platform": "darwin/arm64",
             "files": {
                 "outcomes-v1.jsonl": {"sha256": "old-outcomes"},
+                "coverage-v1.json": {"sha256": "old-coverage"},
                 "README.md": {"sha256": "old-readme"}
             }
         });
         let legacy = br#"{
   "platform": "darwin/arm64",
   "outcomes": "old-outcomes",
+  "coverage": "old-coverage",
   "readme": "old-readme"
 }"#;
         let outcomes = [json!({"platform": "linux/amd64"})];
-        let rendered =
-            render_manifest(legacy, &manifest, b"readme", b"outcomes", &outcomes).unwrap();
+        let rendered = render_manifest(
+            legacy,
+            &manifest,
+            b"readme",
+            b"coverage",
+            b"outcomes",
+            &outcomes,
+        )
+        .unwrap();
         let rendered = String::from_utf8(rendered).unwrap();
         assert!(rendered.contains("\"platform\": \"linux/amd64\""));
         assert!(rendered.contains(&sha256_bytes(b"outcomes")));
+        assert!(rendered.contains(&sha256_bytes(b"coverage")));
         assert!(rendered.contains(&sha256_bytes(b"readme")));
     }
 }

@@ -6,12 +6,12 @@
   "build_version": "0.1.0-alpha.3",
   "case_count": 34,
   "variant_count": 119,
-  "paired_observation_pair_count": 118,
-  "paired_observation_process_count": 236,
+  "paired_observation_pair_count": 119,
+  "paired_observation_process_count": 238,
   "auxiliary_cli_process_count": 4,
-  "fresh_cli_process_count": 240,
-  "exact_variant_count": 100,
-  "versioned_disposition_variant_count": 19,
+  "fresh_cli_process_count": 242,
+  "exact_variant_count": 101,
+  "versioned_disposition_variant_count": 18,
   "disposition_counts": {
     "CLI-DEFER-001": 2,
     "CLI-SAFE-001": 3,
@@ -19,7 +19,6 @@
     "CLI-SAFE-003": 7,
     "CLI-SAFE-004": 2,
     "CLI-SAFE-005": 2,
-    "FOLLOWUP-NATIVE-M11-001": 1,
     "REPORT-SAFE-001": 1
   },
   "safe_dispositions": {
@@ -31,15 +30,14 @@
   },
   "other_dispositions": {
     "CLI-DEFER-001": "Cobra-only commands and diagnostics stay omitted; Rustleaks-native names are added while legacy spellings remain backward-compatible aliases.",
-    "REPORT-SAFE-001": "Rust uses the reviewed deterministic capability-free safe-template profile; Go helpers outside that profile are not reproduced.",
-    "FOLLOWUP-NATIVE-M11-001": "Native Linux and Windows runtime replay is unavailable and nonblocking; cross-compilation is not runtime evidence."
+    "REPORT-SAFE-001": "Rust uses the reviewed deterministic capability-free safe-template profile; Go helpers outside that profile are not reproduced."
   },
-  "complete_duplicate_preserving_finding_count_both_implementations": 100,
-  "raw_report_byte_count_both_implementations": 48732,
+  "complete_duplicate_preserving_finding_count_both_implementations": 102,
+  "raw_report_byte_count_both_implementations": 49540,
   "parser_usage_byte_count_both_implementations": 19508,
-  "stderr_event_count_both_implementations": 884,
+  "stderr_event_count_both_implementations": 888,
   "mutation_control_count": 20,
-  "generator_sha256": "56494d142fcb74bd8f93a8161333fc6ea9dd09624b6cdd7123f810fe6d66fe53",
+  "generator_sha256": "7ecc7bb46ce3abffbf3b3d71b4f5c535cd6cd01dd67ed031625243d4781d03c7",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",
@@ -80,12 +78,14 @@
     "crates/rustleaks-cli/src/source.rs": "2803d6bde7c68504ac7f3f04ec7bbca5c70f7a95da27bed12b61e91c3351625e"
   },
   "requests_sha256": "32126f7d65e15f526836391b681811809d799eaf79066b5e60f9bb48191eb6c4",
-  "outcomes_sha256": "2d1f1f679ca552f7563e4c3313e4215c0d7e89317304db723a4c6d2321b2a791",
+  "outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
   "negative_controls_sha256": "fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152",
-  "runtime_provenance_policy": "independently-validated-then-omitted",
+  "unix_path_outcome_sha256": "0e1a0b277a71bbd09e5a24473a8b20c7feebafebd56389220ca493b7928bda61",
+  "native_linux_outcome_sha256": "b13c67ca0b0fba8dd62364699c898be335ac174f494b3be6450b33a30dbeb240",
+  "runtime_provenance_policy": "independently-validated-with-native-linux-record",
   "native_runtime_evidence": {
-    "generation_host": "validated-but-omitted",
-    "linux": "FOLLOWUP-NATIVE-M11-001",
-    "windows": "FOLLOWUP-NATIVE-M11-001"
+    "generation_host": "validated-and-recorded",
+    "linux": "native-linux-v1.json exact replay plus native Bazel tests",
+    "windows": "pinned oracle replay plus native Bazel tests"
   }
 }

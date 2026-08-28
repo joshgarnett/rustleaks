@@ -266,11 +266,15 @@ jobs:
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
         run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Replay native CLI evidence
+      - name: Replay native compatibility evidence
         working-directory: rustleaks
         run: |
           cargo fetch --locked
-          cargo xtask generate cli --output ../cli-native-evidence
+          cargo xtask verify-upstream
+          cargo xtask generate source --check
+          cargo xtask generate git --check
+          cargo xtask generate report --check
+          cargo xtask generate cli --check
       - name: Build and test the native target
         working-directory: rustleaks
         env:
@@ -361,6 +365,13 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
+      - name: Check out the pinned Go oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -379,6 +390,22 @@ jobs:
           if ($actual -ne $env:EXPECTED_ARCHITECTURE) {
             throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual"
           }
+      - name: Replay native compatibility evidence
+        shell: pwsh
+        working-directory: rustleaks
+        run: |
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask verify-upstream
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate source --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate git --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate report --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate cli --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and test the native target
         shell: pwsh
         working-directory: rustleaks

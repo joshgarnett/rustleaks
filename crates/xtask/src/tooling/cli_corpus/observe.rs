@@ -198,16 +198,29 @@ pub(super) fn row_json(
     row: &Value,
     go_binary: &Path,
     rust_binary: &Path,
+    native_linux: &str,
+    unix_path: &str,
 ) -> Result<String, String> {
+    validate_committed_variant(native_linux, "native-non-utf8", 1, 1, 404)?;
+    validate_committed_variant(unix_path, "windows-drive-unc-spellings", 0, 0, 3)?;
     let case_id = required_str(row, "id", "CLI request")?;
     let mut variants = Vec::new();
     for spec in required_array(row, "variants", case_id)? {
         let variant_id = required_str(spec, "id", case_id)?;
-        if linux_only(spec) && !cfg!(target_os = "linux") {
-            variants.push(format!(
-                "{{\"id\":{},\"status\":\"native-runtime-followup\",\"disposition\":\"FOLLOWUP-NATIVE-M11-001\"}}",
-                quote(variant_id)
-            ));
+        let committed = if linux_only(spec) {
+            Some(native_linux)
+        } else if unix_only(spec) {
+            Some(unix_path)
+        } else {
+            None
+        };
+        if linux_only(spec) && !cfg!(target_os = "linux") || unix_only(spec) && cfg!(windows) {
+            variants.push(
+                committed
+                    .expect("host-specific evidence selected")
+                    .trim_end()
+                    .to_owned(),
+            );
             continue;
         }
         let go = observe(go_binary, "go", case_id, spec, go_binary)?;
@@ -221,8 +234,10 @@ pub(super) fn row_json(
             rust.json,
             comparison(&go, &rust, disposition)
         );
-        if linux_only(spec) {
-            println!("native CLI evidence: {variant}");
+        if committed.is_some_and(|evidence| variant != evidence.trim_end()) {
+            return Err(format!(
+                "{case_id}/{variant_id}: host-specific observation differs from committed evidence"
+            ));
         }
         variants.push(variant);
     }
@@ -232,6 +247,50 @@ pub(super) fn row_json(
         quote(required_str(row, "title", case_id)?),
         variants.join(",")
     ))
+}
+
+fn validate_committed_variant(
+    bytes: &str,
+    expected_id: &str,
+    expected_exit: i64,
+    expected_findings: u64,
+    expected_report_bytes: u64,
+) -> Result<(), String> {
+    if !bytes.ends_with('\n') || bytes[..bytes.len() - 1].contains('\n') {
+        return Err("host-specific CLI evidence must be one newline-terminated JSON object".into());
+    }
+    let value: Value = serde_json::from_str(bytes)
+        .map_err(|error| format!("invalid host-specific CLI evidence: {error}"))?;
+    if required_str(&value, "id", "host-specific evidence")? != expected_id {
+        return Err("host-specific CLI evidence identity changed".into());
+    }
+    for implementation in ["go", "rust"] {
+        let observation = value
+            .get(implementation)
+            .ok_or_else(|| format!("native Linux evidence is missing {implementation}"))?;
+        if observation.get("exit").and_then(Value::as_i64) != Some(expected_exit)
+            || observation.get("finding_count").and_then(Value::as_u64) != Some(expected_findings)
+            || observation.pointer("/report/bytes").and_then(Value::as_u64)
+                != Some(expected_report_bytes)
+        {
+            return Err(format!(
+                "host-specific {implementation} observation contract changed"
+            ));
+        }
+    }
+    let comparison = value
+        .get("comparison")
+        .ok_or("native Linux comparison is missing")?;
+    if comparison.get("status").and_then(Value::as_str) != Some("exact")
+        || comparison.get("disposition") != Some(&Value::Null)
+        || comparison
+            .get("axes")
+            .and_then(Value::as_object)
+            .is_none_or(|axes| axes.len() != 7 || axes.values().any(|axis| axis != "equal"))
+    {
+        return Err("host-specific exact comparison contract changed".into());
+    }
+    Ok(())
 }
 
 struct Report {
@@ -350,11 +409,7 @@ fn validate_expected_pair(
     go: &Observation,
     rust: &Observation,
 ) -> Result<(), String> {
-    if spec
-        .pointer("/expectation/linux_only")
-        .and_then(Value::as_bool)
-        != Some(true)
-    {
+    if !linux_only(spec) && !unix_only(spec) {
         return Ok(());
     }
     let label = format!("{case_id}/{variant_id}");
@@ -387,6 +442,12 @@ fn validate_expected_pair(
 
 fn linux_only(spec: &Value) -> bool {
     spec.pointer("/expectation/linux_only")
+        .and_then(Value::as_bool)
+        == Some(true)
+}
+
+fn unix_only(spec: &Value) -> bool {
+    spec.pointer("/expectation/unix_only")
         .and_then(Value::as_bool)
         == Some(true)
 }

@@ -12,8 +12,8 @@ use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
-    "df7ad24ae9ef4cf00d90ef9341d2f5a5a6c7ef3e6b6e5021d964d2ad879d4cdb",
     "2d1f1f679ca552f7563e4c3313e4215c0d7e89317304db723a4c6d2321b2a791",
+    "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
 );
 
 pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), String> {
@@ -92,6 +92,8 @@ pub(super) fn render_manifest(
     legacy: &[u8],
     manifest: &Value,
     generator_hash: &str,
+    native_linux_hash: &str,
+    unix_path_hash: &str,
 ) -> Result<Vec<u8>, String> {
     let old = required_str(manifest, "generator_sha256", "manifest")?;
     let mut rendered = legacy.to_vec();
@@ -118,12 +120,175 @@ pub(super) fn render_manifest(
             &format!("{path} transition"),
         )?;
     }
-    replace_declared_transition(
+    rendered = replace_declared_transition(
         &rendered,
         DECLARED_OUTCOME_TRANSITION.0.as_bytes(),
         DECLARED_OUTCOME_TRANSITION.1.as_bytes(),
         "CLI outcomes transition",
-    )
+    )?;
+    for (old, new, label) in [
+        (
+            "  \"paired_observation_pair_count\": 118,\n",
+            "  \"paired_observation_pair_count\": 119,\n",
+            "paired observation count",
+        ),
+        (
+            "  \"paired_observation_process_count\": 236,\n",
+            "  \"paired_observation_process_count\": 238,\n",
+            "observation process count",
+        ),
+        (
+            "  \"fresh_cli_process_count\": 240,\n",
+            "  \"fresh_cli_process_count\": 242,\n",
+            "fresh process count",
+        ),
+        (
+            "  \"exact_variant_count\": 100,\n",
+            "  \"exact_variant_count\": 101,\n",
+            "exact variant count",
+        ),
+        (
+            "  \"versioned_disposition_variant_count\": 19,\n",
+            "  \"versioned_disposition_variant_count\": 18,\n",
+            "disposition variant count",
+        ),
+        (
+            "  \"complete_duplicate_preserving_finding_count_both_implementations\": 100,\n",
+            "  \"complete_duplicate_preserving_finding_count_both_implementations\": 102,\n",
+            "finding count",
+        ),
+        (
+            "  \"raw_report_byte_count_both_implementations\": 48732,\n",
+            "  \"raw_report_byte_count_both_implementations\": 49540,\n",
+            "report byte count",
+        ),
+        (
+            "  \"stderr_event_count_both_implementations\": 884,\n",
+            "  \"stderr_event_count_both_implementations\": 888,\n",
+            "stderr event count",
+        ),
+    ] {
+        rendered = replace_text_transition(&rendered, old, new, label)?;
+    }
+    rendered = replace_text_transition(
+        &rendered,
+        "    \"FOLLOWUP-NATIVE-M11-001\": 1,\n",
+        "",
+        "native follow-up disposition count",
+    )?;
+    rendered = replace_text_transition(
+        &rendered,
+        "    \"REPORT-SAFE-001\": \"Rust uses the reviewed deterministic capability-free safe-template profile; Go helpers outside that profile are not reproduced.\",\n    \"FOLLOWUP-NATIVE-M11-001\": \"Native Linux and Windows runtime replay is unavailable and nonblocking; cross-compilation is not runtime evidence.\"\n",
+        "    \"REPORT-SAFE-001\": \"Rust uses the reviewed deterministic capability-free safe-template profile; Go helpers outside that profile are not reproduced.\"\n",
+        "native follow-up disposition description",
+    )?;
+    rendered = replace_text_transition(
+        &rendered,
+        "  \"runtime_provenance_policy\": \"independently-validated-then-omitted\",\n",
+        "  \"runtime_provenance_policy\": \"independently-validated-with-native-linux-record\",\n",
+        "runtime provenance policy",
+    )?;
+    rendered = replace_text_transition(
+        &rendered,
+        "  \"native_runtime_evidence\": {\n    \"generation_host\": \"validated-but-omitted\",\n    \"linux\": \"FOLLOWUP-NATIVE-M11-001\",\n    \"windows\": \"FOLLOWUP-NATIVE-M11-001\"\n  }\n",
+        "  \"native_runtime_evidence\": {\n    \"generation_host\": \"validated-and-recorded\",\n    \"linux\": \"native-linux-v1.json exact replay plus native Bazel tests\",\n    \"windows\": \"pinned oracle replay plus native Bazel tests\"\n  }\n",
+        "native runtime evidence",
+    )?;
+    let field = format!("  \"native_linux_outcome_sha256\": \"{native_linux_hash}\",\n");
+    if let Some(current) = manifest
+        .get("native_linux_outcome_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != native_linux_hash {
+            return Err("native Linux evidence hash differs from manifest".into());
+        }
+    } else {
+        rendered = insert_after_once(
+            &rendered,
+            b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
+            field.as_bytes(),
+            "native Linux evidence provenance",
+        )?;
+    }
+    let field = format!("  \"unix_path_outcome_sha256\": \"{unix_path_hash}\",\n");
+    if let Some(current) = manifest
+        .get("unix_path_outcome_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != unix_path_hash {
+            return Err("Unix path evidence hash differs from manifest".into());
+        }
+    } else {
+        rendered = insert_after_once(
+            &rendered,
+            b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
+            field.as_bytes(),
+            "Unix path evidence provenance",
+        )?;
+    }
+    Ok(rendered)
+}
+
+fn replace_text_transition(
+    bytes: &[u8],
+    old: &str,
+    new: &str,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let old_count = bytes
+        .windows(old.len())
+        .filter(|value| *value == old.as_bytes())
+        .count();
+    let new_count = if new.is_empty() {
+        usize::from(old_count == 0)
+    } else {
+        bytes
+            .windows(new.len())
+            .filter(|value| *value == new.as_bytes())
+            .count()
+    };
+    match (old_count, new_count) {
+        (1, 0) => {
+            let start = bytes
+                .windows(old.len())
+                .position(|value| value == old.as_bytes())
+                .unwrap();
+            let mut result = Vec::with_capacity(bytes.len() - old.len() + new.len());
+            result.extend_from_slice(&bytes[..start]);
+            result.extend_from_slice(new.as_bytes());
+            result.extend_from_slice(&bytes[start + old.len()..]);
+            Ok(result)
+        }
+        (0, 1) => Ok(bytes.to_vec()),
+        _ => Err(format!(
+            "expected exactly one old or current {label}, found {old_count}/{new_count}"
+        )),
+    }
+}
+
+fn insert_after_once(
+    bytes: &[u8],
+    marker: &[u8],
+    insertion: &[u8],
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let positions = bytes
+        .windows(marker.len())
+        .enumerate()
+        .filter_map(|(index, value)| (value == marker).then_some(index))
+        .collect::<Vec<_>>();
+    if positions.len() != 1 {
+        return Err(format!(
+            "expected one {label} marker, found {}",
+            positions.len()
+        ));
+    }
+    let end = positions[0] + marker.len();
+    let mut result = Vec::with_capacity(bytes.len() + insertion.len());
+    result.extend_from_slice(&bytes[..end]);
+    result.extend_from_slice(insertion);
+    result.extend_from_slice(&bytes[end..]);
+    Ok(result)
 }
 
 fn remove_flat_object_field(bytes: &[u8], field: &str) -> Result<Vec<u8>, String> {
@@ -226,15 +391,23 @@ pub(crate) fn validate_cli_manifest_baselines(root: &Path, text: &str) -> Result
             "cli_readme_sha256 = \"{}\"",
             sha256_bytes(&read(&corpus.join("README.md"))?)
         ),
+        format!(
+            "cli_native_linux_sha256 = \"{}\"",
+            sha256_bytes(&read(&corpus.join("native-linux-v1.json"))?)
+        ),
+        format!(
+            "cli_unix_path_sha256 = \"{}\"",
+            sha256_bytes(&read(&corpus.join("unix-path-v1.json"))?)
+        ),
         "cli_cases = 34".into(),
         "cli_variants = 119".into(),
-        "cli_fresh_processes = 240".into(),
-        "cli_exact_variants = 100".into(),
-        "cli_disposition_variants = 19".into(),
-        "cli_findings_both = 100".into(),
-        "cli_report_bytes_both = 48732".into(),
+        "cli_fresh_processes = 242".into(),
+        "cli_exact_variants = 101".into(),
+        "cli_disposition_variants = 18".into(),
+        "cli_findings_both = 102".into(),
+        "cli_report_bytes_both = 49540".into(),
         "cli_parser_usage_bytes_both = 19508".into(),
-        "cli_stderr_events_both = 884".into(),
+        "cli_stderr_events_both = 888".into(),
         "cli_mutation_controls = 20".into(),
     ];
     for baseline in required {

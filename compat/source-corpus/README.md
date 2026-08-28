@@ -11,8 +11,8 @@ from empty byte slices. Archive requests use provenance-tracked copies under
 `compat/fixtures/upstream`, whose hashes are frozen in `coverage-v1.json`.
 `coverage-v1.json` embeds the authoritative definition for every `SRC-001`
 through `SRC-030`, material assertions aligned to those definitions, and an
-explicit per-ID gap list where native or Rust implementation evidence is still
-mandatory.
+explicit per-ID gap list for unresolved behavior that still needs separately
+controlled evidence.
 
 Regenerate or verify from the repository root:
 
@@ -21,5 +21,6 @@ cargo xtask generate source
 cargo xtask generate source --check
 ```
 
-Outcomes record the generating GOOS/GOARCH. Windows symlink behavior and native
-separator metadata require native Windows CI confirmation rather than emulation.
+Outcomes record the generating GOOS/GOARCH. Native Linux and Windows workflows
+replay the pinned source oracle and target-specific Bazel tests; the Windows
+suite directly checks raw and slash-normalized path matching.

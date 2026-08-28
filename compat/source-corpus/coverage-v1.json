@@ -1078,14 +1078,12 @@
     "mholt-archives-v0.1.5/test.part01.rar": "42804be55f3a26bcc9a1f3366c9940f33dfa85c6dbfff02883c4c2f14b5ed26f",
     "mholt-archives-v0.1.5/test.part02.rar": "07639da22106be2aaa12e59651ea277bcb4aaffd021b9b40b0dc9e76b2649c20"
   },
-  "platform_contract": "host GOOS/GOARCH is recorded; Windows symlink creation/metadata remains a native CI lane obligation",
+  "platform_contract": "host GOOS/GOARCH is recorded; native Linux and Windows workflows replay pinned oracle generation and target-specific Bazel tests",
   "ordering_contract": "file callbacks preserve emission order; concurrent directory cases use worker_limit=1 and also include canonical_fragments",
   "known_gaps": {
     "SRC-003": "the current Go adapter protocol cannot distinguish an omitted buffer from an explicit non-nil zero-length buffer",
     "SRC-012": "native Unix permission denial is covered; metadata TOCTOU still requires deterministic filesystem fault injection",
-    "SRC-013": "Windows raw-plus-slash allowlist fallback requires native Windows",
     "SRC-016": "chained, dangling, and looping links are covered; an escaping-but-valid target requires a separately controlled parent fixture",
-    "SRC-017": "NFC/NFD and Windows drive/UNC/extended/mixed spellings are generated natively; Windows evidence requires the declared native workflow to run",
     "SRC-018": "ambiguous multi-format registered-map iteration and formats absent from assigned fixtures remain unfrozen",
     "SRC-022": "The pinned non-encrypted 7z codec profile plus Brotli, bzip2, gzip, LZ4, MinLZ, Snappy/S2, XZ, and Zstandard streams and compressed TARs are covered; RAR3/RAR5 ordinary and solid members are covered while password support is intentionally outside the source API",
     "SRC-024": "nested zip/7z exercises non-seekable spooling, but temporary-file reclamation and spool ceilings are not externally observable here",
@@ -1093,8 +1091,7 @@
     "SRC-026": "worker-one bounded order is frozen; worker counts above one intentionally expose no stable emission order",
     "SRC-027": "pre-cancellation matches the assigned upstream assertion; deterministic mid-flight cancellation needs an injectable cancellation probe",
     "SRC-028": "source fingerprints and ignore merging are covered; baseline equivalence remains in the M8 session corpus",
-    "SRC-029": "Go size/depth gates are covered; Rust checked-overflow, expansion, entry, and spool limits are implementation obligations",
-    "SRC-030": "native path and permission overlays carry platform provenance; safe Rust crate boundaries and dependency audits are implementation evidence"
+    "SRC-029": "Go size/depth gates are covered; Rust checked-overflow, expansion, entry, and spool limits are implementation obligations"
   },
   "excluded": [
     "Git source semantics",
