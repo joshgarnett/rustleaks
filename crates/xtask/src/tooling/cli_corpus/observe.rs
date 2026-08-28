@@ -110,7 +110,7 @@ pub(super) fn observe(
         .pointer("/expectation/native_negative_one")
         .and_then(Value::as_bool)
         == Some(true);
-    if native_negative && ![255, 4_294_967_295].contains(&result.exit) {
+    if native_negative && !native_negative_one_exit(result.exit) {
         return Err(format!("{case_id}/{variant_id}: native -1 status changed"));
     }
     let exit = if native_negative {
@@ -153,6 +153,17 @@ pub(super) fn observe(
         findings: findings_json,
         child: child_json,
     })
+}
+
+fn native_negative_one_exit(exit: i64) -> bool {
+    #[cfg(windows)]
+    {
+        exit == -1
+    }
+    #[cfg(not(windows))]
+    {
+        exit == 255
+    }
 }
 
 pub(super) fn comparison(
@@ -487,4 +498,23 @@ fn quote(value: &str) -> String {
         .replace("\\u0026", "&")
         .replace("\\u003c", "<")
         .replace("\\u003e", ">")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::native_negative_one_exit;
+
+    #[test]
+    fn native_negative_one_status_is_platform_exact() {
+        #[cfg(windows)]
+        {
+            assert!(native_negative_one_exit(-1));
+            assert!(!native_negative_one_exit(255));
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(native_negative_one_exit(255));
+            assert!(!native_negative_one_exit(-1));
+        }
+    }
 }

@@ -28,6 +28,8 @@ as base64. Stderr is reduced only to severity-preserving event classes and
 required counts/fields after ANSI, executable, duration, temporary-root,
 native-separator, and OS-error normalization. JSON reports additionally
 retain complete findings sorted canonically without deduplication.
+The configured `-1` finding exit retains its native process status contract:
+Unix `255` and Windows signed `-1` normalize to one portable observation.
 
 `CLI-SAFE-001..005` are explicit versioned dispositions. Completion omission
 and the reviewed safe-template capability boundary are separately versioned;
