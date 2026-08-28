@@ -268,7 +268,9 @@ jobs:
         run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
       - name: Replay native CLI evidence
         working-directory: rustleaks
-        run: cargo xtask generate cli --output ../cli-native-evidence
+        run: |
+          cargo fetch --locked
+          cargo xtask generate cli --output ../cli-native-evidence
       - name: Build and test the native target
         working-directory: rustleaks
         env:
