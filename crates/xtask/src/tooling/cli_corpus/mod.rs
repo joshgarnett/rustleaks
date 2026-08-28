@@ -84,6 +84,7 @@ fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<()
 fn generate(root: &Path) -> Result<GeneratedTree, String> {
     let corpus = root.join("compat/cli-corpus");
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
+    let committed_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
     let native_linux = read(&corpus.join("native-linux-v1.json"))?;
     let unix_path = read(&corpus.join("unix-path-v1.json"))?;
@@ -123,7 +124,7 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
             .as_bytes(),
         );
     }
-    validation::validate_outcomes(&outcomes, &manifest_value)?;
+    validation::validate_outcomes(&outcomes, &committed_outcomes, &manifest_value)?;
     spec::validate_sources(root, &upstream, &manifest_value)?;
     let final_runtime = spec::selected_runtime(root, &upstream, &temporary)?;
     if final_runtime != runtime {

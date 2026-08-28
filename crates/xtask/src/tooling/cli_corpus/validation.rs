@@ -16,7 +16,11 @@ const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
     "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
 );
 
-pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), String> {
+pub(super) fn validate_outcomes(
+    bytes: &[u8],
+    committed: &[u8],
+    manifest: &Value,
+) -> Result<(), String> {
     let lines = newline_records(bytes, "CLI outcomes")?;
     if lines.len() != CASE_COUNT {
         return Err(format!("fresh CLI outcomes contain {} cases", lines.len()));
@@ -81,11 +85,80 @@ pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), St
     let expected = required_str(manifest, "outcomes_sha256", "manifest")?;
     let actual = sha256_bytes(bytes);
     if expected != actual && (expected, actual.as_str()) != DECLARED_OUTCOME_TRANSITION {
+        let difference = first_outcome_difference(committed, bytes)?;
         return Err(format!(
-            "fresh CLI outcomes differ from committed manifest: expected {expected}, got {actual}"
+            "fresh CLI outcomes differ from committed manifest: expected {expected}, got {actual}; {difference}"
         ));
     }
     Ok(())
+}
+
+fn first_outcome_difference(committed: &[u8], fresh: &[u8]) -> Result<String, String> {
+    let committed_lines = newline_records(committed, "committed CLI outcomes")?;
+    let fresh_lines = newline_records(fresh, "fresh CLI outcomes")?;
+    if committed_lines.len() != fresh_lines.len() {
+        return Ok(format!(
+            "row count differs: committed {}, fresh {}",
+            committed_lines.len(),
+            fresh_lines.len()
+        ));
+    }
+    for (number, (committed_line, fresh_line)) in
+        committed_lines.into_iter().zip(fresh_lines).enumerate()
+    {
+        let committed_value: Value = serde_json::from_slice(committed_line)
+            .map_err(|error| format!("invalid committed CLI outcome {}: {error}", number + 1))?;
+        let fresh_value: Value = serde_json::from_slice(fresh_line)
+            .map_err(|error| format!("invalid fresh CLI outcome {}: {error}", number + 1))?;
+        let label = committed_value
+            .get("id")
+            .and_then(Value::as_str)
+            .map_or_else(|| format!("row[{}]", number + 1), str::to_owned);
+        if let Some(path) = first_value_difference(&committed_value, &fresh_value, &label) {
+            return Ok(format!("first semantic difference at {path}"));
+        }
+    }
+    Ok("semantic JSON matches; byte serialization differs".into())
+}
+
+fn first_value_difference(committed: &Value, fresh: &Value, path: &str) -> Option<String> {
+    if committed == fresh {
+        return None;
+    }
+    match (committed, fresh) {
+        (Value::Object(committed), Value::Object(fresh)) => {
+            let keys = committed
+                .keys()
+                .chain(fresh.keys())
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            for key in keys {
+                let next = format!("{path}/{key}");
+                match (committed.get(key), fresh.get(key)) {
+                    (Some(committed), Some(fresh)) => {
+                        if let Some(difference) = first_value_difference(committed, fresh, &next) {
+                            return Some(difference);
+                        }
+                    }
+                    _ => return Some(next),
+                }
+            }
+            Some(path.into())
+        }
+        (Value::Array(committed), Value::Array(fresh)) => {
+            for (index, (committed, fresh)) in committed.iter().zip(fresh).enumerate() {
+                let next = committed
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map_or_else(|| format!("{path}[{index}]"), |id| format!("{path}[{id}]"));
+                if let Some(difference) = first_value_difference(committed, fresh, &next) {
+                    return Some(difference);
+                }
+            }
+            Some(format!("{path}/length"))
+        }
+        _ => Some(path.into()),
+    }
 }
 
 pub(super) fn render_manifest(
@@ -483,7 +556,21 @@ pub(super) fn required_u64(value: &Value, field: &str, label: &str) -> Result<u6
 
 #[cfg(test)]
 mod tests {
-    use super::{remove_flat_object_field, replace_declared_transition, replace_once};
+    use serde_json::json;
+
+    use super::{
+        first_value_difference, remove_flat_object_field, replace_declared_transition, replace_once,
+    };
+
+    #[test]
+    fn outcome_difference_reports_only_the_first_field_path() {
+        let committed = json!({"variants": [{"id": "portable", "findings": [{"file": "a"}]}]});
+        let fresh = json!({"variants": [{"id": "portable", "findings": [{"file": "b"}]}]});
+        assert_eq!(
+            first_value_difference(&committed, &fresh, "CLI-BB-001").as_deref(),
+            Some("CLI-BB-001/variants[portable]/findings[0]/file")
+        );
+    }
 
     #[test]
     fn flat_generated_object_removal_is_idempotent_and_fails_closed() {
