@@ -401,6 +401,7 @@ jobs:
           RUSTLEAKS_SOURCE_LEDGER_PATH: ${{ runner.temp }}\source-ledger-${{ matrix.architecture }}.json
           RUSTLEAKS_GIT_LEDGER_PATH: ${{ runner.temp }}\git-ledger-${{ matrix.architecture }}.json
           RUSTLEAKS_REPORT_LEDGER_PATH: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
+          RUSTLEAKS_CLI_LEDGER_PATH: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
         run: |
           cargo fetch --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -434,6 +435,13 @@ jobs:
         with:
           name: report-ledger-${{ matrix.architecture }}
           path: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
+          if-no-files-found: error
+      - name: Upload CLI hash ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-ledger-${{ matrix.architecture }}
+          path: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
           if-no-files-found: error
       - name: Build and test the native target
         shell: pwsh

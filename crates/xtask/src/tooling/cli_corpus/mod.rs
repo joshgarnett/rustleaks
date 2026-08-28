@@ -10,7 +10,7 @@ mod validation;
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::artifacts::GeneratedTree;
 use super::support::TempDir;
@@ -129,6 +129,7 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
             .as_bytes(),
         );
     }
+    write_observation_ledger(&outcomes)?;
     validation::validate_outcomes(
         &outcomes,
         &committed_outcomes,
@@ -177,6 +178,124 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
     Ok(tree)
 }
 
+fn observation_ledger(outcomes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut records = Vec::new();
+    for line in newline_records(outcomes, "observed CLI outcomes")? {
+        let row: Value = serde_json::from_slice(line)
+            .map_err(|error| format!("invalid observed CLI outcome: {error}"))?;
+        let case_id = validation::required_str(&row, "id", "CLI outcome")?;
+        for variant in validation::required_array(&row, "variants", case_id)? {
+            let variant_id = validation::required_str(variant, "id", case_id)?;
+            let go = safe_observation_summary(
+                variant
+                    .get("go")
+                    .ok_or_else(|| format!("{case_id}/{variant_id}: missing Go observation"))?,
+                case_id,
+            )?;
+            let rust = safe_observation_summary(
+                variant
+                    .get("rust")
+                    .ok_or_else(|| format!("{case_id}/{variant_id}: missing Rust observation"))?,
+                case_id,
+            )?;
+            let comparison = variant
+                .get("comparison")
+                .ok_or_else(|| format!("{case_id}/{variant_id}: missing comparison"))?;
+            records.push(json!({
+                "id": format!("{case_id}/{variant_id}"),
+                "go": go,
+                "rust": rust,
+                "comparison": comparison,
+            }));
+        }
+    }
+    let ledger = json!({
+        "schema_version": 1,
+        "protocol_version": 1,
+        "oracle_mode": "cli",
+        "upstream_revision": spec::REVISION,
+        "default_config_sha256": spec::CONFIG_SHA256,
+        "platform": observation_platform(),
+        "record_count": records.len(),
+        "outcomes_sha256": crate::tooling::support::sha256_bytes(outcomes),
+        "records": records,
+    });
+    let mut bytes = serde_json::to_vec_pretty(&ledger)
+        .map_err(|error| format!("cannot render CLI observation ledger: {error}"))?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+fn safe_observation_summary(observation: &Value, label: &str) -> Result<Value, String> {
+    let events = validation::required_array(observation, "stderr_events", label)?;
+    let event_projections = events
+        .iter()
+        .map(|event| {
+            Ok(json!({
+                "severity": validation::required_str(event, "severity", label)?,
+                "class": validation::required_str(event, "class", label)?,
+                "fields": event
+                    .get("fields")
+                    .ok_or_else(|| format!("{label}: event fields missing"))?,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let message_hashes = events
+        .iter()
+        .map(|event| {
+            validation::required_str(event, "normalized_message_base64", label)
+                .map(|message| crate::tooling::support::sha256_bytes(message.as_bytes()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let report = observation.get("report").unwrap_or(&Value::Null);
+    let report_summary = if report.is_null() {
+        Value::Null
+    } else {
+        json!({
+            "state": report.get("state"),
+            "bytes": report.get("bytes"),
+            "sha256": report.get("sha256"),
+        })
+    };
+    let findings = observation.get("findings").unwrap_or(&Value::Null);
+    let findings_bytes = serde_json::to_vec(findings)
+        .map_err(|error| format!("cannot hash {label} findings: {error}"))?;
+    let projection_bytes = serde_json::to_vec(&event_projections)
+        .map_err(|error| format!("cannot hash {label} event projection: {error}"))?;
+    Ok(json!({
+        "exit": observation.get("exit"),
+        "stdout_bytes": observation.get("stdout_bytes"),
+        "stdout_sha256": observation.get("stdout_sha256"),
+        "stderr_event_count": events.len(),
+        "stderr_event_projection_sha256": crate::tooling::support::sha256_bytes(&projection_bytes),
+        "stderr_event_projections": event_projections,
+        "normalized_message_base64_sha256": message_hashes,
+        "stderr_usage_bytes": observation.pointer("/stderr_usage/bytes"),
+        "stderr_usage_sha256": observation.pointer("/stderr_usage/sha256"),
+        "report": report_summary,
+        "finding_count": observation.get("finding_count"),
+        "findings_sha256": crate::tooling::support::sha256_bytes(&findings_bytes),
+        "child_reaped": observation.get("child_reaped"),
+    }))
+}
+
+fn write_observation_ledger(outcomes: &[u8]) -> Result<(), String> {
+    if let Some(path) = std::env::var_os("RUSTLEAKS_CLI_LEDGER_PATH") {
+        fs::write(&path, observation_ledger(outcomes)?)
+            .map_err(|error| format!("cannot write CLI observation ledger: {error}"))?;
+    }
+    Ok(())
+}
+
+fn observation_platform() -> String {
+    let architecture = match std::env::consts::ARCH {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{}/{architecture}", std::env::consts::OS)
+}
+
 fn parse_json(bytes: &[u8], label: &str) -> Result<Value, String> {
     serde_json::from_slice(bytes).map_err(|error| format!("invalid {label} JSON: {error}"))
 }
@@ -205,11 +324,30 @@ fn newline_records<'a>(bytes: &'a [u8], label: &str) -> Result<Vec<&'a [u8]>, St
 
 #[cfg(test)]
 mod tests {
-    use super::newline_records;
+    use super::{newline_records, observation_ledger};
+
     #[test]
     fn jsonl_boundaries_fail_closed() {
         assert!(newline_records(b"{}", "test").is_err());
         assert!(newline_records(b"{}\n\n", "test").is_err());
         assert_eq!(newline_records(b"{}\n[]\n", "test").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn observation_ledger_omits_payloads() {
+        let outcomes = br#"{"id":"CLI-BB-999","variants":[{"id":"payload-check","go":{"exit":7,"stdout_base64":"c2Vuc2l0aXZlLXN0ZG91dA==","stdout_bytes":14,"stdout_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","stderr_events":[{"severity":"error","class":"diagnostic.other","fields":{"message_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"normalized_message_base64":"c2Vuc2l0aXZlLW1lc3NhZ2U="}],"stderr_usage":{"bytes":3,"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"report":{"state":"present","bytes_base64":"c2Vuc2l0aXZlLXJlcG9ydA==","bytes":16,"sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"findings":[{"Secret":"sensitive-finding"}],"finding_count":1,"child_reaped":true},"rust":{"exit":7,"stdout_base64":"c2Vuc2l0aXZlLXN0ZG91dA==","stdout_bytes":14,"stdout_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","stderr_events":[{"severity":"error","class":"diagnostic.other","fields":{"message_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"normalized_message_base64":"c2Vuc2l0aXZlLW1lc3NhZ2U="}],"stderr_usage":{"bytes":3,"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"report":{"state":"present","bytes_base64":"c2Vuc2l0aXZlLXJlcG9ydA==","bytes":16,"sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"findings":[{"Secret":"sensitive-finding"}],"finding_count":1,"child_reaped":true},"comparison":{"axes":{"exit":"equal"},"status":"exact","disposition":null}}]}
+"#;
+        let ledger = observation_ledger(outcomes).unwrap();
+        let text = String::from_utf8(ledger).unwrap();
+        for payload in [
+            "c2Vuc2l0aXZlLXN0ZG91dA==",
+            "c2Vuc2l0aXZlLW1lc3NhZ2U=",
+            "c2Vuc2l0aXZlLXJlcG9ydA==",
+            "sensitive-finding",
+        ] {
+            assert!(!text.contains(payload));
+        }
+        assert!(text.contains("normalized_message_base64_sha256"));
+        assert!(text.contains("findings_sha256"));
     }
 }

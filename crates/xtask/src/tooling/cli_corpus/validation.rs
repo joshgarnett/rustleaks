@@ -277,8 +277,16 @@ fn validate_windows_baseline_variant(
         "axes",
         label,
     )?;
-    if axes.values().any(|value| value.as_str() != Some("equal")) {
-        return Err(format!("{label}: native Windows comparison changed"));
+    let changed_axes = axes
+        .iter()
+        .filter_map(|(axis, value)| (value.as_str() != Some("equal")).then_some((axis, value)))
+        .map(|(axis, value)| format!("{axis}={value}"))
+        .collect::<Vec<_>>();
+    if !changed_axes.is_empty() {
+        return Err(format!(
+            "{label}: native Windows comparison changed: {}",
+            changed_axes.join(", ")
+        ));
     }
     for (variant, expected, platform) in [
         (committed, 1_usize, "portable"),
@@ -452,6 +460,15 @@ fn collect_value_differences(
 
 fn describe_scalar_difference(path: &str, committed: &Value, fresh: &Value) -> String {
     let field = path.rsplit('/').next().unwrap_or(path);
+    if field == "normalized_message_base64" {
+        if let (Some(committed), Some(fresh)) = (committed.as_str(), fresh.as_str()) {
+            return format!(
+                "{path} (committed sha256 {}, fresh sha256 {})",
+                sha256_bytes(committed.as_bytes()),
+                sha256_bytes(fresh.as_bytes())
+            );
+        }
+    }
     let safe_value = path.contains("/comparison/axes/")
         || path.contains("/fields/")
         || matches!(
@@ -1037,7 +1054,7 @@ mod tests {
                 "CLI-BB-001/variants[portable]/comparison/axes/stderr_events (committed \"equal\", fresh \"different\")",
                 "CLI-BB-001/variants[portable]/findings[0]/file",
                 "CLI-BB-001/variants[portable]/go/stderr_events[0]/class (committed \"expected\", fresh \"actual\")",
-                "CLI-BB-001/variants[portable]/go/stderr_events[0]/normalized_message_base64",
+                "CLI-BB-001/variants[portable]/go/stderr_events[0]/normalized_message_base64 (committed sha256 8766b9cb08e6040b704f1e3ee1e186efccf2635b1d2634d6525333007e6aeae1, fresh sha256 ff492ef788c89b555e6f738b33d2422f57dbb6656af2402155672c5f123a90af)",
             ]
         );
     }

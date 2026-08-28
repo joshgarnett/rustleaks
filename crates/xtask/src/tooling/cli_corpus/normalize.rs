@@ -296,6 +296,24 @@ fn normalize_dynamic(text: &str) -> String {
     ] {
         result = replace_ascii_case_insensitive(&result, pattern, "<os:not-found>");
     }
+    result = replace_ascii_case_insensitive(&result, "exit code:", "exit status:");
+    if result.contains("could not open report <TMP>/report-dir:") {
+        for pattern in [
+            "Access is denied. (os error 5)",
+            "Access is denied (os error 5)",
+        ] {
+            result =
+                replace_ascii_case_insensitive(&result, pattern, "Is a directory (os error 21)");
+        }
+    }
+    let remote_prefix =
+        "skipping finding links: unable to parse remote URL error=\"command failed (-1): ";
+    if let Some(start) = result.find(remote_prefix) {
+        let status_start = start + remote_prefix.len();
+        if let Some(status_end) = result[status_start..].find(", stderr: ") {
+            result.replace_range(status_start..status_start + status_end, "signal: killed");
+        }
+    }
     let bytes = result.as_bytes();
     let mut ranges = Vec::new();
     let mut index = 0;
@@ -535,5 +553,32 @@ mod tests {
     fn windows_warning_stat_operations_remain_unclassified() {
         let event = event_for("WRN CreateFile missing: The system cannot find the file specified.");
         assert_eq!(event.class, "diagnostic.other");
+    }
+
+    #[test]
+    fn windows_process_and_report_spellings_normalize_portably() {
+        let git = event_for(
+            "ERR source GitExit failed: Git exited unsuccessfully (exit code: 128); bounded stderr",
+        );
+        assert_eq!(
+            git.message,
+            b"source GitExit failed: Git exited unsuccessfully (exit status: 128); bounded stderr"
+        );
+
+        let report = event_for(
+            "ERR could not write json report: could not open report <TMP>/report-dir: Access is denied. (os error 5)",
+        );
+        assert_eq!(
+            report.message,
+            b"could not write json report: could not open report <TMP>/report-dir: Is a directory (os error 21)"
+        );
+
+        let remote = event_for(
+            "ERR skipping finding links: unable to parse remote URL error=\"command failed (-1): exit status 1, stderr: \"",
+        );
+        assert_eq!(
+            remote.message,
+            b"skipping finding links: unable to parse remote URL error=\"command failed (-1): signal: killed, stderr: \""
+        );
     }
 }
