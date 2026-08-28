@@ -7,6 +7,11 @@ use serde_json::json;
 
 use crate::tooling::support::sha256_bytes;
 
+const PORTABLE_SYMLINKS: &[(&str, &str)] = &[(
+    "symlinks/file_symlink/symlinked_id_ed25519",
+    "../source_file/id_ed25519",
+)];
+
 pub(super) fn tree_fingerprint(root: &Path) -> Result<String, String> {
     let mut records = Vec::new();
     visit(root, root, &mut records)?;
@@ -39,10 +44,9 @@ fn visit(
             .to_str()
             .ok_or_else(|| format!("fixture path {} is not UTF-8", path.display()))?
             .replace(std::path::MAIN_SEPARATOR, "/");
-        let payload = if metadata.file_type().is_symlink() {
-            let target = fs::read_link(&path)
-                .map_err(|error| format!("cannot read symlink {}: {error}", path.display()))?;
-            format!("link:{}", target.display())
+        let symlink_target = projected_symlink_target(&relative, &path, &metadata)?;
+        let payload = if let Some(target) = &symlink_target {
+            format!("link:{target}")
         } else if metadata.is_file() {
             let bytes = fs::read(&path)
                 .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
@@ -50,7 +54,11 @@ fn visit(
         } else {
             "dir".to_owned()
         };
-        records.push((relative, permission_mode(&metadata), payload));
+        records.push((
+            relative,
+            permission_mode(&metadata, symlink_target.is_some()),
+            payload,
+        ));
         if metadata.is_dir() {
             visit(root, &path, records)?;
         }
@@ -58,23 +66,57 @@ fn visit(
     Ok(())
 }
 
+fn projected_symlink_target(
+    relative: &str,
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<Option<String>, String> {
+    let expected = PORTABLE_SYMLINKS
+        .iter()
+        .find_map(|(candidate, target)| (*candidate == relative).then_some(*target));
+    if metadata.file_type().is_symlink() {
+        let target = fs::read_link(path)
+            .map_err(|error| format!("cannot read symlink {}: {error}", path.display()))?;
+        let target = target
+            .to_str()
+            .ok_or_else(|| format!("symlink target {} is not UTF-8", target.display()))?
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        if expected.is_some_and(|expected| expected != target) {
+            return Err(format!("fixture symlink {relative} target changed"));
+        }
+        return Ok(Some(target));
+    }
+    if let Some(_expected) = expected {
+        #[cfg(windows)]
+        {
+            if fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?
+                != _expected.as_bytes()
+            {
+                return Err(format!("materialized fixture symlink {relative} changed"));
+            }
+            return Ok(Some(_expected.to_owned()));
+        }
+        #[cfg(not(windows))]
+        {
+            return Err(format!("fixture path {relative} is not a symlink"));
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(unix)]
-fn permission_mode(metadata: &fs::Metadata) -> u32 {
+fn permission_mode(metadata: &fs::Metadata, projected_symlink: bool) -> u32 {
     use std::os::unix::fs::PermissionsExt as _;
-    portable_permission_mode(
-        metadata.file_type().is_symlink(),
-        metadata.permissions().mode() & 0o7777,
-    )
+    portable_permission_mode(projected_symlink, metadata.permissions().mode() & 0o7777)
 }
 
 #[cfg(not(unix))]
-fn permission_mode(metadata: &fs::Metadata) -> u32 {
-    let mode = if metadata.permissions().readonly() {
-        0o444
-    } else {
-        0o666
-    };
-    portable_permission_mode(metadata.file_type().is_symlink(), mode)
+fn permission_mode(metadata: &fs::Metadata, projected_symlink: bool) -> u32 {
+    portable_windows_permission_mode(
+        projected_symlink,
+        metadata.is_dir(),
+        metadata.permissions().readonly(),
+    )
 }
 
 fn portable_permission_mode(is_symlink: bool, mode: u32) -> u32 {
@@ -84,17 +126,36 @@ fn portable_permission_mode(is_symlink: bool, mode: u32) -> u32 {
     if is_symlink { 0o755 } else { mode }
 }
 
+#[cfg(any(not(unix), test))]
+fn portable_windows_permission_mode(is_symlink: bool, is_directory: bool, readonly: bool) -> u32 {
+    if is_symlink || is_directory {
+        0o755
+    } else if readonly {
+        0o444
+    } else {
+        0o644
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
-    use super::{portable_permission_mode, tree_fingerprint};
+    use super::{portable_permission_mode, portable_windows_permission_mode, tree_fingerprint};
 
     #[test]
     fn normalizes_host_symlink_permission_bits() {
         assert_eq!(portable_permission_mode(true, 0o755), 0o755);
         assert_eq!(portable_permission_mode(true, 0o777), 0o755);
         assert_eq!(portable_permission_mode(false, 0o644), 0o644);
+    }
+
+    #[test]
+    fn projects_windows_fixture_permissions() {
+        assert_eq!(portable_windows_permission_mode(true, false, false), 0o755);
+        assert_eq!(portable_windows_permission_mode(false, true, false), 0o755);
+        assert_eq!(portable_windows_permission_mode(false, false, false), 0o644);
+        assert_eq!(portable_windows_permission_mode(false, false, true), 0o444);
     }
 
     #[test]
