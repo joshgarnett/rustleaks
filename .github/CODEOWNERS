@@ -4,6 +4,7 @@
 * @joshgarnett
 
 /.github/workflows/ @joshgarnett
+/.github/secret_scanning.yml @joshgarnett
 /.github/CODEOWNERS @joshgarnett
 /Cargo.toml @joshgarnett
 /Cargo.lock @joshgarnett

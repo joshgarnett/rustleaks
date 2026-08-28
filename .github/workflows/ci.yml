@@ -189,6 +189,7 @@ jobs:
         working-directory: rustleaks
         run: |
           cargo xtask verify-upstream
+          cargo xtask oracle-vulnerability-check
           cargo xtask oracle generate --check --skip-git
           just parity
 

@@ -94,3 +94,18 @@ this review. `cargo deny check` must also pass advisories, bans, licenses, and
 sources. Native Linux/Windows execution remains a nonblocking runtime
 follow-up; target compilation does not validate architecture-specific unsafe
 paths at runtime.
+
+## Unpublished Go oracle
+
+The compatibility-only Go module is not linked into Rustleaks packages or
+published crates. Hosted parity and release differential jobs run
+`govulncheck v1.7.0` against its source graph and fail when a vulnerable symbol
+is reachable. Module-level inventory can still report packages that the pinned
+Gitleaks oracle does not import or call.
+
+`GO-2026-5932` identifies the unmaintained `golang.org/x/crypto/openpgp`
+package and has no fixed module version. The oracle graph uses other
+`x/crypto` packages but does not compile `openpgp`, so the symbol-reachability
+gate reports no affected code. This disposition applies only to the unpublished
+oracle at the pinned upstream revision and must be reviewed when that revision
+or its Go graph changes.

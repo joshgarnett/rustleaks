@@ -4,6 +4,27 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+const CODEQL_ACTION_PIN: &str = "cdf488f595d80d6e07e03d4674febd5ab45fa938";
+const SECRET_SCANNING_CONFIG: &str = r#"paths-ignore:
+  - "compat/allowlist-corpus/**"
+  - "compat/assertion-corpus/**"
+  - "compat/cli-corpus/**"
+  - "compat/composite-corpus/**"
+  - "compat/config-corpus/**"
+  - "compat/decoder-corpus/**"
+  - "compat/detect-corpus/**"
+  - "compat/generator-corpus/**"
+  - "compat/git-corpus/**"
+  - "compat/regex-corpus/**"
+  - "compat/report-corpus/**"
+  - "compat/session-corpus/**"
+  - "compat/source-corpus/**"
+  - "compat/api-dispositions-v1.jsonl"
+  - "compat/api-inventory-v1.json"
+  - "compat/fixtures/**"
+  - "crates/rustleaks-core/default/gitleaks.toml"
+"#;
+
 pub(crate) fn check(root: &Path) -> Result<(), String> {
     let directory = root.join(".github/workflows");
     let mut files = fs::read_dir(&directory)
@@ -39,17 +60,45 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read publication workflow: {error}"))?;
     let scorecard = fs::read_to_string(directory.join("scorecard.yml"))
         .map_err(|error| format!("cannot read Scorecard workflow: {error}"))?;
+    let codeql = fs::read_to_string(directory.join("codeql.yml"))
+        .map_err(|error| format!("cannot read CodeQL workflow: {error}"))?;
+    let secret_scanning = fs::read_to_string(root.join(".github/secret_scanning.yml"))
+        .map_err(|error| format!("cannot read secret-scanning configuration: {error}"))?;
     validate_ci_matrix(&ci)?;
     validate_release_workflow(&dry_run)?;
     validate_github_release_workflow(&release)?;
     validate_publish_workflow(&publish)?;
     validate_scorecard_workflow(&scorecard)?;
+    validate_codeql_workflow(&codeql)?;
+    validate_secret_scanning_config(&secret_scanning)?;
     validate_workflow_efficiency(&ci, &weekly)?;
     validate_dependabot(root)?;
     println!(
         "checked {} least-privilege workflows with immutable action pins and exact runners",
         files.len()
     );
+    Ok(())
+}
+
+fn validate_codeql_workflow(source: &str) -> Result<(), String> {
+    for action in ["init", "analyze"] {
+        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.37.9");
+        if !source.contains(&required) {
+            return Err(format!(
+                "CodeQL workflow omits reviewed action pin {required:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_secret_scanning_config(source: &str) -> Result<(), String> {
+    if source != SECRET_SCANNING_CONFIG {
+        return Err(
+            "secret-scanning exclusions must match the reviewed generated-data paths exactly"
+                .into(),
+        );
+    }
     Ok(())
 }
 
@@ -210,7 +259,7 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
         "security-events: write",
         "ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4",
         "publish_results: true",
-        "github/codeql-action/upload-sarif@4c0873ef8656cb3c50b3f42fb63bc1ade0cfa827 # v4",
+        "github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9",
     ] {
         if !source.contains(required) {
             return Err(format!(
@@ -229,6 +278,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "test \"${TRIGGER_REF}\" = refs/heads/main",
         "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
         "run: just release-dry-run",
+        "cargo xtask oracle-vulnerability-check",
         "cmp \"${first}\" \"${second}\"",
         "cargo install cargo-public-api --locked --version 0.52.0",
         "rustup toolchain install nightly-2026-08-21 --profile minimal --component miri",
@@ -484,6 +534,7 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
         "run: just fuzz-smoke",
         "run: just release-dry-run",
         "just parity",
+        "cargo xtask oracle-vulnerability-check",
         "name: Required",
     ] {
         if !source.contains(required) {
@@ -552,9 +603,11 @@ mod tests {
     use std::path::Path;
 
     use super::{
+        CODEQL_ACTION_PIN, SECRET_SCANNING_CONFIG, validate_codeql_workflow,
         validate_github_release_workflow, validate_publish_workflow,
         validate_release_differential_setup, validate_scorecard_workflow,
-        validate_target_execution_platform, validate_workflow, validate_workflow_efficiency,
+        validate_secret_scanning_config, validate_target_execution_platform, validate_workflow,
+        validate_workflow_efficiency,
     };
 
     const PIN: &str = "d23441a48e516b6c34aea4fa41551a30e30af803";
@@ -673,5 +726,23 @@ mod tests {
     fn rejects_secret_backed_scorecard_workflow() {
         let error = validate_scorecard_workflow("${{ secrets.SCORECARD_TOKEN }}").unwrap_err();
         assert!(error.contains("must not use repository secrets"));
+    }
+
+    #[test]
+    fn rejects_broadened_secret_scanning_exclusions() {
+        validate_secret_scanning_config(SECRET_SCANNING_CONFIG).unwrap();
+        let broadened = format!("{SECRET_SCANNING_CONFIG}  - \"docs/**\"\n");
+        let error = validate_secret_scanning_config(&broadened).unwrap_err();
+        assert!(error.contains("match the reviewed generated-data paths exactly"));
+    }
+
+    #[test]
+    fn requires_reviewed_codeql_commit_pins() {
+        let source = format!(
+            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.37.9\n\
+             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.37.9\n"
+        );
+        validate_codeql_workflow(&source).unwrap();
+        assert!(validate_codeql_workflow(&source.replace(CODEQL_ACTION_PIN, PIN)).is_err());
     }
 }

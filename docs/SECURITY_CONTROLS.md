@@ -100,6 +100,10 @@ compatibility corpora, the two generated API traceability indexes, copied
 compatibility fixtures, Git metadata, and local build output. The root
 `.rustleaksignore` lists reviewed fingerprints for individual synthetic
 examples and generated hashes.
+GitHub secret scanning excludes only the generated compatibility corpora,
+copied fixtures, and the accepted pinned default configuration listed in
+`.github/secret_scanning.yml`. Repository validation requires that exact list;
+generator source, examples, and ordinary documentation remain scanned.
 Do not broaden the path exceptions or add a fingerprint without inspecting the
 redacted rule, path, line, and source context. The maintained local commands
 are:
