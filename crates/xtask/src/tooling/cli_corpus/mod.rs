@@ -52,6 +52,9 @@ committed observation while native Linux regenerates and compares it exactly.
 fixture for native Windows generation.
 `unix-logical-name-v1.json` preserves the Unix filename that contains a
 Windows drive spelling and therefore cannot be created by native Windows.
+The payload-free `native-windows-v1.json` ledger binds both Windows
+architectures to their complete raw outcomes and the one platform-specific
+baseline-path branch while retaining the portable Unix corpus.
 Native Linux and Windows CI also replay the pinned oracle generators before
 running the complete native Bazel test suite.
 
@@ -87,11 +90,13 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
     let committed_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
     let native_linux = read(&corpus.join("native-linux-v1.json"))?;
+    let native_windows = read(&corpus.join("native-windows-v1.json"))?;
     let unix_path = read(&corpus.join("unix-path-v1.json"))?;
     let unix_logical_name = read(&corpus.join("unix-logical-name-v1.json"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
     let negative_value = parse_json(&negative, "CLI negative controls")?;
     let manifest_value = parse_json(&legacy_manifest, "CLI manifest")?;
+    let native_windows_value = parse_json(&native_windows, "native Windows CLI ledger")?;
     let native_linux_text = std::str::from_utf8(&native_linux)
         .map_err(|error| format!("native Linux CLI evidence is not UTF-8: {error}"))?;
     let unix_path_text = std::str::from_utf8(&unix_path)
@@ -124,7 +129,12 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
             .as_bytes(),
         );
     }
-    validation::validate_outcomes(&outcomes, &committed_outcomes, &manifest_value)?;
+    validation::validate_outcomes(
+        &outcomes,
+        &committed_outcomes,
+        &manifest_value,
+        &native_windows_value,
+    )?;
     spec::validate_sources(root, &upstream, &manifest_value)?;
     let final_runtime = spec::selected_runtime(root, &upstream, &temporary)?;
     if final_runtime != runtime {
@@ -142,15 +152,24 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
         &manifest_value,
         &generator_hash,
         &crate::tooling::support::sha256_bytes(&native_linux),
+        &crate::tooling::support::sha256_bytes(&native_windows),
         &crate::tooling::support::sha256_bytes(&unix_path),
         &crate::tooling::support::sha256_bytes(&unix_logical_name),
     )?;
 
     let mut tree = GeneratedTree::default();
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", outcomes)?;
+    tree.insert(
+        "outcomes-v1.jsonl",
+        if cfg!(windows) {
+            committed_outcomes
+        } else {
+            outcomes
+        },
+    )?;
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("native-linux-v1.json", native_linux)?;
+    tree.insert("native-windows-v1.json", native_windows)?;
     tree.insert("unix-path-v1.json", unix_path)?;
     tree.insert("unix-logical-name-v1.json", unix_logical_name)?;
     tree.insert("manifest-v1.json", manifest)?;

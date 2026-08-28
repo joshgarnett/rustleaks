@@ -11,6 +11,7 @@ pub(super) fn transition(root: &Path, canonical: &str) -> Result<String, String>
     }
     let mut output = canonical.to_owned();
     ensure_cli_native_linux_field(root, &mut output)?;
+    ensure_cli_native_windows_field(root, &mut output)?;
     ensure_cli_unix_path_field(root, &mut output)?;
     ensure_cli_unix_logical_name_field(root, &mut output)?;
     ensure_source_native_windows_field(root, &mut output)?;
@@ -154,6 +155,24 @@ fn ensure_cli_native_linux_field(root: &Path, output: &mut String) -> Result<(),
         + 1;
     let hash = sha256_file(&root.join("compat/cli-corpus/native-linux-v1.json"))?;
     output.insert_str(end, &format!("cli_native_linux_sha256 = \"{hash}\"\n"));
+    Ok(())
+}
+
+fn ensure_cli_native_windows_field(root: &Path, output: &mut String) -> Result<(), String> {
+    if output.contains("cli_native_windows_sha256 = ") {
+        return Ok(());
+    }
+    let marker = "cli_native_linux_sha256 = \"";
+    let start = output
+        .find(marker)
+        .ok_or("test manifest lacks cli_native_linux_sha256")?;
+    let end = start
+        + output[start..]
+            .find('\n')
+            .ok_or("test manifest has malformed cli_native_linux_sha256")?
+        + 1;
+    let hash = sha256_file(&root.join("compat/cli-corpus/native-windows-v1.json"))?;
+    output.insert_str(end, &format!("cli_native_windows_sha256 = \"{hash}\"\n"));
     Ok(())
 }
 
@@ -383,6 +402,10 @@ fn refresh_artifact_hashes(root: &Path, output: &mut String) -> Result<(), Strin
         (
             "cli_native_linux_sha256",
             "compat/cli-corpus/native-linux-v1.json",
+        ),
+        (
+            "cli_native_windows_sha256",
+            "compat/cli-corpus/native-windows-v1.json",
         ),
         (
             "cli_unix_path_sha256",

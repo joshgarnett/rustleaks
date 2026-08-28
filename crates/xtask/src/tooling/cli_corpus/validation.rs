@@ -6,7 +6,8 @@ use std::path::Path;
 use serde_json::{Map, Value};
 
 use super::spec::{
-    BUILD_VERSION, CASE_COUNT, DECLARED_TRANSITIONS, LEGACY_BUILD_VERSION, VARIANT_COUNT,
+    BUILD_VERSION, CASE_COUNT, CONFIG_SHA256, DECLARED_TRANSITIONS, LEGACY_BUILD_VERSION, REVISION,
+    VARIANT_COUNT,
 };
 use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
@@ -20,6 +21,7 @@ pub(super) fn validate_outcomes(
     bytes: &[u8],
     committed: &[u8],
     manifest: &Value,
+    native_windows: &Value,
 ) -> Result<(), String> {
     let lines = newline_records(bytes, "CLI outcomes")?;
     if lines.len() != CASE_COUNT {
@@ -83,13 +85,221 @@ pub(super) fn validate_outcomes(
         return Err("fresh CLI variant/process accounting changed".into());
     }
     let expected = required_str(manifest, "outcomes_sha256", "manifest")?;
+    if expected != sha256_bytes(committed) {
+        return Err("committed CLI outcomes differ from manifest".into());
+    }
     let actual = sha256_bytes(bytes);
-    if expected != actual && (expected, actual.as_str()) != DECLARED_OUTCOME_TRANSITION {
+    validate_native_windows_outcomes(committed, bytes, native_windows)?;
+    if !cfg!(windows)
+        && expected != actual
+        && (expected, actual.as_str()) != DECLARED_OUTCOME_TRANSITION
+    {
         let differences = outcome_differences(committed, bytes)?;
         return Err(format!(
             "fresh CLI outcomes differ from committed manifest: expected {expected}, got {actual}; first semantic differences: {}",
             differences.join(", ")
         ));
+    }
+    Ok(())
+}
+
+fn validate_native_windows_outcomes(
+    committed: &[u8],
+    fresh: &[u8],
+    ledger: &Value,
+) -> Result<(), String> {
+    const DIFFERENCE_ID: &str = "CLI-BB-013/outside-baseline";
+    if required_u64(ledger, "schema_version", "native Windows CLI ledger")? != 1
+        || required_u64(ledger, "protocol_version", "native Windows CLI ledger")? != 1
+        || required_str(ledger, "oracle_mode", "native Windows CLI ledger")? != "cli"
+        || required_str(ledger, "upstream_revision", "native Windows CLI ledger")? != REVISION
+        || required_str(ledger, "default_config_sha256", "native Windows CLI ledger")?
+            != CONFIG_SHA256
+    {
+        return Err("native Windows CLI ledger provenance changed".into());
+    }
+    let baseline_hash = sha256_bytes(committed);
+    if required_str(
+        ledger,
+        "baseline_outcomes_sha256",
+        "native Windows CLI ledger",
+    )? != baseline_hash
+        || required_str(
+            ledger,
+            "portable_outcomes_sha256",
+            "native Windows CLI ledger",
+        )? != baseline_hash
+    {
+        return Err("native Windows CLI ledger baseline hash changed".into());
+    }
+    let platforms = required_object(ledger, "platforms", "native Windows CLI ledger")?;
+    let expected_platforms = ["windows/amd64", "windows/arm64"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if platforms
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_platforms
+    {
+        return Err("native Windows CLI ledger platform set changed".into());
+    }
+    for platform in &expected_platforms {
+        validate_sha256(
+            required_str(&platforms[*platform], "outcomes_sha256", platform)?,
+            platform,
+        )?;
+    }
+    let difference_ids = required_array(ledger, "difference_ids", "native Windows CLI ledger")?;
+    if difference_ids != &[Value::String(DIFFERENCE_ID.into())] {
+        return Err("native Windows CLI difference ids changed".into());
+    }
+    let counts = required_object(
+        ledger,
+        "windows_finding_counts",
+        "native Windows CLI ledger",
+    )?;
+    if counts.len() != 1 || counts.get(DIFFERENCE_ID).and_then(Value::as_u64) != Some(2) {
+        return Err("native Windows CLI finding counts changed".into());
+    }
+    if !cfg!(windows) {
+        return Ok(());
+    }
+    let observed_platform =
+        native_windows_platform().ok_or("native Windows CLI architecture is unsupported")?;
+    if sha256_bytes(fresh)
+        != required_str(
+            &platforms[observed_platform],
+            "outcomes_sha256",
+            observed_platform,
+        )?
+    {
+        return Err(format!(
+            "native Windows CLI outcomes changed for {observed_platform}"
+        ));
+    }
+    reconcile_native_windows_outcomes(committed, fresh, DIFFERENCE_ID)
+}
+
+fn reconcile_native_windows_outcomes(
+    committed: &[u8],
+    fresh: &[u8],
+    expected_difference: &str,
+) -> Result<(), String> {
+    let committed_rows = parse_outcome_rows(committed, "committed CLI outcomes")?;
+    let fresh_rows = parse_outcome_rows(fresh, "native Windows CLI outcomes")?;
+    if committed_rows.len() != fresh_rows.len() {
+        return Err("native Windows CLI outcome count changed".into());
+    }
+    let mut differences = Vec::new();
+    for (committed_row, fresh_row) in committed_rows.iter().zip(&fresh_rows) {
+        let case_id = required_str(committed_row, "id", "committed CLI outcome")?;
+        if required_str(fresh_row, "id", "native Windows CLI outcome")? != case_id {
+            return Err("native Windows CLI outcome order changed".into());
+        }
+        let committed_variants = required_array(committed_row, "variants", case_id)?;
+        let fresh_variants = required_array(fresh_row, "variants", case_id)?;
+        if committed_variants.len() != fresh_variants.len() {
+            return Err(format!(
+                "{case_id}: native Windows CLI variant count changed"
+            ));
+        }
+        for (committed_variant, fresh_variant) in committed_variants.iter().zip(fresh_variants) {
+            let variant_id = required_str(committed_variant, "id", case_id)?;
+            if required_str(fresh_variant, "id", case_id)? != variant_id {
+                return Err(format!(
+                    "{case_id}: native Windows CLI variant order changed"
+                ));
+            }
+            if committed_variant == fresh_variant {
+                continue;
+            }
+            let id = format!("{case_id}/{variant_id}");
+            differences.push(id.clone());
+            if id != expected_difference {
+                return Err(format!(
+                    "native Windows CLI outcome changed outside {expected_difference}: {id}"
+                ));
+            }
+            validate_windows_baseline_variant(committed_variant, fresh_variant, &id)?;
+        }
+    }
+    if differences != [expected_difference] {
+        return Err("native Windows CLI difference ledger changed".into());
+    }
+    Ok(())
+}
+
+fn validate_windows_baseline_variant(
+    committed: &Value,
+    fresh: &Value,
+    label: &str,
+) -> Result<(), String> {
+    let axes = required_object(
+        fresh
+            .get("comparison")
+            .ok_or_else(|| format!("{label}: comparison missing"))?,
+        "axes",
+        label,
+    )?;
+    if axes.values().any(|value| value.as_str() != Some("equal")) {
+        return Err(format!("{label}: native Windows comparison changed"));
+    }
+    for (variant, expected, platform) in [
+        (committed, 1_usize, "portable"),
+        (fresh, 2_usize, "Windows"),
+    ] {
+        for implementation in ["go", "rust"] {
+            let observation = variant
+                .get(implementation)
+                .ok_or_else(|| format!("{label}: missing {implementation} observation"))?;
+            let finding_count = usize::try_from(required_u64(observation, "finding_count", label)?)
+                .map_err(|_| format!("{label}: {platform} finding count is out of range"))?;
+            if finding_count != expected
+                || required_array(observation, "findings", label)?.len() != expected
+            {
+                return Err(format!(
+                    "{label}: {platform} {implementation} finding count changed"
+                ));
+            }
+        }
+    }
+    if fresh["go"]["findings"] != fresh["rust"]["findings"]
+        || fresh["go"]["report"] != fresh["rust"]["report"]
+    {
+        return Err(format!("{label}: native Windows paired payloads differ"));
+    }
+    Ok(())
+}
+
+fn parse_outcome_rows(bytes: &[u8], label: &str) -> Result<Vec<Value>, String> {
+    newline_records(bytes, label)?
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            serde_json::from_slice(line)
+                .map_err(|error| format!("invalid {label} row {}: {error}", index + 1))
+        })
+        .collect()
+}
+
+fn native_windows_platform() -> Option<&'static str> {
+    if cfg!(all(windows, target_arch = "x86_64")) {
+        Some("windows/amd64")
+    } else if cfg!(all(windows, target_arch = "aarch64")) {
+        Some("windows/arm64")
+    } else {
+        None
+    }
+}
+
+fn validate_sha256(value: &str, label: &str) -> Result<(), String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(format!("{label} SHA-256 is invalid"));
     }
     Ok(())
 }
@@ -219,6 +429,7 @@ pub(super) fn render_manifest(
     manifest: &Value,
     generator_hash: &str,
     native_linux_hash: &str,
+    native_windows_hash: &str,
     unix_path_hash: &str,
     unix_logical_name_hash: &str,
 ) -> Result<Vec<u8>, String> {
@@ -268,6 +479,23 @@ pub(super) fn render_manifest(
             b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
             field.as_bytes(),
             "native Linux evidence provenance",
+        )?;
+    }
+    let field = format!("  \"native_windows_ledger_sha256\": \"{native_windows_hash}\",\n");
+    if let Some(current) = manifest
+        .get("native_windows_ledger_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != native_windows_hash {
+            return Err("native Windows CLI ledger hash differs from manifest".into());
+        }
+    } else {
+        let anchor = format!("  \"native_linux_outcome_sha256\": \"{native_linux_hash}\",\n");
+        rendered = insert_after_once(
+            &rendered,
+            anchor.as_bytes(),
+            field.as_bytes(),
+            "native Windows CLI ledger provenance",
         )?;
     }
     let field = format!("  \"unix_path_outcome_sha256\": \"{unix_path_hash}\",\n");
@@ -544,6 +772,10 @@ pub(crate) fn validate_cli_manifest_baselines(root: &Path, text: &str) -> Result
             sha256_bytes(&read(&corpus.join("native-linux-v1.json"))?)
         ),
         format!(
+            "cli_native_windows_sha256 = \"{}\"",
+            sha256_bytes(&read(&corpus.join("native-windows-v1.json"))?)
+        ),
+        format!(
             "cli_unix_path_sha256 = \"{}\"",
             sha256_bytes(&read(&corpus.join("unix-path-v1.json"))?)
         ),
@@ -612,9 +844,72 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        collect_value_differences, remove_flat_object_field, replace_declared_transition,
-        replace_once,
+        collect_value_differences, reconcile_native_windows_outcomes, remove_flat_object_field,
+        replace_declared_transition, replace_once,
     };
+
+    fn baseline_variant(count: u64) -> serde_json::Value {
+        let findings = (0..count)
+            .map(|index| json!({"index": index}))
+            .collect::<Vec<_>>();
+        let observation = json!({
+            "finding_count": count,
+            "findings": findings,
+            "report": {"state": "present", "sha256": "synthetic"}
+        });
+        json!({
+            "id": "outside-baseline",
+            "go": observation,
+            "rust": observation,
+            "comparison": {
+                "axes": {
+                    "child_cleanup": "equal",
+                    "exit": "equal",
+                    "findings": "equal",
+                    "report": "equal",
+                    "stderr_events": "equal",
+                    "stderr_usage": "equal",
+                    "stdout": "equal"
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn native_windows_reconciliation_accepts_only_the_baseline_branch() {
+        let committed = json!({
+            "id": "CLI-BB-013",
+            "variants": [baseline_variant(1), {"id": "portable"}]
+        });
+        let fresh = json!({
+            "id": "CLI-BB-013",
+            "variants": [baseline_variant(2), {"id": "portable"}]
+        });
+        let render = |value: &serde_json::Value| {
+            let mut bytes = serde_json::to_vec(value).unwrap();
+            bytes.push(b'\n');
+            bytes
+        };
+        assert!(
+            reconcile_native_windows_outcomes(
+                &render(&committed),
+                &render(&fresh),
+                "CLI-BB-013/outside-baseline"
+            )
+            .is_ok()
+        );
+
+        let mut unexpected = fresh;
+        unexpected["variants"][1]["changed"] = json!(true);
+        assert!(
+            reconcile_native_windows_outcomes(
+                &render(&committed),
+                &render(&unexpected),
+                "CLI-BB-013/outside-baseline"
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn outcome_differences_report_safe_values_without_finding_contents() {

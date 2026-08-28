@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "cli",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "baseline_outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
+  "portable_outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
+  "platforms": {
+    "windows/amd64": {
+      "outcomes_sha256": "954cbd8e474fc0fd4328bfdfc6c908ee68819da0817de77c541a573dc374285c"
+    },
+    "windows/arm64": {
+      "outcomes_sha256": "954cbd8e474fc0fd4328bfdfc6c908ee68819da0817de77c541a573dc374285c"
+    }
+  },
+  "difference_ids": [
+    "CLI-BB-013/outside-baseline"
+  ],
+  "windows_finding_counts": {
+    "CLI-BB-013/outside-baseline": 2
+  }
+}
