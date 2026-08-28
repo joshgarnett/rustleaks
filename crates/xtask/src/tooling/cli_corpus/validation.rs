@@ -179,18 +179,19 @@ fn validate_native_windows_outcomes(
     }
     let observed_platform =
         native_windows_platform().ok_or("native Windows CLI architecture is unsupported")?;
-    if sha256_bytes(fresh)
-        != required_str(
-            &platforms[observed_platform],
-            "outcomes_sha256",
-            observed_platform,
-        )?
-    {
+    let expected_hash = required_str(
+        &platforms[observed_platform],
+        "outcomes_sha256",
+        observed_platform,
+    )?;
+    let actual_hash = sha256_bytes(fresh);
+    reconcile_native_windows_outcomes(committed, fresh, &DIFFERENCE_IDS)?;
+    if actual_hash != expected_hash {
         return Err(format!(
-            "native Windows CLI outcomes changed for {observed_platform}"
+            "native Windows CLI outcomes changed for {observed_platform}: expected {expected_hash}, got {actual_hash}"
         ));
     }
-    reconcile_native_windows_outcomes(committed, fresh, &DIFFERENCE_IDS)
+    Ok(())
 }
 
 fn reconcile_native_windows_outcomes(
