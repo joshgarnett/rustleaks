@@ -26,6 +26,7 @@ const CARGO_PUBLIC_API_VERSION: &str = "cargo-public-api 0.52.0";
 const PUBLIC_API_TOOLCHAIN: &str = "nightly-2026-08-21";
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
 const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
+const GOVULNCHECK_VERSION: &str = "v1.7.0";
 const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
 const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -290,6 +291,7 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<(), String> {
     match args {
         [command] if command == "verify-upstream" => verify_upstream(),
+        [command] if command == "oracle-vulnerability-check" => oracle_vulnerability_check(),
         [command] if command == "manifest-check" => manifest_check(),
         [command] if command == "assertion-check" => assertion_check(),
         [command] if command == "generator-check" => generator_check(),
@@ -358,7 +360,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|oracle-vulnerability-check|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -485,6 +487,21 @@ fn verify_upstream() -> Result<(), String> {
         ));
     }
     println!("verified upstream revision {REVISION} and default config sha256 {CONFIG_SHA256}");
+    Ok(())
+}
+
+fn oracle_vulnerability_check() -> Result<(), String> {
+    verify_upstream()?;
+    let oracle = workspace_root()?.join("crates/rustleaks-compat/oracle");
+    let tool = format!("golang.org/x/vuln/cmd/govulncheck@{GOVULNCHECK_VERSION}");
+    command_output(
+        Command::new("go")
+            .current_dir(oracle)
+            .args(["run", &tool, "-show", "verbose", "./..."]),
+    )?;
+    println!(
+        "pinned Go oracle has no reachable vulnerability reported by govulncheck {GOVULNCHECK_VERSION}"
+    );
     Ok(())
 }
 

@@ -224,7 +224,9 @@ jobs:
           cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
       - name: Replay the complete fresh differential
         working-directory: rustleaks
-        run: cargo xtask parity --all
+        run: |
+          cargo xtask oracle-vulnerability-check
+          cargo xtask parity --all
 
   security:
     name: Dependency and owned-code security

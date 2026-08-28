@@ -13,6 +13,7 @@ exports_files([
 filegroup(
     name = "workspace_files",
     srcs = glob([
+        ".github/**",
         "*.md",
         "*.toml",
         "docs/**",
