@@ -7,6 +7,18 @@ criteria = "safe-to-deploy"
 version = "1.0.18"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.proc-macro2]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.0.107"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.quote]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.0.47"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
 [[audits.semver]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -17,6 +29,12 @@ notes = "locked Rustleaks graph; complete source and selected-feature review rec
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.1.1"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.thiserror]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "2.0.20"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
 [[audits.thiserror-impl]]

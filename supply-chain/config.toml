@@ -149,16 +149,6 @@ version = "0.9.1"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.proc-macro2]]
-version = "1.0.107"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
-[[exemptions.quote]]
-version = "1.0.47"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.rawzip]]
 version = "0.5.1"
 criteria = "safe-to-deploy"
@@ -216,11 +206,6 @@ notes = "owner=Rustleaks maintainers; scope=locked procedural macro graph; ratio
 
 [[exemptions.tar]]
 version = "0.4.46"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
-[[exemptions.thiserror]]
-version = "2.0.20"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
