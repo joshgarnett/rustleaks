@@ -99,6 +99,7 @@ pub(super) fn prepare(
     root: &Path,
     value: Option<&str>,
     go_binary: &Path,
+    fake_git_binary: &Path,
     temporary: &TempDir,
     label: &str,
 ) -> Result<Prepared, String> {
@@ -229,7 +230,9 @@ pub(super) fn prepare(
                 git(root, &["add", "secret.txt"], temporary, label)?;
             }
         }
-        _ if value.starts_with("fake-git:") => return fake_git(root, &value["fake-git:".len()..]),
+        _ if value.starts_with("fake-git:") => {
+            return fake_git(root, &value["fake-git:".len()..], fake_git_binary);
+        }
         _ => return Err(format!("unknown fixture preparation {value:?}")),
     }
     Ok(Prepared::default())
@@ -296,23 +299,21 @@ fn git(root: &Path, args: &[&str], temporary: &TempDir, label: &str) -> Result<(
     Ok(())
 }
 
-fn fake_git(root: &Path, mode: &str) -> Result<Prepared, String> {
-    #[cfg(not(windows))]
-    let relative = "fake-bin/git";
-    #[cfg(windows)]
-    let relative = "fake-bin/git.cmd";
-    #[cfg(not(windows))]
-    let script = "#!/usr/bin/perl\nuse strict; use warnings; use Cwd qw(getcwd);\nopen(my $pid, '>', getcwd() . '/fake-git.pid') or die $!; print $pid $$; close $pid;\nmy $args = join(' ', @ARGV); my $mode = '__MODE__';\nif ($mode eq 'malformed') { print \"malformed patch bytes\\n\"; exit 0; }\nif ($mode eq 'output-limit') { print STDERR ((('x' x 32767) . \"\\n\") x 33); select(undef, undef, undef, 2); exit 0; }\nmy $remote = index($args, 'ls-remote') >= 0; my $sleep = $mode eq 'timeout-remote' ? $remote : !$remote;\nif ($sleep) { select(undef, undef, undef, 30); } elsif ($remote) { exit 1; }\n".replace("__MODE__", mode);
-    #[cfg(windows)]
-    let script = "@echo off\r\npowershell.exe -NoProfile -NonInteractive -Command \"$mode='__MODE__'; [IO.File]::WriteAllText((Join-Path (Get-Location) 'fake-git.pid'), [string]$PID); $raw=[Environment]::CommandLine; $remote=$raw -match 'ls-remote'; if($mode -eq 'malformed'){[Console]::Out.WriteLine('malformed patch bytes'); exit 0}; if($mode -eq 'output-limit'){1..33|%%{[Console]::Error.WriteLine(('x'*32767))}; Start-Sleep -Seconds 2; exit 0}; $sleep=if($mode -eq 'timeout-remote'){$remote}else{!$remote}; if($sleep){Start-Sleep -Seconds 30}elseif($remote){exit 1}\"\r\n"
-        .replace("__MODE__", mode);
-    write(root, relative, script.as_bytes())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        fs::set_permissions(root.join(relative), fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("cannot chmod fake git: {e}"))?;
-    }
+fn fake_git(root: &Path, mode: &str, binary: &Path) -> Result<Prepared, String> {
+    let relative = if cfg!(windows) {
+        "fake-bin/git.exe"
+    } else {
+        "fake-bin/git"
+    };
+    let destination = root.join(relative);
+    fs::create_dir_all(
+        destination
+            .parent()
+            .ok_or("fake Git destination has no parent")?,
+    )
+    .map_err(|error| format!("cannot create fake Git directory: {error}"))?;
+    fs::copy(binary, &destination)
+        .map_err(|error| format!("cannot copy native fake Git helper: {error}"))?;
     let path = format!(
         "{}{}{}",
         root.join("fake-bin").display(),
@@ -320,7 +321,13 @@ fn fake_git(root: &Path, mode: &str) -> Result<Prepared, String> {
         std::env::var("PATH").unwrap_or_default()
     );
     Ok(Prepared {
-        env: BTreeMap::from([("PATH".into(), path.into_bytes())]),
+        env: BTreeMap::from([
+            ("PATH".into(), path.into_bytes()),
+            (
+                "RUSTLEAKS_CLI_FAKE_GIT_MODE".into(),
+                mode.as_bytes().to_vec(),
+            ),
+        ]),
         stdin: None,
         child_pid_file: Some("fake-git.pid".into()),
         native_path: None,
@@ -402,6 +409,7 @@ fn symlink_missing(_root: &Path) -> Result<(), String> {
 #[cfg(all(test, unix))]
 mod tests {
     use std::fs;
+    use std::os::unix::fs::PermissionsExt as _;
     use std::process::{Command, Stdio};
 
     use super::fake_git;
@@ -411,9 +419,13 @@ mod tests {
         let base = std::env::temp_dir().join(format!("cli-fake-git-test-{}", std::process::id()));
         let caller = base.join("caller");
         let fixture = base.join("fixture");
+        let helper = base.join("fake-git-helper");
         fs::create_dir_all(&caller).unwrap();
         fs::create_dir_all(&fixture).unwrap();
-        let prepared = fake_git(&fixture, "malformed").unwrap();
+        fs::write(&helper, b"#!/bin/sh\nprintf '%s' $$ > fake-git.pid\n").unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+        let prepared = fake_git(&fixture, "malformed", &helper).unwrap();
+        assert_eq!(prepared.env["RUSTLEAKS_CLI_FAKE_GIT_MODE"], b"malformed");
         let status = Command::new(fixture.join("fake-bin/git"))
             .current_dir(&fixture)
             .env("PWD", &caller)

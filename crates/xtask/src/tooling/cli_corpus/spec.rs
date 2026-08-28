@@ -1,6 +1,7 @@
 //! CLI request, source-pin, runtime, and binary-build contracts.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -19,9 +20,48 @@ pub(super) const CONFIG_SHA256: &str =
 pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.2";
 pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.3";
 
+const FAKE_GIT_SOURCE: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func main() {
+	if err := os.WriteFile("fake-git.pid", []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	mode := os.Getenv("RUSTLEAKS_CLI_FAKE_GIT_MODE")
+	if mode == "malformed" {
+		fmt.Println("malformed patch bytes")
+		return
+	}
+	if mode == "output-limit" {
+		line := strings.Repeat("x", 32767)
+		for range 33 {
+			fmt.Fprintln(os.Stderr, line)
+		}
+		time.Sleep(2 * time.Second)
+		return
+	}
+	remote := strings.Contains(strings.Join(os.Args[1:], " "), "ls-remote")
+	sleep := mode == "timeout-remote" && remote || mode == "timeout-source" && !remote
+	if sleep {
+		time.Sleep(30 * time.Second)
+	} else if remote {
+		os.Exit(1)
+	}
+}
+"#;
+
 pub(super) struct Binaries {
     pub(super) go: PathBuf,
     pub(super) rust: PathBuf,
+    pub(super) fake_git: PathBuf,
 }
 
 #[derive(PartialEq, Eq)]
@@ -291,6 +331,7 @@ pub(super) fn build(
     } else {
         "rustleaks"
     });
+    let fake_git = build_fake_git(temporary)?;
     let mut args = strings(&["build", "-trimpath", "-buildvcs=true", "-ldflags"]);
     args.push(format!(
         "-X github.com/zricethezav/gitleaks/v8/version.Version={BUILD_VERSION}"
@@ -364,7 +405,35 @@ pub(super) fn build(
     {
         return Err("runtime provenance changed during build".into());
     }
-    Ok(Binaries { go, rust })
+    Ok(Binaries { go, rust, fake_git })
+}
+
+fn build_fake_git(temporary: &TempDir) -> Result<PathBuf, String> {
+    let source = temporary.path.join("fake-git.go");
+    let binary = temporary.path.join(if cfg!(windows) {
+        "fake-git.exe"
+    } else {
+        "fake-git"
+    });
+    fs::write(&source, FAKE_GIT_SOURCE)
+        .map_err(|error| format!("cannot write {}: {error}", source.display()))?;
+    process::command(
+        Path::new("go"),
+        &[
+            "build".into(),
+            "-trimpath".into(),
+            "-o".into(),
+            binary.to_string_lossy().into_owned(),
+            source.to_string_lossy().into_owned(),
+        ],
+        &temporary.path,
+        &process::default_go_env(temporary),
+        temporary,
+        "fake-git-build",
+        Duration::from_secs(300),
+        OUTPUT_LIMIT,
+    )?;
+    Ok(binary)
 }
 
 pub(super) fn git_status(

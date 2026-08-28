@@ -37,6 +37,7 @@ pub(super) fn observe(
     case_id: &str,
     spec: &Value,
     go_binary: &Path,
+    fake_git_binary: &Path,
 ) -> Result<Observation, String> {
     let temporary = TempDir::new(&format!("cli-{}", case_id.to_ascii_lowercase()))?;
     let capture = TempDir::new(&format!("cli-io-{}", case_id.to_ascii_lowercase()))?;
@@ -46,6 +47,7 @@ pub(super) fn observe(
         root,
         spec.get("prepare").and_then(Value::as_str),
         go_binary,
+        fake_git_binary,
         &capture,
         &format!("{case_id}-{}", required_str(spec, "id", case_id)?),
     )?;
@@ -209,6 +211,7 @@ pub(super) fn row_json(
     row: &Value,
     go_binary: &Path,
     rust_binary: &Path,
+    fake_git_binary: &Path,
     native_linux: &str,
     unix_path: &str,
 ) -> Result<String, String> {
@@ -234,8 +237,15 @@ pub(super) fn row_json(
             );
             continue;
         }
-        let go = observe(go_binary, "go", case_id, spec, go_binary)?;
-        let rust = observe(rust_binary, "rust", case_id, spec, go_binary)?;
+        let go = observe(go_binary, "go", case_id, spec, go_binary, fake_git_binary)?;
+        let rust = observe(
+            rust_binary,
+            "rust",
+            case_id,
+            spec,
+            go_binary,
+            fake_git_binary,
+        )?;
         validate_expected_pair(case_id, variant_id, spec, &go, &rust)?;
         let disposition = spec.get("disposition").and_then(Value::as_str);
         let variant = format!(
