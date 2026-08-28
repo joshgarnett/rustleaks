@@ -75,7 +75,7 @@ pub(super) fn validate_outcomes(bytes: &[u8], manifest: &Value) -> Result<(), St
             }
         }
     }
-    if variants != VARIANT_COUNT || paired != 118 || followups != 1 {
+    if variants != VARIANT_COUNT || paired != 119 || followups != 0 {
         return Err("fresh CLI variant/process accounting changed".into());
     }
     let expected = required_str(manifest, "outcomes_sha256", "manifest")?;

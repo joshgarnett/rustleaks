@@ -246,6 +246,13 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
+      - name: Check out the pinned Go oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -259,6 +266,9 @@ jobs:
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
         run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+      - name: Replay native CLI evidence
+        working-directory: rustleaks
+        run: cargo xtask generate cli --output ../cli-native-evidence
       - name: Build and test the native target
         working-directory: rustleaks
         env:

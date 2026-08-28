@@ -203,12 +203,7 @@ pub(super) fn row_json(
     let mut variants = Vec::new();
     for spec in required_array(row, "variants", case_id)? {
         let variant_id = required_str(spec, "id", case_id)?;
-        if native_followup(spec) {
-            if validate_linux_followup(spec) {
-                let go = observe(go_binary, "go", case_id, spec, go_binary)?;
-                let rust = observe(rust_binary, "rust", case_id, spec, go_binary)?;
-                validate_omitted_native_pair(case_id, variant_id, spec, &go, &rust)?;
-            }
+        if linux_only(spec) && !cfg!(target_os = "linux") {
             variants.push(format!(
                 "{{\"id\":{},\"status\":\"native-runtime-followup\",\"disposition\":\"FOLLOWUP-NATIVE-M11-001\"}}",
                 quote(variant_id)
@@ -217,14 +212,19 @@ pub(super) fn row_json(
         }
         let go = observe(go_binary, "go", case_id, spec, go_binary)?;
         let rust = observe(rust_binary, "rust", case_id, spec, go_binary)?;
+        validate_expected_pair(case_id, variant_id, spec, &go, &rust)?;
         let disposition = spec.get("disposition").and_then(Value::as_str);
-        variants.push(format!(
+        let variant = format!(
             "{{\"id\":{},\"go\":{},\"rust\":{},\"comparison\":{}}}",
             quote(variant_id),
             go.json,
             rust.json,
             comparison(&go, &rust, disposition)
-        ));
+        );
+        if linux_only(spec) {
+            println!("native CLI evidence: {variant}");
+        }
+        variants.push(variant);
     }
     Ok(format!(
         "{{\"protocol_version\":1,\"id\":{},\"title\":{},\"variants\":[{}]}}\n",
@@ -343,48 +343,33 @@ fn reap_if_alive(pid: u32) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn native_followup(spec: &Value) -> bool {
-    native_followup_for_target(spec, cfg!(windows))
-}
-
-fn native_followup_for_target(spec: &Value, windows: bool) -> bool {
-    let expected = spec.get("expectation").unwrap_or(&Value::Null);
-    expected.get("unix_only").and_then(Value::as_bool) == Some(true) && windows
-        || expected.get("linux_only").and_then(Value::as_bool) == Some(true)
-}
-
-fn validate_linux_followup(spec: &Value) -> bool {
-    validate_linux_followup_for_target(spec, cfg!(target_os = "linux"))
-}
-
-fn validate_linux_followup_for_target(spec: &Value, linux: bool) -> bool {
-    linux
-        && spec
-            .pointer("/expectation/linux_only")
-            .and_then(Value::as_bool)
-            == Some(true)
-}
-
-fn validate_omitted_native_pair(
+fn validate_expected_pair(
     case_id: &str,
     variant_id: &str,
     spec: &Value,
     go: &Observation,
     rust: &Observation,
 ) -> Result<(), String> {
+    if spec
+        .pointer("/expectation/linux_only")
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return Ok(());
+    }
     let label = format!("{case_id}/{variant_id}");
     let expected = spec.get("expectation").unwrap_or(&Value::Null);
     if let Some(exit) = expected.get("exit").and_then(Value::as_i64) {
         let exit = exit.to_string();
         if go.exit != exit || rust.exit != exit {
-            return Err(format!("{label}: omitted native exit changed"));
+            return Err(format!("{label}: expected exit changed"));
         }
     }
     if let Some(findings) = expected.get("findings").and_then(Value::as_u64) {
         let findings = usize::try_from(findings)
-            .map_err(|_| format!("{label}: native finding expectation is too large"))?;
+            .map_err(|_| format!("{label}: finding expectation is too large"))?;
         if go.finding_count != Some(findings) || rust.finding_count != Some(findings) {
-            return Err(format!("{label}: omitted native finding count changed"));
+            return Err(format!("{label}: expected finding count changed"));
         }
     }
     if go.exit != rust.exit
@@ -395,9 +380,15 @@ fn validate_omitted_native_pair(
         || go.findings != rust.findings
         || go.child != rust.child
     {
-        return Err(format!("{label}: omitted native comparison changed"));
+        return Err(format!("{label}: exact comparison changed"));
     }
     Ok(())
+}
+
+fn linux_only(spec: &Value) -> bool {
+    spec.pointer("/expectation/linux_only")
+        .and_then(Value::as_bool)
+        == Some(true)
 }
 
 fn event_projection_json(event: &Event) -> String {
@@ -435,26 +426,4 @@ fn quote(value: &str) -> String {
         .replace("\\u0026", "&")
         .replace("\\u003c", "<")
         .replace("\\u003e", ">")
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::{native_followup_for_target, validate_linux_followup_for_target};
-
-    #[test]
-    fn linux_native_observation_is_validated_but_omitted() {
-        let spec = json!({"expectation": {"linux_only": true}});
-        assert!(native_followup_for_target(&spec, false));
-        assert!(validate_linux_followup_for_target(&spec, true));
-        assert!(!validate_linux_followup_for_target(&spec, false));
-    }
-
-    #[test]
-    fn unix_observation_is_only_omitted_on_windows() {
-        let spec = json!({"expectation": {"unix_only": true}});
-        assert!(!native_followup_for_target(&spec, false));
-        assert!(native_followup_for_target(&spec, true));
-    }
 }
