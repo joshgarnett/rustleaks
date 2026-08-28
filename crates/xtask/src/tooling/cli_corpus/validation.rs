@@ -204,6 +204,7 @@ fn reconcile_native_windows_outcomes(
         return Err("native Windows CLI outcome count changed".into());
     }
     let mut differences = Vec::new();
+    let mut unexpected = Vec::new();
     for (committed_row, fresh_row) in committed_rows.iter().zip(&fresh_rows) {
         let case_id = required_str(committed_row, "id", "committed CLI outcome")?;
         if required_str(fresh_row, "id", "native Windows CLI outcome")? != case_id {
@@ -236,12 +237,26 @@ fn reconcile_native_windows_outcomes(
                     validate_windows_outside_i32_variant(committed_variant, fresh_variant, &id)?;
                 }
                 _ => {
-                    return Err(format!(
-                        "native Windows CLI outcome changed outside the ledger: {id}"
-                    ));
+                    if unexpected.len() < 12 {
+                        let mut paths = Vec::new();
+                        collect_value_differences(
+                            committed_variant,
+                            fresh_variant,
+                            &id,
+                            &mut paths,
+                        );
+                        paths.truncate(4);
+                        unexpected.push(format!("{id}: {}", paths.join(", ")));
+                    }
                 }
             }
         }
+    }
+    if !unexpected.is_empty() {
+        return Err(format!(
+            "native Windows CLI outcomes changed outside the ledger: {}",
+            unexpected.join("; ")
+        ));
     }
     if differences.iter().map(String::as_str).collect::<Vec<_>>() != expected_differences {
         return Err("native Windows CLI difference ledger changed".into());
@@ -939,11 +954,11 @@ mod tests {
     fn native_windows_reconciliation_accepts_only_the_baseline_branch() {
         let committed = json!({
             "id": "CLI-BB-013",
-            "variants": [baseline_variant(1), {"id": "portable"}]
+            "variants": [baseline_variant(1), {"id": "portable"}, {"id": "second"}]
         });
         let fresh = json!({
             "id": "CLI-BB-013",
-            "variants": [baseline_variant(2), {"id": "portable"}]
+            "variants": [baseline_variant(2), {"id": "portable"}, {"id": "second"}]
         });
         let render = |value: &serde_json::Value| {
             let mut bytes = serde_json::to_vec(value).unwrap();
@@ -961,14 +976,15 @@ mod tests {
 
         let mut unexpected = fresh;
         unexpected["variants"][1]["changed"] = json!(true);
-        assert!(
-            reconcile_native_windows_outcomes(
-                &render(&committed),
-                &render(&unexpected),
-                &["CLI-BB-013/outside-baseline"]
-            )
-            .is_err()
+        unexpected["variants"][2]["changed"] = json!(true);
+        let error = reconcile_native_windows_outcomes(
+            &render(&committed),
+            &render(&unexpected),
+            &["CLI-BB-013/outside-baseline"],
         );
+        let error = error.unwrap_err();
+        assert!(error.contains("CLI-BB-013/portable"));
+        assert!(error.contains("CLI-BB-013/second"));
     }
 
     #[test]
