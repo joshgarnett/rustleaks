@@ -9,7 +9,7 @@ mod validation;
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::artifacts::{GeneratedTree, OutcomeBaseline};
 use super::support::TempDir;
@@ -107,6 +107,10 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         &manifest_value,
         &temporary,
     )?;
+    if let Some(path) = std::env::var_os("RUSTLEAKS_SOURCE_LEDGER_PATH") {
+        fs::write(&path, observation_ledger(&observed)?)
+            .map_err(|error| format!("cannot write source observation ledger: {error}"))?;
+    }
     validation::validate_all(
         root,
         &request_values,
@@ -144,6 +148,43 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     tree.insert("README.md", README.as_bytes())?;
     tree.insert("manifest-v1.json", manifest.clone())?;
     Ok(Generated { tree, manifest })
+}
+
+fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
+    let lines = newline_records(&observed.bytes, "observed source outcomes")?;
+    if lines.len() != observed.values.len() {
+        return Err("source observation ledger count changed".into());
+    }
+    let records = lines
+        .iter()
+        .zip(&observed.values)
+        .map(|(line, value)| {
+            Ok(json!({
+                "id": validation::required_str(value, "id", "source outcome")?,
+                "outcome_sha256": crate::tooling::support::sha256_bytes(line),
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let first = observed
+        .values
+        .first()
+        .ok_or("source observations are empty")?;
+    let ledger = json!({
+        "schema_version": 1,
+        "protocol_version": spec::PROTOCOL_VERSION,
+        "oracle_mode": "source",
+        "upstream_revision": spec::REVISION,
+        "default_config_sha256": spec::CONFIG_SHA256,
+        "go_version": validation::required_str(first, "go_version", "source outcome")?,
+        "platform": validation::required_str(first, "platform", "source outcome")?,
+        "record_count": records.len(),
+        "outcomes_sha256": crate::tooling::support::sha256_bytes(&observed.bytes),
+        "records": records,
+    });
+    let mut bytes = serde_json::to_vec_pretty(&ledger)
+        .map_err(|error| format!("cannot render source observation ledger: {error}"))?;
+    bytes.push(b'\n');
+    Ok(bytes)
 }
 
 fn transition_coverage(legacy: &[u8]) -> Result<Vec<u8>, String> {
@@ -239,12 +280,39 @@ fn newline_records<'a>(bytes: &'a [u8], label: &str) -> Result<Vec<&'a [u8]>, St
 
 #[cfg(test)]
 mod tests {
-    use super::newline_records;
+    use serde_json::{Value, json};
+
+    use super::process::Observed;
+    use super::{newline_records, observation_ledger};
+    use crate::tooling::support::sha256_bytes;
 
     #[test]
     fn jsonl_boundaries_fail_closed() {
         assert!(newline_records(b"{}", "test").is_err());
         assert!(newline_records(b"{}\n\n", "test").is_err());
         assert_eq!(newline_records(b"{}\n[]\n", "test").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn observation_ledger_retains_hashes_without_payloads() {
+        let bytes = br#"{"id":"case","go_version":"go1.26.7","platform":"windows/amd64","payload":"reviewed-fixture-value"}
+"#
+        .to_vec();
+        let observed = Observed {
+            values: vec![serde_json::from_slice(&bytes[..bytes.len() - 1]).unwrap()],
+            bytes: bytes.clone(),
+        };
+        let rendered = observation_ledger(&observed).unwrap();
+        assert!(!rendered
+            .windows(b"reviewed-fixture-value".len())
+            .any(|window| window == b"reviewed-fixture-value"));
+        let ledger: Value = serde_json::from_slice(&rendered).unwrap();
+        assert_eq!(ledger["platform"], json!("windows/amd64"));
+        assert_eq!(ledger["outcomes_sha256"], json!(sha256_bytes(&bytes)));
+        assert_eq!(ledger["records"][0]["id"], json!("case"));
+        assert_eq!(
+            ledger["records"][0]["outcome_sha256"],
+            json!(sha256_bytes(&bytes))
+        );
     }
 }
