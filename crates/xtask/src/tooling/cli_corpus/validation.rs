@@ -85,24 +85,26 @@ pub(super) fn validate_outcomes(
     let expected = required_str(manifest, "outcomes_sha256", "manifest")?;
     let actual = sha256_bytes(bytes);
     if expected != actual && (expected, actual.as_str()) != DECLARED_OUTCOME_TRANSITION {
-        let difference = first_outcome_difference(committed, bytes)?;
+        let differences = outcome_differences(committed, bytes)?;
         return Err(format!(
-            "fresh CLI outcomes differ from committed manifest: expected {expected}, got {actual}; {difference}"
+            "fresh CLI outcomes differ from committed manifest: expected {expected}, got {actual}; first semantic differences: {}",
+            differences.join(", ")
         ));
     }
     Ok(())
 }
 
-fn first_outcome_difference(committed: &[u8], fresh: &[u8]) -> Result<String, String> {
+fn outcome_differences(committed: &[u8], fresh: &[u8]) -> Result<Vec<String>, String> {
     let committed_lines = newline_records(committed, "committed CLI outcomes")?;
     let fresh_lines = newline_records(fresh, "fresh CLI outcomes")?;
     if committed_lines.len() != fresh_lines.len() {
-        return Ok(format!(
+        return Ok(vec![format!(
             "row count differs: committed {}, fresh {}",
             committed_lines.len(),
             fresh_lines.len()
-        ));
+        )]);
     }
+    let mut differences = Vec::new();
     for (number, (committed_line, fresh_line)) in
         committed_lines.into_iter().zip(fresh_lines).enumerate()
     {
@@ -114,16 +116,25 @@ fn first_outcome_difference(committed: &[u8], fresh: &[u8]) -> Result<String, St
             .get("id")
             .and_then(Value::as_str)
             .map_or_else(|| format!("row[{}]", number + 1), str::to_owned);
-        if let Some(path) = first_value_difference(&committed_value, &fresh_value, &label) {
-            return Ok(format!("first semantic difference at {path}"));
+        collect_value_differences(&committed_value, &fresh_value, &label, &mut differences);
+        if differences.len() >= 12 {
+            break;
         }
     }
-    Ok("semantic JSON matches; byte serialization differs".into())
+    if differences.is_empty() {
+        differences.push("semantic JSON matches; byte serialization differs".into());
+    }
+    Ok(differences)
 }
 
-fn first_value_difference(committed: &Value, fresh: &Value, path: &str) -> Option<String> {
-    if committed == fresh {
-        return None;
+fn collect_value_differences(
+    committed: &Value,
+    fresh: &Value,
+    path: &str,
+    differences: &mut Vec<String>,
+) {
+    if committed == fresh || differences.len() >= 12 {
+        return;
     }
     match (committed, fresh) {
         (Value::Object(committed), Value::Object(fresh)) => {
@@ -133,31 +144,73 @@ fn first_value_difference(committed: &Value, fresh: &Value, path: &str) -> Optio
                 .map(String::as_str)
                 .collect::<BTreeSet<_>>();
             for key in keys {
+                if differences.len() >= 12 {
+                    break;
+                }
                 let next = format!("{path}/{key}");
                 match (committed.get(key), fresh.get(key)) {
                     (Some(committed), Some(fresh)) => {
-                        if let Some(difference) = first_value_difference(committed, fresh, &next) {
-                            return Some(difference);
-                        }
+                        collect_value_differences(committed, fresh, &next, differences);
                     }
-                    _ => return Some(next),
+                    (Some(_), None) => differences.push(format!("{next} (missing fresh field)")),
+                    (None, Some(_)) => {
+                        differences.push(format!("{next} (unexpected fresh field)"));
+                    }
+                    (None, None) => unreachable!("key came from at least one object"),
                 }
             }
-            Some(path.into())
         }
         (Value::Array(committed), Value::Array(fresh)) => {
             for (index, (committed, fresh)) in committed.iter().zip(fresh).enumerate() {
+                if differences.len() >= 12 {
+                    break;
+                }
                 let next = committed
                     .get("id")
                     .and_then(Value::as_str)
                     .map_or_else(|| format!("{path}[{index}]"), |id| format!("{path}[{id}]"));
-                if let Some(difference) = first_value_difference(committed, fresh, &next) {
-                    return Some(difference);
-                }
+                collect_value_differences(committed, fresh, &next, differences);
             }
-            Some(format!("{path}/length"))
+            if committed.len() != fresh.len() {
+                differences.push(format!(
+                    "{path}/length (committed {}, fresh {})",
+                    committed.len(),
+                    fresh.len()
+                ));
+            }
         }
-        _ => Some(path.into()),
+        _ => differences.push(describe_scalar_difference(path, committed, fresh)),
+    }
+}
+
+fn describe_scalar_difference(path: &str, committed: &Value, fresh: &Value) -> String {
+    let field = path.rsplit('/').next().unwrap_or(path);
+    let safe_value = path.contains("/comparison/axes/")
+        || path.contains("/fields/")
+        || matches!(
+            field,
+            "child_reaped"
+                | "class"
+                | "disposition"
+                | "exit"
+                | "finding_count"
+                | "report"
+                | "severity"
+                | "state"
+                | "status"
+                | "stderr_contains_disclosure_marker"
+                | "stderr_usage"
+                | "stdout_bytes"
+        );
+    if safe_value
+        && !committed.is_array()
+        && !committed.is_object()
+        && !fresh.is_array()
+        && !fresh.is_object()
+    {
+        format!("{path} (committed {committed}, fresh {fresh})")
+    } else {
+        path.into()
     }
 }
 
@@ -559,16 +612,24 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        first_value_difference, remove_flat_object_field, replace_declared_transition, replace_once,
+        collect_value_differences, remove_flat_object_field, replace_declared_transition,
+        replace_once,
     };
 
     #[test]
-    fn outcome_difference_reports_only_the_first_field_path() {
-        let committed = json!({"variants": [{"id": "portable", "findings": [{"file": "a"}]}]});
-        let fresh = json!({"variants": [{"id": "portable", "findings": [{"file": "b"}]}]});
+    fn outcome_differences_report_safe_values_without_finding_contents() {
+        let committed = json!({"variants": [{"id": "portable", "comparison": {"axes": {"stderr_events": "equal"}}, "go": {"stderr_events": [{"class": "expected", "normalized_message_base64": "secret-a"}]}, "findings": [{"file": "sensitive-a"}]}]});
+        let fresh = json!({"variants": [{"id": "portable", "comparison": {"axes": {"stderr_events": "different"}}, "go": {"stderr_events": [{"class": "actual", "normalized_message_base64": "secret-b"}]}, "findings": [{"file": "sensitive-b"}]}]});
+        let mut differences = Vec::new();
+        collect_value_differences(&committed, &fresh, "CLI-BB-001", &mut differences);
         assert_eq!(
-            first_value_difference(&committed, &fresh, "CLI-BB-001").as_deref(),
-            Some("CLI-BB-001/variants[portable]/findings[0]/file")
+            differences,
+            [
+                "CLI-BB-001/variants[portable]/comparison/axes/stderr_events (committed \"equal\", fresh \"different\")",
+                "CLI-BB-001/variants[portable]/findings[0]/file",
+                "CLI-BB-001/variants[portable]/go/stderr_events[0]/class (committed \"expected\", fresh \"actual\")",
+                "CLI-BB-001/variants[portable]/go/stderr_events[0]/normalized_message_base64",
+            ]
         );
     }
 
