@@ -13,6 +13,7 @@ pub(super) fn transition(root: &Path, canonical: &str) -> Result<String, String>
     ensure_cli_native_linux_field(root, &mut output)?;
     ensure_cli_unix_path_field(root, &mut output)?;
     ensure_source_native_windows_field(root, &mut output)?;
+    ensure_report_native_windows_field(root, &mut output)?;
     transition_cli_native_metrics(&mut output)?;
     refresh_artifact_hashes(root, &mut output)?;
     let generators = [
@@ -152,6 +153,24 @@ fn ensure_source_native_windows_field(root: &Path, output: &mut String) -> Resul
         + 1;
     let hash = sha256_file(&root.join("compat/source-corpus/native-windows-v1.json"))?;
     output.insert_str(end, &format!("source_native_windows_sha256 = \"{hash}\"\n"));
+    Ok(())
+}
+
+fn ensure_report_native_windows_field(root: &Path, output: &mut String) -> Result<(), String> {
+    if output.contains("report_native_windows_sha256 = ") {
+        return Ok(());
+    }
+    let marker = "report_readme_sha256 = \"";
+    let start = output
+        .find(marker)
+        .ok_or("test manifest lacks report_readme_sha256")?;
+    let end = start
+        + output[start..]
+            .find('\n')
+            .ok_or("test manifest has malformed report_readme_sha256")?
+        + 1;
+    let hash = sha256_file(&root.join("compat/report-corpus/native-windows-v1.json"))?;
+    output.insert_str(end, &format!("report_native_windows_sha256 = \"{hash}\"\n"));
     Ok(())
 }
 
@@ -330,6 +349,10 @@ fn refresh_artifact_hashes(root: &Path, output: &mut String) -> Result<(), Strin
             "compat/report-corpus/coverage-v1.json",
         ),
         ("report_readme_sha256", "compat/report-corpus/README.md"),
+        (
+            "report_native_windows_sha256",
+            "compat/report-corpus/native-windows-v1.json",
+        ),
         ("cli_requests_sha256", "compat/cli-corpus/requests-v1.jsonl"),
         ("cli_outcomes_sha256", "compat/cli-corpus/outcomes-v1.jsonl"),
         (

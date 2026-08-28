@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "report",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "baseline_outcomes_sha256": "7f9d89b13ec90c6ccfa0449c427513be1f22f0822abedfabba331125e485c953",
+  "portable_outcomes_sha256": "7f9d89b13ec90c6ccfa0449c427513be1f22f0822abedfabba331125e485c953",
+  "platforms": {
+    "windows/amd64": {
+      "outcomes_sha256": "508d96520105380063f89311f1a8106d765410255eb89bdef5809b833b03020b"
+    },
+    "windows/arm64": {
+      "outcomes_sha256": "508d96520105380063f89311f1a8106d765410255eb89bdef5809b833b03020b"
+    }
+  },
+  "difference_ids": [
+    "template-missing-path"
+  ],
+  "difference_paths": {
+    "template-missing-path": [
+      "/error/message"
+    ]
+  }
+}

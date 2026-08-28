@@ -10,7 +10,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::artifacts::GeneratedTree;
+use super::artifacts::{GeneratedTree, OutcomeBaseline};
 use super::support::{TempDir, sha256_bytes};
 use spec::CASE_COUNT;
 
@@ -23,6 +23,9 @@ and control bytes remain observable.
 
 Runtime Go version and host platform are validated during generation but
 omitted from outcomes so the committed corpus is host-independent.
+Native Windows raw outcomes are pinned for both architectures; the only
+recorded platform normalization is the missing-template operating-system error
+message.
 
 The corpus freezes exact JSON, CSV, JUnit, SARIF, and template bytes; all
 pinned upstream report fixtures; report-test identities `TM-0251..TM-0268`;
@@ -70,6 +73,9 @@ fn generate(root: &Path) -> Result<Generated, String> {
     let requests = read(&canonical_root.join("requests-v1.jsonl"))?;
     let committed_outcomes = read(&canonical_root.join("outcomes-v1.jsonl"))?;
     let committed_values = parse_outcomes(&committed_outcomes)?;
+    let native_windows = read(&canonical_root.join("native-windows-v1.json"))?;
+    let native_windows_value: Value = serde_json::from_slice(&native_windows)
+        .map_err(|error| format!("invalid native Windows report ledger JSON: {error}"))?;
     let coverage = read(&canonical_root.join("coverage-v1.json"))?;
     let coverage_value: Value = serde_json::from_slice(&coverage)
         .map_err(|error| format!("invalid report coverage JSON: {error}"))?;
@@ -84,6 +90,18 @@ fn generate(root: &Path) -> Result<Generated, String> {
     let status_before = process::git_status(&upstream, &temporary, "before")?;
     let observed = process::observe(root, &upstream, &request_values, &requests, &temporary)?;
     write_observation_ledger(&observed, &committed_outcomes, &committed_values)?;
+    validation::validate_native_windows_ledger(
+        OutcomeBaseline {
+            values: &committed_values,
+            bytes: &committed_outcomes,
+        },
+        OutcomeBaseline {
+            values: &observed.values,
+            bytes: &observed.bytes,
+        },
+        &observed.platform,
+        &native_windows_value,
+    )?;
     validation::validate_all(
         &upstream,
         &request_values,
@@ -107,10 +125,16 @@ fn generate(root: &Path) -> Result<Generated, String> {
         .count();
     let requests_sha256 = sha256_bytes(&requests);
     let outcomes_sha256 = sha256_bytes(&observed.bytes);
+    let generated_outcomes = if cfg!(windows) {
+        committed_outcomes
+    } else {
+        observed.bytes
+    };
     let mut tree = GeneratedTree::default();
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", observed.bytes)?;
+    tree.insert("outcomes-v1.jsonl", generated_outcomes)?;
     tree.insert("coverage-v1.json", coverage)?;
+    tree.insert("native-windows-v1.json", native_windows)?;
     tree.insert("README.md", README.as_bytes())?;
     Ok(Generated {
         tree,

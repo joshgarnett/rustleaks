@@ -1,6 +1,6 @@
 //! Response-envelope, fixture, count, and manifest validation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 use super::controls;
 use super::read;
 use super::spec::{CASE_COUNT, DEFAULT_CONFIG_SHA256, PROTOCOL_VERSION, REVISION};
+use crate::tooling::artifacts::{OutcomeBaseline, first_json_difference};
 use crate::tooling::support::sha256_bytes;
 
 pub(super) fn validate_envelope(
@@ -79,6 +80,157 @@ fn runtime_matches(outcome: &Value, go_version: &str, platform: &str) -> bool {
         && outcome.get("platform").and_then(Value::as_str) == Some(platform)
 }
 
+pub(super) fn validate_native_windows_ledger(
+    committed: OutcomeBaseline<'_>,
+    observed: OutcomeBaseline<'_>,
+    observed_platform: &str,
+    ledger: &Value,
+) -> Result<(), String> {
+    const DIFFERENCE_ID: &str = "template-missing-path";
+    const DIFFERENCE_PATH: &str = "/error/message";
+
+    if required_u64(ledger, "schema_version", "native Windows report ledger")? != 1
+        || required_u64(ledger, "protocol_version", "native Windows report ledger")?
+            != PROTOCOL_VERSION
+        || required_str(ledger, "oracle_mode", "native Windows report ledger")? != "report"
+        || required_str(ledger, "upstream_revision", "native Windows report ledger")? != REVISION
+        || required_str(
+            ledger,
+            "default_config_sha256",
+            "native Windows report ledger",
+        )? != DEFAULT_CONFIG_SHA256
+    {
+        return Err("native Windows report ledger provenance changed".into());
+    }
+    let baseline_hash = sha256_bytes(committed.bytes);
+    if required_str(
+        ledger,
+        "baseline_outcomes_sha256",
+        "native Windows report ledger",
+    )? != baseline_hash
+        || required_str(
+            ledger,
+            "portable_outcomes_sha256",
+            "native Windows report ledger",
+        )? != baseline_hash
+    {
+        return Err("native Windows report ledger baseline hash changed".into());
+    }
+
+    let platforms = required_object(ledger, "platforms", "native Windows report ledger")?;
+    let expected_platforms = ["windows/amd64", "windows/arm64"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if platforms
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_platforms
+    {
+        return Err("native Windows report ledger platform set changed".into());
+    }
+    for platform in &expected_platforms {
+        validate_sha256(
+            required_str(&platforms[*platform], "outcomes_sha256", platform)?,
+            platform,
+        )?;
+    }
+    if string_array(ledger, "difference_ids", "native Windows report ledger")? != [DIFFERENCE_ID] {
+        return Err("native Windows report difference ids changed".into());
+    }
+    let paths = required_object(ledger, "difference_paths", "native Windows report ledger")?;
+    if paths.keys().map(String::as_str).collect::<BTreeSet<_>>()
+        != [DIFFERENCE_ID].into_iter().collect()
+        || paths[DIFFERENCE_ID]
+            .as_array()
+            .and_then(|values| values.iter().map(Value::as_str).collect::<Option<Vec<_>>>())
+            .as_deref()
+            != Some(&[DIFFERENCE_PATH])
+    {
+        return Err("native Windows report difference paths changed".into());
+    }
+
+    if !cfg!(windows) {
+        return Ok(());
+    }
+    let platform = platforms.get(observed_platform).ok_or_else(|| {
+        format!("native Windows report platform is unsupported: {observed_platform}")
+    })?;
+    if sha256_bytes(observed.bytes) != required_str(platform, "outcomes_sha256", observed_platform)?
+    {
+        return Err(format!(
+            "native Windows report outcomes changed for {observed_platform}"
+        ));
+    }
+    reconcile_native_windows_outcomes(committed.values, observed.values)
+}
+
+fn reconcile_native_windows_outcomes(
+    committed: &[Value],
+    observed: &[Value],
+) -> Result<(), String> {
+    const DIFFERENCE_ID: &str = "template-missing-path";
+    const DIFFERENCE_PATH: &str = "/error/message";
+
+    if committed.len() != observed.len() {
+        return Err("native Windows report outcome count changed".into());
+    }
+    let mut difference_ids = Vec::new();
+    for (baseline, windows) in committed.iter().zip(observed) {
+        let id = required_str(baseline, "id", "committed report outcome")?;
+        if required_str(windows, "id", "native Windows report outcome")? != id {
+            return Err("native Windows report outcome order changed".into());
+        }
+        if baseline == windows {
+            continue;
+        }
+        difference_ids.push(id);
+        if id != DIFFERENCE_ID
+            || first_json_difference(baseline, windows, "").as_deref() != Some(DIFFERENCE_PATH)
+        {
+            return Err(format!(
+                "native Windows report outcome {id} changed outside its recorded path"
+            ));
+        }
+        let baseline_message = baseline
+            .pointer(DIFFERENCE_PATH)
+            .and_then(Value::as_str)
+            .ok_or("committed missing-template report error has no message")?;
+        let windows_message = windows
+            .pointer(DIFFERENCE_PATH)
+            .and_then(Value::as_str)
+            .ok_or("native Windows missing-template report error has no message")?;
+        if baseline_message == windows_message {
+            return Err("native Windows missing-template report message did not differ".into());
+        }
+        let mut portable = windows.clone();
+        *portable
+            .pointer_mut(DIFFERENCE_PATH)
+            .ok_or("native Windows missing-template report message disappeared")? =
+            Value::String(baseline_message.to_owned());
+        if &portable != baseline {
+            return Err(
+                "native Windows report portable outcome differs from committed corpus".into(),
+            );
+        }
+    }
+    if difference_ids != [DIFFERENCE_ID] {
+        return Err("native Windows report difference ledger changed".into());
+    }
+    Ok(())
+}
+
+fn validate_sha256(value: &str, label: &str) -> Result<(), String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(format!("{label} SHA-256 is invalid"));
+    }
+    Ok(())
+}
+
 pub(super) fn validate_all(
     upstream: &Path,
     requests: &[Value],
@@ -110,7 +262,9 @@ pub(super) fn validate_all(
     {
         return Err("temporary template path leaked into report outcomes".into());
     }
-    if required_str(coverage, "outcomes_sha256", "coverage")? != sha256_bytes(outcome_bytes) {
+    if !cfg!(windows)
+        && required_str(coverage, "outcomes_sha256", "coverage")? != sha256_bytes(outcome_bytes)
+    {
         return Err("fresh report outcomes differ from coverage outcomes_sha256".into());
     }
     let output_count = outcomes
@@ -247,12 +401,35 @@ pub(super) fn string_array<'a>(
 mod tests {
     use serde_json::json;
 
-    use super::{required_str, runtime_negative_control};
+    use super::{reconcile_native_windows_outcomes, required_str, runtime_negative_control};
 
     #[test]
     fn missing_fields_and_mutated_provenance_fail() {
         assert!(required_str(&json!({}), "id", "test").is_err());
         let outcome = json!({"go_version":"go1.26", "platform":"linux/amd64"});
         runtime_negative_control(&outcome, "go1.26", "linux/amd64").unwrap();
+    }
+
+    #[test]
+    fn native_windows_reconciliation_changes_only_the_recorded_message() {
+        let committed = vec![
+            json!({"id":"same", "error":null}),
+            json!({"id":"template-missing-path", "error":{"class":"template", "message":"portable"}}),
+        ];
+        let windows = vec![
+            committed[0].clone(),
+            json!({"id":"template-missing-path", "error":{"class":"template", "message":"windows"}}),
+        ];
+        reconcile_native_windows_outcomes(&committed, &windows).unwrap();
+
+        let mut changed_class = windows.clone();
+        changed_class[1]["error"]["class"] = json!("changed");
+        assert!(reconcile_native_windows_outcomes(&committed, &changed_class).is_err());
+
+        let unexpected = vec![
+            json!({"id":"same", "error":{"message":"unexpected"}}),
+            windows[1].clone(),
+        ];
+        assert!(reconcile_native_windows_outcomes(&committed, &unexpected).is_err());
     }
 }
