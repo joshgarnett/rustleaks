@@ -155,16 +155,38 @@ fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
     if lines.len() != observed.values.len() {
         return Err("source observation ledger count changed".into());
     }
-    let records = lines
-        .iter()
-        .zip(&observed.values)
-        .map(|(line, value)| {
-            Ok(json!({
-                "id": validation::required_str(value, "id", "source outcome")?,
-                "outcome_sha256": crate::tooling::support::sha256_bytes(line),
-            }))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let mut semantic_outcomes = Vec::new();
+    let mut records = Vec::with_capacity(lines.len());
+    for (line, value) in lines.iter().zip(&observed.values) {
+        let id = validation::required_str(value, "id", "source outcome")?;
+        let mut semantic = value.clone();
+        semantic
+            .as_object_mut()
+            .ok_or_else(|| format!("source outcome {id} is not an object"))?
+            .remove("platform")
+            .ok_or_else(|| format!("source outcome {id} has no platform"))?;
+        let mut semantic_bytes = serde_json::to_vec(&semantic)
+            .map_err(|error| format!("cannot render source outcome {id}: {error}"))?;
+        semantic_bytes.push(b'\n');
+        let count = |field: &str| -> Result<usize, String> {
+            value
+                .get(field)
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .ok_or_else(|| format!("source outcome {id} has no {field} array"))
+        };
+        records.push(json!({
+            "id": id,
+            "outcome_sha256": crate::tooling::support::sha256_bytes(line),
+            "semantic_sha256": crate::tooling::support::sha256_bytes(&semantic_bytes),
+            "fragment_count": count("fragments")?,
+            "canonical_fragment_count": count("canonical_fragments")?,
+            "finding_count": count("findings")?,
+            "issue_count": count("issues")?,
+            "has_error": !value.get("error").is_some_and(Value::is_null),
+        }));
+        semantic_outcomes.extend_from_slice(&semantic_bytes);
+    }
     let first = observed
         .values
         .first()
@@ -179,6 +201,7 @@ fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
         "platform": validation::required_str(first, "platform", "source outcome")?,
         "record_count": records.len(),
         "outcomes_sha256": crate::tooling::support::sha256_bytes(&observed.bytes),
+        "semantic_outcomes_sha256": crate::tooling::support::sha256_bytes(&semantic_outcomes),
         "records": records,
     });
     let mut bytes = serde_json::to_vec_pretty(&ledger)
@@ -295,7 +318,7 @@ mod tests {
 
     #[test]
     fn observation_ledger_retains_hashes_without_payloads() {
-        let bytes = br#"{"id":"case","go_version":"go1.26.7","platform":"windows/amd64","payload":"reviewed-fixture-value"}
+        let bytes = br#"{"id":"case","go_version":"go1.26.7","platform":"windows/amd64","payload":"reviewed-fixture-value","fragments":[],"canonical_fragments":[],"findings":[],"issues":[],"error":null}
 "#
         .to_vec();
         let observed = Observed {
@@ -314,5 +337,6 @@ mod tests {
             ledger["records"][0]["outcome_sha256"],
             json!(sha256_bytes(&bytes))
         );
+        assert!(ledger["records"][0]["semantic_sha256"].is_string());
     }
 }
