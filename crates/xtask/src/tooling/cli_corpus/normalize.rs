@@ -122,7 +122,8 @@ pub(super) fn event_json(event: &Event) -> String {
 #[allow(clippy::too_many_lines)] // Keep the ordered diagnostic classification policy reviewable.
 fn event_for(line: &str) -> Event {
     let (severity, text) = severity_and_text(line);
-    let text = normalize_dynamic(text);
+    let text = normalize_native_file_operation(text, &severity);
+    let text = normalize_dynamic(&text);
     let lower = text.to_ascii_lowercase();
     let mut fields = Vec::new();
     let class = if let Some((bytes, human)) = scanned_fields(&text) {
@@ -230,6 +231,24 @@ fn event_for(line: &str) -> Event {
         fields,
         message: text.into_bytes(),
     }
+}
+
+fn normalize_native_file_operation(text: &str, severity: &str) -> String {
+    for operation in ["CreateFile", "GetFileAttributesEx"] {
+        if severity == "fatal" {
+            if let Some(rest) = text
+                .strip_prefix(operation)
+                .and_then(|rest| rest.strip_prefix(' '))
+            {
+                return format!("stat {rest}");
+            }
+        }
+        let pattern = format!("error=\"{operation} ");
+        if text.starts_with("skipping ") && text.contains(&pattern) {
+            return text.replacen(&pattern, "error=\"lstat ", 1);
+        }
+    }
+    text.to_owned()
 }
 
 fn severity_and_text(line: &str) -> (String, &str) {
@@ -494,9 +513,20 @@ mod tests {
             ));
             assert_eq!(event.severity, "fatal");
             assert_eq!(event.class, "config.source-stat-error");
+            assert_eq!(event.message, b"stat missing: <os:not-found>");
+        }
+    }
+
+    #[test]
+    fn windows_walk_stat_operations_use_the_portable_lstat_spelling() {
+        for operation in ["CreateFile", "GetFileAttributesEx"] {
+            let event = event_for(&format!(
+                "WRN skipping error=\"{operation} missing: The system cannot find the file specified.\" path=missing"
+            ));
+            assert_eq!(event.class, "source.issue");
             assert_eq!(
                 event.message,
-                format!("{operation} missing: <os:not-found>").as_bytes()
+                b"skipping error=\"lstat missing: <os:not-found>\" path=missing"
             );
         }
     }
