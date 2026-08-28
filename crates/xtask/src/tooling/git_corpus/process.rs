@@ -42,7 +42,7 @@ pub(super) fn observe(
         .args(["build", "-trimpath", "-o"])
         .arg(&binary)
         .arg(".");
-    configure(&mut build, temporary);
+    configure(&mut build, temporary)?;
     capture(&mut build, temporary, "oracle-build", BUILD_TIMEOUT)?;
 
     let lines = newline_records(request_bytes, "Git requests")?;
@@ -63,7 +63,7 @@ pub(super) fn observe(
             .current_dir(&oracle_root)
             .arg("--git")
             .stdin(Stdio::from(stdin));
-        configure(&mut command, temporary);
+        configure(&mut command, temporary)?;
         let raw = capture(
             &mut command,
             temporary,
@@ -103,7 +103,7 @@ pub(super) fn git_status(
     if let Some(pathspec) = pathspec {
         command.arg("--").arg(pathspec);
     }
-    configure(&mut command, temporary);
+    configure(&mut command, temporary)?;
     capture(&mut command, temporary, label, Duration::from_secs(30))
 }
 
@@ -112,7 +112,7 @@ fn selected_runtime(upstream: &Path, temporary: &TempDir) -> Result<(String, Str
     command
         .current_dir(upstream)
         .args(["env", "GOVERSION", "GOOS", "GOARCH"]);
-    configure(&mut command, temporary);
+    configure(&mut command, temporary)?;
     let output = capture(&mut command, temporary, "go-runtime", BUILD_TIMEOUT)?;
     let fields = std::str::from_utf8(&output)
         .map_err(|error| format!("go env returned non-UTF-8 output: {error}"))?
@@ -128,8 +128,12 @@ fn selected_runtime(upstream: &Path, temporary: &TempDir) -> Result<(String, Str
     Ok((fields[0].to_owned(), platform))
 }
 
-fn configure(command: &mut Command, temporary: &TempDir) {
-    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+fn configure(command: &mut Command, temporary: &TempDir) -> Result<(), String> {
+    let empty_git_config = temporary.path.join("empty-git-config");
+    if !empty_git_config.exists() {
+        fs::write(&empty_git_config, b"")
+            .map_err(|error| format!("cannot create empty Git config: {error}"))?;
+    }
     command
         .env("GOCACHE", temporary.path.join("go-cache"))
         .env("GOMODCACHE", go_module_cache(REVISION))
@@ -141,10 +145,11 @@ fn configure(command: &mut Command, temporary: &TempDir) {
             "GOMAXPROCS",
             std::env::var_os("GOMAXPROCS").unwrap_or_else(|| "2".into()),
         )
-        .env("GIT_CONFIG_GLOBAL", null)
-        .env("GIT_CONFIG_SYSTEM", null)
+        .env("GIT_CONFIG_GLOBAL", &empty_git_config)
+        .env("GIT_CONFIG_SYSTEM", &empty_git_config)
         .env("LC_ALL", "C")
         .env("TZ", "UTC");
+    Ok(())
 }
 
 pub(super) fn capture(

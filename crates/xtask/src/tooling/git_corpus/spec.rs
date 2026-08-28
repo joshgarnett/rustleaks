@@ -77,17 +77,39 @@ const TESTS: &[(&str, &str)] = &[
     ("TM-0137", "TestFromGitStaged"),
 ];
 
+#[derive(Clone, Copy)]
+pub(super) struct InputMetadata<'a> {
+    pub(super) coverage_bytes: &'a [u8],
+    pub(super) coverage: &'a Value,
+    pub(super) negative_bytes: &'a [u8],
+    pub(super) negative: &'a Value,
+    pub(super) native_windows: &'a [u8],
+    pub(super) readme: &'a [u8],
+    pub(super) manifest: &'a Value,
+}
+
 pub(super) fn validate_inputs(
     requests: &[u8],
-    coverage_bytes: &[u8],
-    coverage: &Value,
-    negative_bytes: &[u8],
-    negative: &Value,
-    readme: &[u8],
-    manifest: &Value,
+    metadata: InputMetadata<'_>,
 ) -> Result<Vec<Value>, String> {
+    let InputMetadata {
+        coverage_bytes,
+        coverage,
+        negative_bytes,
+        negative,
+        native_windows,
+        readme,
+        manifest,
+    } = metadata;
     validate_provenance(coverage, manifest)?;
-    validate_manifest_inputs(requests, coverage_bytes, negative_bytes, readme, manifest)?;
+    validate_manifest_inputs(
+        requests,
+        coverage_bytes,
+        negative_bytes,
+        native_windows,
+        readme,
+        manifest,
+    )?;
     validate_negative(negative)?;
     let lines = newline_records(requests, "Git requests")?;
     if lines.len() != REQUEST_COUNT {
@@ -169,6 +191,7 @@ fn validate_manifest_inputs(
     requests: &[u8],
     coverage: &[u8],
     negative: &[u8],
+    native_windows: &[u8],
     readme: &[u8],
     manifest: &Value,
 ) -> Result<(), String> {
@@ -187,6 +210,14 @@ fn validate_manifest_inputs(
         {
             return Err(format!("Git {name} bytes differ from manifest"));
         }
+    }
+    if let Some(entry) = files.get("native-windows-v1.json")
+        && (required_str(entry, "sha256", "native-windows-v1.json")?
+            != sha256_bytes(native_windows)
+            || required_u64(entry, "bytes", "native-windows-v1.json")?
+                != native_windows.len() as u64)
+    {
+        return Err("Git native-windows-v1.json bytes differ from manifest".into());
     }
     Ok(())
 }

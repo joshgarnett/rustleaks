@@ -151,12 +151,58 @@ pub(crate) fn compare_json_outcomes(
             remove_provenance(&mut observed, field, label, observed_id)?;
         }
         if committed != observed {
+            let path = first_json_difference(&committed, &observed, "")
+                .unwrap_or_else(|| "<unknown>".to_owned());
             return Err(format!(
-                "fresh {label} outcome {observed_id} differs from the committed semantic outcome"
+                "fresh {label} outcome {observed_id} differs from the committed semantic outcome at {path}"
             ));
         }
     }
     Ok(())
+}
+
+pub(crate) fn first_json_difference(
+    expected: &Value,
+    actual: &Value,
+    path: &str,
+) -> Option<String> {
+    match (expected, actual) {
+        (Value::Array(expected), Value::Array(actual)) => {
+            for (index, (expected, actual)) in expected.iter().zip(actual).enumerate() {
+                let child = format!("{path}/{index}");
+                if let Some(difference) = first_json_difference(expected, actual, &child) {
+                    return Some(difference);
+                }
+            }
+            (expected.len() != actual.len()).then(|| format!("{path}/length"))
+        }
+        (Value::Object(expected), Value::Object(actual)) => {
+            let keys = expected
+                .keys()
+                .chain(actual.keys())
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            for key in keys {
+                let child = format!("{path}/{}", key.replace('~', "~0").replace('/', "~1"));
+                match (expected.get(key), actual.get(key)) {
+                    (Some(expected), Some(actual)) => {
+                        if let Some(difference) = first_json_difference(expected, actual, &child) {
+                            return Some(difference);
+                        }
+                    }
+                    _ => return Some(child),
+                }
+            }
+            None
+        }
+        _ => (expected != actual).then(|| {
+            if path.is_empty() {
+                "/".to_owned()
+            } else {
+                path.to_owned()
+            }
+        }),
+    }
 }
 
 fn outcome_id<'a>(value: &'a Value, label: &str, index: usize) -> Result<&'a str, String> {
@@ -297,7 +343,9 @@ mod tests {
             "ordered": ["second", "first"],
             "result": {"value": 1}
         })];
-        assert!(compare_json_outcomes(&committed, &reordered, &["platform"], "test").is_err());
+        let error =
+            compare_json_outcomes(&committed, &reordered, &["platform"], "test").unwrap_err();
+        assert!(error.ends_with("at /ordered/0"));
 
         let changed = [json!({
             "id": "case",

@@ -9,7 +9,7 @@ mod validation;
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::artifacts::{GeneratedTree, OutcomeBaseline};
 use super::support::TempDir;
@@ -27,6 +27,14 @@ argv tokens, normalized command text, ordered fragments, canonical fragment
 and finding multisets, commit metadata, remotes, and structured issues.
 Byte-bearing fields are base64. Behavior IDs use the stable `GIT-001..023`
 mapping recorded in `coverage-v1.json`.
+
+Native Linux and Windows jobs replay the pinned Git oracle before running the
+target-specific Bazel suite. The payload-free `native-windows-v1.json` ledger
+binds complete x64 and ARM64 observations by raw and platform-neutral SHA-256
+values. Windows archive fragments preserve the pinned oracle's original
+backslash spelling alongside the slash-normalized portable path; reconciliation
+requires every paired path and every remaining outcome field to match exactly.
+Each Windows replay also publishes a payload-free per-record hash ledger.
 
 Regenerate with `cargo xtask generate git`; verify with
 `cargo xtask generate git --check`. Use `--output PATH` to write elsewhere.
@@ -55,21 +63,26 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
     let coverage = read(&corpus.join("coverage-v1.json"))?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
+    let native_windows = read(&corpus.join("native-windows-v1.json"))?;
     let legacy_readme = read(&corpus.join("README.md"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
     let legacy_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let coverage_value = parse_json(&coverage, "Git coverage")?;
     let negative_value = parse_json(&negative, "Git negative controls")?;
+    let native_windows_value = parse_json(&native_windows, "native Windows Git ledger")?;
     let manifest_value = parse_json(&legacy_manifest, "Git manifest")?;
     let legacy_outcome_values = parse_jsonl(&legacy_outcomes, "committed Git outcomes")?;
     let request_values = spec::validate_inputs(
         &requests,
-        &coverage,
-        &coverage_value,
-        &negative,
-        &negative_value,
-        &legacy_readme,
-        &manifest_value,
+        spec::InputMetadata {
+            coverage_bytes: &coverage,
+            coverage: &coverage_value,
+            negative_bytes: &negative,
+            negative: &negative_value,
+            native_windows: &native_windows,
+            readme: &legacy_readme,
+            manifest: &manifest_value,
+        },
     )?;
 
     let upstream = root
@@ -95,17 +108,24 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
         &manifest_value,
         &temporary,
     )?;
+    write_observation_ledger(&observed)?;
     validation::validate_all(
         root,
         &request_values,
-        &observed.values,
+        OutcomeBaseline {
+            values: &observed.values,
+            bytes: &observed.bytes,
+        },
         OutcomeBaseline {
             values: &legacy_outcome_values,
             bytes: &legacy_outcomes,
         },
-        &coverage_value,
-        &negative_value,
-        &manifest_value,
+        validation::ValidationMetadata {
+            coverage: &coverage_value,
+            negative: &negative_value,
+            native_windows: &native_windows_value,
+            manifest: &manifest_value,
+        },
     )?;
     if fixture::tree_fingerprint(&fixture_root)? != fixture_before
         || process::git_status(
@@ -129,16 +149,143 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
         &manifest_value,
         legacy_readme.len(),
         README.as_bytes(),
+        &native_windows,
         outcome_bytes,
     )?;
+    generated_tree(
+        requests,
+        outcome_bytes,
+        coverage,
+        negative,
+        native_windows,
+        manifest,
+    )
+}
+
+fn generated_tree(
+    requests: Vec<u8>,
+    outcomes: &[u8],
+    coverage: Vec<u8>,
+    negative: Vec<u8>,
+    native_windows: Vec<u8>,
+    manifest: Vec<u8>,
+) -> Result<GeneratedTree, String> {
     let mut tree = GeneratedTree::default();
     tree.insert("README.md", README.as_bytes())?;
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
+    tree.insert("outcomes-v1.jsonl", outcomes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
+    tree.insert("native-windows-v1.json", native_windows)?;
     tree.insert("manifest-v1.json", manifest)?;
     Ok(tree)
+}
+
+fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
+    let lines = newline_records(&observed.bytes, "observed Git outcomes")?;
+    if lines.len() != observed.values.len() {
+        return Err("Git observation ledger count changed".into());
+    }
+    let mut semantic_outcomes = Vec::new();
+    let mut portable_outcomes = Vec::new();
+    let mut records = Vec::with_capacity(lines.len());
+    for (line, value) in lines.iter().zip(&observed.values) {
+        let id = validation::required_str(value, "id", "Git outcome")?;
+        let semantic = semantic_outcome(value, id)?;
+        let mut semantic_bytes = serde_json::to_vec(&semantic)
+            .map_err(|error| format!("cannot render Git outcome {id}: {error}"))?;
+        semantic_bytes.push(b'\n');
+        let mut portable = semantic.clone();
+        let windows_file_count = clear_windows_file_paths(&mut portable);
+        let mut portable_bytes = serde_json::to_vec(&portable)
+            .map_err(|error| format!("cannot render portable Git outcome {id}: {error}"))?;
+        portable_bytes.push(b'\n');
+        let count = |field: &str| -> Result<usize, String> {
+            value
+                .get(field)
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .ok_or_else(|| format!("Git outcome {id} has no {field} array"))
+        };
+        records.push(json!({
+            "id": id,
+            "outcome_sha256": crate::tooling::support::sha256_bytes(line),
+            "semantic_sha256": crate::tooling::support::sha256_bytes(&semantic_bytes),
+            "portable_sha256": crate::tooling::support::sha256_bytes(&portable_bytes),
+            "windows_file_count": windows_file_count,
+            "fragment_count": count("fragments")?,
+            "canonical_fragment_count": count("canonical_fragments")?,
+            "finding_count": count("findings")?,
+            "issue_count": count("issues")?,
+            "has_error": !value.get("error").is_some_and(Value::is_null),
+        }));
+        semantic_outcomes.extend_from_slice(&semantic_bytes);
+        portable_outcomes.extend_from_slice(&portable_bytes);
+    }
+    let first = observed
+        .values
+        .first()
+        .ok_or("Git observations are empty")?;
+    let ledger = json!({
+        "schema_version": 1,
+        "protocol_version": spec::PROTOCOL_VERSION,
+        "oracle_mode": "git",
+        "upstream_revision": spec::REVISION,
+        "default_config_sha256": spec::CONFIG_SHA256,
+        "go_version": validation::required_str(first, "go_version", "Git outcome")?,
+        "platform": validation::required_str(first, "platform", "Git outcome")?,
+        "record_count": records.len(),
+        "outcomes_sha256": crate::tooling::support::sha256_bytes(&observed.bytes),
+        "semantic_outcomes_sha256": crate::tooling::support::sha256_bytes(&semantic_outcomes),
+        "portable_outcomes_sha256": crate::tooling::support::sha256_bytes(&portable_outcomes),
+        "records": records,
+    });
+    let mut bytes = serde_json::to_vec_pretty(&ledger)
+        .map_err(|error| format!("cannot render Git observation ledger: {error}"))?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+fn write_observation_ledger(observed: &process::Observed) -> Result<(), String> {
+    if let Some(path) = std::env::var_os("RUSTLEAKS_GIT_LEDGER_PATH") {
+        fs::write(&path, observation_ledger(observed)?)
+            .map_err(|error| format!("cannot write Git observation ledger: {error}"))?;
+    }
+    Ok(())
+}
+
+fn semantic_outcome(value: &Value, id: &str) -> Result<Value, String> {
+    let mut semantic = value.clone();
+    let object = semantic
+        .as_object_mut()
+        .ok_or_else(|| format!("Git outcome {id} is not an object"))?;
+    for field in ["platform", "git_version_base64"] {
+        if !object.remove(field).is_some_and(|value| value.is_string()) {
+            return Err(format!("Git outcome {id} has no string {field}"));
+        }
+    }
+    Ok(semantic)
+}
+
+fn clear_windows_file_paths(value: &mut Value) -> usize {
+    match value {
+        Value::Array(values) => values.iter_mut().map(clear_windows_file_paths).sum(),
+        Value::Object(values) => {
+            let mut count = 0;
+            for (key, value) in values {
+                if key == "windows_file_base64" {
+                    if value.as_str().is_some_and(|encoded| !encoded.is_empty()) {
+                        count += 1;
+                    }
+                    *value = Value::String(String::new());
+                } else {
+                    count += clear_windows_file_paths(value);
+                }
+            }
+            count
+        }
+        _ => 0,
+    }
 }
 
 fn parse_json(bytes: &[u8], label: &str) -> Result<Value, String> {
@@ -180,12 +327,40 @@ fn newline_records<'a>(bytes: &'a [u8], label: &str) -> Result<Vec<&'a [u8]>, St
 
 #[cfg(test)]
 mod tests {
-    use super::newline_records;
+    use serde_json::Value;
+
+    use super::process::Observed;
+    use super::{newline_records, observation_ledger};
+    use crate::tooling::support::sha256_bytes;
 
     #[test]
     fn jsonl_boundaries_fail_closed() {
         assert!(newline_records(b"{}", "test").is_err());
         assert!(newline_records(b"{}\n\n", "test").is_err());
         assert_eq!(newline_records(b"{}\n[]\n", "test").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn observation_ledger_retains_hashes_without_payloads() {
+        let bytes = br#"{"id":"case","go_version":"go1.26.7","platform":"windows/amd64","git_version_base64":"Z2l0","payload":"reviewed-fixture-value","fragments":[{"windows_file_base64":"QzpcZmlsZS50eHQ="}],"canonical_fragments":[],"findings":[],"issues":[],"error":null}
+"#
+        .to_vec();
+        let observed = Observed {
+            values: vec![serde_json::from_slice(&bytes[..bytes.len() - 1]).unwrap()],
+            bytes: bytes.clone(),
+        };
+        let rendered = observation_ledger(&observed).unwrap();
+        assert!(
+            !rendered
+                .windows(b"reviewed-fixture-value".len())
+                .any(|window| window == b"reviewed-fixture-value")
+        );
+        let ledger: Value = serde_json::from_slice(&rendered).unwrap();
+        assert_eq!(ledger["platform"], "windows/amd64");
+        assert_eq!(ledger["outcomes_sha256"], sha256_bytes(&bytes));
+        assert_eq!(ledger["records"][0]["id"], "case");
+        assert_eq!(ledger["records"][0]["windows_file_count"], 1);
+        assert!(ledger["records"][0]["semantic_sha256"].is_string());
+        assert!(ledger["records"][0]["portable_sha256"].is_string());
     }
 }

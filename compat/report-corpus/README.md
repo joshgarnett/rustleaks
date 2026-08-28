@@ -7,6 +7,9 @@ and control bytes remain observable.
 
 Runtime Go version and host platform are validated during generation but
 omitted from outcomes so the committed corpus is host-independent.
+Native Windows raw outcomes are pinned for both architectures; the only
+recorded platform normalization is the missing-template operating-system error
+message.
 
 The corpus freezes exact JSON, CSV, JUnit, SARIF, and template bytes; all
 pinned upstream report fixtures; report-test identities `TM-0251..TM-0268`;

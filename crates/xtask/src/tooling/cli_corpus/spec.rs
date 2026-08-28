@@ -1,6 +1,7 @@
 //! CLI request, source-pin, runtime, and binary-build contracts.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -19,9 +20,48 @@ pub(super) const CONFIG_SHA256: &str =
 pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.2";
 pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.3";
 
+const FAKE_GIT_SOURCE: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func main() {
+	if err := os.WriteFile("fake-git.pid", []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	mode := os.Getenv("RUSTLEAKS_CLI_FAKE_GIT_MODE")
+	if mode == "malformed" {
+		fmt.Println("malformed patch bytes")
+		return
+	}
+	if mode == "output-limit" {
+		line := strings.Repeat("x", 32767)
+		for range 33 {
+			fmt.Fprintln(os.Stderr, line)
+		}
+		time.Sleep(2 * time.Second)
+		return
+	}
+	remote := strings.Contains(strings.Join(os.Args[1:], " "), "ls-remote")
+	sleep := mode == "timeout-remote" && remote || mode == "timeout-source" && !remote
+	if sleep {
+		time.Sleep(30 * time.Second)
+	} else if remote {
+		os.Exit(1)
+	}
+}
+"#;
+
 pub(super) struct Binaries {
     pub(super) go: PathBuf,
     pub(super) rust: PathBuf,
+    pub(super) fake_git: PathBuf,
 }
 
 #[derive(PartialEq, Eq)]
@@ -119,28 +159,34 @@ fn validate_variant(value: &Value, label: &str) -> Result<(), String> {
 
 fn validate_accounting(manifest: &Value) -> Result<(), String> {
     for (field, value) in [
-        ("paired_observation_pair_count", 118),
-        ("paired_observation_process_count", 236),
+        ("paired_observation_pair_count", 119),
+        ("paired_observation_process_count", 238),
         ("auxiliary_cli_process_count", 4),
-        ("fresh_cli_process_count", 240),
-        ("exact_variant_count", 100),
-        ("versioned_disposition_variant_count", 19),
+        ("fresh_cli_process_count", 242),
+        ("exact_variant_count", 101),
+        ("versioned_disposition_variant_count", 18),
         (
             "complete_duplicate_preserving_finding_count_both_implementations",
-            100,
+            102,
         ),
-        ("raw_report_byte_count_both_implementations", 48_732),
+        ("raw_report_byte_count_both_implementations", 49_540),
         ("parser_usage_byte_count_both_implementations", 19_508),
-        ("stderr_event_count_both_implementations", 884),
+        ("stderr_event_count_both_implementations", 888),
         ("mutation_control_count", 20),
     ] {
         if required_u64(manifest, field, "manifest")? != value {
             return Err(format!("CLI manifest {field} changed"));
         }
     }
-    if required_str(manifest, "runtime_provenance_policy", "manifest")?
-        != "independently-validated-then-omitted"
-    {
+    if ![
+        "independently-validated-then-omitted",
+        "independently-validated-with-native-linux-record",
+    ]
+    .contains(&required_str(
+        manifest,
+        "runtime_provenance_policy",
+        "manifest",
+    )?) {
         return Err("CLI runtime provenance policy changed".into());
     }
     Ok(())
@@ -285,6 +331,7 @@ pub(super) fn build(
     } else {
         "rustleaks"
     });
+    let fake_git = build_fake_git(temporary)?;
     let mut args = strings(&["build", "-trimpath", "-buildvcs=true", "-ldflags"]);
     args.push(format!(
         "-X github.com/zricethezav/gitleaks/v8/version.Version={BUILD_VERSION}"
@@ -358,7 +405,35 @@ pub(super) fn build(
     {
         return Err("runtime provenance changed during build".into());
     }
-    Ok(Binaries { go, rust })
+    Ok(Binaries { go, rust, fake_git })
+}
+
+fn build_fake_git(temporary: &TempDir) -> Result<PathBuf, String> {
+    let source = temporary.path.join("fake-git.go");
+    let binary = temporary.path.join(if cfg!(windows) {
+        "fake-git.exe"
+    } else {
+        "fake-git"
+    });
+    fs::write(&source, FAKE_GIT_SOURCE)
+        .map_err(|error| format!("cannot write {}: {error}", source.display()))?;
+    process::command(
+        Path::new("go"),
+        &[
+            "build".into(),
+            "-trimpath".into(),
+            "-o".into(),
+            binary.to_string_lossy().into_owned(),
+            source.to_string_lossy().into_owned(),
+        ],
+        &temporary.path,
+        &process::default_go_env(temporary),
+        temporary,
+        "fake-git-build",
+        Duration::from_secs(300),
+        OUTPUT_LIMIT,
+    )?;
+    Ok(binary)
 }
 
 pub(super) fn git_status(
@@ -389,7 +464,7 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
     Ok(())
 }
 
-pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 4] = [
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 5] = [
     (
         "Cargo.toml",
         "7a3c9b9d1802ee4c76f10395b7b9aef5cc38833ee1b783f73571e6826c1174b2",
@@ -407,8 +482,13 @@ pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 4] = [
     ),
     (
         "crates/rustleaks-cli/src/config.rs",
-        "ccabcea38b0fdbedcd8f88fa34686215b2840b67a8d5e691554f2a47969349ec",
         "6a083b4e5647f7899d2a13f03624fc91f0e1f0816bfaba200a142811ca320442",
+        "c6eada2ae07cf5c9e9e743dc5ce884c6fdf0d937d2ab7507f70c97a70f7bbed3",
+    ),
+    (
+        "crates/rustleaks-cli/src/source.rs",
+        "2803d6bde7c68504ac7f3f04ec7bbca5c70f7a95da27bed12b61e91c3351625e",
+        "2a97242cd27cde580b9fafbcb78a1c38fc8c2b5da9de5e89db07807ad22355d3",
     ),
 ];
 

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::spec::{CONFIG_SHA256, PROTOCOL_VERSION, REQUEST_COUNT, REVISION};
 use super::{controls, controls_archive};
@@ -56,15 +56,28 @@ pub(super) fn validate_envelope(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct ValidationMetadata<'a> {
+    pub(super) coverage: &'a Value,
+    pub(super) negative: &'a Value,
+    pub(super) native_windows: &'a Value,
+    pub(super) manifest: &'a Value,
+}
+
 pub(super) fn validate_all(
     root: &Path,
     requests: &[Value],
-    outcomes: &[Value],
+    observed: OutcomeBaseline<'_>,
     committed: OutcomeBaseline<'_>,
-    coverage: &Value,
-    negative: &Value,
-    manifest: &Value,
+    metadata: ValidationMetadata<'_>,
 ) -> Result<(), String> {
+    let ValidationMetadata {
+        coverage,
+        negative,
+        native_windows,
+        manifest,
+    } = metadata;
+    let outcomes = observed.values;
     if requests.len() != REQUEST_COUNT || requests.len() != outcomes.len() {
         return Err("source request/outcome count mismatch".into());
     }
@@ -89,16 +102,168 @@ pub(super) fn validate_all(
     validate_projection(outcomes)?;
     controls::validate(&by_id, outcomes, negative)?;
     controls_archive::validate(root, &by_id)?;
-    validate_counts(outcomes, coverage, manifest)?;
+    validate_counts(outcomes, coverage, manifest, !cfg!(windows))?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
     if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
         || required_u64(entry, "records", "outcomes")? != REQUEST_COUNT as u64
     {
         return Err("committed source outcomes differ from their manifest".into());
     }
-    // The committed platform remains pinned provenance. Cross-host replays may
-    // differ only in that envelope field; all semantic fields stay exact.
-    compare_json_outcomes(committed.values, outcomes, &["platform"], "source")?;
+    validate_native_windows_ledger(committed, observed, native_windows)?;
+    if !cfg!(windows) {
+        // The committed platform remains pinned provenance. Non-Windows
+        // cross-host replays may differ only in that envelope field.
+        compare_json_outcomes(committed.values, outcomes, &["platform"], "source")?;
+    }
+    Ok(())
+}
+
+fn validate_native_windows_ledger(
+    committed: OutcomeBaseline<'_>,
+    observed: OutcomeBaseline<'_>,
+    ledger: &Value,
+) -> Result<(), String> {
+    if required_u64(ledger, "schema_version", "native Windows ledger")? != 1
+        || required_u64(ledger, "protocol_version", "native Windows ledger")? != PROTOCOL_VERSION
+        || required_str(ledger, "oracle_mode", "native Windows ledger")? != "source"
+        || required_str(ledger, "upstream_revision", "native Windows ledger")? != REVISION
+        || required_str(ledger, "default_config_sha256", "native Windows ledger")? != CONFIG_SHA256
+        || required_u64(ledger, "record_count", "native Windows ledger")? != REQUEST_COUNT as u64
+    {
+        return Err("native Windows source ledger provenance changed".into());
+    }
+    let committed_platform = uniform_string(committed.values, "platform", "committed source")?;
+    let committed_go = uniform_string(committed.values, "go_version", "committed source")?;
+    if required_str(ledger, "baseline_platform", "native Windows ledger")? != committed_platform
+        || required_str(ledger, "go_version", "native Windows ledger")? != committed_go
+    {
+        return Err("native Windows source ledger baseline changed".into());
+    }
+
+    let (_, committed_semantic_bytes) = semantic_outcomes(committed.values)?;
+    if required_str(
+        ledger,
+        "baseline_semantic_outcomes_sha256",
+        "native Windows ledger",
+    )? != sha256_bytes(&committed_semantic_bytes)
+    {
+        return Err("native Windows source ledger baseline hash changed".into());
+    }
+    let platforms = required_object(ledger, "platforms", "native Windows ledger")?;
+    let expected_platforms = ["windows/amd64", "windows/arm64"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if platforms
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_platforms
+    {
+        return Err("native Windows source ledger platform set changed".into());
+    }
+    for platform in &expected_platforms {
+        validate_sha256(
+            required_str(&platforms[*platform], "outcomes_sha256", platform)?,
+            platform,
+        )?;
+    }
+    validate_sha256(
+        required_str(ledger, "semantic_outcomes_sha256", "native Windows ledger")?,
+        "native Windows semantic outcomes",
+    )?;
+
+    if !cfg!(windows) {
+        return Ok(());
+    }
+
+    let observed_platform = uniform_string(observed.values, "platform", "observed source")?;
+    let expected_raw = required_str(
+        &platforms[observed_platform],
+        "outcomes_sha256",
+        observed_platform,
+    )?;
+    if sha256_bytes(observed.bytes) != expected_raw {
+        return Err(format!(
+            "native Windows source outcomes changed for {observed_platform}"
+        ));
+    }
+    let (observed_semantic, observed_semantic_bytes) = semantic_outcomes(observed.values)?;
+    if sha256_bytes(&observed_semantic_bytes)
+        != required_str(ledger, "semantic_outcomes_sha256", "native Windows ledger")?
+    {
+        return Err("native Windows source semantic outcomes changed".into());
+    }
+    let (committed_semantic, _) = semantic_outcomes(committed.values)?;
+    if committed_semantic.len() != observed_semantic.len() {
+        return Err("native Windows source semantic outcome count changed".into());
+    }
+    let mut difference_ids = Vec::new();
+    let mut structural = Vec::new();
+    for (baseline, windows) in committed_semantic.iter().zip(&observed_semantic) {
+        let baseline_id = required_str(baseline, "id", "source baseline")?;
+        if required_str(windows, "id", "Windows source outcome")? != baseline_id {
+            return Err("native Windows source outcome order changed".into());
+        }
+        if baseline != windows {
+            difference_ids.push(Value::String(baseline_id.to_owned()));
+        }
+        let baseline_structure = outcome_structure(baseline, baseline_id)?;
+        let windows_structure = outcome_structure(windows, baseline_id)?;
+        if baseline_structure != windows_structure {
+            structural.push(json!({
+                "id": baseline_id,
+                "baseline": baseline_structure,
+                "windows": windows_structure,
+            }));
+        }
+    }
+    if required_array(ledger, "semantic_difference_ids", "native Windows ledger")?
+        != &difference_ids
+        || required_array(ledger, "structural_differences", "native Windows ledger")? != &structural
+    {
+        return Err("native Windows source difference ledger changed".into());
+    }
+    Ok(())
+}
+
+fn semantic_outcomes(outcomes: &[Value]) -> Result<(Vec<Value>, Vec<u8>), String> {
+    let mut values = Vec::with_capacity(outcomes.len());
+    let mut bytes = Vec::new();
+    for outcome in outcomes {
+        let id = required_str(outcome, "id", "source outcome")?;
+        let mut semantic = outcome.clone();
+        let platform = semantic
+            .as_object_mut()
+            .ok_or_else(|| format!("source outcome {id} is not an object"))?
+            .remove("platform")
+            .ok_or_else(|| format!("source outcome {id} has no platform"))?;
+        if !platform.is_string() {
+            return Err(format!("source outcome {id} platform is not a string"));
+        }
+        bytes.extend_from_slice(
+            &serde_json::to_vec(&semantic)
+                .map_err(|error| format!("cannot render source outcome {id}: {error}"))?,
+        );
+        bytes.push(b'\n');
+        values.push(semantic);
+    }
+    Ok((values, bytes))
+}
+
+fn outcome_structure(outcome: &Value, id: &str) -> Result<Value, String> {
+    Ok(json!({
+        "fragments": required_array(outcome, "fragments", id)?.len(),
+        "canonical_fragments": required_array(outcome, "canonical_fragments", id)?.len(),
+        "findings": required_array(outcome, "findings", id)?.len(),
+        "issues": required_array(outcome, "issues", id)?.len(),
+        "has_error": !outcome.get("error").is_some_and(Value::is_null),
+    }))
+}
+
+fn validate_sha256(value: &str, label: &str) -> Result<(), String> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!("{label} SHA-256 is invalid"));
+    }
     Ok(())
 }
 
@@ -137,7 +302,12 @@ fn validate_projection(outcomes: &[Value]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_counts(outcomes: &[Value], coverage: &Value, manifest: &Value) -> Result<(), String> {
+fn validate_counts(
+    outcomes: &[Value],
+    coverage: &Value,
+    manifest: &Value,
+    require_baseline_structure: bool,
+) -> Result<(), String> {
     let sum = |field: &str| -> Result<u64, String> {
         outcomes
             .iter()
@@ -150,12 +320,9 @@ fn validate_counts(outcomes: &[Value], coverage: &Value, manifest: &Value) -> Re
         .iter()
         .map(|row| required_array(row, "material_assertions", "behavior").map(Vec::len))
         .sum::<Result<usize, _>>()? as u64;
-    for (field, actual) in [
+    let invariant_counts = [
         ("request_count", REQUEST_COUNT as u64),
         ("outcome_count", outcomes.len() as u64),
-        ("fragment_count", sum("fragments")?),
-        ("finding_count", sum("findings")?),
-        ("issue_count", sum("issues")?),
         (
             "behavior_count",
             required_array(coverage, "behavior_ids", "coverage")?.len() as u64,
@@ -165,9 +332,21 @@ fn validate_counts(outcomes: &[Value], coverage: &Value, manifest: &Value) -> Re
             required_array(coverage, "upstream", "coverage")?.len() as u64,
         ),
         ("material_assertion_count", material),
-    ] {
+    ];
+    for (field, actual) in invariant_counts {
         if required_u64(manifest, field, "manifest")? != actual {
             return Err(format!("source manifest {field} changed"));
+        }
+    }
+    if require_baseline_structure {
+        for (field, actual) in [
+            ("fragment_count", sum("fragments")?),
+            ("finding_count", sum("findings")?),
+            ("issue_count", sum("issues")?),
+        ] {
+            if required_u64(manifest, field, "manifest")? != actual {
+                return Err(format!("source manifest {field} changed"));
+            }
         }
     }
     Ok(())
@@ -177,6 +356,8 @@ pub(super) fn render_manifest(
     legacy: &[u8],
     manifest: &Value,
     readme: &[u8],
+    coverage: &[u8],
+    native_windows: &[u8],
     outcome_bytes: &[u8],
     outcomes: &[Value],
 ) -> Result<Vec<u8>, String> {
@@ -202,6 +383,35 @@ pub(super) fn render_manifest(
         "outcome digest",
     )?;
     let old = required_str(
+        &required_object(manifest, "files", "manifest")?["coverage-v1.json"],
+        "sha256",
+        "coverage",
+    )?;
+    let rendered = replace_once(
+        &rendered,
+        old.as_bytes(),
+        sha256_bytes(coverage).as_bytes(),
+        "coverage digest",
+    )?;
+    let native_hash = sha256_bytes(native_windows);
+    let files = required_object(manifest, "files", "manifest")?;
+    let rendered = if let Some(entry) = files.get("native-windows-v1.json") {
+        if required_str(entry, "sha256", "native-windows-v1.json")? != native_hash {
+            return Err("native Windows source ledger hash differs from manifest".into());
+        }
+        rendered
+    } else {
+        let entry = format!(
+            "    \"native-windows-v1.json\": {{\n      \"sha256\": \"{native_hash}\"\n    }},\n"
+        );
+        insert_before_once(
+            &rendered,
+            b"    \"outcomes-v1.jsonl\": {",
+            entry.as_bytes(),
+            "native Windows source ledger",
+        )?
+    };
+    let old = required_str(
         &required_object(manifest, "files", "manifest")?["README.md"],
         "sha256",
         "README",
@@ -212,6 +422,31 @@ pub(super) fn render_manifest(
         sha256_bytes(readme).as_bytes(),
         "README digest",
     )
+}
+
+fn insert_before_once(
+    bytes: &[u8],
+    marker: &[u8],
+    insertion: &[u8],
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let positions = bytes
+        .windows(marker.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == marker).then_some(index))
+        .collect::<Vec<_>>();
+    if positions.len() != 1 {
+        return Err(format!(
+            "expected exactly one {label} marker, found {}",
+            positions.len()
+        ));
+    }
+    let position = positions[0];
+    let mut rendered = Vec::with_capacity(bytes.len() + insertion.len());
+    rendered.extend_from_slice(&bytes[..position]);
+    rendered.extend_from_slice(insertion);
+    rendered.extend_from_slice(&bytes[position..]);
+    Ok(rendered)
 }
 
 fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result<&'a str, String> {
@@ -342,7 +577,8 @@ pub(super) fn finding_files(
 mod tests {
     use serde_json::json;
 
-    use super::{render_manifest, replace_once};
+    use super::{render_manifest, replace_once, validate_counts};
+    use crate::tooling::source::spec::REQUEST_COUNT;
     use crate::tooling::support::sha256_bytes;
 
     #[test]
@@ -360,25 +596,68 @@ mod tests {
     }
 
     #[test]
+    fn windows_counts_defer_platform_structure_to_the_native_ledger() {
+        let outcomes = vec![
+            json!({
+                "fragments": [],
+                "findings": [],
+                "issues": [],
+            });
+            REQUEST_COUNT
+        ];
+        let coverage = json!({
+            "behavior_ids": [{"material_assertions": []}],
+            "upstream": [],
+        });
+        let manifest = json!({
+            "request_count": REQUEST_COUNT,
+            "outcome_count": REQUEST_COUNT,
+            "fragment_count": 1,
+            "finding_count": 1,
+            "issue_count": 1,
+            "behavior_count": 1,
+            "upstream_identity_count": 0,
+            "material_assertion_count": 0,
+        });
+
+        validate_counts(&outcomes, &coverage, &manifest, false).unwrap();
+        assert!(validate_counts(&outcomes, &coverage, &manifest, true).is_err());
+    }
+
+    #[test]
     fn rendered_manifest_tracks_generated_platform_and_outcomes() {
         let manifest = json!({
             "platform": "darwin/arm64",
             "files": {
                 "outcomes-v1.jsonl": {"sha256": "old-outcomes"},
+                "coverage-v1.json": {"sha256": "old-coverage"},
                 "README.md": {"sha256": "old-readme"}
             }
         });
         let legacy = br#"{
   "platform": "darwin/arm64",
-  "outcomes": "old-outcomes",
-  "readme": "old-readme"
+  "files": {
+    "outcomes-v1.jsonl": {"sha256": "old-outcomes"},
+    "coverage-v1.json": {"sha256": "old-coverage"},
+    "README.md": {"sha256": "old-readme"}
+  }
 }"#;
         let outcomes = [json!({"platform": "linux/amd64"})];
-        let rendered =
-            render_manifest(legacy, &manifest, b"readme", b"outcomes", &outcomes).unwrap();
+        let rendered = render_manifest(
+            legacy,
+            &manifest,
+            b"readme",
+            b"coverage",
+            b"native-windows",
+            b"outcomes",
+            &outcomes,
+        )
+        .unwrap();
         let rendered = String::from_utf8(rendered).unwrap();
         assert!(rendered.contains("\"platform\": \"linux/amd64\""));
         assert!(rendered.contains(&sha256_bytes(b"outcomes")));
+        assert!(rendered.contains(&sha256_bytes(b"coverage")));
+        assert!(rendered.contains(&sha256_bytes(b"native-windows")));
         assert!(rendered.contains(&sha256_bytes(b"readme")));
     }
 }

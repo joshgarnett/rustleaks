@@ -11,13 +11,14 @@ pub(super) fn validate(
     all: &[Value],
     _negative: &Value,
 ) -> Result<(), String> {
+    let platform = required_str(&all[0], "platform", "first outcome")?;
+    let windows = platform.starts_with("windows/");
     validate_boundaries(outcomes)?;
     validate_readers(outcomes)?;
     validate_files(outcomes)?;
-    validate_paths_and_symlinks(outcomes)?;
-    validate_directory_and_engine(outcomes)?;
-    validate_negative_controls(outcomes)?;
-    let platform = required_str(&all[0], "platform", "first outcome")?;
+    validate_paths_and_symlinks(outcomes, windows)?;
+    validate_directory_and_engine(outcomes, windows)?;
+    validate_negative_controls(outcomes, windows)?;
     if !platform.contains('/')
         || all
             .iter()
@@ -125,7 +126,10 @@ fn validate_files(outcomes: &BTreeMap<&str, &Value>) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_paths_and_symlinks(outcomes: &BTreeMap<&str, &Value>) -> Result<(), String> {
+fn validate_paths_and_symlinks(
+    outcomes: &BTreeMap<&str, &Value>,
+    windows: bool,
+) -> Result<(), String> {
     if fragment_values(outcomes, "file-path-nfc", "file_base64")? != ["paths/café.txt".as_bytes()]
         || fragment_values(outcomes, "file-path-nfd", "file_base64")?
             != ["paths/cafe\u{301}.txt".as_bytes()]
@@ -138,10 +142,11 @@ fn validate_paths_and_symlinks(outcomes: &BTreeMap<&str, &Value>) -> Result<(), 
     if decode(invalid, "file_base64", "invalid-byte path")? != b"src/\xff.bin" {
         return Err("SRC-017 invalid path bytes changed".into());
     }
+    let expected_followed = usize::from(!windows);
     if array_len(outcomes, "files-symlink-disabled", "fragments")? != 0
         || array_len(outcomes, "files-directory-symlink", "fragments")? != 1
-        || array_len(outcomes, "files-symlink-enabled", "findings")? != 1
-        || array_len(outcomes, "files-chained-symlink", "fragments")? != 1
+        || array_len(outcomes, "files-symlink-enabled", "findings")? != expected_followed
+        || array_len(outcomes, "files-chained-symlink", "fragments")? != expected_followed
     {
         return Err("SRC-014/015 symlink behavior changed".into());
     }
@@ -158,7 +163,10 @@ fn validate_paths_and_symlinks(outcomes: &BTreeMap<&str, &Value>) -> Result<(), 
     Ok(())
 }
 
-fn validate_directory_and_engine(outcomes: &BTreeMap<&str, &Value>) -> Result<(), String> {
+fn validate_directory_and_engine(
+    outcomes: &BTreeMap<&str, &Value>,
+    windows: bool,
+) -> Result<(), String> {
     if array_len(outcomes, "files-nogit-main", "fragments")? != 1 {
         return Err("SRC-010 root-file discovery changed".into());
     }
@@ -172,7 +180,11 @@ fn validate_directory_and_engine(outcomes: &BTreeMap<&str, &Value>) -> Result<()
         || fragment_values(outcomes, "files-size-boundary", "raw_base64")? != [b"12345"]
         || !fragment_values(outcomes, "files-symlink-alias-size-skip", "raw_base64")?.is_empty()
         || fragment_values(outcomes, "files-symlink-target-size-bypass", "raw_base64")?
-            != [b"1234567890"]
+            != if windows {
+                Vec::<Vec<u8>>::new()
+            } else {
+                vec![b"1234567890".to_vec()]
+            }
     {
         return Err("SRC-011 exact size gates changed".into());
     }
@@ -216,12 +228,16 @@ fn validate_directory_and_engine(outcomes: &BTreeMap<&str, &Value>) -> Result<()
     Ok(())
 }
 
-fn validate_negative_controls(outcomes: &BTreeMap<&str, &Value>) -> Result<(), String> {
+fn validate_negative_controls(
+    outcomes: &BTreeMap<&str, &Value>,
+    windows: bool,
+) -> Result<(), String> {
     if array_len(outcomes, "detect-reader-eof", "findings")?
         == array_len(outcomes, "stream-error", "findings")?
         || fragment_values(outcomes, "files-size-boundary", "raw_base64")? != [b"12345"]
-        || array_len(outcomes, "files-symlink-enabled", "findings")?
-            == array_len(outcomes, "files-symlink-disabled", "findings")?
+        || (!windows
+            && array_len(outcomes, "files-symlink-enabled", "findings")?
+                == array_len(outcomes, "files-symlink-disabled", "findings")?)
         || array_len(outcomes, "nested-depth-8", "findings")?
             == array_len(outcomes, "nested-depth-1", "findings")?
         || array_len(outcomes, "files-prune-directory", "fragments")? != 1

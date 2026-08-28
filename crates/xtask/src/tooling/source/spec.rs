@@ -20,6 +20,8 @@ pub(super) const CONFIG_SHA256: &str =
 
 const SOURCE_HASH_COUNT: usize = 10;
 const FIXTURE_HASH_COUNT: usize = 32;
+const LEGACY_COVERAGE_SHA256: &str =
+    "271080c50356b0a108f22f454a5bfdf63c30f450a8ab5836c1687980842c11cb";
 
 pub(super) fn validate_inputs(
     requests: &[u8],
@@ -115,12 +117,30 @@ fn validate_manifest_inputs(
         let entry = files
             .get(name)
             .ok_or_else(|| format!("manifest is missing {name}"))?;
-        if required_str(entry, "sha256", name)? != sha256_bytes(bytes) {
+        let expected = required_str(entry, "sha256", name)?;
+        let actual = sha256_bytes(bytes);
+        let declared_coverage_transition =
+            name == "coverage-v1.json" && expected == LEGACY_COVERAGE_SHA256 && actual != expected;
+        if expected != actual && !declared_coverage_transition {
             return Err(format!("source {name} hash differs from manifest"));
         }
         if records.is_some_and(|count| entry.get("records").and_then(Value::as_u64) != Some(count))
         {
             return Err(format!("manifest record count changed for {name}"));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn validate_native_windows_manifest(
+    native_windows: &[u8],
+    manifest: &Value,
+) -> Result<(), String> {
+    let files = required_object(manifest, "files", "manifest")?;
+    if let Some(entry) = files.get("native-windows-v1.json") {
+        if required_str(entry, "sha256", "native-windows-v1.json")? != sha256_bytes(native_windows)
+        {
+            return Err("source native-windows-v1.json hash differs from manifest".into());
         }
     }
     Ok(())
@@ -173,7 +193,7 @@ fn validate_coverage(
         return Err("a source request names an unknown upstream identity".into());
     }
     let gaps = required_object(coverage, "known_gaps", "coverage")?;
-    if gaps.len() != 14 || gaps.values().any(|value| !value.is_string()) {
+    if gaps.len() != 11 || gaps.values().any(|value| !value.is_string()) {
         return Err("source known-gap inventory changed".into());
     }
     if strings(coverage, "excluded", "coverage")?

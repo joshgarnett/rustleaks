@@ -246,6 +246,13 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
+      - name: Check out the pinned Go oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -259,6 +266,15 @@ jobs:
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
         run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+      - name: Replay native compatibility evidence
+        working-directory: rustleaks
+        run: |
+          cargo fetch --locked
+          cargo xtask verify-upstream
+          cargo xtask generate source --check
+          cargo xtask generate git --check
+          cargo xtask generate report --check
+          cargo xtask generate cli --check
       - name: Build and test the native target
         working-directory: rustleaks
         env:
@@ -343,11 +359,22 @@ jobs:
             execution_platform: //platforms:windows_aarch64_msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
     steps:
       - name: Check out Rustleaks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: rustleaks
+          persist-credentials: false
+      - name: Check out the pinned Go oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gitleaks/gitleaks
+          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
+          path: gitleaks
           persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -367,6 +394,55 @@ jobs:
           if ($actual -ne $env:EXPECTED_ARCHITECTURE) {
             throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual"
           }
+      - name: Replay native compatibility evidence
+        shell: pwsh
+        working-directory: rustleaks
+        env:
+          RUSTLEAKS_SOURCE_LEDGER_PATH: ${{ runner.temp }}\source-ledger-${{ matrix.architecture }}.json
+          RUSTLEAKS_GIT_LEDGER_PATH: ${{ runner.temp }}\git-ledger-${{ matrix.architecture }}.json
+          RUSTLEAKS_REPORT_LEDGER_PATH: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
+          RUSTLEAKS_CLI_LEDGER_PATH: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
+        run: |
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask verify-upstream
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate source --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate git --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate report --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo xtask generate cli --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload source hash ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-ledger-${{ matrix.architecture }}
+          path: ${{ runner.temp }}\source-ledger-${{ matrix.architecture }}.json
+          if-no-files-found: error
+      - name: Upload Git hash ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: git-ledger-${{ matrix.architecture }}
+          path: ${{ runner.temp }}\git-ledger-${{ matrix.architecture }}.json
+          if-no-files-found: error
+      - name: Upload report hash ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: report-ledger-${{ matrix.architecture }}
+          path: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
+          if-no-files-found: error
+      - name: Upload CLI hash ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-ledger-${{ matrix.architecture }}
+          path: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
+          if-no-files-found: error
       - name: Build and test the native target
         shell: pwsh
         working-directory: rustleaks

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "source",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.26.7",
+  "baseline_platform": "darwin/arm64",
+  "baseline_semantic_outcomes_sha256": "26cbe802d0747add9eb656dd51e0394fc831c9fa8c107469c0a72f426efd2797",
+  "record_count": 124,
+  "platforms": {
+    "windows/amd64": {
+      "outcomes_sha256": "60cf3b35703ae54bb3060b85a7d5d9033864b77153233040b92aafb82a45417d"
+    },
+    "windows/arm64": {
+      "outcomes_sha256": "1e23de88fee071a81074734441133327ff3901303454a7de67c6bf0d378d764e"
+    }
+  },
+  "semantic_outcomes_sha256": "788de67fcf9931571570038e690e3db92be1dcc2bf78a842cfb2a32b9298b97f",
+  "semantic_difference_ids": [
+    "file-invalid-bytes",
+    "file-path-nfc",
+    "file-path-nfd",
+    "file-path-windows-mixed-drive",
+    "file-path-windows-unc",
+    "file-path-windows-extended",
+    "file-yield-error",
+    "file-default-buffer",
+    "file-custom-buffer",
+    "file-lf-line-count",
+    "file-repeat-mime-before-first-lf",
+    "archive-files-7z",
+    "archive-files-tar",
+    "archive-files-tar-xz",
+    "archive-files-tar-zst",
+    "archive-files-zip",
+    "archive-uppercase-name",
+    "archive-substring-name",
+    "archive-windows-outer-path",
+    "decompress-main-go-gz",
+    "decompress-main-go-xz",
+    "decompress-main-go-zst",
+    "decompress-safe-br",
+    "decompress-safe-tar-br",
+    "decompress-safe-bz2",
+    "decompress-safe-tar-bz2",
+    "decompress-safe-lz4",
+    "decompress-safe-tar-lz4",
+    "decompress-safe-mz",
+    "decompress-safe-tar-mz",
+    "decompress-safe-s2",
+    "decompress-safe-tar-s2",
+    "decompress-safe-sz",
+    "decompress-safe-tar-sz",
+    "archive-7z-copy",
+    "archive-7z-delta",
+    "archive-7z-lzma",
+    "archive-7z-deflate",
+    "archive-7z-bzip2",
+    "archive-7z-brotli",
+    "archive-7z-lz4",
+    "archive-7z-zstd",
+    "archive-7z-bcj2",
+    "archive-rar5-stored",
+    "archive-rar5-compressed",
+    "archive-rar2-compressed",
+    "archive-rar-rar3",
+    "archive-rar-rar3-solid",
+    "archive-rar-rar3-multi",
+    "archive-rar-rar3-solid-multi",
+    "archive-rar-rar5",
+    "archive-rar-rar5-solid",
+    "archive-rar-rar5-multi",
+    "archive-rar-rar5-solid-multi",
+    "nested-depth-1",
+    "nested-depth-2",
+    "nested-depth-8",
+    "archive-inner-allowlist-scope",
+    "files-upstream-directory",
+    "files-nogit-directory",
+    "files-nogit-main",
+    "files-nogit-api",
+    "files-nogit-env",
+    "files-symlink-enabled",
+    "files-directory-symlink",
+    "files-chained-symlink",
+    "files-symlink-target-size-bypass",
+    "files-corrupt-archive-matrix",
+    "files-size-boundary",
+    "files-permission-denied",
+    "files-prune-directory",
+    "files-bounded-order"
+  ],
+  "structural_differences": [
+    {
+      "id": "files-symlink-enabled",
+      "baseline": {
+        "fragments": 1,
+        "canonical_fragments": 1,
+        "findings": 1,
+        "issues": 0,
+        "has_error": false
+      },
+      "windows": {
+        "fragments": 0,
+        "canonical_fragments": 0,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      }
+    },
+    {
+      "id": "files-chained-symlink",
+      "baseline": {
+        "fragments": 1,
+        "canonical_fragments": 1,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      },
+      "windows": {
+        "fragments": 0,
+        "canonical_fragments": 0,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      }
+    },
+    {
+      "id": "files-symlink-target-size-bypass",
+      "baseline": {
+        "fragments": 1,
+        "canonical_fragments": 1,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      },
+      "windows": {
+        "fragments": 0,
+        "canonical_fragments": 0,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      }
+    },
+    {
+      "id": "files-permission-denied",
+      "baseline": {
+        "fragments": 0,
+        "canonical_fragments": 0,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      },
+      "windows": {
+        "fragments": 1,
+        "canonical_fragments": 1,
+        "findings": 0,
+        "issues": 0,
+        "has_error": false
+      }
+    }
+  ]
+}
