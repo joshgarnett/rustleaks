@@ -16,6 +16,10 @@ const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
     "2d1f1f679ca552f7563e4c3313e4215c0d7e89317304db723a4c6d2321b2a791",
     "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
 );
+const NATIVE_WINDOWS_LEDGER_TRANSITION: (&str, &str) = (
+    "1a60d9fbadf1b31dd174b8a62ea7c9a8f1f9b6950629897e5bf0ee706167300c",
+    "38c64dc4d97a59440f3eae5b3593b0ac27545798af8f92fcbaeb52989a52253d",
+);
 
 pub(super) fn validate_outcomes(
     bytes: &[u8],
@@ -108,7 +112,9 @@ fn validate_native_windows_outcomes(
     fresh: &[u8],
     ledger: &Value,
 ) -> Result<(), String> {
-    const DIFFERENCE_ID: &str = "CLI-BB-013/outside-baseline";
+    const BASELINE_DIFFERENCE: &str = "CLI-BB-013/outside-baseline";
+    const OUTSIDE_I32_DIFFERENCE: &str = "CLI-BB-019/outside-i32";
+    const DIFFERENCE_IDS: [&str; 2] = [BASELINE_DIFFERENCE, OUTSIDE_I32_DIFFERENCE];
     if required_u64(ledger, "schema_version", "native Windows CLI ledger")? != 1
         || required_u64(ledger, "protocol_version", "native Windows CLI ledger")? != 1
         || required_str(ledger, "oracle_mode", "native Windows CLI ledger")? != "cli"
@@ -151,7 +157,7 @@ fn validate_native_windows_outcomes(
         )?;
     }
     let difference_ids = required_array(ledger, "difference_ids", "native Windows CLI ledger")?;
-    if difference_ids != &[Value::String(DIFFERENCE_ID.into())] {
+    if difference_ids != DIFFERENCE_IDS.map(|id| Value::String(id.into())).as_slice() {
         return Err("native Windows CLI difference ids changed".into());
     }
     let counts = required_object(
@@ -159,8 +165,14 @@ fn validate_native_windows_outcomes(
         "windows_finding_counts",
         "native Windows CLI ledger",
     )?;
-    if counts.len() != 1 || counts.get(DIFFERENCE_ID).and_then(Value::as_u64) != Some(2) {
+    if counts.len() != 1 || counts.get(BASELINE_DIFFERENCE).and_then(Value::as_u64) != Some(2) {
         return Err("native Windows CLI finding counts changed".into());
+    }
+    let exits = required_object(ledger, "windows_go_exits", "native Windows CLI ledger")?;
+    if exits.len() != 1
+        || exits.get(OUTSIDE_I32_DIFFERENCE).and_then(Value::as_i64) != Some(i64::from(i32::MIN))
+    {
+        return Err("native Windows CLI process exits changed".into());
     }
     if !cfg!(windows) {
         return Ok(());
@@ -178,13 +190,13 @@ fn validate_native_windows_outcomes(
             "native Windows CLI outcomes changed for {observed_platform}"
         ));
     }
-    reconcile_native_windows_outcomes(committed, fresh, DIFFERENCE_ID)
+    reconcile_native_windows_outcomes(committed, fresh, &DIFFERENCE_IDS)
 }
 
 fn reconcile_native_windows_outcomes(
     committed: &[u8],
     fresh: &[u8],
-    expected_difference: &str,
+    expected_differences: &[&str],
 ) -> Result<(), String> {
     let committed_rows = parse_outcome_rows(committed, "committed CLI outcomes")?;
     let fresh_rows = parse_outcome_rows(fresh, "native Windows CLI outcomes")?;
@@ -216,15 +228,22 @@ fn reconcile_native_windows_outcomes(
             }
             let id = format!("{case_id}/{variant_id}");
             differences.push(id.clone());
-            if id != expected_difference {
-                return Err(format!(
-                    "native Windows CLI outcome changed outside {expected_difference}: {id}"
-                ));
+            match id.as_str() {
+                "CLI-BB-013/outside-baseline" => {
+                    validate_windows_baseline_variant(committed_variant, fresh_variant, &id)?;
+                }
+                "CLI-BB-019/outside-i32" => {
+                    validate_windows_outside_i32_variant(committed_variant, fresh_variant, &id)?;
+                }
+                _ => {
+                    return Err(format!(
+                        "native Windows CLI outcome changed outside the ledger: {id}"
+                    ));
+                }
             }
-            validate_windows_baseline_variant(committed_variant, fresh_variant, &id)?;
         }
     }
-    if differences != [expected_difference] {
+    if differences.iter().map(String::as_str).collect::<Vec<_>>() != expected_differences {
         return Err("native Windows CLI difference ledger changed".into());
     }
     Ok(())
@@ -268,6 +287,28 @@ fn validate_windows_baseline_variant(
         || fresh["go"]["report"] != fresh["rust"]["report"]
     {
         return Err(format!("{label}: native Windows paired payloads differ"));
+    }
+    Ok(())
+}
+
+fn validate_windows_outside_i32_variant(
+    committed: &Value,
+    fresh: &Value,
+    label: &str,
+) -> Result<(), String> {
+    if committed["go"]["exit"].as_i64() != Some(0)
+        || fresh["go"]["exit"].as_i64() != Some(i64::from(i32::MIN))
+        || committed["rust"]["exit"].as_i64() != Some(1)
+        || fresh["rust"]["exit"].as_i64() != Some(1)
+    {
+        return Err(format!("{label}: native Windows process exits changed"));
+    }
+    let mut normalized = fresh.clone();
+    normalized["go"]["exit"] = committed["go"]["exit"].clone();
+    if &normalized != committed {
+        return Err(format!(
+            "{label}: native Windows outcome changed outside the Go exit"
+        ));
     }
     Ok(())
 }
@@ -481,23 +522,8 @@ pub(super) fn render_manifest(
             "native Linux evidence provenance",
         )?;
     }
-    let field = format!("  \"native_windows_ledger_sha256\": \"{native_windows_hash}\",\n");
-    if let Some(current) = manifest
-        .get("native_windows_ledger_sha256")
-        .and_then(Value::as_str)
-    {
-        if current != native_windows_hash {
-            return Err("native Windows CLI ledger hash differs from manifest".into());
-        }
-    } else {
-        let anchor = format!("  \"native_linux_outcome_sha256\": \"{native_linux_hash}\",\n");
-        rendered = insert_after_once(
-            &rendered,
-            anchor.as_bytes(),
-            field.as_bytes(),
-            "native Windows CLI ledger provenance",
-        )?;
-    }
+    rendered =
+        render_native_windows_ledger(rendered, manifest, native_linux_hash, native_windows_hash)?;
     let field = format!("  \"unix_path_outcome_sha256\": \"{unix_path_hash}\",\n");
     if let Some(current) = manifest
         .get("unix_path_outcome_sha256")
@@ -529,6 +555,40 @@ pub(super) fn render_manifest(
             anchor.as_bytes(),
             field.as_bytes(),
             "Unix logical-name evidence provenance",
+        )?;
+    }
+    Ok(rendered)
+}
+
+fn render_native_windows_ledger(
+    mut rendered: Vec<u8>,
+    manifest: &Value,
+    native_linux_hash: &str,
+    native_windows_hash: &str,
+) -> Result<Vec<u8>, String> {
+    let field = format!("  \"native_windows_ledger_sha256\": \"{native_windows_hash}\",\n");
+    if let Some(current) = manifest
+        .get("native_windows_ledger_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != native_windows_hash {
+            if (current, native_windows_hash) != NATIVE_WINDOWS_LEDGER_TRANSITION {
+                return Err("native Windows CLI ledger hash differs from manifest".into());
+            }
+            rendered = replace_declared_transition(
+                &rendered,
+                current.as_bytes(),
+                native_windows_hash.as_bytes(),
+                "native Windows CLI ledger transition",
+            )?;
+        }
+    } else {
+        let anchor = format!("  \"native_linux_outcome_sha256\": \"{native_linux_hash}\",\n");
+        rendered = insert_after_once(
+            &rendered,
+            anchor.as_bytes(),
+            field.as_bytes(),
+            "native Windows CLI ledger provenance",
         )?;
     }
     Ok(rendered)
@@ -894,7 +954,7 @@ mod tests {
             reconcile_native_windows_outcomes(
                 &render(&committed),
                 &render(&fresh),
-                "CLI-BB-013/outside-baseline"
+                &["CLI-BB-013/outside-baseline"]
             )
             .is_ok()
         );
@@ -905,7 +965,44 @@ mod tests {
             reconcile_native_windows_outcomes(
                 &render(&committed),
                 &render(&unexpected),
-                "CLI-BB-013/outside-baseline"
+                &["CLI-BB-013/outside-baseline"]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn native_windows_reconciliation_accepts_only_the_signed_go_exit() {
+        let committed = json!({
+            "id": "CLI-BB-019",
+            "variants": [{
+                "id": "outside-i32",
+                "go": {"exit": 0},
+                "rust": {"exit": 1}
+            }]
+        });
+        let mut fresh = committed.clone();
+        fresh["variants"][0]["go"]["exit"] = json!(i32::MIN);
+        let render = |value: &serde_json::Value| {
+            let mut bytes = serde_json::to_vec(value).unwrap();
+            bytes.push(b'\n');
+            bytes
+        };
+        assert!(
+            reconcile_native_windows_outcomes(
+                &render(&committed),
+                &render(&fresh),
+                &["CLI-BB-019/outside-i32"]
+            )
+            .is_ok()
+        );
+
+        fresh["variants"][0]["rust"]["exit"] = json!(2);
+        assert!(
+            reconcile_native_windows_outcomes(
+                &render(&committed),
+                &render(&fresh),
+                &["CLI-BB-019/outside-i32"]
             )
             .is_err()
         );

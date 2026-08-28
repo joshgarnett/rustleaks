@@ -36,8 +36,8 @@ fixture for native Windows generation.
 `unix-logical-name-v1.json` preserves the Unix filename that contains a
 Windows drive spelling and therefore cannot be created by native Windows.
 The payload-free `native-windows-v1.json` ledger binds both Windows
-architectures to their complete raw outcomes and the one platform-specific
-baseline-path branch while retaining the portable Unix corpus.
+architectures to their complete raw outcomes and the two platform-specific
+baseline-path and process-exit branches while retaining the portable Unix corpus.
 Native Linux and Windows CI also replay the pinned oracle generators before
 running the complete native Bazel test suite.
 

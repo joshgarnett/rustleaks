@@ -15,9 +15,13 @@
     }
   },
   "difference_ids": [
-    "CLI-BB-013/outside-baseline"
+    "CLI-BB-013/outside-baseline",
+    "CLI-BB-019/outside-i32"
   ],
   "windows_finding_counts": {
     "CLI-BB-013/outside-baseline": 2
+  },
+  "windows_go_exits": {
+    "CLI-BB-019/outside-i32": -2147483648
   }
 }
