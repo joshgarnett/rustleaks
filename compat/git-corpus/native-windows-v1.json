@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "oracle_mode": "git",
+  "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "go_version": "go1.26.7",
+  "baseline_platform": "darwin/arm64",
+  "baseline_semantic_outcomes_sha256": "00420cfcf7e0c54362e742a8222a88675b3e76e29e547542e803f783e89e5805",
+  "record_count": 34,
+  "platforms": {
+    "windows/amd64": {
+      "outcomes_sha256": "fe87facb2c0489de9c82714c234b1795489a48c70782e57a35067cdbb1208650"
+    },
+    "windows/arm64": {
+      "outcomes_sha256": "2f38fa71389acfdbb10a8cc3bec96156297ad04e3c69a917abee6af3fc9aa82a"
+    }
+  },
+  "semantic_outcomes_sha256": "27095bd0a25c925f259dcc3f83cdac7e2ee7bd26c35e9d35c7ee5739315e3683",
+  "portable_outcomes_sha256": "00420cfcf7e0c54362e742a8222a88675b3e76e29e547542e803f783e89e5805",
+  "semantic_difference_ids": [
+    "int-archive-findings",
+    "unstaged-archive-reads-index"
+  ],
+  "windows_file_counts": {
+    "int-archive-findings": 54,
+    "unstaged-archive-reads-index": 2
+  }
+}

@@ -12,5 +12,13 @@ and finding multisets, commit metadata, remotes, and structured issues.
 Byte-bearing fields are base64. Behavior IDs use the stable `GIT-001..023`
 mapping recorded in `coverage-v1.json`.
 
+Native Linux and Windows jobs replay the pinned Git oracle before running the
+target-specific Bazel suite. The payload-free `native-windows-v1.json` ledger
+binds complete x64 and ARM64 observations by raw and platform-neutral SHA-256
+values. Windows archive fragments preserve the pinned oracle's original
+backslash spelling alongside the slash-normalized portable path; reconciliation
+requires every paired path and every remaining outcome field to match exactly.
+Each Windows replay also publishes a payload-free per-record hash ledger.
+
 Regenerate with `cargo xtask generate git`; verify with
 `cargo xtask generate git --check`. Use `--output PATH` to write elsewhere.

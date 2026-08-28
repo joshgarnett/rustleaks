@@ -28,6 +28,14 @@ and finding multisets, commit metadata, remotes, and structured issues.
 Byte-bearing fields are base64. Behavior IDs use the stable `GIT-001..023`
 mapping recorded in `coverage-v1.json`.
 
+Native Linux and Windows jobs replay the pinned Git oracle before running the
+target-specific Bazel suite. The payload-free `native-windows-v1.json` ledger
+binds complete x64 and ARM64 observations by raw and platform-neutral SHA-256
+values. Windows archive fragments preserve the pinned oracle's original
+backslash spelling alongside the slash-normalized portable path; reconciliation
+requires every paired path and every remaining outcome field to match exactly.
+Each Windows replay also publishes a payload-free per-record hash ledger.
+
 Regenerate with `cargo xtask generate git`; verify with
 `cargo xtask generate git --check`. Use `--output PATH` to write elsewhere.
 ";
@@ -55,21 +63,26 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
     let coverage = read(&corpus.join("coverage-v1.json"))?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
+    let native_windows = read(&corpus.join("native-windows-v1.json"))?;
     let legacy_readme = read(&corpus.join("README.md"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
     let legacy_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let coverage_value = parse_json(&coverage, "Git coverage")?;
     let negative_value = parse_json(&negative, "Git negative controls")?;
+    let native_windows_value = parse_json(&native_windows, "native Windows Git ledger")?;
     let manifest_value = parse_json(&legacy_manifest, "Git manifest")?;
     let legacy_outcome_values = parse_jsonl(&legacy_outcomes, "committed Git outcomes")?;
     let request_values = spec::validate_inputs(
         &requests,
-        &coverage,
-        &coverage_value,
-        &negative,
-        &negative_value,
-        &legacy_readme,
-        &manifest_value,
+        spec::InputMetadata {
+            coverage_bytes: &coverage,
+            coverage: &coverage_value,
+            negative_bytes: &negative,
+            negative: &negative_value,
+            native_windows: &native_windows,
+            readme: &legacy_readme,
+            manifest: &manifest_value,
+        },
     )?;
 
     let upstream = root
@@ -102,14 +115,20 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
     validation::validate_all(
         root,
         &request_values,
-        &observed.values,
+        OutcomeBaseline {
+            values: &observed.values,
+            bytes: &observed.bytes,
+        },
         OutcomeBaseline {
             values: &legacy_outcome_values,
             bytes: &legacy_outcomes,
         },
-        &coverage_value,
-        &negative_value,
-        &manifest_value,
+        validation::ValidationMetadata {
+            coverage: &coverage_value,
+            negative: &negative_value,
+            native_windows: &native_windows_value,
+            manifest: &manifest_value,
+        },
     )?;
     if fixture::tree_fingerprint(&fixture_root)? != fixture_before
         || process::git_status(
@@ -133,6 +152,7 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
         &manifest_value,
         legacy_readme.len(),
         README.as_bytes(),
+        &native_windows,
         outcome_bytes,
     )?;
     let mut tree = GeneratedTree::default();
@@ -141,6 +161,7 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
     tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
+    tree.insert("native-windows-v1.json", native_windows)?;
     tree.insert("manifest-v1.json", manifest)?;
     Ok(tree)
 }
