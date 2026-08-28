@@ -64,8 +64,18 @@ cannot be reproduced as possible state leakage or nondeterminism.
 
 ## Dependency review
 
-The cargo-vet policy is self-contained and imports no third-party trust. Its
-current graph uses 61 bootstrap exemptions with this metadata on every entry:
+The cargo-vet policy is self-contained and imports no third-party trust.
+`supply-chain/inventory-v1.json` mechanically reconciles every locked
+third-party package with its local full audit or exemption. Its summary reports
+exact local-audit, exemption-record, and distinct exempted crate-name counts.
+Regenerate and check it with:
+
+```sh
+cargo xtask generate vet-inventory
+cargo xtask generate vet-inventory --check
+```
+
+Every remaining bootstrap exemption carries this metadata:
 
 - owner: Rustleaks maintainers;
 - scope: the locked graph or a narrower selected feature graph;
@@ -77,6 +87,7 @@ current graph uses 61 bootstrap exemptions with this metadata on every entry:
 exemption is temporary coverage, not evidence that source was audited. Replace
 exemptions with local audits as review work is completed. Adding peer imports
 is a separate trust decision and requires explicit maintainer review.
+Completed package worksheets are under `docs/dependency-audits/`.
 
 The exact normal dependency graph, direct build scripts, native code, and safe
 API reasoning are documented in [`DEPENDENCY_SAFETY.md`](DEPENDENCY_SAFETY.md)

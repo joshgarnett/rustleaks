@@ -16,6 +16,7 @@ mod session;
 mod source;
 mod support;
 mod traceability;
+mod vet_inventory;
 
 pub(crate) use cli_corpus::{check_cli_corpus, write_cli_corpus};
 pub(crate) use composite::{check_composite_corpus, write_composite_corpus};
@@ -43,3 +44,4 @@ pub(crate) use traceability::assertions::{
 pub(crate) use traceability::generator_samples::{
     check_generator_samples, regenerate_generator_samples,
 };
+pub(crate) use vet_inventory::{check_vet_inventory, write_vet_inventory};
