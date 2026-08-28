@@ -1,0 +1,1773 @@
+{
+  "cargo_lock_sha256": "e3c24453ec42115d43dd5b2b679e43cdb6e1b0802393932d3ae199db2e502d82",
+  "feature_resolution": "locked default workspace metadata across declared target edges",
+  "format_version": 1,
+  "generated_by": "cargo xtask generate vet-inventory",
+  "packages": [
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "adler2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.0.1",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "perf-literal",
+        "std"
+      ],
+      "links": null,
+      "name": "aho-corasick",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.5",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "alloc-no-stdlib",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.0.4",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "alloc-stdlib",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.4",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "development",
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "std"
+      ],
+      "links": null,
+      "name": "base64",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.23.1",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "std"
+      ],
+      "links": null,
+      "name": "bitflags",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.13.1",
+      "workspace_consumers": [
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "block-buffer",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.12.1",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "3a32acac15fe1967bc3986b2a6347dffc965602354ea6f450ad07e8bfd253583",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc-stdlib",
+        "std"
+      ],
+      "links": null,
+      "name": "brotli-decompressor",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "5.0.3",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "cfg-if",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.4",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "c11ff3545f0554bd738d69ab7d4556713f7b986706563b0554a89339cee83396",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "rar2"
+      ],
+      "links": null,
+      "name": "compcol",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.6.10",
+      "workspace_consumers": [
+        "rustleaks-cli"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "const-oid",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.10.2",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "cfg(any(target_arch = \"aarch64\", target_arch = \"x86_64\", target_arch = \"x86\"))"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "cpufeatures",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.3.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "std"
+      ],
+      "links": null,
+      "name": "crc32fast",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.5.1",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "crypto-common",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.2",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "block-api",
+        "default",
+        "oid"
+      ],
+      "links": null,
+      "name": "digest",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.11.3",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "equivalent",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.2",
+      "workspace_consumers": []
+    },
+    {
+      "applicable_targets": [
+        "cfg(all(not(rustix_use_libc), not(miri), target_os = \"linux\", any(target_endian = \"little\", any(target_arch = \"s390x\", target_arch = \"powerpc\")), any(target_arch = \"arm\", all(target_arch = \"aarch64\", target_pointer_width = \"64\"), target_arch = \"riscv64\", all(rustix_use_experimental_asm, target_arch = \"powerpc\"), all(rustix_use_experimental_asm, target_arch = \"powerpc64\"), all(rustix_use_experimental_asm, target_arch = \"s390x\"), all(rustix_use_experimental_asm, target_arch = \"mips\"), all(rustix_use_experimental_asm, target_arch = \"mips32r6\"), all(rustix_use_experimental_asm, target_arch = \"mips64\"), all(rustix_use_experimental_asm, target_arch = \"mips64r6\"), target_arch = \"x86\", all(target_arch = \"x86_64\", target_pointer_width = \"64\"))))",
+        "cfg(all(not(windows), any(rustix_use_libc, miri, not(all(target_os = \"linux\", any(target_endian = \"little\", any(target_arch = \"s390x\", target_arch = \"powerpc\")), any(target_arch = \"arm\", all(target_arch = \"aarch64\", target_pointer_width = \"64\"), target_arch = \"riscv64\", all(rustix_use_experimental_asm, target_arch = \"powerpc\"), all(rustix_use_experimental_asm, target_arch = \"powerpc64\"), all(rustix_use_experimental_asm, target_arch = \"s390x\"), all(rustix_use_experimental_asm, target_arch = \"mips\"), all(rustix_use_experimental_asm, target_arch = \"mips32r6\"), all(rustix_use_experimental_asm, target_arch = \"mips64\"), all(rustix_use_experimental_asm, target_arch = \"mips64r6\"), target_arch = \"x86\", all(target_arch = \"x86_64\", target_pointer_width = \"64\")))))))",
+        "cfg(windows)"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "std"
+      ],
+      "links": null,
+      "name": "errno",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.3.14",
+      "workspace_consumers": [
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "filetime",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.29",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "any_impl",
+        "default",
+        "miniz_oxide",
+        "rust_backend"
+      ],
+      "links": null,
+      "name": "flate2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.9",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "hashbrown",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.17.1",
+      "workspace_consumers": []
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "707114b52a152fa7bdb290cd7cd5912d9467273b6d74e21b8d81aca1f8533f6b",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "hybrid-array",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.4.14",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "std"
+      ],
+      "links": null,
+      "name": "indexmap",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.14.0",
+      "workspace_consumers": []
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "local-full-audit",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "itoa",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.18",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "cfg(all(not(rustix_use_libc), not(miri), target_os = \"linux\", any(target_endian = \"little\", any(target_arch = \"s390x\", target_arch = \"powerpc\")), any(target_arch = \"arm\", all(target_arch = \"aarch64\", target_pointer_width = \"64\"), target_arch = \"riscv64\", all(rustix_use_experimental_asm, target_arch = \"powerpc\"), all(rustix_use_experimental_asm, target_arch = \"powerpc64\"), all(rustix_use_experimental_asm, target_arch = \"s390x\"), all(rustix_use_experimental_asm, target_arch = \"mips\"), all(rustix_use_experimental_asm, target_arch = \"mips32r6\"), all(rustix_use_experimental_asm, target_arch = \"mips64\"), all(rustix_use_experimental_asm, target_arch = \"mips64r6\"), target_arch = \"x86\", all(target_arch = \"x86_64\", target_pointer_width = \"64\"))))",
+        "cfg(all(not(windows), any(rustix_use_libc, miri, not(all(target_os = \"linux\", any(target_endian = \"little\", any(target_arch = \"s390x\", target_arch = \"powerpc\")), any(target_arch = \"arm\", all(target_arch = \"aarch64\", target_pointer_width = \"64\"), target_arch = \"riscv64\", all(rustix_use_experimental_asm, target_arch = \"powerpc\"), all(rustix_use_experimental_asm, target_arch = \"powerpc64\"), all(rustix_use_experimental_asm, target_arch = \"s390x\"), all(rustix_use_experimental_asm, target_arch = \"mips\"), all(rustix_use_experimental_asm, target_arch = \"mips32r6\"), all(rustix_use_experimental_asm, target_arch = \"mips64\"), all(rustix_use_experimental_asm, target_arch = \"mips64r6\"), target_arch = \"x86\", all(target_arch = \"x86_64\", target_pointer_width = \"64\")))))))",
+        "cfg(all(target_arch = \"aarch64\", target_os = \"android\"))",
+        "cfg(all(target_arch = \"aarch64\", target_os = \"linux\"))",
+        "cfg(all(target_arch = \"aarch64\", target_vendor = \"apple\"))",
+        "cfg(all(target_arch = \"loongarch64\", target_os = \"linux\"))",
+        "cfg(any(target_os = \"freebsd\", target_os = \"netbsd\"))",
+        "cfg(target_os = \"hermit\")",
+        "cfg(target_os = \"wasi\")",
+        "cfg(unix)"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "std"
+      ],
+      "links": null,
+      "name": "libc",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.189",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "cfg(all(any(target_os = \"linux\", target_os = \"android\"), any(rustix_use_libc, miri, not(all(target_os = \"linux\", any(target_endian = \"little\", any(target_arch = \"s390x\", target_arch = \"powerpc\")), any(target_arch = \"arm\", all(target_arch = \"aarch64\", target_pointer_width = \"64\"), target_arch = \"riscv64\", all(rustix_use_experimental_asm, target_arch = \"powerpc\"), all(rustix_use_experimental_asm, target_arch = \"powerpc64\"), all(rustix_use_experimental_asm, target_arch = \"s390x\"), all(rustix_use_experimental_asm, target_arch = \"mips\"), all(rustix_use_experimental_asm, target_arch = \"mips32r6\"), all(rustix_use_experimental_asm, target_arch = \"mips64\"), all(rustix_use_experimental_asm, target_arch = \"mips64r6\"), target_arch = \"x86\", all(target_arch = \"x86_64\", target_pointer_width = \"64\")))))))",
+        "cfg(all(not(rustix_use_libc), not(miri), target_os = \"linux\", any(target_endian = \"little\", any(target_arch = \"s390x\", target_arch = \"powerpc\")), any(target_arch = \"arm\", all(target_arch = \"aarch64\", target_pointer_width = \"64\"), target_arch = \"riscv64\", all(rustix_use_experimental_asm, target_arch = \"powerpc\"), all(rustix_use_experimental_asm, target_arch = \"powerpc64\"), all(rustix_use_experimental_asm, target_arch = \"s390x\"), all(rustix_use_experimental_asm, target_arch = \"mips\"), all(rustix_use_experimental_asm, target_arch = \"mips32r6\"), all(rustix_use_experimental_asm, target_arch = \"mips64\"), all(rustix_use_experimental_asm, target_arch = \"mips64r6\"), target_arch = \"x86\", all(target_arch = \"x86_64\", target_pointer_width = \"64\"))))"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "auxvec",
+        "elf",
+        "errno",
+        "general",
+        "ioctl",
+        "no_std",
+        "prctl"
+      ],
+      "links": null,
+      "name": "linux-raw-sys",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.12.1",
+      "workspace_consumers": [
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "checked-decode",
+        "frame",
+        "safe-decode",
+        "safe-encode",
+        "std"
+      ],
+      "links": null,
+      "name": "lz4_flex",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.14.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "e6effa5c575f68109664a511f378c0e170888e33a426694ee0910a673762bd47",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "lzip",
+        "sha2",
+        "std",
+        "xz"
+      ],
+      "links": null,
+      "name": "lzma-rust2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.20.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "std"
+      ],
+      "links": null,
+      "name": "memchr",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.8.3",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all",
+        "cfg(all(target_arch = \"wasm32\", not(target_os = \"emscripten\")))"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "simd",
+        "simd-adler32",
+        "with-alloc"
+      ],
+      "links": null,
+      "name": "miniz_oxide",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.8.9",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "with-alloc"
+      ],
+      "links": null,
+      "name": "miniz_oxide",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.9.1",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "proc-macro"
+      ],
+      "links": null,
+      "name": "proc-macro2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.107",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "proc-macro"
+      ],
+      "links": null,
+      "name": "quote",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.47",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "75a2b2577f5fd7e26caabd4aa7bba1ef18653ff32204eea251c1136db1a549f3",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "std"
+      ],
+      "links": null,
+      "name": "rawzip",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.5.1",
+      "workspace_consumers": [
+        "rustleaks-cli"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "nfa-pikevm",
+        "nfa-thompson",
+        "std",
+        "syntax",
+        "unicode",
+        "unicode-age",
+        "unicode-bool",
+        "unicode-case",
+        "unicode-gencat",
+        "unicode-perl",
+        "unicode-script",
+        "unicode-segment",
+        "unicode-word-boundary"
+      ],
+      "links": null,
+      "name": "regex-automata",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.4.18",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "std",
+        "unicode",
+        "unicode-age",
+        "unicode-bool",
+        "unicode-case",
+        "unicode-gencat",
+        "unicode-perl",
+        "unicode-script",
+        "unicode-segment"
+      ],
+      "links": null,
+      "name": "regex-syntax",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.8.11",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "cfg(any(target_os = \"android\", target_os = \"linux\", target_os = \"macos\", target_os = \"hurd\"))",
+        "cfg(unix)"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "development",
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "default",
+        "fs",
+        "process",
+        "std"
+      ],
+      "links": null,
+      "name": "rustix",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.4",
+      "workspace_consumers": [
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "std"
+      ],
+      "links": null,
+      "name": "semver",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.28",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all",
+        "cfg(any())"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "development",
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "derive",
+        "serde_derive",
+        "std"
+      ],
+      "links": null,
+      "name": "serde",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.229",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "result",
+        "std"
+      ],
+      "links": null,
+      "name": "serde_core",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.229",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all",
+        "cfg(any())"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default"
+      ],
+      "links": null,
+      "name": "serde_derive",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.229",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "development",
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "std"
+      ],
+      "links": null,
+      "name": "serde_json",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.151",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "local-full-audit",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "serde",
+        "std"
+      ],
+      "links": null,
+      "name": "serde_spanned",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.1",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "default",
+        "oid"
+      ],
+      "links": null,
+      "name": "sha2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.11.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "simd-adler32",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.3.10",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "clone-impls",
+        "default",
+        "derive",
+        "parsing",
+        "printing",
+        "proc-macro"
+      ],
+      "links": null,
+      "name": "syn",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "3.0.4",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "xattr"
+      ],
+      "links": null,
+      "name": "tar",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.4.46",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "std"
+      ],
+      "links": null,
+      "name": "thiserror",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.0.20",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "thiserror-impl",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.0.20",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "bb4ebadaa0af04fab11ae01eb5f9fdb5f9c5b875506e210e71c07873528baa7f",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "tinyvec",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.12.0",
+      "workspace_consumers": [
+        "rustleaks-bzip2",
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "display",
+        "parse",
+        "serde",
+        "std"
+      ],
+      "links": null,
+      "name": "toml",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.4+spec-1.1.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "local-full-audit",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "serde",
+        "std"
+      ],
+      "links": null,
+      "name": "toml_datetime",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.1+spec-1.1.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "std"
+      ],
+      "links": null,
+      "name": "toml_parser",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.3+spec-1.1.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "local-full-audit",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "alloc",
+        "std"
+      ],
+      "links": null,
+      "name": "toml_writer",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.2+spec-1.1.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "xxhash32"
+      ],
+      "links": null,
+      "name": "twox-hash",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.1.4",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "const-generics"
+      ],
+      "links": null,
+      "name": "typenum",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.20.1",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "unicode-ident",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.24",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "windows-link",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.1",
+      "workspace_consumers": [
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "cfg(windows)"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "Win32",
+        "Win32_Foundation",
+        "Win32_Networking",
+        "Win32_Networking_WinSock",
+        "Win32_System",
+        "Win32_System_Diagnostics",
+        "Win32_System_Diagnostics_Debug",
+        "default"
+      ],
+      "links": null,
+      "name": "windows-sys",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.61.2",
+      "workspace_consumers": [
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "winnow",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.4",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "cfg(unix)"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [
+        "default",
+        "unsupported"
+      ],
+      "links": null,
+      "name": "xattr",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.6.1",
+      "workspace_consumers": [
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": true,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+      "core_normal_or_build_graph": true,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "zmij",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.23",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-compat",
+        "rustleaks-core",
+        "rustleaks-report",
+        "rustleaks-sources",
+        "xtask"
+      ]
+    },
+    {
+      "applicable_targets": [
+        "all"
+      ],
+      "build_script": false,
+      "cargo_vet": {
+        "coverage": "exemption",
+        "criteria": "safe-to-deploy"
+      },
+      "checksum": "ff386b8e5bbe3cf2b73dfb0601c19715885473825a2bb9cf3a2b9d401c2dd0cf",
+      "core_normal_or_build_graph": false,
+      "dependency_kinds": [
+        "normal"
+      ],
+      "enabled_features": [],
+      "links": null,
+      "name": "zstd-zero",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.1.0",
+      "workspace_consumers": [
+        "rustleaks-cli",
+        "rustleaks-sevenz"
+      ]
+    }
+  ],
+  "summary": {
+    "exemption_crate_name_count": 57,
+    "exemption_record_count": 58,
+    "local_full_audit_record_count": 4,
+    "third_party_package_count": 62
+  }
+}

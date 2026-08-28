@@ -1,4 +1,26 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.itoa]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.0.18"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.serde_spanned]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.1.1"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.toml_datetime]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.1.1+spec-1.1.0"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.toml_writer]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.1.2+spec-1.1.0"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"

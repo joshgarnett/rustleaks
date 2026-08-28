@@ -8,7 +8,7 @@ use super::{
     regenerate_generator_samples, self_test_api_dispositions, summarize_api_dispositions,
     write_api_dispositions, write_assertions, write_cli_corpus, write_composite_corpus,
     write_config_corpus, write_git_corpus, write_inventory, write_report_corpus,
-    write_session_corpus, write_source_corpus,
+    write_session_corpus, write_source_corpus, write_vet_inventory,
 };
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
@@ -106,6 +106,16 @@ fn run_repository_artifact(root: &Path, args: &[String]) -> Option<Result<(), St
         }
         [target, flag, output] if target == "inventory" && flag == "--output" => {
             Some(write_inventory(root, Path::new(output)))
+        }
+        [target] if target == "vet-inventory" => Some(write_vet_inventory(
+            root,
+            &root.join("supply-chain/inventory-v1.json"),
+        )),
+        [target, flag] if target == "vet-inventory" && flag == "--check" => Some(
+            super::check_vet_inventory(root, &root.join("supply-chain/inventory-v1.json")),
+        ),
+        [target, flag, output] if target == "vet-inventory" && flag == "--output" => {
+            Some(write_vet_inventory(root, Path::new(output)))
         }
         _ => None,
     }
@@ -210,7 +220,7 @@ fn run_direct_oracle(root: &Path, args: &[String]) -> Result<(), String> {
             })
         }
         _ => Err(
-            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
+            "usage: cargo xtask generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|vet-inventory [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>"
                 .into(),
         ),
     }

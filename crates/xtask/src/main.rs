@@ -360,7 +360,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|oracle-vulnerability-check|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|oracle-vulnerability-check|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|vet-inventory [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -1176,6 +1176,7 @@ fn vet_check() -> Result<(), String> {
         }
     }
     validate_vet_exemptions(&root.join("supply-chain/config.toml"))?;
+    tooling::check_vet_inventory(&root, &root.join("supply-chain/inventory-v1.json"))?;
     command_output(Command::new("cargo").current_dir(&root).args([
         "vet",
         "--locked",
@@ -1190,19 +1191,25 @@ fn validate_vet_exemptions(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read cargo-vet policy {}: {error}", path.display()))?;
     let config: toml::Value = toml::from_str(&source)
         .map_err(|error| format!("cannot parse cargo-vet policy {}: {error}", path.display()))?;
-    let exemptions = config
-        .get("exemptions")
-        .and_then(toml::Value::as_table)
-        .ok_or("cargo-vet policy contains no reviewed exemptions")?;
+    let exemptions = match config.get("exemptions") {
+        Some(exemptions) => Some(
+            exemptions
+                .as_table()
+                .ok_or("cargo-vet exemptions are not a table")?,
+        ),
+        None => None,
+    };
     let today = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| format!("system clock predates the Unix epoch: {error}"))?
         .as_secs()
         / 86_400;
-    for (package, entries) in exemptions {
+    let mut record_count = 0_usize;
+    for (package, entries) in exemptions.into_iter().flatten() {
         let entries = entries
             .as_array()
             .ok_or_else(|| format!("cargo-vet exemptions for {package} are not an array"))?;
+        record_count += entries.len();
         for entry in entries {
             let version = entry
                 .get("version")
@@ -1236,9 +1243,9 @@ fn validate_vet_exemptions(path: &Path) -> Result<(), String> {
             }
         }
     }
+    let crate_name_count = exemptions.map_or(0, toml::map::Map::len);
     println!(
-        "all {} cargo-vet bootstrap package groups have owner, scope, rationale, and active review dates",
-        exemptions.len()
+        "all {record_count} cargo-vet exemption records across {crate_name_count} crate names have owner, scope, rationale, and active review dates"
     );
     Ok(())
 }

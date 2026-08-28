@@ -114,11 +114,6 @@ version = "2.14.0"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.itoa]]
-version = "1.0.18"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.libc]]
 version = "0.2.189"
 criteria = "safe-to-deploy"
@@ -209,11 +204,6 @@ version = "1.0.151"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.serde_spanned]]
-version = "1.1.1"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.sha2]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
@@ -254,18 +244,8 @@ version = "1.1.4+spec-1.1.0"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked workspace parser graph; rationale=approved TOML implementation update is configuration-corpus gated pending source audit; review-by=2026-11-23"
 
-[[exemptions.toml_datetime]]
-version = "1.1.1+spec-1.1.0"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked workspace parser graph; rationale=approved TOML implementation update is configuration-corpus gated pending source audit; review-by=2026-11-23"
-
 [[exemptions.toml_parser]]
 version = "1.1.3+spec-1.1.0"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
-[[exemptions.toml_writer]]
-version = "1.1.2+spec-1.1.0"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
