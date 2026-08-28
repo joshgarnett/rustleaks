@@ -37,7 +37,7 @@
   "parser_usage_byte_count_both_implementations": 19508,
   "stderr_event_count_both_implementations": 888,
   "mutation_control_count": 20,
-  "generator_sha256": "1c1ad64f20330159dc70b4ee20332fd7d186f3e4f44cae1d6400bd7aa09e2378",
+  "generator_sha256": "143b70cb592a9ec5fa42176c01f01f01a0cd20e39f99e63513f39504220e2b63",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",

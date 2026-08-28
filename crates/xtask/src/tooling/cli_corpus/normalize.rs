@@ -172,7 +172,11 @@ fn event_for(line: &str) -> Event {
         && (lower.contains("byte ceiling") || lower.contains("output limit"))
     {
         "source.git-error"
-    } else if lower.starts_with("stat ") || lower.contains("during config selection") {
+    } else if lower.starts_with("stat ")
+        || lower.contains("during config selection")
+        || severity == "fatal"
+            && (lower.starts_with("createfile ") || lower.starts_with("getfileattributesex "))
+    {
         "config.source-stat-error"
     } else if lower.contains("config") || lower.contains("toml") {
         "config.error"
@@ -476,4 +480,30 @@ fn unescape_html_json(value: &str) -> String {
         .replace("\\u0026", "&")
         .replace("\\u003c", "<")
         .replace("\\u003e", ">")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::event_for;
+
+    #[test]
+    fn windows_fatal_stat_operations_are_config_selection_errors() {
+        for operation in ["CreateFile", "GetFileAttributesEx"] {
+            let event = event_for(&format!(
+                "FTL {operation} missing: The system cannot find the file specified."
+            ));
+            assert_eq!(event.severity, "fatal");
+            assert_eq!(event.class, "config.source-stat-error");
+            assert_eq!(
+                event.message,
+                format!("{operation} missing: <os:not-found>").as_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn windows_warning_stat_operations_remain_unclassified() {
+        let event = event_for("WRN CreateFile missing: The system cannot find the file specified.");
+        assert_eq!(event.class, "diagnostic.other");
+    }
 }
