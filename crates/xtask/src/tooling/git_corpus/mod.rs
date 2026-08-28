@@ -108,10 +108,7 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
         &manifest_value,
         &temporary,
     )?;
-    if let Some(path) = std::env::var_os("RUSTLEAKS_GIT_LEDGER_PATH") {
-        fs::write(&path, observation_ledger(&observed)?)
-            .map_err(|error| format!("cannot write Git observation ledger: {error}"))?;
-    }
+    write_observation_ledger(&observed)?;
     validation::validate_all(
         root,
         &request_values,
@@ -155,10 +152,28 @@ fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
         &native_windows,
         outcome_bytes,
     )?;
+    generated_tree(
+        requests,
+        outcome_bytes,
+        coverage,
+        negative,
+        native_windows,
+        manifest,
+    )
+}
+
+fn generated_tree(
+    requests: Vec<u8>,
+    outcomes: &[u8],
+    coverage: Vec<u8>,
+    negative: Vec<u8>,
+    native_windows: Vec<u8>,
+    manifest: Vec<u8>,
+) -> Result<GeneratedTree, String> {
     let mut tree = GeneratedTree::default();
     tree.insert("README.md", README.as_bytes())?;
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
+    tree.insert("outcomes-v1.jsonl", outcomes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("native-windows-v1.json", native_windows)?;
@@ -229,6 +244,14 @@ fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("cannot render Git observation ledger: {error}"))?;
     bytes.push(b'\n');
     Ok(bytes)
+}
+
+fn write_observation_ledger(observed: &process::Observed) -> Result<(), String> {
+    if let Some(path) = std::env::var_os("RUSTLEAKS_GIT_LEDGER_PATH") {
+        fs::write(&path, observation_ledger(observed)?)
+            .map_err(|error| format!("cannot write Git observation ledger: {error}"))?;
+    }
+    Ok(())
 }
 
 fn semantic_outcome(value: &Value, id: &str) -> Result<Value, String> {

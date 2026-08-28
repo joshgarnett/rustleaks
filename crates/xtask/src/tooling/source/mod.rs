@@ -117,10 +117,7 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         &manifest_value,
         &temporary,
     )?;
-    if let Some(path) = std::env::var_os("RUSTLEAKS_SOURCE_LEDGER_PATH") {
-        fs::write(&path, observation_ledger(&observed)?)
-            .map_err(|error| format!("cannot write source observation ledger: {error}"))?;
-    }
+    write_observation_ledger(&observed)?;
     validation::validate_all(
         root,
         &request_values,
@@ -139,32 +136,13 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
             manifest: &manifest_value,
         },
     )?;
-    if !check {
-        let observed_platform = validation::required_str(
-            observed
-                .values
-                .first()
-                .ok_or("source observations are empty")?,
-            "platform",
-            "observed source outcome",
-        )?;
-        let committed_platform =
-            validation::required_str(&manifest_value, "platform", "source manifest")?;
-        if observed_platform != committed_platform {
-            return Err(format!(
-                "canonical source regeneration requires {committed_platform}, got {observed_platform}; use --check for native replay"
-            ));
-        }
-    }
+    validate_regeneration_platform(check, &observed, &manifest_value)?;
     if process::git_status(&upstream, &temporary, "after")? != status_before {
         return Err("upstream checkout changed during source generation".into());
     }
 
-    let (outcome_bytes, outcome_values) = if check {
-        (&legacy_outcomes[..], &legacy_outcome_values[..])
-    } else {
-        (&observed.bytes[..], &observed.values[..])
-    };
+    let (outcome_bytes, outcome_values) =
+        selected_outcomes(check, &legacy_outcomes, &legacy_outcome_values, &observed);
     let manifest = validation::render_manifest(
         &legacy_manifest,
         &manifest_value,
@@ -174,15 +152,47 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         outcome_bytes,
         outcome_values,
     )?;
+    let tree = generated_tree(
+        requests,
+        outcome_bytes,
+        coverage,
+        negative,
+        native_windows,
+        manifest.clone(),
+    )?;
+    Ok(Generated { tree, manifest })
+}
+
+fn selected_outcomes<'a>(
+    check: bool,
+    legacy_bytes: &'a [u8],
+    legacy_values: &'a [Value],
+    observed: &'a process::Observed,
+) -> (&'a [u8], &'a [Value]) {
+    if check {
+        (legacy_bytes, legacy_values)
+    } else {
+        (&observed.bytes, &observed.values)
+    }
+}
+
+fn generated_tree(
+    requests: Vec<u8>,
+    outcomes: &[u8],
+    coverage: Vec<u8>,
+    negative: Vec<u8>,
+    native_windows: Vec<u8>,
+    manifest: Vec<u8>,
+) -> Result<GeneratedTree, String> {
     let mut tree = GeneratedTree::default();
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
+    tree.insert("outcomes-v1.jsonl", outcomes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("native-windows-v1.json", native_windows)?;
     tree.insert("README.md", README.as_bytes())?;
-    tree.insert("manifest-v1.json", manifest.clone())?;
-    Ok(Generated { tree, manifest })
+    tree.insert("manifest-v1.json", manifest)?;
+    Ok(tree)
 }
 
 fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
@@ -243,6 +253,39 @@ fn observation_ledger(observed: &process::Observed) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("cannot render source observation ledger: {error}"))?;
     bytes.push(b'\n');
     Ok(bytes)
+}
+
+fn write_observation_ledger(observed: &process::Observed) -> Result<(), String> {
+    if let Some(path) = std::env::var_os("RUSTLEAKS_SOURCE_LEDGER_PATH") {
+        fs::write(&path, observation_ledger(observed)?)
+            .map_err(|error| format!("cannot write source observation ledger: {error}"))?;
+    }
+    Ok(())
+}
+
+fn validate_regeneration_platform(
+    check: bool,
+    observed: &process::Observed,
+    manifest: &Value,
+) -> Result<(), String> {
+    if check {
+        return Ok(());
+    }
+    let observed_platform = validation::required_str(
+        observed
+            .values
+            .first()
+            .ok_or("source observations are empty")?,
+        "platform",
+        "observed source outcome",
+    )?;
+    let committed_platform = validation::required_str(manifest, "platform", "source manifest")?;
+    if observed_platform != committed_platform {
+        return Err(format!(
+            "canonical source regeneration requires {committed_platform}, got {observed_platform}; use --check for native replay"
+        ));
+    }
+    Ok(())
 }
 
 fn transition_coverage(legacy: &[u8]) -> Result<Vec<u8>, String> {

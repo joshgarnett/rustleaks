@@ -56,6 +56,7 @@ pub(super) fn validate_envelope(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct ValidationMetadata<'a> {
     pub(super) coverage: &'a Value,
     pub(super) negative: &'a Value,

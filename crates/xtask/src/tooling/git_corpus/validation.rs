@@ -73,6 +73,7 @@ pub(super) fn validate_envelope(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct ValidationMetadata<'a> {
     pub(super) coverage: &'a Value,
     pub(super) negative: &'a Value,
@@ -147,88 +148,28 @@ pub(super) fn validate_all(
     Ok(())
 }
 
+struct NativeWindowsMetadata<'a> {
+    committed_semantic: Vec<Value>,
+    platforms: &'a Map<String, Value>,
+    semantic_hash: &'a str,
+    portable_hash: &'a str,
+    expected_difference_ids: &'a Vec<Value>,
+    expected_windows_counts: &'a Map<String, Value>,
+}
+
 fn validate_native_windows_ledger(
     committed: OutcomeBaseline<'_>,
     observed: OutcomeBaseline<'_>,
     ledger: &Value,
 ) -> Result<(), String> {
-    if required_u64(ledger, "schema_version", "native Windows Git ledger")? != 1
-        || required_u64(ledger, "protocol_version", "native Windows Git ledger")?
-            != PROTOCOL_VERSION
-        || required_str(ledger, "oracle_mode", "native Windows Git ledger")? != "git"
-        || required_str(ledger, "upstream_revision", "native Windows Git ledger")? != REVISION
-        || required_str(ledger, "default_config_sha256", "native Windows Git ledger")?
-            != CONFIG_SHA256
-        || required_u64(ledger, "record_count", "native Windows Git ledger")?
-            != REQUEST_COUNT as u64
-    {
-        return Err("native Windows Git ledger provenance changed".into());
-    }
-    let committed_platform = uniform_string(committed.values, "platform", "committed Git")?;
-    let committed_go = uniform_string(committed.values, "go_version", "committed Git")?;
-    if required_str(ledger, "baseline_platform", "native Windows Git ledger")? != committed_platform
-        || required_str(ledger, "go_version", "native Windows Git ledger")? != committed_go
-    {
-        return Err("native Windows Git ledger baseline changed".into());
-    }
-    let (committed_semantic, committed_semantic_bytes) = semantic_outcomes(committed.values)?;
-    let baseline_hash = sha256_bytes(&committed_semantic_bytes);
-    if required_str(
-        ledger,
-        "baseline_semantic_outcomes_sha256",
-        "native Windows Git ledger",
-    )? != baseline_hash
-        || required_str(
-            ledger,
-            "portable_outcomes_sha256",
-            "native Windows Git ledger",
-        )? != baseline_hash
-    {
-        return Err("native Windows Git ledger baseline hash changed".into());
-    }
-    let platforms = required_object(ledger, "platforms", "native Windows Git ledger")?;
-    let expected_platforms = ["windows/amd64", "windows/arm64"]
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    if platforms
-        .keys()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>()
-        != expected_platforms
-    {
-        return Err("native Windows Git ledger platform set changed".into());
-    }
-    for platform in &expected_platforms {
-        validate_sha256(
-            required_str(&platforms[*platform], "outcomes_sha256", platform)?,
-            platform,
-        )?;
-    }
-    validate_sha256(
-        required_str(
-            ledger,
-            "semantic_outcomes_sha256",
-            "native Windows Git ledger",
-        )?,
-        "native Windows Git semantic outcomes",
-    )?;
-    let expected_difference_ids = required_array(
-        ledger,
-        "semantic_difference_ids",
-        "native Windows Git ledger",
-    )?;
-    let expected_windows_counts =
-        required_object(ledger, "windows_file_counts", "native Windows Git ledger")?;
-    if expected_difference_ids
-        .iter()
-        .any(|value| !value.is_string())
-        || expected_windows_counts
-            .values()
-            .any(|value| !value.is_u64())
-    {
-        return Err("native Windows Git difference ledger changed".into());
-    }
-
+    let NativeWindowsMetadata {
+        committed_semantic,
+        platforms,
+        semantic_hash,
+        portable_hash,
+        expected_difference_ids,
+        expected_windows_counts,
+    } = validate_native_windows_metadata(committed, ledger)?;
     if !cfg!(windows) {
         return Ok(());
     }
@@ -246,13 +187,7 @@ fn validate_native_windows_ledger(
         ));
     }
     let (observed_semantic, observed_semantic_bytes) = semantic_outcomes(observed.values)?;
-    if sha256_bytes(&observed_semantic_bytes)
-        != required_str(
-            ledger,
-            "semantic_outcomes_sha256",
-            "native Windows Git ledger",
-        )?
-    {
+    if sha256_bytes(&observed_semantic_bytes) != semantic_hash {
         return Err("native Windows Git semantic outcomes changed".into());
     }
     let mut portable = observed_semantic.clone();
@@ -281,17 +216,100 @@ fn validate_native_windows_ledger(
         return Err("native Windows Git difference ledger changed".into());
     }
     let portable_bytes = render_outcomes(&portable, "portable Git")?;
-    if sha256_bytes(&portable_bytes)
-        != required_str(
-            ledger,
-            "portable_outcomes_sha256",
-            "native Windows Git ledger",
-        )?
-        || portable != committed_semantic
-    {
+    if sha256_bytes(&portable_bytes) != portable_hash || portable != committed_semantic {
         return Err("native Windows Git portable outcomes changed".into());
     }
     Ok(())
+}
+
+fn validate_native_windows_metadata<'a>(
+    committed: OutcomeBaseline<'_>,
+    ledger: &'a Value,
+) -> Result<NativeWindowsMetadata<'a>, String> {
+    if required_u64(ledger, "schema_version", "native Windows Git ledger")? != 1
+        || required_u64(ledger, "protocol_version", "native Windows Git ledger")?
+            != PROTOCOL_VERSION
+        || required_str(ledger, "oracle_mode", "native Windows Git ledger")? != "git"
+        || required_str(ledger, "upstream_revision", "native Windows Git ledger")? != REVISION
+        || required_str(ledger, "default_config_sha256", "native Windows Git ledger")?
+            != CONFIG_SHA256
+        || required_u64(ledger, "record_count", "native Windows Git ledger")?
+            != REQUEST_COUNT as u64
+    {
+        return Err("native Windows Git ledger provenance changed".into());
+    }
+    let committed_platform = uniform_string(committed.values, "platform", "committed Git")?;
+    let committed_go = uniform_string(committed.values, "go_version", "committed Git")?;
+    if required_str(ledger, "baseline_platform", "native Windows Git ledger")? != committed_platform
+        || required_str(ledger, "go_version", "native Windows Git ledger")? != committed_go
+    {
+        return Err("native Windows Git ledger baseline changed".into());
+    }
+    let (committed_semantic, committed_semantic_bytes) = semantic_outcomes(committed.values)?;
+    let baseline_hash = sha256_bytes(&committed_semantic_bytes);
+    let portable_hash = required_str(
+        ledger,
+        "portable_outcomes_sha256",
+        "native Windows Git ledger",
+    )?;
+    if required_str(
+        ledger,
+        "baseline_semantic_outcomes_sha256",
+        "native Windows Git ledger",
+    )? != baseline_hash
+        || portable_hash != baseline_hash
+    {
+        return Err("native Windows Git ledger baseline hash changed".into());
+    }
+    let platforms = required_object(ledger, "platforms", "native Windows Git ledger")?;
+    let expected_platforms = ["windows/amd64", "windows/arm64"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if platforms
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_platforms
+    {
+        return Err("native Windows Git ledger platform set changed".into());
+    }
+    for platform in &expected_platforms {
+        validate_sha256(
+            required_str(&platforms[*platform], "outcomes_sha256", platform)?,
+            platform,
+        )?;
+    }
+    let semantic_hash = required_str(
+        ledger,
+        "semantic_outcomes_sha256",
+        "native Windows Git ledger",
+    )?;
+    validate_sha256(semantic_hash, "native Windows Git semantic outcomes")?;
+    let expected_difference_ids = required_array(
+        ledger,
+        "semantic_difference_ids",
+        "native Windows Git ledger",
+    )?;
+    let expected_windows_counts =
+        required_object(ledger, "windows_file_counts", "native Windows Git ledger")?;
+    if expected_difference_ids
+        .iter()
+        .any(|value| !value.is_string())
+        || expected_windows_counts
+            .values()
+            .any(|value| !value.is_u64())
+    {
+        return Err("native Windows Git difference ledger changed".into());
+    }
+
+    Ok(NativeWindowsMetadata {
+        committed_semantic,
+        platforms,
+        semantic_hash,
+        portable_hash,
+        expected_difference_ids,
+        expected_windows_counts,
+    })
 }
 
 fn semantic_outcomes(outcomes: &[Value]) -> Result<(Vec<Value>, Vec<u8>), String> {

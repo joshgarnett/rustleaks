@@ -77,6 +77,7 @@ const TESTS: &[(&str, &str)] = &[
     ("TM-0137", "TestFromGitStaged"),
 ];
 
+#[derive(Clone, Copy)]
 pub(super) struct InputMetadata<'a> {
     pub(super) coverage_bytes: &'a [u8],
     pub(super) coverage: &'a Value,

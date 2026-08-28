@@ -126,6 +126,43 @@ pub(super) fn render_manifest(
         DECLARED_OUTCOME_TRANSITION.1.as_bytes(),
         "CLI outcomes transition",
     )?;
+    rendered = render_native_evidence_transitions(rendered)?;
+    let field = format!("  \"native_linux_outcome_sha256\": \"{native_linux_hash}\",\n");
+    if let Some(current) = manifest
+        .get("native_linux_outcome_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != native_linux_hash {
+            return Err("native Linux evidence hash differs from manifest".into());
+        }
+    } else {
+        rendered = insert_after_once(
+            &rendered,
+            b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
+            field.as_bytes(),
+            "native Linux evidence provenance",
+        )?;
+    }
+    let field = format!("  \"unix_path_outcome_sha256\": \"{unix_path_hash}\",\n");
+    if let Some(current) = manifest
+        .get("unix_path_outcome_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != unix_path_hash {
+            return Err("Unix path evidence hash differs from manifest".into());
+        }
+    } else {
+        rendered = insert_after_once(
+            &rendered,
+            b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
+            field.as_bytes(),
+            "Unix path evidence provenance",
+        )?;
+    }
+    Ok(rendered)
+}
+
+fn render_native_evidence_transitions(mut rendered: Vec<u8>) -> Result<Vec<u8>, String> {
     for (old, new, label) in [
         (
             "  \"paired_observation_pair_count\": 118,\n",
@@ -188,45 +225,12 @@ pub(super) fn render_manifest(
         "  \"runtime_provenance_policy\": \"independently-validated-with-native-linux-record\",\n",
         "runtime provenance policy",
     )?;
-    rendered = replace_text_transition(
+    replace_text_transition(
         &rendered,
         "  \"native_runtime_evidence\": {\n    \"generation_host\": \"validated-but-omitted\",\n    \"linux\": \"FOLLOWUP-NATIVE-M11-001\",\n    \"windows\": \"FOLLOWUP-NATIVE-M11-001\"\n  }\n",
         "  \"native_runtime_evidence\": {\n    \"generation_host\": \"validated-and-recorded\",\n    \"linux\": \"native-linux-v1.json exact replay plus native Bazel tests\",\n    \"windows\": \"pinned oracle replay plus native Bazel tests\"\n  }\n",
         "native runtime evidence",
-    )?;
-    let field = format!("  \"native_linux_outcome_sha256\": \"{native_linux_hash}\",\n");
-    if let Some(current) = manifest
-        .get("native_linux_outcome_sha256")
-        .and_then(Value::as_str)
-    {
-        if current != native_linux_hash {
-            return Err("native Linux evidence hash differs from manifest".into());
-        }
-    } else {
-        rendered = insert_after_once(
-            &rendered,
-            b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
-            field.as_bytes(),
-            "native Linux evidence provenance",
-        )?;
-    }
-    let field = format!("  \"unix_path_outcome_sha256\": \"{unix_path_hash}\",\n");
-    if let Some(current) = manifest
-        .get("unix_path_outcome_sha256")
-        .and_then(Value::as_str)
-    {
-        if current != unix_path_hash {
-            return Err("Unix path evidence hash differs from manifest".into());
-        }
-    } else {
-        rendered = insert_after_once(
-            &rendered,
-            b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
-            field.as_bytes(),
-            "Unix path evidence provenance",
-        )?;
-    }
-    Ok(rendered)
+    )
 }
 
 fn replace_text_transition(
