@@ -24,11 +24,6 @@ version = "0.2.4"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.base64]]
-version = "0.23.1"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked graph with default features disabled; rationale=approved update keeps the simd-unsafe feature out of the selected graph pending source audit; review-by=2026-11-23"
-
 [[exemptions.bitflags]]
 version = "2.13.1"
 criteria = "safe-to-deploy"
