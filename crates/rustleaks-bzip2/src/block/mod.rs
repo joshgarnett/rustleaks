@@ -31,6 +31,7 @@ pub(crate) struct Block {
 
     hasher: Hasher,
     expected_crc: u32,
+    combined_crc: u32,
 
     state: State,
 }
@@ -57,6 +58,7 @@ impl Block {
 
             hasher: Hasher::new(),
             expected_crc: 0,
+            combined_crc: 0,
 
             state: State::NotReady,
         }
@@ -105,14 +107,15 @@ impl Block {
                         self.read(reader, out)
                     }
                     FINAL_MAGIC => {
-                        let _crc = reader
+                        let expected_combined_crc = reader
                             .read_u32(32)
                             .ok_or_else(|| BlockError::new("whole stream crc truncated"))?;
-
-                        // TODO: check whole stream crc
-
                         self.state = State::NotReady;
-                        Ok(0)
+                        if expected_combined_crc == self.combined_crc {
+                            Ok(0)
+                        } else {
+                            Err(BlockError::new("combined stream crc mismatch"))
+                        }
                     }
                     _ => {
                         self.state = State::NotReady;
@@ -173,11 +176,11 @@ impl Block {
             self.state = State::NotReady;
 
             let crc = self.hasher.finalyze();
-            return if self.expected_crc == crc {
-                Ok(0)
-            } else {
-                Err(BlockError::new("bad crc"))
-            };
+            if self.expected_crc != crc {
+                return Err(BlockError::new("bad crc"));
+            }
+            self.combined_crc = combine_crc(self.combined_crc, crc);
+            return Ok(0);
         }
 
         self.hasher.update(&out[..read]);
@@ -413,3 +416,10 @@ impl Block {
         Ok(())
     }
 }
+
+const fn combine_crc(combined_crc: u32, block_crc: u32) -> u32 {
+    combined_crc.rotate_left(1) ^ block_crc
+}
+
+#[cfg(test)]
+mod tests;
