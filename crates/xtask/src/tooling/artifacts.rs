@@ -161,7 +161,11 @@ pub(crate) fn compare_json_outcomes(
     Ok(())
 }
 
-fn first_json_difference(expected: &Value, actual: &Value, path: &str) -> Option<String> {
+pub(crate) fn first_json_difference(
+    expected: &Value,
+    actual: &Value,
+    path: &str,
+) -> Option<String> {
     match (expected, actual) {
         (Value::Array(expected), Value::Array(actual)) => {
             for (index, (expected, actual)) in expected.iter().zip(actual).enumerate() {

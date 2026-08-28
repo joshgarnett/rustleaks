@@ -19,6 +19,8 @@ const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 pub(super) struct Observed {
     pub(super) bytes: Vec<u8>,
     pub(super) values: Vec<Value>,
+    pub(super) go_version: String,
+    pub(super) platform: String,
 }
 
 pub(super) fn observe(
@@ -91,7 +93,12 @@ pub(super) fn observe(
         bytes.extend_from_slice(&normalized);
         values.push(value);
     }
-    Ok(Observed { bytes, values })
+    Ok(Observed {
+        bytes,
+        values,
+        go_version,
+        platform,
+    })
 }
 
 pub(super) fn git_status(

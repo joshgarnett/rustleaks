@@ -8,7 +8,7 @@ mod validation;
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::artifacts::GeneratedTree;
 use super::support::{TempDir, sha256_bytes};
@@ -68,6 +68,8 @@ struct Generated {
 fn generate(root: &Path) -> Result<Generated, String> {
     let canonical_root = root.join("compat/report-corpus");
     let requests = read(&canonical_root.join("requests-v1.jsonl"))?;
+    let committed_outcomes = read(&canonical_root.join("outcomes-v1.jsonl"))?;
+    let committed_values = parse_outcomes(&committed_outcomes)?;
     let coverage = read(&canonical_root.join("coverage-v1.json"))?;
     let coverage_value: Value = serde_json::from_slice(&coverage)
         .map_err(|error| format!("invalid report coverage JSON: {error}"))?;
@@ -81,6 +83,7 @@ fn generate(root: &Path) -> Result<Generated, String> {
     spec::validate_upstream(&upstream, &coverage_value, &temporary)?;
     let status_before = process::git_status(&upstream, &temporary, "before")?;
     let observed = process::observe(root, &upstream, &request_values, &requests, &temporary)?;
+    write_observation_ledger(&observed, &committed_outcomes, &committed_values)?;
     validation::validate_all(
         &upstream,
         &request_values,
@@ -118,6 +121,113 @@ fn generate(root: &Path) -> Result<Generated, String> {
     })
 }
 
+fn parse_outcomes(bytes: &[u8]) -> Result<Vec<Value>, String> {
+    newline_records(bytes, "committed report outcomes")?
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            serde_json::from_slice(line).map_err(|error| {
+                format!(
+                    "committed report outcome {} is invalid JSON: {error}",
+                    index + 1
+                )
+            })
+        })
+        .collect()
+}
+
+fn observation_ledger(
+    observed: &process::Observed,
+    committed_bytes: &[u8],
+    committed_values: &[Value],
+) -> Result<Vec<u8>, String> {
+    let observed_lines = newline_records(&observed.bytes, "observed report outcomes")?;
+    let committed_lines = newline_records(committed_bytes, "committed report outcomes")?;
+    if observed_lines.len() != observed.values.len()
+        || committed_lines.len() != committed_values.len()
+        || observed.values.len() != committed_values.len()
+    {
+        return Err("report observation ledger count changed".into());
+    }
+    let mut records = Vec::with_capacity(observed.values.len());
+    for (((observed_line, observed_value), committed_line), committed_value) in observed_lines
+        .iter()
+        .zip(&observed.values)
+        .zip(&committed_lines)
+        .zip(committed_values)
+    {
+        let id = validation::required_str(observed_value, "id", "report outcome")?;
+        if validation::required_str(committed_value, "id", "committed report outcome")? != id {
+            return Err("report observation ledger order changed".into());
+        }
+        let count = |value: &Value, field: &str| -> Result<usize, String> {
+            value
+                .get(field)
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .ok_or_else(|| format!("report outcome {id} has no {field} array"))
+        };
+        records.push(json!({
+            "id": id,
+            "committed_sha256": sha256_bytes(committed_line),
+            "outcome_sha256": sha256_bytes(observed_line),
+            "difference_path": crate::tooling::artifacts::first_json_difference(
+                committed_value,
+                observed_value,
+                "",
+            ),
+            "committed_output_sha256": validation::required_str(
+                committed_value,
+                "output_sha256",
+                id,
+            )?,
+            "output_sha256": validation::required_str(observed_value, "output_sha256", id)?,
+            "committed_output_bytes": validation::required_u64(
+                committed_value,
+                "output_bytes",
+                id,
+            )?,
+            "output_bytes": validation::required_u64(observed_value, "output_bytes", id)?,
+            "committed_redacted_finding_count": count(committed_value, "redacted_findings")?,
+            "redacted_finding_count": count(observed_value, "redacted_findings")?,
+            "committed_has_error": !committed_value.get("error").is_some_and(Value::is_null),
+            "has_error": !observed_value.get("error").is_some_and(Value::is_null),
+        }));
+    }
+    let ledger = json!({
+        "schema_version": 1,
+        "protocol_version": spec::PROTOCOL_VERSION,
+        "oracle_mode": "report",
+        "upstream_revision": spec::REVISION,
+        "default_config_sha256": spec::DEFAULT_CONFIG_SHA256,
+        "go_version": observed.go_version,
+        "platform": observed.platform,
+        "record_count": records.len(),
+        "committed_outcomes_sha256": sha256_bytes(committed_bytes),
+        "outcomes_sha256": sha256_bytes(&observed.bytes),
+        "records": records,
+    });
+    let mut bytes = serde_json::to_vec_pretty(&ledger)
+        .map_err(|error| format!("cannot render report observation ledger: {error}"))?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+fn write_observation_ledger(
+    observed: &process::Observed,
+    committed_bytes: &[u8],
+    committed_values: &[Value],
+) -> Result<(), String> {
+    if let Some(path) = std::env::var_os("RUSTLEAKS_REPORT_LEDGER_PATH") {
+        fs::write(
+            &path,
+            observation_ledger(observed, committed_bytes, committed_values)?,
+        )
+        .map_err(|error| format!("cannot write report observation ledger: {error}"))?;
+    }
+    Ok(())
+}
+
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
@@ -142,12 +252,47 @@ fn newline_records<'a>(bytes: &'a [u8], label: &str) -> Result<Vec<&'a [u8]>, St
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::newline_records;
+    use super::observation_ledger;
+    use super::process::Observed;
+    use crate::tooling::support::sha256_bytes;
 
     #[test]
     fn malformed_jsonl_fails_closed() {
         assert!(newline_records(b"{}", "test").is_err());
         assert!(newline_records(b"{}\n\n", "test").is_err());
         assert_eq!(newline_records(b"{}\n[]\n", "test").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn observation_ledger_retains_hashes_without_payloads() {
+        let committed = br#"{"id":"case","output_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","output_bytes":1,"redacted_findings":[],"error":null,"payload":"reviewed-fixture-value"}
+"#;
+        let observed_bytes = br#"{"id":"case","output_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","output_bytes":2,"redacted_findings":[],"error":null,"payload":"changed-reviewed-fixture-value"}
+"#
+        .to_vec();
+        let observed = Observed {
+            values: vec![
+                serde_json::from_slice(&observed_bytes[..observed_bytes.len() - 1]).unwrap(),
+            ],
+            bytes: observed_bytes.clone(),
+            go_version: "go1.26.7".into(),
+            platform: "windows/arm64".into(),
+        };
+        let committed_values =
+            vec![serde_json::from_slice::<Value>(&committed[..committed.len() - 1]).unwrap()];
+        let rendered = observation_ledger(&observed, committed, &committed_values).unwrap();
+        assert!(
+            !rendered
+                .windows(b"reviewed-fixture-value".len())
+                .any(|window| window == b"reviewed-fixture-value")
+        );
+        let ledger: Value = serde_json::from_slice(&rendered).unwrap();
+        assert_eq!(ledger["platform"], "windows/arm64");
+        assert_eq!(ledger["outcomes_sha256"], sha256_bytes(&observed_bytes));
+        assert_eq!(ledger["records"][0]["id"], "case");
+        assert_eq!(ledger["records"][0]["difference_path"], "/output_bytes");
     }
 }
