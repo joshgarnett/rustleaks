@@ -395,7 +395,13 @@ fn baseline_exclusion(
 ) -> Result<ByteText, String> {
     let source = clean_native_path(&resolve(cwd, &invocation.source))?;
     let baseline = clean_native_path(baseline)?;
-    relative_native_path(&source, &baseline).map(|path| logical_native(&path))
+    relative_native_path(&source, &baseline).map(|path| {
+        let logical = LogicalPath::from_native(&path);
+        logical
+            .windows_original()
+            .unwrap_or_else(|| logical.normalized())
+            .clone()
+    })
 }
 
 fn logical_native(path: &Path) -> ByteText {
@@ -665,9 +671,14 @@ mod tests {
             source: PathBuf::from("repo/./nested/.."),
             options: Options::default(),
         };
+        let outside = if cfg!(windows) {
+            ByteText::from(r"..\other\base.json")
+        } else {
+            ByteText::from("../other/base.json")
+        };
         assert_eq!(
             baseline_exclusion(&directory, cwd, Path::new("/workspace/other/base.json")).unwrap(),
-            ByteText::from("../other/base.json")
+            outside
         );
 
         let file = Invocation {
@@ -675,9 +686,14 @@ mod tests {
             source: PathBuf::from("repo/secret.txt"),
             options: Options::default(),
         };
+        let sibling = if cfg!(windows) {
+            ByteText::from(r"..\base.json")
+        } else {
+            ByteText::from("../base.json")
+        };
         assert_eq!(
             baseline_exclusion(&file, cwd, Path::new("/workspace/repo/base.json")).unwrap(),
-            ByteText::from("../base.json")
+            sibling
         );
 
         let mut excessive = PathBuf::from("/workspace");

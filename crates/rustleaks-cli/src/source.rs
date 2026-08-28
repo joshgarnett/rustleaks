@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rustleaks_core::config::CompiledConfig;
-use rustleaks_core::model::ByteText;
+use rustleaks_core::model::{ByteText, Fragment};
 use rustleaks_sources::{
     ArchiveLimits, ArchiveOptions, ArchiveSource, CallbackError, Cancellation, DirectoryOptions,
     DirectorySource, FileSource, GitMode, GitSource, Source, SourceControl, SourceError,
@@ -85,9 +85,7 @@ impl Source for BuiltSource {
                 issue: None,
             } = &event
             {
-                if excluded.iter().any(|path| {
-                    path == fragment.file_path() || path == fragment.windows_file_path()
-                }) {
+                if is_excluded(excluded, fragment) {
                     let length = u64::try_from(fragment.content().len()).map_err(|_| {
                         CallbackError::new("excluded fragment byte count is out of range")
                     })?;
@@ -101,6 +99,12 @@ impl Source for BuiltSource {
             emit(event)
         })
     }
+}
+
+fn is_excluded(excluded: &[ByteText], fragment: &Fragment) -> bool {
+    // The pinned detector compares config and baseline self-exclusions only
+    // with its slash-normalized FilePath, not its retained WindowsFilePath.
+    excluded.iter().any(|path| path == fragment.file_path())
 }
 
 pub(crate) fn build<R: Read + Send + 'static>(
@@ -253,5 +257,21 @@ mod tests {
         let error = commits.observe(&ByteText::from("second")).unwrap_err();
         assert!(error.to_string().contains("1-commit safety limit"));
         assert_eq!(commits.values.len(), 1);
+    }
+
+    #[test]
+    fn exclusions_match_the_upstream_normalized_file_path_only() {
+        let fragment = Fragment::builder(Vec::<u8>::new())
+            .file_path(ByteText::from("other/baseline.json"))
+            .windows_file_path(ByteText::from(r"other\baseline.json"))
+            .build();
+        assert!(is_excluded(
+            &[ByteText::from("other/baseline.json")],
+            &fragment
+        ));
+        assert!(!is_excluded(
+            &[ByteText::from(r"other\baseline.json")],
+            &fragment
+        ));
     }
 }
