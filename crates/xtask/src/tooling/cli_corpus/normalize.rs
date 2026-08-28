@@ -307,12 +307,10 @@ fn normalize_dynamic(text: &str) -> String {
         }
     }
     let remote_prefix =
-        "skipping finding links: unable to parse remote URL error=\"command failed (-1): ";
-    if let Some(start) = result.find(remote_prefix) {
-        let status_start = start + remote_prefix.len();
-        if let Some(status_end) = result[status_start..].find(", stderr: ") {
-            result.replace_range(status_start..status_start + status_end, "signal: killed");
-        }
+        "skipping finding links: unable to parse remote URL error=\"command failed (";
+    let remote_suffix = ", stderr: \"";
+    if result.starts_with(remote_prefix) && result.ends_with(remote_suffix) {
+        result = format!("{remote_prefix}-1): signal: killed{remote_suffix}");
     }
     let bytes = result.as_bytes();
     let mut ranges = Vec::new();
@@ -574,7 +572,7 @@ mod tests {
         );
 
         let remote = event_for(
-            "ERR skipping finding links: unable to parse remote URL error=\"command failed (-1): exit status 1, stderr: \"",
+            "ERR skipping finding links: unable to parse remote URL error=\"command failed (4294967295): exit status 1, stderr: \"",
         );
         assert_eq!(
             remote.message,

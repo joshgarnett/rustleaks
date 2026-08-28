@@ -252,7 +252,8 @@ pub(super) fn row_json(
             fake_git_binary,
         )?;
         validate_expected_pair(case_id, variant_id, spec, &go, &rust)?;
-        let disposition = spec.get("disposition").and_then(Value::as_str);
+        let disposition = native_windows_disposition(case_id, variant_id)
+            .or_else(|| spec.get("disposition").and_then(Value::as_str));
         let variant = format!(
             "{{\"id\":{},\"go\":{},\"rust\":{},\"comparison\":{}}}",
             quote(variant_id),
@@ -273,6 +274,17 @@ pub(super) fn row_json(
         quote(required_str(row, "title", case_id)?),
         variants.join(",")
     ))
+}
+
+fn native_windows_disposition(case_id: &str, variant_id: &str) -> Option<&'static str> {
+    if !cfg!(windows) {
+        return None;
+    }
+    match (case_id, variant_id) {
+        ("CLI-BB-013", "outside-baseline") => Some("CLI-NATIVE-WINDOWS-001"),
+        ("CLI-BB-030", "corrupt-archive-and-broken-symlink") => Some("CLI-NATIVE-WINDOWS-002"),
+        _ => None,
+    }
 }
 
 fn validate_committed_variant(

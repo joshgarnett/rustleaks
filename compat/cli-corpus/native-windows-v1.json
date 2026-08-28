@@ -8,20 +8,38 @@
   "portable_outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
   "platforms": {
     "windows/amd64": {
-      "outcomes_sha256": "954cbd8e474fc0fd4328bfdfc6c908ee68819da0817de77c541a573dc374285c"
+      "native_replay": "required"
     },
     "windows/arm64": {
-      "outcomes_sha256": "954cbd8e474fc0fd4328bfdfc6c908ee68819da0817de77c541a573dc374285c"
+      "native_replay": "required"
     }
   },
   "difference_ids": [
     "CLI-BB-013/outside-baseline",
-    "CLI-BB-019/outside-i32"
+    "CLI-BB-019/outside-i32",
+    "CLI-BB-030/corrupt-archive-and-broken-symlink"
   ],
+  "dispositions": {
+    "CLI-NATIVE-WINDOWS-001": "Windows baseline paths use native logical spelling; canonical findings are exact while paired raw report order may differ.",
+    "CLI-NATIVE-WINDOWS-002": "Windows cannot create the dangling-symlink fixture; corrupt-archive handling remains natively replayed and pair-exact."
+  },
   "windows_finding_counts": {
     "CLI-BB-013/outside-baseline": 2
   },
+  "windows_finding_set_sha256": {
+    "CLI-BB-013/outside-baseline": "5c47e6a449ce6e905ae112eef094907de2e1af89e1409e2d86fb6e7cf367c90d"
+  },
+  "windows_report_bytes": {
+    "CLI-BB-013/outside-baseline": {
+      "bytes": 796
+    }
+  },
   "windows_go_exits": {
     "CLI-BB-019/outside-i32": -2147483648
+  },
+  "windows_event_counts": {
+    "CLI-BB-030/corrupt-archive-and-broken-symlink": {
+      "events": 3
+    }
   }
 }

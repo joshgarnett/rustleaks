@@ -37,7 +37,7 @@
   "parser_usage_byte_count_both_implementations": 19508,
   "stderr_event_count_both_implementations": 888,
   "mutation_control_count": 20,
-  "generator_sha256": "9e554c32466c3604b9990ddde50613b5a2e9cfa6fb8832570a4f60d1167eb81d",
+  "generator_sha256": "9a44465c8176c7be0612d914e512758dd64b709ee5e0d5977d1af6e4140503a2",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",
@@ -83,7 +83,7 @@
   "unix_path_outcome_sha256": "0e1a0b277a71bbd09e5a24473a8b20c7feebafebd56389220ca493b7928bda61",
   "unix_logical_name_outcome_sha256": "9fb7a94501f91ecd7a1cb68658b5497e99993c644d818b117eb1f2770d0ae30b",
   "native_linux_outcome_sha256": "b13c67ca0b0fba8dd62364699c898be335ac174f494b3be6450b33a30dbeb240",
-  "native_windows_ledger_sha256": "38c64dc4d97a59440f3eae5b3593b0ac27545798af8f92fcbaeb52989a52253d",
+  "native_windows_ledger_sha256": "2362611535a41bd04829f95fc8fef4e7b8a7e3340bc4281e05f41931ce03d7c6",
   "runtime_provenance_policy": "independently-validated-with-native-linux-record",
   "native_runtime_evidence": {
     "generation_host": "validated-and-recorded",

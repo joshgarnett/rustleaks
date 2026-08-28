@@ -17,9 +17,18 @@ const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
     "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
 );
 const NATIVE_WINDOWS_LEDGER_TRANSITION: (&str, &str) = (
-    "1a60d9fbadf1b31dd174b8a62ea7c9a8f1f9b6950629897e5bf0ee706167300c",
     "38c64dc4d97a59440f3eae5b3593b0ac27545798af8f92fcbaeb52989a52253d",
+    "2362611535a41bd04829f95fc8fef4e7b8a7e3340bc4281e05f41931ce03d7c6",
 );
+const NATIVE_WINDOWS_BASELINE_DISPOSITION: &str = "Windows baseline paths use native logical spelling; canonical findings are exact while paired raw report order may differ.";
+const NATIVE_WINDOWS_SYMLINK_DISPOSITION: &str = "Windows cannot create the dangling-symlink fixture; corrupt-archive handling remains natively replayed and pair-exact.";
+
+struct NativeWindowsFacts<'a> {
+    baseline_finding_count: usize,
+    baseline_findings_sha256: &'a str,
+    baseline_report_bytes: u64,
+    issue_event_count: usize,
+}
 
 pub(super) fn validate_outcomes(
     bytes: &[u8],
@@ -107,6 +116,7 @@ pub(super) fn validate_outcomes(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)] // Keep the fail-closed native ledger contract in one reviewable path.
 fn validate_native_windows_outcomes(
     committed: &[u8],
     fresh: &[u8],
@@ -114,7 +124,12 @@ fn validate_native_windows_outcomes(
 ) -> Result<(), String> {
     const BASELINE_DIFFERENCE: &str = "CLI-BB-013/outside-baseline";
     const OUTSIDE_I32_DIFFERENCE: &str = "CLI-BB-019/outside-i32";
-    const DIFFERENCE_IDS: [&str; 2] = [BASELINE_DIFFERENCE, OUTSIDE_I32_DIFFERENCE];
+    const ISSUE_DIFFERENCE: &str = "CLI-BB-030/corrupt-archive-and-broken-symlink";
+    const DIFFERENCE_IDS: [&str; 3] = [
+        BASELINE_DIFFERENCE,
+        OUTSIDE_I32_DIFFERENCE,
+        ISSUE_DIFFERENCE,
+    ];
     if required_u64(ledger, "schema_version", "native Windows CLI ledger")? != 1
         || required_u64(ledger, "protocol_version", "native Windows CLI ledger")? != 1
         || required_str(ledger, "oracle_mode", "native Windows CLI ledger")? != "cli"
@@ -151,10 +166,16 @@ fn validate_native_windows_outcomes(
         return Err("native Windows CLI ledger platform set changed".into());
     }
     for platform in &expected_platforms {
-        validate_sha256(
-            required_str(&platforms[*platform], "outcomes_sha256", platform)?,
-            platform,
-        )?;
+        let record = platforms[*platform]
+            .as_object()
+            .ok_or_else(|| format!("{platform}: native Windows replay record is not an object"))?;
+        if record.len() != 1
+            || record.get("native_replay").and_then(Value::as_str) != Some("required")
+        {
+            return Err(format!(
+                "{platform}: native Windows replay contract changed"
+            ));
+        }
     }
     let difference_ids = required_array(ledger, "difference_ids", "native Windows CLI ledger")?;
     if difference_ids != DIFFERENCE_IDS.map(|id| Value::String(id.into())).as_slice() {
@@ -174,23 +195,67 @@ fn validate_native_windows_outcomes(
     {
         return Err("native Windows CLI process exits changed".into());
     }
+    let finding_hashes = required_object(
+        ledger,
+        "windows_finding_set_sha256",
+        "native Windows CLI ledger",
+    )?;
+    if finding_hashes.len() != 1 {
+        return Err("native Windows CLI finding hash set changed".into());
+    }
+    let baseline_findings_sha256 = finding_hashes[BASELINE_DIFFERENCE]
+        .as_str()
+        .ok_or("native Windows CLI finding hash is not a string")?;
+    validate_sha256(baseline_findings_sha256, BASELINE_DIFFERENCE)?;
+    let report_bytes =
+        required_object(ledger, "windows_report_bytes", "native Windows CLI ledger")?;
+    let event_counts =
+        required_object(ledger, "windows_event_counts", "native Windows CLI ledger")?;
+    if report_bytes.len() != 1
+        || !report_bytes.contains_key(BASELINE_DIFFERENCE)
+        || event_counts.len() != 1
+        || !event_counts.contains_key(ISSUE_DIFFERENCE)
+    {
+        return Err("native Windows CLI bounded fact set changed".into());
+    }
+    let dispositions = required_object(ledger, "dispositions", "native Windows CLI ledger")?;
+    if dispositions.len() != 2
+        || dispositions
+            .get("CLI-NATIVE-WINDOWS-001")
+            .and_then(Value::as_str)
+            != Some(NATIVE_WINDOWS_BASELINE_DISPOSITION)
+        || dispositions
+            .get("CLI-NATIVE-WINDOWS-002")
+            .and_then(Value::as_str)
+            != Some(NATIVE_WINDOWS_SYMLINK_DISPOSITION)
+    {
+        return Err("native Windows CLI dispositions changed".into());
+    }
+    let facts = NativeWindowsFacts {
+        baseline_finding_count: usize::try_from(
+            counts[BASELINE_DIFFERENCE]
+                .as_u64()
+                .ok_or("native Windows CLI finding count is not unsigned")?,
+        )
+        .map_err(|_| "native Windows CLI finding count is out of range")?,
+        baseline_findings_sha256,
+        baseline_report_bytes: required_u64(
+            &report_bytes[BASELINE_DIFFERENCE],
+            "bytes",
+            BASELINE_DIFFERENCE,
+        )?,
+        issue_event_count: usize::try_from(required_u64(
+            &event_counts[ISSUE_DIFFERENCE],
+            "events",
+            ISSUE_DIFFERENCE,
+        )?)
+        .map_err(|_| "native Windows CLI event count is out of range")?,
+    };
     if !cfg!(windows) {
         return Ok(());
     }
-    let observed_platform =
-        native_windows_platform().ok_or("native Windows CLI architecture is unsupported")?;
-    let expected_hash = required_str(
-        &platforms[observed_platform],
-        "outcomes_sha256",
-        observed_platform,
-    )?;
-    let actual_hash = sha256_bytes(fresh);
-    reconcile_native_windows_outcomes(committed, fresh, &DIFFERENCE_IDS)?;
-    if actual_hash != expected_hash {
-        return Err(format!(
-            "native Windows CLI outcomes changed for {observed_platform}: expected {expected_hash}, got {actual_hash}"
-        ));
-    }
+    native_windows_platform().ok_or("native Windows CLI architecture is unsupported")?;
+    reconcile_native_windows_outcomes(committed, fresh, &DIFFERENCE_IDS, &facts)?;
     Ok(())
 }
 
@@ -198,6 +263,7 @@ fn reconcile_native_windows_outcomes(
     committed: &[u8],
     fresh: &[u8],
     expected_differences: &[&str],
+    facts: &NativeWindowsFacts<'_>,
 ) -> Result<(), String> {
     let committed_rows = parse_outcome_rows(committed, "committed CLI outcomes")?;
     let fresh_rows = parse_outcome_rows(fresh, "native Windows CLI outcomes")?;
@@ -232,10 +298,23 @@ fn reconcile_native_windows_outcomes(
             differences.push(id.clone());
             match id.as_str() {
                 "CLI-BB-013/outside-baseline" => {
-                    validate_windows_baseline_variant(committed_variant, fresh_variant, &id)?;
+                    validate_windows_baseline_variant(
+                        committed_variant,
+                        fresh_variant,
+                        &id,
+                        facts,
+                    )?;
                 }
                 "CLI-BB-019/outside-i32" => {
                     validate_windows_outside_i32_variant(committed_variant, fresh_variant, &id)?;
+                }
+                "CLI-BB-030/corrupt-archive-and-broken-symlink" => {
+                    validate_windows_issue_variant(
+                        committed_variant,
+                        fresh_variant,
+                        &id,
+                        facts.issue_event_count,
+                    )?;
                 }
                 _ => {
                     if unexpected.len() < 12 {
@@ -269,28 +348,26 @@ fn validate_windows_baseline_variant(
     committed: &Value,
     fresh: &Value,
     label: &str,
+    facts: &NativeWindowsFacts<'_>,
 ) -> Result<(), String> {
-    let axes = required_object(
-        fresh
-            .get("comparison")
-            .ok_or_else(|| format!("{label}: comparison missing"))?,
-        "axes",
+    let comparison =
+        validate_native_windows_disposition(fresh, label, "CLI-NATIVE-WINDOWS-001", true)?;
+    if scrub_native_variant(
+        committed,
+        &["finding_count", "findings", "report", "stderr_events"],
         label,
-    )?;
-    let changed_axes = axes
-        .iter()
-        .filter_map(|(axis, value)| (value.as_str() != Some("equal")).then_some((axis, value)))
-        .map(|(axis, value)| format!("{axis}={value}"))
-        .collect::<Vec<_>>();
-    if !changed_axes.is_empty() {
+    )? != scrub_native_variant(
+        fresh,
+        &["finding_count", "findings", "report", "stderr_events"],
+        label,
+    )? {
         return Err(format!(
-            "{label}: native Windows comparison changed: {}",
-            changed_axes.join(", ")
+            "{label}: native Windows baseline changed outside bounded fields"
         ));
     }
     for (variant, expected, platform) in [
         (committed, 1_usize, "portable"),
-        (fresh, 2_usize, "Windows"),
+        (fresh, facts.baseline_finding_count, "Windows"),
     ] {
         for implementation in ["go", "rust"] {
             let observation = variant
@@ -305,14 +382,196 @@ fn validate_windows_baseline_variant(
                     "{label}: {platform} {implementation} finding count changed"
                 ));
             }
+            let events = required_array(observation, "stderr_events", label)?;
+            if events.len() != 2 {
+                return Err(format!(
+                    "{label}: {platform} {implementation} event count changed"
+                ));
+            }
+            validate_summary_findings_event(&events[1], expected, label)?;
+            let report = required_object(observation, "report", label)?;
+            if report.get("state").and_then(Value::as_str) != Some("present") {
+                return Err(format!(
+                    "{label}: {platform} {implementation} report state changed"
+                ));
+            }
+        }
+    }
+    for implementation in ["go", "rust"] {
+        let findings = &fresh[implementation]["findings"];
+        let findings_bytes = serde_json::to_vec(findings)
+            .map_err(|error| format!("{label}: cannot hash Windows findings: {error}"))?;
+        if sha256_bytes(&findings_bytes) != facts.baseline_findings_sha256
+            || fresh[implementation]["report"]["bytes"].as_u64()
+                != Some(facts.baseline_report_bytes)
+        {
+            return Err(format!(
+                "{label}: Windows {implementation} canonical payload changed"
+            ));
+        }
+        validate_sha256(
+            required_str(&fresh[implementation]["report"], "sha256", label)?,
+            label,
+        )?;
+        if committed[implementation]["stderr_events"][0]
+            != fresh[implementation]["stderr_events"][0]
+        {
+            return Err(format!(
+                "{label}: Windows {implementation} scanned summary changed"
+            ));
         }
     }
     if fresh["go"]["findings"] != fresh["rust"]["findings"]
-        || fresh["go"]["report"] != fresh["rust"]["report"]
+        || fresh["go"]["stderr_events"] != fresh["rust"]["stderr_events"]
     {
-        return Err(format!("{label}: native Windows paired payloads differ"));
+        return Err(format!(
+            "{label}: native Windows paired canonical payloads differ"
+        ));
+    }
+    let reports_equal = fresh["go"]["report"] == fresh["rust"]["report"];
+    if (comparison["axes"]["report"].as_str() == Some("equal")) != reports_equal {
+        return Err(format!(
+            "{label}: native Windows report-order comparison changed"
+        ));
     }
     Ok(())
+}
+
+fn validate_windows_issue_variant(
+    committed: &Value,
+    fresh: &Value,
+    label: &str,
+    expected_event_count: usize,
+) -> Result<(), String> {
+    validate_native_windows_disposition(fresh, label, "CLI-NATIVE-WINDOWS-002", false)?;
+    if scrub_native_variant(committed, &["stderr_events"], label)?
+        != scrub_native_variant(fresh, &["stderr_events"], label)?
+    {
+        return Err(format!(
+            "{label}: native Windows issue fixture changed outside stderr events"
+        ));
+    }
+    for implementation in ["go", "rust"] {
+        let portable = required_array(&committed[implementation], "stderr_events", label)?;
+        let windows = required_array(&fresh[implementation], "stderr_events", label)?;
+        if portable.len() != expected_event_count + 1 || windows.len() != expected_event_count {
+            return Err(format!(
+                "{label}: {implementation} issue event count changed"
+            ));
+        }
+        for event in &portable[..2] {
+            validate_source_issue_event(event, label)?;
+        }
+        validate_source_issue_event(&windows[0], label)?;
+        if portable[2..] != windows[1..] {
+            return Err(format!(
+                "{label}: {implementation} applicable summaries changed"
+            ));
+        }
+    }
+    let go_events = required_array(&fresh["go"], "stderr_events", label)?;
+    let rust_events = required_array(&fresh["rust"], "stderr_events", label)?;
+    if go_events.len() != rust_events.len()
+        || go_events
+            .iter()
+            .zip(rust_events)
+            .any(|(go, rust)| !same_event_projection(go, rust))
+    {
+        return Err(format!(
+            "{label}: native Windows paired issue projections differ"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_native_windows_disposition<'a>(
+    variant: &'a Value,
+    label: &str,
+    expected_disposition: &str,
+    allow_report_order: bool,
+) -> Result<&'a Value, String> {
+    let comparison = variant
+        .get("comparison")
+        .ok_or_else(|| format!("{label}: comparison missing"))?;
+    if required_str(comparison, "status", label)? != "accepted-versioned-disposition"
+        || required_str(comparison, "disposition", label)? != expected_disposition
+    {
+        return Err(format!("{label}: native Windows disposition changed"));
+    }
+    let axes = required_object(comparison, "axes", label)?;
+    if axes.len() != 7
+        || axes.iter().any(|(axis, value)| {
+            value.as_str() != Some("equal")
+                && !(allow_report_order && axis == "report" && value.as_str() == Some("different"))
+        })
+    {
+        return Err(format!("{label}: native Windows comparison changed"));
+    }
+    Ok(comparison)
+}
+
+fn scrub_native_variant(
+    value: &Value,
+    observation_fields: &[&str],
+    label: &str,
+) -> Result<Value, String> {
+    let mut scrubbed = value.clone();
+    let object = scrubbed
+        .as_object_mut()
+        .ok_or_else(|| format!("{label}: variant is not an object"))?;
+    object
+        .remove("comparison")
+        .ok_or_else(|| format!("{label}: comparison missing"))?;
+    for implementation in ["go", "rust"] {
+        let observation = object
+            .get_mut(implementation)
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| format!("{label}: {implementation} observation missing"))?;
+        for field in observation_fields {
+            observation
+                .remove(*field)
+                .ok_or_else(|| format!("{label}: {implementation} {field} missing"))?;
+        }
+    }
+    Ok(scrubbed)
+}
+
+fn validate_summary_findings_event(
+    event: &Value,
+    expected_count: usize,
+    label: &str,
+) -> Result<(), String> {
+    if required_str(event, "severity", label)? != "warn"
+        || required_str(event, "class", label)? != "summary.findings"
+    {
+        return Err(format!("{label}: findings summary event changed"));
+    }
+    let fields = required_object(event, "fields", label)?;
+    if fields.len() != 1
+        || fields.get("count").and_then(Value::as_u64)
+            != Some(u64::try_from(expected_count).map_err(|_| "finding count is out of range")?)
+    {
+        return Err(format!("{label}: findings summary count changed"));
+    }
+    required_str(event, "normalized_message_base64", label)?;
+    Ok(())
+}
+
+fn validate_source_issue_event(event: &Value, label: &str) -> Result<(), String> {
+    if required_str(event, "severity", label)? != "error"
+        || required_str(event, "class", label)? != "source.issue"
+        || !required_object(event, "fields", label)?.is_empty()
+    {
+        return Err(format!("{label}: source issue projection changed"));
+    }
+    required_str(event, "normalized_message_base64", label)?;
+    Ok(())
+}
+
+fn same_event_projection(left: &Value, right: &Value) -> bool {
+    left.get("severity") == right.get("severity")
+        && left.get("class") == right.get("class")
+        && left.get("fields") == right.get("fields")
 }
 
 fn validate_windows_outside_i32_variant(
@@ -934,11 +1193,13 @@ pub(super) fn required_u64(value: &Value, field: &str, label: &str) -> Result<u6
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    use crate::tooling::support::sha256_bytes;
 
     use super::{
-        collect_value_differences, reconcile_native_windows_outcomes, remove_flat_object_field,
-        replace_declared_transition, replace_once,
+        NativeWindowsFacts, collect_value_differences, reconcile_native_windows_outcomes,
+        remove_flat_object_field, replace_declared_transition, replace_once,
     };
 
     fn baseline_variant(count: u64) -> serde_json::Value {
@@ -948,8 +1209,27 @@ mod tests {
         let observation = json!({
             "finding_count": count,
             "findings": findings,
-            "report": {"state": "present", "sha256": "synthetic"}
+            "report": {
+                "state": "present",
+                "bytes": count * 10,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "stderr_events": [
+                {
+                    "severity": "info",
+                    "class": "summary.scanned",
+                    "fields": {"bytes": 1, "human": "1 byte"},
+                    "normalized_message_base64": "c2Nhbm5lZA=="
+                },
+                {
+                    "severity": "warn",
+                    "class": "summary.findings",
+                    "fields": {"count": count},
+                    "normalized_message_base64": "ZmluZGluZ3M="
+                }
+            ]
         });
+        let native = count == 2;
         json!({
             "id": "outside-baseline",
             "go": observation,
@@ -963,7 +1243,67 @@ mod tests {
                     "stderr_events": "equal",
                     "stderr_usage": "equal",
                     "stdout": "equal"
-                }
+                },
+                "status": if native { "accepted-versioned-disposition" } else { "exact" },
+                "disposition": if native { json!("CLI-NATIVE-WINDOWS-001") } else { Value::Null }
+            }
+        })
+    }
+
+    fn issue_variant(native: bool) -> serde_json::Value {
+        let issue = |message| {
+            json!({
+                "severity": "error",
+                "class": "source.issue",
+                "fields": {},
+                "normalized_message_base64": message
+            })
+        };
+        let summary = json!({
+            "severity": "info",
+            "class": "summary.scanned",
+            "fields": {"bytes": 1, "human": "1 byte"},
+            "normalized_message_base64": "c2Nhbm5lZA=="
+        });
+        let findings = json!({
+            "severity": "warn",
+            "class": "summary.findings",
+            "fields": {"count": 1},
+            "normalized_message_base64": "ZmluZGluZ3M="
+        });
+        let events = if native {
+            vec![issue("bmF0aXZl"), summary, findings]
+        } else {
+            vec![
+                issue("YXJjaGl2ZQ=="),
+                issue("c3ltbGluaw=="),
+                summary,
+                findings,
+            ]
+        };
+        let observation = json!({
+            "exit": 1,
+            "report": {"state": "present", "bytes": 10},
+            "findings": [{"index": 0}],
+            "finding_count": 1,
+            "stderr_events": events
+        });
+        json!({
+            "id": "corrupt-archive-and-broken-symlink",
+            "go": observation,
+            "rust": observation,
+            "comparison": {
+                "axes": {
+                    "child_cleanup": "equal",
+                    "exit": "equal",
+                    "findings": "equal",
+                    "report": "equal",
+                    "stderr_events": "equal",
+                    "stderr_usage": "equal",
+                    "stdout": "equal"
+                },
+                "status": if native { "accepted-versioned-disposition" } else { "exact" },
+                "disposition": if native { json!("CLI-NATIVE-WINDOWS-002") } else { Value::Null }
             }
         })
     }
@@ -983,11 +1323,20 @@ mod tests {
             bytes.push(b'\n');
             bytes
         };
+        let findings = serde_json::to_vec(&fresh["variants"][0]["go"]["findings"]).unwrap();
+        let finding_hash = sha256_bytes(&findings);
+        let facts = NativeWindowsFacts {
+            baseline_finding_count: 2,
+            baseline_findings_sha256: &finding_hash,
+            baseline_report_bytes: 20,
+            issue_event_count: 3,
+        };
         assert!(
             reconcile_native_windows_outcomes(
                 &render(&committed),
                 &render(&fresh),
-                &["CLI-BB-013/outside-baseline"]
+                &["CLI-BB-013/outside-baseline"],
+                &facts,
             )
             .is_ok()
         );
@@ -999,6 +1348,7 @@ mod tests {
             &render(&committed),
             &render(&unexpected),
             &["CLI-BB-013/outside-baseline"],
+            &facts,
         );
         let error = error.unwrap_err();
         assert!(error.contains("CLI-BB-013/portable"));
@@ -1022,11 +1372,18 @@ mod tests {
             bytes.push(b'\n');
             bytes
         };
+        let facts = NativeWindowsFacts {
+            baseline_finding_count: 2,
+            baseline_findings_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            baseline_report_bytes: 20,
+            issue_event_count: 3,
+        };
         assert!(
             reconcile_native_windows_outcomes(
                 &render(&committed),
                 &render(&fresh),
-                &["CLI-BB-019/outside-i32"]
+                &["CLI-BB-019/outside-i32"],
+                &facts,
             )
             .is_ok()
         );
@@ -1036,7 +1393,51 @@ mod tests {
             reconcile_native_windows_outcomes(
                 &render(&committed),
                 &render(&fresh),
-                &["CLI-BB-019/outside-i32"]
+                &["CLI-BB-019/outside-i32"],
+                &facts,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn native_windows_reconciliation_bounds_the_symlink_capability_gap() {
+        let committed = json!({
+            "id": "CLI-BB-030",
+            "variants": [issue_variant(false)]
+        });
+        let mut fresh = json!({
+            "id": "CLI-BB-030",
+            "variants": [issue_variant(true)]
+        });
+        let render = |value: &serde_json::Value| {
+            let mut bytes = serde_json::to_vec(value).unwrap();
+            bytes.push(b'\n');
+            bytes
+        };
+        let facts = NativeWindowsFacts {
+            baseline_finding_count: 2,
+            baseline_findings_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            baseline_report_bytes: 20,
+            issue_event_count: 3,
+        };
+        assert!(
+            reconcile_native_windows_outcomes(
+                &render(&committed),
+                &render(&fresh),
+                &["CLI-BB-030/corrupt-archive-and-broken-symlink"],
+                &facts,
+            )
+            .is_ok()
+        );
+
+        fresh["variants"][0]["go"]["finding_count"] = json!(2);
+        assert!(
+            reconcile_native_windows_outcomes(
+                &render(&committed),
+                &render(&fresh),
+                &["CLI-BB-030/corrupt-archive-and-broken-symlink"],
+                &facts,
             )
             .is_err()
         );
