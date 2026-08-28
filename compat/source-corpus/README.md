@@ -23,4 +23,11 @@ cargo xtask generate source --check
 
 Outcomes record the generating GOOS/GOARCH. Native Linux and Windows workflows
 replay the pinned source oracle and target-specific Bazel tests; the Windows
-suite directly checks raw and slash-normalized path matching.
+suite directly checks raw and slash-normalized path matching. The payload-free
+`native-windows-v1.json` ledger binds complete x64 and ARM64 observations by
+raw and platform-neutral SHA-256 values while listing every semantic and
+structural difference from the committed Darwin baseline. The pinned Go oracle
+cannot produce Unix-equivalent followed-symlink observations on Windows, so
+the ledger records target-only or empty results as an unavailable dimension,
+not as fabricated equality. Each successful Windows replay also publishes a
+payload-free per-record hash ledger for review.

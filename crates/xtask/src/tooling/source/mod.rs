@@ -39,7 +39,14 @@ cargo xtask generate source --check
 
 Outcomes record the generating GOOS/GOARCH. Native Linux and Windows workflows
 replay the pinned source oracle and target-specific Bazel tests; the Windows
-suite directly checks raw and slash-normalized path matching.
+suite directly checks raw and slash-normalized path matching. The payload-free
+`native-windows-v1.json` ledger binds complete x64 and ARM64 observations by
+raw and platform-neutral SHA-256 values while listing every semantic and
+structural difference from the committed Darwin baseline. The pinned Go oracle
+cannot produce Unix-equivalent followed-symlink observations on Windows, so
+the ledger records target-only or empty results as an unavailable dimension,
+not as fabricated equality. Each successful Windows replay also publishes a
+payload-free per-record hash ledger for review.
 ";
 
 pub(crate) fn check_source_corpus(root: &Path) -> Result<(), String> {
@@ -68,11 +75,13 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     let legacy_coverage = read(&corpus.join("coverage-v1.json"))?;
     let coverage = transition_coverage(&legacy_coverage)?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
+    let native_windows = read(&corpus.join("native-windows-v1.json"))?;
     let legacy_readme = read(&corpus.join("README.md"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
     let legacy_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let coverage_value = parse_json(&coverage, "source coverage")?;
     let negative_value = parse_json(&negative, "source negative controls")?;
+    let native_windows_value = parse_json(&native_windows, "native Windows source ledger")?;
     let manifest_value = parse_json(&legacy_manifest, "source manifest")?;
     let legacy_outcome_values = parse_jsonl(&legacy_outcomes, "committed source outcomes")?;
     let request_values = spec::validate_inputs(
@@ -84,6 +93,7 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         &legacy_readme,
         &manifest_value,
     )?;
+    spec::validate_native_windows_manifest(&native_windows, &manifest_value)?;
 
     let upstream = root
         .parent()
@@ -114,15 +124,38 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     validation::validate_all(
         root,
         &request_values,
-        &observed.values,
+        OutcomeBaseline {
+            values: &observed.values,
+            bytes: &observed.bytes,
+        },
         OutcomeBaseline {
             values: &legacy_outcome_values,
             bytes: &legacy_outcomes,
         },
-        &coverage_value,
-        &negative_value,
-        &manifest_value,
+        validation::ValidationMetadata {
+            coverage: &coverage_value,
+            negative: &negative_value,
+            native_windows: &native_windows_value,
+            manifest: &manifest_value,
+        },
     )?;
+    if !check {
+        let observed_platform = validation::required_str(
+            observed
+                .values
+                .first()
+                .ok_or("source observations are empty")?,
+            "platform",
+            "observed source outcome",
+        )?;
+        let committed_platform =
+            validation::required_str(&manifest_value, "platform", "source manifest")?;
+        if observed_platform != committed_platform {
+            return Err(format!(
+                "canonical source regeneration requires {committed_platform}, got {observed_platform}; use --check for native replay"
+            ));
+        }
+    }
     if process::git_status(&upstream, &temporary, "after")? != status_before {
         return Err("upstream checkout changed during source generation".into());
     }
@@ -137,6 +170,7 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         &manifest_value,
         README.as_bytes(),
         &coverage,
+        &native_windows,
         outcome_bytes,
         outcome_values,
     )?;
@@ -145,6 +179,7 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     tree.insert("outcomes-v1.jsonl", outcome_bytes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
+    tree.insert("native-windows-v1.json", native_windows)?;
     tree.insert("README.md", README.as_bytes())?;
     tree.insert("manifest-v1.json", manifest.clone())?;
     Ok(Generated { tree, manifest })
@@ -326,9 +361,11 @@ mod tests {
             bytes: bytes.clone(),
         };
         let rendered = observation_ledger(&observed).unwrap();
-        assert!(!rendered
-            .windows(b"reviewed-fixture-value".len())
-            .any(|window| window == b"reviewed-fixture-value"));
+        assert!(
+            !rendered
+                .windows(b"reviewed-fixture-value".len())
+                .any(|window| window == b"reviewed-fixture-value")
+        );
         let ledger: Value = serde_json::from_slice(&rendered).unwrap();
         assert_eq!(ledger["platform"], json!("windows/amd64"));
         assert_eq!(ledger["outcomes_sha256"], json!(sha256_bytes(&bytes)));
