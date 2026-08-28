@@ -101,7 +101,7 @@ pub(super) fn validate_all(
     validate_projection(outcomes)?;
     controls::validate(&by_id, outcomes, negative)?;
     controls_archive::validate(root, &by_id)?;
-    validate_counts(outcomes, coverage, manifest)?;
+    validate_counts(outcomes, coverage, manifest, !cfg!(windows))?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
     if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
         || required_u64(entry, "records", "outcomes")? != REQUEST_COUNT as u64
@@ -301,7 +301,12 @@ fn validate_projection(outcomes: &[Value]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_counts(outcomes: &[Value], coverage: &Value, manifest: &Value) -> Result<(), String> {
+fn validate_counts(
+    outcomes: &[Value],
+    coverage: &Value,
+    manifest: &Value,
+    require_baseline_structure: bool,
+) -> Result<(), String> {
     let sum = |field: &str| -> Result<u64, String> {
         outcomes
             .iter()
@@ -314,12 +319,9 @@ fn validate_counts(outcomes: &[Value], coverage: &Value, manifest: &Value) -> Re
         .iter()
         .map(|row| required_array(row, "material_assertions", "behavior").map(Vec::len))
         .sum::<Result<usize, _>>()? as u64;
-    for (field, actual) in [
+    let invariant_counts = [
         ("request_count", REQUEST_COUNT as u64),
         ("outcome_count", outcomes.len() as u64),
-        ("fragment_count", sum("fragments")?),
-        ("finding_count", sum("findings")?),
-        ("issue_count", sum("issues")?),
         (
             "behavior_count",
             required_array(coverage, "behavior_ids", "coverage")?.len() as u64,
@@ -329,9 +331,21 @@ fn validate_counts(outcomes: &[Value], coverage: &Value, manifest: &Value) -> Re
             required_array(coverage, "upstream", "coverage")?.len() as u64,
         ),
         ("material_assertion_count", material),
-    ] {
+    ];
+    for (field, actual) in invariant_counts {
         if required_u64(manifest, field, "manifest")? != actual {
             return Err(format!("source manifest {field} changed"));
+        }
+    }
+    if require_baseline_structure {
+        for (field, actual) in [
+            ("fragment_count", sum("fragments")?),
+            ("finding_count", sum("findings")?),
+            ("issue_count", sum("issues")?),
+        ] {
+            if required_u64(manifest, field, "manifest")? != actual {
+                return Err(format!("source manifest {field} changed"));
+            }
         }
     }
     Ok(())
@@ -562,7 +576,8 @@ pub(super) fn finding_files(
 mod tests {
     use serde_json::json;
 
-    use super::{render_manifest, replace_once};
+    use super::{render_manifest, replace_once, validate_counts};
+    use crate::tooling::source::spec::REQUEST_COUNT;
     use crate::tooling::support::sha256_bytes;
 
     #[test]
@@ -577,6 +592,35 @@ mod tests {
         );
         assert!(replace_once(b"old old", b"old", b"new", "test").is_err());
         assert!(replace_once(b"none", b"old", b"new", "test").is_err());
+    }
+
+    #[test]
+    fn windows_counts_defer_platform_structure_to_the_native_ledger() {
+        let outcomes = vec![
+            json!({
+                "fragments": [],
+                "findings": [],
+                "issues": [],
+            });
+            REQUEST_COUNT
+        ];
+        let coverage = json!({
+            "behavior_ids": [{"material_assertions": []}],
+            "upstream": [],
+        });
+        let manifest = json!({
+            "request_count": REQUEST_COUNT,
+            "outcome_count": REQUEST_COUNT,
+            "fragment_count": 1,
+            "finding_count": 1,
+            "issue_count": 1,
+            "behavior_count": 1,
+            "upstream_identity_count": 0,
+            "material_assertion_count": 0,
+        });
+
+        validate_counts(&outcomes, &coverage, &manifest, false).unwrap();
+        assert!(validate_counts(&outcomes, &coverage, &manifest, true).is_err());
     }
 
     #[test]
