@@ -37,7 +37,7 @@
   "parser_usage_byte_count_both_implementations": 19508,
   "stderr_event_count_both_implementations": 888,
   "mutation_control_count": 20,
-  "generator_sha256": "068c06fd353bf781ea007c9a7243c7f2734024c44b68047610a76fabf9e035b1",
+  "generator_sha256": "eaaf5d3ad9961de7a5551569eb78d981759b423ae508a5b1337a3f9c38d344f8",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",
@@ -81,6 +81,7 @@
   "outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
   "negative_controls_sha256": "fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152",
   "unix_path_outcome_sha256": "0e1a0b277a71bbd09e5a24473a8b20c7feebafebd56389220ca493b7928bda61",
+  "unix_logical_name_outcome_sha256": "9fb7a94501f91ecd7a1cb68658b5497e99993c644d818b117eb1f2770d0ae30b",
   "native_linux_outcome_sha256": "b13c67ca0b0fba8dd62364699c898be335ac174f494b3be6450b33a30dbeb240",
   "runtime_provenance_policy": "independently-validated-with-native-linux-record",
   "native_runtime_evidence": {

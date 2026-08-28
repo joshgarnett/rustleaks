@@ -214,21 +214,26 @@ pub(super) fn row_json(
     fake_git_binary: &Path,
     native_linux: &str,
     unix_path: &str,
+    unix_logical_name: &str,
 ) -> Result<String, String> {
     validate_committed_variant(native_linux, "native-non-utf8", 1, 1, 404)?;
     validate_committed_variant(unix_path, "windows-drive-unc-spellings", 0, 0, 3)?;
+    validate_committed_variant(unix_logical_name, "windows-logical-name", 1, 1, 438)?;
     let case_id = required_str(row, "id", "CLI request")?;
     let mut variants = Vec::new();
     for spec in required_array(row, "variants", case_id)? {
         let variant_id = required_str(spec, "id", case_id)?;
+        let windows_incompatible = unix_only(spec) || variant_id == "windows-logical-name";
         let committed = if linux_only(spec) {
             Some(native_linux)
         } else if unix_only(spec) {
             Some(unix_path)
+        } else if variant_id == "windows-logical-name" {
+            Some(unix_logical_name)
         } else {
             None
         };
-        if linux_only(spec) && !cfg!(target_os = "linux") || unix_only(spec) && cfg!(windows) {
+        if linux_only(spec) && !cfg!(target_os = "linux") || windows_incompatible && cfg!(windows) {
             variants.push(
                 committed
                     .expect("host-specific evidence selected")

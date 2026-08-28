@@ -33,6 +33,8 @@ captured and replayed by native Linux CI; non-Linux generation reuses that
 committed observation while native Linux regenerates and compares it exactly.
 `unix-path-v1.json` similarly preserves the Unix-only logical Windows-path
 fixture for native Windows generation.
+`unix-logical-name-v1.json` preserves the Unix filename that contains a
+Windows drive spelling and therefore cannot be created by native Windows.
 Native Linux and Windows CI also replay the pinned oracle generators before
 running the complete native Bazel test suite.
 

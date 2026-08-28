@@ -87,7 +87,9 @@ pub(super) fn setup(root: &Path, kind: &str, temporary: &TempDir) -> Result<(), 
         "paths" => {
             write(root, "config file.toml", MATCHING_CONFIG.as_bytes())?;
             write(root, "source dir ü/secret file.txt", b"token=AB12\n")?;
-            write(root, "source dir ü/C:\\repo\\secret.txt", b"token=CD34\n")?;
+            if !cfg!(windows) {
+                write(root, "source dir ü/C:\\repo\\secret.txt", b"token=CD34\n")?;
+            }
         }
         _ => return Err(format!("unknown CLI fixture setup {kind:?}")),
     }

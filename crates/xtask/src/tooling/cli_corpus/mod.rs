@@ -50,6 +50,8 @@ captured and replayed by native Linux CI; non-Linux generation reuses that
 committed observation while native Linux regenerates and compares it exactly.
 `unix-path-v1.json` similarly preserves the Unix-only logical Windows-path
 fixture for native Windows generation.
+`unix-logical-name-v1.json` preserves the Unix filename that contains a
+Windows drive spelling and therefore cannot be created by native Windows.
 Native Linux and Windows CI also replay the pinned oracle generators before
 running the complete native Bazel test suite.
 
@@ -85,6 +87,7 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
     let native_linux = read(&corpus.join("native-linux-v1.json"))?;
     let unix_path = read(&corpus.join("unix-path-v1.json"))?;
+    let unix_logical_name = read(&corpus.join("unix-logical-name-v1.json"))?;
     let legacy_manifest = read(&corpus.join("manifest-v1.json"))?;
     let negative_value = parse_json(&negative, "CLI negative controls")?;
     let manifest_value = parse_json(&legacy_manifest, "CLI manifest")?;
@@ -92,6 +95,8 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
         .map_err(|error| format!("native Linux CLI evidence is not UTF-8: {error}"))?;
     let unix_path_text = std::str::from_utf8(&unix_path)
         .map_err(|error| format!("Unix path CLI evidence is not UTF-8: {error}"))?;
+    let unix_logical_name_text = std::str::from_utf8(&unix_logical_name)
+        .map_err(|error| format!("Unix logical-name CLI evidence is not UTF-8: {error}"))?;
     let rows = spec::validate_inputs(&requests, &negative, &negative_value, &manifest_value)?;
     let upstream = root
         .parent()
@@ -113,6 +118,7 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
                 &binaries.fake_git,
                 native_linux_text,
                 unix_path_text,
+                unix_logical_name_text,
             )?
             .as_bytes(),
         );
@@ -136,6 +142,7 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
         &generator_hash,
         &crate::tooling::support::sha256_bytes(&native_linux),
         &crate::tooling::support::sha256_bytes(&unix_path),
+        &crate::tooling::support::sha256_bytes(&unix_logical_name),
     )?;
 
     let mut tree = GeneratedTree::default();
@@ -144,6 +151,7 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("native-linux-v1.json", native_linux)?;
     tree.insert("unix-path-v1.json", unix_path)?;
+    tree.insert("unix-logical-name-v1.json", unix_logical_name)?;
     tree.insert("manifest-v1.json", manifest)?;
     tree.insert("README.md", README.as_bytes())?;
     Ok(tree)

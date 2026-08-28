@@ -94,6 +94,7 @@ pub(super) fn render_manifest(
     generator_hash: &str,
     native_linux_hash: &str,
     unix_path_hash: &str,
+    unix_logical_name_hash: &str,
 ) -> Result<Vec<u8>, String> {
     let old = required_str(manifest, "generator_sha256", "manifest")?;
     let mut rendered = legacy.to_vec();
@@ -157,6 +158,23 @@ pub(super) fn render_manifest(
             b"  \"negative_controls_sha256\": \"fd24952e9e8e28dae4f8a581ae6bbb20bfa720ac75e2028a717850cc9ac6f152\",\n",
             field.as_bytes(),
             "Unix path evidence provenance",
+        )?;
+    }
+    let field = format!("  \"unix_logical_name_outcome_sha256\": \"{unix_logical_name_hash}\",\n");
+    if let Some(current) = manifest
+        .get("unix_logical_name_outcome_sha256")
+        .and_then(Value::as_str)
+    {
+        if current != unix_logical_name_hash {
+            return Err("Unix logical-name evidence hash differs from manifest".into());
+        }
+    } else {
+        let anchor = format!("  \"unix_path_outcome_sha256\": \"{unix_path_hash}\",\n");
+        rendered = insert_after_once(
+            &rendered,
+            anchor.as_bytes(),
+            field.as_bytes(),
+            "Unix logical-name evidence provenance",
         )?;
     }
     Ok(rendered)
@@ -402,6 +420,10 @@ pub(crate) fn validate_cli_manifest_baselines(root: &Path, text: &str) -> Result
         format!(
             "cli_unix_path_sha256 = \"{}\"",
             sha256_bytes(&read(&corpus.join("unix-path-v1.json"))?)
+        ),
+        format!(
+            "cli_unix_logical_name_sha256 = \"{}\"",
+            sha256_bytes(&read(&corpus.join("unix-logical-name-v1.json"))?)
         ),
         "cli_cases = 34".into(),
         "cli_variants = 119".into(),
