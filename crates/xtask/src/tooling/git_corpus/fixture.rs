@@ -119,6 +119,7 @@ fn permission_mode(metadata: &fs::Metadata, projected_symlink: bool) -> u32 {
     )
 }
 
+#[cfg(any(unix, test))]
 fn portable_permission_mode(is_symlink: bool, mode: u32) -> u32 {
     // Symlink permission bits are not portable or chmod-controlled. The link
     // type and target remain in the fingerprint, while the accepted fixture
