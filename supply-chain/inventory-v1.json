@@ -545,7 +545,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "peer-imported-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9",
@@ -758,7 +758,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "peer-imported-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316",
@@ -1691,7 +1691,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "peer-imported-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156",
@@ -1765,9 +1765,11 @@
     }
   ],
   "summary": {
-    "exemption_crate_name_count": 28,
-    "exemption_record_count": 29,
+    "exemption_crate_name_count": 26,
+    "exemption_record_count": 26,
     "local_full_audit_record_count": 33,
+    "peer_import_source_count": 5,
+    "peer_imported_audit_package_count": 3,
     "third_party_package_count": 62
   }
 }
