@@ -149,11 +149,6 @@ version = "1.20.1"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.windows-link]]
-version = "0.2.1"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.windows-sys]]
 version = "0.61.2"
 criteria = "safe-to-deploy"

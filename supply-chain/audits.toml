@@ -163,6 +163,12 @@ criteria = "safe-to-deploy"
 version = "1.0.24"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.windows-link]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.2.1"
+notes = "locked Rustleaks graph; complete source and target-specific review in docs/dependency-audits/runtime-windows-link-batch-21.md"
+
 [[audits.winnow]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
