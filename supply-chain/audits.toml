@@ -61,6 +61,12 @@ criteria = "safe-to-deploy"
 version = "1.0.229"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.serde_json]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.0.151"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
 [[audits.serde_spanned]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
