@@ -13,6 +13,12 @@ criteria = "safe-to-deploy"
 version = "1.0.18"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.memchr]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "2.8.3"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
 [[audits.proc-macro2]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
