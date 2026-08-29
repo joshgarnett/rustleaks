@@ -1,6 +1,12 @@
 
 # cargo-vet audits file
 
+[[audits.aho-corasick]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.1.5"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
 [[audits.base64]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
