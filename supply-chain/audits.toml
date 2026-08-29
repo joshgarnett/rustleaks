@@ -181,6 +181,12 @@ criteria = "safe-to-deploy"
 version = "3.0.4"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/core-syn-batch-15.md"
 
+[[audits.tar]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.4.46"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/maintenance-tar-batch-34.md; filesystem unpacking retains a documented concurrent-mutation TOCTOU limitation and Builder follows symlinks by default, neither reached by Rustleaks controlled xtask paths"
+
 [[audits.thiserror]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
