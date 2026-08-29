@@ -85,6 +85,12 @@ criteria = "safe-to-deploy"
 version = "1.0.18"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.lz4_flex]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/runtime-lz4-flex-batch-30.md"
+
 [[audits.memchr]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
