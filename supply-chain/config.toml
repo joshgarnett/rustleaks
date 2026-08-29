@@ -139,11 +139,6 @@ version = "0.5.1"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.regex-automata]]
-version = "0.4.18"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked std, syntax, nfa-pikevm, and unicode features; rationale=approved downstream-compatible range update retains the private direct PikeVM boundary pending source audit; review-by=2026-11-23"
-
 [[exemptions.rustix]]
 version = "1.1.4"
 criteria = "safe-to-deploy"
