@@ -115,6 +115,12 @@ criteria = "safe-to-deploy"
 version = "1.0.24"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.winnow]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.0.4"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
 [[audits.zmij]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
