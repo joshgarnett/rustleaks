@@ -24,6 +24,10 @@ use regex_automata::{
 const PATTERN_SIZE_LIMIT: usize = 1 << 20;
 /// Maximum heap used by the compiled Thompson NFA.
 const COMPILED_SIZE_LIMIT: usize = 256 << 20;
+/// Maximum estimated heap used by one PikeVM search working set.
+const PIKEVM_WORKING_SIZE_LIMIT: usize = 256 << 20;
+/// Conservative per-state words for sparse sets and epsilon-closure frames.
+const PIKEVM_STATE_WORDS: usize = 10;
 /// Parser nesting bound. Go's syntax parser separately caps repetition at 1000.
 const NEST_LIMIT: u32 = 4_096;
 const GO_CAPTURE_NEST_LIMIT: usize = 999;
@@ -198,9 +202,21 @@ impl CaptureSpans {
 /// A fallible Go-regexp-compatible compiler error.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum GoRegexError {
-    PatternTooLarge { actual: usize, limit: usize },
-    Syntax { offset: usize, message: String },
-    Backend { message: String },
+    PatternTooLarge {
+        actual: usize,
+        limit: usize,
+    },
+    WorkingSetTooLarge {
+        estimated: Option<usize>,
+        limit: usize,
+    },
+    Syntax {
+        offset: usize,
+        message: String,
+    },
+    Backend {
+        message: String,
+    },
 }
 
 impl fmt::Display for GoRegexError {
@@ -210,6 +226,24 @@ impl fmt::Display for GoRegexError {
                 write!(
                     formatter,
                     "regexp source is {actual} bytes; limit is {limit}"
+                )
+            }
+            Self::WorkingSetTooLarge {
+                estimated: Some(estimated),
+                limit,
+            } => {
+                write!(
+                    formatter,
+                    "regexp PikeVM working set is estimated at {estimated} bytes; limit is {limit}"
+                )
+            }
+            Self::WorkingSetTooLarge {
+                estimated: None,
+                limit,
+            } => {
+                write!(
+                    formatter,
+                    "regexp PikeVM working set estimate overflowed; limit is {limit}"
                 )
             }
             Self::Syntax { offset, message } => {
@@ -290,7 +324,7 @@ impl GoRegex {
     }
 
     fn build_backend(pattern: &str) -> Result<PikeVM, GoRegexError> {
-        PikeVM::builder()
+        let backend = PikeVM::builder()
             .configure(PikeVM::config().match_kind(MatchKind::LeftmostFirst))
             .syntax(
                 syntax::Config::new()
@@ -307,7 +341,15 @@ impl GoRegex {
             .build(pattern)
             .map_err(|error| GoRegexError::Backend {
                 message: error.to_string(),
-            })
+            })?;
+        let estimated = pikevm_working_size(&backend);
+        if estimated.is_none_or(|size| size > PIKEVM_WORKING_SIZE_LIMIT) {
+            return Err(GoRegexError::WorkingSetTooLarge {
+                estimated,
+                limit: PIKEVM_WORKING_SIZE_LIMIT,
+            });
+        }
+        Ok(backend)
     }
 
     pub(crate) fn source(&self) -> &str {
@@ -395,6 +437,25 @@ impl GoRegex {
         }
         results
     }
+}
+
+/// Conservatively estimates the heap that one PikeVM search can retain.
+///
+/// The dependency allocates two capture-slot tables, two sparse state sets,
+/// one epsilon-closure stack, and caller-visible capture slots. Its private
+/// state identifiers are no wider than `usize`; `PIKEVM_STATE_WORDS`
+/// deliberately overestimates the combined state-set and stack storage.
+fn pikevm_working_size(backend: &PikeVM) -> Option<usize> {
+    let nfa = backend.get_nfa();
+    let states = nfa.states().len();
+    let slots = nfa.group_info().slot_len();
+    let scratch_slots = slots.max(backend.pattern_len().checked_mul(2)?);
+    let table_slots = states.checked_mul(slots)?.checked_add(scratch_slots)?;
+    let all_slot_words = table_slots.checked_mul(2)?.checked_add(slots)?;
+    let state_words = states.checked_mul(PIKEVM_STATE_WORDS)?;
+    all_slot_words
+        .checked_add(state_words)?
+        .checked_mul(std::mem::size_of::<usize>())
 }
 
 struct NormalizedHaystack<'a> {
@@ -1819,6 +1880,27 @@ mod tests {
             Err(GoRegexError::Syntax { offset: 12, .. })
         ));
         assert!(GoRegex::compile(r"(?:a{1000}){0}").is_ok());
+    }
+
+    #[test]
+    fn bounds_capture_heavy_pikevm_working_sets_before_cache_allocation() {
+        let accepted = "()".repeat(512);
+        let accepted = GoRegex::compile(&accepted).unwrap();
+        let cache = accepted.backend.create_cache();
+        assert!(super::pikevm_working_size(&accepted.backend).unwrap() >= cache.memory_usage());
+        assert!(accepted.is_match(b""));
+
+        let rejected = "()".repeat(4_096);
+        let error = GoRegex::compile(&rejected).unwrap_err();
+        let GoRegexError::WorkingSetTooLarge {
+            estimated: Some(estimated),
+            limit,
+        } = error
+        else {
+            panic!("unexpected compile result: {error:?}");
+        };
+        assert!(estimated > limit);
+        assert_eq!(limit, super::PIKEVM_WORKING_SIZE_LIMIT);
     }
 
     #[test]
