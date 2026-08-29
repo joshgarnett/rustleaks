@@ -37,6 +37,12 @@ criteria = "safe-to-deploy"
 version = "1.0.47"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.regex-automata]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.4.18"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
 [[audits.regex-syntax]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
