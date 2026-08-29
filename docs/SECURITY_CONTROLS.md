@@ -69,7 +69,8 @@ explicitly reviewed peer projects, then local source audits for uncovered
 packages or version deltas. The configured peers are Bytecode Alliance, Google,
 ISRG, Mozilla, and Zcash. `supply-chain/imports.lock` retains only the audit
 records cargo-vet selects from those sources for the locked graph. Publisher-
-wide trust and wildcard audits are not accepted.
+wide trust and wildcard audits are not accepted. This is a peer-first evidence
+policy. It is not a local-first or local-only evidence policy.
 
 `supply-chain/inventory-v1.json` mechanically reconciles every locked
 third-party package with its local full audit, peer-imported audit, or exemption.
@@ -93,8 +94,8 @@ Every remaining bootstrap exemption carries this metadata:
 `just security` rejects a missing, malformed, or expired review date. A vet
 exemption is temporary coverage, not evidence that source was audited. Replace
 exemptions with minimized peer-imported audits where available and local audits
-for the remaining gaps. Adding or changing an imported peer remains an explicit
-maintainer trust decision. Completed package worksheets are under
+only for the remaining gaps. Adding or changing an imported peer remains an
+explicit maintainer trust decision. Completed package worksheets are under
 `docs/dependency-audits/`.
 
 The exact normal dependency graph, direct build scripts, native code, and safe
