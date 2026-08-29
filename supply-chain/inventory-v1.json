@@ -1255,7 +1255,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f",
@@ -1765,9 +1765,9 @@
     }
   ],
   "summary": {
-    "exemption_crate_name_count": 38,
-    "exemption_record_count": 39,
-    "local_full_audit_record_count": 23,
+    "exemption_crate_name_count": 37,
+    "exemption_record_count": 38,
+    "local_full_audit_record_count": 24,
     "third_party_package_count": 62
   }
 }
