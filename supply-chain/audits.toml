@@ -31,6 +31,12 @@ criteria = "safe-to-deploy"
 version = "1.0.4"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/runtime-cfg-if-batch-16.md"
 
+[[audits.const-oid]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.10.2"
+notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-const-oid-batch-27.md"
+
 [[audits.crc32fast]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
