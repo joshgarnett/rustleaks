@@ -12,13 +12,17 @@ use super::{command_output, sha256_file};
 const CORE_PACKAGE: &str = "rustleaks-core";
 type PackageStringSets = BTreeMap<String, BTreeSet<String>>;
 type IncomingEdgeProperties = (PackageStringSets, PackageStringSets);
+type PackageIdentity = (String, String);
+type AuditDelta = (String, String, String);
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct VetCoverage {
-    exemptions: BTreeSet<(String, String)>,
+    exemptions: BTreeSet<PackageIdentity>,
     exemption_crate_names: BTreeSet<String>,
-    local_audits: BTreeSet<(String, String)>,
-    peer_audits: BTreeSet<(String, String)>,
+    local_full_audits: BTreeSet<PackageIdentity>,
+    local_audit_deltas: BTreeSet<AuditDelta>,
+    local_delta_audits: BTreeSet<PackageIdentity>,
+    peer_audits: BTreeSet<PackageIdentity>,
     peer_imports: BTreeSet<String>,
 }
 
@@ -57,9 +61,10 @@ pub(crate) fn check_vet_inventory(root: &Path, candidate: &Path) -> Result<(), S
     let inventory: Value = serde_json::from_slice(&actual)
         .map_err(|error| format!("cannot decode {}: {error}", candidate.display()))?;
     println!(
-        "verified {} locked third-party packages: {} local audits, {} peer-imported audits, and {} exemptions across {} crate names",
+        "verified {} locked third-party packages: {} local full-audit records, {} local delta-audit records, {} peer-imported audits, and {} exemptions across {} crate names",
         inventory["summary"]["third_party_package_count"],
         inventory["summary"]["local_full_audit_record_count"],
+        inventory["summary"]["local_delta_audit_record_count"],
         inventory["summary"]["peer_imported_audit_package_count"],
         inventory["summary"]["exemption_record_count"],
         inventory["summary"]["exemption_crate_name_count"]
@@ -172,7 +177,8 @@ fn build_inventory(
         "feature_resolution": "locked default workspace metadata across declared target edges",
         "summary": {
             "third_party_package_count": third_party.len(),
-            "local_full_audit_record_count": coverage.local_audits.len(),
+            "local_full_audit_record_count": coverage.local_full_audits.len(),
+            "local_delta_audit_record_count": coverage.local_audit_deltas.len(),
             "peer_import_source_count": coverage.peer_imports.len(),
             "peer_imported_audit_package_count": peer_audits.len(),
             "exemption_record_count": coverage.exemptions.len(),
@@ -186,17 +192,30 @@ fn validate_coverage_against_locked(
     locked_identities: &BTreeSet<(String, String)>,
     coverage: &VetCoverage,
 ) -> Result<BTreeSet<(String, String)>, String> {
+    let audited_identities = coverage
+        .local_full_audits
+        .union(&coverage.local_delta_audits)
+        .filter(|identity| locked_identities.contains(*identity))
+        .cloned()
+        .chain(
+            coverage
+                .peer_audits
+                .intersection(locked_identities)
+                .cloned(),
+        )
+        .collect::<BTreeSet<_>>();
     let policy_identities = coverage
         .exemptions
-        .union(&coverage.local_audits)
-        .chain(coverage.peer_audits.intersection(locked_identities))
+        .iter()
         .cloned()
+        .chain(audited_identities)
         .collect::<BTreeSet<_>>();
     let missing = locked_identities
         .difference(&policy_identities)
         .cloned()
         .collect::<BTreeSet<_>>();
-    let orphaned = policy_identities
+    let orphaned = coverage
+        .exemptions
         .difference(locked_identities)
         .cloned()
         .collect::<BTreeSet<_>>();
@@ -205,9 +224,15 @@ fn validate_coverage_against_locked(
             "cargo-vet coverage does not match the locked third-party graph: missing {missing:?}, orphaned {orphaned:?}"
         ));
     }
+    let local_audits = coverage
+        .local_full_audits
+        .union(&coverage.local_delta_audits)
+        .cloned()
+        .collect::<BTreeSet<_>>();
     Ok(coverage
         .peer_audits
         .intersection(locked_identities)
+        .filter(|identity| !local_audits.contains(*identity))
         .cloned()
         .collect())
 }
@@ -244,8 +269,10 @@ fn package_record(
             .as_array()
             .is_some_and(|kinds| kinds.iter().any(|kind| kind == "custom-build"))
     });
-    let coverage_name = if coverage.local_audits.contains(&identity) {
+    let coverage_name = if coverage.local_full_audits.contains(&identity) {
         "local-full-audit"
+    } else if coverage.local_delta_audits.contains(&identity) {
+        "local-delta-audit"
     } else if peer_audits.contains(&identity) {
         "peer-imported-audit"
     } else if coverage.exemptions.contains(&identity) {
@@ -313,6 +340,7 @@ fn read_vet_coverage(root: &Path) -> Result<VetCoverage, String> {
     reject_broad_trust(&imports, "cargo-vet import lock")?;
     let mut coverage = vet_coverage(&config, &audits)?;
     coverage.peer_audits = imported_audit_coverage(&imports)?;
+    resolve_local_delta_coverage(&mut coverage)?;
     Ok(coverage)
 }
 
@@ -366,16 +394,8 @@ fn imported_audit_coverage(imports: &toml::Value) -> Result<BTreeSet<(String, St
                         covered.insert((name.clone(), version.to_owned()));
                     }
                     (None, Some(delta)) => {
-                        let delta = delta.as_str().ok_or_else(|| {
-                            format!("cargo-vet imported audit for {name} has invalid delta")
-                        })?;
-                        let (from, to) = delta.split_once("->").ok_or_else(|| {
-                            format!("cargo-vet imported audit for {name} has invalid delta {delta}")
-                        })?;
-                        deltas
-                            .entry(name.clone())
-                            .or_default()
-                            .push((from.trim().to_owned(), to.trim().to_owned()));
+                        let (from, to) = parse_audit_delta(delta, name, "imported audit")?;
+                        deltas.entry(name.clone()).or_default().push((from, to));
                     }
                     _ => {
                         return Err(format!(
@@ -401,6 +421,63 @@ fn imported_audit_coverage(imports: &toml::Value) -> Result<BTreeSet<(String, St
         }
     }
     Ok(covered)
+}
+
+fn resolve_local_delta_coverage(coverage: &mut VetCoverage) -> Result<(), String> {
+    coverage.local_delta_audits.clear();
+    let mut covered = coverage
+        .peer_audits
+        .union(&coverage.local_full_audits)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut unresolved = coverage.local_audit_deltas.clone();
+
+    loop {
+        let resolvable = unresolved
+            .iter()
+            .filter(|(name, from, _)| covered.contains(&(name.clone(), from.clone())))
+            .cloned()
+            .collect::<Vec<_>>();
+        if resolvable.is_empty() {
+            break;
+        }
+        for (name, from, to) in resolvable {
+            unresolved.remove(&(name.clone(), from, to.clone()));
+            let target = (name, to);
+            if !covered.contains(&target) {
+                coverage.local_delta_audits.insert(target.clone());
+                covered.insert(target);
+            }
+        }
+    }
+
+    if !unresolved.is_empty() {
+        return Err(format!(
+            "cargo-vet local audit deltas have no safe-to-deploy baseline: {unresolved:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn parse_audit_delta(
+    delta: &toml::Value,
+    name: &str,
+    record_kind: &str,
+) -> Result<(String, String), String> {
+    let delta = delta
+        .as_str()
+        .ok_or_else(|| format!("cargo-vet {record_kind} for {name} has invalid delta"))?;
+    let (from, to) = delta
+        .split_once("->")
+        .ok_or_else(|| format!("cargo-vet {record_kind} for {name} has invalid delta {delta}"))?;
+    let from = from.trim();
+    let to = to.trim();
+    if from.is_empty() || to.is_empty() || to.contains("->") {
+        return Err(format!(
+            "cargo-vet {record_kind} for {name} has invalid delta {delta}"
+        ));
+    }
+    Ok((from.to_owned(), to.to_owned()))
 }
 
 fn read_toml(path: &Path) -> Result<toml::Value, String> {
@@ -453,21 +530,50 @@ fn vet_coverage(config: &toml::Value, audits: &toml::Value) -> Result<VetCoverag
                 .ok_or_else(|| format!("cargo-vet audits for {name} are not an array"))?;
             for entry in entries {
                 require_safe_to_deploy(entry, name, "audit")?;
-                let version = required_toml_str(entry, "version", name, "audit")?;
-                if !coverage
-                    .local_audits
-                    .insert((name.clone(), version.to_owned()))
-                {
-                    return Err(format!(
-                        "cargo-vet contains duplicate local audit {name}@{version}"
-                    ));
+                match (entry.get("version"), entry.get("delta")) {
+                    (Some(version), None) => {
+                        let version = version.as_str().ok_or_else(|| {
+                            format!("cargo-vet audit for {name} has invalid version")
+                        })?;
+                        if !coverage
+                            .local_full_audits
+                            .insert((name.clone(), version.to_owned()))
+                        {
+                            return Err(format!(
+                                "cargo-vet contains duplicate local full audit {name}@{version}"
+                            ));
+                        }
+                    }
+                    (None, Some(delta)) => {
+                        let (from, to) = parse_audit_delta(delta, name, "audit")?;
+                        if !coverage.local_audit_deltas.insert((
+                            name.clone(),
+                            from.clone(),
+                            to.clone(),
+                        )) {
+                            return Err(format!(
+                                "cargo-vet contains duplicate local delta audit {name} {from} -> {to}"
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(format!(
+                            "cargo-vet audit for {name} must contain exactly one of version or delta"
+                        ));
+                    }
                 }
             }
         }
     }
+    let local_delta_targets = coverage
+        .local_audit_deltas
+        .iter()
+        .map(|(name, _, to)| (name.clone(), to.clone()))
+        .collect::<BTreeSet<_>>();
     let duplicates = coverage
         .exemptions
-        .intersection(&coverage.local_audits)
+        .intersection(&coverage.local_full_audits)
+        .chain(coverage.exemptions.intersection(&local_delta_targets))
         .cloned()
         .collect::<BTreeSet<_>>();
     if !duplicates.is_empty() {
@@ -668,7 +774,9 @@ mod tests {
         let coverage = vet_coverage(&config, &audits).expect("coverage");
         assert_eq!(coverage.exemptions.len(), 2);
         assert_eq!(coverage.exemption_crate_names.len(), 1);
-        assert_eq!(coverage.local_audits.len(), 1);
+        assert_eq!(coverage.local_full_audits.len(), 1);
+        assert!(coverage.local_audit_deltas.is_empty());
+        assert!(coverage.local_delta_audits.is_empty());
         assert!(coverage.peer_audits.is_empty());
         assert!(coverage.peer_imports.is_empty());
     }
@@ -720,9 +828,7 @@ mod tests {
         let coverage = VetCoverage {
             exemptions: BTreeSet::from([("orphaned".to_owned(), "2.0.0".to_owned())]),
             exemption_crate_names: BTreeSet::from(["orphaned".to_owned()]),
-            local_audits: BTreeSet::new(),
-            peer_audits: BTreeSet::new(),
-            peer_imports: BTreeSet::new(),
+            ..VetCoverage::default()
         };
         let error =
             validate_coverage_against_locked(&locked, &coverage).expect_err("coverage mismatch");
@@ -788,6 +894,98 @@ mod tests {
                 ("crate".to_owned(), "2.0.0".to_owned()),
             ])
         );
+    }
+
+    #[test]
+    fn local_delta_coverage_extends_peer_and_local_chains() {
+        let config: toml::Value = toml::from_str("[exemptions]").expect("config");
+        let audits: toml::Value = toml::from_str(
+            r#"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "1.0.0 -> 2.0.0"
+
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "2.0.0 -> 3.0.0"
+            "#,
+        )
+        .expect("audits");
+        let mut coverage = vet_coverage(&config, &audits).expect("coverage");
+        coverage
+            .peer_audits
+            .insert(("crate".to_owned(), "1.0.0".to_owned()));
+        resolve_local_delta_coverage(&mut coverage).expect("delta coverage");
+        assert_eq!(
+            coverage.local_delta_audits,
+            BTreeSet::from([
+                ("crate".to_owned(), "2.0.0".to_owned()),
+                ("crate".to_owned(), "3.0.0".to_owned()),
+            ])
+        );
+        let locked = BTreeSet::from([("crate".to_owned(), "3.0.0".to_owned())]);
+        assert!(
+            validate_coverage_against_locked(&locked, &coverage)
+                .expect("locked coverage")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn local_delta_coverage_rejects_an_uncovered_baseline() {
+        let config: toml::Value = toml::from_str("[exemptions]").expect("config");
+        let audits: toml::Value = toml::from_str(
+            r#"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "1.0.0 -> 2.0.0"
+            "#,
+        )
+        .expect("audits");
+        let mut coverage = vet_coverage(&config, &audits).expect("coverage");
+        let error = resolve_local_delta_coverage(&mut coverage).expect_err("missing baseline");
+        assert!(error.contains("no safe-to-deploy baseline"));
+        assert!(error.contains("crate"));
+        assert!(error.contains("1.0.0"));
+        assert!(error.contains("2.0.0"));
+    }
+
+    #[test]
+    fn coverage_rejects_audit_with_version_and_delta() {
+        let config: toml::Value = toml::from_str("[exemptions]").expect("config");
+        let audits: toml::Value = toml::from_str(
+            r#"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                version = "1.0.0"
+                delta = "1.0.0 -> 2.0.0"
+            "#,
+        )
+        .expect("audits");
+        let error = vet_coverage(&config, &audits).expect_err("ambiguous audit");
+        assert!(error.contains("exactly one of version or delta"));
+    }
+
+    #[test]
+    fn coverage_rejects_delta_target_with_an_exemption() {
+        let config: toml::Value = toml::from_str(
+            r#"
+                [[exemptions.crate]]
+                criteria = "safe-to-deploy"
+                version = "2.0.0"
+            "#,
+        )
+        .expect("config");
+        let audits: toml::Value = toml::from_str(
+            r#"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "1.0.0 -> 2.0.0"
+            "#,
+        )
+        .expect("audits");
+        let error = vet_coverage(&config, &audits).expect_err("duplicate coverage");
+        assert!(error.contains("both local audits and exemptions"));
     }
 
     #[test]
