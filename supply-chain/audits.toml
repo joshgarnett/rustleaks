@@ -19,6 +19,12 @@ criteria = "safe-to-deploy"
 version = "0.23.1"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.bitflags]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "2.13.1"
+notes = "locked Rustleaks graph; exact source, provenance, selected and optional feature boundaries, tests, Miri, licenses, and advisories recorded in runtime-bitflags-batch-32"
+
 [[audits.block-buffer]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"

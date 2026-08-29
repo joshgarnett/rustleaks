@@ -29,11 +29,6 @@ version = "0.2.4"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.bitflags]]
-version = "2.13.1"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.brotli-decompressor]]
 version = "5.0.3"
 criteria = "safe-to-deploy"
