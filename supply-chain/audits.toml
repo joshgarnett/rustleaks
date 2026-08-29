@@ -85,6 +85,12 @@ criteria = "safe-to-deploy"
 version = "1.1.1"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.syn]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "3.0.4"
+notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/core-syn-batch-15.md"
+
 [[audits.thiserror]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
