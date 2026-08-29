@@ -37,6 +37,12 @@ criteria = "safe-to-deploy"
 version = "0.2.2"
 notes = "locked Rustleaks graph; complete source and selected-feature review in docs/dependency-audits/runtime-crypto-common-batch-18.md"
 
+[[audits.digest]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.11.3"
+notes = "locked Rustleaks graph; complete source and selected-feature review in docs/dependency-audits/runtime-digest-batch-26.md"
+
 [[audits.equivalent]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
