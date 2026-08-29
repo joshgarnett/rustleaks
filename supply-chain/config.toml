@@ -44,11 +44,6 @@ version = "0.6.10"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked alloc and rar2 features; rationale=selected source and exact RAR2 delta reviewed with no normal dependencies, build script, native code, or unsafe Rust; upstream and Rustleaks hostile-input evidence covers this decoder while unselected codecs remain out of scope; review-by=2026-11-23"
 
-[[exemptions.const-oid]]
-version = "0.10.2"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.cpufeatures]]
 version = "0.3.0"
 criteria = "safe-to-deploy"
