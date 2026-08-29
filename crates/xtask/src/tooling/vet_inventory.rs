@@ -18,6 +18,8 @@ struct VetCoverage {
     exemptions: BTreeSet<(String, String)>,
     exemption_crate_names: BTreeSet<String>,
     local_audits: BTreeSet<(String, String)>,
+    peer_audits: BTreeSet<(String, String)>,
+    peer_imports: BTreeSet<String>,
 }
 
 pub(crate) fn write_vet_inventory(root: &Path, output: &Path) -> Result<(), String> {
@@ -55,9 +57,10 @@ pub(crate) fn check_vet_inventory(root: &Path, candidate: &Path) -> Result<(), S
     let inventory: Value = serde_json::from_slice(&actual)
         .map_err(|error| format!("cannot decode {}: {error}", candidate.display()))?;
     println!(
-        "verified {} locked third-party packages: {} local audits and {} exemptions across {} crate names",
+        "verified {} locked third-party packages: {} local audits, {} peer-imported audits, and {} exemptions across {} crate names",
         inventory["summary"]["third_party_package_count"],
         inventory["summary"]["local_full_audit_record_count"],
+        inventory["summary"]["peer_imported_audit_package_count"],
         inventory["summary"]["exemption_record_count"],
         inventory["summary"]["exemption_crate_name_count"]
     );
@@ -65,6 +68,14 @@ pub(crate) fn check_vet_inventory(root: &Path, candidate: &Path) -> Result<(), S
 }
 
 fn generate_vet_inventory(root: &Path) -> Result<Vec<u8>, String> {
+    let coverage = read_vet_coverage(root)?;
+    if !coverage.peer_imports.is_empty() {
+        command_output(Command::new("cargo").current_dir(root).args([
+            "vet",
+            "--locked",
+            "--no-registry-suggestions",
+        ]))?;
+    }
     let metadata = command_output(Command::new("cargo").current_dir(root).args([
         "metadata",
         "--format-version",
@@ -78,7 +89,6 @@ fn generate_vet_inventory(root: &Path) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("cannot read Cargo.lock: {error}"))?;
     let lock: toml::Value = toml::from_str(&lock_source)
         .map_err(|error| format!("cannot parse Cargo.lock: {error}"))?;
-    let coverage = read_vet_coverage(root)?;
     let consumers = cargo_tree_consumers(root, &metadata)?;
     let core_graph = cargo_tree_identities(root, CORE_PACKAGE, "normal,build")?;
     let inventory = build_inventory(
@@ -119,6 +129,18 @@ fn build_inventory(
     let lock_checksums = lock_checksums(lock)?;
     let (dependency_kinds, applicable_targets) = incoming_edge_properties(nodes)?;
 
+    let locked_identities = packages
+        .iter()
+        .filter(|package| !package["source"].is_null())
+        .map(|package| {
+            Ok((
+                required_json_str(package, "name", "cargo metadata package")?.to_owned(),
+                required_json_str(package, "version", "cargo metadata package")?.to_owned(),
+            ))
+        })
+        .collect::<Result<BTreeSet<_>, String>>()?;
+    let peer_audits = validate_coverage_against_locked(&locked_identities, coverage)?;
+
     let mut third_party = packages
         .iter()
         .filter(|package| !package["source"].is_null())
@@ -132,6 +154,7 @@ fn build_inventory(
                 core_graph,
                 &dependency_kinds,
                 &applicable_targets,
+                &peer_audits,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -142,17 +165,6 @@ fn build_inventory(
             .then_with(|| left["version"].as_str().cmp(&right["version"].as_str()))
     });
 
-    let locked_identities = third_party
-        .iter()
-        .map(|package| {
-            Ok((
-                required_json_str(package, "name", "inventory package")?.to_owned(),
-                required_json_str(package, "version", "inventory package")?.to_owned(),
-            ))
-        })
-        .collect::<Result<BTreeSet<_>, String>>()?;
-    validate_coverage_against_locked(&locked_identities, coverage)?;
-
     Ok(json!({
         "format_version": 1,
         "generated_by": "cargo xtask generate vet-inventory",
@@ -161,6 +173,8 @@ fn build_inventory(
         "summary": {
             "third_party_package_count": third_party.len(),
             "local_full_audit_record_count": coverage.local_audits.len(),
+            "peer_import_source_count": coverage.peer_imports.len(),
+            "peer_imported_audit_package_count": peer_audits.len(),
             "exemption_record_count": coverage.exemptions.len(),
             "exemption_crate_name_count": coverage.exemption_crate_names.len(),
         },
@@ -171,10 +185,11 @@ fn build_inventory(
 fn validate_coverage_against_locked(
     locked_identities: &BTreeSet<(String, String)>,
     coverage: &VetCoverage,
-) -> Result<(), String> {
+) -> Result<BTreeSet<(String, String)>, String> {
     let policy_identities = coverage
         .exemptions
         .union(&coverage.local_audits)
+        .chain(coverage.peer_audits.intersection(locked_identities))
         .cloned()
         .collect::<BTreeSet<_>>();
     let missing = locked_identities
@@ -190,7 +205,11 @@ fn validate_coverage_against_locked(
             "cargo-vet coverage does not match the locked third-party graph: missing {missing:?}, orphaned {orphaned:?}"
         ));
     }
-    Ok(())
+    Ok(coverage
+        .peer_audits
+        .intersection(locked_identities)
+        .cloned()
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -203,6 +222,7 @@ fn package_record(
     core_graph: &BTreeSet<(String, String)>,
     dependency_kinds: &BTreeMap<String, BTreeSet<String>>,
     applicable_targets: &BTreeMap<String, BTreeSet<String>>,
+    peer_audits: &BTreeSet<(String, String)>,
 ) -> Result<Value, String> {
     let id = required_json_str(package, "id", "cargo metadata package")?;
     let name = required_json_str(package, "name", "cargo metadata package")?;
@@ -226,6 +246,8 @@ fn package_record(
     });
     let coverage_name = if coverage.local_audits.contains(&identity) {
         "local-full-audit"
+    } else if peer_audits.contains(&identity) {
+        "peer-imported-audit"
     } else if coverage.exemptions.contains(&identity) {
         "exemption"
     } else {
@@ -285,7 +307,100 @@ fn lock_checksums(
 fn read_vet_coverage(root: &Path) -> Result<VetCoverage, String> {
     let config = read_toml(&root.join("supply-chain/config.toml"))?;
     let audits = read_toml(&root.join("supply-chain/audits.toml"))?;
-    vet_coverage(&config, &audits)
+    let imports = read_toml(&root.join("supply-chain/imports.lock"))?;
+    reject_broad_trust(&config, "cargo-vet config")?;
+    reject_broad_trust(&audits, "local cargo-vet audits")?;
+    reject_broad_trust(&imports, "cargo-vet import lock")?;
+    let mut coverage = vet_coverage(&config, &audits)?;
+    coverage.peer_audits = imported_audit_coverage(&imports)?;
+    Ok(coverage)
+}
+
+fn reject_broad_trust(value: &toml::Value, context: &str) -> Result<(), String> {
+    match value {
+        toml::Value::Table(table) => {
+            for (key, child) in table {
+                if matches!(key.as_str(), "trusted" | "wildcard-audits") {
+                    return Err(format!(
+                        "{context} contains unsupported publisher-wide or wildcard trust table {key}"
+                    ));
+                }
+                reject_broad_trust(child, context)?;
+            }
+        }
+        toml::Value::Array(values) => {
+            for child in values {
+                reject_broad_trust(child, context)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn imported_audit_coverage(imports: &toml::Value) -> Result<BTreeSet<(String, String)>, String> {
+    let Some(peers) = imports.get("audits") else {
+        return Ok(BTreeSet::new());
+    };
+    let peers = peers
+        .as_table()
+        .ok_or("cargo-vet imported audits are not a table")?;
+    let mut covered = BTreeSet::<(String, String)>::new();
+    let mut deltas = BTreeMap::<String, Vec<(String, String)>>::new();
+    for (peer, peer_value) in peers {
+        let peer_audits = peer_value
+            .get("audits")
+            .and_then(toml::Value::as_table)
+            .ok_or_else(|| format!("cargo-vet import {peer} omits its audits table"))?;
+        for (name, entries) in peer_audits {
+            let entries = entries.as_array().ok_or_else(|| {
+                format!("cargo-vet imported audits for {name} from {peer} are not an array")
+            })?;
+            for entry in entries {
+                require_safe_to_deploy(entry, name, "imported audit")?;
+                match (entry.get("version"), entry.get("delta")) {
+                    (Some(version), None) => {
+                        let version = version.as_str().ok_or_else(|| {
+                            format!("cargo-vet imported audit for {name} has invalid version")
+                        })?;
+                        covered.insert((name.clone(), version.to_owned()));
+                    }
+                    (None, Some(delta)) => {
+                        let delta = delta.as_str().ok_or_else(|| {
+                            format!("cargo-vet imported audit for {name} has invalid delta")
+                        })?;
+                        let (from, to) = delta.split_once("->").ok_or_else(|| {
+                            format!("cargo-vet imported audit for {name} has invalid delta {delta}")
+                        })?;
+                        deltas
+                            .entry(name.clone())
+                            .or_default()
+                            .push((from.trim().to_owned(), to.trim().to_owned()));
+                    }
+                    _ => {
+                        return Err(format!(
+                            "cargo-vet imported audit for {name} must contain exactly one of version or delta"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    loop {
+        let mut changed = false;
+        for (name, edges) in &deltas {
+            for (from, to) in edges {
+                if covered.contains(&(name.clone(), from.clone())) {
+                    changed |= covered.insert((name.clone(), to.clone()));
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    Ok(covered)
 }
 
 fn read_toml(path: &Path) -> Result<toml::Value, String> {
@@ -296,6 +411,15 @@ fn read_toml(path: &Path) -> Result<toml::Value, String> {
 
 fn vet_coverage(config: &toml::Value, audits: &toml::Value) -> Result<VetCoverage, String> {
     let mut coverage = VetCoverage::default();
+    if let Some(imports) = config.get("imports") {
+        let imports = imports
+            .as_table()
+            .ok_or("cargo-vet imports are not a table")?;
+        for (name, entry) in imports {
+            required_toml_str(entry, "url", name, "peer import")?;
+            coverage.peer_imports.insert(name.clone());
+        }
+    }
     if let Some(exemptions) = config.get("exemptions") {
         let exemptions = exemptions
             .as_table()
@@ -359,10 +483,18 @@ fn require_safe_to_deploy(
     name: &str,
     record_kind: &str,
 ) -> Result<(), String> {
-    let criteria = required_toml_str(entry, "criteria", name, record_kind)?;
-    if criteria != "safe-to-deploy" {
+    let criteria = entry
+        .get("criteria")
+        .ok_or_else(|| format!("cargo-vet {record_kind} for {name} omits criteria"))?;
+    let includes_safe_to_deploy = criteria.as_str() == Some("safe-to-deploy")
+        || criteria.as_array().is_some_and(|criteria| {
+            criteria
+                .iter()
+                .any(|criterion| criterion.as_str() == Some("safe-to-deploy"))
+        });
+    if !includes_safe_to_deploy {
         return Err(format!(
-            "cargo-vet {record_kind} for {name} uses unsupported criteria {criteria}"
+            "cargo-vet {record_kind} for {name} does not include safe-to-deploy criteria"
         ));
     }
     Ok(())
@@ -537,6 +669,8 @@ mod tests {
         assert_eq!(coverage.exemptions.len(), 2);
         assert_eq!(coverage.exemption_crate_names.len(), 1);
         assert_eq!(coverage.local_audits.len(), 1);
+        assert!(coverage.peer_audits.is_empty());
+        assert!(coverage.peer_imports.is_empty());
     }
 
     #[test]
@@ -587,11 +721,73 @@ mod tests {
             exemptions: BTreeSet::from([("orphaned".to_owned(), "2.0.0".to_owned())]),
             exemption_crate_names: BTreeSet::from(["orphaned".to_owned()]),
             local_audits: BTreeSet::new(),
+            peer_audits: BTreeSet::new(),
+            peer_imports: BTreeSet::new(),
         };
         let error =
             validate_coverage_against_locked(&locked, &coverage).expect_err("coverage mismatch");
         assert!(error.contains("missing {(\"locked\", \"1.0.0\")}"));
         assert!(error.contains("orphaned {(\"orphaned\", \"2.0.0\")}"));
+    }
+
+    #[test]
+    fn locked_coverage_classifies_unrecorded_identities_as_peer_imports() {
+        let locked = BTreeSet::from([("peer-covered".to_owned(), "1.0.0".to_owned())]);
+        let coverage = VetCoverage {
+            peer_audits: locked.clone(),
+            peer_imports: BTreeSet::from(["peer".to_owned()]),
+            ..VetCoverage::default()
+        };
+        assert_eq!(
+            validate_coverage_against_locked(&locked, &coverage).expect("peer coverage"),
+            locked
+        );
+    }
+
+    #[test]
+    fn coverage_records_explicit_peer_imports() {
+        let config: toml::Value = toml::from_str(
+            r#"
+                [imports.peer]
+                url = "https://example.invalid/audits.toml"
+            "#,
+        )
+        .expect("config");
+        let audits: toml::Value = toml::from_str("[audits]").expect("audits");
+        let coverage = vet_coverage(&config, &audits).expect("coverage");
+        assert_eq!(coverage.peer_imports, BTreeSet::from(["peer".to_owned()]));
+    }
+
+    #[test]
+    fn broad_publisher_and_wildcard_trust_are_rejected() {
+        for source in ["[trusted.crate]", "[audits.peer.wildcard-audits.crate]"] {
+            let value: toml::Value = toml::from_str(source).expect("trust table");
+            let error = reject_broad_trust(&value, "test policy").expect_err("broad trust");
+            assert!(error.contains("publisher-wide or wildcard trust"));
+        }
+    }
+
+    #[test]
+    fn imported_audit_coverage_follows_cross_peer_delta_chains() {
+        let imports: toml::Value = toml::from_str(
+            r#"
+                [[audits.first.audits.crate]]
+                criteria = "safe-to-deploy"
+                version = "1.0.0"
+
+                [[audits.second.audits.crate]]
+                criteria = ["safe-to-run", "safe-to-deploy"]
+                delta = "1.0.0 -> 2.0.0"
+            "#,
+        )
+        .expect("imports");
+        assert_eq!(
+            imported_audit_coverage(&imports).expect("coverage"),
+            BTreeSet::from([
+                ("crate".to_owned(), "1.0.0".to_owned()),
+                ("crate".to_owned(), "2.0.0".to_owned()),
+            ])
+        );
     }
 
     #[test]

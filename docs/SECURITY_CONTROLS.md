@@ -64,11 +64,18 @@ cannot be reproduced as possible state leakage or nondeterminism.
 
 ## Dependency review
 
-The cargo-vet policy is self-contained and imports no third-party trust.
+The cargo-vet policy prefers version-specific audit evidence imported from
+explicitly reviewed peer projects, then local source audits for uncovered
+packages or version deltas. The configured peers are Bytecode Alliance, Google,
+ISRG, Mozilla, and Zcash. `supply-chain/imports.lock` retains only the audit
+records cargo-vet selects from those sources for the locked graph. Publisher-
+wide trust and wildcard audits are not accepted.
+
 `supply-chain/inventory-v1.json` mechanically reconciles every locked
-third-party package with its local full audit or exemption. Its summary reports
-exact local-audit, exemption-record, and distinct exempted crate-name counts.
-Regenerate and check it with:
+third-party package with its local full audit, peer-imported audit, or exemption.
+Its summary reports exact local-audit, peer-import-source, peer-covered-package,
+exemption-record, and distinct exempted crate-name counts. Regenerate and check
+it with:
 
 ```sh
 cargo xtask generate vet-inventory
@@ -85,9 +92,10 @@ Every remaining bootstrap exemption carries this metadata:
 
 `just security` rejects a missing, malformed, or expired review date. A vet
 exemption is temporary coverage, not evidence that source was audited. Replace
-exemptions with local audits as review work is completed. Adding peer imports
-is a separate trust decision and requires explicit maintainer review.
-Completed package worksheets are under `docs/dependency-audits/`.
+exemptions with minimized peer-imported audits where available and local audits
+for the remaining gaps. Adding or changing an imported peer remains an explicit
+maintainer trust decision. Completed package worksheets are under
+`docs/dependency-audits/`.
 
 The exact normal dependency graph, direct build scripts, native code, and safe
 API reasoning are documented in [`DEPENDENCY_SAFETY.md`](DEPENDENCY_SAFETY.md)
