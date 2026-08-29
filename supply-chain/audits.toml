@@ -1,6 +1,12 @@
 
 # cargo-vet audits file
 
+[[audits.adler2]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "2.0.1"
+notes = "locked Rustleaks graph; complete source and selected-feature review in docs/dependency-audits/runtime-adler2-batch-17.md"
+
 [[audits.aho-corasick]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
