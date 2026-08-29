@@ -49,6 +49,12 @@ criteria = "safe-to-deploy"
 version = "0.3.14"
 notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-errno-batch-23.md"
 
+[[audits.filetime]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.2.29"
+notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-filetime-batch-24.md"
+
 [[audits.itoa]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
