@@ -91,6 +91,12 @@ criteria = "safe-to-deploy"
 version = "2.8.3"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.miniz_oxide]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.8.9 -> 0.9.1"
+notes = "locked Rustleaks graph; complete delta and selected-feature review in docs/dependency-audits/runtime-miniz-oxide-batch-29.md"
+
 [[audits.proc-macro2]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
