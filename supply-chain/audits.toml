@@ -121,6 +121,12 @@ criteria = "safe-to-deploy"
 version = "1.0.47"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.rawzip]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.5.1"
+notes = "Complete safe-only source, hostile-input parser, provenance, multi-toolchain, integration, and fuzz review in docs/dependency-audits/runtime-rawzip-batch-35.md."
+
 [[audits.regex-automata]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
