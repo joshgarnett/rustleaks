@@ -99,11 +99,6 @@ version = "1.12.0"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.twox-hash]]
-version = "2.1.4"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked xxhash32 feature through lz4_flex; rationale=2.1.4 changes the selected implementation only for lint-driven equivalent expressions and adds no dependencies, build script, native code, or new unsafe boundary; review-by=2026-11-23"
-
 [[exemptions.typenum]]
 version = "1.20.1"
 criteria = "safe-to-deploy"
