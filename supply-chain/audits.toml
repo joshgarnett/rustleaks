@@ -19,6 +19,12 @@ criteria = "safe-to-deploy"
 version = "0.23.1"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.block-buffer]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.12.1"
+notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-block-buffer-batch-19.md"
+
 [[audits.cfg-if]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
