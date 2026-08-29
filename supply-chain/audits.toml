@@ -193,6 +193,12 @@ criteria = "safe-to-deploy"
 version = "2.0.20"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.tinyvec]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.12.0"
+notes = "locked Rustleaks ArrayVec graph; complete safe-only source, selected and stable-feature, Miri, and provenance review in docs/dependency-audits/runtime-tinyvec-batch-33.md"
+
 [[audits.toml]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
