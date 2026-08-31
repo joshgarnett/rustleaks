@@ -7,9 +7,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.3" }
-rustleaks-report = { path = "../rustleaks-report", version = "=0.1.0-alpha.3" }
-rustleaks-sources = { path = "../rustleaks-sources", version = "=0.1.0-alpha.3" }
+rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.4" }
+rustleaks-report = { path = "../rustleaks-report", version = "=0.1.0-alpha.4" }
+rustleaks-sources = { path = "../rustleaks-sources", version = "=0.1.0-alpha.4" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

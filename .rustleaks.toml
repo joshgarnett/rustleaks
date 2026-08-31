@@ -1,5 +1,5 @@
 title = "Rustleaks repository self-scan"
-minVersion = "0.1.0-alpha.3"
+minVersion = "0.1.0-alpha.4"
 
 [extend]
 useDefault = true

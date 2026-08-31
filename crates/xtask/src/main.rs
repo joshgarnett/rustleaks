@@ -18,7 +18,7 @@ const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 const API_INVENTORY_SHA256: &str =
     "958ddaa92c5cce6afb21ef8209ce5689ff907cb2d9f152951bb75c795362125a";
-const RELEASE_VERSION: &str = "0.1.0-alpha.3";
+const RELEASE_VERSION: &str = "0.1.0-alpha.4";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
 const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
@@ -3342,7 +3342,7 @@ mod tests {
         let independent = r#"{
             "packages": [{
                 "name": "rustleaks-core",
-                "version": "0.1.0-alpha.3",
+                "version": "0.1.0-alpha.4",
                 "description": "Byte-first synchronous engine for the independent Rustleaks port",
                 "license": "MIT AND BSD-3-Clause",
                 "repository": "https://github.com/joshgarnett/rustleaks",
