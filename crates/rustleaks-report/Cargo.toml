@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.3" }
+rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.4" }
 serde_json = "1"
 thiserror = "2"
 

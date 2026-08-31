@@ -17,8 +17,8 @@ pub(super) const VARIANT_COUNT: usize = 119;
 pub(super) const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 pub(super) const CONFIG_SHA256: &str =
     "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
-pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.2";
-pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.3";
+pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.3";
+pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.4";
 
 const FAKE_GIT_SOURCE: &str = r#"package main
 
@@ -467,23 +467,23 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
 pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 5] = [
     (
         "Cargo.toml",
-        "7a3c9b9d1802ee4c76f10395b7b9aef5cc38833ee1b783f73571e6826c1174b2",
         "7a4da4825aee1dd319e5450233c25bfc5a5e9a953bf502b4a6cc491fabba3730",
+        "c9d52d6d300899c3f007c866b8eda81e1e2dccded41e97530eeb4ea3f6677737",
     ),
     (
         "Cargo.lock",
-        "693e0834d122c0f611f9a4a344770fcad9fd49bf476307f679fae038b13be7ed",
         "e3c24453ec42115d43dd5b2b679e43cdb6e1b0802393932d3ae199db2e502d82",
+        "8f3893f06c74b312afd2ef9b6a240eaab6d5e3b5a4abe0eff1302a912d468eb4",
     ),
     (
         "crates/rustleaks-cli/Cargo.toml",
-        "b7315db74ada15efc2eead6e2be517cc77110f811fe570a9c61e4afb1dd17483",
         "1b8c67bcb3bb8cb4567295e665bea6b77aefae5dcfde48012c7e9ecd51dd17fb",
+        "d1c741d8f012c40ac6efcb3611ef3bae51778e48046c5d82adb65399f3d70ba3",
     ),
     (
         "crates/rustleaks-cli/src/config.rs",
-        "6a083b4e5647f7899d2a13f03624fc91f0e1f0816bfaba200a142811ca320442",
         "c6eada2ae07cf5c9e9e743dc5ce884c6fdf0d937d2ab7507f70c97a70f7bbed3",
+        "ad4859ac4eccb243b5ca61bbf838ccbab517e234efbe4a386c8f2e79320c88bc",
     ),
     (
         "crates/rustleaks-cli/src/source.rs",

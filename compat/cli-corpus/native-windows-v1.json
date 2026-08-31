@@ -4,8 +4,8 @@
   "oracle_mode": "cli",
   "upstream_revision": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
-  "baseline_outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
-  "portable_outcomes_sha256": "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
+  "baseline_outcomes_sha256": "28b3a2cd6ac648a6f6cc860fa37b0fd0838f0793e7fbe1656864d3edffe0e0d7",
+  "portable_outcomes_sha256": "28b3a2cd6ac648a6f6cc860fa37b0fd0838f0793e7fbe1656864d3edffe0e0d7",
   "platforms": {
     "windows/amd64": {
       "native_replay": "required"

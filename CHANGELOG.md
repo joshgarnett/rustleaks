@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.4] - 2026-08-31
+
+- Bound estimated PikeVM search working sets before cache allocation and
+  return a structured compile error when the configured limits exceed the
+  supported working-set ceiling.
+
 ## [0.1.0-alpha.3] - 2026-08-27
 
 - Require Rust 1.88 and use that toolchain consistently in Cargo, Bazel, CI,
@@ -53,3 +59,4 @@ version and exact source commit.
 [0.1.0-alpha.1]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
+[0.1.0-alpha.4]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.4

@@ -13,12 +13,12 @@ use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
-    "2d1f1f679ca552f7563e4c3313e4215c0d7e89317304db723a4c6d2321b2a791",
     "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
+    "28b3a2cd6ac648a6f6cc860fa37b0fd0838f0793e7fbe1656864d3edffe0e0d7",
 );
 const NATIVE_WINDOWS_LEDGER_TRANSITION: (&str, &str) = (
-    "38c64dc4d97a59440f3eae5b3593b0ac27545798af8f92fcbaeb52989a52253d",
     "2362611535a41bd04829f95fc8fef4e7b8a7e3340bc4281e05f41931ce03d7c6",
+    "26a579c6741b183ba58e0947ceaee257e5bd6078595c859bf3b9c916fc36a89d",
 );
 const NATIVE_WINDOWS_BASELINE_DISPOSITION: &str = "Windows baseline paths use native logical spelling; canonical findings are exact while paired raw report order may differ.";
 const NATIVE_WINDOWS_SYMLINK_DISPOSITION: &str = "Windows cannot create the dangling-symlink fixture; corrupt-archive handling remains natively replayed and pair-exact.";

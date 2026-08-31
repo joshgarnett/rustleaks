@@ -24,7 +24,7 @@ use regex_automata::{
 const PATTERN_SIZE_LIMIT: usize = 1 << 20;
 /// Maximum heap used by the compiled Thompson NFA.
 const COMPILED_SIZE_LIMIT: usize = 256 << 20;
-/// Maximum estimated heap used by one PikeVM search working set.
+/// Maximum estimated heap used by one `PikeVM` search working set.
 const PIKEVM_WORKING_SIZE_LIMIT: usize = 256 << 20;
 /// Conservative per-state words for sparse sets and epsilon-closure frames.
 const PIKEVM_STATE_WORDS: usize = 10;
@@ -439,7 +439,7 @@ impl GoRegex {
     }
 }
 
-/// Conservatively estimates the heap that one PikeVM search can retain.
+/// Conservatively estimates the heap that one `PikeVM` search can retain.
 ///
 /// The dependency allocates two capture-slot tables, two sparse state sets,
 /// one epsilon-closure stack, and caller-visible capture slots. Its private
