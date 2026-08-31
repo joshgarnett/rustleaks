@@ -13,6 +13,18 @@ criteria = "safe-to-deploy"
 version = "1.1.5"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.alloc-no-stdlib]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "2.0.4"
+notes = "locked Rustleaks graph; complete source, unsafe-boundary, provenance, license, Rust 1.88, and selected-call-path review in docs/dependency-audits/runtime-small-residual-batch-41.md"
+
+[[audits.alloc-stdlib]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.2.4"
+notes = "locked Rustleaks graph; complete source, selected safe allocator, provenance, license, Rust 1.88, and consumer-path review in docs/dependency-audits/runtime-small-residual-batch-41.md"
+
 [[audits.base64]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -48,6 +60,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.10.2"
 notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-const-oid-batch-27.md"
+
+[[audits.cpufeatures]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = "locked Rustleaks graph; complete source, target-specific unsafe, atomic cache, provenance, license, Rust 1.88, and native-path review in docs/dependency-audits/runtime-small-residual-batch-41.md"
 
 [[audits.crc32fast]]
 who = "OpenAI Codex"
@@ -294,3 +312,9 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.0.23"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.zstd-zero]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "locked Rustleaks graph; complete safe-only decoder, hostile-input, bounded-buffer, provenance, license, Rust 1.88, package, and consumer review in docs/dependency-audits/runtime-small-residual-batch-41.md"
