@@ -64,11 +64,6 @@ version = "0.12.1"
 criteria = "safe-to-deploy"
 notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
 
-[[exemptions.lzma-rust2]]
-version = "0.20.0"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked std, xz, and lzip feature union; rationale=approved update unifies both archive consumers on the MSRV-compatible release pending source audit; review-by=2026-11-23"
-
 [[exemptions.rustix]]
 version = "1.1.4"
 criteria = "safe-to-deploy"
