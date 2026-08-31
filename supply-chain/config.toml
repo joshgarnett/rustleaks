@@ -19,16 +19,6 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 [imports.zcash]
 url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
-[[exemptions.brotli-decompressor]]
-version = "5.0.3"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
-[[exemptions.flate2]]
-version = "1.1.9"
-criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
-
 [[exemptions.libc]]
 version = "0.2.189"
 criteria = "safe-to-deploy"
