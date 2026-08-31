@@ -247,6 +247,12 @@ criteria = "safe-to-deploy"
 version = "2.1.4"
 notes = "locked Rustleaks xxhash32 graph; complete source, unsafe-boundary, cross-model Miri, and reference-C review in docs/dependency-audits/runtime-twox-hash-batch-31.md"
 
+[[audits.typenum]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.20.1"
+notes = "Locked Rustleaks graph; complete source, generated-content, capability, license, provenance, all-feature, selected-feature, and multi-toolchain review in docs/dependency-audits/runtime-typenum-batch-37.md"
+
 [[audits.unicode-ident]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
