@@ -157,6 +157,12 @@ criteria = "safe-to-deploy"
 version = "0.8.11"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.rustix]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.1.4"
+notes = "locked Rustleaks graph; complete source, unsafe-boundary, build-script, target, provenance, license, test, and Miri review in docs/dependency-audits/maintenance-rustix-batch-40.md"
+
 [[audits.semver]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
