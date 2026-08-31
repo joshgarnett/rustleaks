@@ -50,6 +50,12 @@ schedule them, but it submits only complete fragment outcomes to a session.
 RAR2 decoding uses the upstream `compcol 0.6.10` crate privately through
 `rustleaks-sources`. No `compcol` type crosses the source API.
 
+The exact retained-fork provenance, local deltas, replacement criteria,
+candidate evaluation, and upstream-ready work are recorded in
+[`ARCHIVE_CODEC_STRATEGY.md`](ARCHIVE_CODEC_STRATEGY.md). Publishing the
+workspace-only crates or replacing a codec requires a separate approved
+transaction.
+
 The dependency direction is core to sources and reports, then into the CLI.
 The core does not depend on source adapters, report writers, the CLI, archive
 codecs, Git, a shell, or an async runtime. Compatibility tools may observe the
