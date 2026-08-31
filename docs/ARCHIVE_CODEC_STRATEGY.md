@@ -62,10 +62,11 @@ scratch root. The recorded lock digest is the SHA-256 of that generated
 `Cargo.lock`. These lockfiles are evidence for this observation, not proposed
 workspace lockfiles.
 
-Configured peer evidence was checked in the Bytecode Alliance, Google, ISRG,
-Mozilla, and Zcash cargo-vet audit files. Candidate evaluation did not query a
-vulnerability advisory API. A future transaction must run the maintained
-`just security` gate against its exact locked graph.
+Version-specific `safe-to-deploy` paths from the configured Bytecode Alliance,
+Google, ISRG, Mozilla, and Zcash cargo-vet sources are trusted by default and
+do not require a local re-audit. Candidate evaluation checked those peer audit
+files and did not query a vulnerability advisory API. A future transaction
+must run the maintained `just security` gate against its exact locked graph.
 
 ## Retained provenance and deltas
 

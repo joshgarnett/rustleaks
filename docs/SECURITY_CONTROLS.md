@@ -64,13 +64,16 @@ cannot be reproduced as possible state leakage or nondeterminism.
 
 ## Dependency review
 
-The cargo-vet policy prefers version-specific audit evidence imported from
-explicitly reviewed peer projects, then local source audits for uncovered
-packages or version deltas. The configured peers are Bytecode Alliance, Google,
-ISRG, Mozilla, and Zcash. `supply-chain/imports.lock` retains only the audit
-records cargo-vet selects from those sources for the locked graph. Publisher-
-wide trust and wildcard audits are not accepted. This is a peer-first evidence
-policy. It is not a local-first or local-only evidence policy.
+The cargo-vet policy accepts version-specific `safe-to-deploy` audit paths
+imported from configured trusted peers by default, without a local re-audit or
+separate approval for each selected record. Local source audits are required
+only for packages or version deltas that remain uncovered. The configured
+trusted peers are Bytecode Alliance, Google, ISRG, Mozilla, and Zcash. Adding,
+removing, or changing a configured peer remains a reviewed policy change.
+`supply-chain/imports.lock` retains only the audit records cargo-vet selects
+from those sources for the locked graph. Publisher-wide trust and wildcard
+audits are not accepted. This is a peer-first evidence policy. It is not a
+local-first or local-only evidence policy.
 
 `supply-chain/inventory-v1.json` mechanically reconciles every locked
 third-party package with its local full audit, peer-imported audit, or exemption.
