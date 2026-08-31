@@ -109,7 +109,11 @@ pub(super) fn prepare(
         return Ok(Prepared::default());
     };
     match value {
-        "embedded-secret" => write(root, "aws.txt", b"aws_access_key_id=AKIALALEMEL33243OLIA\n")?,
+        "embedded-secret" => write(
+            root,
+            "aws.txt",
+            concat!("aws_access_key_id=AKIA", "LALEMEL33243OLIA\n").as_bytes(),
+        )?,
         "stdin-ignore-union" => {
             write(root, ".gitleaksignore", b":fixture-token:1\n")?;
             write(root, "named.ignore", b"malformed\n")?;

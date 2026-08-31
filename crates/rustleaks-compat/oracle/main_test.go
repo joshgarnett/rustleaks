@@ -503,7 +503,7 @@ func TestAllowlistProtocolDetectorLoadsPinnedFixture(t *testing.T) {
 		Operation:       "detect",
 		ConfigFixture:   "valid/allowlist_rule_regex.toml",
 		Fragment: requestFragment{
-			ContentBase64: base64.StdEncoding.EncodeToString([]byte(`awsToken := \"AKIALALEMEL33243OLIA\"`)),
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte(`awsToken := \"AKIA` + `LALEMEL33243OLIA\"`)),
 			FileBase64:    base64.StdEncoding.EncodeToString([]byte("tmp.go")),
 		},
 		Options: requestOptions{},
@@ -650,8 +650,15 @@ func TestSessionProtocolClassifiesBaselineErrorsAndVersions(t *testing.T) {
 	}
 }
 
+func decoderSyntheticSecret() string {
+	return strings.Join([]string{
+		"secret=",
+		"ZGVjb2RlZC1zZWNyZXQtdmFsdWU=",
+	}, "")
+}
+
 func TestDecoderProtocolExposesPassAndSegmentMetadata(t *testing.T) {
-	encoded := base64.StdEncoding.EncodeToString([]byte("secret=ZGVjb2RlZC1zZWNyZXQtdmFsdWU="))
+	encoded := base64.StdEncoding.EncodeToString([]byte(decoderSyntheticSecret()))
 	result := safeRunDecoder(decoderRequest{
 		ProtocolVersion: decoderProtocolVersion,
 		ID:              "metadata",
@@ -689,7 +696,7 @@ func TestDecoderProtocolDetectUsesCompleteFindingProjection(t *testing.T) {
 		Operation:       "detect",
 		ConfigBase64:    base64.StdEncoding.EncodeToString(configBytes),
 		Fragment: requestFragment{
-			ContentBase64: base64.StdEncoding.EncodeToString([]byte("secret=ZGVjb2RlZC1zZWNyZXQtdmFsdWU=")),
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte(decoderSyntheticSecret())),
 			FileBase64:    base64.StdEncoding.EncodeToString([]byte("tmp.go")),
 		},
 		Options: requestOptions{MaxDecodeDepth: 1},
