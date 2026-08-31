@@ -66,7 +66,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3",
@@ -90,7 +90,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195",
@@ -297,7 +297,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201",
@@ -1745,7 +1745,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "ff386b8e5bbe3cf2b73dfb0601c19715885473825a2bb9cf3a2b9d401c2dd0cf",
@@ -1765,10 +1765,10 @@
     }
   ],
   "summary": {
-    "exemption_crate_name_count": 10,
-    "exemption_record_count": 10,
+    "exemption_crate_name_count": 6,
+    "exemption_record_count": 6,
     "local_delta_audit_record_count": 1,
-    "local_full_audit_record_count": 48,
+    "local_full_audit_record_count": 52,
     "peer_import_source_count": 5,
     "peer_imported_audit_package_count": 3,
     "third_party_package_count": 62
