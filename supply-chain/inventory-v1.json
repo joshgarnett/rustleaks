@@ -605,7 +605,7 @@
       ],
       "build_script": true,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2",
@@ -634,7 +634,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53",
@@ -1630,7 +1630,7 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "exemption",
+        "coverage": "local-full-audit",
         "criteria": "safe-to-deploy"
       },
       "checksum": "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc",
@@ -1765,10 +1765,10 @@
     }
   ],
   "summary": {
-    "exemption_crate_name_count": 4,
-    "exemption_record_count": 4,
+    "exemption_crate_name_count": 1,
+    "exemption_record_count": 1,
     "local_delta_audit_record_count": 1,
-    "local_full_audit_record_count": 54,
+    "local_full_audit_record_count": 57,
     "peer_import_source_count": 5,
     "peer_imported_audit_package_count": 3,
     "third_party_package_count": 62

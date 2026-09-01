@@ -133,6 +133,18 @@ criteria = "safe-to-deploy"
 version = "1.0.18"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.libc]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.2.189"
+notes = "locked Rustleaks graph; exact source, build script, selected ABI and unsafe helper review, license, provenance, Rust 1.88, 7,162 native ABI checks, and maintained-target integration in docs/dependency-audits/platform-bindings-batch-43.md"
+
+[[audits.linux-raw-sys]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.12.1"
+notes = "locked Rustleaks graph; exact generated source, selected features and repeated unsafe helper pattern, license, provenance, Rust 1.88, and maintained Linux target integration in docs/dependency-audits/platform-bindings-batch-43.md"
+
 [[audits.lz4_flex]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -312,6 +324,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.2.1"
 notes = "locked Rustleaks graph; complete source and target-specific review in docs/dependency-audits/runtime-windows-link-batch-21.md"
+
+[[audits.windows-sys]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.61.2"
+notes = "locked Rustleaks graph; exact generated source, selected FFI and zeroed-POD Default boundary, license, provenance, Rust 1.88 selected and all-feature checks, and maintained Windows integration in docs/dependency-audits/platform-bindings-batch-43.md"
 
 [[audits.winnow]]
 who = "OpenAI Codex"
