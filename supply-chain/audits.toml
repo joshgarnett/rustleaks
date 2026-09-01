@@ -43,6 +43,12 @@ criteria = "safe-to-deploy"
 version = "0.12.1"
 notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-block-buffer-batch-19.md"
 
+[[audits.brotli-decompressor]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "5.0.3"
+notes = "locked Rustleaks graph complete source and selected-feature review recorded in docs/dependency-audits/runtime-compression-batch-42.md"
+
 [[audits.cfg-if]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -102,6 +108,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.2.29"
 notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-filetime-batch-24.md"
+
+[[audits.flate2]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "1.1.9"
+notes = "locked Rustleaks graph complete source and selected-feature review recorded in docs/dependency-audits/runtime-compression-batch-42.md"
 
 [[audits.hashbrown]]
 who = "OpenAI Codex"

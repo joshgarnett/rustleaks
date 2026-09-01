@@ -14,7 +14,7 @@ maintainer intent is false, not an invitation to infer a beta decision.
 | Durable beta intent and stable design | No durable maintainer statement currently says the core API is entering beta stabilization. | Fail |
 | SemVer comparison with published alpha.3 | Required for an exact beta candidate. It is not used to override the failed intent criterion. | Pending |
 | Intended public API snapshot | The maintained public API snapshot remains the repository baseline. Exact candidate validation is required during qualification. | Pending |
-| Core cargo-vet coverage | The generated inventory reports no exemption in the publishable core normal or build graph. The six remaining workspace exemptions are outside that graph, but still prevent the repository-wide cargo-vet workstream from being complete. | Pass for beta criterion |
+| Core cargo-vet coverage | The generated inventory reports no exemption in the publishable core normal or build graph. The four remaining workspace exemptions are outside that graph, but still prevent the repository-wide cargo-vet workstream from being complete. | Pass for beta criterion |
 | Rust 1.88 and stable profiles | Required exact-candidate gates have not yet run for the selected next version. | Pending |
 | External Cargo and Bazel consumers | Required exact-candidate `just package-check` evidence has not yet run. | Pending |
 | Pinned compatibility identity | The Gitleaks commit remains `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b`; the default configuration SHA-256 remains `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`. | Pass |

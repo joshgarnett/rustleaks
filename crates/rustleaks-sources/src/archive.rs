@@ -18,6 +18,7 @@ const DEFAULT_MAX_MEMBER_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_TOTAL_BYTES: usize = 256 * 1024 * 1024;
 const DEFAULT_MAX_SPOOL_BYTES: usize = 64 * 1024 * 1024;
 const COPY_BUFFER: usize = 16 * 1024;
+const BROTLI_LARGE_WINDOW_HEADER: u8 = 0x11;
 
 /// Checked resource ceilings applied across one archive traversal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -455,11 +456,7 @@ impl ArchiveState<'_> {
             return Err(DecodeFailure::Limit);
         }
         let result = match codec {
-            Codec::Brotli => decode_reader(
-                brotli_decompressor::Decompressor::new(input, COPY_BUFFER),
-                limit,
-                cancellation,
-            ),
+            Codec::Brotli => decode_brotli(input, limit, cancellation),
             Codec::Bzip2 => decode_reader(bzip2_rs::DecoderReader::new(input), limit, cancellation),
             Codec::Gzip => decode_gzip(input, limit, cancellation),
             Codec::Lz4 => decode_reader(
@@ -1333,6 +1330,21 @@ fn decode_reader(
     }
 }
 
+fn decode_brotli(
+    input: &[u8],
+    limit: usize,
+    cancellation: &dyn Cancellation,
+) -> Result<Vec<u8>, DecodeFailure> {
+    if input.first() == Some(&BROTLI_LARGE_WINDOW_HEADER) {
+        return Err(DecodeFailure::Limit);
+    }
+    decode_reader(
+        brotli_decompressor::Decompressor::new(input, COPY_BUFFER),
+        limit,
+        cancellation,
+    )
+}
+
 fn decode_lzip(
     input: &[u8],
     limit: usize,
@@ -1814,6 +1826,15 @@ fn emit_issue(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_large_window_brotli_before_decoder_construction() {
+        let cancellation = crate::CancellationToken::new();
+        assert!(matches!(
+            decode_brotli(&[BROTLI_LARGE_WINDOW_HEADER], 1, &cancellation),
+            Err(DecodeFailure::Limit)
+        ));
+    }
 
     #[test]
     fn unsupported_7z_disposition_is_not_misclassified_as_corrupt() {
