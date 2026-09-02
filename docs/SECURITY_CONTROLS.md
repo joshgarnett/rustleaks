@@ -86,19 +86,33 @@ cargo xtask generate vet-inventory
 cargo xtask generate vet-inventory --check
 ```
 
-Every remaining bootstrap exemption carries this metadata:
+Use a cargo-vet exemption only after configured peer evidence and a truthful
+local review cannot establish the required criterion, and only with explicit
+maintainer approval. An exemption must not cover a known concern reachable in
+the maintained runtime graph. A target- or feature-scoped exemption may cover
+a package-wide audit gap when the review establishes that the concern is
+confined to code outside the maintained targets and selected features. The
+cargo-vet exemption record remains package-level; its scope note documents the
+project decision and does not narrow cargo-vet resolver semantics.
 
-- owner: Rustleaks maintainers;
-- scope: the locked graph or a narrower selected feature graph;
-- rationale: the initial bootstrap or an approved dependency transition,
-  pending source audit; and
-- review date: 2026-11-23.
+Every exemption records:
 
-`just security` rejects a missing, malformed, or expired review date. A vet
-exemption is temporary coverage, not evidence that source was audited. Replace
-exemptions with minimized peer-imported audits where available and local audits
-only for the remaining gaps. Adding or changing an imported peer remains an
-explicit maintainer trust decision. Completed package worksheets are under
+- an owner and the exact package version in the exemption record;
+- the locked graph, target, feature, and consumer scope relevant to the
+  decision;
+- a factual rationale for the uncovered criterion and its reachability;
+- a resolution condition, such as a fixed registry release or qualifying
+  audit; and
+- a review date.
+
+Reopen the decision when the package version or source, selected features,
+supported targets, consumers, or reachability changes, or when new audit or
+advisory evidence appears. `just security` rejects a missing, malformed, or
+expired review date. A vet exemption is temporary policy coverage, not an
+audit, and must not be used to lower the required criterion. Replace exemptions
+with minimized peer-imported audits where available and local audits only for
+the remaining gaps. Adding or changing an imported peer remains an explicit
+maintainer trust decision. Completed package worksheets are under
 `docs/dependency-audits/`.
 
 The exact normal dependency graph, direct build scripts, native code, and safe

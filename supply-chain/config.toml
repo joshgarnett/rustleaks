@@ -22,4 +22,4 @@ url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/
 [[exemptions.sha2]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
-notes = "owner=Rustleaks maintainers; scope=locked all-features workspace; rationale=initial bootstrap exemption pending source audit; review-by=2026-11-23"
+notes = "owner=Rustleaks maintainers; scope=locked workspace on maintained x86-64 and ARM64 targets; rationale=approved target-scoped exception because the unresolved package-wide audit concern is confined to an opt-in RISC-V backend outside the maintained graph; resolution=fixed registry release or qualifying audit; review-by=2026-11-23"
