@@ -417,28 +417,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload source hash ledger
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: source-ledger-${{ matrix.architecture }}
           path: ${{ runner.temp }}\source-ledger-${{ matrix.architecture }}.json
           if-no-files-found: error
       - name: Upload Git hash ledger
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: git-ledger-${{ matrix.architecture }}
           path: ${{ runner.temp }}\git-ledger-${{ matrix.architecture }}.json
           if-no-files-found: error
       - name: Upload report hash ledger
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: report-ledger-${{ matrix.architecture }}
           path: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
           if-no-files-found: error
       - name: Upload CLI hash ledger
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cli-ledger-${{ matrix.architecture }}
           path: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
