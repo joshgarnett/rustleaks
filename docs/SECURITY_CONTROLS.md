@@ -25,7 +25,7 @@ lockfiles unchanged.
 - Miri from `nightly-2026-08-21`
 
 Fuzz commands require `cargo-fuzz 0.13.2`. The repository's ordinary Rust
-toolchain is pinned in `rust-toolchain.toml`; the declared MSRV is Rust 1.88.
+toolchain is pinned in `rust-toolchain.toml`; the declared MSRV is Rust 1.95.
 The security gate checks exact tool versions and fails on drift.
 
 The RustSec check intentionally updates its advisory database. It is not an
@@ -103,13 +103,27 @@ Every exemption records:
 - a factual rationale for the uncovered criterion and its reachability;
 - a resolution condition, such as a fixed registry release or qualifying
   audit; and
-- a review date.
+- a review date, except for the standing decision below.
 
 Reopen the decision when the package version or source, selected features,
-supported targets, consumers, or reachability changes, or when new audit or
-advisory evidence appears. `just security` rejects a missing, malformed, or
-expired review date. A vet exemption is temporary policy coverage, not an
-audit, and must not be used to lower the required criterion. Replace exemptions
+supported targets, consumers, source distribution, or reachability changes, or
+when new audit or advisory evidence appears. `just security` rejects a missing,
+malformed, or expired review date for ordinary exemptions.
+
+The approved standing exemption for `compcol 0.7.8` uses
+`review-on=boundary-change` without a calendar expiry. It covers only the
+reviewed registry source, exactly `alloc` and `rar2` in the workspace feature
+union and Bazel resolution, and the eight maintained 64-bit targets. The vet
+gate enforces those boundaries and excludes the dependency from every core
+feature selection. Existing package and release-archive checks constrain
+distribution: the published core package excludes compcol, and binary release
+archives contain only the executable, README, LICENSE, and NOTICE. The
+decision does not cover redistribution of unselected codec sources. Any scope
+change requires re-review; calendar renewal alone is unnecessary. No other
+undated exemption is accepted.
+
+A vet exemption provides policy coverage, not an audit, and must not be used
+to lower the required criterion. Replace exemptions
 with minimized peer-imported audits where available and local audits only for
 the remaining gaps. Adding or changing an imported peer remains an explicit
 maintainer trust decision. Completed package worksheets are under

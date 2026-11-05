@@ -624,10 +624,10 @@ fn physical_prefixes(path: &Path) -> Vec<Vec<u8>> {
         .ok()
         .map(|value| normalized_path_bytes(&value));
     let mut prefixes = vec![lexical];
-    if let Some(canonical) = canonical {
-        if canonical != prefixes[0] {
-            prefixes.push(canonical);
-        }
+    if let Some(canonical) = canonical
+        && canonical != prefixes[0]
+    {
+        prefixes.push(canonical);
     }
     prefixes
 }

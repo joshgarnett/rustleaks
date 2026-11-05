@@ -879,6 +879,21 @@ mod tests {
     }
 
     #[test]
+    fn extracts_rar2_repeat_match_followed_by_old_offset() {
+        let cancelled = AtomicBool::new(false);
+        let expected = b"ABCDABDABDAB";
+        let packed = rar2_repeat_offset_payload();
+        let archive = v15_archive(b"value.txt", &packed, expected, 0x33);
+
+        let entries = extract(&archive, 1, 1 << 20, expected.len(), &cancelled).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, b"value.txt");
+        assert_eq!(entries[0].data, expected);
+        assert!(!entries[0].is_directory);
+    }
+
+    #[test]
     fn extracts_rar3_rar5_and_solid_oracle_fixtures() {
         type Fixture<'a> = (&'a str, &'a [u8], &'a [&'a [u8]]);
 
@@ -1005,17 +1020,20 @@ mod tests {
     }
 
     fn stored_v15(name: &[u8], payload: &[u8]) -> Vec<u8> {
+        v15_archive(name, payload, payload, 0x30)
+    }
+
+    fn v15_archive(name: &[u8], packed: &[u8], unpacked: &[u8], method: u8) -> Vec<u8> {
         let mut archive = b"Rar!\x1a\x07\x00".to_vec();
-        append_v15_header(&mut archive, V15_BLOCK_ARCHIVE, 0, &[], &[]);
+        append_v15_header(&mut archive, V15_BLOCK_ARCHIVE, 0, &[0; 6], &[]);
         let mut body = Vec::new();
-        let payload_size = u32::try_from(payload.len()).unwrap();
-        body.extend_from_slice(&payload_size.to_le_bytes());
-        body.extend_from_slice(&payload_size.to_le_bytes());
+        body.extend_from_slice(&u32::try_from(packed.len()).unwrap().to_le_bytes());
+        body.extend_from_slice(&u32::try_from(unpacked.len()).unwrap().to_le_bytes());
         body.push(2);
-        body.extend_from_slice(&crc32(payload).to_le_bytes());
+        body.extend_from_slice(&crc32(unpacked).to_le_bytes());
         body.extend_from_slice(&0u32.to_le_bytes());
         body.push(20);
-        body.push(0x30);
+        body.push(method);
         body.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
         body.extend_from_slice(&0u32.to_le_bytes());
         body.extend_from_slice(name);
@@ -1024,10 +1042,54 @@ mod tests {
             V15_BLOCK_FILE,
             V15_BLOCK_HAS_DATA,
             &body,
-            payload,
+            packed,
         );
         append_v15_header(&mut archive, V15_BLOCK_END, 0, &[], &[]);
         archive
+    }
+
+    fn rar2_repeat_offset_payload() -> Vec<u8> {
+        let mut bits = Vec::new();
+        let mut write = |value: u16, width: u32| {
+            bits.extend(
+                (0..width)
+                    .rev()
+                    .map(|shift| u8::from(value & (1 << shift) != 0)),
+            );
+        };
+        write(0, 2); // Non-audio block with fresh code lengths.
+        for symbol in 0..19 {
+            write(if symbol < 4 { 2 } else { 0 }, 4);
+        }
+        // The pretree encodes lengths 0..=3 as their two-bit values. Eight
+        // main symbols have three-bit codes; the unused distance tree is
+        // empty, and length symbols 0 and 1 each have a one-bit code.
+        let main_symbols = [65, 66, 67, 68, 256, 257, 258, 261];
+        for symbol in 0..(298 + 48 + 28) {
+            let length = if main_symbols.contains(&symbol) {
+                3
+            } else if (346..348).contains(&symbol) {
+                1
+            } else {
+                0
+            };
+            write(length, 2);
+        }
+        for literal in 0..4 {
+            write(literal, 3); // ABCD.
+        }
+        write(7, 3); // Short match, distance 4: AB.
+        write(3, 2);
+        write(7, 3); // Short match, distance 3: DA.
+        write(2, 2);
+        write(4, 3); // Repeat last match: BD; history becomes [4, 3, 3].
+        write(6, 3); // Second-most-recent distance is now 3, not 4.
+        write(0, 1); // Match length 2: AB, not DA.
+        bits.chunks(8)
+            .map(|chunk| {
+                chunk.iter().fold(0_u8, |byte, bit| (byte << 1) | bit) << (8 - chunk.len())
+            })
+            .collect()
     }
 
     fn append_v15_header(output: &mut Vec<u8>, kind: u8, flags: u16, data: &[u8], payload: &[u8]) {

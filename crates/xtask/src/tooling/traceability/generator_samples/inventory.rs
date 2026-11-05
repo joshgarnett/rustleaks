@@ -176,19 +176,16 @@ fn constructor_starts(source: &str) -> Vec<(usize, String)> {
     let mut starts = Vec::new();
     let mut offset = 0;
     for line in source.split_inclusive('\n') {
-        if let Some(rest) = line.strip_prefix("func ") {
-            if let Some(name) = rest
+        if let Some(rest) = line.strip_prefix("func ")
+            && let Some(name) = rest
                 .strip_suffix("() *config.Rule {\n")
                 .or_else(|| rest.strip_suffix("() *config.Rule {"))
-            {
-                if name.starts_with(|character: char| character.is_ascii_uppercase())
-                    && name
-                        .chars()
-                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
-                {
-                    starts.push((offset, name.to_owned()));
-                }
-            }
+            && name.starts_with(|character: char| character.is_ascii_uppercase())
+            && name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        {
+            starts.push((offset, name.to_owned()));
         }
         offset += line.len();
     }

@@ -145,17 +145,17 @@ fn validate_errors(outcomes: &[Value]) -> Result<(), String> {
     for outcome in outcomes {
         let id = required_str(outcome, "id", "outcome")?;
         match expected.get(id) {
-            Some((class, message)) => {
+            Some((class, message))
                 if outcome.pointer("/error/class").and_then(Value::as_str) != Some(class)
-                    || outcome.pointer("/error/message").and_then(Value::as_str) != Some(message)
-                {
-                    return Err(format!("{id}: structured error changed"));
-                }
+                    || outcome.pointer("/error/message").and_then(Value::as_str)
+                        != Some(message) =>
+            {
+                return Err(format!("{id}: structured error changed"));
             }
             None if !outcome.get("error").is_some_and(Value::is_null) => {
                 return Err(format!("{id}: unexpected session error"));
             }
-            None => {}
+            _ => {}
         }
     }
     Ok(())

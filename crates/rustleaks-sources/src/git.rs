@@ -381,13 +381,12 @@ impl Source for GitSource {
             }
             if file.binary {
                 #[cfg(feature = "archives")]
-                if let Some(options) = self.archives.clone() {
-                    if crate::archive::name_is_archive(&file.path) {
-                        let control =
-                            self.visit_archive_blob(&file, options, cancellation, emit)?;
-                        if control == SourceControl::Stop {
-                            return Ok(control);
-                        }
+                if let Some(options) = self.archives.clone()
+                    && crate::archive::name_is_archive(&file.path)
+                {
+                    let control = self.visit_archive_blob(&file, options, cancellation, emit)?;
+                    if control == SourceControl::Stop {
+                        return Ok(control);
                     }
                 }
                 continue;
@@ -1143,27 +1142,26 @@ fn parse_commit_header(
         }
         if let Some(author) = line.strip_prefix(b"Author: ") {
             let author = trim_line(author);
-            if let Some(open) = author.iter().rposition(|byte| *byte == b'<') {
-                if author.ends_with(b">") {
-                    author_name = copy_limited(
-                        trim_unicode_space(&author[..open]),
-                        metadata_limit,
-                        "Git author name",
-                    )?;
-                    author_email = copy_limited(
-                        &author[open + 1..author.len() - 1],
-                        metadata_limit,
-                        "Git author email",
-                    )?;
-                }
+            if let Some(open) = author.iter().rposition(|byte| *byte == b'<')
+                && author.ends_with(b">")
+            {
+                author_name = copy_limited(
+                    trim_unicode_space(&author[..open]),
+                    metadata_limit,
+                    "Git author name",
+                )?;
+                author_email = copy_limited(
+                    &author[open + 1..author.len() - 1],
+                    metadata_limit,
+                    "Git author email",
+                )?;
             }
         } else if let Some(value) = line
             .strip_prefix(b"Date:   ")
             .or_else(|| line.strip_prefix(b"AuthorDate: "))
+            && let Some(parsed) = git_date_to_rfc3339(trim_line(value), metadata_limit)?
         {
-            if let Some(parsed) = git_date_to_rfc3339(trim_line(value), metadata_limit)? {
-                date = parsed;
-            }
+            date = parsed;
         }
         index += 1;
     }

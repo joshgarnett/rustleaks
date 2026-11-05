@@ -92,8 +92,8 @@ jobs:
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
         run: |
-          cargo +1.88.0 doc --locked -p rustleaks-core --all-features --no-deps
-          cargo +1.88.0 test --locked -p rustleaks-core --doc
+          cargo +1.95.0 doc --locked -p rustleaks-core --all-features --no-deps
+          cargo +1.95.0 test --locked -p rustleaks-core --doc
       - name: Retain the inspected package archive
         working-directory: rustleaks
         env:

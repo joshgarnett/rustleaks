@@ -137,11 +137,10 @@ pub(super) fn validate_native_windows_manifest(
     manifest: &Value,
 ) -> Result<(), String> {
     let files = required_object(manifest, "files", "manifest")?;
-    if let Some(entry) = files.get("native-windows-v1.json") {
-        if required_str(entry, "sha256", "native-windows-v1.json")? != sha256_bytes(native_windows)
-        {
-            return Err("source native-windows-v1.json hash differs from manifest".into());
-        }
+    if let Some(entry) = files.get("native-windows-v1.json")
+        && required_str(entry, "sha256", "native-windows-v1.json")? != sha256_bytes(native_windows)
+    {
+        return Err("source native-windows-v1.json hash differs from manifest".into());
     }
     Ok(())
 }

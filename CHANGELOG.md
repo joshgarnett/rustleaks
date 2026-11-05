@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Require Rust 1.95 and align Cargo, Bazel, CI, package consumers, and release
+  tooling on Rust 1.95.0.
+- Update the optional RAR2 decoder to `compcol 0.7.8`, including corrected
+  repeated-match offset history and bounded speculative output reservation.
+
 ## [0.1.0-alpha.4] - 2026-11-04
 
 - Bound estimated PikeVM search working sets before cache allocation and

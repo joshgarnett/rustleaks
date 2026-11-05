@@ -328,14 +328,14 @@ fn run_scan<R: Read + Send + 'static>(
     {
         return 1;
     }
-    if let Some(report) = report {
-        if let Err(error) = report.write(stdout, &findings) {
-            let _ = output::error(
-                stderr,
-                format_args!("could not write {} report: {error}", report.format),
-            );
-            return 1;
-        }
+    if let Some(report) = report
+        && let Err(error) = report.write(stdout, &findings)
+    {
+        let _ = output::error(
+            stderr,
+            format_args!("could not write {} report: {error}", report.format),
+        );
+        return 1;
     }
     if partial {
         1

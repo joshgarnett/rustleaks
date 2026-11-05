@@ -548,13 +548,12 @@ fn normalize_remote(remote: &[u8]) -> Result<ParsedRemote, ScmError> {
         remote_hostname(without_user)
     })?;
 
-    if let Some(range) = authority {
-        if let Some(at) = normalized[range.clone()]
+    if let Some(range) = authority
+        && let Some(at) = normalized[range.clone()]
             .iter()
             .rposition(|byte| *byte == b'@')
-        {
-            normalized.drain(range.start..=range.start + at);
-        }
+    {
+        normalized.drain(range.start..=range.start + at);
     }
 
     Ok(ParsedRemote {

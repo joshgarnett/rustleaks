@@ -211,23 +211,22 @@ impl ReportPlan {
             }
             _ => return Err(format!("unsupported report format {format}")),
         };
-        if let ReportTarget::File(path) = &target {
-            if let Some(parent) = path
+        if let ReportTarget::File(path) = &target
+            && let Some(parent) = path
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                let metadata = fs::metadata(parent).map_err(|error| {
-                    format!(
-                        "could not inspect report parent {}: {error}",
-                        parent.display()
-                    )
-                })?;
-                if !metadata.is_dir() {
-                    return Err(format!(
-                        "report parent {} is not a directory",
-                        parent.display()
-                    ));
-                }
+        {
+            let metadata = fs::metadata(parent).map_err(|error| {
+                format!(
+                    "could not inspect report parent {}: {error}",
+                    parent.display()
+                )
+            })?;
+            if !metadata.is_dir() {
+                return Err(format!(
+                    "report parent {} is not a directory",
+                    parent.display()
+                ));
             }
         }
         Ok(Some(Self {

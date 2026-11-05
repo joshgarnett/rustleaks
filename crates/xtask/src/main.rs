@@ -26,6 +26,19 @@ const CARGO_PUBLIC_API_VERSION: &str = "cargo-public-api 0.52.0";
 const PUBLIC_API_TOOLCHAIN: &str = "nightly-2026-08-21";
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
 const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
+const COMPCOL_EXEMPTION_VERSION: &str = "0.7.8";
+const COMPCOL_EXEMPTION_SHA256: &str =
+    "7a9657f9d47c2bc36be681f158d208f40bafdd1c8c32003dac8e7dfe0cb68a97";
+const COMPCOL_EXEMPTION_TARGETS: &[&str] = &[
+    "aarch64-apple-darwin",
+    "aarch64-pc-windows-msvc",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+];
 const GOVULNCHECK_VERSION: &str = "v1.7.0";
 const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
 const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
@@ -609,7 +622,7 @@ fn validate_core_repository_metadata(metadata: &str) -> Result<(), String> {
         ("homepage", "https://github.com/joshgarnett/rustleaks"),
         ("documentation", "https://docs.rs/rustleaks-core"),
         ("readme", "README.md"),
-        ("rust_version", "1.88"),
+        ("rust_version", "1.95"),
     ] {
         if package[field].as_str() != Some(expected) {
             return Err(format!(
@@ -977,7 +990,7 @@ fn run_external_bazel_consumer(staging: &Path, package: &Path) -> Result<(), Str
 bazel_dep(name = "rules_rust", version = "0.72.0")
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
-rust.toolchain(edition = "2024", versions = ["1.88.0"])
+rust.toolchain(edition = "2024", versions = ["1.95.0"])
 use_repo(rust, "rust_toolchains")
 register_toolchains("@rust_toolchains//:all")
 
@@ -1175,7 +1188,9 @@ fn vet_check() -> Result<(), String> {
             return Err(format!("cargo-vet policy is missing {required}"));
         }
     }
-    validate_vet_exemptions(&root.join("supply-chain/config.toml"))?;
+    if validate_vet_exemptions(&root.join("supply-chain/config.toml"))? {
+        check_compcol_exemption_scope(&root)?;
+    }
     tooling::check_vet_inventory(&root, &root.join("supply-chain/inventory-v1.json"))?;
     command_output(Command::new("cargo").current_dir(&root).args([
         "vet",
@@ -1186,7 +1201,7 @@ fn vet_check() -> Result<(), String> {
     Ok(())
 }
 
-fn validate_vet_exemptions(path: &Path) -> Result<(), String> {
+fn validate_vet_exemptions(path: &Path) -> Result<bool, String> {
     let source = std::fs::read_to_string(path)
         .map_err(|error| format!("cannot read cargo-vet policy {}: {error}", path.display()))?;
     let config: toml::Value = toml::from_str(&source)
@@ -1205,49 +1220,177 @@ fn validate_vet_exemptions(path: &Path) -> Result<(), String> {
         .as_secs()
         / 86_400;
     let mut record_count = 0_usize;
+    let mut compcol_standing_exemption = false;
     for (package, entries) in exemptions.into_iter().flatten() {
         let entries = entries
             .as_array()
             .ok_or_else(|| format!("cargo-vet exemptions for {package} are not an array"))?;
         record_count += entries.len();
         for entry in entries {
-            let version = entry
-                .get("version")
-                .and_then(toml::Value::as_str)
-                .ok_or_else(|| format!("cargo-vet exemption for {package} omits version"))?;
-            let notes = entry
-                .get("notes")
-                .and_then(toml::Value::as_str)
-                .ok_or_else(|| format!("cargo-vet exemption {package}@{version} omits notes"))?;
-            for marker in ["owner=", "scope=", "rationale=", "review-by="] {
-                if !notes.contains(marker) {
-                    return Err(format!(
-                        "cargo-vet exemption {package}@{version} omits {marker} metadata"
-                    ));
-                }
-            }
-            let review = notes
-                .split(';')
-                .map(str::trim)
-                .find_map(|field| field.strip_prefix("review-by="))
-                .ok_or_else(|| {
-                    format!("cargo-vet exemption {package}@{version} has no review date")
-                })?;
-            let review_day = parse_civil_day(review).ok_or_else(|| {
-                format!("cargo-vet exemption {package}@{version} has invalid review date {review}")
-            })?;
-            if review_day < today {
-                return Err(format!(
-                    "cargo-vet exemption {package}@{version} expired on {review}"
-                ));
-            }
+            compcol_standing_exemption |= validate_vet_exemption(package, entry, today)?;
         }
     }
     let crate_name_count = exemptions.map_or(0, toml::map::Map::len);
     println!(
-        "all {record_count} cargo-vet exemption records across {crate_name_count} crate names have owner, scope, rationale, and active review dates"
+        "all {record_count} cargo-vet exemption records across {crate_name_count} crate names have required metadata and valid review conditions"
+    );
+    Ok(compcol_standing_exemption)
+}
+
+fn validate_vet_exemption(package: &str, entry: &toml::Value, today: u64) -> Result<bool, String> {
+    let version = entry
+        .get("version")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| format!("cargo-vet exemption for {package} omits version"))?;
+    let context = format!("cargo-vet exemption {package}@{version}");
+    let notes = entry
+        .get("notes")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| format!("{context} omits notes"))?;
+    let field = |name: &str| -> Result<Option<&str>, String> {
+        let values = notes
+            .split(';')
+            .filter_map(|field| field.trim().split_once('='))
+            .filter_map(|(key, value)| (key == name).then_some(value.trim()))
+            .collect::<Vec<_>>();
+        match values.as_slice() {
+            [] => Ok(None),
+            [value] if !value.is_empty() => Ok(Some(*value)),
+            _ => Err(format!("{context} has empty or duplicate {name} metadata")),
+        }
+    };
+    for name in ["owner", "scope", "rationale"] {
+        field(name)?.ok_or_else(|| format!("{context} omits {name} metadata"))?;
+    }
+    let review_by = field("review-by")?;
+    if let Some(review_on) = field("review-on")? {
+        let criterion = entry.get("criteria").is_some_and(|criteria| {
+            criteria.as_str() == Some("safe-to-deploy")
+                || criteria.as_array().is_some_and(|values| {
+                    values.len() == 1 && values[0].as_str() == Some("safe-to-deploy")
+                })
+        });
+        if package != "compcol"
+            || version != COMPCOL_EXEMPTION_VERSION
+            || !criterion
+            || review_on != "boundary-change"
+            || review_by.is_some()
+        {
+            return Err(format!("{context} is not the approved standing exemption"));
+        }
+        field("resolution")?.ok_or_else(|| format!("{context} omits resolution metadata"))?;
+        return Ok(true);
+    }
+    let review = review_by.ok_or_else(|| format!("{context} has no review date"))?;
+    let review_day = parse_civil_day(review)
+        .ok_or_else(|| format!("{context} has invalid review date {review}"))?;
+    if review_day < today {
+        return Err(format!("{context} expired on {review}"));
+    }
+    Ok(false)
+}
+
+fn check_compcol_exemption_scope(root: &Path) -> Result<(), String> {
+    let core = normal_dependency_packages(root, "rustleaks-core", true)?;
+    let metadata = command_output(Command::new("cargo").current_dir(root).args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked",
+        "--all-features",
+    ]))?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata)
+        .map_err(|error| format!("cannot decode cargo metadata: {error}"))?;
+    let bazel = std::fs::read_to_string(root.join("cargo-bazel-lock.json"))
+        .map_err(|error| format!("cannot read cargo-bazel-lock.json: {error}"))?;
+    let bazel: serde_json::Value = serde_json::from_str(&bazel)
+        .map_err(|error| format!("cannot decode cargo-bazel-lock.json: {error}"))?;
+    validate_compcol_exemption_scope(&core, &metadata, &bazel)?;
+    println!(
+        "compcol standing exemption retains its reviewed source, features, targets, and core boundary"
     );
     Ok(())
+}
+
+fn validate_compcol_exemption_scope(
+    core: &BTreeSet<String>,
+    metadata: &serde_json::Value,
+    bazel: &serde_json::Value,
+) -> Result<(), String> {
+    let outside_scope = "compcol standing exemption requires re-review after a source, version, feature, target, or core boundary change";
+    if core.contains("compcol") {
+        return Err(outside_scope.into());
+    }
+    let packages = metadata["packages"].as_array().ok_or(outside_scope)?;
+    let compcol = packages
+        .iter()
+        .filter(|package| package["name"].as_str() == Some("compcol"))
+        .collect::<Vec<_>>();
+    let [compcol] = compcol.as_slice() else {
+        return Err(outside_scope.into());
+    };
+    if compcol["version"].as_str() != Some(COMPCOL_EXEMPTION_VERSION)
+        || compcol["source"].as_str()
+            != Some("registry+https://github.com/rust-lang/crates.io-index")
+    {
+        return Err(outside_scope.into());
+    }
+    let id = compcol["id"].as_str().ok_or(outside_scope)?;
+    let node = metadata["resolve"]["nodes"]
+        .as_array()
+        .ok_or(outside_scope)?
+        .iter()
+        .find(|node| node["id"].as_str() == Some(id))
+        .ok_or(outside_scope)?;
+    let expected_features = BTreeSet::from(["alloc", "rar2"]);
+    if json_string_set(&node["features"])? != expected_features {
+        return Err(outside_scope.into());
+    }
+
+    let crates = bazel["crates"].as_object().ok_or(outside_scope)?;
+    let compcol = crates
+        .values()
+        .filter(|package| package["name"].as_str() == Some("compcol"))
+        .collect::<Vec<_>>();
+    let [compcol] = compcol.as_slice() else {
+        return Err(outside_scope.into());
+    };
+    let features = &compcol["common_attrs"]["crate_features"];
+    if compcol["version"].as_str() != Some(COMPCOL_EXEMPTION_VERSION)
+        || compcol["repository"]["Http"]["sha256"].as_str() != Some(COMPCOL_EXEMPTION_SHA256)
+        || json_string_set(&features["common"])? != expected_features
+        || !features["selects"]
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty)
+    {
+        return Err(outside_scope.into());
+    }
+    let mut targets = BTreeSet::new();
+    for condition in bazel["conditions"]
+        .as_object()
+        .ok_or(outside_scope)?
+        .values()
+    {
+        targets.extend(json_string_set(condition)?);
+    }
+    if targets != COMPCOL_EXEMPTION_TARGETS.iter().copied().collect() {
+        return Err(outside_scope.into());
+    }
+    Ok(())
+}
+
+fn json_string_set(value: &serde_json::Value) -> Result<BTreeSet<&str>, String> {
+    value
+        .as_array()
+        .ok_or_else(|| "expected an array of strings in dependency resolution".to_owned())?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| "expected a string in dependency resolution".to_owned())
+        })
+        .collect()
 }
 
 fn parse_civil_day(value: &str) -> Option<u64> {
@@ -1820,7 +1963,7 @@ fn quality_check() -> Result<(), String> {
         &root,
         &target,
         &[
-            "+1.88.0",
+            "+1.95.0",
             "check",
             "--workspace",
             "--all-targets",
@@ -1828,7 +1971,7 @@ fn quality_check() -> Result<(), String> {
             "--locked",
             "--offline",
         ],
-        "Rust 1.88 MSRV check",
+        "Rust 1.95 MSRV check",
     )?;
     println!("local quality and MSRV checks passed; Bazel owns the supported target matrix");
     Ok(())
@@ -2962,13 +3105,15 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        CONFIG_SHA256, PERF_INVARIANTS, PUBLIC_API_TOOLCHAIN, PerfBudget, RELEASE_VERSION,
-        REVISION, build_system, composite_test_executable_from_messages, parse_civil_day,
-        public_api_command, resource_test_command, reviewed_unsafe_packages, run_resource_test,
-        validate_core_repository_metadata, validate_dependency_boundaries,
-        validate_owned_unsafe_package, validate_perf_budget, validate_perf_records,
-        validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
-        validate_unsafe_package_set, workspace_root,
+        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, CONFIG_SHA256, PERF_INVARIANTS,
+        PUBLIC_API_TOOLCHAIN, PerfBudget, RELEASE_VERSION, REVISION, build_system,
+        composite_test_executable_from_messages, parse_civil_day, public_api_command,
+        resource_test_command, reviewed_unsafe_packages, run_resource_test,
+        validate_compcol_exemption_scope, validate_core_repository_metadata,
+        validate_dependency_boundaries, validate_owned_unsafe_package, validate_perf_budget,
+        validate_perf_records, validate_publish_policy, validate_regex_backend_metadata,
+        validate_supply_chain_exceptions, validate_unsafe_package_set, validate_vet_exemption,
+        workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
@@ -3032,6 +3177,169 @@ mod tests {
         assert!(parse_civil_day("2026-04-31").is_none());
         assert!(parse_civil_day("2026-13-01").is_none());
         assert!(parse_civil_day("2026-01-01-extra").is_none());
+    }
+
+    #[test]
+    fn vet_exemptions_retain_ordinary_expiry_and_require_valid_metadata() {
+        let today = parse_civil_day("2026-11-05").unwrap();
+        let entry = |notes: &str| {
+            toml::Value::Table(toml::map::Map::from_iter([
+                ("version".into(), toml::Value::String("1.0.0".into())),
+                (
+                    "criteria".into(),
+                    toml::Value::String("safe-to-deploy".into()),
+                ),
+                ("notes".into(), toml::Value::String(notes.into())),
+            ]))
+        };
+        let metadata = "owner=maintainers; scope=runtime; rationale=review gap";
+        for date in ["2026-11-05", "2026-11-06"] {
+            assert!(
+                !validate_vet_exemption(
+                    "other",
+                    &entry(&format!("{metadata}; review-by={date}")),
+                    today,
+                )
+                .unwrap()
+            );
+        }
+        for suffix in [
+            "",
+            "; review-by=2026-11-04",
+            "; review-by=never",
+            "; review-by=2026-11-31",
+            "; review-by=2026-11-06; review-by=2026-11-07",
+            "; owner=; review-by=2026-11-06",
+            "; review-on=boundary-change",
+        ] {
+            assert!(
+                validate_vet_exemption("other", &entry(&format!("{metadata}{suffix}")), today)
+                    .is_err(),
+                "{suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn standing_vet_exemption_accepts_only_the_approved_package_and_criterion() {
+        let entry: toml::Value = toml::from_str(
+            r#"version = "0.7.8"
+criteria = "safe-to-deploy"
+notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; resolution=fixed audited release; review-on=boundary-change"
+"#,
+        ).unwrap();
+        let future = parse_civil_day("2100-01-01").unwrap();
+        assert!(validate_vet_exemption("compcol", &entry, future).unwrap());
+        assert!(validate_vet_exemption("other", &entry, future).is_err());
+        for (field, value) in [
+            ("version", "0.7.9"),
+            ("criteria", "safe-to-run"),
+            ("criteria", "unreviewed"),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; resolution=fix; review-on=never",
+            ),
+            (
+                "notes",
+                "owner=; scope=runtime; rationale=gap; resolution=fix; review-on=boundary-change",
+            ),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; resolution=fix; review-on=boundary-change; review-on=boundary-change",
+            ),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; review-on=boundary-change",
+            ),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; resolution=fix; review-on=boundary-change; review-by=2100-01-01",
+            ),
+        ] {
+            let mut invalid = entry.clone();
+            invalid[field] = toml::Value::String(value.into());
+            assert!(
+                validate_vet_exemption("compcol", &invalid, future).is_err(),
+                "{field}={value}"
+            );
+        }
+        let mut criteria_array = entry.clone();
+        criteria_array["criteria"] =
+            toml::Value::Array(vec![toml::Value::String("safe-to-deploy".into())]);
+        assert!(validate_vet_exemption("compcol", &criteria_array, future).unwrap());
+        criteria_array["criteria"]
+            .as_array_mut()
+            .unwrap()
+            .push(toml::Value::String("safe-to-run".into()));
+        assert!(validate_vet_exemption("compcol", &criteria_array, future).is_err());
+    }
+
+    #[test]
+    fn standing_compcol_scope_rejects_resolved_graph_expansion() {
+        let core = BTreeSet::from(["rustleaks-core".to_owned()]);
+        let metadata = serde_json::json!({
+            "packages": [{"name":"compcol", "version":"0.7.8", "id":"compcol-id",
+                "source":"registry+https://github.com/rust-lang/crates.io-index"}],
+            "resolve":{"nodes":[{"id":"compcol-id", "features":["alloc","rar2"]}]},
+        });
+        let bazel = serde_json::json!({
+            "crates":{"compcol 0.7.8":{
+                "name":"compcol", "version":"0.7.8",
+                "repository":{"Http":{"sha256":COMPCOL_EXEMPTION_SHA256}},
+                "common_attrs":{"crate_features":{"common":["alloc","rar2"],"selects":{}}},
+            }},
+            "conditions":{"cfg(reviewed)":COMPCOL_EXEMPTION_TARGETS},
+        });
+        validate_compcol_exemption_scope(&core, &metadata, &bazel).unwrap();
+        let mut coupled = core.clone();
+        coupled.insert("compcol".into());
+        assert!(validate_compcol_exemption_scope(&coupled, &metadata, &bazel).is_err());
+        for (path, value) in [
+            ("/packages/0/version", serde_json::json!("0.7.9")),
+            ("/packages/0/source", serde_json::Value::Null),
+            (
+                "/resolve/nodes/0/features",
+                serde_json::json!(["alloc", "rar2", "lzfse"]),
+            ),
+            ("/resolve/nodes/0/features", serde_json::json!(["rar2"])),
+            (
+                "/resolve/nodes/0/features",
+                serde_json::json!(["alloc", "rar2", false]),
+            ),
+        ] {
+            let mut changed = metadata.clone();
+            *changed.pointer_mut(path).unwrap() = value;
+            assert!(
+                validate_compcol_exemption_scope(&core, &changed, &bazel).is_err(),
+                "{path}"
+            );
+        }
+        for (path, value) in [
+            ("/crates/compcol 0.7.8/version", serde_json::json!("0.7.9")),
+            (
+                "/crates/compcol 0.7.8/repository/Http/sha256",
+                serde_json::json!("changed"),
+            ),
+            (
+                "/crates/compcol 0.7.8/common_attrs/crate_features/common",
+                serde_json::json!(["alloc", "rar2", "default"]),
+            ),
+            (
+                "/crates/compcol 0.7.8/common_attrs/crate_features/selects",
+                serde_json::json!({"cfg(unix)":["std"]}),
+            ),
+            (
+                "/conditions",
+                serde_json::json!({"cfg(target_pointer_width=32)":["i686-unknown-linux-gnu"]}),
+            ),
+        ] {
+            let mut changed = bazel.clone();
+            *changed.pointer_mut(path).unwrap() = value;
+            assert!(
+                validate_compcol_exemption_scope(&core, &metadata, &changed).is_err(),
+                "{path}"
+            );
+        }
     }
 
     #[test]
@@ -3357,7 +3665,7 @@ mod tests {
                 "homepage": "https://github.com/joshgarnett/rustleaks",
                 "documentation": "https://docs.rs/rustleaks-core",
                 "readme": "README.md",
-                "rust_version": "1.88",
+                "rust_version": "1.95",
                 "keywords": ["gitleaks", "secret-detection", "security", "scanner"],
                 "categories": ["development-tools"],
                 "metadata": {"docs": {"rs": {

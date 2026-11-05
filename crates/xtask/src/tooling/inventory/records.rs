@@ -11,14 +11,13 @@ pub(super) fn section_records(text: &str, section: &str) -> Vec<Record> {
             current = Some(records.len() - 1);
         } else if line.starts_with('[') {
             current = None;
-        } else if let Some(index) = current {
-            if let Some((key, value)) = line.split_once(" = ") {
-                if key.chars().all(|character| {
-                    character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
-                }) {
-                    records[index].insert(key.to_owned(), value.trim().to_owned());
-                }
-            }
+        } else if let Some(index) = current
+            && let Some((key, value)) = line.split_once(" = ")
+            && key.chars().all(|character| {
+                character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
+            })
+        {
+            records[index].insert(key.to_owned(), value.trim().to_owned());
         }
     }
     records
