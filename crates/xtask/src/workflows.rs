@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-const CODEQL_ACTION_PIN: &str = "cdf488f595d80d6e07e03d4674febd5ab45fa938";
+const CODEQL_ACTION_PIN: &str = "9b3254085494b55a0f7c4c2b3d2d52cc712ce370";
 const SECRET_SCANNING_CONFIG: &str = r#"paths-ignore:
   - "compat/allowlist-corpus/**"
   - "compat/assertion-corpus/**"
@@ -82,7 +82,7 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
 
 fn validate_codeql_workflow(source: &str) -> Result<(), String> {
     for action in ["init", "analyze"] {
-        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.37.9");
+        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.39.1");
         if !source.contains(&required) {
             return Err(format!(
                 "CodeQL workflow omits reviewed action pin {required:?}"
@@ -138,7 +138,7 @@ fn validate_publish_workflow(source: &str) -> Result<(), String> {
         ".github/workflows/release-dry-run.yml",
         "rustleaks-core-${EXPECTED_VERSION}-package",
         "cmp \"${approved_crate}\" \"${current_crate}\"",
-        "rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5",
+        "rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6",
         "CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}",
         "run: cargo publish --locked -p rustleaks-core",
         "https://crates.io/api/v1/crates/rustleaks-core/${EXPECTED_VERSION}",
@@ -257,9 +257,9 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
         "contents: read",
         "id-token: write",
         "security-events: write",
-        "ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4",
+        "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0",
         "publish_results: true",
-        "github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9",
+        "github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1",
     ] {
         if !source.contains(required) {
             return Err(format!(
@@ -739,8 +739,8 @@ mod tests {
     #[test]
     fn requires_reviewed_codeql_commit_pins() {
         let source = format!(
-            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.37.9\n\
-             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.37.9\n"
+            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.39.1\n\
+             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.39.1\n"
         );
         validate_codeql_workflow(&source).unwrap();
         assert!(validate_codeql_workflow(&source.replace(CODEQL_ACTION_PIN, PIN)).is_err());

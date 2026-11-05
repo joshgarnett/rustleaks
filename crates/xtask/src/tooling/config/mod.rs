@@ -59,8 +59,15 @@ fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<()
         .ok_or_else(|| format!("repository root {} has no parent", root.display()))?
         .join("gitleaks");
     let temporary = TempDir::new("config-corpus")?;
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
     let observed = process::observe(root, &upstream, &canonical, &temporary)?;
-    let summary = validation::validate_all(&canonical, &observed)?;
+    let baseline = std::fs::read(root.join("compat/config-corpus/outcomes-v1.jsonl"))
+        .map_err(|error| format!("cannot read config baseline: {error}"))?;
+    let comparison = process::Observed {
+        outcomes: runtime.comparison_bytes(&baseline, &observed.outcomes, check, "config")?,
+        default_config: observed.default_config,
+    };
+    let summary = validation::validate_all(&canonical, &comparison)?;
 
     let mut tree = GeneratedTree::default();
     tree.insert("README.md", README.as_bytes())?;
@@ -68,8 +75,8 @@ fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<()
     tree.insert("manifest-v1.json", canonical.manifest)?;
     tree.insert("inputs-v1.jsonl", canonical.inputs)?;
     tree.insert("requests-v1.jsonl", canonical.requests)?;
-    tree.insert("outcomes-v1.jsonl", observed.outcomes)?;
-    tree.insert("default-gitleaks.toml", observed.default_config)?;
+    tree.insert("outcomes-v1.jsonl", comparison.outcomes)?;
+    tree.insert("default-gitleaks.toml", comparison.default_config)?;
     tree.write_or_check(output_root, check)?;
 
     println!(

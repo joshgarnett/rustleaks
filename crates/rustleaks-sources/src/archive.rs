@@ -1355,7 +1355,7 @@ fn decode_lzip(
         .map(|bytes| bytes / 1024)
         .and_then(|kilobytes| u32::try_from(kilobytes).ok())
         .unwrap_or(u32::MAX);
-    let mut stream = lzma_rust2::LzipStream::new_mem_limit(limit_kb);
+    let mut stream = lzma_rust2::LzipStream::new_mem_limit(true, limit_kb);
     let mut input_position = 0_usize;
     let mut output = Vec::new();
     let mut buffer = [0_u8; COPY_BUFFER];
@@ -1393,11 +1393,18 @@ fn decode_zstd(
     let mut history = allocate_zeroed(limit)?;
     let mut block = allocate_zeroed(zstd_zero::MAX_BLOCK_SIZE)?;
     let mut literals = allocate_zeroed(zstd_zero::MAX_BLOCK_SIZE)?;
+    let mut fse = allocate_zeroed(zstd_zero::FSE_ENTRIES)?;
+    let mut huffman = allocate_zeroed(zstd_zero::HUFFMAN_ENTRIES)?;
+    let mut fse_scratch = allocate_zeroed(zstd_zero::FSE_SCRATCH_LEN)?;
     let mut decoder = zstd_zero::Decoder::new(zstd_zero::DecoderBuffers {
         history: &mut history,
         block: &mut block,
         literals: &mut literals,
-    });
+        fse: &mut fse,
+        huffman: &mut huffman,
+        fse_scratch: &mut fse_scratch,
+    })
+    .map_err(|error| DecodeFailure::Decode(error.to_string()))?;
     let mut output = Vec::new();
     let mut append = |bytes: &[u8]| -> Result<(), DecodeFailure> {
         if cancellation.is_cancelled() {
@@ -1410,12 +1417,12 @@ fn decode_zstd(
     Ok(output)
 }
 
-fn allocate_zeroed(size: usize) -> Result<Vec<u8>, DecodeFailure> {
+fn allocate_zeroed<T: Clone + Default>(size: usize) -> Result<Vec<T>, DecodeFailure> {
     let mut value = Vec::new();
     value
         .try_reserve_exact(size)
         .map_err(|_| DecodeFailure::Limit)?;
-    value.resize(size, 0);
+    value.resize(size, T::default());
     Ok(value)
 }
 

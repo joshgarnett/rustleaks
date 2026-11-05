@@ -554,9 +554,9 @@ fn check_interface(root: &Path) -> Result<(), String> {
 
     let go_version = fs::read_to_string(root.join(".go-version"))
         .map_err(|error| format!("cannot read .go-version: {error}"))?;
-    if go_version.trim() != "1.26.7" {
+    if go_version.trim() != "1.26.10" {
         return Err(format!(
-            "Go maintenance version must be 1.26.7, got {go_version:?}"
+            "Go maintenance version must be 1.26.10, got {go_version:?}"
         ));
     }
 

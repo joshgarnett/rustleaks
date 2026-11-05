@@ -31,6 +31,7 @@ pub(super) fn observe(
     temporary: &TempDir,
 ) -> Result<Observed, String> {
     let (go_version, platform) = selected_runtime(upstream, temporary)?;
+    crate::tooling::runtime_provenance::verify_selected(root, &go_version)?;
     let oracle_root = root.join("crates/rustleaks-compat/oracle");
     let binary = temporary.path.join(if cfg!(windows) {
         "oracle.exe"

@@ -12,6 +12,7 @@ mod go_lowercase;
 mod inventory;
 mod oracle;
 mod report;
+mod runtime_provenance;
 mod session;
 mod source;
 mod support;

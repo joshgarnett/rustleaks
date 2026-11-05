@@ -418,11 +418,12 @@ mod tests {
     use std::os::unix::fs::PermissionsExt as _;
     use std::process::{Command, Stdio};
 
-    use super::fake_git;
+    use super::{TempDir, fake_git};
 
     #[test]
     fn fake_git_pid_file_uses_child_working_directory() {
-        let base = std::env::temp_dir().join(format!("cli-fake-git-test-{}", std::process::id()));
+        let temporary = TempDir::new("cli-fake-git-test").unwrap();
+        let base = &temporary.path;
         let caller = base.join("caller");
         let fixture = base.join("fixture");
         let helper = base.join("fake-git-helper");
@@ -432,7 +433,10 @@ mod tests {
         fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
         let prepared = fake_git(&fixture, "malformed", &helper).unwrap();
         assert_eq!(prepared.env["RUSTLEAKS_CLI_FAKE_GIT_MODE"], b"malformed");
-        let status = Command::new(fixture.join("fake-bin/git"))
+        // Interpret the synthetic script with an existing executable. Executing
+        // a just-written file can race with concurrent fork/exec on Linux.
+        let status = Command::new("/bin/sh")
+            .arg(fixture.join("fake-bin/git"))
             .current_dir(&fixture)
             .env("PWD", &caller)
             .stdout(Stdio::null())
@@ -442,6 +446,5 @@ mod tests {
         assert!(status.success());
         assert!(fixture.join(prepared.child_pid_file.unwrap()).is_file());
         assert!(!caller.join("fake-git.pid").exists());
-        fs::remove_dir_all(base).unwrap();
     }
 }

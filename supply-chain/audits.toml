@@ -19,11 +19,23 @@ criteria = "safe-to-deploy"
 version = "2.0.4"
 notes = "locked Rustleaks graph; complete source, unsafe-boundary, provenance, license, Rust 1.88, and selected-call-path review in docs/dependency-audits/runtime-small-residual-batch-41.md"
 
+[[audits.alloc-no-stdlib]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "2.0.4 -> 3.0.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.alloc-stdlib]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.2.4"
 notes = "locked Rustleaks graph; complete source, selected safe allocator, provenance, license, Rust 1.88, and consumer-path review in docs/dependency-audits/runtime-small-residual-batch-41.md"
+
+[[audits.alloc-stdlib]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.2.4 -> 0.3.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.base64]]
 who = "OpenAI Codex"
@@ -37,6 +49,12 @@ criteria = "safe-to-deploy"
 version = "2.13.1"
 notes = "locked Rustleaks graph; exact source, provenance, selected and optional feature boundaries, tests, Miri, licenses, and advisories recorded in runtime-bitflags-batch-32"
 
+[[audits.bitflags]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "2.13.1 -> 2.13.2"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.block-buffer]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -49,11 +67,23 @@ criteria = "safe-to-deploy"
 version = "5.0.3"
 notes = "locked Rustleaks graph complete source and selected-feature review recorded in docs/dependency-audits/runtime-compression-batch-42.md"
 
+[[audits.brotli-decompressor]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "5.0.3 -> 6.2.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.cfg-if]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.0.4"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/runtime-cfg-if-batch-16.md"
+
+[[audits.cfg-if]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.0.4 -> 1.0.5"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.compcol]]
 who = "OpenAI Codex"
@@ -79,6 +109,12 @@ criteria = "safe-to-deploy"
 version = "1.5.1"
 notes = "locked Rustleaks graph; complete source and unsafe review in docs/dependency-audits/runtime-crc32fast-batch-25.md"
 
+[[audits.crc32fast]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.5.1 -> 1.5.4"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.crypto-common]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -96,6 +132,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.0.2"
 notes = "locked Rustleaks graph; complete source and trait-contract review in docs/dependency-audits/runtime-equivalent-batch-22.md"
+
+[[audits.equivalent]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.0.2 -> 1.0.3"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.errno]]
 who = "OpenAI Codex"
@@ -115,6 +157,12 @@ criteria = "safe-to-deploy"
 version = "1.1.9"
 notes = "locked Rustleaks graph complete source and selected-feature review recorded in docs/dependency-audits/runtime-compression-batch-42.md"
 
+[[audits.flate2]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.9 -> 1.1.10"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.hashbrown]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -127,6 +175,18 @@ criteria = "safe-to-deploy"
 version = "0.4.14"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.hybrid-array]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.4.14 -> 0.4.15"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
+[[audits.indexmap]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "2.14.0 -> 2.14.2"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.itoa]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -138,6 +198,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.2.189"
 notes = "locked Rustleaks graph; exact source, build script, selected ABI and unsafe helper review, license, provenance, Rust 1.88, 7,162 native ABI checks, and maintained-target integration in docs/dependency-audits/platform-bindings-batch-43.md"
+
+[[audits.libc]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.2.190 -> 0.2.191"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.linux-raw-sys]]
 who = "OpenAI Codex"
@@ -156,6 +222,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.20.0"
 notes = "Locked Rustleaks graph; complete source, feature, unsafe, hostile-input, license, provenance, test, and fuzz review recorded in docs/dependency-audits/runtime-lzma-rust2-batch-36.md"
+
+[[audits.lzma-rust2]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.20.0 -> 0.25.0"
+notes = "Complete production decoder, encoder, optional-path, manifest and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.memchr]]
 who = "OpenAI Codex"
@@ -187,6 +259,12 @@ criteria = "safe-to-deploy"
 version = "0.5.1"
 notes = "Complete safe-only source, hostile-input parser, provenance, multi-toolchain, integration, and fuzz review in docs/dependency-audits/runtime-rawzip-batch-35.md."
 
+[[audits.rawzip]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.5.1 -> 0.5.2"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.regex-automata]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -204,6 +282,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.1.4"
 notes = "locked Rustleaks graph; complete source, unsafe-boundary, build-script, target, provenance, license, test, and Miri review in docs/dependency-audits/maintenance-rustix-batch-40.md"
+
+[[audits.rustix]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.4 -> 1.1.6"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.semver]]
 who = "OpenAI Codex"
@@ -235,11 +319,29 @@ criteria = "safe-to-deploy"
 version = "1.0.151"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.serde_json]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.0.151 -> 1.0.154"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.serde_spanned]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.1.1"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.serde_spanned]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.1 -> 1.1.2"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
+[[audits.sha2]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+version = "0.11.1"
+notes = "Prior complete-source review and complete fixed-release delta; resolves the documented RISC-V concern in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.simd-adler32]]
 who = "OpenAI Codex"
@@ -253,6 +355,12 @@ criteria = "safe-to-deploy"
 version = "3.0.4"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/core-syn-batch-15.md"
 
+[[audits.syn]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "3.0.4 -> 3.0.9"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.tar]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -265,11 +373,23 @@ criteria = "safe-to-deploy"
 version = "2.0.20"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.thiserror]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "2.0.20 -> 2.0.21"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.thiserror-impl]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "2.0.20"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.thiserror-impl]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "2.0.20 -> 2.0.21"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.tinyvec]]
 who = "OpenAI Codex"
@@ -283,11 +403,23 @@ criteria = "safe-to-deploy"
 version = "1.1.4+spec-1.1.0"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.toml]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.4+spec-1.1.0 -> 1.2.0+spec-1.1.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.toml_datetime]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.1.1+spec-1.1.0"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.toml_datetime]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.1+spec-1.1.0 -> 1.1.2+spec-1.1.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.toml_parser]]
 who = "OpenAI Codex"
@@ -295,17 +427,35 @@ criteria = "safe-to-deploy"
 version = "1.1.3+spec-1.1.0"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.toml_parser]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.3+spec-1.1.0 -> 1.1.5+spec-1.1.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.toml_writer]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.1.2+spec-1.1.0"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.toml_writer]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.1.2+spec-1.1.0 -> 1.2.0+spec-1.1.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.twox-hash]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "2.1.4"
 notes = "locked Rustleaks xxhash32 graph; complete source, unsafe-boundary, cross-model Miri, and reference-C review in docs/dependency-audits/runtime-twox-hash-batch-31.md"
+
+[[audits.twox-hash]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "2.1.4 -> 2.1.5"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.typenum]]
 who = "OpenAI Codex"
@@ -318,6 +468,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "1.0.24"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.unicode-ident]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.0.24 -> 1.0.27"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
 [[audits.windows-link]]
 who = "OpenAI Codex"
@@ -337,6 +493,18 @@ criteria = "safe-to-deploy"
 version = "1.0.4"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.winnow]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.0.4 -> 1.0.5"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
+[[audits.xattr]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "1.6.1 -> 1.7.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
 [[audits.zmij]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -348,3 +516,9 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.1.0"
 notes = "locked Rustleaks graph; complete safe-only decoder, hostile-input, bounded-buffer, provenance, license, Rust 1.88, package, and consumer review in docs/dependency-audits/runtime-small-residual-batch-41.md"
+
+[[audits.zstd-zero]]
+who = "OpenAI Codex"
+criteria = "safe-to-deploy"
+delta = "0.1.0 -> 0.2.1"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"

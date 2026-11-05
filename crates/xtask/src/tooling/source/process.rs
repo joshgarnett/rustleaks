@@ -26,15 +26,9 @@ pub(super) fn observe(
     upstream: &Path,
     requests: &[Value],
     request_bytes: &[u8],
-    manifest: &Value,
     temporary: &TempDir,
 ) -> Result<Observed, String> {
     let (go_version, platform) = selected_runtime(upstream, temporary)?;
-    if required_str(manifest, "go_version", "manifest")? != go_version {
-        return Err(format!(
-            "selected Go version {go_version} differs from the committed source manifest"
-        ));
-    }
     let oracle_root = root.join("crates/rustleaks-compat/oracle");
     let binary = temporary.path.join(if cfg!(windows) {
         "source-oracle.exe"

@@ -162,6 +162,17 @@ fn validate_native_windows_ledger(
     observed: OutcomeBaseline<'_>,
     ledger: &Value,
 ) -> Result<(), String> {
+    let metadata = validate_native_windows_metadata(committed, ledger)?;
+    if !cfg!(windows) {
+        return Ok(());
+    }
+    validate_native_windows_observations(observed.values, metadata)
+}
+
+fn validate_native_windows_observations(
+    observed: &[Value],
+    metadata: NativeWindowsMetadata<'_>,
+) -> Result<(), String> {
     let NativeWindowsMetadata {
         committed_semantic,
         platforms,
@@ -169,24 +180,17 @@ fn validate_native_windows_ledger(
         portable_hash,
         expected_difference_ids,
         expected_windows_counts,
-    } = validate_native_windows_metadata(committed, ledger)?;
-    if !cfg!(windows) {
-        return Ok(());
-    }
+    } = metadata;
 
-    let observed_platform = uniform_string(observed.values, "platform", "observed Git")?;
-    if sha256_bytes(observed.bytes)
-        != required_str(
-            &platforms[observed_platform],
-            "outcomes_sha256",
-            observed_platform,
-        )?
-    {
+    let observed_platform = uniform_string(observed, "platform", "observed Git")?;
+    if !platforms.contains_key(observed_platform) {
         return Err(format!(
-            "native Windows Git outcomes changed for {observed_platform}"
+            "native Windows Git platform is not recorded: {observed_platform}"
         ));
     }
-    let (observed_semantic, observed_semantic_bytes) = semantic_outcomes(observed.values)?;
+    // Raw hashes retain the original observations. Replays allow only the same
+    // platform and Git-version provenance differences as non-Windows hosts.
+    let (observed_semantic, observed_semantic_bytes) = semantic_outcomes(observed)?;
     if sha256_bytes(&observed_semantic_bytes) != semantic_hash {
         return Err("native Windows Git semantic outcomes changed".into());
     }
@@ -637,7 +641,10 @@ pub(super) fn fragment_bytes(
 mod tests {
     use serde_json::json;
 
-    use super::{render_manifest, replace_once, validate_and_clear_windows_paths};
+    use super::{
+        NativeWindowsMetadata, render_manifest, replace_once, semantic_outcomes,
+        validate_and_clear_windows_paths, validate_native_windows_observations,
+    };
     use crate::tooling::support::sha256_bytes;
 
     #[test]
@@ -694,5 +701,42 @@ mod tests {
             "windows_file_base64": "ZmlsZXNcb3RoZXIuZ28="
         });
         assert!(validate_and_clear_windows_paths(&mut mismatch, "archive").is_err());
+    }
+
+    #[test]
+    fn native_windows_replay_allows_git_version_but_rejects_semantic_drift() {
+        let baseline = json!({
+            "id": "case", "platform": "darwin/arm64", "git_version_base64": "b2xk",
+            "go_version": "go1.26.7", "fragments": [], "findings": [], "error": null
+        });
+        let (committed_semantic, bytes) = semantic_outcomes(&[baseline.clone()]).unwrap();
+        let hash = sha256_bytes(&bytes);
+        let platforms = json!({"windows/amd64": {}, "windows/arm64": {}});
+        let counts = serde_json::Map::new();
+        let differences = Vec::new();
+        let check = |value| {
+            validate_native_windows_observations(
+                &[value],
+                NativeWindowsMetadata {
+                    committed_semantic: committed_semantic.clone(),
+                    platforms: platforms.as_object().unwrap(),
+                    semantic_hash: &hash,
+                    portable_hash: &hash,
+                    expected_difference_ids: &differences,
+                    expected_windows_counts: &counts,
+                },
+            )
+        };
+        let mut observed = baseline;
+        observed["platform"] = json!("windows/amd64");
+        observed["git_version_base64"] = json!("bmV3");
+        check(observed.clone()).unwrap();
+        observed["platform"] = json!("windows/arm64");
+        check(observed.clone()).unwrap();
+        observed["findings"] = json!([{"changed": true}]);
+        assert!(check(observed.clone()).is_err());
+        observed["findings"] = json!([]);
+        observed["platform"] = json!("windows/unsupported");
+        assert!(check(observed).is_err());
     }
 }

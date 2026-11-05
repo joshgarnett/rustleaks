@@ -1578,9 +1578,16 @@ fn git_date_to_rfc3339(value: &[u8], limit: usize) -> PatchResult<Option<Vec<u8>
     let Some(days) = days_from_civil(year, month, day) else {
         return Ok(None);
     };
+    let Some(clock_seconds) = hour
+        .checked_mul(3600)
+        .and_then(|value| minute.checked_mul(60)?.checked_add(value))
+        .and_then(|value| value.checked_add(second))
+    else {
+        return Ok(None);
+    };
     let Some(timestamp) = days
         .checked_mul(86_400)
-        .and_then(|value| value.checked_add(hour * 3600 + minute * 60 + second))
+        .and_then(|value| value.checked_add(clock_seconds))
         .and_then(|value| value.checked_sub(offset))
     else {
         return Ok(None);
@@ -1600,13 +1607,15 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> Option<i64> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
-    let adjusted_year = year - i64::from(month <= 2);
+    let adjusted_year = year.checked_sub(i64::from(month <= 2))?;
     let era = adjusted_year.div_euclid(400);
-    let year_of_era = adjusted_year - era * 400;
+    let year_of_era = adjusted_year.rem_euclid(400);
     let shifted_month = month + if month > 2 { -3 } else { 9 };
     let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    Some(era * 146_097 + day_of_era - 719_468)
+    era.checked_mul(146_097)?
+        .checked_add(day_of_era)?
+        .checked_sub(719_468)
 }
 
 fn civil_from_timestamp(timestamp: i64) -> Option<(i64, i64, i64, i64, i64, i64)> {
@@ -2350,6 +2359,45 @@ mod tests {
                 .expect("malformed date is non-fatal"),
             None
         );
+    }
+
+    #[test]
+    fn overflowing_git_dates_are_ignored_without_panicking() {
+        for date in [
+            "Thu Jan 1 9223372036854775807:00:00 1970 +0000",
+            "Thu Jan 1 -9223372036854775808:00:00 1970 +0000",
+            "Thu Jan 1 00:9223372036854775807:00 1970 +0000",
+            "Thu Jan 1 00:-9223372036854775808:00 1970 +0000",
+            "Thu Jan 1 01:00:9223372036854775807 1970 +0000",
+            "Thu Jan 1 -1:00:-9223372036854775808 1970 +0000",
+            "Thu Jan 1 00:00:00 9223372036854775807 +0000",
+            "Thu Jan 1 00:00:00 -9223372036854775808 +0000",
+            "Thu Mar 1 00:00:00 -9223372036854775808 +0000",
+        ] {
+            assert_eq!(
+                git_date_to_rfc3339(date.as_bytes(), 64).expect("invalid date is non-fatal"),
+                None,
+                "{date}"
+            );
+            let patch = format!(
+                "commit abc\nDate:   {date}\n\ndiff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -0,0 +1 @@\n+x\n"
+            );
+            let files = parse_patch(
+                patch.as_bytes(),
+                GitLimits::default(),
+                &crate::CancellationToken::new(),
+            )
+            .expect("invalid date preserves the patch");
+            assert_eq!(
+                files[0]
+                    .metadata
+                    .as_ref()
+                    .expect("metadata")
+                    .date()
+                    .as_bytes(),
+                b"0001-01-01T00:00:00Z"
+            );
+        }
     }
 
     #[test]

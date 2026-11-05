@@ -46,7 +46,7 @@ pub(crate) fn write_session_corpus(root: &Path, output_root: &Path) -> Result<()
 }
 
 fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<(), String> {
-    let generated = generate(root)?;
+    let generated = generate(root, check)?;
     generated.tree.write_or_check(output_root, check)?;
     println!("{}", String::from_utf8_lossy(&generated.manifest));
     Ok(())
@@ -57,9 +57,10 @@ struct Generated {
     manifest: Vec<u8>,
 }
 
-fn generate(root: &Path) -> Result<Generated, String> {
+fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     let corpus = root.join("compat/session-corpus");
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
+    let committed_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
     let coverage = read(&corpus.join("coverage-v1.json"))?;
     let negative = read(&corpus.join("negative-controls-v1.json"))?;
     let legacy_readme = read(&corpus.join("README.md"))?;
@@ -87,18 +88,18 @@ fn generate(root: &Path) -> Result<Generated, String> {
     if !status_before.is_empty() {
         return Err("pinned upstream checkout has tracked changes".into());
     }
-    let observed = process::observe(
-        root,
-        &upstream,
-        &request_values,
-        &requests,
-        &manifest_value,
-        &temporary,
-    )?;
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
+    let observed = process::observe(root, &upstream, &request_values, &requests, &temporary)?;
+    let comparison_bytes =
+        runtime.comparison_bytes(&committed_outcomes, &observed.bytes, check, "session")?;
+    let comparison_values = newline_records(&comparison_bytes, "session comparison")?
+        .into_iter()
+        .map(|line| serde_json::from_slice(line).map_err(|error| error.to_string()))
+        .collect::<Result<Vec<Value>, String>>()?;
     validation::validate_all(
         &request_values,
-        &observed.values,
-        &observed.bytes,
+        &comparison_values,
+        &comparison_bytes,
         &coverage_value,
         &negative_value,
         &manifest_value,
@@ -111,7 +112,7 @@ fn generate(root: &Path) -> Result<Generated, String> {
         validation::render_manifest(&legacy_manifest, &manifest_value, README.as_bytes())?;
     let mut tree = GeneratedTree::default();
     tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", observed.bytes)?;
+    tree.insert("outcomes-v1.jsonl", comparison_bytes)?;
     tree.insert("coverage-v1.json", coverage)?;
     tree.insert("negative-controls-v1.json", negative)?;
     tree.insert("README.md", README.as_bytes())?;

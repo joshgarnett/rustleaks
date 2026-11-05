@@ -30,8 +30,14 @@ fn generate(root: &Path, output_root: &Path, check: bool) -> Result<(), String> 
         .ok_or_else(|| format!("repository root {} has no parent", root.display()))?
         .join("gitleaks");
     let temporary = TempDir::new("composite corpus ü")?;
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
     let observed = process::observe(root, &upstream, &canonical, &temporary)?;
-    let summary = validation::validate(&canonical, &observed)?;
+    let baseline = std::fs::read(root.join("compat/composite-corpus/outcomes-v1.jsonl"))
+        .map_err(|error| format!("cannot read composite baseline: {error}"))?;
+    let comparison = process::Observed {
+        outcomes: runtime.comparison_bytes(&baseline, &observed.outcomes, check, "composite")?,
+    };
+    let summary = validation::validate(&canonical, &comparison)?;
     let readme = spec::rust_readme(&canonical.readme)?;
     let manifest = spec::rust_manifest(&canonical.manifest, &readme)?;
 
@@ -40,7 +46,7 @@ fn generate(root: &Path, output_root: &Path, check: bool) -> Result<(), String> 
     tree.insert("coverage-v1.json", canonical.coverage)?;
     tree.insert("manifest-v1.json", manifest)?;
     tree.insert("negative-controls-v1.json", canonical.negative_controls)?;
-    tree.insert("outcomes-v1.jsonl", observed.outcomes)?;
+    tree.insert("outcomes-v1.jsonl", comparison.outcomes)?;
     tree.insert("requests-v1.jsonl", canonical.requests)?;
     tree.write_or_check(output_root, check)?;
     println!(

@@ -109,21 +109,18 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     {
         return Err("pinned upstream checkout has tracked changes".into());
     }
-    let observed = process::observe(
-        root,
-        &upstream,
-        &request_values,
-        &requests,
-        &manifest_value,
-        &temporary,
-    )?;
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
+    let observed = process::observe(root, &upstream, &request_values, &requests, &temporary)?;
     write_observation_ledger(&observed)?;
+    let comparison_bytes =
+        runtime.comparison_bytes(&legacy_outcomes, &observed.bytes, check, "source")?;
+    let comparison_values = parse_jsonl(&comparison_bytes, "comparison outcomes")?;
     validation::validate_all(
         root,
         &request_values,
         OutcomeBaseline {
-            values: &observed.values,
-            bytes: &observed.bytes,
+            values: &comparison_values,
+            bytes: &comparison_bytes,
         },
         OutcomeBaseline {
             values: &legacy_outcome_values,

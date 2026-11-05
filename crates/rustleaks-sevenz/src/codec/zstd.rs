@@ -38,11 +38,18 @@ pub(crate) fn decode(
     let mut history = try_zeroed(memory_limit, "Zstandard history")?;
     let mut block = try_zeroed(zstd_zero::MAX_BLOCK_SIZE, "Zstandard block scratch")?;
     let mut literals = try_zeroed(zstd_zero::MAX_BLOCK_SIZE, "Zstandard literal scratch")?;
+    let mut fse = try_zeroed(zstd_zero::FSE_ENTRIES, "Zstandard FSE scratch")?;
+    let mut huffman = try_zeroed(zstd_zero::HUFFMAN_ENTRIES, "Zstandard Huffman scratch")?;
+    let mut fse_scratch = try_zeroed(zstd_zero::FSE_SCRATCH_LEN, "Zstandard FSE counters")?;
     let mut decoder = zstd_zero::Decoder::new(zstd_zero::DecoderBuffers {
         history: &mut history,
         block: &mut block,
         literals: &mut literals,
-    });
+        fse: &mut fse,
+        huffman: &mut huffman,
+        fse_scratch: &mut fse_scratch,
+    })
+    .map_err(|error| Error::other(format!("Zstandard initialization failed: {error}")))?;
     let mut output = Vec::new();
     output
         .try_reserve_exact(uncompressed_len)
@@ -76,12 +83,12 @@ pub(crate) fn decode(
     Ok(output)
 }
 
-fn try_zeroed(size: usize, label: &'static str) -> Result<Vec<u8>, Error> {
+fn try_zeroed<T: Clone + Default>(size: usize, label: &'static str) -> Result<Vec<T>, Error> {
     let mut value = Vec::new();
     value
         .try_reserve_exact(size)
         .map_err(|_| Error::other(format!("unable to allocate the 7z {label} buffer")))?;
-    value.resize(size, 0);
+    value.resize(size, T::default());
     Ok(value)
 }
 

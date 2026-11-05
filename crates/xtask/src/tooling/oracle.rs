@@ -129,6 +129,7 @@ pub(crate) fn generate_corpus(
 
     let temporary = TempDir::new(&format!("{}-oracle", corpus.name()))?;
     let oracle_root = root.join("crates/rustleaks-compat/oracle");
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
     let binary = build_oracle(&oracle_root, &temporary)?;
     let outcomes = generate_outcomes(
         corpus,
@@ -139,7 +140,11 @@ pub(crate) fn generate_corpus(
         &requests,
     )?;
     validate_outcomes(corpus, &requests, &outcomes)?;
-    let tree = generated_tree(&corpus_root, corpus.artifacts(), &outcomes)?;
+    let baseline_path = corpus_root.join("outcomes-v1.jsonl");
+    let baseline = fs::read(&baseline_path)
+        .map_err(|error| format!("cannot read {}: {error}", baseline_path.display()))?;
+    let comparison = runtime.comparison_bytes(&baseline, &outcomes, check, corpus.name())?;
+    let tree = generated_tree(&corpus_root, corpus.artifacts(), &comparison)?;
     tree.write_or_check(output_root, check)?;
     println!(
         "{} corpus {} from fresh pinned-Go oracle outcomes",

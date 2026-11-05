@@ -264,6 +264,7 @@ pub(super) fn selected_runtime(
     {
         return Err("selected Go runtime is outside 1.26".into());
     }
+    crate::tooling::runtime_provenance::verify_selected(root, &fields[0])?;
     let rust = process::command(
         Path::new("rustc"),
         &strings(&["-vV"]),
