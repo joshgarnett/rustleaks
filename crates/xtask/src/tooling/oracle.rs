@@ -109,7 +109,10 @@ pub(crate) fn check_bootstrap_corpus(root: &Path) -> Result<(), String> {
     ] {
         let path = corpus_root.join(required);
         if !path.is_file() {
-            return Err(format!("missing oracle corpus artifact: {}", path.display()));
+            return Err(format!(
+                "missing oracle corpus artifact: {}",
+                path.display()
+            ));
         }
     }
     let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
@@ -138,7 +141,10 @@ pub(crate) fn check_bootstrap_corpus(root: &Path) -> Result<(), String> {
         Duration::from_secs(180),
     )?;
     let observed = read_bounded(&fresh, MAX_OUTCOME_BYTES)?;
-    let baseline = read_bounded(&corpus_root.join("bootstrap-golden.jsonl"), MAX_OUTCOME_BYTES)?;
+    let baseline = read_bounded(
+        &corpus_root.join("bootstrap-golden.jsonl"),
+        MAX_OUTCOME_BYTES,
+    )?;
     let comparison = runtime.comparison_bytes(&baseline, &observed, true, "bootstrap")?;
     if comparison != baseline {
         let offset = comparison
