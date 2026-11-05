@@ -15,10 +15,10 @@ compat/test-manifest.toml:generic-api-key:42
 compat/test-manifest.toml:generic-api-key:45
 crates/rustleaks-compat/oracle/main_test.go:generic-api-key:646
 crates/rustleaks-compat/oracle/main_test.go:generic-api-key:684
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:843
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:848
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:864
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:868
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:844
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:849
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:865
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:869
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
 crates/rustleaks-core/tests/engine.rs:generic-api-key:289
@@ -42,6 +42,10 @@ crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-compat/oracle/main_test.go:aws-access-token:504
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-compat/oracle/main_test.go:generic-api-key:652
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-compat/oracle/main_test.go:generic-api-key:690
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:843
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:848
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:864
+4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:868
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/tests/engine.rs:generic-api-key:226
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/tests/engine.rs:generic-api-key:236
 4e1cf3fb09e60301d930564467bf2749c071c7ea:crates/rustleaks-core/tests/engine.rs:generic-api-key:281
