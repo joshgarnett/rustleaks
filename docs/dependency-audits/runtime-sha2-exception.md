@@ -2,6 +2,10 @@
 
 Review date: 2026-08-31. Maintainer approval date: 2026-09-02.
 
+Resolved on 2026-11-04 by `sha2 0.11.1` and the
+[fixed-release review](maintenance-2026-11.md#sha-2-exception-resolution).
+The exemption below is historical and is no longer configured.
+
 Locked graph baseline: Rustleaks commit
 `3003cc33b0d76a5576046be1f4fd2f50cfe30dd7`, with `Cargo.lock` SHA-256
 `8f3893f06c74b312afd2ef9b6a240eaab6d5e3b5a4abe0eff1302a912d468eb4`.

@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 base64 = { version = "0.23", default-features = false, features = ["std"] }
-flate2 = "1"
+flate2 = { version = "1", default-features = false, features = ["miniz_oxide"] }
 serde_json = "1"
 semver = "1"
 sha2 = "0.11"
@@ -16,7 +16,7 @@ tar = "0.4"
 toml = "1.1"
 
 [target.'cfg(unix)'.dev-dependencies]
-rustix = { version = "=1.1.4", features = ["process"] }
+rustix = { version = "=1.1.6", features = ["process"] }
 
 [lints]
 workspace = true

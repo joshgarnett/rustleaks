@@ -264,6 +264,7 @@ pub(super) fn selected_runtime(
     {
         return Err("selected Go runtime is outside 1.26".into());
     }
+    crate::tooling::runtime_provenance::verify_selected(root, &fields[0])?;
     let rust = process::command(
         Path::new("rustc"),
         &strings(&["-vV"]),
@@ -472,8 +473,8 @@ pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 5] = [
     ),
     (
         "Cargo.lock",
-        "e3c24453ec42115d43dd5b2b679e43cdb6e1b0802393932d3ae199db2e502d82",
         "8f3893f06c74b312afd2ef9b6a240eaab6d5e3b5a4abe0eff1302a912d468eb4",
+        "452ee9620c5ee2abecc2af0aa4493b6a9ba6df0bcf06b9bdee0f8f0695e580a3",
     ),
     (
         "crates/rustleaks-cli/Cargo.toml",

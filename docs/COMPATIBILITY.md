@@ -58,6 +58,16 @@ duplicates, ordering where specified, suppression outcomes, reports, and
 structured errors. Normalization is limited to ordering already shown to be
 nondeterministic upstream.
 
+Fresh oracle replay verifies the selected Go runtime against `.go-version`
+and every observed runtime envelope. Historical corpora retain the Go version
+that produced them. Check-only replay projects that single top-level version
+token to its historical value for comparison; every other byte or existing
+semantic comparison remains enforced. Diagnostics record the actual runtime
+and raw outcome hash, and source and Git observation ledgers retain their raw
+provenance. Generating a new baseline under a different runtime requires an
+explicit provenance migration; check-only projection is never published as a
+fresh observation.
+
 The optional upstream `gore2regex` build tag is outside the profile. The oracle
 uses the standard Go regular-expression implementation from an ordinary build.
 Host-capable template helpers and unsafe panic behavior are replaced with

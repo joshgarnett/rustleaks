@@ -1297,33 +1297,33 @@ fn unsafe_count(value: &serde_json::Value) -> u64 {
 fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
     let common = [
         "aho-corasick@1.1.5",
-        "alloc-no-stdlib@2.0.4",
-        "alloc-stdlib@0.2.4",
+        "alloc-no-stdlib@3.0.0",
+        "alloc-stdlib@0.3.0",
         "block-buffer@0.12.1",
-        "brotli-decompressor@5.0.3",
+        "brotli-decompressor@6.2.0",
         "const-oid@0.10.2",
-        "hybrid-array@0.4.14",
+        "hybrid-array@0.4.15",
         "itoa@1.0.18",
         "lz4_flex@0.14.0",
-        "lzma-rust2@0.20.0",
+        "lzma-rust2@0.25.0",
         "memchr@2.8.3",
         "proc-macro2@1.0.107",
         "regex-automata@0.4.18",
         "semver@1.0.28",
         "serde_core@1.0.229",
-        "serde_json@1.0.151",
-        "sha2@0.11.0",
-        "syn@3.0.4",
-        "toml_parser@1.1.3+spec-1.1.0",
-        "twox-hash@2.1.4",
-        "unicode-ident@1.0.24",
-        "winnow@1.0.4",
+        "serde_json@1.0.154",
+        "sha2@0.11.1",
+        "syn@3.0.9",
+        "toml_parser@1.1.5+spec-1.1.0",
+        "twox-hash@2.1.5",
+        "unicode-ident@1.0.27",
+        "winnow@1.0.5",
         "zmij@1.0.23",
     ]
     .into_iter()
     .map(str::to_owned)
     .collect();
-    let target_specific = ["cpufeatures@0.3.0", "libc@0.2.189"]
+    let target_specific = ["cpufeatures@0.3.1", "libc@0.2.191"]
         .into_iter()
         .map(str::to_owned)
         .collect();
@@ -1404,13 +1404,11 @@ fn unsafe_inventory_check() -> Result<(), String> {
             .as_str()
             .ok_or("cargo-geiger package omits version")?;
         let used_unsafe = unsafe_count(&package["unsafety"]["used"]);
-        if id["source"].is_null()
-            && (used_unsafe != 0 || package["unsafety"]["forbids_unsafe"] != true)
-        {
-            return Err(format!(
-                "owned package {name}@{version} does not have a zero-unsafe forbid inventory"
-            ));
-        }
+        validate_owned_unsafe_package(
+            id,
+            used_unsafe,
+            package["unsafety"]["forbids_unsafe"] == true,
+        )?;
         if used_unsafe != 0 {
             unsafe_packages.insert(format!("{name}@{version}"));
         }
@@ -1419,6 +1417,22 @@ fn unsafe_inventory_check() -> Result<(), String> {
     println!(
         "cargo-geiger matched the reviewed {common_count}-package common unsafe-bearing inventory plus {selected_target_specific} target-specific packages; owned packages remain zero-unsafe"
     );
+    Ok(())
+}
+
+fn validate_owned_unsafe_package(
+    id: &serde_json::Value,
+    used_unsafe: u64,
+    forbids_unsafe: bool,
+) -> Result<(), String> {
+    let source = &id["source"];
+    if (source.is_null() || source.get("Path").is_some()) && (used_unsafe != 0 || !forbids_unsafe) {
+        return Err(format!(
+            "owned package {}@{} does not have a zero-unsafe forbid inventory",
+            id["name"].as_str().unwrap_or("unknown"),
+            id["version"].as_str().unwrap_or("unknown"),
+        ));
+    }
     Ok(())
 }
 
@@ -2522,34 +2536,7 @@ fn fixture_check() -> Result<(), String> {
 fn oracle_check(check_git: bool) -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    let corpus = root.join("compat/oracle-corpus");
-    for required in [
-        "README.md",
-        "bootstrap-input.jsonl",
-        "bootstrap-golden.jsonl",
-    ] {
-        let path = corpus.join(required);
-        if !path.is_file() {
-            return Err(format!(
-                "missing oracle corpus artifact: {}",
-                path.display()
-            ));
-        }
-    }
-    let oracle_dir = root.join("crates/rustleaks-compat/oracle");
-    command_output(
-        Command::new("go")
-            .args(["test", "./..."])
-            .current_dir(&oracle_dir),
-    )?;
-    command_output(
-        Command::new("go")
-            .args(["run", ".", "-input"])
-            .arg(corpus.join("bootstrap-input.jsonl"))
-            .arg("-check")
-            .arg(corpus.join("bootstrap-golden.jsonl"))
-            .current_dir(oracle_dir),
-    )?;
+    tooling::check_bootstrap_corpus(&root)?;
     tooling::check_config_corpus(&root)?;
     tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
     tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
@@ -2978,9 +2965,10 @@ mod tests {
         CONFIG_SHA256, PERF_INVARIANTS, PUBLIC_API_TOOLCHAIN, PerfBudget, RELEASE_VERSION,
         REVISION, build_system, composite_test_executable_from_messages, parse_civil_day,
         public_api_command, resource_test_command, reviewed_unsafe_packages, run_resource_test,
-        validate_core_repository_metadata, validate_dependency_boundaries, validate_perf_budget,
-        validate_perf_records, validate_publish_policy, validate_regex_backend_metadata,
-        validate_supply_chain_exceptions, validate_unsafe_package_set, workspace_root,
+        validate_core_repository_metadata, validate_dependency_boundaries,
+        validate_owned_unsafe_package, validate_perf_budget, validate_perf_records,
+        validate_publish_policy, validate_regex_backend_metadata, validate_supply_chain_exceptions,
+        validate_unsafe_package_set, workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
@@ -3014,6 +3002,26 @@ mod tests {
         let mut unexpected = common;
         unexpected.insert("unreviewed@1.0.0".into());
         assert!(validate_unsafe_package_set(&unexpected).is_err());
+    }
+
+    #[test]
+    fn unsafe_inventory_enforces_path_package_policy() {
+        let mut id = serde_json::json!({
+            "name": "rustleaks-core",
+            "version": "0.1.0",
+            "source": { "Path": "file:///workspace/crates/rustleaks-core" },
+        });
+        assert!(validate_owned_unsafe_package(&id, 0, true).is_ok());
+        assert!(validate_owned_unsafe_package(&id, 1, true).is_err());
+        assert!(validate_owned_unsafe_package(&id, 0, false).is_err());
+
+        id["source"] = serde_json::Value::Null;
+        assert!(validate_owned_unsafe_package(&id, 0, true).is_ok());
+        assert!(validate_owned_unsafe_package(&id, 1, true).is_err());
+        assert!(validate_owned_unsafe_package(&id, 0, false).is_err());
+
+        id["source"] = serde_json::json!({ "Registry": { "name": "crates.io" } });
+        assert!(validate_owned_unsafe_package(&id, 1, false).is_ok());
     }
 
     #[test]

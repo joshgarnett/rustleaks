@@ -37,7 +37,7 @@
   "parser_usage_byte_count_both_implementations": 19508,
   "stderr_event_count_both_implementations": 888,
   "mutation_control_count": 20,
-  "generator_sha256": "24511b3547781e367fc68cbdcf6d4723677e2b5e789217cf09cdfe8186c9d474",
+  "generator_sha256": "e3b30fc362cb1495fe64b00bd5ed0bf0897d76a4844018ac206e737c045c0e93",
   "go_source_sha256": {
     "cmd/root.go": "275516f78724a075530898e6354e096f2b33ef78de8856f9a5f1b68b9552d994",
     "cmd/git.go": "8df69d800458de6b3140d2c6742e03aa9cb4aea0ac3c4cbfab2bb601222e93bc",
@@ -67,7 +67,7 @@
   },
   "rust_source_sha256": {
     "Cargo.toml": "c9d52d6d300899c3f007c866b8eda81e1e2dccded41e97530eeb4ea3f6677737",
-    "Cargo.lock": "8f3893f06c74b312afd2ef9b6a240eaab6d5e3b5a4abe0eff1302a912d468eb4",
+    "Cargo.lock": "452ee9620c5ee2abecc2af0aa4493b6a9ba6df0bcf06b9bdee0f8f0695e580a3",
     "crates/rustleaks-cli/Cargo.toml": "d1c741d8f012c40ac6efcb3611ef3bae51778e48046c5d82adb65399f3d70ba3",
     "crates/rustleaks-cli/src/args.rs": "efc406db5eb453e2e0fb16ea90e7f90f3ddb94f880e51fa03bdb6a73488fdbe2",
     "crates/rustleaks-cli/src/config.rs": "ad4859ac4eccb243b5ca61bbf838ccbab517e234efbe4a386c8f2e79320c88bc",

@@ -2,11 +2,17 @@
 
 ## Unreleased
 
-## [0.1.0-alpha.4] - 2026-08-31
+## [0.1.0-alpha.4] - 2026-11-04
 
 - Bound estimated PikeVM search working sets before cache allocation and
   return a structured compile error when the configured limits exceed the
   supported working-set ceiling.
+- Validate combined bzip2 stream checksums, reject large-window Brotli streams,
+  and handle overflowing Git commit dates without panicking.
+- Update Rust dependencies while retaining Rust 1.88 and compatible public
+  dependency ranges. Update the unpublished oracle toolchain to Go 1.26.10.
+- Update pinned GitHub Actions, repair platform provenance checks and the
+  Linux fixture race, and exercise newest allowed registry dependencies.
 
 ## [0.1.0-alpha.3] - 2026-08-27
 

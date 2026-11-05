@@ -339,7 +339,7 @@ fn read_vet_coverage(root: &Path) -> Result<VetCoverage, String> {
     reject_broad_trust(&audits, "local cargo-vet audits")?;
     reject_broad_trust(&imports, "cargo-vet import lock")?;
     let mut coverage = vet_coverage(&config, &audits)?;
-    coverage.peer_audits = imported_audit_coverage(&imports)?;
+    coverage.peer_audits = imported_audit_coverage(&imports, &coverage)?;
     resolve_local_delta_coverage(&mut coverage)?;
     Ok(coverage)
 }
@@ -366,7 +366,10 @@ fn reject_broad_trust(value: &toml::Value, context: &str) -> Result<(), String> 
     Ok(())
 }
 
-fn imported_audit_coverage(imports: &toml::Value) -> Result<BTreeSet<(String, String)>, String> {
+fn imported_audit_coverage(
+    imports: &toml::Value,
+    local: &VetCoverage,
+) -> Result<BTreeSet<PackageIdentity>, String> {
     let Some(peers) = imports.get("audits") else {
         return Ok(BTreeSet::new());
     };
@@ -407,20 +410,29 @@ fn imported_audit_coverage(imports: &toml::Value) -> Result<BTreeSet<(String, St
         }
     }
 
+    let mut peer_covered = covered.clone();
+    covered.extend(local.local_full_audits.iter().cloned());
     loop {
         let mut changed = false;
         for (name, edges) in &deltas {
             for (from, to) in edges {
                 if covered.contains(&(name.clone(), from.clone())) {
-                    changed |= covered.insert((name.clone(), to.clone()));
+                    let target = (name.clone(), to.clone());
+                    peer_covered.insert(target.clone());
+                    changed |= covered.insert(target);
                 }
+            }
+        }
+        for (name, from, to) in &local.local_audit_deltas {
+            if covered.contains(&(name.clone(), from.clone())) {
+                changed |= covered.insert((name.clone(), to.clone()));
             }
         }
         if !changed {
             break;
         }
     }
-    Ok(covered)
+    Ok(peer_covered)
 }
 
 fn resolve_local_delta_coverage(coverage: &mut VetCoverage) -> Result<(), String> {
@@ -888,7 +900,7 @@ mod tests {
         )
         .expect("imports");
         assert_eq!(
-            imported_audit_coverage(&imports).expect("coverage"),
+            imported_audit_coverage(&imports, &VetCoverage::default()).expect("coverage"),
             BTreeSet::from([
                 ("crate".to_owned(), "1.0.0".to_owned()),
                 ("crate".to_owned(), "2.0.0".to_owned()),
@@ -948,6 +960,64 @@ mod tests {
         assert!(error.contains("crate"));
         assert!(error.contains("1.0.0"));
         assert!(error.contains("2.0.0"));
+    }
+
+    #[test]
+    fn audit_coverage_alternates_local_and_peer_deltas() {
+        let config: toml::Value = toml::from_str("[exemptions]").expect("config");
+        let audits: toml::Value = toml::from_str(
+            r#"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                version = "1.0.0"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "2.0.0 -> 3.0.0"
+                [[audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "4.0.0 -> 5.0.0"
+            "#,
+        )
+        .expect("audits");
+        let imports: toml::Value = toml::from_str(
+            r#"
+                [[audits.peer.audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "1.0.0 -> 2.0.0"
+                [[audits.peer.audits.crate]]
+                criteria = "safe-to-deploy"
+                delta = "3.0.0 -> 4.0.0"
+                [[audits.peer.audits.uncovered]]
+                criteria = "safe-to-deploy"
+                delta = "1.0.0 -> 2.0.0"
+                [[audits.peer.audits.uncovered]]
+                criteria = "safe-to-deploy"
+                delta = "2.0.0 -> 1.0.0"
+            "#,
+        )
+        .expect("imports");
+        let mut coverage = vet_coverage(&config, &audits).expect("coverage");
+        coverage.peer_audits = imported_audit_coverage(&imports, &coverage).expect("peers");
+        resolve_local_delta_coverage(&mut coverage).expect("combined coverage");
+        assert_eq!(
+            coverage.peer_audits,
+            BTreeSet::from([
+                ("crate".to_owned(), "2.0.0".to_owned()),
+                ("crate".to_owned(), "4.0.0".to_owned()),
+            ])
+        );
+        assert_eq!(
+            coverage.local_delta_audits,
+            BTreeSet::from([
+                ("crate".to_owned(), "3.0.0".to_owned()),
+                ("crate".to_owned(), "5.0.0".to_owned()),
+            ])
+        );
+
+        coverage.local_full_audits.clear();
+        coverage.peer_audits = imported_audit_coverage(&imports, &coverage).expect("peers");
+        assert!(coverage.peer_audits.is_empty());
+        assert!(resolve_local_delta_coverage(&mut coverage).is_err());
     }
 
     #[test]

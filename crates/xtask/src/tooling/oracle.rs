@@ -100,6 +100,66 @@ impl Corpus {
     }
 }
 
+pub(crate) fn check_bootstrap_corpus(root: &Path) -> Result<(), String> {
+    let corpus_root = root.join("compat/oracle-corpus");
+    for required in [
+        "README.md",
+        "bootstrap-input.jsonl",
+        "bootstrap-golden.jsonl",
+    ] {
+        let path = corpus_root.join(required);
+        if !path.is_file() {
+            return Err(format!(
+                "missing oracle corpus artifact: {}",
+                path.display()
+            ));
+        }
+    }
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
+    let temporary = TempDir::new("bootstrap-oracle")?;
+    let oracle_root = root.join("crates/rustleaks-compat/oracle");
+    run_bounded(
+        Command::new("go")
+            .current_dir(&oracle_root)
+            .args(["test", "./..."]),
+        &temporary,
+        "bootstrap-go-test",
+        Duration::from_secs(180),
+    )?;
+    let fresh = temporary.path.join("fresh-outcomes.jsonl");
+    run_bounded(
+        Command::new("go")
+            .current_dir(&oracle_root)
+            .args(["run", ".", "-input"])
+            .arg(corpus_root.join("bootstrap-input.jsonl"))
+            .arg("-output")
+            .arg(&fresh)
+            .env("GOMEMLIMIT", "512MiB")
+            .env("GOMAXPROCS", "2"),
+        &temporary,
+        "bootstrap",
+        Duration::from_secs(180),
+    )?;
+    let observed = read_bounded(&fresh, MAX_OUTCOME_BYTES)?;
+    let baseline = read_bounded(
+        &corpus_root.join("bootstrap-golden.jsonl"),
+        MAX_OUTCOME_BYTES,
+    )?;
+    let comparison = runtime.comparison_bytes(&baseline, &observed, true, "bootstrap")?;
+    if comparison != baseline {
+        let offset = comparison
+            .iter()
+            .zip(&baseline)
+            .position(|(fresh, historical)| fresh != historical)
+            .unwrap_or(comparison.len().min(baseline.len()));
+        return Err(format!(
+            "bootstrap oracle outcome differs from the committed corpus at byte {offset}"
+        ));
+    }
+    println!("bootstrap corpus verified from fresh pinned-Go oracle outcomes");
+    Ok(())
+}
+
 pub(crate) fn replay_corpus(root: &Path, corpus: Corpus) -> Result<(), String> {
     let corpus_root = root
         .join("compat")
@@ -129,6 +189,7 @@ pub(crate) fn generate_corpus(
 
     let temporary = TempDir::new(&format!("{}-oracle", corpus.name()))?;
     let oracle_root = root.join("crates/rustleaks-compat/oracle");
+    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
     let binary = build_oracle(&oracle_root, &temporary)?;
     let outcomes = generate_outcomes(
         corpus,
@@ -139,7 +200,11 @@ pub(crate) fn generate_corpus(
         &requests,
     )?;
     validate_outcomes(corpus, &requests, &outcomes)?;
-    let tree = generated_tree(&corpus_root, corpus.artifacts(), &outcomes)?;
+    let baseline_path = corpus_root.join("outcomes-v1.jsonl");
+    let baseline = fs::read(&baseline_path)
+        .map_err(|error| format!("cannot read {}: {error}", baseline_path.display()))?;
+    let comparison = runtime.comparison_bytes(&baseline, &outcomes, check, corpus.name())?;
+    let tree = generated_tree(&corpus_root, corpus.artifacts(), &comparison)?;
     tree.write_or_check(output_root, check)?;
     println!(
         "{} corpus {} from fresh pinned-Go oracle outcomes",

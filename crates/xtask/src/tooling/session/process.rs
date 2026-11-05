@@ -18,7 +18,6 @@ const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
 pub(super) struct Observed {
     pub(super) bytes: Vec<u8>,
-    pub(super) values: Vec<Value>,
 }
 
 pub(super) fn observe(
@@ -26,15 +25,9 @@ pub(super) fn observe(
     upstream: &Path,
     requests: &[Value],
     request_bytes: &[u8],
-    manifest: &Value,
     temporary: &TempDir,
 ) -> Result<Observed, String> {
     let go_version = selected_runtime(upstream, temporary)?;
-    if required_str(manifest, "go_version", "manifest")? != go_version {
-        return Err(format!(
-            "selected Go version {go_version} differs from the committed session manifest"
-        ));
-    }
     let oracle_root = root.join("crates/rustleaks-compat/oracle");
     let binary = temporary.path.join(if cfg!(windows) {
         "session-oracle.exe"
@@ -59,7 +52,6 @@ pub(super) fn observe(
         return Err("session request parsing changed before oracle execution".into());
     }
     let mut bytes = Vec::new();
-    let mut values = Vec::with_capacity(lines.len());
     for (index, (line, request)) in lines.iter().zip(requests).enumerate() {
         let id = required_str(request, "id", "request")?;
         let request_path = temporary.path.join(format!("request-{index:02}.jsonl"));
@@ -90,9 +82,8 @@ pub(super) fn observe(
             .map_err(|error| format!("{id}: invalid oracle JSON: {error}"))?;
         validate_envelope(request, &outcome, &go_version)?;
         bytes.extend_from_slice(outcome_lines[0]);
-        values.push(outcome);
     }
-    Ok(Observed { bytes, values })
+    Ok(Observed { bytes })
 }
 
 pub(super) fn git_status(
