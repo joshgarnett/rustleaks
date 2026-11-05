@@ -13,7 +13,7 @@ use super::{TempDir, newline_records, read};
 use crate::tooling::support::{command_status_with_timeout, diagnostic_tail, go_module_cache};
 
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(20);
-const BUILD_TIMEOUT: Duration = Duration::from_secs(180);
+const BUILD_TIMEOUT: Duration = Duration::from_mins(3);
 const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
 pub(super) struct Observed {

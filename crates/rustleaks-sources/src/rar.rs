@@ -1068,10 +1068,8 @@ mod tests {
         for symbol in 0..(298 + 48 + 28) {
             let length = if main_symbols.contains(&symbol) {
                 3
-            } else if (346..348).contains(&symbol) {
-                1
             } else {
-                0
+                u16::from((346..348).contains(&symbol))
             };
             write(length, 2);
         }

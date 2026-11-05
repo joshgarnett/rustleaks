@@ -84,9 +84,9 @@ impl Corpus {
 
     const fn timeout(self) -> Duration {
         match self {
-            Self::Regex => Duration::from_secs(180),
-            Self::Detect | Self::Allowlist => Duration::from_secs(60),
-            Self::Decoder => Duration::from_secs(120),
+            Self::Regex => Duration::from_mins(3),
+            Self::Detect | Self::Allowlist => Duration::from_mins(1),
+            Self::Decoder => Duration::from_mins(2),
         }
     }
 
@@ -124,7 +124,7 @@ pub(crate) fn check_bootstrap_corpus(root: &Path) -> Result<(), String> {
             .args(["test", "./..."]),
         &temporary,
         "bootstrap-go-test",
-        Duration::from_secs(180),
+        Duration::from_mins(3),
     )?;
     let fresh = temporary.path.join("fresh-outcomes.jsonl");
     run_bounded(
@@ -138,7 +138,7 @@ pub(crate) fn check_bootstrap_corpus(root: &Path) -> Result<(), String> {
             .env("GOMAXPROCS", "2"),
         &temporary,
         "bootstrap",
-        Duration::from_secs(180),
+        Duration::from_mins(3),
     )?;
     let observed = read_bounded(&fresh, MAX_OUTCOME_BYTES)?;
     let baseline = read_bounded(
@@ -227,7 +227,7 @@ fn build_oracle(oracle_root: &Path, temporary: &TempDir) -> Result<PathBuf, Stri
             .env("GOCACHE", temporary.path.join("go-cache")),
         temporary,
         "go-test",
-        Duration::from_secs(180),
+        Duration::from_mins(3),
     )?;
     run_bounded(
         Command::new("go")
@@ -238,7 +238,7 @@ fn build_oracle(oracle_root: &Path, temporary: &TempDir) -> Result<PathBuf, Stri
             .env("GOCACHE", temporary.path.join("go-cache")),
         temporary,
         "go-build",
-        Duration::from_secs(180),
+        Duration::from_mins(3),
     )?;
     Ok(binary)
 }

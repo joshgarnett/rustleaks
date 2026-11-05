@@ -248,7 +248,7 @@ pub(super) fn selected_runtime(
         &process::default_go_env(temporary),
         temporary,
         "go-provenance",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         OUTPUT_LIMIT,
     )?;
     let fields = String::from_utf8(go)
@@ -272,7 +272,7 @@ pub(super) fn selected_runtime(
         &BTreeMap::new(),
         temporary,
         "rust-provenance",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         OUTPUT_LIMIT,
     )?;
     let rust = String::from_utf8(rust).map_err(|e| format!("rustc output is not UTF-8: {e}"))?;
@@ -345,7 +345,7 @@ pub(super) fn build(
         &process::default_go_env(temporary),
         temporary,
         "go-build",
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         OUTPUT_LIMIT,
     )?;
     let env = BTreeMap::from([
@@ -362,7 +362,7 @@ pub(super) fn build(
         &env,
         temporary,
         "rust-build",
-        Duration::from_secs(900),
+        Duration::from_mins(15),
         32 * 1024 * 1024,
     )?;
     for (name, binary) in [("go", &go), ("rust", &rust)] {
@@ -392,7 +392,7 @@ pub(super) fn build(
         &BTreeMap::new(),
         temporary,
         "go-module",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         OUTPUT_LIMIT,
     )?;
     if !String::from_utf8_lossy(&module).contains(&format!("vcs.revision={REVISION}")) {
@@ -431,7 +431,7 @@ fn build_fake_git(temporary: &TempDir) -> Result<PathBuf, String> {
         &process::default_go_env(temporary),
         temporary,
         "fake-git-build",
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         OUTPUT_LIMIT,
     )?;
     Ok(binary)

@@ -1746,7 +1746,7 @@ fn run_quality_command(
             .current_dir(root)
             .env("CARGO_TARGET_DIR", &target.path)
             .args(args),
-        Duration::from_secs(1_200),
+        Duration::from_mins(20),
         label,
     )
 }
@@ -1956,7 +1956,7 @@ fn quality_check() -> Result<(), String> {
                 "--locked",
                 "--offline",
             ]),
-        Duration::from_secs(1_200),
+        Duration::from_mins(20),
         "warning-denied rustdoc",
     )?;
     run_quality_command(
@@ -2021,7 +2021,7 @@ fn miri_check() -> Result<(), String> {
                     "--",
                     "--exact",
                 ]),
-            Duration::from_secs(1_200),
+            Duration::from_mins(20),
             &format!("Miri case {package}::{case}"),
         )?;
     }
@@ -2062,7 +2062,7 @@ fn panic_abort_check() -> Result<(), String> {
                 "panic_abort_policy",
                 "--all-features",
             ]),
-        Duration::from_secs(240),
+        Duration::from_mins(4),
         "panic=abort archive policy",
     )?;
     println!("panic=abort archive policy rejected 7z as unsupported before dependency entry");

@@ -30,7 +30,7 @@ impl GoRuntime {
             ));
         command_status_with_output_limits(
             &mut command,
-            Duration::from_secs(120),
+            Duration::from_mins(2),
             "selected Go runtime",
             &[(&stdout, "stdout", 1024), (&stderr, "stderr", 16 * 1024)],
         )?;

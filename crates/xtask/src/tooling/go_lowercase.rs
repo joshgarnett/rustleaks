@@ -49,7 +49,7 @@ func main() {
         .stderr(Stdio::from(stderr));
     if let Err(error) = command_status_with_timeout(
         &mut command,
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         "Go lowercase generator",
     ) {
         let diagnostic = fs::read_to_string(&stderr_path).unwrap_or_default();
