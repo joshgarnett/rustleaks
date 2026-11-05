@@ -38,7 +38,7 @@ pub(super) fn build(
     runner.capture(
         &mut build,
         "composite-go-build",
-        Duration::from_secs(180),
+        Duration::from_mins(3),
         8 * 1024 * 1024,
     )?;
 
@@ -112,7 +112,7 @@ fn compile_test(
         .capture(
             &mut command,
             &format!("{label}-oracle-build"),
-            Duration::from_secs(180),
+            Duration::from_mins(3),
             16 * 1024 * 1024,
         )
         .map(|_| ())

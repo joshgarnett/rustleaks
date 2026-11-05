@@ -5,6 +5,10 @@ decision for the unpublished archive codec forks. It does not authorize a
 dependency change, a reduction in archive behavior, or publication of a codec,
 source, report, or CLI crate.
 
+Replacement criteria use the current Rust 1.95 minimum. Candidate evaluations
+and upstream drafts below retain the Rust 1.88 policy used for the dated
+observation; their toolchain rejections require reevaluation before reuse.
+
 ## Decision
 
 No evaluated released package satisfies the complete Rustleaks archive
@@ -26,7 +30,7 @@ and [`RESOURCE_LIMITS.md`](RESOURCE_LIMITS.md).
 
 A replacement must satisfy all of these conditions:
 
-- support Rust 1.88 and all eight declared compile targets;
+- support Rust 1.95 and all eight declared compile targets;
 - be a released registry package, not a Git dependency;
 - remain outside `rustleaks-core` and keep implementation types private;
 - preserve the required formats and source-adapter error classifications, or
@@ -37,7 +41,7 @@ A replacement must satisfy all of these conditions:
   surfaces to the Rustleaks API;
 - identify every unsafe block, build script, native library, C or C++ build,
   `links` declaration, proc macro, and target-specific dependency;
-- pass Rust 1.88, native tests for every claimed family, archive unit and
+- pass Rust 1.95, native tests for every claimed family, archive unit and
   corpus tests, parity, panic-abort checks, fuzzing, and resource-limit tests;
 - satisfy license, notice, source, cargo-deny, RustSec, and peer-first
   cargo-vet policy; and
@@ -96,7 +100,7 @@ CRC, and the combination operation. Decoder error and streaming behavior are
 covered beside the implementation and through the source archive tests.
 
 The nonsemantic changes are crate naming, dependency removal, documentation,
-formatting, and the Rust 1.88 workspace policy. The semantic changes are the
+formatting, and the workspace MSRV policy. The semantic changes are the
 structured hostile-input failures, owned CRC implementation, and combined CRC
 validation.
 

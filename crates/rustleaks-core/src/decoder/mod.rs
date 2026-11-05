@@ -425,19 +425,20 @@ fn decode_percent(encoded: &[u8]) -> Vec<u8> {
     let mut decoded = Vec::with_capacity(encoded.len());
     let mut index = 0;
     while index < encoded.len() {
-        if encoded[index] == b'%' && index + 2 < encoded.len() {
-            if let (Some(high), Some(low)) = (
+        if encoded[index] == b'%'
+            && index + 2 < encoded.len()
+            && let (Some(high), Some(low)) = (
                 hex_nibble(encoded[index + 1]),
                 hex_nibble(encoded[index + 2]),
-            ) {
-                let byte = (high << 4) | low;
-                if !is_printable_ascii(byte) {
-                    return Vec::new();
-                }
-                decoded.push(byte);
-                index += 3;
-                continue;
+            )
+        {
+            let byte = (high << 4) | low;
+            if !is_printable_ascii(byte) {
+                return Vec::new();
             }
+            decoded.push(byte);
+            index += 3;
+            continue;
         }
         decoded.push(encoded[index]);
         index += 1;
@@ -446,7 +447,7 @@ fn decode_percent(encoded: &[u8]) -> Vec<u8> {
 }
 
 fn decode_hex(encoded: &[u8]) -> Vec<u8> {
-    if encoded.len() % 2 != 0 || !encoded.iter().any(u8::is_ascii_digit) {
+    if !encoded.len().is_multiple_of(2) || !encoded.iter().any(u8::is_ascii_digit) {
         return Vec::new();
     }
     let mut decoded = Vec::with_capacity(encoded.len() / 2);
@@ -471,10 +472,10 @@ fn decode_base64(encoded: &[u8]) -> Vec<u8> {
         return Vec::new();
     }
     for engine in [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64] {
-        if let Ok(decoded) = engine.decode(encoded) {
-            if decoded.iter().copied().all(is_printable_ascii) {
-                return decoded;
-            }
+        if let Ok(decoded) = engine.decode(encoded)
+            && decoded.iter().copied().all(is_printable_ascii)
+        {
+            return decoded;
         }
     }
     Vec::new()

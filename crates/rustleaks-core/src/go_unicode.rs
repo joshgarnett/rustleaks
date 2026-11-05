@@ -22,15 +22,13 @@ pub(crate) fn chars(mut bytes: &[u8]) -> impl Iterator<Item = char> + '_ {
             return Some(char::from(first));
         }
         for width in 2..=4 {
-            if let Some(candidate) = bytes.get(..width) {
-                if let Ok(valid) = std::str::from_utf8(candidate) {
-                    if let Some(character) = valid.chars().next() {
-                        if character.len_utf8() == width {
-                            bytes = &bytes[width..];
-                            return Some(character);
-                        }
-                    }
-                }
+            if let Some(candidate) = bytes.get(..width)
+                && let Ok(valid) = std::str::from_utf8(candidate)
+                && let Some(character) = valid.chars().next()
+                && character.len_utf8() == width
+            {
+                bytes = &bytes[width..];
+                return Some(character);
             }
         }
         bytes = remaining;

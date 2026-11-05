@@ -46,8 +46,8 @@ jobs:
       - name: Set up the Rust toolchain
         run: |
           set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal
-          rustup default 1.88.0
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup default 1.95.0
           rustc -vV
           cargo -vV
       - name: Require the current protected branch version

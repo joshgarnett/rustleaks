@@ -462,10 +462,10 @@ impl Source for FragmentSource {
                 return Ok(control);
             }
             emitted += 1;
-            if emitted == 1 {
-                if let Some(token) = &self.cancel_after_first {
-                    token.cancel();
-                }
+            if emitted == 1
+                && let Some(token) = &self.cancel_after_first
+            {
+                token.cancel();
             }
         }
         Ok(SourceControl::Continue)

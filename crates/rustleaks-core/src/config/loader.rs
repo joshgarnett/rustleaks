@@ -1361,10 +1361,10 @@ fn parse_go_decimal_float(value: &str) -> Option<f64> {
         if !fast_truncated {
             return Some(lower);
         }
-        if let Some(upper) = super::eisel_lemire::parse_64(fast_mantissa + 1, fast_exponent) {
-            if lower.to_bits() == upper.to_bits() {
-                return Some(lower);
-            }
+        if let Some(upper) = super::eisel_lemire::parse_64(fast_mantissa + 1, fast_exponent)
+            && lower.to_bits() == upper.to_bits()
+        {
+            return Some(lower);
         }
     }
     if truncated {

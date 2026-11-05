@@ -204,7 +204,7 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
             .arg(&isolated),
         temporary,
         "isolated-clone",
-        Duration::from_secs(60),
+        Duration::from_mins(1),
     )?;
     capture(
         Command::new("git")
@@ -212,7 +212,7 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
             .args(["checkout", "--detach", "--quiet", REVISION]),
         temporary,
         "isolated-checkout",
-        Duration::from_secs(60),
+        Duration::from_mins(1),
     )?;
     let probe = isolated.join("testdata/.rustleaks-isolation-probe");
     fs::write(&probe, b"temporary isolated write\n")
@@ -233,7 +233,7 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
         ),
         temporary,
         "go-mod-download",
-        Duration::from_secs(300),
+        Duration::from_mins(5),
     )?;
     capture(
         configured_go(
@@ -244,7 +244,7 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
         ),
         temporary,
         "go-mod-verify",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
     )?;
     let status = git_capture(
         &isolated,
@@ -264,7 +264,7 @@ fn isolated_test_events(upstream: &Path, temporary: &TempDir) -> Result<Vec<Test
         ),
         temporary,
         "go-test-json",
-        Duration::from_secs(300),
+        Duration::from_mins(5),
     )?;
     let mut found = BTreeSet::new();
     for (index, line) in output
@@ -306,7 +306,7 @@ fn go_packages(upstream: &Path, temporary: &TempDir) -> Result<Vec<String>, Stri
         ),
         temporary,
         "go-list",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
     )?;
     let mut packages = text(output)?.lines().map(str::to_owned).collect::<Vec<_>>();
     packages.sort();

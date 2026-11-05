@@ -39,13 +39,15 @@
 
 ## Archive codec decisions
 
-- `compcol 0.6.10` replaces the owned `rustleaks-compcol` copy. Only `alloc`
+- `compcol 0.7.8` supplies the private RAR2 decoder. Only `alloc`
   and `rar2` are enabled. This selected graph has no normal transitive
-  dependencies, build script, native code, or unsafe Rust. Review of the exact
-  0.3.1 to 0.6.10 RAR2 source delta found only checked decoder-copy and Huffman
-  lookup optimizations. Upstream RAR2 tests and fuzzing and the Rustleaks
-  archive tests and fuzzing exercise the selected boundary. Broader unselected
-  compcol codecs are outside this review.
+  dependencies, build script, native code, or unsafe Rust. The update corrects
+  repeated-match offset history and caps speculative output reservation.
+  A synthetic archive regression checks the history correction against the
+  pinned Go decoder. The [dependency review](dependency-audits/compcol-0.7.8.md)
+  records the production source delta and an upstream notice discrepancy in
+  unselected bzip2 code. That code is neither compiled nor redistributed by
+  Rustleaks; enabling other codecs or distributing their sources reopens review.
 - `rustleaks-bzip2` remains a fork of `bzip2-rs 0.1.2`. The fork replaces
   decoder `unwrap`, `unreachable!`, and input-consumption assertions with
   structured failures and replaces `crc32fast` with owned safe CRC code. The

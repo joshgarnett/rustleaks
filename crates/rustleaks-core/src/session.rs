@@ -180,10 +180,10 @@ fn decode_first_go_rune(bytes: &[u8]) -> (u32, usize) {
         return (u32::from(first), 1);
     }
     for width in 2..=4.min(bytes.len()) {
-        if let Ok(value) = std::str::from_utf8(&bytes[..width]) {
-            if value.chars().count() == 1 {
-                return (u32::from(value.chars().next().unwrap_or('\u{fffd}')), width);
-            }
+        if let Ok(value) = std::str::from_utf8(&bytes[..width])
+            && value.chars().count() == 1
+        {
+            return (u32::from(value.chars().next().unwrap_or('\u{fffd}')), width);
         }
     }
     (0xfffd, 1)
@@ -197,10 +197,10 @@ fn decode_last_go_rune(bytes: &[u8]) -> (u32, usize) {
         return (u32::from(last), 1);
     }
     for width in 2..=4.min(bytes.len()) {
-        if let Ok(value) = std::str::from_utf8(&bytes[bytes.len() - width..]) {
-            if value.chars().count() == 1 {
-                return (u32::from(value.chars().next().unwrap_or('\u{fffd}')), width);
-            }
+        if let Ok(value) = std::str::from_utf8(&bytes[bytes.len() - width..])
+            && value.chars().count() == 1
+        {
+            return (u32::from(value.chars().next().unwrap_or('\u{fffd}')), width);
         }
     }
     (0xfffd, 1)
@@ -1267,28 +1267,29 @@ fn replace_lone_surrogates(input: &str) -> String {
                 index += 2;
                 continue;
             }
-            if bytes[index + 1] == b'u' && index + 6 <= bytes.len() {
-                if let Some(code) = four_hex(&bytes[index + 2..index + 6]) {
-                    if (0xd800..=0xdbff).contains(&code) {
-                        let paired = index + 12 <= bytes.len()
-                            && bytes[index + 6] == b'\\'
-                            && bytes[index + 7] == b'u'
-                            && four_hex(&bytes[index + 8..index + 12])
-                                .is_some_and(|low| (0xdc00..=0xdfff).contains(&low));
-                        if paired {
-                            output.extend_from_slice(&bytes[index..index + 12]);
-                            index += 12;
-                            continue;
-                        }
-                        output.extend_from_slice(b"\\ufffd");
-                        index += 6;
+            if bytes[index + 1] == b'u'
+                && index + 6 <= bytes.len()
+                && let Some(code) = four_hex(&bytes[index + 2..index + 6])
+            {
+                if (0xd800..=0xdbff).contains(&code) {
+                    let paired = index + 12 <= bytes.len()
+                        && bytes[index + 6] == b'\\'
+                        && bytes[index + 7] == b'u'
+                        && four_hex(&bytes[index + 8..index + 12])
+                            .is_some_and(|low| (0xdc00..=0xdfff).contains(&low));
+                    if paired {
+                        output.extend_from_slice(&bytes[index..index + 12]);
+                        index += 12;
                         continue;
                     }
-                    if (0xdc00..=0xdfff).contains(&code) {
-                        output.extend_from_slice(b"\\ufffd");
-                        index += 6;
-                        continue;
-                    }
+                    output.extend_from_slice(b"\\ufffd");
+                    index += 6;
+                    continue;
+                }
+                if (0xdc00..=0xdfff).contains(&code) {
+                    output.extend_from_slice(b"\\ufffd");
+                    index += 6;
+                    continue;
                 }
             }
             output.extend_from_slice(&bytes[index..index + 2]);

@@ -102,20 +102,18 @@ impl GeneratedTree {
                 root.join(extra).display()
             ));
         }
-        if require_all {
-            if let Some(missing) = expected.difference(&actual).next() {
-                if root.exists() {
-                    return Err(format!(
-                        "missing generated artifact: {}",
-                        root.join(missing).display()
-                    ));
-                }
-                if !self.files.is_empty() {
-                    return Err(format!(
-                        "missing generated artifact root: {}",
-                        root.display()
-                    ));
-                }
+        if require_all && let Some(missing) = expected.difference(&actual).next() {
+            if root.exists() {
+                return Err(format!(
+                    "missing generated artifact: {}",
+                    root.join(missing).display()
+                ));
+            }
+            if !self.files.is_empty() {
+                return Err(format!(
+                    "missing generated artifact root: {}",
+                    root.display()
+                ));
             }
         }
         Ok(())

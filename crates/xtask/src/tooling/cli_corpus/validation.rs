@@ -719,14 +719,14 @@ fn collect_value_differences(
 
 fn describe_scalar_difference(path: &str, committed: &Value, fresh: &Value) -> String {
     let field = path.rsplit('/').next().unwrap_or(path);
-    if field == "normalized_message_base64" {
-        if let (Some(committed), Some(fresh)) = (committed.as_str(), fresh.as_str()) {
-            return format!(
-                "{path} (committed sha256 {}, fresh sha256 {})",
-                sha256_bytes(committed.as_bytes()),
-                sha256_bytes(fresh.as_bytes())
-            );
-        }
+    if field == "normalized_message_base64"
+        && let (Some(committed), Some(fresh)) = (committed.as_str(), fresh.as_str())
+    {
+        return format!(
+            "{path} (committed sha256 {}, fresh sha256 {})",
+            sha256_bytes(committed.as_bytes()),
+            sha256_bytes(fresh.as_bytes())
+        );
     }
     let safe_value = path.contains("/comparison/axes/")
         || path.contains("/fields/")

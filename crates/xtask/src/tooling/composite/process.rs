@@ -15,7 +15,7 @@ use super::spec::{Canonical, DEFAULT_SHA256, REVISION};
 use crate::tooling::support::{TempDir, sha256_bytes};
 
 const ORDINARY_TIMEOUT: Duration = Duration::from_secs(20);
-const PRIVATE_TIMEOUT: Duration = Duration::from_secs(60);
+const PRIVATE_TIMEOUT: Duration = Duration::from_mins(1);
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_OUTPUT_LIMIT: u64 = 64 * 1024 * 1024;
 

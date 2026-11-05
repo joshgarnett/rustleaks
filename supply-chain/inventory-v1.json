@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "452ee9620c5ee2abecc2af0aa4493b6a9ba6df0bcf06b9bdee0f8f0695e580a3",
+  "cargo_lock_sha256": "5a8ec9d3a4a77f38fd93fc78a018bb6e596ed251de53df3188f09a87ac4cb57c",
   "feature_resolution": "locked default workspace metadata across declared target edges",
   "format_version": 1,
   "generated_by": "cargo xtask generate vet-inventory",
@@ -247,10 +247,10 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "local-full-audit",
+        "coverage": "exemption",
         "criteria": "safe-to-deploy"
       },
-      "checksum": "c11ff3545f0554bd738d69ab7d4556713f7b986706563b0554a89339cee83396",
+      "checksum": "7a9657f9d47c2bc36be681f158d208f40bafdd1c8c32003dac8e7dfe0cb68a97",
       "core_normal_or_build_graph": false,
       "dependency_kinds": [
         "normal"
@@ -262,7 +262,7 @@
       "links": null,
       "name": "compcol",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "version": "0.6.10",
+      "version": "0.7.8",
       "workspace_consumers": [
         "rustleaks-cli"
       ]
@@ -1736,8 +1736,8 @@
     }
   ],
   "summary": {
-    "exemption_crate_name_count": 0,
-    "exemption_record_count": 0,
+    "exemption_crate_name_count": 1,
+    "exemption_record_count": 1,
     "local_delta_audit_record_count": 29,
     "local_full_audit_record_count": 58,
     "peer_import_source_count": 5,

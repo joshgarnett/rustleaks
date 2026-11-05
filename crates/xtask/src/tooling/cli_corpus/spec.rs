@@ -248,7 +248,7 @@ pub(super) fn selected_runtime(
         &process::default_go_env(temporary),
         temporary,
         "go-provenance",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         OUTPUT_LIMIT,
     )?;
     let fields = String::from_utf8(go)
@@ -272,7 +272,7 @@ pub(super) fn selected_runtime(
         &BTreeMap::new(),
         temporary,
         "rust-provenance",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         OUTPUT_LIMIT,
     )?;
     let rust = String::from_utf8(rust).map_err(|e| format!("rustc output is not UTF-8: {e}"))?;
@@ -345,7 +345,7 @@ pub(super) fn build(
         &process::default_go_env(temporary),
         temporary,
         "go-build",
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         OUTPUT_LIMIT,
     )?;
     let env = BTreeMap::from([
@@ -362,7 +362,7 @@ pub(super) fn build(
         &env,
         temporary,
         "rust-build",
-        Duration::from_secs(900),
+        Duration::from_mins(15),
         32 * 1024 * 1024,
     )?;
     for (name, binary) in [("go", &go), ("rust", &rust)] {
@@ -392,7 +392,7 @@ pub(super) fn build(
         &BTreeMap::new(),
         temporary,
         "go-module",
-        Duration::from_secs(120),
+        Duration::from_mins(2),
         OUTPUT_LIMIT,
     )?;
     if !String::from_utf8_lossy(&module).contains(&format!("vcs.revision={REVISION}")) {
@@ -431,7 +431,7 @@ fn build_fake_git(temporary: &TempDir) -> Result<PathBuf, String> {
         &process::default_go_env(temporary),
         temporary,
         "fake-git-build",
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         OUTPUT_LIMIT,
     )?;
     Ok(binary)
@@ -465,16 +465,31 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
     Ok(())
 }
 
-pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 5] = [
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 7] = [
     (
         "Cargo.toml",
-        "7a4da4825aee1dd319e5450233c25bfc5a5e9a953bf502b4a6cc491fabba3730",
         "c9d52d6d300899c3f007c866b8eda81e1e2dccded41e97530eeb4ea3f6677737",
+        "9a90406b76743ab37bd18f4aa9021cf176a6cc107b4e0fd5175638359a5cde68",
     ),
     (
         "Cargo.lock",
-        "8f3893f06c74b312afd2ef9b6a240eaab6d5e3b5a4abe0eff1302a912d468eb4",
         "452ee9620c5ee2abecc2af0aa4493b6a9ba6df0bcf06b9bdee0f8f0695e580a3",
+        "5a8ec9d3a4a77f38fd93fc78a018bb6e596ed251de53df3188f09a87ac4cb57c",
+    ),
+    (
+        "crates/rustleaks-cli/src/output.rs",
+        "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
+        "20230a0fee6161993d97f0e4144fccc718c63e75ceab7c604f9545ec22062006",
+    ),
+    (
+        "crates/rustleaks-cli/src/run.rs",
+        "194e6eafc48337ed70c8d5140891bdcf92d4f4461840b8898ea59f15053dcf2f",
+        "8dec36ca351197286c9e11faee809239336f2bd3ea56932531dcdc238176ef63",
+    ),
+    (
+        "crates/rustleaks-cli/src/source.rs",
+        "2a97242cd27cde580b9fafbcb78a1c38fc8c2b5da9de5e89db07807ad22355d3",
+        "0308c42c178f1bec7dac50cea547294720cc4bbb7775a975fa9bd3d67ec4abc4",
     ),
     (
         "crates/rustleaks-cli/Cargo.toml",
@@ -485,11 +500,6 @@ pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 5] = [
         "crates/rustleaks-cli/src/config.rs",
         "c6eada2ae07cf5c9e9e743dc5ce884c6fdf0d937d2ab7507f70c97a70f7bbed3",
         "ad4859ac4eccb243b5ca61bbf838ccbab517e234efbe4a386c8f2e79320c88bc",
-    ),
-    (
-        "crates/rustleaks-cli/src/source.rs",
-        "2803d6bde7c68504ac7f3f04ec7bbca5c70f7a95da27bed12b61e91c3351625e",
-        "2a97242cd27cde580b9fafbcb78a1c38fc8c2b5da9de5e89db07807ad22355d3",
     ),
 ];
 

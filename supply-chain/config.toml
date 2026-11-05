@@ -21,3 +21,8 @@ url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/
 
 [policy.rustleaks-core]
 audit-as-crates-io = false
+
+[[exemptions.compcol]]
+version = "0.7.8"
+criteria = "safe-to-deploy"
+notes = "owner=Rustleaks maintainers; scope=the maintained eight 64-bit targets with exactly alloc and rar2 features, outside the publishable core graph and without redistribution of unselected codec sources; rationale=complete source review found an availability concern confined to an unselected codec on unsupported 32-bit builds, so package-wide certification is withheld despite the reviewed RAR2 path; resolution=replace after an upstream fix and qualifying audit, and reopen before version, source, feature, target, consumer, or source-distribution changes or on new audit or advisory evidence; review-on=boundary-change"

@@ -41,7 +41,7 @@ pub(super) fn observations(upstream: &Path, inventory: &[Value]) -> Result<Vec<V
     process::status_with_limits(
         &mut go,
         "instrumented generator",
-        Duration::from_secs(600),
+        Duration::from_mins(10),
         &[
             (&log, "observation log", 32 * 1024 * 1024),
             (&generated, "generated config", 2 * 1024 * 1024),
@@ -65,13 +65,13 @@ fn archive(upstream: &Path, destination: &Path) -> Result<(), String> {
         .args(["archive", "--format=tar", "--output"])
         .arg(&archive)
         .arg(REVISION);
-    process::status(&mut git, "git archive", Duration::from_secs(120))?;
+    process::status(&mut git, "git archive", Duration::from_mins(2))?;
     let mut tar = Command::new("tar");
     tar.args(["-xf"])
         .arg(&archive)
         .args(["-C"])
         .arg(destination);
-    process::status(&mut tar, "git archive extraction", Duration::from_secs(120))
+    process::status(&mut tar, "git archive extraction", Duration::from_mins(2))
 }
 
 fn normalize(raw: &[Value], inventory: &BTreeMap<String, &Value>) -> Result<Vec<Value>, String> {

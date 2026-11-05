@@ -362,15 +362,14 @@ fn scan_parts(source: &[u8]) -> Result<Vec<Part>, TemplateError> {
             && source
                 .get(open + 3)
                 .is_some_and(|byte| is_trim_space(*byte));
-        if left_trim {
-            if let Some(Part {
+        if left_trim
+            && let Some(Part {
                 kind: PartKind::Literal(literal),
                 ..
             }) = parts.last_mut()
-            {
-                while literal.last().is_some_and(|byte| is_trim_space(*byte)) {
-                    literal.pop();
-                }
+        {
+            while literal.last().is_some_and(|byte| is_trim_space(*byte)) {
+                literal.pop();
             }
         }
         let action_start = open + if left_trim { 3 } else { 2 };

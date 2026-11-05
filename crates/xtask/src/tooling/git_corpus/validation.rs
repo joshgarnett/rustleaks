@@ -709,7 +709,8 @@ mod tests {
             "id": "case", "platform": "darwin/arm64", "git_version_base64": "b2xk",
             "go_version": "go1.26.7", "fragments": [], "findings": [], "error": null
         });
-        let (committed_semantic, bytes) = semantic_outcomes(&[baseline.clone()]).unwrap();
+        let (committed_semantic, bytes) =
+            semantic_outcomes(std::slice::from_ref(&baseline)).unwrap();
         let hash = sha256_bytes(&bytes);
         let platforms = json!({"windows/amd64": {}, "windows/arm64": {}});
         let counts = serde_json::Map::new();

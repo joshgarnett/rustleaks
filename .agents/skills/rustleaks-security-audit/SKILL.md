@@ -23,16 +23,17 @@ test. Do not test a suspected credential by using it.
 Owned crates must continue to forbid unsafe Rust. Treat dependency unsafe
 inventory as a change signal, not proof of safety or reachability. Review any
 new source, build script, native link, license, advisory, vet exemption,
-exception expiry, feature, or target-specific edge. Accepting an advisory,
-vetting, unsafe, native, or compatibility exception requires maintainer
-approval.
+exception review condition, feature, or target-specific edge. Accepting an
+advisory, vetting, unsafe, native, or compatibility exception requires
+maintainer approval.
 
 Before retaining an approved cargo-vet exemption, apply the exemption policy
 in `docs/SECURITY_CONTROLS.md`. Confirm that configured peer evidence is absent,
 record why the required criterion cannot be certified, establish whether the
 concern is reachable in the maintained graph, and record the scope, resolution
-condition, owner, and review date. Never use an exemption for a known concern
-reachable in the maintained runtime graph or as a silent criteria downgrade.
+condition, owner, and the applicable review date or approved boundary-change
+trigger. Never use an exemption for a known concern reachable in the
+maintained runtime graph or as a silent criteria downgrade.
 Regenerate the vet inventory after changing an exemption.
 
 Use `rustleaks-build-maintenance` for dependency and lockfile mechanics. This

@@ -11,8 +11,8 @@ use crate::tooling::support::{
     TempDir, command_status_with_timeout, diagnostic_tail, go_module_cache,
 };
 
-const BUILD_TIMEOUT: Duration = Duration::from_secs(180);
-const CASE_TIMEOUT: Duration = Duration::from_secs(60);
+const BUILD_TIMEOUT: Duration = Duration::from_mins(3);
+const CASE_TIMEOUT: Duration = Duration::from_mins(1);
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CAPTURE_BYTES: u64 = 8 * 1024 * 1024;
 const DIAGNOSTIC_LIMIT: usize = 16 * 1024;

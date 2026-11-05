@@ -235,13 +235,12 @@ fn event_for(line: &str) -> Event {
 
 fn normalize_native_file_operation(text: &str, severity: &str) -> String {
     for operation in ["CreateFile", "GetFileAttributesEx"] {
-        if severity == "fatal" {
-            if let Some(rest) = text
+        if severity == "fatal"
+            && let Some(rest) = text
                 .strip_prefix(operation)
                 .and_then(|rest| rest.strip_prefix(' '))
-            {
-                return format!("stat {rest}");
-            }
+        {
+            return format!("stat {rest}");
         }
         let pattern = format!("error=\"{operation} ");
         if text.starts_with("skipping ") && text.contains(&pattern) {

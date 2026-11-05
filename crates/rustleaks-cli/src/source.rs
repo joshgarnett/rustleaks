@@ -84,17 +84,16 @@ impl Source for BuiltSource {
                 fragment,
                 issue: None,
             } = &event
+                && is_excluded(excluded, fragment)
             {
-                if is_excluded(excluded, fragment) {
-                    let length = u64::try_from(fragment.content().len()).map_err(|_| {
-                        CallbackError::new("excluded fragment byte count is out of range")
-                    })?;
-                    *excluded_bytes = excluded_bytes.checked_add(length).ok_or_else(|| {
-                        CallbackError::new("excluded fragment byte count overflowed")
-                    })?;
-                    excluded_commits.observe(fragment.commit())?;
-                    return Ok(SourceControl::Continue);
-                }
+                let length = u64::try_from(fragment.content().len()).map_err(|_| {
+                    CallbackError::new("excluded fragment byte count is out of range")
+                })?;
+                *excluded_bytes = excluded_bytes
+                    .checked_add(length)
+                    .ok_or_else(|| CallbackError::new("excluded fragment byte count overflowed"))?;
+                excluded_commits.observe(fragment.commit())?;
+                return Ok(SourceControl::Continue);
             }
             emit(event)
         })
