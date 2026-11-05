@@ -17,8 +17,8 @@ pub(super) const VARIANT_COUNT: usize = 119;
 pub(super) const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 pub(super) const CONFIG_SHA256: &str =
     "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
-pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.3";
-pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.4";
+pub(super) const LEGACY_BUILD_VERSION: &str = "0.1.0-alpha.4";
+pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.5";
 
 const FAKE_GIT_SOURCE: &str = r#"package main
 
@@ -465,41 +465,26 @@ fn verify_map(root: &Path, hashes: &serde_json::Map<String, Value>) -> Result<()
     Ok(())
 }
 
-pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 7] = [
+pub(super) const DECLARED_TRANSITIONS: [(&str, &str, &str); 4] = [
     (
         "Cargo.toml",
-        "c9d52d6d300899c3f007c866b8eda81e1e2dccded41e97530eeb4ea3f6677737",
         "9a90406b76743ab37bd18f4aa9021cf176a6cc107b4e0fd5175638359a5cde68",
+        "b9d5df1ad6d338f853020538dc07d179c26aa0a2244e62f13677847fe55e2543",
     ),
     (
         "Cargo.lock",
-        "452ee9620c5ee2abecc2af0aa4493b6a9ba6df0bcf06b9bdee0f8f0695e580a3",
         "5a8ec9d3a4a77f38fd93fc78a018bb6e596ed251de53df3188f09a87ac4cb57c",
-    ),
-    (
-        "crates/rustleaks-cli/src/output.rs",
-        "b237b1f765275d3ebd9b6fe83bc4c78aaf6cb70701b8d1bcda983c51398340e7",
-        "20230a0fee6161993d97f0e4144fccc718c63e75ceab7c604f9545ec22062006",
-    ),
-    (
-        "crates/rustleaks-cli/src/run.rs",
-        "194e6eafc48337ed70c8d5140891bdcf92d4f4461840b8898ea59f15053dcf2f",
-        "8dec36ca351197286c9e11faee809239336f2bd3ea56932531dcdc238176ef63",
-    ),
-    (
-        "crates/rustleaks-cli/src/source.rs",
-        "2a97242cd27cde580b9fafbcb78a1c38fc8c2b5da9de5e89db07807ad22355d3",
-        "0308c42c178f1bec7dac50cea547294720cc4bbb7775a975fa9bd3d67ec4abc4",
+        "b214f46fd5ebf8f4aa6b1ffd4271463aa878c0d52b72b479032babd782247fe9",
     ),
     (
         "crates/rustleaks-cli/Cargo.toml",
-        "1b8c67bcb3bb8cb4567295e665bea6b77aefae5dcfde48012c7e9ecd51dd17fb",
         "d1c741d8f012c40ac6efcb3611ef3bae51778e48046c5d82adb65399f3d70ba3",
+        "021f8452a05d9197ce0d44fc6b06e8687e8118c87e40b003fc8026c4bf0923e9",
     ),
     (
         "crates/rustleaks-cli/src/config.rs",
-        "c6eada2ae07cf5c9e9e743dc5ce884c6fdf0d937d2ab7507f70c97a70f7bbed3",
         "ad4859ac4eccb243b5ca61bbf838ccbab517e234efbe4a386c8f2e79320c88bc",
+        "8fb1fb532a130ff2fe6010f67cce0f2faa90f25fd7566526723bde292fe222a0",
     ),
 ];
 

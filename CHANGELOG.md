@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.5] - 2026-11-05
+
 - Require Rust 1.95 and align Cargo, Bazel, CI, package consumers, and release
   tooling on Rust 1.95.0.
 - Update the optional RAR2 decoder to `compcol 0.7.8`, including corrected
@@ -71,3 +73,4 @@ version and exact source commit.
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.4]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.4
+[0.1.0-alpha.5]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.5

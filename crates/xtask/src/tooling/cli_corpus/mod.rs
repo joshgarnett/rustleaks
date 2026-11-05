@@ -145,6 +145,16 @@ fn generate(root: &Path) -> Result<GeneratedTree, String> {
     if spec::git_status(&upstream, &temporary, "upstream-after")? != status_before {
         return Err("upstream checkout changed during CLI generation".into());
     }
+    let canonical_outcomes = if cfg!(windows) {
+        &committed_outcomes
+    } else {
+        &outcomes
+    };
+    let native_windows = validation::render_native_windows_baseline(
+        &native_windows,
+        &crate::tooling::support::sha256_bytes(&committed_outcomes),
+        &crate::tooling::support::sha256_bytes(canonical_outcomes),
+    )?;
     let generator_hash = crate::tooling::support::source_tree_sha256(
         root,
         &root.join("crates/xtask/src/tooling/cli_corpus"),
