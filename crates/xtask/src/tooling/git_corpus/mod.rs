@@ -58,6 +58,7 @@ fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<()
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)] // Keep the ordered provenance and fixture checks together.
 fn generate(root: &Path, check: bool) -> Result<GeneratedTree, String> {
     let corpus = root.join("compat/git-corpus");
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
