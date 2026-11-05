@@ -28,7 +28,7 @@ pub(crate) use generate::run as run_generate;
 pub(crate) use git_corpus::{check_git_corpus, write_git_corpus};
 pub(crate) use go_lowercase::generate_go_lowercase;
 pub(crate) use inventory::{check_inventory, write_inventory};
-pub(crate) use oracle::{Corpus, generate_corpus, replay_corpus};
+pub(crate) use oracle::{Corpus, check_bootstrap_corpus, generate_corpus, replay_corpus};
 pub(crate) use report::{check_report_corpus, write_report_corpus};
 pub(crate) use session::{check_session_corpus, write_session_corpus};
 pub(crate) use source::{check_source_corpus, write_source_corpus};

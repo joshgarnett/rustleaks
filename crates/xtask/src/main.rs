@@ -2536,34 +2536,7 @@ fn fixture_check() -> Result<(), String> {
 fn oracle_check(check_git: bool) -> Result<(), String> {
     verify_upstream()?;
     let root = workspace_root()?;
-    let corpus = root.join("compat/oracle-corpus");
-    for required in [
-        "README.md",
-        "bootstrap-input.jsonl",
-        "bootstrap-golden.jsonl",
-    ] {
-        let path = corpus.join(required);
-        if !path.is_file() {
-            return Err(format!(
-                "missing oracle corpus artifact: {}",
-                path.display()
-            ));
-        }
-    }
-    let oracle_dir = root.join("crates/rustleaks-compat/oracle");
-    command_output(
-        Command::new("go")
-            .args(["test", "./..."])
-            .current_dir(&oracle_dir),
-    )?;
-    command_output(
-        Command::new("go")
-            .args(["run", ".", "-input"])
-            .arg(corpus.join("bootstrap-input.jsonl"))
-            .arg("-check")
-            .arg(corpus.join("bootstrap-golden.jsonl"))
-            .current_dir(oracle_dir),
-    )?;
+    tooling::check_bootstrap_corpus(&root)?;
     tooling::check_config_corpus(&root)?;
     tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
     tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
