@@ -13,12 +13,12 @@ use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 const DECLARED_OUTCOME_TRANSITION: (&str, &str) = (
-    "525fa0bc43e6603b15cdbc5c6078a3063dfa2c36162ce2e847561ed0eda36df4",
     "28b3a2cd6ac648a6f6cc860fa37b0fd0838f0793e7fbe1656864d3edffe0e0d7",
+    "00bd41d862e473847a40373d89f79aa597aa5be7414fa4a1248d12cd3a497de9",
 );
 const NATIVE_WINDOWS_LEDGER_TRANSITION: (&str, &str) = (
-    "2362611535a41bd04829f95fc8fef4e7b8a7e3340bc4281e05f41931ce03d7c6",
     "26a579c6741b183ba58e0947ceaee257e5bd6078595c859bf3b9c916fc36a89d",
+    "af498655aa66898f52a6ce4981d1ea975c4f46d4d08a2b79af4e13b31b16a335",
 );
 const NATIVE_WINDOWS_BASELINE_DISPOSITION: &str = "Windows baseline paths use native logical spelling; canonical findings are exact while paired raw report order may differ.";
 const NATIVE_WINDOWS_SYMLINK_DISPOSITION: &str = "Windows cannot create the dangling-symlink fixture; corrupt-archive handling remains natively replayed and pair-exact.";
@@ -757,6 +757,36 @@ fn describe_scalar_difference(path: &str, committed: &Value, fresh: &Value) -> S
     }
 }
 
+pub(super) fn render_native_windows_baseline(
+    legacy: &[u8],
+    baseline_hash: &str,
+    canonical_hash: &str,
+) -> Result<Vec<u8>, String> {
+    let ledger: Value = serde_json::from_slice(legacy)
+        .map_err(|error| format!("invalid native Windows CLI ledger: {error}"))?;
+    for field in ["baseline_outcomes_sha256", "portable_outcomes_sha256"] {
+        if required_str(&ledger, field, "native Windows CLI ledger")? != baseline_hash {
+            return Err("native Windows CLI ledger baseline hash changed".into());
+        }
+    }
+    if baseline_hash == canonical_hash {
+        return Ok(legacy.to_vec());
+    }
+    if (baseline_hash, canonical_hash) != DECLARED_OUTCOME_TRANSITION {
+        return Err("undeclared native Windows CLI ledger baseline transition".into());
+    }
+    let mut rendered = legacy.to_vec();
+    for field in ["baseline_outcomes_sha256", "portable_outcomes_sha256"] {
+        rendered = replace_once(
+            &rendered,
+            format!("\"{field}\": \"{baseline_hash}\"").as_bytes(),
+            format!("\"{field}\": \"{canonical_hash}\"").as_bytes(),
+            "native Windows CLI ledger baseline transition",
+        )?;
+    }
+    Ok(rendered)
+}
+
 pub(super) fn render_manifest(
     legacy: &[u8],
     manifest: &Value,
@@ -1198,9 +1228,37 @@ mod tests {
     use crate::tooling::support::sha256_bytes;
 
     use super::{
-        NativeWindowsFacts, collect_value_differences, reconcile_native_windows_outcomes,
-        remove_flat_object_field, replace_declared_transition, replace_once,
+        DECLARED_OUTCOME_TRANSITION, NativeWindowsFacts, collect_value_differences,
+        reconcile_native_windows_outcomes, remove_flat_object_field,
+        render_native_windows_baseline, replace_declared_transition, replace_once,
     };
+
+    #[test]
+    fn native_windows_ledger_migrates_only_the_declared_canonical_baseline() {
+        let (old, new) = DECLARED_OUTCOME_TRANSITION;
+        let legacy = format!(
+            "{{\n  \"baseline_outcomes_sha256\": \"{old}\",\n  \"portable_outcomes_sha256\": \"{old}\",\n  \"platforms\": {{\"windows/amd64\": {{\"native_replay\": \"required\"}}}},\n  \"difference_ids\": [\"retained-native-difference\"],\n  \"historical_evidence\": \"{old}\"\n}}\n"
+        );
+        assert_eq!(
+            render_native_windows_baseline(legacy.as_bytes(), old, old).unwrap(),
+            legacy.as_bytes()
+        );
+        let rendered = render_native_windows_baseline(legacy.as_bytes(), old, new).unwrap();
+        assert_eq!(rendered, legacy.replacen(old, new, 2).as_bytes());
+        assert_eq!(
+            render_native_windows_baseline(&rendered, new, new).unwrap(),
+            rendered
+        );
+        assert!(render_native_windows_baseline(legacy.as_bytes(), old, "unexpected").is_err());
+        assert!(render_native_windows_baseline(legacy.as_bytes(), "unexpected", new).is_err());
+        for field in ["baseline_outcomes_sha256", "portable_outcomes_sha256"] {
+            let stale = legacy.replace(
+                &format!("\"{field}\": \"{old}\""),
+                &format!("\"{field}\": \"unexpected\""),
+            );
+            assert!(render_native_windows_baseline(stale.as_bytes(), old, new).is_err());
+        }
+    }
 
     fn baseline_variant(count: u64) -> serde_json::Value {
         let findings = (0..count)
