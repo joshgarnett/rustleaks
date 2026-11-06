@@ -333,7 +333,20 @@ mod tests {
             compare(&id, frozen, frozen, false).unwrap();
             let mut changed = frozen.clone();
             match control["expected_failure_class"].as_str().unwrap() {
-                "selected-findings" | "complete-findings" => changed["findings"] = json!([]),
+                "selected-findings" => {
+                    // Selecting the matching environment config instead of the
+                    // explicit no-match config introduces this fixture finding.
+                    changed["findings"] = variants
+                        .iter()
+                        .find(|variant| variant.id == "CLI-BB-002/dir")
+                        .unwrap()
+                        .expected["findings"]
+                        .clone();
+                }
+                "complete-findings" => {
+                    let removed = changed["findings"].as_array_mut().unwrap().pop();
+                    assert!(removed.is_some(), "{id}: no finding available to remove");
+                }
                 "safe-arity"
                 | "stdout-format"
                 | "terminal-exit"
@@ -351,7 +364,10 @@ mod tests {
                 "process-cleanup" => changed["child_reaped"] = json!(false),
                 unknown => panic!("unmapped control {unknown}"),
             }
-            assert_ne!(&changed, frozen, "ineffective mutation {id}");
+            assert!(
+                &changed != frozen,
+                "{id}: mutation did not change its observation"
+            );
             assert!(compare(&id, &changed, frozen, false).is_err(), "{id}");
         }
     }
