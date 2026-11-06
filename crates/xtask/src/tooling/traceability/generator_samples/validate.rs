@@ -383,28 +383,6 @@ pub(super) fn negative_identity_control(rows: &[Value]) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn changed_observations(expected: &[Value], actual: &[Value]) -> Result<usize, String> {
-    let expected: BTreeMap<_, _> = expected
-        .iter()
-        .map(|row| Ok((string(row, "case_id")?, row)))
-        .collect::<Result<_, String>>()?;
-    actual
-        .iter()
-        .map(|row| {
-            let frozen = expected
-                .get(string(row, "case_id")?)
-                .ok_or("fresh sample absent from frozen set")?;
-            Ok(usize::from(
-                ["input_base64", "path_base64", "findings"]
-                    .iter()
-                    .any(|field| {
-                        json::required(row, field).ok() != json::required(frozen, field).ok()
-                    }),
-            ))
-        })
-        .sum()
-}
-
 fn projected(rows: &[Value]) -> Result<BTreeMap<String, Vec<u8>>, String> {
     rows.iter()
         .map(|row| {

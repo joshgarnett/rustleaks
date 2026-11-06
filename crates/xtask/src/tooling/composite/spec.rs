@@ -25,13 +25,6 @@ const BEHAVIOR_IDENTITIES_SHA256: &str =
     "bc76f555aef6e9275826dfa9d9b436410193a48f41288d7d33e5bbf423157dc4";
 const TEST_IDENTITIES_SHA256: &str =
     "67b808a4264df3d3d8c27072325b8248368511ea5a890719a4d84fda8ad68dd8";
-// The executable oracle produces the corpus. Its tests are validation, not corpus provenance.
-const ORACLE_MAIN_SHA256: &str = "8e2482a757fe49eece06694c1c8300c09b5752b9625ece8eee9fac18d39c1266";
-const DETECT_SOURCE_SHA256: &str =
-    "2bac563a09f22ff76c56b200c3b9b5dc865c1de699eb0ba2a27cca741fa9bd13";
-const FINDING_SOURCE_SHA256: &str =
-    "a1ecd3837f6d89b8ddf95f2b0a6c301103b8d3e67f84e1b3520ffc6f7d7751a6";
-
 const FILES: &[&str] = &[
     "README.md",
     "coverage-v1.json",
@@ -41,25 +34,11 @@ const FILES: &[&str] = &[
     "requests-v1.jsonl",
 ];
 
-pub(super) struct ResourceContract {
-    pub(super) timeout_seconds: u64,
-    pub(super) output_bytes: u64,
-    pub(super) allocation_bytes: u64,
-}
-
 pub(super) struct Canonical {
-    pub(super) readme: Vec<u8>,
-    pub(super) coverage: Vec<u8>,
-    pub(super) manifest: Vec<u8>,
-    pub(super) negative_controls: Vec<u8>,
-    pub(super) requests: Vec<u8>,
-    pub(super) request_lines: Vec<Vec<u8>>,
     pub(super) request_values: Vec<Value>,
-    pub(super) resources: BTreeMap<String, ResourceContract>,
 }
 
 struct RequestSet {
-    lines: Vec<Vec<u8>>,
     values: Vec<Value>,
     ids: BTreeSet<String>,
 }
@@ -90,38 +69,11 @@ pub(super) fn load(root: &Path) -> Result<Canonical, String> {
     validate_sources(root)?;
     validate_manifest(&manifest)?;
     let request_set = validate_requests(&requests)?;
-    let resources = validate_coverage(&coverage, &request_set.ids)?;
+    let _resources = validate_coverage(&coverage, &request_set.ids)?;
     validate_negative_controls(&negative_controls, &request_set.ids)?;
     Ok(Canonical {
-        readme,
-        coverage,
-        manifest,
-        negative_controls,
-        requests,
-        request_lines: request_set.lines,
         request_values: request_set.values,
-        resources,
     })
-}
-
-pub(super) fn rust_readme(canonical: &[u8]) -> Result<Vec<u8>, String> {
-    let source = std::str::from_utf8(canonical)
-        .map_err(|error| format!("composite README is not UTF-8: {error}"))?;
-    let provenance = "cargo xtask generate composite\ncargo xtask generate composite --check";
-    if source.matches(provenance).count() == 1 {
-        return Ok(canonical.to_vec());
-    }
-    Err("composite README regeneration provenance changed".into())
-}
-
-pub(super) fn rust_manifest(canonical: &[u8], readme: &[u8]) -> Result<Vec<u8>, String> {
-    let source = std::str::from_utf8(canonical)
-        .map_err(|error| format!("composite manifest is not UTF-8: {error}"))?;
-    let expected = sha256_bytes(readme);
-    if source.matches(&expected).count() == 1 {
-        return Ok(canonical.to_vec());
-    }
-    Err("composite manifest README pin changed".into())
 }
 
 fn validate_manifest(bytes: &[u8]) -> Result<(), String> {
@@ -225,7 +177,7 @@ fn validate_requests(bytes: &[u8]) -> Result<RequestSet, String> {
 fn validate_coverage(
     bytes: &[u8],
     ids: &BTreeSet<String>,
-) -> Result<BTreeMap<String, ResourceContract>, String> {
+) -> Result<BTreeMap<String, (u64, u64, u64)>, String> {
     let value: Value = serde_json::from_slice(bytes)
         .map_err(|error| format!("invalid composite coverage: {error}"))?;
     pins(&value, "composite coverage")?;
@@ -262,11 +214,11 @@ fn validate_coverage(
             || resources
                 .insert(
                     id.to_owned(),
-                    ResourceContract {
-                        timeout_seconds: unsigned(row, "deadline_seconds", id)?,
-                        output_bytes: unsigned(row, "output_bytes", id)?,
-                        allocation_bytes: unsigned(row, "allocation_bytes", id)?,
-                    },
+                    (
+                        unsigned(row, "deadline_seconds", id)?,
+                        unsigned(row, "output_bytes", id)?,
+                        unsigned(row, "allocation_bytes", id)?,
+                    ),
                 )
                 .is_some()
         {
@@ -303,26 +255,6 @@ fn validate_negative_controls(bytes: &[u8], ids: &BTreeSet<String>) -> Result<()
 }
 
 fn validate_sources(root: &Path) -> Result<(), String> {
-    for (path, expected) in [
-        (
-            root.join("crates/rustleaks-compat/oracle/main.go"),
-            ORACLE_MAIN_SHA256,
-        ),
-        (
-            root.parent()
-                .ok_or("repository has no parent")?
-                .join("gitleaks/detect/detect.go"),
-            DETECT_SOURCE_SHA256,
-        ),
-        (
-            root.parent()
-                .ok_or("repository has no parent")?
-                .join("gitleaks/report/finding.go"),
-            FINDING_SOURCE_SHA256,
-        ),
-    ] {
-        require_hash(&path.display().to_string(), &read(&path)?, expected)?;
-    }
     validate_test_manifest(&read(&root.join("compat/test-manifest.toml"))?)?;
     Ok(())
 }
@@ -464,14 +396,4 @@ fn require_hash(label: &str, bytes: &[u8], expected: &str) -> Result<(), String>
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::rust_manifest;
-
-    #[test]
-    fn manifest_replacement_requires_exact_pin() {
-        assert!(rust_manifest(b"{}\n", b"readme\n").is_err());
-    }
 }

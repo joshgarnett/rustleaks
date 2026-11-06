@@ -1,11 +1,10 @@
-//! Schema, count, negative-control, and semantic checks for fresh outcomes.
+//! Schema, count, negative-control, and semantic checks for frozen outcomes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::Value;
 
-use super::process::Observed;
 use super::spec::{Canonical, DEFAULT_SHA256, OUTCOMES_SHA256, REVISION};
 use crate::tooling::support::sha256_bytes;
 
@@ -70,11 +69,11 @@ pub(super) struct Summary {
     pub(super) outcomes_sha256: String,
 }
 
-pub(super) fn validate(canonical: &Canonical, observed: &Observed) -> Result<Summary, String> {
-    let outcomes = records(&observed.outcomes)?;
+pub(super) fn validate(canonical: &Canonical, outcome_bytes: &[u8]) -> Result<Summary, String> {
+    let outcomes = records(outcome_bytes)?;
     if outcomes.len() != 182 || outcomes.len() != canonical.request_values.len() {
         return Err(format!(
-            "fresh composite outcome count changed: {}",
+            "frozen composite outcome count changed: {}",
             outcomes.len()
         ));
     }
@@ -97,13 +96,13 @@ pub(super) fn validate(canonical: &Canonical, observed: &Observed) -> Result<Sum
             || outcome["upstream_revision"] != REVISION
             || outcome["default_config_sha256"] != DEFAULT_SHA256
         {
-            return Err(format!("{id}: fresh composite response envelope changed"));
+            return Err(format!("{id}: frozen composite response envelope changed"));
         }
         if !outcome["go_version"]
             .as_str()
             .is_some_and(|version| version.starts_with("go1.26."))
         {
-            return Err(format!("{id}: fresh composite Go version changed"));
+            return Err(format!("{id}: frozen composite Go version changed"));
         }
         let findings = outcome["findings"]
             .as_array()
@@ -130,7 +129,7 @@ pub(super) fn validate(canonical: &Canonical, observed: &Observed) -> Result<Sum
             );
         }
         if by_id.insert(id.to_owned(), outcome).is_some() {
-            return Err(format!("duplicate fresh composite outcome {id}"));
+            return Err(format!("duplicate frozen composite outcome {id}"));
         }
     }
     if finding_count != 275 || required_count != 1623 {
@@ -148,10 +147,10 @@ pub(super) fn validate(canonical: &Canonical, observed: &Observed) -> Result<Sum
     }
     validate_controls(&by_id)?;
     validate_negative_pairs(canonical, &by_id)?;
-    let outcomes_sha256 = sha256_bytes(&observed.outcomes);
+    let outcomes_sha256 = sha256_bytes(outcome_bytes);
     if outcomes_sha256 != OUTCOMES_SHA256 {
         return Err(format!(
-            "fresh composite outcomes SHA-256 changed: expected {OUTCOMES_SHA256}, got {outcomes_sha256}"
+            "frozen composite outcomes SHA-256 changed: expected {OUTCOMES_SHA256}, got {outcomes_sha256}"
         ));
     }
     Ok(Summary {
@@ -264,7 +263,7 @@ fn validate_negative_pairs(
 
 fn records(bytes: &[u8]) -> Result<Vec<Value>, String> {
     if !bytes.ends_with(b"\n") {
-        return Err("fresh composite outcomes lack final newline".into());
+        return Err("frozen composite outcomes lack final newline".into());
     }
     bytes
         .split_inclusive(|byte| *byte == b'\n')
@@ -272,13 +271,13 @@ fn records(bytes: &[u8]) -> Result<Vec<Value>, String> {
         .map(|(index, line)| {
             if line == b"\n" {
                 return Err(format!(
-                    "fresh composite outcome line {} is blank",
+                    "frozen composite outcome line {} is blank",
                     index + 1
                 ));
             }
             serde_json::from_slice(line).map_err(|error| {
                 format!(
-                    "fresh composite outcome line {} is invalid: {error}",
+                    "frozen composite outcome line {} is invalid: {error}",
                     index + 1
                 )
             })

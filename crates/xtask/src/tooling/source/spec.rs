@@ -2,14 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::process;
 use super::validation::{required_array, required_object, required_str, required_u64, strings};
-use super::{TempDir, newline_records, read};
+use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 pub(super) const PROTOCOL_VERSION: u64 = 1;
@@ -221,31 +218,11 @@ fn validate_negative_metadata(negative: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_upstream(
-    root: &Path,
-    upstream: &Path,
-    coverage: &Value,
-    temporary: &TempDir,
-) -> Result<(), String> {
-    let mut command = Command::new("git");
-    command.current_dir(upstream).args(["rev-parse", "HEAD"]);
-    let revision = process::capture(
-        &mut command,
-        temporary,
-        "upstream-revision",
-        Duration::from_secs(30),
-    )?;
-    if trim(&revision) != REVISION.as_bytes() {
-        return Err("pinned upstream revision changed".into());
+pub(super) fn validate_local(root: &Path, coverage: &Value) -> Result<(), String> {
+    if required_object(coverage, "source_hashes", "coverage")?.len() != SOURCE_HASH_COUNT {
+        return Err("historical source hash inventory changed".into());
     }
-    verify_hash(upstream, "config/gitleaks.toml", CONFIG_SHA256)?;
-    let sources = required_object(coverage, "source_hashes", "coverage")?;
-    if sources.len() != SOURCE_HASH_COUNT {
-        return Err("source hash inventory changed".into());
-    }
-    for (path, hash) in sources {
-        verify_hash(upstream, path, hash.as_str().ok_or("invalid source hash")?)?;
-    }
+
     let fixtures = required_object(coverage, "fixture_hashes", "coverage")?;
     if fixtures.len() != FIXTURE_HASH_COUNT {
         return Err("archive fixture hash inventory changed".into());
@@ -294,16 +271,6 @@ fn valid_behavior(id: &str) -> bool {
         .and_then(|number| number.parse::<u8>().ok())
         .is_some_and(|number| (1..=30).contains(&number))
         && id.len() == 7
-}
-
-fn trim(mut bytes: &[u8]) -> &[u8] {
-    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[1..];
-    }
-    while bytes.last().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[..bytes.len() - 1];
-    }
-    bytes
 }
 
 #[cfg(test)]

@@ -135,7 +135,7 @@ pub(super) fn validate_all(
         return Err("committed Git outcomes differ from their manifest".into());
     }
     validate_native_windows_ledger(committed, observed, native_windows)?;
-    if !cfg!(windows) {
+    if !uniform_string(observed.values, "platform", "frozen Git")?.starts_with("windows/") {
         // The committed platform and host Git version remain pinned provenance.
         // Non-Windows cross-host replays may differ only in those fields.
         compare_json_outcomes(
@@ -163,7 +163,7 @@ fn validate_native_windows_ledger(
     ledger: &Value,
 ) -> Result<(), String> {
     let metadata = validate_native_windows_metadata(committed, ledger)?;
-    if !cfg!(windows) {
+    if !uniform_string(observed.values, "platform", "frozen Git")?.starts_with("windows/") {
         return Ok(());
     }
     validate_native_windows_observations(observed.values, metadata)
@@ -443,119 +443,6 @@ fn validate_projection(outcomes: &[Value]) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn render_manifest(
-    legacy: &[u8],
-    manifest: &Value,
-    legacy_readme_len: usize,
-    readme: &[u8],
-    native_windows: &[u8],
-    outcome_bytes: &[u8],
-) -> Result<Vec<u8>, String> {
-    let outcome_entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
-    let old_outcome_hash = required_str(outcome_entry, "sha256", "outcomes")?;
-    let old_outcome_bytes = required_u64(outcome_entry, "bytes", "outcomes")?;
-    let old = format!(
-        "\"outcomes-v1.jsonl\": {{\n      \"sha256\": \"{old_outcome_hash}\",\n      \"bytes\": {old_outcome_bytes}\n    }}"
-    );
-    let new = format!(
-        "\"outcomes-v1.jsonl\": {{\n      \"sha256\": \"{}\",\n      \"bytes\": {}\n    }}",
-        sha256_bytes(outcome_bytes),
-        outcome_bytes.len()
-    );
-    let rendered = replace_once(
-        legacy,
-        old.as_bytes(),
-        new.as_bytes(),
-        "outcomes manifest entry",
-    )?;
-    let native_hash = sha256_bytes(native_windows);
-    let files = required_object(manifest, "files", "manifest")?;
-    let rendered = if let Some(entry) = files.get("native-windows-v1.json") {
-        if required_str(entry, "sha256", "native-windows-v1.json")? != native_hash
-            || required_u64(entry, "bytes", "native-windows-v1.json")?
-                != native_windows.len() as u64
-        {
-            return Err("native Windows Git ledger differs from manifest".into());
-        }
-        rendered
-    } else {
-        let entry = format!(
-            "    \"native-windows-v1.json\": {{\n      \"sha256\": \"{native_hash}\",\n      \"bytes\": {}\n    }},\n",
-            native_windows.len()
-        );
-        insert_before_once(
-            &rendered,
-            b"    \"outcomes-v1.jsonl\": {",
-            entry.as_bytes(),
-            "native Windows Git ledger",
-        )?
-    };
-    let old_hash = required_str(
-        &required_object(manifest, "files", "manifest")?["README.md"],
-        "sha256",
-        "README",
-    )?;
-    let old = format!(
-        "\"README.md\": {{\n      \"sha256\": \"{old_hash}\",\n      \"bytes\": {legacy_readme_len}\n    }}"
-    );
-    let new = format!(
-        "\"README.md\": {{\n      \"sha256\": \"{}\",\n      \"bytes\": {}\n    }}",
-        sha256_bytes(readme),
-        readme.len()
-    );
-    replace_once(
-        &rendered,
-        old.as_bytes(),
-        new.as_bytes(),
-        "README manifest entry",
-    )
-}
-
-fn insert_before_once(
-    bytes: &[u8],
-    marker: &[u8],
-    insertion: &[u8],
-    label: &str,
-) -> Result<Vec<u8>, String> {
-    let positions = bytes
-        .windows(marker.len())
-        .enumerate()
-        .filter_map(|(index, window)| (window == marker).then_some(index))
-        .collect::<Vec<_>>();
-    if positions.len() != 1 {
-        return Err(format!(
-            "expected exactly one {label} insertion point, found {}",
-            positions.len()
-        ));
-    }
-    let position = positions[0];
-    let mut rendered = Vec::with_capacity(bytes.len() + insertion.len());
-    rendered.extend_from_slice(&bytes[..position]);
-    rendered.extend_from_slice(insertion);
-    rendered.extend_from_slice(&bytes[position..]);
-    Ok(rendered)
-}
-
-fn replace_once(bytes: &[u8], old: &[u8], new: &[u8], label: &str) -> Result<Vec<u8>, String> {
-    let positions = bytes
-        .windows(old.len())
-        .enumerate()
-        .filter_map(|(index, window)| (window == old).then_some(index))
-        .collect::<Vec<_>>();
-    if positions.len() != 1 {
-        return Err(format!(
-            "expected exactly one {label}, found {}",
-            positions.len()
-        ));
-    }
-    let position = positions[0];
-    let mut rendered = Vec::with_capacity(bytes.len() - old.len() + new.len());
-    rendered.extend_from_slice(&bytes[..position]);
-    rendered.extend_from_slice(new);
-    rendered.extend_from_slice(&bytes[position + old.len()..]);
-    Ok(rendered)
-}
-
 pub(super) fn outcome_for<'a>(
     outcomes: &'a BTreeMap<&str, &Value>,
     id: &str,
@@ -642,47 +529,10 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        NativeWindowsMetadata, render_manifest, replace_once, semantic_outcomes,
-        validate_and_clear_windows_paths, validate_native_windows_observations,
+        NativeWindowsMetadata, semantic_outcomes, validate_and_clear_windows_paths,
+        validate_native_windows_observations,
     };
     use crate::tooling::support::sha256_bytes;
-
-    #[test]
-    fn manifest_replacement_supports_length_changes() {
-        assert_eq!(
-            replace_once(b"a old z", b"old", b"newer", "test").unwrap(),
-            b"a newer z"
-        );
-        assert!(replace_once(b"old old", b"old", b"new", "test").is_err());
-    }
-
-    #[test]
-    fn rendered_manifest_tracks_generated_outcome_bytes() {
-        let manifest = json!({
-            "files": {
-                "outcomes-v1.jsonl": {"sha256": "old-outcomes", "bytes": 3},
-                "README.md": {"sha256": "old-readme", "bytes": 3}
-            }
-        });
-        let legacy = br#"{
-    "outcomes-v1.jsonl": {
-      "sha256": "old-outcomes",
-      "bytes": 3
-    },
-    "README.md": {
-      "sha256": "old-readme",
-      "bytes": 3
-    }
-}"#;
-        let rendered =
-            render_manifest(legacy, &manifest, 3, b"readme", b"native", b"outcomes").unwrap();
-        let rendered = String::from_utf8(rendered).unwrap();
-        assert!(rendered.contains(&sha256_bytes(b"outcomes")));
-        assert!(rendered.contains("\"bytes\": 8"));
-        assert!(rendered.contains(&sha256_bytes(b"readme")));
-        assert!(rendered.contains("\"bytes\": 6"));
-        assert!(rendered.contains(&sha256_bytes(b"native")));
-    }
 
     #[test]
     fn native_windows_paths_require_exact_slash_normalization() {

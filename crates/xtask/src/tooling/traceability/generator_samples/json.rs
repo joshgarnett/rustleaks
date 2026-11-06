@@ -25,90 +25,6 @@ pub(super) fn read_jsonl(path: &Path) -> Result<Vec<Value>, String> {
         .collect()
 }
 
-pub(super) fn jsonl(rows: &[Value]) -> Result<Vec<u8>, String> {
-    let mut output = String::new();
-    for row in rows {
-        write_ordered(row, &mut output)?;
-        output.push('\n');
-    }
-    Ok(output.into_bytes())
-}
-
-fn write_ordered(row: &Value, output: &mut String) -> Result<(), String> {
-    let kind = string(row, "record_type")?;
-    let fields: &[&str] = match kind {
-        "generator_constructor" => &[
-            "schema_version",
-            "record_type",
-            "upstream_revision",
-            "constructor",
-            "rule_id",
-            "source_file",
-            "constructor_line",
-            "helper_line",
-            "helper",
-            "constructor_source_sha256",
-            "selected_default",
-            "helper_covered",
-            "disposition",
-            "exception",
-        ],
-        "generator_sample" => &[
-            "schema_version",
-            "record_type",
-            "upstream_revision",
-            "case_id",
-            "constructor",
-            "rule_id",
-            "selected_default",
-            "helper",
-            "polarity",
-            "ordinal",
-            "contract",
-            "source_file",
-            "constructor_line",
-            "helper_line",
-            "source_occurrence",
-            "constructor_source_sha256",
-            "origin_kind",
-            "origin_source_file",
-            "origin_line",
-            "template_key",
-            "duplicate_ordinal",
-            "input_base64",
-            "input_sha256",
-            "path_present",
-            "path_base64",
-            "path_sha256",
-            "upstream_expected_count",
-            "oracle_observed_count",
-            "findings",
-            "dependencies",
-            "identity_sha256",
-        ],
-        _ => return Err(format!("unknown record type {kind}")),
-    };
-    output.push('{');
-    for (index, field) in fields.iter().enumerate() {
-        if index != 0 {
-            output.push(',');
-        }
-        write!(output, "{}:", quote(field)?).expect("writing to String cannot fail");
-        if *field == "dependencies" {
-            write_dependencies(required(row, field)?, output)?;
-        } else if *field == "findings" {
-            write_findings(required(row, field)?, output)?;
-        } else {
-            output.push_str(
-                &serde_json::to_string(required(row, field)?)
-                    .map_err(|error| format!("cannot serialize JSON: {error}"))?,
-            );
-        }
-    }
-    output.push('}');
-    Ok(())
-}
-
 fn write_dependencies(value: &Value, output: &mut String) -> Result<(), String> {
     let fields = [
         "entropy",
@@ -119,19 +35,6 @@ fn write_dependencies(value: &Value, output: &mut String) -> Result<(), String> 
         "global_allowlist",
     ];
     write_object_fields(value, &fields, output)
-}
-
-fn write_findings(value: &Value, output: &mut String) -> Result<(), String> {
-    let findings = value.as_array().ok_or("findings must be an array")?;
-    output.push('[');
-    for (index, finding) in findings.iter().enumerate() {
-        if index != 0 {
-            output.push(',');
-        }
-        write_object_fields(finding, &["match_base64", "secret_base64"], output)?;
-    }
-    output.push(']');
-    Ok(())
 }
 
 fn write_object_fields(value: &Value, fields: &[&str], output: &mut String) -> Result<(), String> {

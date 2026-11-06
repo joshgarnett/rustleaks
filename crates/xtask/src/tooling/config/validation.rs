@@ -1,10 +1,10 @@
-//! Semantic and byte-level validation of fresh configuration observations.
+//! Semantic and byte-level validation of frozen configuration observations.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-use super::process::Observed;
+use super::Frozen;
 use super::spec::{CONFIG_SHA256, Canonical, OUTCOMES_SHA256, REVISION};
 use crate::tooling::support::sha256_bytes;
 
@@ -18,19 +18,19 @@ pub(super) struct Summary {
     pub(super) outcomes_sha256: String,
 }
 
-pub(super) fn validate_all(canonical: &Canonical, observed: &Observed) -> Result<Summary, String> {
+pub(super) fn validate_all(canonical: &Canonical, observed: &Frozen) -> Result<Summary, String> {
     require_hash(
-        "fresh default configuration",
+        "frozen default configuration",
         &observed.default_config,
         CONFIG_SHA256,
     )?;
     if observed.default_config != canonical.committed_default {
-        return Err("fresh default configuration differs from committed canonical bytes".into());
+        return Err("frozen default configuration differs from committed canonical bytes".into());
     }
-    let outcomes = jsonl(&observed.outcomes, "fresh config outcomes")?;
+    let outcomes = jsonl(&observed.outcomes, "frozen config outcomes")?;
     if outcomes.len() != canonical.request_values.len() || outcomes.len() != 112 {
         return Err(format!(
-            "fresh config outcome count changed: expected 112, got {}",
+            "frozen config outcome count changed: expected 112, got {}",
             outcomes.len()
         ));
     }
@@ -53,7 +53,7 @@ pub(super) fn validate_all(canonical: &Canonical, observed: &Observed) -> Result
         validate_envelope(request, outcome, &response_fields)?;
         let id = required_str(outcome, "id", "config outcome")?;
         if by_id.insert(id.to_owned(), outcome).is_some() {
-            return Err(format!("duplicate fresh config outcome ID {id}"));
+            return Err(format!("duplicate frozen config outcome ID {id}"));
         }
         if outcome["error"].is_null() {
             success_count += 1;
@@ -83,7 +83,7 @@ pub(super) fn validate_all(canonical: &Canonical, observed: &Observed) -> Result
     let outcomes_sha256 = sha256_bytes(&observed.outcomes);
     if outcomes_sha256 != OUTCOMES_SHA256 {
         return Err(format!(
-            "fresh config outcomes SHA-256 changed: expected {OUTCOMES_SHA256}, got {outcomes_sha256}"
+            "frozen config outcomes SHA-256 changed: expected {OUTCOMES_SHA256}, got {outcomes_sha256}"
         ));
     }
     Ok(Summary {
@@ -101,7 +101,7 @@ fn validate_envelope(
 ) -> Result<(), String> {
     let object = outcome
         .as_object()
-        .ok_or("fresh config outcome is not an object")?;
+        .ok_or("frozen config outcome is not an object")?;
     let actual_fields = object.keys().cloned().collect::<BTreeSet<_>>();
     if &actual_fields != response_fields {
         return Err(format!(
@@ -116,7 +116,7 @@ fn validate_envelope(
         || outcome["default_config_sha256"] != CONFIG_SHA256
         || outcome["config_sha256"] != request["input_sha256"]
     {
-        return Err(format!("{id}: fresh config outcome envelope changed"));
+        return Err(format!("{id}: frozen config outcome envelope changed"));
     }
     let version = required_str(outcome, "go_version", id)?;
     if !version.starts_with("go1.26.") {
@@ -152,7 +152,7 @@ fn validate_semantic_controls(by_id: &BTreeMap<String, &Value>) -> Result<(), St
     remove_id(&mut first)?;
     remove_id(&mut second)?;
     if first != second {
-        return Err("fresh-process reentrant outcomes differ".into());
+        return Err("frozen-process reentrant outcomes differ".into());
     }
     Ok(())
 }

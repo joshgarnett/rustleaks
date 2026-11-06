@@ -2,15 +2,11 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
 
 use serde_json::Value;
 
-use super::fixture;
-use super::process;
 use super::validation::{required_array, required_object, required_str, required_u64, strings};
-use super::{TempDir, newline_records, read};
+use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 pub(super) const PROTOCOL_VERSION: u64 = 1;
@@ -23,32 +19,6 @@ const BEHAVIORS: &[&str] = &[
     "GIT-001", "GIT-002", "GIT-003", "GIT-004", "GIT-005", "GIT-006", "GIT-007", "GIT-008",
     "GIT-009", "GIT-010", "GIT-011", "GIT-013", "GIT-014", "GIT-015", "GIT-016", "GIT-017",
     "GIT-018", "GIT-019", "GIT-023",
-];
-const SOURCE_HASHES: &[(&str, &str)] = &[
-    (
-        "sources/git.go",
-        "1fb86062416b83f756be89165e4ef1244f038a6e59c6ab5c014d330909de8e8f",
-    ),
-    (
-        "sources/git_test.go",
-        "8f94704954737adb4be6225cc01a0d2c64ac322ae50a2f020d9fced9485faddb",
-    ),
-    (
-        "detect/git.go",
-        "1126fc5149daac5b06d0b61e1575796496c7102a41e990a42a60bc813a616266",
-    ),
-    (
-        "detect/detect_test.go",
-        "191e7178827d790ae7c72f7b17824e3d368fe66b263fb12a9b8f3ede225124d3",
-    ),
-    (
-        "cmd/scm/scm.go",
-        "9d3783fb042e2047b467a79138799f82b6256fc15bbae0f81a5ca8d51c23814e",
-    ),
-    (
-        "config/allowlist.go",
-        "5fac823414a97a873e25016e4bc76a0d1aa898c0a6f57b248bdc067d69fd6d7f",
-    ),
 ];
 const INDEX_HASHES: &[(&str, &str)] = &[
     (
@@ -289,37 +259,10 @@ fn validate_negative(negative: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_upstream(
-    root: &Path,
-    upstream: &Path,
-    coverage: &Value,
-    temporary: &TempDir,
-) -> Result<(), String> {
-    let mut command = Command::new("git");
-    command.current_dir(upstream).args(["rev-parse", "HEAD"]);
-    if trim(&process::capture(
-        &mut command,
-        temporary,
-        "upstream-revision",
-        Duration::from_secs(30),
-    )?) != REVISION.as_bytes()
-    {
-        return Err("pinned upstream revision changed".into());
-    }
-    verify_hash(upstream, "config/gitleaks.toml", CONFIG_SHA256)?;
-    for (path, hash) in SOURCE_HASHES {
-        verify_hash(upstream, path, hash)?;
-    }
+pub(super) fn validate_local(root: &Path, _coverage: &Value) -> Result<(), String> {
     for (repository, hash) in INDEX_HASHES {
         let relative = format!("testdata/repos/{repository}/dotGit/index");
         verify_hash(&root.join("compat/fixtures/upstream"), &relative, hash)?;
-        verify_hash(upstream, &relative, hash)?;
-    }
-    let fixture_root = root.join("compat/fixtures/upstream/testdata/repos");
-    if fixture::tree_fingerprint(&fixture_root)?
-        != required_str(coverage, "fixture_tree_sha256", "coverage")?
-    {
-        return Err("Git fixture tree fingerprint changed".into());
     }
     validate_test_manifest(root)
 }
@@ -345,14 +288,4 @@ fn verify_hash(root: &Path, relative: &str, expected: &str) -> Result<(), String
         return Err(format!("pinned Git source {relative} changed"));
     }
     Ok(())
-}
-
-fn trim(mut bytes: &[u8]) -> &[u8] {
-    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[1..];
-    }
-    while bytes.last().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[..bytes.len() - 1];
-    }
-    bytes
 }

@@ -10,55 +10,33 @@ use sha2::{Digest, Sha256};
 
 use crate::{REVISION, command_output};
 
-use super::support::TempDir;
-
 const FIXTURE_RECORD_SHA256: &str =
     "a29bcb807fc5466fb38bba0134fe6d5f41364e9efeae4980225cc21524fd4ed1";
 #[allow(clippy::too_many_lines)] // Kept linear so every fixture invariant remains auditable.
-pub(crate) fn verify_fixtures(root: &Path, oracle: &Path) -> Result<(), String> {
-    let source = oracle.join("testdata");
+pub(crate) fn verify_fixtures(root: &Path) -> Result<(), String> {
+    super::frozen::verify_artifact(root, "compat/test-manifest.toml")?;
     let copied = root.join("compat/fixtures/upstream/testdata");
-    let temporary = TempDir::new("fixture-self-test")?;
-    let flattened = temporary.path.join("flattened-link");
-    fs::write(&flattened, b"../target")
-        .map_err(|error| format!("cannot write fixture negative control: {error}"))?;
-    if fs::symlink_metadata(&flattened)
-        .map_err(|error| format!("cannot inspect fixture negative control: {error}"))?
-        .file_type()
-        .is_symlink()
-    {
-        return Err("flattened-symlink negative self-test unexpectedly passed".into());
+    let manifest = fs::read_to_string(root.join("compat/test-manifest.toml"))
+        .map_err(|error| format!("cannot read fixture manifest: {error}"))?;
+    let manifest: toml::Value =
+        toml::from_str(&manifest).map_err(|error| format!("invalid fixture manifest: {error}"))?;
+    let rows = manifest["fixture"]
+        .as_array()
+        .ok_or("fixture manifest has no rows")?;
+    let mut fixtures = BTreeMap::new();
+    for row in rows {
+        let source = row["source"].as_str().ok_or("fixture has no source")?;
+        let relative = source
+            .strip_prefix("testdata/")
+            .ok_or("fixture outside testdata")?;
+        if fixtures.insert(relative.to_owned(), row).is_some() {
+            return Err(format!("duplicate fixture path {relative}"));
+        }
     }
-
-    let revision = command_output(
-        Command::new("git")
-            .current_dir(oracle)
-            .args(["rev-parse", "HEAD"]),
-    )?;
-    if revision != REVISION {
-        return Err(format!(
-            "upstream revision mismatch: expected {REVISION}, got {revision}"
-        ));
-    }
-    if !copied.is_dir() {
-        return Err(format!("fixture copy is missing: {}", copied.display()));
-    }
-    let source_paths = fixture_entries(&source)?;
     let copy_paths = fixture_entries(&copied)?;
-    if source_paths != copy_paths {
-        let missing = source_paths
-            .iter()
-            .find(|path| copy_paths.binary_search(path).is_err())
-            .map_or("<none>", String::as_str);
-        let extra = copy_paths
-            .iter()
-            .find(|path| source_paths.binary_search(path).is_err())
-            .map_or("<none>", String::as_str);
-        return Err(format!(
-            "fixture path mismatch; missing={missing}; extra={extra}"
-        ));
+    if fixtures.keys().cloned().collect::<Vec<_>>() != copy_paths {
+        return Err("frozen fixture path set changed".into());
     }
-    let source_modes = git_modes(oracle, "testdata", "testdata/")?;
     let copy_modes = git_modes(
         root,
         "compat/fixtures/upstream/testdata",
@@ -67,16 +45,12 @@ pub(crate) fn verify_fixtures(root: &Path, oracle: &Path) -> Result<(), String> 
     if copy_modes.keys().cloned().collect::<Vec<_>>() != copy_paths {
         return Err("fixture copy is not completely tracked in Git".into());
     }
-
     let mut regular_records = Vec::new();
     let mut regular_count = 0_usize;
     let mut symlink_count = 0_usize;
-    for relative in &source_paths {
-        let source_path = source.join(relative);
+    for (relative, fixture) in &fixtures {
         let copy_path = copied.join(relative);
-        let mode = source_modes
-            .get(relative)
-            .ok_or_else(|| format!("upstream fixture is not tracked: {relative}"))?;
+        let mode = fixture["mode"].as_str().ok_or("fixture has no mode")?;
         let copy_mode = copy_modes
             .get(relative)
             .ok_or_else(|| format!("copied fixture is not tracked: {relative}"))?;
@@ -87,7 +61,11 @@ pub(crate) fn verify_fixtures(root: &Path, oracle: &Path) -> Result<(), String> 
         }
         if mode == "120000" {
             symlink_count += 1;
-            let expected = symlink_target(&source_path, "upstream")?;
+            let expected = PathBuf::from(
+                fixture["symlink_target"]
+                    .as_str()
+                    .ok_or("fixture has no symlink target")?,
+            );
             let actual = symlink_target(&copy_path, "copied")?;
             if actual != expected {
                 return Err(format!("symlink target mismatch for {relative}"));
@@ -95,14 +73,16 @@ pub(crate) fn verify_fixtures(root: &Path, oracle: &Path) -> Result<(), String> 
             continue;
         }
         regular_count += 1;
-        let expected = fs::read(&source_path)
-            .map_err(|error| format!("cannot read {}: {error}", source_path.display()))?;
         let actual = fs::read(&copy_path)
             .map_err(|error| format!("cannot read {}: {error}", copy_path.display()))?;
-        if actual.len() != expected.len() {
+        if u64::try_from(actual.len()).ok()
+            != fixture["size"]
+                .as_integer()
+                .and_then(|size| u64::try_from(size).ok())
+        {
             return Err(format!("fixture size mismatch for {relative}"));
         }
-        let expected_hash = hex_sha256(&expected);
+        let expected_hash = fixture["sha256"].as_str().ok_or("fixture has no SHA-256")?;
         if hex_sha256(&actual) != expected_hash {
             return Err(format!("fixture content mismatch for {relative}"));
         }
@@ -124,7 +104,7 @@ pub(crate) fn verify_fixtures(root: &Path, oracle: &Path) -> Result<(), String> 
         regular_records.extend_from_slice(
             format!(
                 "testdata/{relative}\t{expected_hash}\t{expected_permissions:o}\t{}\n",
-                expected.len()
+                actual.len()
             )
             .as_bytes(),
         );
@@ -144,7 +124,7 @@ pub(crate) fn verify_fixtures(root: &Path, oracle: &Path) -> Result<(), String> 
         ));
     }
     eprintln!(
-        "verified {regular_count} regular fixtures and {symlink_count} symlink at upstream {REVISION}"
+        "verified {regular_count} regular fixtures and {symlink_count} symlink from frozen upstream {REVISION}"
     );
     Ok(())
 }

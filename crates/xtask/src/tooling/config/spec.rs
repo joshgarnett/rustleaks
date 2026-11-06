@@ -53,12 +53,8 @@ pub(super) struct Fixture {
 
 pub(super) struct Canonical {
     pub(super) schema: Vec<u8>,
-    pub(super) manifest: Vec<u8>,
-    pub(super) inputs: Vec<u8>,
-    pub(super) requests: Vec<u8>,
     pub(super) committed_default: Vec<u8>,
     pub(super) request_values: Vec<Value>,
-    pub(super) fixtures: Vec<Fixture>,
 }
 
 impl Canonical {
@@ -89,17 +85,13 @@ pub(super) fn load(root: &Path) -> Result<Canonical, String> {
     )?;
 
     validate_schema(&schema)?;
-    validate_manifest(root, &manifest)?;
+    validate_manifest(&manifest)?;
     let fixtures = validate_inputs(root, &inputs)?;
     let request_values = validate_requests(&requests, &fixtures, &committed_default)?;
     Ok(Canonical {
         schema,
-        manifest,
-        inputs,
-        requests,
         committed_default,
         request_values,
-        fixtures,
     })
 }
 

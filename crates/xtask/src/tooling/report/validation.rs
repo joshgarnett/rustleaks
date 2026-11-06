@@ -12,12 +12,7 @@ use super::spec::{CASE_COUNT, DEFAULT_CONFIG_SHA256, PROTOCOL_VERSION, REVISION}
 use crate::tooling::artifacts::{OutcomeBaseline, first_json_difference};
 use crate::tooling::support::sha256_bytes;
 
-pub(super) fn validate_envelope(
-    request: &Value,
-    outcome: &Value,
-    go_version: &str,
-    platform: &str,
-) -> Result<(), String> {
+pub(super) fn validate_envelope(request: &Value, outcome: &Value) -> Result<(), String> {
     let id = required_str(request, "id", "request")?;
     if required_str(outcome, "id", id)? != id
         || required_u64(outcome, "protocol_version", id)? != PROTOCOL_VERSION
@@ -26,11 +21,6 @@ pub(super) fn validate_envelope(
         || required_str(outcome, "default_config_sha256", id)? != DEFAULT_CONFIG_SHA256
     {
         return Err(format!("{id}: oracle response envelope changed"));
-    }
-    if !runtime_matches(outcome, go_version, platform) {
-        return Err(format!(
-            "{id}: runtime provenance differs from selected Go toolchain"
-        ));
     }
     for field in ["behavior_ids", "test_case_ids"] {
         if outcome.get(field) != request.get(field) {
@@ -53,31 +43,6 @@ pub(super) fn validate_envelope(
         return Err(format!("{id}: redacted projection is missing"));
     }
     Ok(())
-}
-
-pub(super) fn runtime_negative_control(
-    outcome: &Value,
-    go_version: &str,
-    platform: &str,
-) -> Result<(), String> {
-    for field in ["go_version", "platform"] {
-        let mut mutated = outcome.clone();
-        mutated
-            .as_object_mut()
-            .ok_or("oracle outcome is not an object")?
-            .insert(field.into(), Value::String("invalid-provenance".into()));
-        if runtime_matches(&mutated, go_version, platform) {
-            return Err(format!(
-                "runtime provenance negative control accepted mutated {field}"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn runtime_matches(outcome: &Value, go_version: &str, platform: &str) -> bool {
-    outcome.get("go_version").and_then(Value::as_str) == Some(go_version)
-        && outcome.get("platform").and_then(Value::as_str) == Some(platform)
 }
 
 pub(super) fn validate_native_windows_ledger(
@@ -150,7 +115,7 @@ pub(super) fn validate_native_windows_ledger(
         return Err("native Windows report difference paths changed".into());
     }
 
-    if !cfg!(windows) {
+    if !observed_platform.starts_with("windows/") {
         return Ok(());
     }
     let platform = platforms.get(observed_platform).ok_or_else(|| {
@@ -262,9 +227,7 @@ pub(super) fn validate_all(
     {
         return Err("temporary template path leaked into report outcomes".into());
     }
-    if !cfg!(windows)
-        && required_str(coverage, "outcomes_sha256", "coverage")? != sha256_bytes(outcome_bytes)
-    {
+    if required_str(coverage, "outcomes_sha256", "coverage")? != sha256_bytes(outcome_bytes) {
         return Err("fresh report outcomes differ from coverage outcomes_sha256".into());
     }
     let output_count = outcomes
@@ -401,13 +364,11 @@ pub(super) fn string_array<'a>(
 mod tests {
     use serde_json::json;
 
-    use super::{reconcile_native_windows_outcomes, required_str, runtime_negative_control};
+    use super::{reconcile_native_windows_outcomes, required_str};
 
     #[test]
-    fn missing_fields_and_mutated_provenance_fail() {
+    fn missing_fields_fail() {
         assert!(required_str(&json!({}), "id", "test").is_err());
-        let outcome = json!({"go_version":"go1.26", "platform":"linux/amd64"});
-        runtime_negative_control(&outcome, "go1.26", "linux/amd64").unwrap();
     }
 
     #[test]
