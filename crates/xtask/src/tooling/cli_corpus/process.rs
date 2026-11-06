@@ -8,8 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::TempDir;
-use super::spec::REVISION;
-use crate::tooling::support::{diagnostic_tail, go_module_cache};
+use crate::tooling::support::diagnostic_tail;
 
 pub(super) const CASE_TIMEOUT: Duration = Duration::from_secs(15);
 pub(super) const OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
@@ -53,10 +52,25 @@ pub(super) fn run<S: AsRef<std::ffi::OsStr>>(
         .map_err(|error| format!("cannot create {}: {error}", stdout_path.display()))?;
     let stderr = File::create(&stderr_path)
         .map_err(|error| format!("cannot create {}: {error}", stderr_path.display()))?;
+    let git = super::git_executable()?;
+    let program = if program == Path::new("git") {
+        git.as_path()
+    } else {
+        program
+    };
+    let git_parent = git.parent().ok_or("bound Git executable has no parent")?;
+    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+    let search_path = std::env::join_paths(
+        std::iter::once(git_parent.to_path_buf()).chain(std::env::split_paths(&inherited_path)),
+    )
+    .map_err(|error| format!("cannot construct CLI fixture search path: {error}"))?;
     let mut command = Command::new(program);
     command
         .current_dir(directory)
         .args(args)
+        .env("PATH", search_path)
+        .env_remove("RUSTLEAKS_CONFIG")
+        .env_remove("RUSTLEAKS_CONFIG_TOML")
         .env_remove("GITLEAKS_CONFIG")
         .env_remove("GITLEAKS_CONFIG_TOML")
         .env("LC_ALL", "C")
@@ -201,34 +215,12 @@ fn bytes_os(bytes: &[u8]) -> Result<std::ffi::OsString, String> {
     }
 }
 
-pub(super) fn default_go_env(temporary: &TempDir) -> BTreeMap<String, Vec<u8>> {
-    BTreeMap::from([
-        (
-            "GOCACHE".into(),
-            temporary
-                .path
-                .join("go-cache")
-                .to_string_lossy()
-                .into_owned()
-                .into_bytes(),
-        ),
-        (
-            "GOMODCACHE".into(),
-            go_module_cache(REVISION)
-                .to_string_lossy()
-                .into_owned()
-                .into_bytes(),
-        ),
-        ("GOMEMLIMIT".into(), b"768MiB".to_vec()),
-        ("GOMAXPROCS".into(), b"2".to_vec()),
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::exit_value;
 
     #[test]
+    #[cfg(unix)]
     fn successful_status_maps_to_zero() {
         let status = std::process::Command::new("true").status().unwrap();
         assert_eq!(exit_value(status), 0);

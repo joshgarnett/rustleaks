@@ -11,34 +11,20 @@ use serde_json::Value;
 
 use super::TempDir;
 use super::fixture;
-use super::normalize::{self, Event};
+use super::normalize;
 use super::process::{self, CASE_TIMEOUT, OUTPUT_LIMIT};
 use super::validation::{required_array, required_str};
 use crate::tooling::support::sha256_bytes;
 
 const MARKER: &[u8] = b"CLI_CORPUS_DISCLOSURE_MARKER_8F20C3";
 
-pub(super) struct Observation {
-    pub(super) json: String,
-    exit: String,
-    finding_count: Option<usize>,
-    stdout: String,
-    event_projection: String,
-    usage: String,
-    report: String,
-    findings: String,
-    child: String,
-}
-
 #[allow(clippy::too_many_lines)] // Observation keeps the ordered black-box protocol in one place.
 pub(super) fn observe(
     binary: &Path,
-    implementation: &str,
     case_id: &str,
     spec: &Value,
-    go_binary: &Path,
     fake_git_binary: &Path,
-) -> Result<Observation, String> {
+) -> Result<Value, String> {
     let temporary = TempDir::new(&format!("cli-{}", case_id.to_ascii_lowercase()))?;
     let capture = TempDir::new(&format!("cli-io-{}", case_id.to_ascii_lowercase()))?;
     let root = &temporary.path;
@@ -46,7 +32,6 @@ pub(super) fn observe(
     let prepared = fixture::prepare(
         root,
         spec.get("prepare").and_then(Value::as_str),
-        go_binary,
         fake_git_binary,
         &capture,
         &format!("{case_id}-{}", required_str(spec, "id", case_id)?),
@@ -85,7 +70,7 @@ pub(super) fn observe(
         &env,
         &stdin,
         &capture,
-        &format!("{case_id}-{variant_id}-{implementation}"),
+        &format!("{case_id}-{variant_id}-rust"),
         CASE_TIMEOUT,
         OUTPUT_LIMIT,
     )?;
@@ -122,7 +107,6 @@ pub(super) fn observe(
     };
     let stdout_b64 = BASE64.encode(&stdout);
     let event_json = events.iter().map(normalize::event_json).collect::<Vec<_>>();
-    let event_projection = events.iter().map(event_projection_json).collect::<Vec<_>>();
     let usage_json = usage
         .as_ref()
         .map_or_else(|| "null".into(), |bytes| byte_record(bytes));
@@ -137,24 +121,14 @@ pub(super) fn observe(
     let child_json = child_reaped.map_or_else(|| "null".into(), |value| value.to_string());
     let json = format!(
         "{{\"implementation\":{},\"exit\":{exit},\"stdout_base64\":{},\"stdout_bytes\":{},\"stdout_sha256\":{},\"stderr_events\":[{}],\"stderr_usage\":{usage_json},\"stderr_contains_disclosure_marker\":{},\"report\":{report_json},\"findings\":{findings_json},\"finding_count\":{finding_count},\"child_reaped\":{child_json}}}",
-        quote(implementation),
+        quote("rust"),
         quote(&stdout_b64),
         stdout.len(),
         quote(&sha256_bytes(&stdout)),
         event_json.join(","),
         contains(&result.stderr, MARKER)
     );
-    Ok(Observation {
-        json,
-        exit,
-        finding_count: findings.as_ref().map(Vec::len),
-        stdout: quote(&stdout_b64),
-        event_projection: format!("[{}]", event_projection.join(",")),
-        usage: usage_json,
-        report: report_json,
-        findings: findings_json,
-        child: child_json,
-    })
+    serde_json::from_str(&json).map_err(|error| format!("cannot encode CLI observation: {error}"))
 }
 
 fn native_negative_one_exit(exit: i64) -> bool {
@@ -166,169 +140,6 @@ fn native_negative_one_exit(exit: i64) -> bool {
     {
         exit == 255
     }
-}
-
-pub(super) fn comparison(
-    go: &Observation,
-    rust: &Observation,
-    disposition: Option<&str>,
-) -> String {
-    let axes = [
-        ("exit", go.exit == rust.exit),
-        ("stdout", go.stdout == rust.stdout),
-        (
-            "stderr_events",
-            go.event_projection == rust.event_projection,
-        ),
-        ("stderr_usage", go.usage == rust.usage),
-        ("report", go.report == rust.report),
-        ("findings", go.findings == rust.findings),
-        ("child_cleanup", go.child == rust.child),
-    ];
-    let axes = axes
-        .iter()
-        .map(|(name, equal)| {
-            format!(
-                "{}:{}",
-                quote(name),
-                quote(if *equal { "equal" } else { "different" })
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"axes\":{{{axes}}},\"status\":{},\"disposition\":{}}}",
-        quote(if disposition.is_some() {
-            "accepted-versioned-disposition"
-        } else {
-            "exact"
-        }),
-        disposition.map_or_else(|| "null".into(), quote)
-    )
-}
-
-pub(super) fn row_json(
-    row: &Value,
-    go_binary: &Path,
-    rust_binary: &Path,
-    fake_git_binary: &Path,
-    native_linux: &str,
-    unix_path: &str,
-    unix_logical_name: &str,
-) -> Result<String, String> {
-    validate_committed_variant(native_linux, "native-non-utf8", 1, 1, 404)?;
-    validate_committed_variant(unix_path, "windows-drive-unc-spellings", 0, 0, 3)?;
-    validate_committed_variant(unix_logical_name, "windows-logical-name", 1, 1, 438)?;
-    let case_id = required_str(row, "id", "CLI request")?;
-    let mut variants = Vec::new();
-    for spec in required_array(row, "variants", case_id)? {
-        let variant_id = required_str(spec, "id", case_id)?;
-        let windows_incompatible = unix_only(spec) || variant_id == "windows-logical-name";
-        let committed = if linux_only(spec) {
-            Some(native_linux)
-        } else if unix_only(spec) {
-            Some(unix_path)
-        } else if variant_id == "windows-logical-name" {
-            Some(unix_logical_name)
-        } else {
-            None
-        };
-        if linux_only(spec) && !cfg!(target_os = "linux") || windows_incompatible && cfg!(windows) {
-            variants.push(
-                committed
-                    .expect("host-specific evidence selected")
-                    .trim_end()
-                    .to_owned(),
-            );
-            continue;
-        }
-        let go = observe(go_binary, "go", case_id, spec, go_binary, fake_git_binary)?;
-        let rust = observe(
-            rust_binary,
-            "rust",
-            case_id,
-            spec,
-            go_binary,
-            fake_git_binary,
-        )?;
-        validate_expected_pair(case_id, variant_id, spec, &go, &rust)?;
-        let disposition = native_windows_disposition(case_id, variant_id)
-            .or_else(|| spec.get("disposition").and_then(Value::as_str));
-        let variant = format!(
-            "{{\"id\":{},\"go\":{},\"rust\":{},\"comparison\":{}}}",
-            quote(variant_id),
-            go.json,
-            rust.json,
-            comparison(&go, &rust, disposition)
-        );
-        if committed.is_some_and(|evidence| variant != evidence.trim_end()) {
-            return Err(format!(
-                "{case_id}/{variant_id}: host-specific observation differs from committed evidence"
-            ));
-        }
-        variants.push(variant);
-    }
-    Ok(format!(
-        "{{\"protocol_version\":1,\"id\":{},\"title\":{},\"variants\":[{}]}}\n",
-        quote(case_id),
-        quote(required_str(row, "title", case_id)?),
-        variants.join(",")
-    ))
-}
-
-fn native_windows_disposition(case_id: &str, variant_id: &str) -> Option<&'static str> {
-    if !cfg!(windows) {
-        return None;
-    }
-    match (case_id, variant_id) {
-        ("CLI-BB-013", "outside-baseline") => Some("CLI-NATIVE-WINDOWS-001"),
-        ("CLI-BB-030", "corrupt-archive-and-broken-symlink") => Some("CLI-NATIVE-WINDOWS-002"),
-        _ => None,
-    }
-}
-
-fn validate_committed_variant(
-    bytes: &str,
-    expected_id: &str,
-    expected_exit: i64,
-    expected_findings: u64,
-    expected_report_bytes: u64,
-) -> Result<(), String> {
-    if !bytes.ends_with('\n') || bytes[..bytes.len() - 1].contains('\n') {
-        return Err("host-specific CLI evidence must be one newline-terminated JSON object".into());
-    }
-    let value: Value = serde_json::from_str(bytes)
-        .map_err(|error| format!("invalid host-specific CLI evidence: {error}"))?;
-    if required_str(&value, "id", "host-specific evidence")? != expected_id {
-        return Err("host-specific CLI evidence identity changed".into());
-    }
-    for implementation in ["go", "rust"] {
-        let observation = value
-            .get(implementation)
-            .ok_or_else(|| format!("native Linux evidence is missing {implementation}"))?;
-        if observation.get("exit").and_then(Value::as_i64) != Some(expected_exit)
-            || observation.get("finding_count").and_then(Value::as_u64) != Some(expected_findings)
-            || observation.pointer("/report/bytes").and_then(Value::as_u64)
-                != Some(expected_report_bytes)
-        {
-            return Err(format!(
-                "host-specific {implementation} observation contract changed"
-            ));
-        }
-    }
-    let comparison = value
-        .get("comparison")
-        .ok_or("native Linux comparison is missing")?;
-    if comparison.get("status").and_then(Value::as_str) != Some("exact")
-        || comparison.get("disposition") != Some(&Value::Null)
-        || comparison
-            .get("axes")
-            .and_then(Value::as_object)
-            .is_none_or(|axes| axes.len() != 7 || axes.values().any(|axis| axis != "equal"))
-    {
-        return Err("host-specific exact comparison contract changed".into());
-    }
-    Ok(())
 }
 
 struct Report {
@@ -438,70 +249,6 @@ fn reap_if_alive(pid: u32) -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
-}
-
-fn validate_expected_pair(
-    case_id: &str,
-    variant_id: &str,
-    spec: &Value,
-    go: &Observation,
-    rust: &Observation,
-) -> Result<(), String> {
-    if !linux_only(spec) && !unix_only(spec) {
-        return Ok(());
-    }
-    let label = format!("{case_id}/{variant_id}");
-    let expected = spec.get("expectation").unwrap_or(&Value::Null);
-    if let Some(exit) = expected.get("exit").and_then(Value::as_i64) {
-        let exit = exit.to_string();
-        if go.exit != exit || rust.exit != exit {
-            return Err(format!("{label}: expected exit changed"));
-        }
-    }
-    if let Some(findings) = expected.get("findings").and_then(Value::as_u64) {
-        let findings = usize::try_from(findings)
-            .map_err(|_| format!("{label}: finding expectation is too large"))?;
-        if go.finding_count != Some(findings) || rust.finding_count != Some(findings) {
-            return Err(format!("{label}: expected finding count changed"));
-        }
-    }
-    if go.exit != rust.exit
-        || go.stdout != rust.stdout
-        || go.event_projection != rust.event_projection
-        || go.usage != rust.usage
-        || go.report != rust.report
-        || go.findings != rust.findings
-        || go.child != rust.child
-    {
-        return Err(format!("{label}: exact comparison changed"));
-    }
-    Ok(())
-}
-
-fn linux_only(spec: &Value) -> bool {
-    spec.pointer("/expectation/linux_only")
-        .and_then(Value::as_bool)
-        == Some(true)
-}
-
-fn unix_only(spec: &Value) -> bool {
-    spec.pointer("/expectation/unix_only")
-        .and_then(Value::as_bool)
-        == Some(true)
-}
-
-fn event_projection_json(event: &Event) -> String {
-    let fields = event
-        .fields
-        .iter()
-        .map(|(key, value)| format!("{}:{}", quote(key), serde_json::to_string(value).unwrap()))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"severity\":{},\"class\":{},\"fields\":{{{fields}}}}}",
-        quote(&event.severity),
-        quote(&event.class)
-    )
 }
 
 fn byte_record(bytes: &[u8]) -> String {
