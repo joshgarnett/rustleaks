@@ -442,26 +442,38 @@ fn collector_rejects_incomplete_failed_unbounded_or_trailing_output() {
         fs::set_permissions(&worker, fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(work.join("fixture.json"), fixture.to_string()).unwrap();
         fs::write(work.join("case.txt"), case).unwrap();
+        // Protocol fixtures are not host-speed tests. Keep intentional stalls
+        // short while allowing cold process startup on shared native runners.
+        let intentional_stall = matches!(case, "hang-after-finished" | "descendant-holds-output");
+        let collector_seconds = if intentional_stall { "5" } else { "30" };
+        let parent_seconds = if intentional_stall { 10 } else { 45 };
         let mut command = Command::new("python3");
         command
             .args(["-c", CONTROLLER, "sample-window"])
             .arg(&worker)
             .arg("core-dense-16-kib")
             .arg(&output)
-            .args(["5", "100", "0", "1"]);
+            .args([collector_seconds, "100", "0", "1"]);
         let result = super::collect_supervised(
             &mut command,
             &output,
-            Instant::now() + Duration::from_secs(10),
+            Instant::now() + Duration::from_secs(parent_seconds),
         );
         let success = matches!(case, "complete" | "stdout-at-bound" | "stderr-at-bound");
-        assert_eq!(result.is_ok(), success, "{case}: {result:?}");
         let parent: Value = serde_json::from_slice(
             &fs::read(output.join("parent-completion.json")).unwrap_or_else(|error| {
                 panic!("{case}: missing parent completion: {error}; {result:?}")
             }),
         )
         .unwrap_or_else(|error| panic!("{case}: invalid parent completion: {error}; {result:?}"));
+        // These receipts contain only synthetic fixture status. Keep them in a
+        // failed assertion so hosted failures retain the actual failure class.
+        let collector_receipt = fs::read_to_string(output.join("collector-completion.json"));
+        assert_eq!(
+            result.is_ok(),
+            success,
+            "{case}: {result:?}; parent={parent}; collector={collector_receipt:?}"
+        );
         assert_eq!(parent["cleanup_complete"], true, "{case}: {parent}");
         assert_eq!(parent["deadline_met"], true, "{case}: {parent}");
         assert_eq!(parent["outcome"] == "success", success, "{case}: {parent}");
