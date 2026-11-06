@@ -290,6 +290,8 @@ mod tests {
 
     #[test]
     fn missing_swapped_and_duplicate_identities_are_rejected() {
+        use std::fmt::Write as _;
+
         let (rows, _, bytes) = fixture();
         let mut outcomes = newline_records(&bytes, "outcomes")
             .unwrap()
@@ -298,9 +300,10 @@ mod tests {
             .collect::<Vec<_>>();
         outcomes[0]["variants"].as_array_mut().unwrap().swap(0, 1);
         let encode = |rows: &[Value]| {
-            rows.iter()
-                .map(|row| format!("{row}\n"))
-                .collect::<String>()
+            rows.iter().fold(String::new(), |mut output, row| {
+                writeln!(output, "{row}").unwrap();
+                output
+            })
         };
         assert!(bind_expected(&rows, encode(&outcomes).as_bytes()).is_err());
         outcomes.swap(0, 1);
@@ -356,7 +359,7 @@ mod tests {
                 | "raw-template-grammar"
                 | "exit" => changed["exit"] = json!(99),
                 "dormant-report" | "report-before-exit" | "safe-preflight" | "report-bytes" => {
-                    changed["report"] = json!({"state": "mutated"})
+                    changed["report"] = json!({"state": "mutated"});
                 }
                 "non-disclosure" => changed["stderr_contains_disclosure_marker"] = json!(true),
                 "help-golden" => changed["stdout_base64"] = json!(BASE64.encode(b"changed help")),
