@@ -192,11 +192,11 @@ fn explicit_rule_and_global_allowlists_apply_without_default_mutation() {
         ),
     ] {
         for global in [false, true] {
-            for condition in [
-                format!("stopwords = ['{secret}']"),
-                format!("regexes = ['^{secret}$']"),
-                "paths = ['^allowed[.]conf$']".into(),
-                "commits = ['synthetic-commit']".into(),
+            for (condition_kind, condition) in [
+                ("stopwords", format!("stopwords = ['{secret}']")),
+                ("regexes", format!("regexes = ['^{secret}$']")),
+                ("paths", "paths = ['^allowed[.]conf$']".into()),
+                ("commits", "commits = ['synthetic-commit']".into()),
             ] {
                 let mut raw: RawConfig = toml::from_str(PACK).unwrap();
                 if global {
@@ -226,7 +226,7 @@ fn explicit_rule_and_global_allowlists_apply_without_default_mutation() {
                         .scan_fragment(&fragment, &ScanOptions::default())
                         .findings()
                         .is_empty(),
-                    "{rule}: {condition}"
+                    "{rule}: {condition_kind}, global={global}"
                 );
             }
         }
