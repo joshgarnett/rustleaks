@@ -25,6 +25,9 @@ const BEHAVIOR_IDENTITIES_SHA256: &str =
     "bc76f555aef6e9275826dfa9d9b436410193a48f41288d7d33e5bbf423157dc4";
 const TEST_IDENTITIES_SHA256: &str =
     "67b808a4264df3d3d8c27072325b8248368511ea5a890719a4d84fda8ad68dd8";
+// Historical provenance embedded in coverage, without a live source requirement.
+const DETECT_SOURCE_SHA256: &str =
+    "2bac563a09f22ff76c56b200c3b9b5dc865c1de699eb0ba2a27cca741fa9bd13";
 const FILES: &[&str] = &[
     "README.md",
     "coverage-v1.json",
@@ -36,6 +39,7 @@ const FILES: &[&str] = &[
 
 pub(super) struct Canonical {
     pub(super) request_values: Vec<Value>,
+    pub(super) negative_controls: Vec<u8>,
 }
 
 struct RequestSet {
@@ -73,6 +77,7 @@ pub(super) fn load(root: &Path) -> Result<Canonical, String> {
     validate_negative_controls(&negative_controls, &request_set.ids)?;
     Ok(Canonical {
         request_values: request_set.values,
+        negative_controls,
     })
 }
 
@@ -171,7 +176,7 @@ fn validate_requests(bytes: &[u8]) -> Result<RequestSet, String> {
         BEHAVIOR_IDENTITIES_SHA256,
     )?;
     require_set_hash("composite test identities", &tests, TEST_IDENTITIES_SHA256)?;
-    Ok(RequestSet { lines, values, ids })
+    Ok(RequestSet { values, ids })
 }
 
 fn validate_coverage(

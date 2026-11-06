@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::newline_records;
 use super::validation::{required_object, required_str, required_u64, string_array};
+use crate::tooling::support::sha256_bytes;
 
 pub(super) const PROTOCOL_VERSION: u64 = 1;
 pub(super) const CASE_COUNT: usize = 49;

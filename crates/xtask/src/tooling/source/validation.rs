@@ -357,6 +357,20 @@ fn validate_counts(
     Ok(())
 }
 
+fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result<&'a str, String> {
+    let first = outcomes
+        .first()
+        .ok_or_else(|| format!("{label} outcomes are empty"))?;
+    let expected = required_str(first, field, label)?;
+    if outcomes
+        .iter()
+        .any(|outcome| outcome.get(field).and_then(Value::as_str) != Some(expected))
+    {
+        return Err(format!("frozen {label} {field} provenance is inconsistent"));
+    }
+    Ok(expected)
+}
+
 pub(super) fn outcome_for<'a>(
     outcomes: &'a BTreeMap<&str, &Value>,
     id: &str,
