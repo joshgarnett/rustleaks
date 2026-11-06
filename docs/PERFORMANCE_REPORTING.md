@@ -2,8 +2,12 @@
 
 The reporting command is an optional local operation. It does not change
 release checks, scheduled workflows, thresholds, baselines or runner purchases.
-Existing normal tests already check deterministic workload outcomes. Timing and
-profiling remain manual operations on a quiet native host.
+Existing normal tests already check deterministic workload outcomes.
+Informational collection and profiling are manual operations that may use
+best-effort host isolation. Record host load and treat elapsed times on a busy
+host as observations, not qualified wall-time comparisons. CPU-time comparisons
+require their own declared scope and qualification; they do not establish
+wall-time improvement.
 
 Run from the repository root, choosing a new private directory outside the
 checkout:
@@ -19,7 +23,10 @@ M1 Max budgets: one untimed warmup, seven fresh process samples and RSS from the
 first three processes for each budgeted workload. The exact original hardware
 predicate is retained and checked. Other hosts report a skipped budget. The
 Cargo-to-Bazel calibration caveat in [Performance measurement](PERFORMANCE.md)
-still applies. Passing an inherited limit does not establish a new baseline.
+still applies. Use `--legacy-budget` only with the retained hardware predicate
+and controlled collection conditions. A busy-host informational run does not
+qualify those wall-time budgets. Passing an inherited limit does not establish
+a new baseline.
 
 Collection has a 900-second outer deadline, including build preparation. Its
 process tree is terminated and reaped on completion or failure. The supervisor capture

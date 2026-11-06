@@ -18,25 +18,29 @@ current contracts are the [native policy](../DETECTION_POLICY.md),
 The [local validation record](../ROADMAP.md#current-local-validation) binds the
 clean source that passed generated API and quality checks, external consumers,
 full compatibility, fuzz smoke, package dry run and selected Bazel targets.
-Earlier integrated CI/security and repeated-test results retain their exact
-source scope. Final CI/security refresh passed; hosted checks and merge remain
-pending.
+Earlier results retain their exact source scope, including historical Go
+comparisons. Current qualification is Rust-owned: retirement CI/security,
+55 first-party targets repeated ten times and 16 uncached clean-clone targets
+without Go on PATH or a sibling checkout passed. Complete clean Rust
+qualification also passed after the test-only lint corrections. Hosted checks
+and merge remain pending. Defaults and frozen corpus bytes are unchanged.
 The F3 pilot implements historical-layout validation with checksum `Unknown`;
 checksum computation and finding suppression are outside that pilot.
 
-P3 helper semantics, public checks and profile attribution passed, but no new
-candidate comparison has started. Primary and guard qualification remain
-prerequisites to accepting an optimization in a separate delivery. P4 native
-profile import/reparse and summary verification passed; its native collector
-smoke remains pending. Its manual public-artifact contract requires seven-day
-retention and enables no schedule. Historical source
+P3 retains earlier helper semantics, public checks and profile attribution;
+current source/build bindings and new CPU-time comparison remain pending.
+Primary and guard qualification remain prerequisites to accepting an
+optimization. P4 native collector smoke completed all 23 informational rows,
+cleanup and summary verification; profile import/reparse also passed. These
+results establish no wall-time budget or speedup. Its manual public-artifact
+contract requires seven-day retention and enables no schedule. Historical source
 observations and the acceptance criteria below retain their original scope;
 implemented code alone does not establish completed validation or release
 availability.
 
 ## Design contract
 
-Preserve synchronous byte-oriented core detection, Send + Sync, exact byte spans, structured partial outcomes, and the default graph without I/O, background threads, async runtimes, native libraries, source adapters, or reports. Keep existing copied defaults and pinned Go evidence unchanged. Native extensions must have distinct policy/version identity and tests; changes to existing supported behavior still require the current full differential procedure. See AGENTS.md; docs/ARCHITECTURE.md:38-67; docs/COMPATIBILITY.md:12-22.
+Preserve synchronous byte-oriented core detection, Send + Sync, exact byte spans, structured partial outcomes, and the default graph without I/O, background threads, async runtimes, native libraries, source adapters, or reports. Keep existing copied defaults and pinned Go evidence unchanged. Native extensions must have distinct policy/version identity and tests; changes to existing supported behavior require the current complete Rust qualification procedure. See AGENTS.md; docs/ARCHITECTURE.md:38-67; docs/COMPATIBILITY.md:12-22.
 
 The current implementation scope is recorded in the roadmap. Dependency/toolchain/rules_rust changes, copied-default or pin changes, compatibility or security exceptions, credential use, publication, paid services, and GitHub settings changes retain their repository approval boundaries.
 
@@ -202,7 +206,7 @@ Acceptance: improvement reproduces beyond the calibrated noise band, exact findi
 
 ### P4 Add optional periodic performance reporting
 
-Implementation: the [optional reporting command](../PERFORMANCE_REPORTING.md) collects a bounded legacy matrix or imports supported retained reports. It recomputes derived classifications, separates invariant/execution failure, qualified legacy regression, informational timing, skipped budgets and profile availability, and emits a fixed sanitized summary. Manual public artifacts must contain only the verified summary and use seven-day retention. Actual native profile import/reparse and summary verification passed. The native collector smoke and hosted qualification remain pending; no automatic schedule or new release gate is added.
+Implementation: the [optional reporting command](../PERFORMANCE_REPORTING.md) collects a bounded legacy matrix or imports supported retained reports. It recomputes derived classifications, separates invariant/execution failure, qualified legacy regression, informational timing, skipped budgets and profile availability, and emits a fixed sanitized summary. Manual public artifacts must contain only the verified summary and use seven-day retention. Native collector smoke completed all 23 informational rows, cleanup and summary verification; native profile import/reparse also passed. Hosted qualification and merge remain pending; no automatic schedule or new release gate is added.
 
 Acceptance: each run distinguishes invariant failure, measured regression, budget not evaluated, unavailable host/tool and completed profile. Retain bounded raw samples, source/build/corpus identity and profile references; use only synthetic/reviewed inputs and avoid unnecessary environment/path disclosure. Reproduce a deliberate slowdown and unchanged-code noise behavior. No paid runner procurement or external service is included. Current release latency must not grow merely because this optional profile exists.
 

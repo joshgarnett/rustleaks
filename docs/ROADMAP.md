@@ -47,8 +47,8 @@ Further optimization requires a separately reviewed measurement approach.
 | P0 | Authoritative benchmark integration | Complete | None | Bazel runner/tests, real build provenance, preserved invariants and legacy timing scope, unchanged inherited M1 limits with migration evidence |
 | P1 | Representative performance workloads | Complete | P0 | 28 workloads, 103 phases and seven native samples per phase; exact outcomes and unchanged legacy limits pass |
 | P2 | Profiling and regression calibration | Complete | P0; P1 | Usable native CPU/retained-memory evidence and two independently validated A/A/slowdown-control runs |
-| P3 | Measured hotspot optimizations | In progress | Qualified primary and guard measurements | Helper semantic controls, 17 public checks and profile attribution pass; candidate comparison has not started and remains a separate delivery |
-| P4 | Optional periodic performance reporting | In review | P0-P2; sanitized retention contract | [Bounded collection/import and manual summary retention](PERFORMANCE_REPORTING.md) implemented; native profile import/reparse and summary verification pass; collector smoke and hosted qualification pending |
+| P3 | Measured hotspot optimizations | In progress | Qualified primary and guard measurements | Prior semantic controls and profile attribution retained; current source/build bindings and new CPU-time comparison pending; no optimization accepted |
+| P4 | Optional periodic performance reporting | In review | P0-P2; sanitized retention contract | [Bounded collection/import and manual summary retention](PERFORMANCE_REPORTING.md), native collector smoke, cleanup, profile import/reparse and summary verification pass; hosted qualification and merge pending |
 
 Statuses are `Planned`, `In progress`, `In review`, `Complete`, or `Blocked`
 with a concrete prerequisite. `In review` means implementation is present with
@@ -68,6 +68,25 @@ checks.
 
 ## Current local validation
 
+The live Go oracle is retired. Current qualification checks frozen evidence
+integrity and Rust regressions without Go or a sibling Gitleaks checkout.
+Defaults, corpus bytes, attribution and historical Go observations remain
+unchanged; current Rust output is not used to create expected baselines.
+
+Retirement source `828def79855f53a01baf9dc4b608835321834c64` passed 60 CI targets,
+security checks and all 55 first-party targets repeated ten times. A clean clone
+passed 16 uncached regression/tooling targets with Go unavailable on its command
+PATH and no sibling checkout. Candidate
+`ebaeddbc5bdae6c5f96a04f16eaf491c5d76adca` adds test-only lint corrections with
+focused formatting, Clippy and xtask unit checks passed. Complete clean Rust
+qualification also passed with Go unavailable on PATH and no sibling checkout,
+including default/all-feature tests, strict lint, MSRV, Miri, public API,
+package consumers, bounded resources, eight fuzz smoke targets and inherited
+performance limits. Required hosted checks and merge remain pending.
+
+The following source-bound results predate retirement and retain their original
+Go differential scope.
+
 The clean runtime candidate `c7aa41adf015ebef4ba7100850c62a43d5f58079`, tree
 `85a6e6b7f46353508b54b5982ccf2778c259298b`, passed the full pinned-Go differential,
 default/all-feature quality checks, exact public API checks, packaging and
@@ -84,11 +103,16 @@ qualification remain pending.
 Native runtime evidence is for aarch64-apple-darwin; target compilation does not
 establish runtime qualification elsewhere.
 
-P4 has exercised an actual native profile import, artifact reparse and summary
-verification. Its native collector smoke remains pending. Isolated P3 candidate
-controls covered 730,605 spans and detected the deliberately wrong boundary;
-17 public targets also passed. Fresh profile attribution supports investigating location lookup,
-but no new candidate timing comparison has started and no speedup is accepted.
+P4 native collector smoke passed at
+`cd56919ecced57e5450a073deb1e2bac737b24e1`: all 23 informational workload rows,
+process cleanup and sanitized-summary verification completed. Native profile
+import and artifact reparse also passed. This busy-host collection establishes
+collector correctness, not a wall-time budget result or speedup.
+
+Earlier isolated P3 controls covered 730,605 spans, detected the deliberately
+wrong boundary and passed 17 public targets. Profile attribution supports the
+location-lookup investigation. New source/build bindings and CPU-time comparison
+remain pending; no optimization is accepted.
 
 ## Foundation acceptance record
 
@@ -155,19 +179,20 @@ observations. Neither packet is claimed to be exhausted.
 
 The remaining work includes:
 
-- Complete required hosted checks and merge qualification for the feature
-  and hardening implementation. Preserve
-  the completed local API, package/consumer, quality, differential, robustness
-  and repeated-test evidence. The F3 checksum disposition remains `Unknown`.
+- Complete required hosted checks and merge qualification after live-oracle
+  retirement. Preserve the completed clean Rust qualification, local API,
+  package/consumer, quality, historical differential, robustness and repeated-test
+  evidence. The F3 checksum disposition remains `Unknown`.
 - P3 measurement work follows the unqualified
   [baseline observation-window packet](validation/baseline-observation-windows.md).
   A separately justified measurement change and reviewed protocol must qualify
   the primary and guards before another candidate comparison. Existing bands
   do not transfer to a different protocol. Capture/scratch or source scheduling
   changes also require their own profiling and measurements.
-- Complete the P4 native collector smoke. Actual profile import/reparse and
-  sanitized-summary verification have passed. Manual public summaries require
-  seven-day artifact retention; no schedule or new release threshold is enabled.
+- Complete P4 hosted qualification and merge with its passed collector,
+  profile-import/reparse and summary-verification evidence. Manual public
+  summaries require seven-day artifact retention; no schedule or new release
+  threshold is enabled.
 
 New network verification, external storage, dependencies, compatibility
 exceptions, paid infrastructure and publication remain outside this scope.
