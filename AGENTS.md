@@ -6,7 +6,7 @@ Rustleaks is an engine-first Rust port of selected behavior from one pinned
 Gitleaks revision. Keep `rustleaks-core` independent of files, archives, Git,
 reports, the CLI, async runtimes, and native libraries. Source adapters belong
 in `rustleaks-sources`, formatting in `rustleaks-report`, orchestration in
-`rustleaks-cli`, and unpublished oracle or maintenance code in
+`rustleaks-cli`, and unpublished regression or maintenance code in
 `rustleaks-compat` or `xtask`. Owned codec crates are source implementation
 details and must not enter the default core graph or public API.
 
@@ -55,8 +55,12 @@ native evidence.
 
 - Preserve supported configuration and detection behavior, byte findings,
   exact spans, structured errors, and the mappings in
-  `compat/test-manifest.toml`. Use the pinned Go oracle when behavior is
-  unclear. Never normalize away a semantic difference.
+  `compat/test-manifest.toml`. Historical Go observations are frozen provenance;
+  validate current behavior with Rust regression tests and local evidence
+  checks. Specify new expectations independently of the implementation under
+  test. Never normalize away a semantic difference or bless current output as
+  an expected baseline. The live Go oracle and automatic upstream rediscovery
+  are retired.
 - Keep detection synchronous, in-memory, `Send + Sync`, and free of implicit
   file, environment, log, thread, async-runtime, or process-global behavior.
   Keep C and C++ build steps and dependency implementation types out of the

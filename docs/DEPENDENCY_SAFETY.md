@@ -70,7 +70,8 @@ and 7z forks forbid owned unsafe. RAR2 uses upstream `compcol 0.7.8` with only
 `alloc` and `rar2`. The selected graph has no normal transitive dependencies,
 build script, native code, or unsafe Rust. The updated decoder corrects
 repeated-match offset history and caps speculative output reservation; the
-synthetic regression is independently checked against the pinned Go decoder.
+synthetic regression retains expected bytes independently checked against the
+pinned Go decoder before live oracle retirement.
 The [dependency review](dependency-audits/compcol-0.7.8.md) also records the
 unselected-code and source-distribution boundaries. XZ checksums retain
 exact-pinned `sha2`; its selected
@@ -108,17 +109,15 @@ sources. Native Linux/Windows execution remains a nonblocking runtime
 follow-up; target compilation does not validate architecture-specific unsafe
 paths at runtime.
 
-## Unpublished Go oracle
+## Historical Go oracle
 
-The compatibility-only Go module is not linked into Rustleaks packages or
-published crates. Hosted parity and release differential jobs run
-`govulncheck v1.7.0` against its source graph and fail when a vulnerable symbol
-is reachable. Module-level inventory can still report packages that the pinned
-Gitleaks oracle does not import or call.
+The compatibility-only Go module and its live execution paths are retired.
+They are absent from the maintained dependency graph. Frozen observations,
+fixture provenance and upstream attribution remain checked regression inputs;
+they are not executable Go dependencies. Normal and release qualification use
+Rust regression and security checks.
 
-`GO-2026-5932` identifies the unmaintained `golang.org/x/crypto/openpgp`
-package and has no fixed module version. The oracle graph uses other
-`x/crypto` packages but does not compile `openpgp`, so the symbol-reachability
-gate reports no affected code. This disposition applies only to the unpublished
-oracle at the pinned upstream revision and must be reviewed when that revision
-or its Go graph changes.
+Historical Go advisory observations do not imply that those advisories were
+fixed or waived. Reintroducing an executable oracle or dependency graph would
+require a separately reviewed scope and the applicable dependency and security
+checks.

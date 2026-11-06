@@ -74,11 +74,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Hydrate locked package dependencies
@@ -156,11 +151,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Install the pinned public API tool
@@ -173,8 +163,8 @@ jobs:
         working-directory: rustleaks
         run: just ci
 
-  differential:
-    name: Fresh compatibility differential
+  qualification:
+    name: Rust regression and release hardening
     needs: candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -185,18 +175,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Check out the pinned Go oracle
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: gitleaks/gitleaks
-          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
-          path: gitleaks
-          persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache-dependency-path: gitleaks/go.sum
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Install the pinned public API tool
@@ -215,18 +193,16 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
           cargo +nightly-2026-08-21 miri setup
-      - name: Hydrate locked parity dependencies
+      - name: Hydrate locked qualification dependencies
         working-directory: rustleaks
         run: |
           cargo fetch --locked
           cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
           cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
           cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
-      - name: Replay the complete fresh differential
+      - name: Run complete Rust qualification
         working-directory: rustleaks
-        run: |
-          cargo xtask oracle-vulnerability-check
-          cargo xtask parity --all
+        run: cargo xtask qualify
 
   security:
     name: Dependency and owned-code security
@@ -240,11 +216,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Install pinned security tools
@@ -275,11 +246,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Install the pinned fuzz toolchain
@@ -313,11 +279,6 @@ jobs:
           path: rustleaks
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -372,11 +333,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -494,11 +450,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -602,11 +553,6 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -702,7 +648,7 @@ jobs:
       - candidate
       - package
       - acceptance
-      - differential
+      - qualification
       - security
       - fuzz
       - self-scan
@@ -717,7 +663,7 @@ jobs:
           CANDIDATE: ${{ needs.candidate.result }}
           PACKAGE: ${{ needs.package.result }}
           ACCEPTANCE: ${{ needs.acceptance.result }}
-          DIFFERENTIAL: ${{ needs.differential.result }}
+          QUALIFICATION: ${{ needs.qualification.result }}
           SECURITY: ${{ needs.security.result }}
           FUZZ: ${{ needs.fuzz.result }}
           SELF_SCAN: ${{ needs.self-scan.result }}
@@ -726,6 +672,6 @@ jobs:
           NATIVE_WINDOWS: ${{ needs.native-windows.result }}
         run: |
           set -euo pipefail
-          for result in "${CANDIDATE}" "${PACKAGE}" "${ACCEPTANCE}" "${DIFFERENTIAL}" "${SECURITY}" "${FUZZ}" "${SELF_SCAN}" "${NATIVE_LINUX}" "${NATIVE_MACOS}" "${NATIVE_WINDOWS}"; do
+          for result in "${CANDIDATE}" "${PACKAGE}" "${ACCEPTANCE}" "${QUALIFICATION}" "${SECURITY}" "${FUZZ}" "${SELF_SCAN}" "${NATIVE_LINUX}" "${NATIVE_MACOS}" "${NATIVE_WINDOWS}"; do
             test "${result}" = success
           done

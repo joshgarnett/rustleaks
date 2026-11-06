@@ -52,7 +52,7 @@ just ci
 ```
 
 The final `just ci` result includes committed parity. When supported behavior
-or fresh Go evidence changes, run `cargo xtask parity --all` against a clean,
+or its regression evidence changes, run `cargo xtask qualify` against a clean,
 committed candidate tree; it includes package and fuzz checks. Otherwise run
 `just fuzz-smoke`, and add `just package-check` when public APIs, default
 assets, features, manifests, or dependencies change. Do not run

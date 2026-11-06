@@ -13,9 +13,9 @@ identify Rustleaks as an official release or imply endorsement.
 
 | Level | Domain | Evidence state |
 | --- | --- | --- |
-| P0 | Configuration, regular expressions, detection, allowlists, decoding, composite rules, redaction, fingerprints, baselines, ignores, and sessions | Implemented and differentially tested |
-| P1 | Readers, files, directories, symlinks, archives, Git, and remote links | Implemented in workspace crates and differentially tested |
-| P2 | CLI precedence, diagnostics, exits, JSON, CSV, JUnit, SARIF, and restricted templates | Implemented in workspace crates and differentially tested |
+| P0 | Configuration, regular expressions, detection, allowlists, decoding, composite rules, redaction, fingerprints, baselines, ignores, and sessions | Rust regression coverage with historical differential evidence |
+| P1 | Readers, files, directories, symlinks, archives, Git, and remote links | Workspace Rust regression coverage with historical differential evidence |
+| P2 | CLI precedence, diagnostics, exits, JSON, CSV, JUnit, SARIF, and restricted templates | Workspace Rust regression coverage with historical differential evidence |
 
 Only `rustleaks-core` is in the current public package boundary. P1 and P2 are
 repository evidence and do not make the corresponding workspace crates public
@@ -58,18 +58,36 @@ duplicates, ordering where specified, suppression outcomes, reports, and
 structured errors. Normalization is limited to ordering already shown to be
 nondeterministic upstream.
 
-Fresh oracle replay verifies the selected Go runtime against `.go-version`
-and every observed runtime envelope. Historical corpora retain the Go version
-that produced them. Check-only replay projects that single top-level version
-token to its historical value for comparison; every other byte or existing
-semantic comparison remains enforced. Diagnostics record the actual runtime
-and raw outcome hash, and source and Git observation ledgers retain their raw
-provenance. Generating a new baseline under a different runtime requires an
-explicit provenance migration; check-only projection is never published as a
-fresh observation.
+The live Go oracle and automatic upstream test/constructor rediscovery are
+retired. The accepted revision, default configuration, request/outcome bytes,
+Go runtime tokens, generator hashes, copied fixtures and attribution remain
+historical provenance. Generated corpus READMEs and manifests describe the
+historical generation process; their retired commands are not current operator
+instructions. Original generators remain accessible in Git history.
 
-The optional upstream `gore2regex` build tag is outside the profile. The oracle
-uses the standard Go regular-expression implementation from an ordinary build.
+`cargo xtask regression-check` checks frozen artifact integrity, identities,
+dispositions and local evidence links, then executes the Rust regression suite.
+`cargo xtask qualify` adds complete local Rust release hardening from a clean,
+committed candidate. Neither command requires Go or a sibling upstream checkout.
+New cases use synthetic inputs with independently reviewed expectations and
+negative controls. Current Rust output must never become its own expected
+baseline. This policy preserves the selected regression contracts and ends
+fresh independent Go comparison; it makes no equivalence claim for unseen inputs.
+
+The 6,770 helper samples cover 220 rules; negative helper samples cover 82.
+The two Dropbox default constructors have no helper samples. Source replay
+accounts for all 124 cases with explicit safe and platform dispositions. Git
+replay delegates 13 remote cases to SCM tests; report replay delegates 15
+template cases to template tests. CLI replay accounts for all 119 variants and
+reports executed, platform-inapplicable and native-disposition counts separately.
+Archived observations substituted for unavailable host behavior are not counted
+as executions. The three valid bootstrap records have Rust regressions;
+wrong-protocol is retired adapter behavior, and malformed-regex panic maps to
+the supported structured Rust configuration error.
+
+The optional upstream `gore2regex` build tag is outside the profile. The
+historical oracle used the standard Go regular-expression implementation from
+an ordinary build.
 Host-capable template helpers and unsafe panic behavior are replaced with
 named, bounded Rust dispositions rather than normalized away.
 
@@ -94,6 +112,7 @@ evidence also covers `aarch64-apple-darwin`. Hermetic cross-compilation remains
 compilation evidence only and is not used to make runtime support claims. The
 absence of native evidence is not a compatibility exception.
 
-Run `just parity` for the committed replay. The pinned sibling checkout is
-required separately when regenerating or performing the complete differential
-oracle validation.
+Run `just parity` for the committed Rust replay. Native lanes run the complete
+platform-compatible Rust test suite and retain payload-free CLI execution
+ledgers. Historical native Go ledgers remain provenance; new ledgers describe
+only actual Rust executions and explicit host limitations.

@@ -570,12 +570,8 @@ fn check_interface(root: &Path) -> Result<(), String> {
         return Err(format!("Bazelisk version must be 9.2.0, got {version:?}"));
     }
 
-    let go_version = fs::read_to_string(root.join(".go-version"))
-        .map_err(|error| format!("cannot read .go-version: {error}"))?;
-    if go_version.trim() != "1.26.10" {
-        return Err(format!(
-            "Go maintenance version must be 1.26.10, got {go_version:?}"
-        ));
+    if root.join(".go-version").exists() {
+        return Err("the retired Go toolchain pin must not be restored".into());
     }
 
     let bazelrc = fs::read_to_string(root.join(".bazelrc"))
@@ -736,7 +732,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "bazelisk build --build_tests_only //:test",
         "just ci test prebuild",
     )?;
-    require_contains(&justfile, "go version", "just doctor Go version")?;
+    require_not_contains(&justfile, "go version", "retired Go doctor requirement")?;
     for recipe in ["fuzz", "perf-profile", "perf-calibrate", "security-deep"] {
         require_contains(
             &justfile,
@@ -744,16 +740,9 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             &format!("private Unix {recipe} argument forwarding"),
         )?;
     }
-    require_contains(
-        &justfile,
-        "go env GOVERSION",
-        "just doctor selected Go version",
-    )?;
-    require_contains(
-        &justfile,
-        "Go version mismatch: expected",
-        "just doctor exact Go version failure",
-    )?;
+    for forbidden in ["go env", ".go-version"] {
+        require_not_contains(&justfile, forbidden, "retired Go toolchain requirement")?;
+    }
     for forbidden in ["cargo build", "cargo clippy", "cargo doc", "cargo test"] {
         require_not_contains(&justfile, forbidden, "normal just recipe")?;
     }

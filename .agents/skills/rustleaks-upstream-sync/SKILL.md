@@ -1,74 +1,63 @@
 ---
 name: rustleaks-upstream-sync
-description: Assess and integrate a candidate Gitleaks revision into Rustleaks, including the pin, copied configuration, provenance, generated compatibility evidence, and complete differential validation. Use only for upstream revision updates, not ordinary Rustleaks rule edits.
+description: Assess an approved candidate Gitleaks baseline and its import plan, preserving frozen historical evidence, copied configuration, provenance and Rust regression contracts. Use only for upstream revision updates, not ordinary Rustleaks rule edits.
 ---
 
 # Rustleaks upstream sync
 
-Treat an upstream update as one reviewed compatibility transaction. Do not
-replace the accepted baseline or sibling checkout before the candidate passes.
+Read `docs/UPDATING_UPSTREAM.md`, `docs/COMPATIBILITY.md`,
+`compat/upstream-revision.txt`, and `compat/test-manifest.toml`.
+The live Go oracle and automatic upstream rediscovery are retired. Historical
+generator commands are not current maintenance commands.
 
 ## Establish the candidate
 
-1. Read `docs/UPDATING_UPSTREAM.md`,
-   `docs/COMPATIBILITY.md`, `compat/upstream-revision.txt`, and
-   `compat/test-manifest.toml`.
-2. Require maintainer approval for the exact candidate Gitleaks commit. Record
-   the immutable commit, its relationship to the current pin, and the SHA-256
-   of `config/gitleaks.toml`.
-3. Work in an isolated temporary parent containing a clean Rustleaks clone and
-   a read-only candidate Gitleaks checkout at the clone's `../gitleaks` path.
-   Keep the accepted repository and accepted sibling checkout unchanged.
-4. Review upstream release notes and the actual commit range. Inventory rule,
-   config schema, regex, detector, source, report, CLI, test, fixture, license,
-   Go toolchain, and dependency changes before editing Rustleaks.
+Require maintainer approval for the exact candidate commit and import scope.
+Honor approval already present in the session. Record its immutable revision,
+relationship to the accepted pin, and default-config SHA-256. Inspect upstream
+source and the actual commit range without changing the accepted baseline.
 
-## Update one identity
+Inventory rules, configuration, regular expressions, detection, sources,
+reports, CLI behavior, tests, fixtures and licenses. Establish independently
+reviewable expected results and an explicit provenance plan before replacing
+accepted inputs. If the approved task requires external executable tooling or
+dependencies outside the agreed scope, identify that boundary before using it.
+Do not restore the retired oracle merely to satisfy an old command reference.
 
-Update these identity-bearing files together:
+## Preserve evidence and behavior
 
-- `compat/upstream-revision.txt`;
-- `crates/rustleaks-core/default/gitleaks.toml`;
-- `compat/config-corpus/default-gitleaks.toml`;
-- revision and config-hash fields in `compat/test-manifest.toml` and generated
-  corpus manifests;
-- copied fixtures and their provenance inventory;
-- API, assertion, constructor, benchmark, and corpus evidence affected by the
-  candidate; and
-- adjacent license files, `NOTICE`, and attribution when upstream material or
-  terms changed.
+Keep historical observations immutable. Version candidate evidence separately
+and retain its source/generator identities. Generated expected outcomes must
+not be derived solely from current Rust output. Use reviewed deterministic
+tooling for generated inventories and snapshots; do not hand-edit them.
 
-Use the maintained Rust `xtask` generators. Inspect the `generate` dispatch in
-`crates/xtask/src/main.rs` to select the applicable scope and its
-`cargo xtask generate <scope>` and `--check` forms. Do not hand-edit generated
-JSON, JSONL, snapshots, or corpus outcomes. Generate into a temporary path when
-a command supports one, review the complete delta, then replace accepted bytes
-only after classification.
+Update the approved pin, both default-config copies, evidence bindings,
+fixture inventory, hashes and attribution together. Preserve copied bytes,
+modes, symlinks and licenses. Keep old generator hashes as historical facts,
+not requirements that deleted generator code still exists.
 
-Classify every difference as exact supported behavior, a named safe Rust
-disposition, an explicit profile exclusion, or a Rustleaks defect. Do not add
-normalization to conceal a semantic difference. Any profile exclusion or
-compatibility exception requires maintainer approval.
+Classify every difference as exact behavior, a named safe Rust disposition,
+an explicitly approved profile exclusion, or a defect. No normalization may
+conceal semantic differences. Add direct Rust tests and material negative
+controls for the adopted behavior and its exact bytes, spans and errors.
 
 ## Validate
 
-From the isolated Rustleaks clone with the candidate at `../gitleaks`, run the
-affected generator checks first, then the complete gates:
+Run the affected focused Bazel checks after related edits are integrated, then:
 
 ```sh
-cargo xtask oracle generate --check
-cargo xtask parity --all
+cargo xtask regression-check
 just ci
 just security
+cargo xtask qualify
 ```
 
-`cargo xtask parity --all` requires a clean worktree, so validate generated
-changes before committing and run it against the committed candidate tree.
-It includes package, external-consumer, and fuzz checks; do not rerun those
-contained gates.
+Full qualification requires a clean, committed candidate and includes package,
+external-consumer, Miri, fuzz and performance checks. Do not rerun contained
+gates without a changed input or unresolved concern. Refresh the matching
+native target evidence; cross-compilation does not prove runtime support.
 
-The review record must identify the old and new commits and config hashes,
-commands and exact results, generated counts, classified differences, copied
-material and licenses, native target evidence not run, and every approval
-still required. Do not publish, change GitHub settings, or replace the
-maintainer's accepted sibling checkout.
+Obtain independent compatibility and Rust/API review. Report old/new source
+identities and hashes, adopted behavior, exact evidence and results, copied
+material and licenses, host limitations and any remaining approval. Do not
+publish or change repository settings without authorization for those actions.

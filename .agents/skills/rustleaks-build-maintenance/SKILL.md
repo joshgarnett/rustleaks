@@ -59,7 +59,7 @@ just security
 
 The final `just ci` result covers `just check` and committed parity. When a
 feature or dependency can affect supported compatibility, run
-`cargo xtask parity --all` only against a clean, committed candidate tree. It
+`cargo xtask qualify` only against a clean, committed candidate tree. It
 already includes package and fuzz checks, so do not rerun those gates. Run
 `just package-check` for other packaged-asset or consumer changes. Run
 `just release-dry-run` instead when publish metadata or package contents change

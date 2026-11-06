@@ -104,8 +104,9 @@ The profile is pinned to Gitleaks commit
 configuration has SHA-256
 `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
 
-Compatibility is checked through a bounded Go oracle and committed Rust
-replays. The evidence includes 6,770 default-rule samples, 3,618 regular
+Compatibility is checked through Rust regression tests against frozen
+historical observations and independently specified Rust contracts. The
+evidence includes 6,770 default-rule samples, 3,618 regular
 expression requests, mapped upstream tests and assertions, copied fixtures,
 and focused corpora for configuration, detection, allowlists, decoding,
 composite rules, sessions, files, archives, Git, reports, and the CLI. See the
@@ -118,9 +119,12 @@ Run the committed compatibility replay through its canonical Bazel target:
 just parity
 ```
 
-The exact pinned upstream checkout at `../gitleaks` is an additional oracle
-input for regeneration and complete differential validation. It is not a
-normal Bazel build/test input or a runtime dependency of any Rustleaks package.
+`cargo xtask regression-check` verifies the frozen evidence and Rust replay.
+`cargo xtask qualify` runs complete local Rust release hardening from a clean,
+committed candidate. The live Go oracle and upstream rediscovery are retired;
+these commands require no Go installation or sibling Gitleaks checkout.
+Historical input/output bytes and attribution remain unchanged. Frozen tests
+establish regression coverage for their cases, not equivalence on unseen input.
 
 ## Platform and dependency evidence
 

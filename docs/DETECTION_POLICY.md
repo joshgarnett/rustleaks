@@ -123,7 +123,8 @@ The independent quality evaluator supplies the baseline. New rules require
 positive, negative, boundary, invalid-byte, allowlist and exact-span evidence,
 including full-ruleset overlap. The initial pilot remains limited to Azure
 Service Bus/Event Hub, Azure App Configuration and MongoDB credential URIs.
-Existing behavior continues to use the pinned Go differential evidence.
+Existing behavior uses Rust regression replay of frozen historical evidence
+and independently specified Rust contracts.
 
 The native API includes executable documentation examples and focused tests
 for composition, identity changes, unchanged legacy outcomes, partial outcomes,

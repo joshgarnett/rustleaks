@@ -280,9 +280,9 @@ not execute untrusted pull request code from `pull_request_target`,
 | Cadence | Required work |
 | --- | --- |
 | Pull request | `just ci`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the matching native platform slice. Keep RustSec freshness in a network-enabled secretless job. `just ci` includes committed parity. |
-| Nightly | Longer high-risk fuzz campaigns, increased property cases, batched Go differentials, fresh RustSec, newest-allowed dependency resolution in a noncommitting checkout, and repository self-scan. |
+| Nightly | Longer high-risk fuzz campaigns, increased property cases, frozen-evidence integrity and Rust regression replay, fresh RustSec, newest-allowed dependency resolution in a noncommitting checkout, and repository self-scan. |
 | Weekly | Scheduled CI supplies pinned Miri, unsafe inventory, cargo-vet, RustSec, and all available native target lanes. The weekly fuzz job raises execution/time budgets while retaining smoke input/harness caps; it does not run the optional deep profile. Its separate Bazel coverage review measures ordinary tests, not fuzz source coverage. CodeQL and OpenSSF Scorecard remain independently scheduled. |
-| Release candidate | A secretless manual dry run bound to the exact current `main` commit and version; parallel `just ci`, complete fresh differential, `just security`, extended AddressSanitizer fuzzing, and worktree and history scans; package, external-consumer, docs.rs, and no-upload checks; and twice-built native artifacts with byte comparison, checksums, target SBOMs reconciled with the Bazel graph, provenance, and attestations. |
+| Release candidate | A secretless manual dry run bound to the exact current `main` commit and version; parallel `just ci`, complete Rust qualification, `just security`, extended AddressSanitizer fuzzing, and worktree and history scans; package, external-consumer, docs.rs, and no-upload checks; and twice-built native artifacts with byte comparison, checksums, target SBOMs reconciled with the Bazel graph, provenance, and attestations. |
 
 The protected publication workflow accepts only a current `main` commit, a
 matching version, and a successful retained release dry run. It compares the
@@ -392,7 +392,7 @@ existing limitation for deliberately escaped process groups remains; the local
 operator is not an operating-system sandbox. It clears ambient environment
 values except the existing path/home/toolchain-location allowlist, then sets
 only the required workspace, profile and target-directory values. It does not
-run the Go oracle or alter its pinned toolchain.
+require the retired Go oracle or change a toolchain.
 
 ### Comparison and coverage evidence
 

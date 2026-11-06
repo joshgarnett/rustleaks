@@ -155,8 +155,8 @@ regression requires its own unchanged A/A calibration before disposition.
 Keep the legacy matrix and elapsed/RSS limits unchanged. Record process RSS
 separately from operation timing; the current snapshots cannot establish a
 scan-allocation improvement. After integration, run `just ci`, `just security`
-and `cargo xtask parity --all` on a clean committed candidate. The full
-differential includes package, consumer, fuzz and existing performance checks;
+and `cargo xtask qualify` on a clean committed candidate. Full Rust
+qualification includes package, consumer, fuzz and existing performance checks;
 do not duplicate those gates separately. Reject and remove the optimization
 if semantics differ, measurements are invalid, the
 primary fails either round or a calibrated guard regresses. No production

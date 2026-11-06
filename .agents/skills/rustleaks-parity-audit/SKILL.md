@@ -1,6 +1,6 @@
 ---
 name: rustleaks-parity-audit
-description: Audit Rustleaks compatibility against the pinned Gitleaks oracle by reconciling traceability, replaying committed and fresh corpora, and classifying exact semantic differences. Use for parity reviews and unexplained Go-versus-Rust outcomes, not general test failures.
+description: Audit Rustleaks compatibility against frozen historical Gitleaks evidence and Rust contracts by reconciling traceability, replaying Rust regressions and classifying exact semantic differences. Use for parity reviews and unexplained baseline-versus-Rust outcomes, not general test failures.
 ---
 
 # Rustleaks parity audit
@@ -37,17 +37,15 @@ Run the complete committed replay with:
 just parity
 ```
 
-When the exact pinned Gitleaks checkout is present at `../gitleaks`, verify
-fresh Go outcomes and the complete local release-hardening boundary with:
+Verify offline integrity, local traceability and Rust replay with:
 
 ```sh
-cargo xtask oracle generate --check
-cargo xtask parity --all
+cargo xtask regression-check
 ```
 
-The full differential command requires a clean, committed candidate tree;
-normally run it in the shared validation clone after the focused fix is
-committed.
+Use `cargo xtask qualify` for complete local release hardening against a clean,
+committed candidate. The live Go oracle and upstream rediscovery are retired.
+Historical generator commands are provenance, not current instructions.
 
 Do not edit accepted outcomes to make a replay pass. Reproduce an unexplained
 difference in a temporary corpus or focused test first.
