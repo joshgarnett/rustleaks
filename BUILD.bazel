@@ -32,7 +32,6 @@ filegroup(
         ".bazelignore",
         ".bazelrc",
         ".bazelversion",
-        ".go-version",
         "BUILD.bazel",
         "Cargo.lock",
         "Cargo.toml",
@@ -165,6 +164,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-cli:rustleaks_cli_unit_test",
     "//crates/rustleaks-compat:rustleaks_compat",
     "//crates/rustleaks-compat:rustleaks_compat_unit_test",
+    "//crates/rustleaks-compat:rustleaks_cli_fixture",
     "//crates/rustleaks-compat:rustleaks_perf",
     "//crates/rustleaks-compat:rustleaks_perf_test",
     "//crates/rustleaks-compat:rustleaks_quality",
@@ -212,6 +212,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-sources:security_stress_test",
     "//crates/rustleaks-sources:source_corpus_test",
     "//crates/rustleaks-sources:source_fuzz_test",
+    "//crates/xtask:cli_regression_test",
     "//crates/xtask:xtask",
     "//crates/xtask:xtask_unit_test",
 ]
@@ -235,6 +236,7 @@ test_suite(
         "//crates/rustleaks-core:parity_tests",
         "//crates/rustleaks-report:parity_tests",
         "//crates/rustleaks-sources:parity_tests",
+        "//crates/xtask:cli_regression_test",
     ],
     visibility = ["//visibility:public"],
 )

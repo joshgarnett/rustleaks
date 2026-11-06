@@ -53,6 +53,15 @@ rust_binary(
     visibility = ["//visibility:public"],
 )
 
+rust_binary(
+    name = "rustleaks_cli_fixture",
+    crate_name = "rustleaks_cli_fixture",
+    crate_root = "src/bin/rustleaks-cli-fixture.rs",
+    edition = "2024",
+    srcs = ["src/bin/rustleaks-cli-fixture.rs"],
+    visibility = ["//visibility:public"],
+)
+
 _PERF_GIT_DATA = select({
     "@platforms//os:windows": [],
     "//conditions:default": ["//bazel:git"],

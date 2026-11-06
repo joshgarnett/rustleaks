@@ -15,12 +15,10 @@ mod security_deep;
 mod tooling;
 mod workflows;
 
-use tooling::{command_output, command_status_with_timeout, sha256_file};
+use tooling::{command_output, command_status_with_timeout};
 
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
-const API_INVENTORY_SHA256: &str =
-    "958ddaa92c5cce6afb21ef8209ce5689ff907cb2d9f152951bb75c795362125a";
 const RELEASE_VERSION: &str = "0.1.0-alpha.5";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
@@ -42,7 +40,6 @@ const COMPCOL_EXEMPTION_TARGETS: &[&str] = &[
     "x86_64-unknown-linux-gnu",
     "x86_64-unknown-linux-musl",
 ];
-const GOVULNCHECK_VERSION: &str = "v1.7.0";
 const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
 const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -61,27 +58,14 @@ fn main() -> ExitCode {
 
 fn run(args: &[String]) -> Result<(), String> {
     match args {
-        [command] if command == "verify-upstream" => verify_upstream(),
-        [command] if command == "oracle-vulnerability-check" => oracle_vulnerability_check(),
-        [command] if command == "manifest-check" => manifest_check(),
-        [command] if command == "assertion-check" => assertion_check(),
-        [command] if command == "generator-check" => generator_check(),
-        [command] if command == "api-check" => api_check(),
-        [command] if command == "fixture-check" => fixture_check(),
+        [command] if command == "manifest-check" || command == "frozen-evidence-check" => {
+            tooling::check_frozen_evidence(&workspace_root()?)
+        }
+        [command] if command == "regression-check" => regression_check(),
+        [command] if command == "qualify" => qualify(),
         [command, arguments @ ..] if command == "generate" => {
             tooling::run_generate(&workspace_root()?, arguments)
         }
-        [command] if command == "config-check" => config_check(),
-        [command] if command == "regex-check" => regex_check(),
-        [command] if command == "detect-check" => detect_check(),
-        [command] if command == "allowlist-check" => allowlist_check(),
-        [command] if command == "decoder-check" => decoder_check(),
-        [command] if command == "composite-check" => composite_check(),
-        [command] if command == "session-check" => session_check(),
-        [command] if command == "source-check" => source_check(),
-        [command] if command == "git-check" => git_check(),
-        [command] if command == "report-check" => report_check(),
-        [command] if command == "cli-check" => cli_check(),
         [command] if command == "public-api-check" => public_api_check(),
         [command] if command == "build-system-check" => build_system::check(&workspace_root()?),
         [command] if command == "package-check" => package_check(),
@@ -127,33 +111,7 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
-        [command, subcommand, flag]
-            if command == "oracle" && subcommand == "generate" && flag == "--check" =>
-        {
-            oracle_check(true)
-        }
-        [command, subcommand, flag, skip]
-            if command == "oracle"
-                && subcommand == "generate"
-                && flag == "--check"
-                && skip == "--skip-git" =>
-        {
-            oracle_check(false)
-        }
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "bootstrap" => bootstrap_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "config" => config_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "regex" => regex_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "detect" => detect_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "allowlist" => allowlist_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "decoder" => decoder_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "composite" => composite_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "session" => session_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "source" => source_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "git" => git_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
-        [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
-        [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|oracle-vulnerability-check|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz <run|replay|minimize|reproduce|tmin|promote> [ARGS]|generate <native-pack-identity [--check]|go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|vet-inventory [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT|archive-fuzz-seeds OUTPUT [--check]>|perf <run|check|representative|profile|calibrate|report> [ARGS]|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {manifest-check|frozen-evidence-check|regression-check|qualify|public-api-check|build-system-check|package-check|release-dry-run|release-artifact [ARGS]|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz [ARGS]|generate [ARGS]|perf <run|check|representative|profile|calibrate|report> [ARGS]}".into()),
     }
 }
 
@@ -171,13 +129,6 @@ fn workspace_root() -> Result<PathBuf, String> {
     } else {
         Ok(root)
     }
-}
-
-fn oracle_root() -> Result<PathBuf, String> {
-    Ok(workspace_root()?
-        .parent()
-        .ok_or("workspace has no parent")?
-        .join("gitleaks"))
 }
 
 fn composite_test_executable_from_messages(messages: &str) -> Result<PathBuf, String> {
@@ -258,44 +209,6 @@ fn run_resource_test(
         timeout,
         test,
     )
-}
-
-fn verify_upstream() -> Result<(), String> {
-    let root = oracle_root()?;
-    let actual_revision = command_output(
-        Command::new("git")
-            .args(["-C"])
-            .arg(&root)
-            .args(["rev-parse", "HEAD"]),
-    )?;
-    if actual_revision != REVISION {
-        return Err(format!(
-            "upstream revision mismatch: expected {REVISION}, got {actual_revision}"
-        ));
-    }
-    let actual_hash = sha256_file(&root.join("config/gitleaks.toml"))?;
-    if actual_hash != CONFIG_SHA256 {
-        return Err(format!(
-            "default config hash mismatch: expected {CONFIG_SHA256}, got {actual_hash}"
-        ));
-    }
-    println!("verified upstream revision {REVISION} and default config sha256 {CONFIG_SHA256}");
-    Ok(())
-}
-
-fn oracle_vulnerability_check() -> Result<(), String> {
-    verify_upstream()?;
-    let oracle = workspace_root()?.join("crates/rustleaks-compat/oracle");
-    let tool = format!("golang.org/x/vuln/cmd/govulncheck@{GOVULNCHECK_VERSION}");
-    command_output(
-        Command::new("go")
-            .current_dir(oracle)
-            .args(["run", &tool, "-show", "verbose", "./..."]),
-    )?;
-    println!(
-        "pinned Go oracle has no reachable vulnerability reported by govulncheck {GOVULNCHECK_VERSION}"
-    );
-    Ok(())
 }
 
 fn package_attribution_check(root: &Path) -> Result<(), String> {
@@ -1983,329 +1896,6 @@ fn fuzz_check() -> Result<(), String> {
     fuzz_smoke()
 }
 
-fn manifest_check() -> Result<(), String> {
-    let root = workspace_root()?;
-    package_attribution_check(&root)?;
-    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
-    assertion_check()?;
-    generator_check()?;
-    api_check()?;
-    println!("manifest exact mechanical identities and dispositions are consistent");
-    Ok(())
-}
-
-fn generator_check() -> Result<(), String> {
-    let root = workspace_root()?;
-    tooling::check_generator_samples(&oracle_root()?, &root.join("compat/generator-corpus"))?;
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-core",
-                "--test",
-                "default_rule_corpus",
-                "--offline",
-            ])
-            .current_dir(&root),
-    )?;
-    println!("generator sample identities and all 6,770 Rust default-rule outcomes are consistent");
-    Ok(())
-}
-
-fn api_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    command_output(
-        Command::new("go")
-            .args(["run", "compat/inventory_api.go", "-mode", "self-test"])
-            .env("GOCACHE", env::temp_dir().join("rustleaks-api-gocache"))
-            .current_dir(&root),
-    )?;
-    let actual_hash = sha256_file(&root.join("compat/api-inventory-v1.json"))?;
-    if actual_hash != API_INVENTORY_SHA256 {
-        return Err(format!(
-            "API inventory hash mismatch: expected {API_INVENTORY_SHA256}, got {actual_hash}"
-        ));
-    }
-    tooling::check_api_dispositions(&root, &root.join("compat/api-dispositions-v1.jsonl"))?;
-    println!("API inventory contains the exact pinned 607-identity surface");
-    Ok(())
-}
-
-fn assertion_check() -> Result<(), String> {
-    let root = workspace_root()?;
-    let upstream = oracle_root()?;
-    tooling::check_assertions(&root, &upstream, &root.join("compat/assertion-corpus"))?;
-    let assertions = std::fs::read_to_string(root.join("compat/assertion-corpus/assertions.jsonl"))
-        .map_err(|error| format!("cannot read semantic assertions: {error}"))?;
-    let benchmarks =
-        std::fs::read_to_string(root.join("compat/assertion-corpus/benchmark-links.jsonl"))
-            .map_err(|error| format!("cannot read benchmark assertion links: {error}"))?;
-    let platform_skips =
-        std::fs::read_to_string(root.join("compat/assertion-corpus/platform-skips.jsonl"))
-            .map_err(|error| format!("cannot read platform branches: {error}"))?;
-    tooling::validate_final_traceability(&assertions, &benchmarks, &platform_skips)?;
-    println!(
-        "semantic assertions, benchmark links, and platform branches have final Rust evidence"
-    );
-    Ok(())
-}
-
-fn fixture_check() -> Result<(), String> {
-    verify_upstream()?;
-    tooling::verify_fixtures(&workspace_root()?, &oracle_root()?)?;
-    println!("independent fixture copy matches the pinned upstream testdata");
-    Ok(())
-}
-
-fn oracle_check(check_git: bool) -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_bootstrap_corpus(&root)?;
-    tooling::check_config_corpus(&root)?;
-    tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
-    tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
-    tooling::generate_go_lowercase(&root, true)?;
-    tooling::replay_corpus(&root, tooling::Corpus::Allowlist)?;
-    tooling::replay_corpus(&root, tooling::Corpus::Decoder)?;
-    tooling::check_composite_corpus(&root)?;
-    tooling::check_session_corpus(&root)?;
-    tooling::check_source_corpus(&root)?;
-    if check_git {
-        tooling::check_git_corpus(&root)?;
-        println!("oracle corpus matches fresh Go outcomes");
-    } else {
-        println!("portable oracle corpora except Git match fresh Go outcomes");
-    }
-    Ok(())
-}
-
-fn config_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_config_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--test", "config"])
-            .current_dir(&root),
-    )?;
-    println!("configuration corpus and Rust outcomes are consistent");
-    Ok(())
-}
-
-fn regex_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::replay_corpus(&root, tooling::Corpus::Regex)?;
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-core",
-                "--lib",
-                "regex::tests::canonical_go_regex_corpus_matches_all_manifest_outcomes",
-            ])
-            .current_dir(&root),
-    )?;
-    println!("GoRegex corpus and all Rust match/capture/span outcomes are consistent");
-    Ok(())
-}
-
-fn detect_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::replay_corpus(&root, tooling::Corpus::Detect)?;
-    tooling::generate_go_lowercase(&root, true)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--test", "detect_corpus"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--lib", "engine::tests::"])
-            .current_dir(&root),
-    )?;
-    println!("raw detector corpus and all Rust finding outcomes are consistent");
-    Ok(())
-}
-
-fn allowlist_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::replay_corpus(&root, tooling::Corpus::Allowlist)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--test", "allowlist"])
-            .current_dir(&root),
-    )?;
-    println!("allowlist corpus and all validated Rust outcomes are consistent");
-    Ok(())
-}
-
-fn decoder_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::replay_corpus(&root, tooling::Corpus::Decoder)?;
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-core",
-                "--lib",
-                "decoder::tests::canonical_decoder_pass_corpus_matches_go",
-            ])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-core",
-                "--test",
-                "detect_corpus",
-                "frozen_decoder_detector_corpus_matches_go",
-            ])
-            .current_dir(&root),
-    )?;
-    println!("decoder/pass corpus and complete decoded finding outcomes are consistent");
-    Ok(())
-}
-
-fn composite_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_composite_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--test", "composite_corpus"])
-            .current_dir(&root),
-    )?;
-    let test_executable = composite_test_executable(&root)?;
-    for test in [
-        "resource_primary_aux_duplicate_cartesian_is_bounded",
-        "resource_many_generics_is_bounded",
-        "resource_empty_full_long_malformed_is_bounded",
-        "resource_deep_required_graph_is_bounded",
-    ] {
-        run_resource_test(&test_executable, test, &root, Duration::from_secs(30))?;
-    }
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-core",
-                "--lib",
-                "engine::tests::private_filter_replays_the_frozen_oracle_adapter",
-            ])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-core",
-                "--lib",
-                "model::redaction_tests::private_mask_helper_replays_every_frozen_oracle_row",
-            ])
-            .current_dir(&root),
-    )?;
-    println!("composite, suppression, and redaction corpus outcomes are consistent");
-    Ok(())
-}
-
-fn session_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_session_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--test", "session_corpus"])
-            .current_dir(&root),
-    )?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-core", "--lib", "session::tests::"])
-            .current_dir(&root),
-    )?;
-    println!("scan-session corpus and portable Rust filtering outcomes are consistent");
-    Ok(())
-}
-
-fn source_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
-    tooling::check_source_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-sources", "--all-features"])
-            .current_dir(&root),
-    )?;
-    println!("reader, filesystem, and archive source outcomes are consistent");
-    Ok(())
-}
-
-fn git_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
-    validate_git_adversarial_matrix(&root)?;
-    tooling::check_git_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args([
-                "test",
-                "-p",
-                "rustleaks-sources",
-                "--all-features",
-                "--lib",
-                "--test",
-                "git_corpus",
-                "--test",
-                "git_sources",
-                "--test",
-                "git_scm",
-            ])
-            .current_dir(&root),
-    )?;
-    println!("Git source, detector findings, and SCM outcomes are consistent");
-    Ok(())
-}
-
-fn report_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_inventory(&root, &root.join("compat/test-manifest.toml"))?;
-    tooling::check_report_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-report", "--offline"])
-            .current_dir(&root),
-    )?;
-    println!("built-in and safe-template report outcomes are consistent");
-    Ok(())
-}
-
-fn cli_check() -> Result<(), String> {
-    verify_upstream()?;
-    let root = workspace_root()?;
-    tooling::check_cli_corpus(&root)?;
-    command_output(
-        Command::new("cargo")
-            .args(["test", "-p", "rustleaks-cli", "--all-features", "--offline"])
-            .current_dir(&root),
-    )?;
-    println!("portable command-line outcomes are consistent");
-    Ok(())
-}
-
 fn validate_git_adversarial_matrix(root: &Path) -> Result<(), String> {
     let paths = [
         "crates/rustleaks-sources/src/git.rs",
@@ -2376,99 +1966,45 @@ fn validate_git_adversarial_matrix(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn bootstrap_parity() -> Result<(), String> {
-    verify_upstream()?;
-    manifest_check()?;
-    fixture_check()?;
-    println!("bootstrap parity scope passed");
+fn regression_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    tooling::check_frozen_evidence(&root)?;
+    validate_git_adversarial_matrix(&root)?;
+    command_status_with_timeout(
+        Command::new("bazelisk")
+            .current_dir(&root)
+            .args(["test", "//:parity"]),
+        Duration::from_mins(30),
+        "Rust frozen regression replay",
+    )?;
+    println!("frozen evidence integrity and Rust regression replay passed");
     Ok(())
 }
 
-fn config_parity() -> Result<(), String> {
-    bootstrap_parity()?;
-    config_check()?;
-    println!("configuration parity scope passed");
+fn bounded_composite_resources() -> Result<(), String> {
+    let root = workspace_root()?;
+    let test_executable = composite_test_executable(&root)?;
+    for test in [
+        "resource_primary_aux_duplicate_cartesian_is_bounded",
+        "resource_many_generics_is_bounded",
+        "resource_empty_full_long_malformed_is_bounded",
+        "resource_deep_required_graph_is_bounded",
+    ] {
+        run_resource_test(&test_executable, test, &root, Duration::from_secs(30))?;
+    }
+    println!("bounded composite resource controls passed");
     Ok(())
 }
 
-fn regex_parity() -> Result<(), String> {
-    config_parity()?;
-    regex_check()?;
-    println!("GoRegex feasibility parity scope passed");
-    Ok(())
-}
-
-fn detect_parity() -> Result<(), String> {
-    regex_parity()?;
-    detect_check()?;
-    println!("raw detector parity scope passed");
-    Ok(())
-}
-
-fn allowlist_parity() -> Result<(), String> {
-    detect_parity()?;
-    allowlist_check()?;
-    println!("allowlist parity scope passed");
-    Ok(())
-}
-
-fn decoder_parity() -> Result<(), String> {
-    allowlist_parity()?;
-    decoder_check()?;
-    println!("decoder and original-offset parity scope passed");
-    Ok(())
-}
-
-fn composite_parity() -> Result<(), String> {
-    decoder_parity()?;
-    composite_check()?;
-    println!("required/composite and final-filtering parity scope passed");
-    Ok(())
-}
-
-fn session_parity() -> Result<(), String> {
-    composite_parity()?;
-    session_check()?;
-    println!("scan-session, baseline, ignore, and collection parity scope passed");
-    Ok(())
-}
-
-fn source_parity() -> Result<(), String> {
-    session_parity()?;
-    source_check()?;
-    println!("portable filesystem and archive source parity scope passed");
-    Ok(())
-}
-
-fn git_parity() -> Result<(), String> {
-    source_parity()?;
-    git_check()?;
-    println!("portable Git repository source parity scope passed");
-    Ok(())
-}
-
-fn report_parity() -> Result<(), String> {
-    git_parity()?;
-    report_check()?;
-    println!("reusable report writer parity scope passed");
-    Ok(())
-}
-
-fn cli_parity() -> Result<(), String> {
-    report_parity()?;
-    cli_check()?;
-    println!("portable command-line parity scope passed");
-    Ok(())
-}
-
-fn full_parity() -> Result<(), String> {
+fn qualify() -> Result<(), String> {
     clean_worktree_check()?;
     docs_check()?;
     quality_check()?;
     owned_safety_check()?;
     dependency_safety_check()?;
     miri_check()?;
-    cli_parity()?;
+    regression_check()?;
+    bounded_composite_resources()?;
     public_api_check()?;
     package_check()?;
     supply_chain_check()?;
@@ -2476,7 +2012,7 @@ fn full_parity() -> Result<(), String> {
     fuzz_check()?;
     performance::check()?;
     clean_worktree_check()?;
-    println!("complete compatibility and local release hardening passed");
+    println!("complete Rust regression and local release hardening passed");
     Ok(())
 }
 

@@ -520,7 +520,10 @@ fn validate_no_live_go(source: &str) -> Result<(), String> {
     let words = source.split_whitespace().collect::<Vec<_>>();
     if words.windows(2).any(|pair| {
         pair[0] == "go"
-            && matches!(pair[1], "install" | "env" | "run" | "build" | "test" | "version")
+            && matches!(
+                pair[1],
+                "install" | "env" | "run" | "build" | "test" | "version"
+            )
     }) {
         return Err("automation restores a host Go command".into());
     }
@@ -606,7 +609,9 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
             "if-no-files-found: error",
         ] {
             if !lane.contains(required) {
-                return Err(format!("native lane {job} omits Rust evidence {required:?}"));
+                return Err(format!(
+                    "native lane {job} omits Rust evidence {required:?}"
+                ));
             }
         }
     }

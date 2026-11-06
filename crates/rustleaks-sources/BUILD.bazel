@@ -175,6 +175,8 @@ test_suite(
     name = "parity_tests",
     tests = [
         ":git_corpus_test",
+        ":git_scm_test",
+        ":native_sources_test",
         ":source_corpus_test",
     ],
     visibility = ["//visibility:public"],

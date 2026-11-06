@@ -61,6 +61,7 @@ test_suite(
         ":config_test",
         ":default_rule_corpus_test",
         ":detect_corpus_test",
+        ":rustleaks_core_unit_test",
         ":session_corpus_test",
     ],
     visibility = ["//visibility:public"],

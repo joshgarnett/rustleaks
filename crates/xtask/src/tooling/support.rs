@@ -2,11 +2,16 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+#[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
@@ -70,92 +75,6 @@ pub(crate) fn command_status_with_timeout(
         .spawn()
         .map_err(|error| format!("failed to run {label} ({display}): {error}"))?;
     wait_for_child_with_timeout(&mut child, timeout, label, &display)
-}
-
-/// Runs one command in an isolated process tree while enforcing live file-size
-/// limits on redirected output. Descendants are terminated when the direct
-/// child exits, fails, exceeds a limit, or reaches its deadline.
-pub(crate) fn command_status_with_output_limits(
-    command: &mut Command,
-    timeout: Duration,
-    label: &str,
-    limits: &[(&Path, &str, u64)],
-) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        command.process_group(0);
-    }
-    let display = format!("{command:?}");
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("failed to run {label} ({display}): {error}"))?;
-    let started = Instant::now();
-    loop {
-        match output_limit_violation(limits, label) {
-            Ok(None) => {}
-            Ok(Some(error)) | Err(error) => return fail_after_cleanup(&mut child, label, error),
-        }
-        let status = match child.try_wait() {
-            Ok(status) => status,
-            Err(error) => {
-                return fail_after_cleanup(
-                    &mut child,
-                    label,
-                    format!("failed to poll {label} ({display}): {error}"),
-                );
-            }
-        };
-        if let Some(status) = status {
-            match output_limit_violation(limits, label) {
-                Ok(None) => {}
-                Ok(Some(error)) | Err(error) => {
-                    return fail_after_cleanup(&mut child, label, error);
-                }
-            }
-            terminate_process_tree(&mut child, label)?;
-            return if status.success() {
-                Ok(())
-            } else {
-                Err(format!("{label} ({display}) exited {status}"))
-            };
-        }
-        if started.elapsed() >= timeout {
-            return fail_after_cleanup(
-                &mut child,
-                label,
-                format!(
-                    "{label} exceeded its external {} second deadline",
-                    timeout.as_secs()
-                ),
-            );
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn output_limit_violation(
-    limits: &[(&Path, &str, u64)],
-    label: &str,
-) -> Result<Option<String>, String> {
-    for (path, stream, limit) in limits {
-        let length = match fs::metadata(path) {
-            Ok(metadata) => metadata.len(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(error) => return Err(format!("cannot inspect {label} {stream}: {error}")),
-        };
-        if length > *limit {
-            return Ok(Some(format!("{label} {stream} exceeded {limit} bytes")));
-        }
-    }
-    Ok(None)
-}
-
-fn fail_after_cleanup(child: &mut Child, label: &str, error: String) -> Result<(), String> {
-    match terminate_process_tree(child, label) {
-        Ok(()) => Err(error),
-        Err(cleanup) => Err(format!("{error}; cleanup failed: {cleanup}")),
-    }
 }
 
 pub(crate) fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> {
@@ -244,10 +163,12 @@ pub(crate) fn wait_for_child_with_timeout(
     }
 }
 
+#[cfg(test)]
 pub(super) struct TempDir {
     pub(super) path: PathBuf,
 }
 
+#[cfg(test)]
 impl TempDir {
     pub(super) fn new(label: &str) -> Result<Self, String> {
         static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -270,6 +191,7 @@ impl TempDir {
     }
 }
 
+#[cfg(test)]
 impl Drop for TempDir {
     fn drop(&mut self) {
         let is_scoped = self.path.parent() == Some(std::env::temp_dir().as_path())

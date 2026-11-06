@@ -40,7 +40,10 @@ rustleaks_integration_test(
 
 test_suite(
     name = "parity_tests",
-    tests = [":report_corpus_test"],
+    tests = [
+        ":report_corpus_test",
+        ":template_test",
+    ],
     visibility = ["//visibility:public"],
 )
 
