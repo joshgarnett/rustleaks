@@ -1,15 +1,22 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
+#[allow(dead_code)]
+#[path = "../../tests/support/campaign_profile.rs"]
+mod campaign_profile;
+
+use campaign_profile::Profile;
+
 use std::hint::black_box;
 
-use rustleaks_core::config::{ConfigLoader, ConfigOrigin};
 use libfuzzer_sys::fuzz_target;
-
-const MAX_INPUT_BYTES: usize = 8 * 1024;
+use rustleaks_core::config::{ConfigLoader, ConfigOrigin};
 
 fuzz_target!(|data: &[u8]| {
-    let data = &data[..data.len().min(MAX_INPUT_BYTES)];
+    let maximum = Profile::current()
+        .input_limit("config")
+        .expect("known target");
+    let data = &data[..data.len().min(maximum)];
     let text = String::from_utf8_lossy(data);
     let loader = ConfigLoader::new()
         .with_default_config("")

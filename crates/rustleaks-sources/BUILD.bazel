@@ -93,6 +93,62 @@ rust_binary(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "archive_fuzz_support",
+    srcs = glob(["fuzz/support/*.rs"]),
+    visibility = ["//visibility:public"],
+)
+
+rustleaks_integration_test(
+    name = "archive_fuzz_test",
+    src = "tests/archive_fuzz.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    data = [
+        "//compat:all",
+        "fuzz/seeds/archive/tar-header.txt",
+        "fuzz/seeds/archive/zip-header.txt",
+    ],
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+)
+
+rustleaks_integration_test(
+    name = "source_fuzz_test",
+    src = "tests/source_fuzz.rs",
+    compile_data = [
+        "fuzz/seeds/git_patch/basic.patch",
+        "fuzz/seeds/reader_schedule/data-error.txt",
+    ],
+    crate_features = _FUZZING_FEATURES,
+    deps = [":profile_fuzzing"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+)
+
+rustleaks_integration_test(
+    name = "security_stress_test",
+    src = "tests/security_stress.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+)
+
+rustleaks_integration_test(
+    name = "archive_semantics_test",
+    src = "tests/archive_semantics.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support"],
+)
+
+rustleaks_integration_test(
+    name = "perf_archives_test",
+    src = "tests/perf_archives.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    data = ["//compat:all"],
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support"],
+)
+
 [
     rustleaks_integration_test(
         name = test + "_test",
@@ -119,6 +175,8 @@ test_suite(
     name = "parity_tests",
     tests = [
         ":git_corpus_test",
+        ":git_scm_test",
+        ":native_sources_test",
         ":source_corpus_test",
     ],
     visibility = ["//visibility:public"],
@@ -127,16 +185,21 @@ test_suite(
 test_suite(
     name = "all_tests",
     tests = [
+        ":security_stress_test",
+        ":archive_fuzz_test",
         ":archive_sources_test",
+        ":archive_semantics_test",
         ":git_corpus_test",
         ":git_scm_test",
         ":git_sources_test",
         ":native_sources_test",
+        ":perf_archives_test",
         ":rustleaks_sources_doc_test",
         ":rustleaks_sources_unit_test",
         ":rustleaks_sources_archives_doc_test",
         ":rustleaks_sources_archives_unit_test",
         ":source_corpus_test",
+        ":source_fuzz_test",
     ],
     visibility = ["//visibility:public"],
 )

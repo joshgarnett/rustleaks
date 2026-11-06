@@ -1,5 +1,5 @@
 # Reviewed synthetic AWS compatibility examples and source assertions.
-README.md:aws-access-token:51
+README.md:aws-access-token:54
 crates/rustleaks-core/src/lib.rs:aws-access-token:14
 crates/rustleaks-compat/oracle/main_test.go:aws-access-token:498
 crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:131
@@ -8,6 +8,15 @@ crates/xtask/src/tooling/cli_corpus/fixture.rs:aws-access-token:109
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:287
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:289
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:290
+
+# Reviewed synthetic values in the independent accuracy corpus generator.
+crates/rustleaks-compat/src/evaluation/generator.rs:github-pat:3
+crates/rustleaks-compat/src/evaluation/generator.rs:aws-access-token:4
+crates/rustleaks-compat/src/evaluation/generator.rs:private-key:167
+crates/rustleaks-compat/src/evaluation/generator.rs:generic-api-key:217
+crates/rustleaks-compat/src/evaluation/pilot.rs:github-pat:182
+crates/rustleaks-core/tests/native_policy.rs:aws-access-token:30
+crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:340
 
 # Reviewed generated hashes and synthetic decoder test values.
 MODULE.bazel.lock:generic-api-key:794

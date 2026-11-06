@@ -3,13 +3,16 @@
 
 #[path = "../perf/benchmark_data.rs"]
 mod benchmark_data;
+#[path = "../perf/representative.rs"]
+mod representative;
+#[path = "../perf/representative_io.rs"]
+mod representative_io;
 
 use std::error::Error;
 use std::fs::{self, File};
 use std::hint::black_box;
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use benchmark_data::{
@@ -29,7 +32,8 @@ use rustleaks_sources::{
 };
 use serde::Serialize;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
+const MEASUREMENT_SCOPE: &str = "legacy-v1-includes-verification";
 const DEFAULT_INPUT_BYTES: usize = 1_048_576;
 const HOSTILE_INPUT_BYTES: usize = 262_144;
 const SOURCE_FILES: usize = 64;
@@ -104,8 +108,7 @@ struct Metric {
 struct Provenance {
     upstream_revision: &'static str,
     default_config_sha256: &'static str,
-    rust_revision: String,
-    rustc: String,
+    binding: &'static str,
     package_version: &'static str,
     target_os: &'static str,
     target_arch: &'static str,
@@ -119,6 +122,9 @@ struct Record<'a> {
     schema_version: u32,
     workload: &'a str,
     iterations: usize,
+    warmup_iterations: usize,
+    measurement_scope: &'static str,
+    logical_unit: &'static str,
     elapsed_ns: u64,
     ns_per_iteration: u64,
     logical_bytes: u64,
@@ -141,6 +147,7 @@ struct Expected {
 struct Args {
     workloads: Vec<&'static str>,
     iterations: usize,
+    warmup: usize,
 }
 
 struct FixtureDir {
@@ -181,15 +188,32 @@ impl Drop for FixtureDir {
 
 fn main() {
     if let Err(error) = real_main() {
+        if error.is::<InvariantFailure>() {
+            eprintln!("rustleaks-perf-status: invariant-failure-v1");
+        }
         eprintln!("rustleaks-perf: {error}");
         std::process::exit(2);
     }
 }
 
 fn real_main() -> Result<(), Box<dyn Error>> {
-    let args = parse_args(std::env::args().skip(1))?;
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if arguments.first().is_some_and(|arg| arg == "--investigate") {
+        return representative::investigate(&arguments);
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg.starts_with("--representative"))
+    {
+        return representative::main(&arguments);
+    }
+    let args = parse_args(arguments)?;
     let provenance = provenance()?;
     for workload in args.workloads {
+        for _ in 0..args.warmup {
+            let (_, metric) = run_workload(workload, 1)?;
+            validate_metric(workload, &metric, expected(workload))?;
+        }
         let (elapsed_ns, metric) = run_workload(workload, args.iterations)?;
         let expected = expected(workload);
         validate_metric(workload, &metric, expected)?;
@@ -198,6 +222,9 @@ fn real_main() -> Result<(), Box<dyn Error>> {
             schema_version: SCHEMA_VERSION,
             workload,
             iterations: args.iterations,
+            warmup_iterations: args.warmup,
+            measurement_scope: MEASUREMENT_SCOPE,
+            logical_unit: logical_unit(workload),
             elapsed_ns,
             ns_per_iteration: elapsed_ns / u64::try_from(args.iterations)?,
             logical_bytes: metric.logical_bytes,
@@ -215,6 +242,7 @@ fn real_main() -> Result<(), Box<dyn Error>> {
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Box<dyn Error>> {
     let mut selected = None;
     let mut iterations = 1usize;
+    let mut warmup = 0usize;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -231,11 +259,17 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Box<dyn Er
                     .ok_or("--iterations requires a value")?
                     .parse()?;
             }
+            "--warmup" => {
+                warmup = args.next().ok_or("--warmup requires a value")?.parse()?;
+            }
             _ => return Err(format!("unknown argument '{arg}'").into()),
         }
     }
     if !(1..=MAX_ITERATIONS).contains(&iterations) {
         return Err(format!("iterations must be in 1..={MAX_ITERATIONS}").into());
+    }
+    if warmup > MAX_ITERATIONS {
+        return Err(format!("warmup must be in 0..={MAX_ITERATIONS}").into());
     }
     let workloads = match selected.as_deref() {
         None | Some("all") => WORKLOADS.to_vec(),
@@ -249,6 +283,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Box<dyn Er
     Ok(Args {
         workloads,
         iterations,
+        warmup,
     })
 }
 
@@ -271,8 +306,7 @@ fn provenance() -> Result<Provenance, Box<dyn Error>> {
     Ok(Provenance {
         upstream_revision: UPSTREAM_REVISION,
         default_config_sha256: DEFAULT_CONFIG_SHA256,
-        rust_revision: command_line("git", &["rev-parse", "HEAD"], 128),
-        rustc: command_line("rustc", &["-Vv"], 1024),
+        binding: "unbound-runner",
         package_version: env!("CARGO_PKG_VERSION"),
         target_os: std::env::consts::OS,
         target_arch: std::env::consts::ARCH,
@@ -282,17 +316,12 @@ fn provenance() -> Result<Provenance, Box<dyn Error>> {
     })
 }
 
-fn command_line(program: &str, args: &[&str], maximum: usize) -> String {
-    let Ok(output) = Command::new(program).args(args).output() else {
-        return "unavailable".to_owned();
-    };
-    if !output.status.success() || output.stdout.len() > maximum {
-        return "unavailable".to_owned();
+fn logical_unit(workload: &str) -> &'static str {
+    if workload.starts_with("report-") {
+        "findings"
+    } else {
+        "input-bytes"
     }
-    String::from_utf8(output.stdout).map_or_else(
-        |_| "unavailable".to_owned(),
-        |value| value.trim().replace('\n', "; "),
-    )
 }
 
 fn run_workload(id: &str, iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
@@ -499,6 +528,9 @@ fn run_scan(
     let start = Instant::now();
     for _ in 0..iterations {
         let outcome = detector.scan_fragment(black_box(&fragment), &options);
+        if !outcome.is_complete() {
+            return Err("performance workload terminated early".into());
+        }
         last = Some(Metric {
             logical_bytes: u64::try_from(fragment.content().len())?,
             result_count: u64::try_from(outcome.findings().len())?,
@@ -1108,33 +1140,44 @@ impl Expected {
     }
 }
 
+#[derive(Debug)]
+struct InvariantFailure(String);
+
+impl std::fmt::Display for InvariantFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl Error for InvariantFailure {}
+
 fn validate_metric(id: &str, actual: &Metric, expected: Expected) -> Result<(), Box<dyn Error>> {
     if actual.logical_bytes != expected.logical_bytes {
-        return Err(format!(
+        return Err(InvariantFailure(format!(
             "{id} logical bytes {} != {}",
             actual.logical_bytes, expected.logical_bytes
-        )
+        ))
         .into());
     }
     if actual.result_count != expected.result_count {
-        return Err(format!(
+        return Err(InvariantFailure(format!(
             "{id} result count {} != {}",
             actual.result_count, expected.result_count
-        )
+        ))
         .into());
     }
     if actual.output_bytes != expected.output_bytes {
-        return Err(format!(
+        return Err(InvariantFailure(format!(
             "{id} output bytes {} != {}",
             actual.output_bytes, expected.output_bytes
-        )
+        ))
         .into());
     }
     if actual.fingerprint != expected.fingerprint {
-        return Err(format!(
+        return Err(InvariantFailure(format!(
             "{id} fingerprint {:016x} != {:016x}",
             actual.fingerprint, expected.fingerprint
-        )
+        ))
         .into());
     }
     Ok(())
@@ -1154,6 +1197,13 @@ mod tests {
         assert!(parse_args(["--iterations".into(), "0".into()]).is_err());
         assert!(parse_args(["--iterations".into(), "11".into()]).is_err());
         assert!(parse_args(["--workload".into(), "missing".into()]).is_err());
+        assert!(parse_args(["--warmup".into(), "11".into()]).is_err());
+        assert_eq!(
+            parse_args(["--warmup".into(), "2".into()]).unwrap().warmup,
+            2
+        );
+        assert_eq!(logical_unit("report-json"), "findings");
+        assert_eq!(logical_unit("default-compile"), "input-bytes");
     }
 
     #[test]
@@ -1166,7 +1216,7 @@ mod tests {
 
     #[test]
     fn all_performance_categories_run_with_invariants() {
-        for id in WORKLOADS.iter().take(13) {
+        for id in WORKLOADS.iter().take(15) {
             let (_, metric) = run_workload(id, 1).expect("performance workload");
             validate_metric(id, &metric, expected(id)).expect("performance invariant");
         }

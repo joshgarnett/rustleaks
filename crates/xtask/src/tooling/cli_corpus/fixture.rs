@@ -6,16 +6,17 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use serde_json::Value;
-
 use super::TempDir;
-use super::process::{self, CASE_TIMEOUT, OUTPUT_LIMIT};
+use super::process::{self, OUTPUT_LIMIT};
 
 pub(super) const MATCHING_CONFIG: &str = "title='fixture'\n[[rules]]\nid='fixture-token'\ndescription='fixture token'\nregex='''token=([A-Z0-9]{4})'''\nsecretGroup=1\nkeywords=['token']\n";
 const NO_MATCH_CONFIG: &str = "title='fixture'\n[[rules]]\nid='never'\ndescription='never'\nregex='''NEVER_MATCH_THIS_VALUE'''\n";
 const TWO_RULE_CONFIG: &str = "title='fixture'\n[[rules]]\nid='alpha'\ndescription='alpha'\nregex='''alpha=([A-Z0-9]{4})'''\nsecretGroup=1\n[[rules]]\nid='beta'\ndescription='beta'\nregex='''beta=([A-Z0-9]{4})'''\nsecretGroup=1\n";
 const COMPOSITE_CONFIG: &str = "title='fixture'\n[[rules]]\nid='primary-rule'\ndescription='primary'\nregex='''password\\s*=\\s*\"([^\"]+)\"'''\n[[rules.required]]\nid='username-rule'\n[[rules]]\nid='username-rule'\ndescription='username'\nregex='''username\\s*=\\s*\"([^\"]+)\"'''\nskipReport=true\n";
 const TEMPLATE: &str = "{{ range . }}{{ .RuleID }}:{{ .Secret }}\\n{{ end }}";
+
+const BASELINE_JSON: &str = r#"[{"RuleID":"fixture-token","Description":"fixture token","StartLine":1,"EndLine":1,"StartColumn":1,"EndColumn":10,"Match":"token=AB12","Secret":"AB12","File":"secret.txt","SymlinkFile":"","Commit":"","Entropy":2,"Author":"","Email":"","Date":"","Message":"","Tags":[],"Fingerprint":"secret.txt:fixture-token:1"}]
+"#;
 
 #[derive(Default)]
 pub(super) struct Prepared {
@@ -100,7 +101,6 @@ pub(super) fn setup(root: &Path, kind: &str, temporary: &TempDir) -> Result<(), 
 pub(super) fn prepare(
     root: &Path,
     value: Option<&str>,
-    go_binary: &Path,
     fake_git_binary: &Path,
     temporary: &TempDir,
     label: &str,
@@ -118,42 +118,9 @@ pub(super) fn prepare(
             write(root, ".gitleaksignore", b":fixture-token:1\n")?;
             write(root, "named.ignore", b"malformed\n")?;
         }
-        "valid-baseline" => {
-            let args = strings(&[
-                "dir",
-                "secret.txt",
-                "--no-banner",
-                "--no-color",
-                "-c",
-                "config.toml",
-                "-r",
-                "baseline.json",
-                "-f",
-                "json",
-            ]);
-            let result = process::run(
-                go_binary,
-                &args,
-                root,
-                &BTreeMap::new(),
-                b"",
-                temporary,
-                &format!("{label}-baseline"),
-                CASE_TIMEOUT,
-                OUTPUT_LIMIT,
-            )?;
-            if result.exit != 1 {
-                return Err("baseline seed did not find exactly one secret".into());
-            }
-            let baseline: Value = serde_json::from_slice(
-                &fs::read(root.join("baseline.json"))
-                    .map_err(|e| format!("cannot read baseline: {e}"))?,
-            )
-            .map_err(|e| format!("invalid baseline JSON: {e}"))?;
-            if baseline.as_array().map(Vec::len) != Some(1) {
-                return Err("baseline seed finding count changed".into());
-            }
-        }
+        // Independently specified input for the synthetic token fixture. Never
+        // produce this baseline by running the CLI whose suppression is tested.
+        "valid-baseline" => write(root, "baseline.json", BASELINE_JSON.as_bytes())?,
         "malformed-baseline" => write(root, "baseline.json", b"[{broken")?,
         "config-self-secret" => write(
             root,

@@ -5,8 +5,8 @@ Rustleaks keeps detection independent from I/O and process behavior.
 ## Root CLI generator auxiliary packages
 
 The workspace root owns package policy and validation. The CLI is a thin
-consumer. Compatibility generators and the pinned Go oracle are unpublished
-test infrastructure.
+consumer. Rust regression tools, frozen historical compatibility evidence and
+quality evaluation are unpublished test infrastructure.
 
 ## Configuration
 
@@ -43,7 +43,7 @@ schedule them, but it submits only complete fragment outcomes to a session.
 | `rustleaks-sources` | Files, directories, archives, Git, cancellation, and bounded scheduling | Workspace only |
 | `rustleaks-report` | JSON, CSV, JUnit, SARIF, and restricted templates | Workspace only |
 | `rustleaks-cli` | Argument compatibility, config discovery, orchestration, diagnostics, and exits | Workspace only |
-| `rustleaks-compat` | Go oracle integration and performance workloads | Workspace only |
+| `rustleaks-compat` | Quality evaluation and performance workloads | Workspace only |
 | `xtask` | Repository validation and release-policy checks | Workspace only |
 | `rustleaks-bzip2`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Retained internal safe archive decoder forks | Workspace only |
 
@@ -58,8 +58,9 @@ transaction.
 
 The dependency direction is core to sources and reports, then into the CLI.
 The core does not depend on source adapters, report writers, the CLI, archive
-codecs, Git, a shell, or an async runtime. Compatibility tools may observe the
-pinned Go implementation, but production packages do not load it.
+codecs, Git, a shell, or an async runtime. Compatibility tests replay frozen
+historical observations and independently specified Rust contracts. No
+maintained tool executes the retired Go oracle.
 
 The default core engine owns immutable compiled configuration. A caller passes
 one byte-oriented fragment and scan options, then receives a complete or

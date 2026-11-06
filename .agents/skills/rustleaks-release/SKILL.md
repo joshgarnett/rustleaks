@@ -42,7 +42,10 @@ README, license, and notice files, and for unwanted workspace or private
 material.
 
 Require the matching native target, feature, parity, example, CLI, MSRV,
-SemVer, and extended security evidence defined by the release document. Do not
+SemVer, and extended security evidence defined by the release document.
+Use `cargo xtask qualify` for complete Rust qualification when compatibility
+inputs or behavior change. Historical Go observations remain immutable;
+qualification requires no Go installation or sibling Gitleaks checkout. Do not
 promote compile-only target results to support. Do not invent an artifact,
 checksum, SBOM, attestation, or native result that the current release workflow
 does not produce.

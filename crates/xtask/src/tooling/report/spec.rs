@@ -1,15 +1,11 @@
 //! Immutable report-corpus schema, provenance, and canonical-input checks.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
 
 use serde_json::Value;
 
-use super::process;
+use super::newline_records;
 use super::validation::{required_object, required_str, required_u64, string_array};
-use super::{TempDir, newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 pub(super) const PROTOCOL_VERSION: u64 = 1;
@@ -270,38 +266,6 @@ pub(super) fn validate_inputs(requests: &[u8], coverage: &Value) -> Result<Vec<V
     Ok(values)
 }
 
-pub(super) fn validate_upstream(
-    upstream: &Path,
-    coverage: &Value,
-    temporary: &TempDir,
-) -> Result<(), String> {
-    let mut command = Command::new("git");
-    command.current_dir(upstream).args(["rev-parse", "HEAD"]);
-    let revision = process::capture(
-        &mut command,
-        temporary,
-        "upstream-revision",
-        Duration::from_secs(30),
-    )?;
-    if trim_ascii(&revision) != REVISION.as_bytes() {
-        return Err(format!(
-            "pinned upstream revision changed in {}",
-            upstream.display()
-        ));
-    }
-    if sha256_bytes(&read(&upstream.join("config/gitleaks.toml"))?) != DEFAULT_CONFIG_SHA256 {
-        return Err("pinned upstream default config changed".into());
-    }
-    for field in ["source_sha256", "fixture_sha256"] {
-        for (path, expected) in required_object(coverage, field, "coverage")? {
-            if expected.as_str() != Some(sha256_bytes(&read(&upstream.join(path))?).as_str()) {
-                return Err(format!("pinned upstream file {path} changed"));
-            }
-        }
-    }
-    Ok(())
-}
-
 fn validate_string_map(
     value: &Value,
     field: &str,
@@ -316,14 +280,4 @@ fn validate_string_map(
         return Err(format!("report coverage {field} changed"));
     }
     Ok(())
-}
-
-fn trim_ascii(mut bytes: &[u8]) -> &[u8] {
-    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[1..];
-    }
-    while bytes.last().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[..bytes.len() - 1];
-    }
-    bytes
 }

@@ -1,3 +1,4 @@
+frame_v1="RLG\x01"
 commit="commit deadbeef\x0a"
 diff="diff --git a/a b/a\x0a"
 old_path="--- a/a\x0a"

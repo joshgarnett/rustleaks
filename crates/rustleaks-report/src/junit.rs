@@ -96,7 +96,7 @@ fn write_xml(writer: &mut dyn Write, bytes: &[u8]) -> Result<(), std::io::Error>
                 b'\t' => writer.write_all(b"&#x9;")?,
                 b'\n' => writer.write_all(b"&#xA;")?,
                 b'\r' => writer.write_all(b"&#xD;")?,
-                0x00..=0x1f | 0x7f => writer.write_all("\u{fffd}".as_bytes())?,
+                0x00..=0x1f => writer.write_all("\u{fffd}".as_bytes())?,
                 _ => writer.write_all(&[byte])?,
             }
             offset += 1;
@@ -109,12 +109,16 @@ fn write_xml(writer: &mut dyn Write, bytes: &[u8]) -> Result<(), std::io::Error>
             _ => 0,
         };
         let candidate = bytes.get(offset..offset.saturating_add(width));
-        let valid = candidate
+        let decoded = candidate
             .and_then(|part| std::str::from_utf8(part).ok())
-            .and_then(|text| text.chars().next())
-            .filter(|value| is_xml_character(*value));
-        if let (Some(part), Some(_)) = (candidate, valid) {
-            writer.write_all(part)?;
+            .and_then(|text| text.chars().next());
+        if let (Some(part), Some(value)) = (candidate, decoded) {
+            if is_xml_character(value) {
+                writer.write_all(part)?;
+            } else {
+                writer.write_all("\u{fffd}".as_bytes())?;
+            }
+            // A valid scalar outside XML's character range is replaced once.
             offset += width;
         } else {
             writer.write_all("\u{fffd}".as_bytes())?;

@@ -1,5 +1,5 @@
 load("@crates//:defs.bzl", "aliases", "all_crate_deps")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_clippy", "rust_test")
 load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files")
 
 exports_files(["Cargo.toml"])
@@ -16,20 +16,23 @@ rust_binary(
         "CARGO_MANIFEST_DIR": "crates/xtask",
         "CARGO_PKG_VERSION": "0.1.0-alpha.5",
     },
-    srcs = glob(["src/**/*.rs"]),
+    srcs = glob(["src/**/*.rs"]) + [
+        "//crates/rustleaks-core:campaign_profile_support",
+        "//crates/rustleaks-sources:archive_fuzz_support",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Clippy emits metadata without requiring a foreign-platform executable linker.
+rust_clippy(
+    name = "xtask_compile_check",
+    deps = [":xtask"],
     visibility = ["//visibility:public"],
 )
 
 rust_test(
     name = "xtask_unit_test",
     aliases = aliases(normal = True, normal_dev = True),
-    # These two generator integration checks intentionally inspect the pinned
-    # sibling Go checkout. Normal Bazel tests must remain sibling-independent;
-    # the generator is exercised explicitly by the parity workflow instead.
-    args = [
-        "--skip=tooling::inventory::tests::explicit_candidate_mode_supports_spaces_and_non_ascii",
-        "--skip=tooling::inventory::tests::generated_inventory_is_idempotent",
-    ],
     crate = ":xtask",
     data = [
         "//:build_contract_files",
@@ -44,8 +47,55 @@ rust_test(
     visibility = ["//visibility:public"],
 )
 
+_CLI_GIT_DATA = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": ["//bazel:git"],
+})
+
+_CLI_REGRESSION_ENV = select({
+    "@platforms//os:windows": {
+        "RUSTLEAKS_CLI_RUNFILE": "$(rlocationpath //crates/rustleaks-cli:rustleaks)",
+        "RUSTLEAKS_CLI_FIXTURE_RUNFILE": "$(rlocationpath //crates/rustleaks-compat:rustleaks_cli_fixture)",
+        "RUSTLEAKS_CLI_GIT_RUNFILE": "git",
+    },
+    "//conditions:default": {
+        "RUSTLEAKS_CLI_RUNFILE": "$(rlocationpath //crates/rustleaks-cli:rustleaks)",
+        "RUSTLEAKS_CLI_FIXTURE_RUNFILE": "$(rlocationpath //crates/rustleaks-compat:rustleaks_cli_fixture)",
+        "RUSTLEAKS_CLI_GIT_RUNFILE": "$(rlocationpath //bazel:git)",
+    },
+})
+
+# The ignored Rust test is explicitly selected here and remains part of CI.
+rust_test(
+    name = "cli_regression_test",
+    aliases = aliases(normal = True, normal_dev = True),
+    args = [
+        "tooling::cli_corpus::tests::frozen_cli_corpus_replays_with_native_binaries",
+        "--exact",
+        "--ignored",
+    ],
+    crate = ":xtask",
+    data = [
+        "//:build_contract_files",
+        "//:workspace_files",
+        "//compat:all",
+        "//crates/rustleaks-cli:rustleaks",
+        "//crates/rustleaks-compat:rustleaks_cli_fixture",
+    ] + _CLI_GIT_DATA,
+    deps = all_crate_deps(normal = True, normal_dev = True),
+    env = _CLI_REGRESSION_ENV,
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "crates/xtask",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.5",
+    },
+    visibility = ["//visibility:public"],
+)
+
 test_suite(
     name = "all_tests",
-    tests = [":xtask_unit_test"],
+    tests = [
+        ":cli_regression_test",
+        ":xtask_unit_test",
+    ],
     visibility = ["//visibility:public"],
 )

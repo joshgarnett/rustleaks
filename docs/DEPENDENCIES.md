@@ -21,8 +21,8 @@
   private frontend still limits accepted property names to the Go namespace,
   and generated Go simple-lowercase tables used outside regular expressions
   remain pinned to Unicode 15. Dependency updates require the complete regex
-  oracle and security review. Development uses the pinned toolchain; CI also
-  builds the declared MSRV and current native platform lanes.
+  regression corpus and security review. Development uses the pinned toolchain;
+  CI also builds the declared MSRV and current native platform lanes.
 - `serde_json` is a core runtime dependency because the upstream baseline file
   is a JSON report. The session parser wraps its tokenizer with a private
   compatibility visitor for Go field matching, null/duplicate handling,

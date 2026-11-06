@@ -1,63 +1,11 @@
-//! Pinned-Go generation and verification of the scan-session corpus.
-
+//! Offline integrity of the frozen session corpus.
 mod controls;
-mod process;
 mod spec;
 mod validation;
-
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
-
-use serde_json::Value;
-
-use super::artifacts::GeneratedTree;
-use super::support::TempDir;
-
-const README: &str = r"# Session oracle corpus v1
-
-This corpus freezes pinned Gitleaks `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` session behavior. The generator
-runs every one of its 45 requests in a fresh Go child with a
-10-second deadline, 4 MiB per-stream output ceiling, 512 MiB Go memory limit,
-and explicit input bytes for cross-platform path cases.
-
-`outcomes-v1.jsonl` preserves every Finding field, duplicates, original collection
-order, fingerprint mutation, and a separate stable canonical-sort view. Baseline
-comparisons mutate each compared and ignored field individually; ignore cases
-cover global and commit forms, slash normalization, comments, blanks, malformed
-entries, duplicate collapse, and precedence.
-
-Regenerate or verify from the repository root:
-
-```sh
-cargo xtask generate session
-cargo xtask generate session --check
-```
-
-Production safety, unsafe-code policy, and Rust implementation claims are
-outside this corpus.
-";
-
 pub(crate) fn check_session_corpus(root: &Path) -> Result<(), String> {
-    generate_and_apply(root, &root.join("compat/session-corpus"), true)
-}
-
-pub(crate) fn write_session_corpus(root: &Path, output_root: &Path) -> Result<(), String> {
-    generate_and_apply(root, output_root, false)
-}
-
-fn generate_and_apply(root: &Path, output_root: &Path, check: bool) -> Result<(), String> {
-    let generated = generate(root, check)?;
-    generated.tree.write_or_check(output_root, check)?;
-    println!("{}", String::from_utf8_lossy(&generated.manifest));
-    Ok(())
-}
-
-struct Generated {
-    tree: GeneratedTree,
-    manifest: Vec<u8>,
-}
-
-fn generate(root: &Path, check: bool) -> Result<Generated, String> {
     let corpus = root.join("compat/session-corpus");
     let requests = read(&corpus.join("requests-v1.jsonl"))?;
     let committed_outcomes = read(&corpus.join("outcomes-v1.jsonl"))?;
@@ -78,46 +26,31 @@ fn generate(root: &Path, check: bool) -> Result<Generated, String> {
         &manifest_value,
     )?;
 
-    let upstream = root
-        .parent()
-        .ok_or_else(|| format!("repository root {} has no parent", root.display()))?
-        .join("gitleaks");
-    let temporary = TempDir::new("session-corpus")?;
-    spec::validate_upstream(root, &upstream, &coverage_value, &temporary)?;
-    let status_before = process::git_status(&upstream, &temporary, "before")?;
-    if !status_before.is_empty() {
-        return Err("pinned upstream checkout has tracked changes".into());
-    }
-    let runtime = super::runtime_provenance::GoRuntime::observe(root)?;
-    let observed = process::observe(root, &upstream, &request_values, &requests, &temporary)?;
-    let comparison_bytes =
-        runtime.comparison_bytes(&committed_outcomes, &observed.bytes, check, "session")?;
-    let comparison_values = newline_records(&comparison_bytes, "session comparison")?
+    spec::validate_local(root, &coverage_value)?;
+    let values = newline_records(&committed_outcomes, "frozen session outcomes")?
         .into_iter()
         .map(|line| serde_json::from_slice(line).map_err(|error| error.to_string()))
         .collect::<Result<Vec<Value>, String>>()?;
+    for (request, outcome) in request_values.iter().zip(&values) {
+        validation::validate_envelope(
+            request,
+            outcome,
+            validation::required_str(outcome, "go_version", "session outcome")?,
+        )?;
+    }
     validation::validate_all(
         &request_values,
-        &comparison_values,
-        &comparison_bytes,
+        &values,
+        &committed_outcomes,
         &coverage_value,
         &negative_value,
         &manifest_value,
     )?;
-    if process::git_status(&upstream, &temporary, "after")? != status_before {
-        return Err("upstream checkout changed during session generation".into());
-    }
-
-    let manifest =
-        validation::render_manifest(&legacy_manifest, &manifest_value, README.as_bytes())?;
-    let mut tree = GeneratedTree::default();
-    tree.insert("requests-v1.jsonl", requests)?;
-    tree.insert("outcomes-v1.jsonl", comparison_bytes)?;
-    tree.insert("coverage-v1.json", coverage)?;
-    tree.insert("negative-controls-v1.json", negative)?;
-    tree.insert("README.md", README.as_bytes())?;
-    tree.insert("manifest-v1.json", manifest.clone())?;
-    Ok(Generated { tree, manifest })
+    println!(
+        "frozen session integrity: {} requests",
+        request_values.len()
+    );
+    Ok(())
 }
 
 fn parse_json(bytes: &[u8], label: &str) -> Result<Value, String> {

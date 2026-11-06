@@ -14,6 +14,9 @@ use crate::decoder::{
     Decoder, EncodedSegment, adjust_match_index, current_line, segments_with_decoded_overlap,
     tags as decoder_tags,
 };
+use crate::explanation::{
+    ExplanationCollector, ExplanationLog, ExplanationOptions, ExplanationReason,
+};
 use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes};
 use crate::model::{
     ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
@@ -277,6 +280,9 @@ struct DetectionPass<'a> {
     current_raw: &'a [u8],
     encoded_segments: &'a [EncodedSegment],
     original_newlines: &'a [usize],
+    rule_ordinal: usize,
+    decoded_pass: usize,
+    candidate_ordinal: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -284,15 +290,18 @@ struct RulePass<'a> {
     current_raw: &'a [u8],
     encoded_segments: &'a [EncodedSegment],
     inherited_from_finding: bool,
+    rule_ordinal: usize,
+    decoded_pass: usize,
 }
 
 struct ScanContext<'a> {
     control: ScanControl<'a>,
     usage: ScanUsage,
+    explanations: ExplanationCollector,
 }
 
 impl<'a> ScanContext<'a> {
-    const fn new(control: ScanControl<'a>) -> Self {
+    fn new(control: ScanControl<'a>) -> Self {
         Self {
             control,
             usage: ScanUsage {
@@ -300,6 +309,7 @@ impl<'a> ScanContext<'a> {
                 work_units: 0,
                 finding_records: 0,
             },
+            explanations: ExplanationCollector::new(ExplanationOptions::disabled(), false),
         }
     }
 
@@ -415,13 +425,53 @@ impl Engine {
         options: &ScanOptions,
         control: &ScanControl<'_>,
     ) -> ScanOutcome {
+        self.scan_fragment_with_context(fragment, options, &mut ScanContext::new(*control))
+    }
+
+    pub(crate) fn scan_fragment_explained(
+        &self,
+        fragment: &Fragment,
+        options: &ScanOptions,
+        control: &ScanControl<'_>,
+        explanations: ExplanationOptions,
+        github_classic: bool,
+    ) -> (ScanOutcome, ExplanationLog) {
         let mut context = ScanContext::new(*control);
+        context.explanations = ExplanationCollector::new(explanations, github_classic);
+        let outcome = self.scan_fragment_with_context(fragment, options, &mut context);
+        if let Some(termination) = outcome.termination() {
+            let reason = match termination {
+                ScanTermination::Cancelled => ExplanationReason::ScanCancelled,
+                ScanTermination::BudgetExceeded { kind, .. } => match kind {
+                    ScanBudgetKind::DecodedBytes => ExplanationReason::DecodedByteBudgetExceeded,
+                    ScanBudgetKind::WorkUnits => ExplanationReason::WorkBudgetExceeded,
+                    ScanBudgetKind::FindingRecords => ExplanationReason::FindingBudgetExceeded,
+                },
+            };
+            context.explanations.record(None, 0, None, reason);
+        }
+        (outcome, context.explanations.log)
+    }
+
+    #[allow(clippy::too_many_lines)] // Keep pass ordering and partial-result accounting in one auditable flow.
+    fn scan_fragment_with_context(
+        &self,
+        fragment: &Fragment,
+        options: &ScanOptions,
+        context: &mut ScanContext<'_>,
+    ) -> ScanOutcome {
         if let Err(termination) = context.check_cancelled() {
             return ScanOutcome::partial(Vec::new(), context.usage, termination);
         }
         if commit_or_path_allowed(fragment, &self.config.allowlists) {
+            context
+                .explanations
+                .record(None, 0, None, ExplanationReason::AllowlistMatched);
             return ScanOutcome::complete(Vec::new(), context.usage);
         }
+        context
+            .explanations
+            .record(None, 0, None, ExplanationReason::AllowlistNotMatched);
 
         let mut findings = Vec::new();
         let mut current_raw = fragment.content().as_bytes().to_vec();
@@ -443,7 +493,13 @@ impl Engine {
                 }
             }
 
-            for rule in self.config.rules.values() {
+            for (rule_ordinal, rule) in self.config.rules.values().enumerate() {
+                context.explanations.record(
+                    Some(rule_ordinal),
+                    decode_depth,
+                    None,
+                    ExplanationReason::RuleSelected,
+                );
                 if !rule.keywords.is_empty()
                     && !rule.keywords.iter().any(|keyword| {
                         self.keyword_ids
@@ -451,8 +507,24 @@ impl Engine {
                             .is_some_and(|index| matched_keywords[*index])
                     })
                 {
+                    context.explanations.record(
+                        Some(rule_ordinal),
+                        decode_depth,
+                        None,
+                        ExplanationReason::KeywordMissed,
+                    );
                     continue;
                 }
+                context.explanations.record(
+                    Some(rule_ordinal),
+                    decode_depth,
+                    None,
+                    if rule.keywords.is_empty() {
+                        ExplanationReason::KeywordNotRequired
+                    } else {
+                        ExplanationReason::KeywordMatched
+                    },
+                );
                 let detected = self.detect_rule(
                     fragment,
                     options,
@@ -461,8 +533,10 @@ impl Engine {
                         current_raw: &current_raw,
                         encoded_segments: &encoded_segments,
                         inherited_from_finding: fragment.inherited_from_finding(),
+                        rule_ordinal,
+                        decoded_pass: decode_depth,
                     },
-                    &mut context,
+                    context,
                 );
                 match detected {
                     Ok(detected) => findings.extend(detected),
@@ -499,9 +573,10 @@ impl Engine {
             current_raw = decoded_output;
             encoded_segments = segments;
         }
-        finish_complete(findings, options, &context)
+        finish_complete(findings, options, context)
     }
 
+    #[allow(clippy::too_many_lines)] // Rule decisions and their bounded annotations share the same control flow.
     fn detect_rule(
         &self,
         fragment: &Fragment,
@@ -512,16 +587,44 @@ impl Engine {
     ) -> Result<Vec<Finding>, ScanTermination> {
         context.work()?;
         if rule.skip_report && !rule_pass.inherited_from_finding {
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                ExplanationReason::RuleReportSkipped,
+            );
             return Ok(Vec::new());
         }
         if commit_or_path_allowed(fragment, &rule.allowlists) {
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                ExplanationReason::AllowlistMatched,
+            );
             return Ok(Vec::new());
         }
+        context.explanations.record(
+            Some(rule_pass.rule_ordinal),
+            rule_pass.decoded_pass,
+            None,
+            ExplanationReason::AllowlistNotMatched,
+        );
 
         if let Some(path) = &rule.path_matcher {
             let path_matches = path.is_match(fragment.file_path().as_bytes())
                 || (!fragment.windows_file_path().is_empty()
                     && path.is_match(fragment.windows_file_path().as_bytes()));
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                if path_matches {
+                    ExplanationReason::PathMatched
+                } else {
+                    ExplanationReason::PathMissed
+                },
+            );
             if rule.regex_matcher.is_none() {
                 let finding = (rule_pass.encoded_segments.is_empty() && path_matches)
                     .then(|| path_finding(fragment, rule))
@@ -530,6 +633,12 @@ impl Engine {
                     .collect::<Vec<_>>();
                 if !finding.is_empty() {
                     context.finding_record()?;
+                    context.explanations.record(
+                        Some(rule_pass.rule_ordinal),
+                        rule_pass.decoded_pass,
+                        None,
+                        ExplanationReason::CandidateAccepted,
+                    );
                 }
                 return Ok(finding);
             }
@@ -545,6 +654,12 @@ impl Engine {
             .max_target_bytes()
             .is_some_and(|maximum| rule_pass.current_raw.len() > maximum)
         {
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                ExplanationReason::TargetByteLimit,
+            );
             return Ok(Vec::new());
         }
 
@@ -558,22 +673,47 @@ impl Engine {
             current_raw: rule_pass.current_raw,
             encoded_segments: rule_pass.encoded_segments,
             original_newlines: &newlines,
+            rule_ordinal: rule_pass.rule_ordinal,
+            decoded_pass: rule_pass.decoded_pass,
+            candidate_ordinal: 0,
         };
         let mut findings = Vec::new();
-        for span in regex.find_all(rule_pass.current_raw) {
+        let mut any_match = false;
+        for (candidate_ordinal, span) in regex
+            .find_all(rule_pass.current_raw)
+            .into_iter()
+            .enumerate()
+        {
             context.work()?;
-            if let Some(finding) = Self::content_finding(
+            any_match = true;
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                Some(candidate_ordinal),
+                ExplanationReason::PatternMatched,
+            );
+            if let Some(finding) = self.content_finding(
                 fragment,
                 options,
                 rule,
-                regex,
-                &self.config.allowlists,
-                pass,
+                DetectionPass {
+                    candidate_ordinal,
+                    ..pass
+                },
                 span,
+                context,
             ) {
                 context.finding_record()?;
                 findings.push(finding);
             }
+        }
+        if !any_match {
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                ExplanationReason::PatternMissed,
+            );
         }
         if rule_pass.inherited_from_finding || rule.required.is_empty() || findings.is_empty() {
             return Ok(findings);
@@ -597,12 +737,28 @@ impl Engine {
             let Some(rule) = self.config.rules.get(&required.id) else {
                 continue;
             };
+            let rule_ordinal = if context.explanations.has_room() {
+                self.config
+                    .rules
+                    .keys()
+                    .position(|id| id == &required.id)
+                    .unwrap_or(rule_pass.rule_ordinal)
+            } else {
+                rule_pass.rule_ordinal
+            };
+            context.explanations.record(
+                Some(rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                ExplanationReason::RuleSelected,
+            );
             let findings = self.detect_rule(
                 fragment,
                 options,
                 rule,
                 RulePass {
                     inherited_from_finding: true,
+                    rule_ordinal,
                     ..rule_pass
                 },
                 context,
@@ -633,23 +789,44 @@ impl Engine {
                     .any(|finding| finding.rule_id().as_bytes() == required.id.as_bytes())
             });
             if projected.is_empty() || !has_all {
+                context.explanations.record(
+                    Some(rule_pass.rule_ordinal),
+                    rule_pass.decoded_pass,
+                    None,
+                    ExplanationReason::RequiredRulesMissing,
+                );
                 continue;
             }
+            context.explanations.record(
+                Some(rule_pass.rule_ordinal),
+                rule_pass.decoded_pass,
+                None,
+                ExplanationReason::RequiredRulesMatched,
+            );
             primary.add_required_findings(projected);
             completed.push(primary);
         }
         Ok(completed)
     }
 
+    #[allow(clippy::too_many_lines)] // Preserve extraction, location and filtering order alongside their explanation codes.
     fn content_finding(
+        &self,
         fragment: &Fragment,
         options: &ScanOptions,
         rule: &CompiledRule,
-        regex: &GoRegex,
-        global_allowlists: &[CompiledAllowlist],
         pass: DetectionPass<'_>,
         whole: ByteSpan,
+        context: &mut ScanContext<'_>,
     ) -> Option<Finding> {
+        let mut explain = |reason| {
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                Some(pass.candidate_ordinal),
+                reason,
+            );
+        };
         let original_raw = fragment.content().as_bytes();
         let matched = pass.current_raw.get(whole.start..whole.end)?;
         let (trimmed_offset, trimmed) = trim_newlines(matched);
@@ -667,6 +844,7 @@ impl Engine {
                 let overlapping =
                     segments_with_decoded_overlap(pass.encoded_segments, whole.start, whole.end);
                 if overlapping.is_empty() {
+                    explain(ExplanationReason::DecodedMappingUnavailable);
                     return None;
                 }
                 let (start, end) = adjust_match_index(&overlapping, whole.start, whole.end)?;
@@ -688,20 +866,66 @@ impl Engine {
             && (contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
                 || contains_bytes(line, ALLOW_SIGNATURE))
         {
+            explain(ExplanationReason::AllowMarkerMatched);
             return None;
         }
 
-        let extracted_secret = extract_secret(regex, trimmed, rule.secret_group)?;
+        let Some(extracted_secret) =
+            extract_secret(rule.regex_matcher.as_ref()?, trimmed, rule.secret_group)
+        else {
+            explain(ExplanationReason::SecretGroupUnavailable);
+            return None;
+        };
         let secret = extracted_secret.bytes;
         let entropy = shannon_entropy(secret);
         if rule.entropy != 0.0 && entropy <= rule.entropy {
+            explain(ExplanationReason::EntropyRejected);
             return None;
         }
+        explain(if rule.entropy == 0.0 {
+            ExplanationReason::EntropyNotRequired
+        } else {
+            ExplanationReason::EntropyAccepted
+        });
         let allowlist_line = decoded_line.filter(|line| !line.is_empty()).unwrap_or(line);
-        if finding_allowed(fragment, trimmed, secret, allowlist_line, global_allowlists)
-            || finding_allowed(fragment, trimmed, secret, allowlist_line, &rule.allowlists)
+        if finding_allowed(
+            fragment,
+            trimmed,
+            secret,
+            allowlist_line,
+            &self.config.allowlists,
+        ) || finding_allowed(fragment, trimmed, secret, allowlist_line, &rule.allowlists)
         {
+            explain(ExplanationReason::AllowlistMatched);
             return None;
+        }
+        explain(ExplanationReason::AllowlistNotMatched);
+        explain(ExplanationReason::CandidateAccepted);
+        if context.explanations.github_classic && context.explanations.begin_annotation() {
+            let isolated = extracted_secret.span.is_some_and(|span| {
+                let start = direct_match_start.checked_add(span.start);
+                let end = direct_match_start.checked_add(span.end);
+                start.zip(end).is_some_and(|(start, end)| {
+                    let continues = |byte: &u8| byte.is_ascii_alphanumeric() || *byte == b'_';
+                    !start
+                        .checked_sub(1)
+                        .and_then(|index| pass.current_raw.get(index))
+                        .is_some_and(continues)
+                        && !pass.current_raw.get(end).is_some_and(continues)
+                })
+            });
+            for assessment in crate::validation::github_classic_pat_in_context(secret, isolated) {
+                context.explanations.record(
+                    Some(pass.rule_ordinal),
+                    pass.decoded_pass,
+                    Some(pass.candidate_ordinal),
+                    ExplanationReason::OfflineValidation {
+                        check: assessment.check(),
+                        state: assessment.state(),
+                        reason: assessment.reason(),
+                    },
+                );
+            }
         }
 
         let location = Location::from_upstream(

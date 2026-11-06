@@ -70,10 +70,14 @@
 pub mod config;
 mod decoder;
 mod engine;
+pub mod explanation;
 mod go_unicode;
 pub mod model;
+pub mod native;
 mod regex;
 pub mod session;
+pub mod triage;
+pub mod validation;
 
 pub use engine::{
     Engine, EngineBuilder, ScanBudget, ScanBudgetKind, ScanCancellation, ScanControl, ScanError,

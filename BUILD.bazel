@@ -32,7 +32,6 @@ filegroup(
         ".bazelignore",
         ".bazelrc",
         ".bazelversion",
-        ".go-version",
         "BUILD.bazel",
         "Cargo.lock",
         "Cargo.toml",
@@ -81,17 +80,26 @@ filegroup(
         "//crates/rustleaks-cli:rustleaks",
         "//crates/rustleaks-cli:rustleaks_cli",
         "//crates/rustleaks-compat:rustleaks_perf",
+        "//crates/rustleaks-compat:rustleaks_quality",
         "//crates/rustleaks-sources:panic_abort_policy",
         "//crates/xtask:xtask",
     ],
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "platform_compile_inputs",
+    srcs = [
+        ":libraries",
+        "//crates/xtask:xtask_compile_check",
+    ],
+)
+
 [
     platform_build(
         name = "build_" + name,
         platform = "//platforms:" + name,
-        target = ":libraries",
+        target = ":platform_compile_inputs",
     )
     for name in [
         "linux_x86_64_gnu",
@@ -137,6 +145,12 @@ filegroup(
 )
 
 _RUST_TARGETS = [
+    "//crates/rustleaks-report:triage_test",
+
+    "//crates/rustleaks-core:native_policy_test",
+    "//crates/rustleaks-core:native_rules_test",
+    "//crates/rustleaks-core:triage_test",
+
     "//crates/rustleaks-bzip2:profile_default",
     "//crates/rustleaks-bzip2:profile_nightly",
     "//crates/rustleaks-bzip2:profile_rustc_1_37",
@@ -150,17 +164,24 @@ _RUST_TARGETS = [
     "//crates/rustleaks-cli:rustleaks_cli_unit_test",
     "//crates/rustleaks-compat:rustleaks_compat",
     "//crates/rustleaks-compat:rustleaks_compat_unit_test",
+    "//crates/rustleaks-compat:rustleaks_cli_fixture",
     "//crates/rustleaks-compat:rustleaks_perf",
+    "//crates/rustleaks-compat:rustleaks_perf_test",
+    "//crates/rustleaks-compat:rustleaks_quality",
     "//crates/rustleaks-core:allowlist_test",
     "//crates/rustleaks-core:composite_corpus_test",
     "//crates/rustleaks-core:config_test",
     "//crates/rustleaks-core:controlled_scan_test",
     "//crates/rustleaks-core:default_rule_corpus_test",
+    "//crates/rustleaks-core:decoded_locations_test",
+    "//crates/rustleaks-core:location_lookup_test",
     "//crates/rustleaks-core:detect_corpus_test",
     "//crates/rustleaks-core:engine_test",
     "//crates/rustleaks-core:model_test",
     "//crates/rustleaks-core:rustleaks_core",
     "//crates/rustleaks-core:rustleaks_core_unit_test",
+    "//crates/rustleaks-core:scan_semantics_test",
+    "//crates/rustleaks-core:security_stress_test",
     "//crates/rustleaks-core:session_corpus_test",
     "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
     "//crates/rustleaks-rar-codec:rustleaks_rar_codec_unit_test",
@@ -168,23 +189,30 @@ _RUST_TARGETS = [
     "//crates/rustleaks-report:reporters_test",
     "//crates/rustleaks-report:rustleaks_report",
     "//crates/rustleaks-report:rustleaks_report_unit_test",
+    "//crates/rustleaks-report:security_stress_test",
     "//crates/rustleaks-report:template_test",
     "//crates/rustleaks-sevenz:oracle_codecs_test",
     "//crates/rustleaks-sevenz:profile_minimal",
     "//crates/rustleaks-sevenz:rustleaks_sevenz",
     "//crates/rustleaks-sevenz:rustleaks_sevenz_unit_test",
     "//crates/rustleaks-sources:archive_sources_test",
+    "//crates/rustleaks-sources:archive_fuzz_test",
+    "//crates/rustleaks-sources:archive_semantics_test",
     "//crates/rustleaks-sources:git_corpus_test",
     "//crates/rustleaks-sources:git_scm_test",
     "//crates/rustleaks-sources:git_sources_test",
     "//crates/rustleaks-sources:native_sources_test",
     "//crates/rustleaks-sources:panic_abort_policy",
+    "//crates/rustleaks-sources:perf_archives_test",
     "//crates/rustleaks-sources:profile_minimal",
     "//crates/rustleaks-sources:rustleaks_sources",
     "//crates/rustleaks-sources:rustleaks_sources_archives",
     "//crates/rustleaks-sources:rustleaks_sources_archives_unit_test",
     "//crates/rustleaks-sources:rustleaks_sources_unit_test",
+    "//crates/rustleaks-sources:security_stress_test",
     "//crates/rustleaks-sources:source_corpus_test",
+    "//crates/rustleaks-sources:source_fuzz_test",
+    "//crates/xtask:cli_regression_test",
     "//crates/xtask:xtask",
     "//crates/xtask:xtask_unit_test",
 ]
@@ -208,6 +236,7 @@ test_suite(
         "//crates/rustleaks-core:parity_tests",
         "//crates/rustleaks-report:parity_tests",
         "//crates/rustleaks-sources:parity_tests",
+        "//crates/xtask:cli_regression_test",
     ],
     visibility = ["//visibility:public"],
 )

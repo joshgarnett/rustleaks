@@ -212,38 +212,6 @@ fn validate_counts(outcomes: &[Value], manifest: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn render_manifest(
-    legacy: &[u8],
-    manifest: &Value,
-    readme: &[u8],
-) -> Result<Vec<u8>, String> {
-    let old = required_str(
-        &required_object(manifest, "files", "manifest")?["README.md"],
-        "sha256",
-        "README",
-    )?;
-    let new = sha256_bytes(readme);
-    replace_once(legacy, old.as_bytes(), new.as_bytes(), "README digest")
-}
-
-fn replace_once(bytes: &[u8], old: &[u8], new: &[u8], label: &str) -> Result<Vec<u8>, String> {
-    if old.len() != new.len() {
-        return Err(format!("cannot replace {label} without changing layout"));
-    }
-    let matches = bytes
-        .windows(old.len())
-        .enumerate()
-        .filter(|(_, window)| *window == old)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    if matches.len() != 1 {
-        return Err(format!("expected one {label}, found {}", matches.len()));
-    }
-    let mut rendered = bytes.to_vec();
-    rendered[matches[0]..matches[0] + old.len()].copy_from_slice(new);
-    Ok(rendered)
-}
-
 pub(super) fn required_object<'a>(
     value: &'a Value,
     field: &str,
@@ -306,19 +274,4 @@ pub(super) fn outcome_for<'a>(
         .get(id)
         .copied()
         .ok_or_else(|| format!("missing session outcome {id}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::replace_once;
-
-    #[test]
-    fn provenance_replacement_is_exact_and_unique() {
-        assert_eq!(
-            replace_once(b"before-old-after", b"old", b"new", "test").unwrap(),
-            b"before-new-after"
-        );
-        assert!(replace_once(b"old-old", b"old", b"new", "test").is_err());
-        assert!(replace_once(b"missing", b"old", b"new", "test").is_err());
-    }
 }

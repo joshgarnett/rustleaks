@@ -52,7 +52,7 @@ unexplained fuzz, sanitizer, advisory, provenance, or integrity failure.
 - Run the affected targeted tests, `just security`, `just fuzz-smoke`,
   `just ci`, package checks, and supported native target evidence in a clean
   checkout. The CI gate includes committed corpora and parity. Use
-  `cargo xtask parity --all` when compatibility behavior or fresh Go evidence
+  `cargo xtask qualify` when compatibility behavior or its regression evidence
   changed. Obtain a technical review independent of the fix author.
 - Rebuild release artifacts from trusted inputs. Reconcile source, lockfiles,
   Bazel graph, SBOM, checksums, and attestations before restoring publication.

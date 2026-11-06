@@ -1,6 +1,12 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
+#[allow(dead_code)]
+#[path = "../../tests/support/campaign_profile.rs"]
+mod campaign_profile;
+
+use campaign_profile::Profile;
+
 use std::borrow::Cow;
 use std::hint::black_box;
 
@@ -12,11 +18,7 @@ mod regex;
 use regex::GoRegex;
 
 fn framed_input(data: &[u8]) -> Option<(Cow<'_, str>, &[u8])> {
-    let (&low, rest) = data.split_first()?;
-    let (&high, payload) = rest.split_first()?;
-    let declared_pattern_len = usize::from(u16::from_le_bytes([low, high]));
-    let pattern_len = declared_pattern_len % (payload.len() + 1);
-    let (pattern, haystack) = payload.split_at(pattern_len);
+    let (pattern, haystack) = campaign_profile::regex_parts(data, Profile::current())?;
     Some((String::from_utf8_lossy(pattern), haystack))
 }
 

@@ -1,3 +1,5 @@
+# Versioned fuzz frame prefix.
+frame_v1="RLA\x01"
 tar_ustar="ustar\x0000"
 zip_local="PK\x03\x04"
 zip_central="PK\x01\x02"

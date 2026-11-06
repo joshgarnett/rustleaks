@@ -102,7 +102,12 @@ pub(super) fn validate_all(
     validate_projection(outcomes)?;
     controls::validate(&by_id, outcomes, negative)?;
     controls_archive::validate(root, &by_id)?;
-    validate_counts(outcomes, coverage, manifest, !cfg!(windows))?;
+    validate_counts(
+        outcomes,
+        coverage,
+        manifest,
+        !uniform_string(outcomes, "platform", "frozen source")?.starts_with("windows/"),
+    )?;
     let entry = &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"];
     if required_str(entry, "sha256", "outcomes")? != sha256_bytes(committed.bytes)
         || required_u64(entry, "records", "outcomes")? != REQUEST_COUNT as u64
@@ -110,7 +115,7 @@ pub(super) fn validate_all(
         return Err("committed source outcomes differ from their manifest".into());
     }
     validate_native_windows_ledger(committed, observed, native_windows)?;
-    if !cfg!(windows) {
+    if !uniform_string(observed.values, "platform", "frozen source")?.starts_with("windows/") {
         // The committed platform remains pinned provenance. Non-Windows
         // cross-host replays may differ only in that envelope field.
         compare_json_outcomes(committed.values, outcomes, &["platform"], "source")?;
@@ -172,7 +177,7 @@ fn validate_native_windows_ledger(
         "native Windows semantic outcomes",
     )?;
 
-    if !cfg!(windows) {
+    if !uniform_string(observed.values, "platform", "frozen source")?.starts_with("windows/") {
         return Ok(());
     }
 
@@ -352,103 +357,6 @@ fn validate_counts(
     Ok(())
 }
 
-pub(super) fn render_manifest(
-    legacy: &[u8],
-    manifest: &Value,
-    readme: &[u8],
-    coverage: &[u8],
-    native_windows: &[u8],
-    outcome_bytes: &[u8],
-    outcomes: &[Value],
-) -> Result<Vec<u8>, String> {
-    let old_platform = required_str(manifest, "platform", "manifest")?;
-    let new_platform = uniform_string(outcomes, "platform", "source")?;
-    let old = format!("\"platform\": \"{old_platform}\"");
-    let new = format!("\"platform\": \"{new_platform}\"");
-    let rendered = replace_once(
-        legacy,
-        old.as_bytes(),
-        new.as_bytes(),
-        "platform provenance",
-    )?;
-    let old = required_str(
-        &required_object(manifest, "files", "manifest")?["outcomes-v1.jsonl"],
-        "sha256",
-        "outcomes",
-    )?;
-    let rendered = replace_once(
-        &rendered,
-        old.as_bytes(),
-        sha256_bytes(outcome_bytes).as_bytes(),
-        "outcome digest",
-    )?;
-    let old = required_str(
-        &required_object(manifest, "files", "manifest")?["coverage-v1.json"],
-        "sha256",
-        "coverage",
-    )?;
-    let rendered = replace_once(
-        &rendered,
-        old.as_bytes(),
-        sha256_bytes(coverage).as_bytes(),
-        "coverage digest",
-    )?;
-    let native_hash = sha256_bytes(native_windows);
-    let files = required_object(manifest, "files", "manifest")?;
-    let rendered = if let Some(entry) = files.get("native-windows-v1.json") {
-        if required_str(entry, "sha256", "native-windows-v1.json")? != native_hash {
-            return Err("native Windows source ledger hash differs from manifest".into());
-        }
-        rendered
-    } else {
-        let entry = format!(
-            "    \"native-windows-v1.json\": {{\n      \"sha256\": \"{native_hash}\"\n    }},\n"
-        );
-        insert_before_once(
-            &rendered,
-            b"    \"outcomes-v1.jsonl\": {",
-            entry.as_bytes(),
-            "native Windows source ledger",
-        )?
-    };
-    let old = required_str(
-        &required_object(manifest, "files", "manifest")?["README.md"],
-        "sha256",
-        "README",
-    )?;
-    replace_once(
-        &rendered,
-        old.as_bytes(),
-        sha256_bytes(readme).as_bytes(),
-        "README digest",
-    )
-}
-
-fn insert_before_once(
-    bytes: &[u8],
-    marker: &[u8],
-    insertion: &[u8],
-    label: &str,
-) -> Result<Vec<u8>, String> {
-    let positions = bytes
-        .windows(marker.len())
-        .enumerate()
-        .filter_map(|(index, window)| (window == marker).then_some(index))
-        .collect::<Vec<_>>();
-    if positions.len() != 1 {
-        return Err(format!(
-            "expected exactly one {label} marker, found {}",
-            positions.len()
-        ));
-    }
-    let position = positions[0];
-    let mut rendered = Vec::with_capacity(bytes.len() + insertion.len());
-    rendered.extend_from_slice(&bytes[..position]);
-    rendered.extend_from_slice(insertion);
-    rendered.extend_from_slice(&bytes[position..]);
-    Ok(rendered)
-}
-
 fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result<&'a str, String> {
     let first = outcomes
         .first()
@@ -458,31 +366,9 @@ fn uniform_string<'a>(outcomes: &'a [Value], field: &str, label: &str) -> Result
         .iter()
         .any(|outcome| outcome.get(field).and_then(Value::as_str) != Some(expected))
     {
-        return Err(format!(
-            "generated {label} {field} provenance is inconsistent"
-        ));
+        return Err(format!("frozen {label} {field} provenance is inconsistent"));
     }
     Ok(expected)
-}
-
-fn replace_once(bytes: &[u8], old: &[u8], new: &[u8], label: &str) -> Result<Vec<u8>, String> {
-    let positions = bytes
-        .windows(old.len())
-        .enumerate()
-        .filter_map(|(index, window)| (window == old).then_some(index))
-        .collect::<Vec<_>>();
-    if positions.len() != 1 {
-        return Err(format!(
-            "expected exactly one {label}, found {}",
-            positions.len()
-        ));
-    }
-    let position = positions[0];
-    let mut rendered = Vec::with_capacity(bytes.len() - old.len() + new.len());
-    rendered.extend_from_slice(&bytes[..position]);
-    rendered.extend_from_slice(new);
-    rendered.extend_from_slice(&bytes[position + old.len()..]);
-    Ok(rendered)
 }
 
 pub(super) fn outcome_for<'a>(
@@ -577,23 +463,8 @@ pub(super) fn finding_files(
 mod tests {
     use serde_json::json;
 
-    use super::{render_manifest, replace_once, validate_counts};
+    use super::validate_counts;
     use crate::tooling::source::spec::REQUEST_COUNT;
-    use crate::tooling::support::sha256_bytes;
-
-    #[test]
-    fn manifest_replacement_fails_closed() {
-        assert_eq!(
-            replace_once(b"old", b"old", b"new", "test").unwrap(),
-            b"new"
-        );
-        assert_eq!(
-            replace_once(b"a darwin/arm64 z", b"darwin/arm64", b"linux/amd64", "test").unwrap(),
-            b"a linux/amd64 z"
-        );
-        assert!(replace_once(b"old old", b"old", b"new", "test").is_err());
-        assert!(replace_once(b"none", b"old", b"new", "test").is_err());
-    }
 
     #[test]
     fn windows_counts_defer_platform_structure_to_the_native_ledger() {
@@ -622,42 +493,5 @@ mod tests {
 
         validate_counts(&outcomes, &coverage, &manifest, false).unwrap();
         assert!(validate_counts(&outcomes, &coverage, &manifest, true).is_err());
-    }
-
-    #[test]
-    fn rendered_manifest_tracks_generated_platform_and_outcomes() {
-        let manifest = json!({
-            "platform": "darwin/arm64",
-            "files": {
-                "outcomes-v1.jsonl": {"sha256": "old-outcomes"},
-                "coverage-v1.json": {"sha256": "old-coverage"},
-                "README.md": {"sha256": "old-readme"}
-            }
-        });
-        let legacy = br#"{
-  "platform": "darwin/arm64",
-  "files": {
-    "outcomes-v1.jsonl": {"sha256": "old-outcomes"},
-    "coverage-v1.json": {"sha256": "old-coverage"},
-    "README.md": {"sha256": "old-readme"}
-  }
-}"#;
-        let outcomes = [json!({"platform": "linux/amd64"})];
-        let rendered = render_manifest(
-            legacy,
-            &manifest,
-            b"readme",
-            b"coverage",
-            b"native-windows",
-            b"outcomes",
-            &outcomes,
-        )
-        .unwrap();
-        let rendered = String::from_utf8(rendered).unwrap();
-        assert!(rendered.contains("\"platform\": \"linux/amd64\""));
-        assert!(rendered.contains(&sha256_bytes(b"outcomes")));
-        assert!(rendered.contains(&sha256_bytes(b"coverage")));
-        assert!(rendered.contains(&sha256_bytes(b"native-windows")));
-        assert!(rendered.contains(&sha256_bytes(b"readme")));
     }
 }

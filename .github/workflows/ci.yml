@@ -31,11 +31,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Run the authoritative acceptance gate
@@ -83,11 +78,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Install pinned security tools
@@ -113,11 +103,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -147,11 +132,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
       - name: Hydrate locked package dependencies
@@ -162,7 +142,7 @@ jobs:
         run: just release-dry-run
 
   parity:
-    name: Pinned oracle and committed parity
+    name: Frozen evidence and Rust regression
     runs-on: macos-15
     timeout-minutes: 120
     steps:
@@ -171,27 +151,11 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Check out the pinned Go oracle
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: gitleaks/gitleaks
-          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
-          path: gitleaks
-          persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache-dependency-path: gitleaks/go.sum
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
-      - name: Verify the oracle and committed compatibility evidence
+      - name: Verify frozen evidence and replay Rust regressions
         working-directory: rustleaks
-        run: |
-          cargo xtask verify-upstream
-          cargo xtask oracle-vulnerability-check
-          cargo xtask oracle generate --check --skip-git
-          just parity
+        run: cargo xtask regression-check
 
   dependency-review:
     name: Dependency review
@@ -246,18 +210,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Check out the pinned Go oracle
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: gitleaks/gitleaks
-          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
-          path: gitleaks
-          persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -266,15 +218,6 @@ jobs:
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
         run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Replay native compatibility evidence
-        working-directory: rustleaks
-        run: |
-          cargo fetch --locked
-          cargo xtask verify-upstream
-          cargo xtask generate source --check
-          cargo xtask generate git --check
-          cargo xtask generate report --check
-          cargo xtask generate cli --check
       - name: Build and test the native target
         working-directory: rustleaks
         env:
@@ -284,7 +227,14 @@ jobs:
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 //:test
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 --nozip_undeclared_test_outputs //:test
+      - name: Retain native Rust CLI regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-cli-regression-${{ matrix.target }}
+          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
+          if-no-files-found: error
 
   native-macos:
     name: Native ${{ matrix.target }}
@@ -314,11 +264,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -337,7 +282,14 @@ jobs:
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 //:test
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 --nozip_undeclared_test_outputs //:test
+      - name: Retain native Rust CLI regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-cli-regression-${{ matrix.target }}
+          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
+          if-no-files-found: error
 
   native-windows:
     name: Native ${{ matrix.target }}
@@ -369,18 +321,6 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Check out the pinned Go oracle
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: gitleaks/gitleaks
-          ref: b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b
-          path: gitleaks
-          persist-credentials: false
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: rustleaks/.go-version
-          cache: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
         with:
@@ -394,55 +334,6 @@ jobs:
           if ($actual -ne $env:EXPECTED_ARCHITECTURE) {
             throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual"
           }
-      - name: Replay native compatibility evidence
-        shell: pwsh
-        working-directory: rustleaks
-        env:
-          RUSTLEAKS_SOURCE_LEDGER_PATH: ${{ runner.temp }}\source-ledger-${{ matrix.architecture }}.json
-          RUSTLEAKS_GIT_LEDGER_PATH: ${{ runner.temp }}\git-ledger-${{ matrix.architecture }}.json
-          RUSTLEAKS_REPORT_LEDGER_PATH: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
-          RUSTLEAKS_CLI_LEDGER_PATH: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
-        run: |
-          cargo fetch --locked
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask verify-upstream
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask generate source --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask generate git --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask generate report --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask generate cli --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Upload source hash ledger
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: source-ledger-${{ matrix.architecture }}
-          path: ${{ runner.temp }}\source-ledger-${{ matrix.architecture }}.json
-          if-no-files-found: error
-      - name: Upload Git hash ledger
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: git-ledger-${{ matrix.architecture }}
-          path: ${{ runner.temp }}\git-ledger-${{ matrix.architecture }}.json
-          if-no-files-found: error
-      - name: Upload report hash ledger
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: report-ledger-${{ matrix.architecture }}
-          path: ${{ runner.temp }}\report-ledger-${{ matrix.architecture }}.json
-          if-no-files-found: error
-      - name: Upload CLI hash ledger
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: cli-ledger-${{ matrix.architecture }}
-          path: ${{ runner.temp }}\cli-ledger-${{ matrix.architecture }}.json
-          if-no-files-found: error
       - name: Build and test the native target
         shell: pwsh
         working-directory: rustleaks
@@ -455,8 +346,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 --nozip_undeclared_test_outputs //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain native Rust CLI regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-cli-regression-${{ matrix.target }}
+          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
+          if-no-files-found: error
 
   required:
     name: Required

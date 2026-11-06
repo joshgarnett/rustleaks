@@ -1,15 +1,11 @@
 //! Schema, manifest, source-pin, and coverage validation.
 
-use std::fs;
-use std::path::Path;
-
 use serde_json::Value;
 
 use super::spec::{
     CONFIG_SHA256, FIXTURE_TREE_SHA256, INPUTS_SHA256, ORACLE_MAIN_SHA256, OUTCOMES_SHA256,
     REQUESTS_SHA256, REVISION, SCHEMA_SHA256,
 };
-use crate::tooling::support::sha256_bytes;
 
 pub(super) fn validate_schema(bytes: &[u8]) -> Result<(), String> {
     let schema: Value = serde_json::from_slice(bytes)
@@ -29,7 +25,7 @@ pub(super) fn validate_schema(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_manifest(root: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(super) fn validate_manifest(bytes: &[u8]) -> Result<(), String> {
     let manifest: Value = serde_json::from_slice(bytes)
         .map_err(|error| format!("invalid config manifest JSON: {error}"))?;
     require_exact(&manifest, "upstream_revision", REVISION)?;
@@ -49,8 +45,7 @@ pub(super) fn validate_manifest(root: &Path, bytes: &[u8]) -> Result<(), String>
     ] {
         require_exact(&manifest, field, expected)?;
     }
-    let oracle = root.join("crates/rustleaks-compat/oracle");
-    require_file_hash(&oracle.join("main.go"), ORACLE_MAIN_SHA256)?;
+    // The extractor digest describes the historical observation, not a live source requirement.
     let totals = manifest["case_totals"]
         .as_object()
         .ok_or("config manifest case_totals is not an object")?;
@@ -80,19 +75,6 @@ pub(super) fn validate_manifest(root: &Path, bytes: &[u8]) -> Result<(), String>
         || manifest["deferred_manifest_ids"] != serde_json::json!(["TM-0028", "TM-0032", "TM-0033"])
     {
         return Err("config manifest covered/deferred identities changed".into());
-    }
-    Ok(())
-}
-
-fn require_file_hash(path: &Path, expected: &str) -> Result<(), String> {
-    let bytes =
-        fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-    let actual = sha256_bytes(&bytes);
-    if actual != expected {
-        return Err(format!(
-            "{} SHA-256 changed: expected {expected}, got {actual}",
-            path.display()
-        ));
     }
     Ok(())
 }

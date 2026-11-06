@@ -45,15 +45,14 @@ just ci
 ```
 
 Add `bazelisk test //crates/rustleaks-core:config_test` for TOML, extension,
-or config-loading changes. Use `cargo xtask parity --all` with the pinned
-sibling checkout when supported behavior, generated corpora, or the upstream
-comparison changes, but only against a clean, committed candidate tree. This
-full differential gate replaces separate parity, package, and fuzz runs. Treat
-a behavior fix as a supported-behavior change even if unchanged committed
-evidence already contains the expected outcome; never waive the full
-differential gate on that basis. When the full differential gate is not
-required, run `just fuzz-smoke` for a parser, regex, decoder, or hostile-input
-boundary change.
+or config-loading changes. Use `cargo xtask qualify` when supported behavior
+or its regression evidence changes, against a clean, committed candidate tree.
+It includes frozen-evidence integrity, Rust replay, package and fuzz checks.
+Treat a behavior fix as a supported-behavior change even if unchanged committed
+evidence already contains the expected outcome. New expectations must be
+specified independently of current Rust output; do not rewrite historical Go
+observations. When full qualification is not required, run `just fuzz-smoke`
+for a parser, regex, decoder, or hostile-input boundary change.
 
 Report the rule identifiers, intended supported behavior, positive and
 negative cases, exact span evidence, allowlist effect, compatibility

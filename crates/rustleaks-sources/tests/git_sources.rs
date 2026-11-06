@@ -271,3 +271,78 @@ fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
     assert_eq!(control, SourceControl::Stop);
     assert_eq!(callbacks, 1);
 }
+
+#[cfg(all(feature = "archives", unix))]
+#[test]
+fn binary_archive_paths_reach_blob_expansion_without_loss() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let repository = TempRepo::copy_fixture("small");
+    let paths: &[&[u8]] = &[b"tab\tarchive.tar", b"folder b/archive.tar"];
+    let content = b"synthetic archive content\n";
+    let mut header = [0_u8; 512];
+    header[..10].copy_from_slice(b"inside.txt");
+    header[100..108].copy_from_slice(b"0000644\0");
+    header[124..136].copy_from_slice(format!("{:011o}\0", content.len()).as_bytes());
+    header[148..156].fill(b' ');
+    header[156] = b'0';
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    let checksum: usize = header.iter().map(|byte| usize::from(*byte)).sum();
+    header[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+    let mut archive = header.to_vec();
+    archive.extend_from_slice(content);
+    archive.resize(2048, 0);
+    for path in paths {
+        let path = repository.path().join(std::ffi::OsStr::from_bytes(path));
+        fs::create_dir_all(path.parent().expect("archive parent")).expect("create archive parent");
+        fs::write(path, &archive).expect("write synthetic archive");
+    }
+    let output = support::command()
+        .arg("-C")
+        .arg(repository.path())
+        .args(["add", "--"])
+        .args(paths.iter().map(|path| std::ffi::OsStr::from_bytes(path)))
+        .output()
+        .expect("stage synthetic archives");
+    assert!(output.status.success(), "isolated Git add failed");
+    let output = support::command()
+        .arg("-C")
+        .arg(repository.path())
+        .args([
+            "-c",
+            "user.name=Synthetic Test",
+            "-c",
+            "user.email=synthetic@example.invalid",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "add synthetic archives",
+        ])
+        .output()
+        .expect("commit synthetic archives");
+    assert!(output.status.success(), "isolated Git commit failed");
+    let mut source = support::git_source(repository.path())
+        .mode(GitMode::LogArguments(vec!["-1".into()]))
+        .archives(ArchiveOptions::default());
+    let (fragments, issues) = collect(&mut source);
+    assert!(issues.is_empty());
+    assert_eq!(fragments.len(), paths.len());
+    for path in paths {
+        let mut expected = path.to_vec();
+        expected.extend_from_slice(b"!inside.txt");
+        let fragment = fragments
+            .iter()
+            .find(|fragment| fragment.file_path().as_bytes() == expected)
+            .expect("every binary archive is expanded at its exact path");
+        assert_eq!(fragment.content().as_bytes(), content);
+        let metadata = fragment.commit_metadata().expect("archive commit metadata");
+        assert_eq!(metadata.sha().as_bytes(), fragment.commit().as_bytes());
+        assert_eq!(metadata.author_name().as_bytes(), b"Synthetic Test");
+        assert_eq!(metadata.message().as_bytes(), b"add synthetic archives");
+    }
+}

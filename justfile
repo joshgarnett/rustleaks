@@ -1,25 +1,21 @@
 set default-list
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
-# Report required tools and enforce the pinned Go version without changing the workspace.
+# Report required tools without changing the workspace.
 [unix]
 doctor:
     just --version
     bazelisk version
     cargo --version
     rustc --version
-    go version
-    expected_go="$(tr -d '\r\n' < .go-version)"; actual_go="$(go env GOVERSION)"; test "$actual_go" = "go$expected_go" || { echo "Go version mismatch: expected go$expected_go, got $actual_go" >&2; exit 1; }
 
-# Report required tools and enforce the pinned Go version without changing the workspace.
+# Report required tools without changing the workspace.
 [windows]
 doctor:
     just --version
     bazelisk version
     cargo --version
     rustc --version
-    go version
-    $expectedGo = (Get-Content -Raw .go-version).Trim(); $actualGo = (go env GOVERSION).Trim(); if ($actualGo -ne "go$expectedGo") { throw "Go version mismatch: expected go$expectedGo, got $actualGo" }
 
 # Check Rust formatting through the authoritative Bazel graph.
 format:
@@ -49,6 +45,39 @@ docs-check:
 parity:
     bazelisk test //:parity
 
+# Evaluate the maintained synthetic detection-quality corpus.
+quality-eval:
+    bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate
+
+# Run optimized benchmark workloads with their Bazel build identity.
+perf-run:
+    bazelisk run //crates/xtask:xtask -- perf run
+
+# Check benchmark outcomes, build identity, and applicable host budgets.
+perf-check:
+    bazelisk run //crates/xtask:xtask -- perf check
+
+# Collect representative phase measurements on demand.
+perf-representative:
+    bazelisk run //crates/xtask:xtask -- perf representative
+
+# Capture an optional native profile with private output.
+[unix]
+[positional-arguments]
+perf-profile *arguments:
+    bazelisk run //crates/xtask:xtask -- perf profile "$@"
+
+# Measure local unchanged-code noise and a deliberate slowdown control.
+[unix]
+[positional-arguments]
+perf-calibrate *arguments:
+    bazelisk run //crates/xtask:xtask -- perf calibrate "$@"
+
+# Collect or validate an optional private performance report.
+[positional-arguments]
+perf-report *arguments:
+    bazelisk run //crates/xtask:xtask -- perf report "$@"
+
 # Run formatting, lint, documentation, build, and eight-target compile gates.
 check: docs-check
     bazelisk test //:check
@@ -66,9 +95,21 @@ fuzz-build:
 fuzz-smoke:
     bazelisk run //crates/xtask:xtask -- fuzz-smoke
 
+# Run private local fuzz evidence and reviewed-corpus operations.
+[unix]
+[positional-arguments]
+fuzz *arguments:
+    bazelisk run //crates/xtask:xtask -- fuzz "$@"
+
 # Check advisories, dependency policy, and owned-code safety.
 security:
     bazelisk run //crates/xtask:xtask -- security-check
+
+# Run the optional bounded local deep-security profile.
+[unix]
+[positional-arguments]
+security-deep *arguments:
+    bazelisk run //crates/xtask:xtask -- security-deep "$@"
 
 # Package the engine and run clean external Cargo and Bazel consumers.
 package-check:

@@ -673,3 +673,403 @@ fn create_directory_symlink(target: &Path, alias: &Path) {
 fn resolved_expected(path: &Path) -> PathBuf {
     fs::canonicalize(path).expect("canonical target")
 }
+
+fn budget_engine() -> Engine {
+    Engine::builder(
+        ConfigLoader::new()
+            .load_toml("[[rules]]\nid = 'synthetic'\nregex = 'A'\n")
+            .unwrap(),
+    )
+    .build()
+    .unwrap()
+}
+
+fn budget_fragments(count: usize, content: &str) -> FragmentSource {
+    FragmentSource {
+        fragments: (0..count)
+            .map(|index| {
+                Fragment::builder(content)
+                    .file_path(format!("synthetic-{index}"))
+                    .start_line(1)
+                    .build()
+            })
+            .collect(),
+        cancel_after_first: None,
+    }
+}
+
+#[test]
+fn source_budget_validation_requires_reservable_aggregate_dimensions() {
+    use rustleaks_core::{ScanBudget, ScanBudgetKind};
+    use rustleaks_sources::SourceBudget;
+    for (aggregate, expected) in [
+        (
+            ScanBudget::unlimited().max_work_units(0),
+            ScanBudgetKind::WorkUnits,
+        ),
+        (
+            ScanBudget::unlimited().max_decoded_bytes(0),
+            ScanBudgetKind::DecodedBytes,
+        ),
+        (
+            ScanBudget::unlimited().max_finding_records(0),
+            ScanBudgetKind::FindingRecords,
+        ),
+    ] {
+        let error = SourceRunner::default()
+            .with_budget(SourceBudget::unlimited().aggregate(aggregate))
+            .unwrap_err();
+        assert_eq!(error.kind(), expected);
+    }
+    assert!(SourceRunner::default().budget().is_none());
+    let budget = SourceBudget::unlimited();
+    assert_eq!(
+        SourceRunner::default()
+            .with_budget(budget)
+            .unwrap()
+            .budget(),
+        Some(budget)
+    );
+}
+
+#[test]
+fn source_budget_inclusive_totals_preserve_complete_duplicate_aware_findings() {
+    use rustleaks_core::ScanBudget;
+    use rustleaks_sources::SourceBudget;
+    let detector = budget_engine();
+    for workers in [1, 4] {
+        let per_fragment = ScanBudget::unlimited()
+            .max_work_units(3)
+            .max_finding_records(1)
+            .max_decoded_bytes(0);
+        let aggregate = ScanBudget::unlimited()
+            .max_work_units(24)
+            .max_finding_records(8)
+            .max_decoded_bytes(0);
+        let budget = SourceBudget::unlimited()
+            .per_fragment(per_fragment)
+            .aggregate(aggregate)
+            .max_fragment_bytes(1)
+            .max_original_bytes(8)
+            .max_fragments(8)
+            .max_issues(0);
+        let mut source = budget_fragments(8, "A");
+        let outcome = SourceRunner::new(workers, 2)
+            .unwrap()
+            .with_budget(budget)
+            .unwrap()
+            .run(
+                &mut source,
+                &detector,
+                ScanOptions::default(),
+                &SessionPolicy::default(),
+                &CancellationToken::new(),
+            );
+        assert_eq!(outcome.termination(), &SourceTermination::Completed);
+        let usage = outcome.usage().unwrap();
+        assert!(usage.is_exact());
+        assert_eq!(usage.original_bytes(), 8);
+        assert_eq!(usage.fragments(), 8);
+        assert_eq!(usage.completed_fragments(), 8);
+        assert_eq!(usage.incomplete_fragments(), 0);
+        assert_eq!(
+            usage.work_units(),
+            24,
+            "one scan pass, one rule and one candidate per fragment"
+        );
+        assert_eq!(usage.finding_records(), 8);
+        assert_eq!(usage.decoded_bytes(), 0);
+        let mut files = outcome
+            .findings()
+            .iter()
+            .map(|finding| {
+                assert_eq!(finding.secret().as_bytes(), b"A");
+                assert_eq!(finding.match_range().exact().unwrap().as_range(), 0..1);
+                finding.file().as_bytes().to_vec()
+            })
+            .collect::<Vec<_>>();
+        files.sort();
+        assert_eq!(
+            files,
+            (0..8)
+                .map(|index| format!("synthetic-{index}").into_bytes())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn aggregate_work_and_finding_limits_do_not_multiply_by_workers() {
+    use rustleaks_core::ScanBudget;
+    use rustleaks_sources::{SourceBudget, SourceBudgetKind, SourceBudgetScope};
+    let detector = budget_engine();
+    for workers in [1, 4] {
+        for (aggregate, kind, expected_work, expected_records) in [
+            (
+                ScanBudget::unlimited().max_work_units(0),
+                SourceBudgetKind::WorkUnits,
+                0,
+                0,
+            ),
+            (
+                ScanBudget::unlimited().max_work_units(11),
+                SourceBudgetKind::WorkUnits,
+                11,
+                3,
+            ),
+            (
+                ScanBudget::unlimited().max_finding_records(0),
+                SourceBudgetKind::FindingRecords,
+                3,
+                0,
+            ),
+            (
+                ScanBudget::unlimited().max_finding_records(3),
+                SourceBudgetKind::FindingRecords,
+                12,
+                3,
+            ),
+        ] {
+            let budget = SourceBudget::unlimited()
+                .per_fragment(
+                    ScanBudget::unlimited()
+                        .max_work_units(3)
+                        .max_finding_records(1),
+                )
+                .aggregate(aggregate);
+            let outcome = SourceRunner::new(workers, 2)
+                .unwrap()
+                .with_budget(budget)
+                .unwrap()
+                .run(
+                    &mut budget_fragments(32, "A"),
+                    &detector,
+                    ScanOptions::default(),
+                    &SessionPolicy::default(),
+                    &CancellationToken::new(),
+                );
+            let SourceTermination::BudgetExceeded(exceeded) = outcome.termination() else {
+                panic!("expected a budget stop: {:?}", outcome.termination())
+            };
+            assert_eq!(exceeded.scope(), SourceBudgetScope::Operation);
+            assert_eq!(exceeded.kind(), kind);
+            assert_eq!(exceeded.requested(), 1);
+            let usage = outcome.usage().unwrap();
+            assert_eq!(usage.work_units(), expected_work);
+            assert_eq!(usage.finding_records(), expected_records);
+            assert_eq!(usage.completed_fragments(), expected_records);
+            assert_eq!(outcome.findings().len(), expected_records);
+            assert!(usage.incomplete_fragments() >= 1);
+            assert!(usage.is_exact());
+        }
+    }
+}
+
+#[test]
+fn aggregate_decoded_bytes_charge_whole_passes_across_workers() {
+    use rustleaks_core::ScanBudget;
+    use rustleaks_sources::{SourceBudget, SourceBudgetKind, SourceBudgetScope};
+    let detector = Engine::builder(
+        ConfigLoader::new()
+            .load_toml("[[rules]]\nid = 'decoded'\nregex = 'marker=VALUE'\n")
+            .unwrap(),
+    )
+    .build()
+    .unwrap();
+    for workers in [1, 4] {
+        for total in [0, 11, 12, 35, 36] {
+            let budget = SourceBudget::unlimited()
+                .per_fragment(ScanBudget::unlimited().max_decoded_bytes(12))
+                .aggregate(ScanBudget::unlimited().max_decoded_bytes(total));
+            let outcome = SourceRunner::new(workers, 2)
+                .unwrap()
+                .with_budget(budget)
+                .unwrap()
+                .run(
+                    &mut budget_fragments(3, "bWFya2VyPVZBTFVF"),
+                    &detector,
+                    ScanOptions::builder().max_decode_depth(1).build(),
+                    &SessionPolicy::default(),
+                    &CancellationToken::new(),
+                );
+            let complete = total / 12;
+            assert_eq!(outcome.findings().len(), complete);
+            let usage = outcome.usage().unwrap();
+            assert_eq!(usage.decoded_bytes(), complete * 12);
+            assert_eq!(usage.completed_fragments(), complete);
+            if total == 36 {
+                assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            } else {
+                let SourceTermination::BudgetExceeded(exceeded) = outcome.termination() else {
+                    panic!("expected decoded-byte stop")
+                };
+                assert_eq!(exceeded.scope(), SourceBudgetScope::Operation);
+                assert_eq!(exceeded.kind(), SourceBudgetKind::DecodedBytes);
+                assert_eq!(exceeded.limit(), total);
+                assert_eq!(exceeded.requested(), 12);
+            }
+        }
+    }
+}
+
+#[test]
+fn per_fragment_exhaustion_discards_its_completed_rule_prefix() {
+    use rustleaks_core::ScanBudget;
+    use rustleaks_sources::{SourceBudget, SourceBudgetKind, SourceBudgetScope};
+    let detector = Engine::builder(
+        ConfigLoader::new()
+            .load_toml(
+                "[[rules]]\nid = 'a-first'\nregex = 'A'\n[[rules]]\nid = 'b-last'\nregex = 'B'\n",
+            )
+            .unwrap(),
+    )
+    .build()
+    .unwrap();
+    for workers in [1, 4] {
+        let budget = SourceBudget::unlimited()
+            .per_fragment(ScanBudget::unlimited().max_finding_records(1))
+            .aggregate(ScanBudget::unlimited().max_finding_records(10));
+        let outcome = SourceRunner::new(workers, 1)
+            .unwrap()
+            .with_budget(budget)
+            .unwrap()
+            .run(
+                &mut budget_fragments(1, "A B"),
+                &detector,
+                ScanOptions::default(),
+                &SessionPolicy::default(),
+                &CancellationToken::new(),
+            );
+        let SourceTermination::BudgetExceeded(exceeded) = outcome.termination() else {
+            panic!("expected per-fragment stop")
+        };
+        assert_eq!(exceeded.scope(), SourceBudgetScope::Fragment);
+        assert_eq!(exceeded.kind(), SourceBudgetKind::FindingRecords);
+        assert_eq!(exceeded.limit(), 1);
+        assert_eq!(exceeded.consumed(), 1);
+        assert_eq!(outcome.usage().unwrap().finding_records(), 1);
+        assert_eq!(outcome.usage().unwrap().completed_fragments(), 0);
+        assert!(
+            outcome.findings().is_empty(),
+            "the complete first rule cannot publish a partial fragment"
+        );
+    }
+}
+
+#[test]
+fn original_byte_fragment_and_issue_admissions_have_zero_and_inclusive_limits() {
+    use rustleaks_sources::{SourceBudget, SourceBudgetKind, SourceBudgetScope};
+    let detector = budget_engine();
+    for workers in [1, 4] {
+        for (budget, expected_kind, scope) in [
+            (
+                SourceBudget::unlimited().max_original_bytes(0),
+                SourceBudgetKind::OriginalBytes,
+                SourceBudgetScope::Operation,
+            ),
+            (
+                SourceBudget::unlimited().max_fragment_bytes(0),
+                SourceBudgetKind::OriginalBytes,
+                SourceBudgetScope::Fragment,
+            ),
+            (
+                SourceBudget::unlimited().max_fragments(0),
+                SourceBudgetKind::Fragments,
+                SourceBudgetScope::Operation,
+            ),
+        ] {
+            let outcome = SourceRunner::new(workers, 1)
+                .unwrap()
+                .with_budget(budget)
+                .unwrap()
+                .run(
+                    &mut budget_fragments(1, "A"),
+                    &detector,
+                    ScanOptions::default(),
+                    &SessionPolicy::default(),
+                    &CancellationToken::new(),
+                );
+            let SourceTermination::BudgetExceeded(exceeded) = outcome.termination() else {
+                panic!("expected admission stop")
+            };
+            assert_eq!(exceeded.kind(), expected_kind);
+            assert_eq!(exceeded.scope(), scope);
+            assert_eq!(exceeded.limit(), 0);
+            assert_eq!(outcome.usage().unwrap().fragments(), 0);
+            assert_eq!(outcome.scanned_bytes(), 0);
+            assert!(outcome.findings().is_empty());
+        }
+        let outcome = SourceRunner::new(workers, 1)
+            .unwrap()
+            .with_budget(
+                SourceBudget::unlimited()
+                    .max_original_bytes(0)
+                    .max_fragment_bytes(0)
+                    .max_fragments(2),
+            )
+            .unwrap()
+            .run(
+                &mut budget_fragments(3, ""),
+                &detector,
+                ScanOptions::default(),
+                &SessionPolicy::default(),
+                &CancellationToken::new(),
+            );
+        let SourceTermination::BudgetExceeded(exceeded) = outcome.termination() else {
+            panic!("expected empty-fragment admission stop")
+        };
+        assert_eq!(exceeded.kind(), SourceBudgetKind::Fragments);
+        assert_eq!(exceeded.limit(), 2);
+        assert_eq!(outcome.usage().unwrap().fragments(), 2);
+        assert_eq!(outcome.usage().unwrap().original_bytes(), 0);
+
+        for maximum in [0, 1] {
+            let outcome = SourceRunner::new(workers, 1)
+                .unwrap()
+                .with_budget(SourceBudget::unlimited().max_issues(maximum))
+                .unwrap()
+                .run(
+                    &mut CoupledIssueSource,
+                    &detector,
+                    ScanOptions::default(),
+                    &SessionPolicy::default(),
+                    &CancellationToken::new(),
+                );
+            assert_eq!(outcome.issues().len(), maximum);
+            assert_eq!(outcome.usage().unwrap().fragments(), 0);
+            if maximum == 0 {
+                let SourceTermination::BudgetExceeded(exceeded) = outcome.termination() else {
+                    panic!("expected issue stop")
+                };
+                assert_eq!(exceeded.kind(), SourceBudgetKind::Issues);
+            } else {
+                assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            }
+        }
+    }
+}
+
+#[test]
+fn source_budgets_count_findings_before_session_suppression() {
+    use rustleaks_core::ScanBudget;
+    use rustleaks_sources::SourceBudget;
+    let ignores = IgnoreSet::parse_go_compatible(b"synthetic-0:synthetic:1\n").ignores;
+    let policy = SessionPolicy::builder().ignores(ignores).build();
+    let budget = SourceBudget::unlimited()
+        .per_fragment(ScanBudget::unlimited().max_finding_records(1))
+        .aggregate(ScanBudget::unlimited().max_finding_records(1));
+    let outcome = SourceRunner::default().with_budget(budget).unwrap().run(
+        &mut budget_fragments(2, "A"),
+        &budget_engine(),
+        ScanOptions::default(),
+        &policy,
+        &CancellationToken::new(),
+    );
+    assert!(matches!(
+        outcome.termination(),
+        SourceTermination::BudgetExceeded(_)
+    ));
+    assert_eq!(outcome.usage().unwrap().finding_records(), 1);
+    assert_eq!(outcome.usage().unwrap().completed_fragments(), 1);
+    assert!(outcome.findings().is_empty());
+}

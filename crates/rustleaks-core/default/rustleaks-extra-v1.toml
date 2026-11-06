@@ -1,0 +1,29 @@
+# Independently authored opt-in rules. See rustleaks-extra-v1.md.
+# The first participating capture is the secret. Alternative field orders use
+# separate capture groups; an explicit secretGroup would discard other orders.
+title = "Rustleaks extra rules v1"
+
+[[rules]]
+id = "rustleaks.azure-servicebus-key"
+description = "Azure Service Bus or Event Hubs shared access key"
+regex = '''(?im)\b(?:Endpoint[ \t]*=[ \t]*sb://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.servicebus\.windows\.net/?[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKeyName[ \t]*=[ \t]*[a-z0-9._-]{1,128}[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKey[ \t]*=[ \t]*([A-Za-z0-9+/]{43}=)[ \t]*|Endpoint[ \t]*=[ \t]*sb://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.servicebus\.windows\.net/?[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKey[ \t]*=[ \t]*([A-Za-z0-9+/]{43}=)[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKeyName[ \t]*=[ \t]*[a-z0-9._-]{1,128}[ \t]*|SharedAccessKeyName[ \t]*=[ \t]*[a-z0-9._-]{1,128}[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?Endpoint[ \t]*=[ \t]*sb://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.servicebus\.windows\.net/?[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKey[ \t]*=[ \t]*([A-Za-z0-9+/]{43}=)[ \t]*|SharedAccessKeyName[ \t]*=[ \t]*[a-z0-9._-]{1,128}[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKey[ \t]*=[ \t]*([A-Za-z0-9+/]{43}=)[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?Endpoint[ \t]*=[ \t]*sb://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.servicebus\.windows\.net/?[ \t]*|SharedAccessKey[ \t]*=[ \t]*([A-Za-z0-9+/]{43}=)[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?Endpoint[ \t]*=[ \t]*sb://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.servicebus\.windows\.net/?[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKeyName[ \t]*=[ \t]*[a-z0-9._-]{1,128}[ \t]*|SharedAccessKey[ \t]*=[ \t]*([A-Za-z0-9+/]{43}=)[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?SharedAccessKeyName[ \t]*=[ \t]*[a-z0-9._-]{1,128}[ \t]*;[ \t]*(?:EntityPath[ \t]*=[ \t]*[a-z0-9._~/-]{1,128}[ \t]*;[ \t]*)?Endpoint[ \t]*=[ \t]*sb://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.servicebus\.windows\.net/?[ \t]*)(?:[; \t"'`]|$)'''
+entropy = 3.5
+keywords = ['sharedaccesskey', 'servicebus.windows.net']
+
+[[rules]]
+id = "rustleaks.azure-app-configuration-key"
+description = "Azure App Configuration access key"
+regex = '''(?im)\b(?:Endpoint[ \t]*=[ \t]*https://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.azconfig\.io/?[ \t]*;[ \t]*Id[ \t]*=[ \t]*[a-z0-9:/+_.=-]{1,128}[ \t]*;[ \t]*Secret[ \t]*=[ \t]*((?:[A-Za-z0-9+/]{4}){4,32}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)[ \t]*|Endpoint[ \t]*=[ \t]*https://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.azconfig\.io/?[ \t]*;[ \t]*Secret[ \t]*=[ \t]*((?:[A-Za-z0-9+/]{4}){4,32}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)[ \t]*;[ \t]*Id[ \t]*=[ \t]*[a-z0-9:/+_.=-]{1,128}[ \t]*|Id[ \t]*=[ \t]*[a-z0-9:/+_.=-]{1,128}[ \t]*;[ \t]*Endpoint[ \t]*=[ \t]*https://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.azconfig\.io/?[ \t]*;[ \t]*Secret[ \t]*=[ \t]*((?:[A-Za-z0-9+/]{4}){4,32}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)[ \t]*|Id[ \t]*=[ \t]*[a-z0-9:/+_.=-]{1,128}[ \t]*;[ \t]*Secret[ \t]*=[ \t]*((?:[A-Za-z0-9+/]{4}){4,32}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)[ \t]*;[ \t]*Endpoint[ \t]*=[ \t]*https://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.azconfig\.io/?[ \t]*|Secret[ \t]*=[ \t]*((?:[A-Za-z0-9+/]{4}){4,32}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)[ \t]*;[ \t]*Endpoint[ \t]*=[ \t]*https://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.azconfig\.io/?[ \t]*;[ \t]*Id[ \t]*=[ \t]*[a-z0-9:/+_.=-]{1,128}[ \t]*|Secret[ \t]*=[ \t]*((?:[A-Za-z0-9+/]{4}){4,32}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)[ \t]*;[ \t]*Id[ \t]*=[ \t]*[a-z0-9:/+_.=-]{1,128}[ \t]*;[ \t]*Endpoint[ \t]*=[ \t]*https://[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?\.azconfig\.io/?[ \t]*)(?:[; \t"'`]|$)'''
+entropy = 3.5
+keywords = ['azconfig.io']
+
+[[rules]]
+id = "rustleaks.mongodb-password"
+description = "MongoDB connection URI password"
+regex = '''(?im)\b(?:mongodb://(?:[a-z0-9._~!&*()+,;=-]|%[a-f0-9]{2}){1,128}:((?:[a-z0-9._~!&*()+,;=-]|%[a-f0-9]{2}){1,256})@[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?(?:,[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?){0,3}|mongodb\+srv://(?:[a-z0-9._~!&*()+,;=-]|%[a-f0-9]{2}){1,128}:((?:[a-z0-9._~!&*()+,;=-]|%[a-f0-9]{2}){1,256})@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){2,8})(?:[/ \t"'`]|$)'''
+keywords = ['mongodb']
+
+[[rules.allowlists]]
+description = "Conventional percent-encoded password template values"
+regexTarget = "secret"
+regexes = ['(?i)^(?:%3c(?:password|your_password)%3e|%24%7bpassword%7d|%7b%7bpassword%7d%7d)$']

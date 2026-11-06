@@ -1,8 +1,5 @@
 use std::collections::BTreeMap;
 
-pub(super) const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
-pub(super) const MODULE: &str = "github.com/zricethezav/gitleaks/v8";
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SourceLocation {
     pub(super) path: String,

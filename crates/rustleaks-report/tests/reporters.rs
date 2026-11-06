@@ -145,3 +145,63 @@ fn csv_preserves_bytes_and_uses_first_finding_for_link_column() {
     );
     assert!(output.ends_with(b",\n"));
 }
+
+#[test]
+fn csv_quotes_tag_join_separators_when_the_first_tag_is_empty() {
+    let cases: &[(&[&[u8]], &[u8])] = &[
+        (&[b"", b"alpha"], b",\" alpha\"\n"),
+        (&[b"", b"", b"alpha"], b",\"  alpha\"\n"),
+        (&[b"", b""], b",\" \"\n"),
+        (&[b"", &[0xff]], b",\" \xff\"\n"),
+        (&[b""], b",\n"),
+        (&[], b",\n"),
+        (&[b"alpha", b""], b",alpha \n"),
+        (&[br"\."], b",\"\\.\"\n"),
+    ];
+    for (index, (tags, expected_suffix)) in cases.iter().enumerate() {
+        let finding = Finding::builder()
+            .rule_id("tag-case")
+            .location(Location::new(1, 1, 1, 1).unwrap())
+            .tags(tags.iter().copied())
+            .build()
+            .unwrap();
+        let output = render(&CsvReporter, &[finding]);
+        assert!(
+            output.ends_with(expected_suffix),
+            "tag serialization case {index} must preserve the Go CSV field bytes"
+        );
+    }
+}
+
+#[test]
+fn junit_escapes_complete_unicode_scalars_and_preserves_xml_legal_del() {
+    let replacement = "\u{fffd}".as_bytes();
+    let cases: &[(&[u8], &[u8])] = &[
+        ("\u{fffe}".as_bytes(), replacement),
+        ("\u{ffff}".as_bytes(), replacement),
+        (b"\x7f", b"\x7f"),
+        (&[0xff, 0xfe], "\u{fffd}\u{fffd}".as_bytes()),
+        ("\u{0085}".as_bytes(), "\u{0085}".as_bytes()),
+    ];
+    for (index, (description, expected)) in cases.iter().enumerate() {
+        let finding = Finding::builder()
+            .rule_id("xml-case")
+            .description(*description)
+            .location(Location::new(1, 1, 1, 1).unwrap())
+            .build()
+            .unwrap();
+        let output = render(&JunitReporter, &[finding]);
+        for name in [b"classname".as_slice(), b"type".as_slice()] {
+            let mut attribute = name.to_vec();
+            attribute.extend_from_slice(b"=\"");
+            attribute.extend_from_slice(expected);
+            attribute.push(b'"');
+            assert!(
+                output
+                    .windows(attribute.len())
+                    .any(|bytes| bytes == attribute),
+                "XML character case {index} must escape one whole Unicode scalar"
+            );
+        }
+    }
+}

@@ -42,6 +42,54 @@ fn link(
 }
 
 #[test]
+fn bootstrap_source_link_matches_frozen_bytes() {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/oracle-corpus");
+    let request: serde_json::Value = serde_json::from_str(
+        fs::read_to_string(corpus.join("bootstrap-input.jsonl"))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let outcome: serde_json::Value = serde_json::from_str(
+        fs::read_to_string(corpus.join("bootstrap-golden.jsonl"))
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(request["id"], "custom-basic");
+    assert_eq!(outcome["id"], request["id"]);
+    let fragment = &request["fragment"];
+    let frozen = &outcome["findings"][0];
+    let decode = |value: &serde_json::Value| BASE64.decode(value.as_str().unwrap()).unwrap();
+    let finding = Finding::builder()
+        .rule_id("bootstrap-token")
+        .location(
+            Location::new(
+                usize::try_from(frozen["start_line"].as_u64().unwrap()).unwrap(),
+                usize::try_from(frozen["end_line"].as_u64().unwrap()).unwrap(),
+                0,
+                0,
+            )
+            .unwrap(),
+        )
+        .file(decode(&fragment["file_base64"]))
+        .commit(decode(&fragment["commit_base64"]))
+        .build()
+        .unwrap();
+    let platform = ScmPlatform::from_str(fragment["remote_platform"].as_str().unwrap()).unwrap();
+    let actual = RemoteMetadata::new(platform, decode(&fragment["remote_url_base64"]))
+        .link_for(&finding)
+        .unwrap()
+        .unwrap();
+    assert_eq!(actual.as_bytes(), decode(&frozen["link_base64"]));
+}
+
+#[test]
 fn matrix_l_remote_normalization_platform_names_match_the_contract() {
     let cases = [
         ("", ScmPlatform::Unknown, "unknown"),

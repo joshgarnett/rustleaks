@@ -35,7 +35,10 @@ pub use file::{
 pub use git::fuzz_parse_patch;
 pub use git::{GitLimits, GitMode, GitSource};
 pub use path::{INNER_PATH_SEPARATOR, LogicalPath};
-pub use runner::{SourceOutcome, SourceRunner, SourceTermination};
+pub use runner::{
+    SourceBudget, SourceBudgetError, SourceBudgetExceeded, SourceBudgetKind, SourceBudgetScope,
+    SourceOutcome, SourceRunner, SourceTermination, SourceUsage,
+};
 pub use scm::{RemoteMetadata, ScmError, ScmErrorKind, ScmPlatform, scm_link};
 pub use source::{
     CallbackError, Source, SourceConfigError, SourceControl, SourceError, SourceEvent, SourceIssue,

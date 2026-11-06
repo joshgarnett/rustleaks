@@ -196,6 +196,164 @@ fn assert_debug_omits_all(value: &impl Debug, sensitive_values: &[&[u8]]) {
     }
 }
 
+#[test]
+#[allow(clippy::too_many_lines)] // Keep all retained-field and structure checks in one regression.
+fn detected_secret_removal_does_not_recreate_known_sequences_at_deletion_boundaries() {
+    type RemovalCase<'a> = (&'a [u8], &'a [u8], &'a [u8], &'a [u8]);
+    let cases: &[RemovalCase<'_>] = &[
+        (b"aba", b"", b"XaababaY", b"XY"),
+        (b"abcd", b"X", b"PabXcdQ", b"PQ"),
+        // Existing longest-first deletion must keep its already clean result.
+        (b"ABCD", b"BC", b"xABCDy", b"xy"),
+        (
+            &[0xff, b'b', 0x80],
+            b"x",
+            &[1, 0xff, b'x', b'b', 0x80, 2],
+            &[1, 2],
+        ),
+    ];
+    let location = Location::new(1, 1, 2, 4).unwrap();
+    let range = FindingRange::Exact(ByteRange::new(1, 4).unwrap());
+    for (index, &(primary, required_secret, value, expected)) in cases.iter().enumerate() {
+        let required = RequiredFinding::builder()
+            .rule_id(value)
+            .location(location)
+            .match_range(range)
+            .secret_range(range)
+            .line(value)
+            .match_text(value)
+            .secret(required_secret)
+            .build()
+            .unwrap();
+        let finding = Finding::builder()
+            .rule_id(value)
+            .description(value)
+            .location(location)
+            .match_range(range)
+            .secret_range(range)
+            .line(value)
+            .match_text(value)
+            .secret(primary)
+            .file(value)
+            .symlink_file(value)
+            .commit(value)
+            .link(value)
+            .author(value)
+            .email(value)
+            .date(value)
+            .message(value)
+            .fingerprint(value)
+            .tags([value, value])
+            .fragment(Fragment::new(value))
+            .required_findings([required])
+            .build()
+            .unwrap()
+            .without_detected_secrets();
+        for actual in [
+            finding.rule_id(),
+            finding.description(),
+            finding.line(),
+            finding.match_text(),
+            finding.file(),
+            finding.symlink_file(),
+            finding.commit(),
+            finding.link(),
+            finding.author(),
+            finding.email(),
+            finding.date(),
+            finding.message(),
+            finding.fingerprint(),
+            &finding.tags()[0],
+            &finding.tags()[1],
+            finding.required_findings()[0].rule_id(),
+            finding.required_findings()[0].line(),
+            finding.required_findings()[0].match_text(),
+        ] {
+            assert!(
+                actual.as_bytes() == expected,
+                "case {index}: retained bytes differ"
+            );
+            assert!(
+                !contains_bytes(actual.as_bytes(), primary),
+                "case {index}: primary sequence remains"
+            );
+            if !required_secret.is_empty() {
+                assert!(
+                    !contains_bytes(actual.as_bytes(), required_secret),
+                    "case {index}: required sequence remains"
+                );
+            }
+        }
+        assert!(finding.secret().is_empty());
+        assert!(finding.required_findings()[0].secret().is_empty());
+        assert!(finding.fragment().is_none());
+        assert_eq!(finding.location(), location);
+        assert_eq!(finding.match_range(), range);
+        assert_eq!(finding.secret_range(), range);
+        assert_eq!(finding.tags().len(), 2);
+        assert_eq!(finding.clone().without_detected_secrets(), finding);
+    }
+}
+
+#[test]
+fn detected_secret_removal_handles_many_nested_deletion_joins() {
+    let depth = 32 * 1024;
+    let mut content = vec![b'a'; depth];
+    content.extend(std::iter::repeat_n(b'b', depth));
+    let finding = Finding::builder()
+        .rule_id("structured")
+        .location(Location::new(1, 1, 1, content.len()).unwrap())
+        .line(content)
+        .secret(b"ab".as_slice())
+        .build()
+        .unwrap()
+        .without_detected_secrets();
+    assert!(finding.line().is_empty());
+    assert_eq!(finding.rule_id().as_bytes(), b"structured");
+}
+
+#[test]
+fn detected_secret_removal_preserves_a_secret_free_subsequence_for_small_byte_words() {
+    let secrets: &[&[u8]] = &[b"A", b"B", b"AA", b"AB", b"BA", b"BB", b"ABA", b"BAB"];
+    for length in 0..=7 {
+        for bits in 0..(1 << length) {
+            let content = (0..length)
+                .map(|bit| if bits & (1 << bit) == 0 { b'A' } else { b'B' })
+                .collect::<Vec<_>>();
+            let location = Location::new(1, 1, 1, content.len().max(1)).unwrap();
+            for &primary in secrets {
+                for secondary in std::iter::once(b"".as_slice()).chain(secrets.iter().copied()) {
+                    let required = RequiredFinding::builder()
+                        .rule_id("auxiliary")
+                        .location(location)
+                        .secret(secondary)
+                        .build()
+                        .unwrap();
+                    let finding = Finding::builder()
+                        .rule_id("structured")
+                        .location(location)
+                        .line(content.as_slice())
+                        .secret(primary)
+                        .required_findings([required])
+                        .build()
+                        .unwrap()
+                        .without_detected_secrets();
+                    let output = finding.line().as_bytes();
+                    assert!(!contains_bytes(output, primary));
+                    assert!(secondary.is_empty() || !contains_bytes(output, secondary));
+                    let mut original = content.iter();
+                    assert!(
+                        output
+                            .iter()
+                            .all(|byte| original.any(|candidate| candidate == byte))
+                    );
+                    assert_eq!(finding.clone().without_detected_secrets(), finding);
+                }
+            }
+        }
+    }
+}
+
 fn assert_debug_omits(value: &impl Debug, sensitive: &[u8]) {
     let debug = format!("{value:?}");
     let text = std::str::from_utf8(sensitive).unwrap();

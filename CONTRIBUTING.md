@@ -23,9 +23,9 @@ Install Bazelisk and Just 1.53.0, matching the maintained CI setup. Use the Rust
 toolchain selected by `rust-toolchain.toml`; the repository pins Bazel in
 `.bazelversion`. `just doctor` reports the selected versions without installing
 or changing anything.
-Full differential checks use the Go version in `.go-version` and require the
-exact pinned Gitleaks checkout at `../gitleaks`. Security checks require the
-exact tools listed in [the security controls](docs/SECURITY_CONTROLS.md).
+Rust regression and qualification checks need neither a Go installation nor a
+sibling Gitleaks checkout. Security checks require the exact tools listed in
+[the security controls](docs/SECURITY_CONTROLS.md).
 
 Just is the public command interface, and Bazel is the build authority. Use
 `just --list` to see maintained recipes. Start with a focused Bazel target:
@@ -70,8 +70,10 @@ tests, all first-party tests, and the compile-only target matrix. Run
 `just package-check` when public APIs, manifests, features, packaged assets, or
 release inputs change. Run both fuzz recipes when parser, matcher, decoder,
 source, report, CLI, resource-limit, or fuzz inputs change. Use
-`cargo xtask parity --all` for a change to supported compatibility behavior or
-generated oracle evidence.
+`cargo xtask regression-check` to verify frozen evidence and Rust replay, and
+`cargo xtask qualify` from a clean, committed candidate for changes to supported
+compatibility behavior or its evidence. Qualification includes package,
+external-consumer, fuzz, Miri, and performance checks.
 
 Run `just flake-check` after changing timers, cancellation, subprocesses,
 filesystem traversal, temporary paths, or concurrency. A test must pass all
@@ -91,9 +93,13 @@ crate-universe, and Bazel module lockfiles.
 
 Do not update the upstream revision, packaged default configuration, frozen
 corpora, fixtures, public API snapshot, or safe Rust dispositions in isolation.
-Follow [the upstream update procedure](docs/UPDATING_UPSTREAM.md). Explain
-every intentional difference and add evidence that fails when the contract is
-violated.
+Follow [the upstream update procedure](docs/UPDATING_UPSTREAM.md). Historical
+Go corpora remain immutable; their generation commands describe the archived
+workflow and are no longer executable maintenance instructions. New Rust
+regressions need independently specified expected bytes, errors and spans,
+positive and negative cases, and stable identities. Do not generate accepted
+expectations from current Rust output. Explain every intentional difference
+and add evidence that fails when the contract is violated.
 
 Use synthetic or reviewed upstream test values. Preserve copied bytes, modes,
 symlinks, provenance, hashes, licenses, and attribution. Keep suspected

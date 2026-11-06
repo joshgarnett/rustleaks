@@ -73,6 +73,14 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
     validate_secret_scanning_config(&secret_scanning)?;
     validate_workflow_efficiency(&ci, &weekly)?;
     validate_dependabot(root)?;
+    let setup = fs::read_to_string(root.join(".github/actions/setup/action.yml"))
+        .map_err(|error| format!("cannot read setup action: {error}"))?;
+    validate_tool_setup(&setup)?;
+    let nightly = fs::read_to_string(directory.join("nightly.yml"))
+        .map_err(|error| format!("cannot read nightly workflow: {error}"))?;
+    if !nightly.contains("run: cargo xtask regression-check") {
+        return Err("nightly workflow omits Rust regression replay".into());
+    }
     println!(
         "checked {} least-privilege workflows with immutable action pins and exact runners",
         files.len()
@@ -278,11 +286,10 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "test \"${TRIGGER_REF}\" = refs/heads/main",
         "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
         "run: just release-dry-run",
-        "cargo xtask oracle-vulnerability-check",
         "cmp \"${first}\" \"${second}\"",
         "cargo install cargo-public-api --locked --version 0.52.0",
         "rustup toolchain install nightly-2026-08-21 --profile minimal --component miri",
-        "cargo xtask parity --all",
+        "cargo xtask qualify",
         "run: just security",
         "run: just fuzz-smoke",
         "release-artifact compare",
@@ -300,12 +307,12 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "--deny-self-hosted-runners",
         "name: Release candidate required",
         "  acceptance:",
-        "  differential:",
+        "  qualification:",
         "  security:",
         "  fuzz:",
         "  self-scan:",
         "      - acceptance",
-        "      - differential",
+        "      - qualification",
         "      - security",
         "      - fuzz",
         "      - self-scan",
@@ -341,7 +348,7 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
 }
 
 fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
-    validate_release_differential_setup(source)?;
+    validate_release_qualification_setup(source)?;
     let native_attestation_steps = source
         .split("- name: Verify and retain the release archive attestation")
         .skip(1)
@@ -384,12 +391,12 @@ fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_release_differential_setup(source: &str) -> Result<(), String> {
-    let differential = source
-        .split("\n  differential:\n")
+fn validate_release_qualification_setup(source: &str) -> Result<(), String> {
+    let qualification = source
+        .split("\n  qualification:\n")
         .nth(1)
         .and_then(|tail| tail.split("\n  security:\n").next())
-        .ok_or("release workflow omits the differential job")?;
+        .ok_or("release workflow omits the qualification job")?;
     for required in [
         "cargo install cargo-public-api --locked --version 0.52.0",
         "cargo install cargo-deny --locked --version 0.19.9",
@@ -400,11 +407,11 @@ fn validate_release_differential_setup(source: &str) -> Result<(), String> {
         "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml",
         "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml",
         "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml",
-        "cargo xtask parity --all",
+        "cargo xtask qualify",
     ] {
-        if !differential.contains(required) {
+        if !qualification.contains(required) {
             return Err(format!(
-                "release differential job omits required setup {required:?}"
+                "release qualification job omits required setup {required:?}"
             ));
         }
     }
@@ -438,20 +445,7 @@ fn validate_workflow(
             ));
         }
     }
-    if source.contains("actions/setup-go@") {
-        if source.contains("go-version:") {
-            return Err(format!(
-                "{} hard-codes Go instead of using .go-version",
-                path.display()
-            ));
-        }
-        if !source.contains("go-version-file: rustleaks/.go-version") {
-            return Err(format!(
-                "{} sets up Go without the repository version file",
-                path.display()
-            ));
-        }
-    }
+    validate_no_live_go(source)?;
     let permissions = source
         .find("permissions:\n  contents: read")
         .ok_or_else(|| format!("{} omits top-level read-only permissions", path.display()))?;
@@ -504,7 +498,123 @@ fn validate_workflow(
     Ok(())
 }
 
+fn validate_no_live_go(source: &str) -> Result<(), String> {
+    for forbidden in [
+        "actions/setup-go@",
+        "repository: gitleaks/gitleaks",
+        ".go-version",
+        "cargo xtask verify-upstream",
+        "cargo xtask oracle",
+        "cargo xtask parity --all",
+        "cargo xtask generate source",
+        "cargo xtask generate git",
+        "cargo xtask generate report",
+        "cargo xtask generate cli",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!(
+                "automation restores retired Go execution {forbidden:?}"
+            ));
+        }
+    }
+    let words = source.split_whitespace().collect::<Vec<_>>();
+    if words.windows(2).any(|pair| {
+        pair[0] == "go"
+            && matches!(
+                pair[1],
+                "install" | "env" | "run" | "build" | "test" | "version"
+            )
+    }) {
+        return Err("automation restores a host Go command".into());
+    }
+    Ok(())
+}
+
+fn validate_tool_setup(source: &str) -> Result<(), String> {
+    validate_no_live_go(source)?;
+    for (runner, asset, sha256) in [
+        (
+            "Linux:X64",
+            "bazelisk-linux-amd64",
+            "5a408715e932c0250d28bd84555f12edbf70117de42f9181691c736eacc4a992",
+        ),
+        (
+            "Linux:ARM64",
+            "bazelisk-linux-arm64",
+            "e20e8b0f4f240091b7a55bf17b9398bd4f40ee70ae0208dff95dd4c445fb4010",
+        ),
+        (
+            "macOS:X64",
+            "bazelisk-darwin-amd64",
+            "16c3d7aa15323a9fb69f56c7ec5733ed18bedb786680d0ba13bb12a3c8083007",
+        ),
+        (
+            "macOS:ARM64",
+            "bazelisk-darwin-arm64",
+            "cee851f726789227d5561004e9904a52be45c3efb56f8b38b6993d6adbaa0409",
+        ),
+        (
+            "Windows:X64",
+            "bazelisk-windows-amd64.exe",
+            "092a8738d5b41aae7a85c42cc961b1034e3389aba43ffc20c0fabda7b43e095b",
+        ),
+        (
+            "Windows:ARM64",
+            "bazelisk-windows-arm64.exe",
+            "8bc42bd5d7857f18a21440b906469bb6c7cf91a7c72364d4b1e5ec56a76fe94f",
+        ),
+    ] {
+        let binding = format!("{runner})\n            asset={asset}\n            sha256={sha256}");
+        if !source.contains(&binding) {
+            return Err(format!(
+                "setup action omits the verified Bazelisk asset for {runner}"
+            ));
+        }
+    }
+    let mut remaining = source;
+    for required in [
+        "https://github.com/bazelbuild/bazelisk/releases/download/v1.29.0/${asset}",
+        "test \"${actual_sha256}\" = \"${sha256}\"",
+        "chmod +x \"${destination}\"",
+        "bazeliskVersion",
+        "Bazelisk version: v1.29.0",
+    ] {
+        remaining = remaining
+            .split_once(required)
+            .map(|(_, remaining)| remaining)
+            .ok_or_else(|| format!("setup action omits ordered verification {required:?}"))?;
+    }
+    Ok(())
+}
+
 fn validate_ci_matrix(source: &str) -> Result<(), String> {
+    for job in ["native-linux", "native-macos", "native-windows"] {
+        let header = format!("\n  {job}:\n");
+        let lane = source
+            .split_once(&header)
+            .map(|(_, tail)| {
+                tail.split("\n  native-")
+                    .next()
+                    .unwrap_or(tail)
+                    .split("\n  required:")
+                    .next()
+                    .unwrap_or(tail)
+            })
+            .ok_or_else(|| format!("CI omits native lane {job}"))?;
+        for required in [
+            "//:test",
+            "rust-cli-regression-${{ matrix.target }}",
+            "rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json",
+            "--nozip_undeclared_test_outputs",
+            "if-no-files-found: error",
+        ] {
+            if !lane.contains(required) {
+                return Err(format!(
+                    "native lane {job} omits Rust evidence {required:?}"
+                ));
+            }
+        }
+    }
     for (runner, target) in [
         ("ubuntu-24.04", "x86_64-unknown-linux-gnu"),
         ("ubuntu-24.04-arm", "aarch64-unknown-linux-gnu"),
@@ -533,8 +643,7 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
         "run: just security",
         "run: just fuzz-smoke",
         "run: just release-dry-run",
-        "just parity",
-        "cargo xtask oracle-vulnerability-check",
+        "cargo xtask regression-check",
         "name: Required",
     ] {
         if !source.contains(required) {
@@ -575,16 +684,13 @@ fn validate_workflow_efficiency(ci: &str, weekly: &str) -> Result<(), String> {
 fn validate_dependabot(root: &Path) -> Result<(), String> {
     let source = fs::read_to_string(root.join(".github/dependabot.yml"))
         .map_err(|error| format!("cannot read Dependabot configuration: {error}"))?;
-    for ecosystem in [
-        "cargo",
-        "gomod",
-        "rust-toolchain",
-        "bazel",
-        "github-actions",
-    ] {
+    for ecosystem in ["cargo", "rust-toolchain", "bazel", "github-actions"] {
         if !source.contains(&format!("package-ecosystem: {ecosystem}")) {
             return Err(format!("Dependabot omits {ecosystem}"));
         }
+    }
+    if source.contains("package-ecosystem: gomod") {
+        return Err("Dependabot must not restore the retired oracle module".into());
     }
     for group in ["rust-dependencies", "rust-security-fixes", "github-actions"] {
         if !source.contains(&format!("{group}:")) {
@@ -605,7 +711,7 @@ mod tests {
     use super::{
         CODEQL_ACTION_PIN, SECRET_SCANNING_CONFIG, validate_codeql_workflow,
         validate_github_release_workflow, validate_publish_workflow,
-        validate_release_differential_setup, validate_scorecard_workflow,
+        validate_release_qualification_setup, validate_scorecard_workflow,
         validate_secret_scanning_config, validate_target_execution_platform, validate_workflow,
         validate_workflow_efficiency,
     };
@@ -639,19 +745,45 @@ mod tests {
     }
 
     #[test]
-    fn requires_the_repository_go_version_file() {
-        let source = format!(
-            "name: Test\non:\n  push:\npermissions:\n  contents: read\njobs:\n  test:\n    steps:\n      - uses: actions/setup-go@{PIN} # v6\n        with:\n          go-version: 1.26.7\n"
-        );
-        let error =
-            validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap_err();
-        assert!(error.contains("hard-codes Go"));
+    fn rejects_retired_go_execution_and_sibling_checkouts() {
+        for forbidden in [
+            "uses: actions/setup-go@reviewed-pin",
+            "repository: gitleaks/gitleaks",
+            "run: cargo xtask oracle-vulnerability-check",
+            "run: cargo xtask generate cli --check",
+            "go install github.com/bazelbuild/bazelisk@v1.29.0",
+        ] {
+            assert!(super::validate_no_live_go(forbidden).is_err());
+        }
+        super::validate_no_live_go("run: cargo xtask regression-check").unwrap();
+        super::validate_no_live_go("run: cargo install just --locked --version 1.53.0").unwrap();
+    }
 
-        let source = source.replace(
-            "go-version: 1.26.7",
-            "go-version-file: rustleaks/.go-version",
+    #[test]
+    fn rejects_changed_bazelisk_hash_or_unverified_execution() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = std::fs::read_to_string(root.join(".github/actions/setup/action.yml"))
+            .expect("read setup action");
+        super::validate_tool_setup(&source).unwrap();
+        let changed = source.replace(
+            "5a408715e932c0250d28bd84555f12edbf70117de42f9181691c736eacc4a992",
+            "0000000000000000000000000000000000000000000000000000000000000000",
         );
-        validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap();
+        assert!(super::validate_tool_setup(&changed).is_err());
+        let unchecked = source.replace("test \"${actual_sha256}\" = \"${sha256}\"", "true");
+        assert!(super::validate_tool_setup(&unchecked).is_err());
+    }
+
+    #[test]
+    fn native_ledgers_require_exact_json_and_unzipped_outputs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
+            .expect("read CI workflow");
+        super::validate_ci_matrix(&source).unwrap();
+        let zipped = source.replace("--nozip_undeclared_test_outputs", "");
+        assert!(super::validate_ci_matrix(&zipped).is_err());
+        let broad = source.replace("test.outputs/cli-regression-ledger.json", "test.outputs/**");
+        assert!(super::validate_ci_matrix(&broad).is_err());
     }
 
     #[test]
@@ -669,23 +801,23 @@ mod tests {
     }
 
     #[test]
-    fn requires_parity_tools_in_the_release_differential_job() {
-        let source = "\n  differential:\n    steps:\n      - run: cargo xtask parity --all\n  security:\n    steps:\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview\n      - run: cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml\n";
-        let error = validate_release_differential_setup(source).unwrap_err();
-        assert!(error.contains("release differential job"));
+    fn requires_qualification_tools_in_the_release_qualification_job() {
+        let source = "\n  qualification:\n    steps:\n      - run: cargo xtask qualify\n  security:\n    steps:\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview\n      - run: cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml\n";
+        let error = validate_release_qualification_setup(source).unwrap_err();
+        assert!(error.contains("release qualification job"));
 
         let source = source.replace(
-            "      - run: cargo xtask parity --all",
-            "      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview\n      - run: cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml\n      - run: cargo xtask parity --all",
+            "      - run: cargo xtask qualify",
+            "      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview\n      - run: cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2\n      - run: rustup toolchain install nightly-2026-08-21 --profile minimal --component miri\n      - run: cargo +nightly-2026-08-21 miri setup\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml\n      - run: cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml\n      - run: cargo xtask qualify",
         );
-        validate_release_differential_setup(&source).unwrap();
+        validate_release_qualification_setup(&source).unwrap();
         for required in [
             "cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2",
             "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml",
             "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml",
             "cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml",
         ] {
-            let error = validate_release_differential_setup(&source.replace(required, "missing"))
+            let error = validate_release_qualification_setup(&source.replace(required, "missing"))
                 .unwrap_err();
             assert!(error.contains(required));
         }

@@ -1,31 +1,19 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
+#[allow(dead_code)]
+#[path = "../../tests/support/campaign_profile.rs"]
+mod campaign_profile;
+
+use campaign_profile::Profile;
+
 use std::hint::black_box;
 
+use libfuzzer_sys::fuzz_target;
 use rustleaks_core::model::{Finding, Location};
 use rustleaks_core::session::{
     Baseline, IgnoreSet, ScanSession, SessionPolicy, SuppressionReason, global_fingerprint,
 };
-use libfuzzer_sys::fuzz_target;
-
-const MAX_INPUT_BYTES: usize = 16 * 1024;
-
-fn split_input(data: &[u8]) -> (&[u8], &[u8], &[u8]) {
-    let Some((&low, rest)) = data.split_first() else {
-        return (&[], &[], &[]);
-    };
-    let Some((&high, payload)) = rest.split_first() else {
-        return (&[], &[], &[]);
-    };
-    let baseline_len = usize::from(u16::from_le_bytes([low, high])) % (payload.len() + 1);
-    let (baseline, rest) = payload.split_at(baseline_len);
-    let ignore_len = rest
-        .first()
-        .map_or(0, |value| usize::from(*value) % (rest.len() + 1));
-    let (ignore, finding) = rest.split_at(ignore_len);
-    (baseline, ignore, finding)
-}
 
 fn finding(bytes: &[u8]) -> Finding {
     let control = bytes.first().copied().unwrap_or_default();
@@ -51,8 +39,12 @@ fn finding(bytes: &[u8]) -> Finding {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let data = &data[..data.len().min(MAX_INPUT_BYTES)];
-    let (baseline_bytes, ignore_bytes, finding_bytes) = split_input(data);
+    let maximum = Profile::current()
+        .input_limit("session")
+        .expect("known target");
+    let data = &data[..data.len().min(maximum)];
+    let (baseline_bytes, ignore_bytes, finding_bytes) =
+        campaign_profile::session_parts(data, Profile::current());
     let candidate = finding(finding_bytes);
 
     let arbitrary_baseline = Baseline::from_go_json(baseline_bytes);

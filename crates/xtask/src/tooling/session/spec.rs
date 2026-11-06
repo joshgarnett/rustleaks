@@ -2,14 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::process;
 use super::validation::{required_array, required_object, required_str, required_u64, strings};
-use super::{TempDir, newline_records, read};
+use super::{newline_records, read};
 use crate::tooling::support::sha256_bytes;
 
 pub(super) const PROTOCOL_VERSION: u64 = 1;
@@ -272,26 +269,7 @@ fn validate_negative_metadata(negative: &Value) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn validate_upstream(
-    root: &Path,
-    upstream: &Path,
-    coverage: &Value,
-    temporary: &TempDir,
-) -> Result<(), String> {
-    let mut revision_command = Command::new("git");
-    revision_command
-        .current_dir(upstream)
-        .args(["rev-parse", "HEAD"]);
-    if trim(&process::capture(
-        &mut revision_command,
-        temporary,
-        "upstream-revision",
-        Duration::from_secs(30),
-    )?) != REVISION.as_bytes()
-    {
-        return Err("pinned upstream revision changed".into());
-    }
-    verify_hash(upstream, "config/gitleaks.toml", CONFIG_SHA256)?;
+pub(super) fn validate_local(root: &Path, coverage: &Value) -> Result<(), String> {
     let hashes = required_object(coverage, "source_hashes", "coverage")?;
     if hashes.len() != SOURCE_HASHES.len() {
         return Err("session source hash inventory changed".into());
@@ -300,15 +278,14 @@ pub(super) fn validate_upstream(
         if hashes.get(*path).and_then(Value::as_str) != Some(*expected) {
             return Err(format!("coverage source hash changed for {path}"));
         }
-        verify_hash(upstream, path, expected)?;
     }
     verify_hash(
-        upstream,
+        &root.join("compat/fixtures/upstream"),
         "testdata/gitleaksignore/.windowspaths",
         "5426aeccb90cd6495f01a2ff078a008108615697f2fe5ff98d0baa1a1738add3",
     )?;
     verify_hash(
-        upstream,
+        &root.join("compat/fixtures/upstream"),
         "testdata/baseline/baseline.json",
         "02b42cf04e716d178e4fc2c98783646e3133a5b14a47f15f7305074b376676f7",
     )?;
@@ -337,14 +314,4 @@ fn verify_hash(root: &Path, relative: &str, expected: &str) -> Result<(), String
         return Err(format!("pinned upstream file {relative} changed"));
     }
     Ok(())
-}
-
-fn trim(mut bytes: &[u8]) -> &[u8] {
-    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[1..];
-    }
-    while bytes.last().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[..bytes.len() - 1];
-    }
-    bytes
 }

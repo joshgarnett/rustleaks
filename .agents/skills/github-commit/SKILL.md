@@ -55,7 +55,7 @@ bazelisk test //crates/rustleaks-cli:cli_test
 ```
 
 Use `just ci` and `just security` for pull-request-ready changes. Add
-`just package-check`, both fuzz recipes, or `cargo xtask parity --all` only for
+`just package-check`, both fuzz recipes, or `cargo xtask qualify` only for
 the boundaries named in `CONTRIBUTING.md` and the applicable Rustleaks
 maintenance skill. Bazel is authoritative for normal build and test work;
 Cargo does not bypass a failed Bazel action. Report only commands that passed

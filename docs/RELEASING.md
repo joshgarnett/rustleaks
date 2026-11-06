@@ -41,8 +41,9 @@ The publishable package metadata also selects docs.rs-compatible warning-denied
 documentation for all features. The hosted dry run repeats that interface and
 retains the exact `.crate` archive plus its file list.
 
-Run `cargo xtask parity --all` with the exact pinned Gitleaks checkout at
-`../gitleaks` when compatibility inputs or behavior changed. Complete SemVer
+Run `cargo xtask qualify` when compatibility inputs or behavior changed. It
+checks frozen evidence and runs Rust regression and release-hardening checks
+without Go or a sibling upstream checkout. Complete SemVer
 comparison against the latest published release is required once a prior
 release exists.
 
@@ -62,8 +63,8 @@ current `origin/main`, receives no registry token, and fails if either
 conventional crates.io token variable is present. Qualification can therefore
 start without spending an approval that protects a later external mutation.
 
-The package and native matrix run alongside separate acceptance, fresh
-differential, security, extended AddressSanitizer fuzz, and worktree and history
+The package and native matrix run alongside separate acceptance, Rust
+qualification, security, extended AddressSanitizer fuzz, and worktree and history
 self-scan jobs. The required summary accepts the candidate only when every job
 succeeds. Every native job builds the CLI twice with isolated Bazel output
 roots, requires byte-identical binaries and independently prepared bundles,

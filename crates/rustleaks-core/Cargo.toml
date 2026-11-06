@@ -13,6 +13,9 @@ keywords = ["gitleaks", "secret-detection", "security", "scanner"]
 categories = ["development-tools"]
 include = [
     "default/gitleaks.toml",
+    "default/rustleaks-extra-v1.toml",
+    "default/rustleaks-extra-v1.md",
+    "default/rustleaks-extra-v1.sha256",
     "src/**/*.rs",
     "tests/**/*.rs",
     "LICENSE",

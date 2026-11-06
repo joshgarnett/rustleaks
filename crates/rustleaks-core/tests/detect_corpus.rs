@@ -189,74 +189,169 @@ fn replay_detector_corpus(corpus: &Path) {
             "{}",
             request.id
         );
-        let config_bytes = if request.config_fixture.is_empty() {
-            decode_base64(&request.config_base64)
-        } else {
-            let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../compat/fixtures/upstream/testdata/config")
-                .join(&request.config_fixture);
-            fs::read(fixture).unwrap()
-        };
-        let config_text = std::str::from_utf8(&config_bytes).unwrap();
-        let config = ConfigLoader::new().load_toml(config_text).unwrap();
-        let engine = Engine::builder(config).build().unwrap();
-
-        let content = decode_base64(&request.fragment.content_base64);
-        let file = decode_base64(&request.fragment.file_base64);
-        let windows_file = decode_base64(&request.fragment.windows_file_base64);
-        let symlink_file = decode_base64(&request.fragment.symlink_file_base64);
-        let commit = decode_base64(&request.fragment.commit_base64);
-        let author = decode_base64(&request.fragment.author_base64);
-        let email = decode_base64(&request.fragment.email_base64);
-        let date = decode_base64(&request.fragment.date_base64);
-        let message = decode_base64(&request.fragment.message_base64);
-        let has_metadata = [&author, &email, &date, &message]
-            .into_iter()
-            .any(|value| !value.is_empty());
-        let mut fragment = Fragment::builder(content)
-            .file_path(file)
-            .windows_file_path(windows_file)
-            .symlink_file(symlink_file)
-            .commit(commit)
-            .start_line(request.fragment.start_line)
-            .inherited_from_finding(request.fragment.inherited_from_finding);
-        if has_metadata {
-            fragment = fragment.commit_metadata(
-                CommitMetadata::builder()
-                    .author_name(author)
-                    .author_email(email)
-                    .date(date)
-                    .message(message)
-                    .build(),
-            );
-        }
-
-        // Upstream truncates len/1_000_000 before comparing its megabyte
-        // setting. Express that inclusive effective boundary in the Rust
-        // API's exact-byte option.
-        let maximum = (request.options.max_target_megabytes > 0).then(|| {
-            usize::try_from(request.options.max_target_megabytes)
-                .unwrap()
-                .saturating_add(1)
-                .saturating_mul(1_000_000)
-                .saturating_sub(1)
-        });
-        let options = ScanOptions::builder()
-            .max_decode_depth(canonical_decode_depth(request.options.max_decode_depth))
-            .max_target_bytes(maximum)
-            .honor_gitleaks_allow(!request.options.ignore_allow_marker)
-            .build();
-        let mut actual = engine
-            .scan_fragment(&fragment.build(), &options)
-            .findings()
-            .iter()
-            .map(canonical_finding)
-            .collect::<Vec<_>>();
+        let mut actual = scan_detector_request(&request);
         actual.sort_by_cached_key(|finding| serde_json::to_string(finding).unwrap());
         let mut expected = response.findings;
         expected.sort_by_cached_key(|finding| serde_json::to_string(finding).unwrap());
         assert_eq!(actual, expected, "detector corpus case {}", request.id);
     }
+}
+
+fn scan_detector_request(request: &Request) -> Vec<CanonicalFinding> {
+    let config_bytes = if request.config_fixture.is_empty() {
+        decode_base64(&request.config_base64)
+    } else {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../compat/fixtures/upstream/testdata/config")
+            .join(&request.config_fixture);
+        fs::read(fixture).unwrap()
+    };
+    let config_text = std::str::from_utf8(&config_bytes).unwrap();
+    let config = ConfigLoader::new().load_toml(config_text).unwrap();
+    let engine = Engine::builder(config).build().unwrap();
+
+    let content = decode_base64(&request.fragment.content_base64);
+    let file = decode_base64(&request.fragment.file_base64);
+    let windows_file = decode_base64(&request.fragment.windows_file_base64);
+    let symlink_file = decode_base64(&request.fragment.symlink_file_base64);
+    let commit = decode_base64(&request.fragment.commit_base64);
+    let author = decode_base64(&request.fragment.author_base64);
+    let email = decode_base64(&request.fragment.email_base64);
+    let date = decode_base64(&request.fragment.date_base64);
+    let message = decode_base64(&request.fragment.message_base64);
+    let has_metadata = [&author, &email, &date, &message]
+        .into_iter()
+        .any(|value| !value.is_empty());
+    let mut fragment = Fragment::builder(content)
+        .file_path(file)
+        .windows_file_path(windows_file)
+        .symlink_file(symlink_file)
+        .commit(commit)
+        .start_line(request.fragment.start_line)
+        .inherited_from_finding(request.fragment.inherited_from_finding);
+    if has_metadata {
+        fragment = fragment.commit_metadata(
+            CommitMetadata::builder()
+                .author_name(author)
+                .author_email(email)
+                .date(date)
+                .message(message)
+                .build(),
+        );
+    }
+
+    // Upstream truncates len/1_000_000 before comparing its megabyte
+    // setting. Express that inclusive effective boundary in the Rust
+    // API's exact-byte option.
+    let maximum = (request.options.max_target_megabytes > 0).then(|| {
+        usize::try_from(request.options.max_target_megabytes)
+            .unwrap()
+            .saturating_add(1)
+            .saturating_mul(1_000_000)
+            .saturating_sub(1)
+    });
+    let options = ScanOptions::builder()
+        .max_decode_depth(canonical_decode_depth(request.options.max_decode_depth))
+        .max_target_bytes(maximum)
+        .honor_gitleaks_allow(!request.options.ignore_allow_marker)
+        .build();
+    engine
+        .scan_fragment(&fragment.build(), &options)
+        .findings()
+        .iter()
+        .map(canonical_finding)
+        .collect::<Vec<_>>()
+}
+
+#[test]
+fn frozen_bootstrap_detector_rows_keep_exact_detection_fields() {
+    let (requests, outcomes) = bootstrap_rows();
+    for (request, response) in requests.into_iter().zip(outcomes).take(3) {
+        assert_eq!(request["protocol_version"], 1);
+        assert!(response["error"].is_null());
+        let mut projected = request.clone();
+        for field in [
+            "file_base64",
+            "windows_file_base64",
+            "symlink_file_base64",
+            "commit_base64",
+            "author_base64",
+            "email_base64",
+            "date_base64",
+            "message_base64",
+        ] {
+            projected["fragment"]
+                .as_object_mut()
+                .unwrap()
+                .entry(field)
+                .or_insert_with(|| serde_json::json!(""));
+        }
+        projected["fragment"]["inherited_from_finding"] = serde_json::json!(false);
+        projected["options"]["max_target_megabytes"] = serde_json::json!(0);
+        projected["options"]["ignore_allow_marker"] = serde_json::json!(false);
+        let request: Request = serde_json::from_value(projected).unwrap();
+        let actual = scan_detector_request(&request);
+        let mut expected = response["findings"].as_array().unwrap().clone();
+        for finding in &mut expected {
+            finding["fragment"] = serde_json::Value::Null;
+            finding["required_findings"] = serde_json::json!([]);
+            // Remote metadata belongs to sources. The exact frozen link is
+            // replayed by git_scm::bootstrap_source_link_matches_frozen_bytes.
+            if request.id == "custom-basic" {
+                assert_eq!(
+                    decode_base64(finding["link_base64"].as_str().unwrap()),
+                    b"https://github.com/acme/repo.git/blob/abcdef1234567890/src/example.txt#L1"
+                );
+            } else {
+                assert_eq!(finding["link_base64"], "");
+            }
+            finding["link_base64"] = serde_json::json!("");
+        }
+        let expected = expected
+            .into_iter()
+            .map(|value| serde_json::from_value::<CanonicalFinding>(value).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "bootstrap detector case {}", request.id);
+    }
+}
+
+#[test]
+fn bootstrap_adapter_errors_have_explicit_retired_and_safe_dispositions() {
+    let (requests, outcomes) = bootstrap_rows();
+    let config = decode_base64(requests[3]["config_base64"].as_str().unwrap());
+    assert_eq!(outcomes[3]["error"]["class"], "panic");
+    assert!(matches!(
+        ConfigLoader::new().load_toml(std::str::from_utf8(&config).unwrap()),
+        Err(rustleaks_core::config::ConfigError::InvalidPattern { .. })
+    ));
+    // Protocol validation was a Go JSONL adapter contract. The in-memory Rust
+    // engine accepts typed inputs and does not implement that retired protocol.
+    assert_eq!(requests[4]["protocol_version"], 99);
+    assert_eq!(outcomes[4]["error"]["class"], "protocol");
+    assert_eq!(outcomes[4]["error"]["message"], "expected protocol 1");
+}
+
+fn bootstrap_rows() -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/oracle-corpus");
+    let requests = detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-input.jsonl"));
+    let outcomes = detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-golden.jsonl"));
+    let ids = [
+        "custom-basic",
+        "custom-invalid-utf8",
+        "custom-allow-marker",
+        "malformed-regex-panic",
+        "wrong-protocol",
+    ];
+    for rows in [&requests, &outcomes] {
+        assert_eq!(rows.len(), ids.len());
+        assert_eq!(
+            rows.iter()
+                .map(|row| row["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ids
+        );
+    }
+    (requests, outcomes)
 }
 
 fn canonical_decode_depth(depth: i64) -> usize {

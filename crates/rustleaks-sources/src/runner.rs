@@ -12,6 +12,13 @@ use crate::{
     SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
+mod budget;
+
+pub use budget::{
+    SourceBudget, SourceBudgetError, SourceBudgetExceeded, SourceBudgetKind, SourceBudgetScope,
+    SourceUsage,
+};
+
 /// Terminal state of a bounded source run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -26,6 +33,8 @@ pub enum SourceTermination {
     SourceError(SourceError),
     /// At least one detection worker panicked; every worker was still joined.
     WorkerPanic,
+    /// An opt-in source budget stopped the operation; every worker was joined.
+    BudgetExceeded(SourceBudgetExceeded),
 }
 
 /// Owned results of scanning one source.
@@ -36,6 +45,7 @@ pub struct SourceOutcome {
     termination: SourceTermination,
     scanned_bytes: u64,
     unique_commits: Vec<ByteText>,
+    usage: Option<SourceUsage>,
 }
 
 struct SourceStatistics {
@@ -96,8 +106,9 @@ impl SourceOutcome {
         &self.findings
     }
 
-    /// Returns all recoverable source issues in producer order, followed by
-    /// runner issues.
+    /// Returns retained source issues in producer order, followed by runner
+    /// issues. An explicit source budget can cap the collection; rejecting a
+    /// further source issue returns incomplete budget termination.
     #[must_use]
     pub fn issues(&self) -> &[SourceIssue] {
         &self.issues
@@ -113,6 +124,12 @@ impl SourceOutcome {
     #[must_use]
     pub const fn scanned_bytes(&self) -> u64 {
         self.scanned_bytes
+    }
+
+    /// Returns operation accounting when an explicit source budget was installed.
+    #[must_use]
+    pub const fn usage(&self) -> Option<SourceUsage> {
+        self.usage
     }
 
     /// Returns the number of distinct nonempty fragment commit identifiers.
@@ -143,11 +160,13 @@ impl SourceOutcome {
 /// The runner owns no global pool and exports no synchronization primitive.
 /// Both single-worker and multi-worker operation use the same bounded queue and
 /// session-batch path. Finding order is not a compatibility contract; complete
-/// duplicate-preserving multisets are invariant.
+/// duplicate-preserving multisets are invariant for complete runs. Budget stops
+/// can return a scheduling-dependent subset of completely scanned fragments.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SourceRunner {
     workers: NonZeroUsize,
     queue_capacity: NonZeroUsize,
+    budget: Option<SourceBudget>,
 }
 
 impl SourceRunner {
@@ -164,6 +183,7 @@ impl SourceRunner {
         Ok(Self {
             workers,
             queue_capacity,
+            budget: None,
         })
     }
 
@@ -179,6 +199,23 @@ impl SourceRunner {
         self.queue_capacity.get()
     }
 
+    /// Installs an opt-in operation policy without changing the worker count.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a finite aggregate scan limit lacks a matching
+    /// finite per-fragment reservation ceiling.
+    pub fn with_budget(mut self, budget: SourceBudget) -> Result<Self, SourceBudgetError> {
+        self.budget = Some(budget.validate()?);
+        Ok(self)
+    }
+
+    /// Returns the installed operation policy, or `None` for the default path.
+    #[must_use]
+    pub const fn budget(self) -> Option<SourceBudget> {
+        self.budget
+    }
+
     /// Produces source events, scans fragments, applies one immutable session
     /// policy, joins every worker, and returns owned results.
     #[must_use]
@@ -189,6 +226,29 @@ impl SourceRunner {
         scan_options: ScanOptions,
         policy: &SessionPolicy,
         cancellation: &CancellationToken,
+    ) -> SourceOutcome {
+        if let Some(budget) = self.budget {
+            return budget::run(
+                self,
+                source,
+                engine,
+                scan_options,
+                policy,
+                cancellation,
+                budget,
+            );
+        }
+        self.run_with_worker(source, policy, cancellation, |receiver| {
+            worker_loop(receiver, engine, scan_options, policy, cancellation)
+        })
+    }
+
+    fn run_with_worker(
+        &self,
+        source: &mut dyn Source,
+        policy: &SessionPolicy,
+        cancellation: &CancellationToken,
+        worker: impl Fn(&Mutex<mpsc::Receiver<Fragment>>) -> SessionBatch + Sync,
     ) -> SourceOutcome {
         let (sender, receiver) = mpsc::sync_channel::<Fragment>(self.queue_capacity());
         let receiver = Arc::new(Mutex::new(receiver));
@@ -209,17 +269,10 @@ impl SourceRunner {
             if setup_error.is_none() {
                 for index in 0..self.workers() {
                     let receiver = Arc::clone(&receiver);
+                    let worker = &worker;
                     let spawned = thread::Builder::new()
                         .name(format!("rustleaks-source-{index}"))
-                        .spawn_scoped(scope, move || {
-                            worker_loop(
-                                receiver.as_ref(),
-                                engine,
-                                scan_options,
-                                policy,
-                                cancellation,
-                            )
-                        });
+                        .spawn_scoped(scope, move || worker(receiver.as_ref()));
                     match spawned {
                         Ok(handle) => handles.push(handle),
                         Err(error) => {
@@ -231,6 +284,9 @@ impl SourceRunner {
                     }
                 }
             }
+            // Only workers may retain receivers while the producer is active.
+            // Otherwise their failure cannot disconnect a full queue.
+            drop(receiver);
 
             if let Some(error) = setup_error {
                 source_result = Err(error);
@@ -409,6 +465,7 @@ fn finish_run(
         termination,
         scanned_bytes: statistics.scanned_bytes,
         unique_commits: statistics.unique_commits,
+        usage: None,
     }
 }
 
@@ -417,6 +474,7 @@ impl Default for SourceRunner {
         Self {
             workers: NonZeroUsize::new(1).expect("one worker is positive"),
             queue_capacity: NonZeroUsize::new(1).expect("one queue slot is positive"),
+            budget: None,
         }
     }
 }
@@ -424,10 +482,77 @@ impl Default for SourceRunner {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use rustleaks_core::config::ConfigLoader;
 
     use super::*;
+
+    #[test]
+    fn all_workers_panicking_disconnects_the_full_queue_and_joins_every_worker() {
+        struct Fragments;
+        impl Source for Fragments {
+            fn visit(
+                &mut self,
+                _: &dyn crate::Cancellation,
+                emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+            ) -> Result<SourceControl, SourceError> {
+                for _ in 0..32 {
+                    let control = emit(SourceEvent::Fragment {
+                        fragment: Box::new(Fragment::new(b"synthetic")),
+                        issue: None,
+                    })
+                    .map_err(SourceError::Callback)?;
+                    if control == SourceControl::Stop {
+                        return Ok(control);
+                    }
+                }
+                Ok(SourceControl::Continue)
+            }
+        }
+
+        struct WorkerExited(Arc<AtomicUsize>);
+        impl Drop for WorkerExited {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        for workers in [1, 4] {
+            let cancellation = CancellationToken::new();
+            let rescue = cancellation.clone();
+            let forced = Arc::new(AtomicUsize::new(0));
+            let forced_by_watchdog = Arc::clone(&forced);
+            let (done, completion) = mpsc::channel();
+            let watchdog = thread::spawn(move || {
+                if completion.recv_timeout(Duration::from_secs(5)).is_err() {
+                    forced_by_watchdog.store(1, Ordering::SeqCst);
+                    rescue.cancel();
+                }
+            });
+            let exited = Arc::new(AtomicUsize::new(0));
+            let outcome = SourceRunner::new(workers, 1).unwrap().run_with_worker(
+                &mut Fragments,
+                &SessionPolicy::default(),
+                &cancellation,
+                |receiver| {
+                    let _exited = WorkerExited(Arc::clone(&exited));
+                    let _first = receiver.lock().unwrap().recv().unwrap();
+                    panic!("synthetic detection worker failure");
+                },
+            );
+            let _ = done.send(());
+            watchdog.join().unwrap();
+            assert_eq!(exited.load(Ordering::SeqCst), workers);
+            assert_eq!(outcome.termination(), &SourceTermination::WorkerPanic);
+            assert!(outcome.findings().is_empty());
+            assert_eq!(
+                forced.load(Ordering::SeqCst),
+                0,
+                "worker failure must terminate without watchdog cancellation"
+            );
+        }
+    }
 
     #[test]
     fn commit_statistics_limit_fails_before_unbounded_growth() {

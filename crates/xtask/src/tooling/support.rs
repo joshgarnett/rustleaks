@@ -2,11 +2,18 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
+#[cfg(windows)]
+use std::process::Stdio;
+use std::process::{Child, Command, ExitStatus};
+#[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+#[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
@@ -23,59 +30,6 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path)
         .map_err(|error| format!("cannot read {} for SHA-256: {error}", path.display()))?;
     Ok(sha256_bytes(&bytes))
-}
-
-pub(crate) fn go_module_cache(revision: &str) -> PathBuf {
-    std::env::var_os("GOMODCACHE").map_or_else(
-        || std::env::temp_dir().join(format!("rustleaks-go-mod-cache-{revision}")),
-        PathBuf::from,
-    )
-}
-
-/// Hashes a sorted Rust source tree as portable `path\0content-hash\n` records.
-pub(crate) fn source_tree_sha256(root: &Path, directory: &Path) -> Result<String, String> {
-    let mut files = Vec::new();
-    collect_rust_sources(directory, &mut files)?;
-    files.sort();
-    if files.is_empty() {
-        return Err(format!(
-            "generator source tree {} contains no Rust files",
-            directory.display()
-        ));
-    }
-    let mut records = Vec::new();
-    for path in files {
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|error| format!("{} is outside {}: {error}", path.display(), root.display()))?
-            .to_string_lossy()
-            .replace('\\', "/");
-        records.extend_from_slice(relative.as_bytes());
-        records.push(0);
-        records.extend_from_slice(sha256_file(&path)?.as_bytes());
-        records.push(b'\n');
-    }
-    Ok(sha256_bytes(&records))
-}
-
-fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(directory)
-        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
-    {
-        let entry = entry
-            .map_err(|error| format!("cannot read entry in {}: {error}", directory.display()))?;
-        let path = entry.path();
-        if entry
-            .file_type()
-            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?
-            .is_dir()
-        {
-            collect_rust_sources(&path, output)?;
-        } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
-            output.push(path);
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn command_output(command: &mut Command) -> Result<String, String> {
@@ -125,101 +79,23 @@ pub(crate) fn command_status_with_timeout(
     wait_for_child_with_timeout(&mut child, timeout, label, &display)
 }
 
-/// Runs one command in an isolated process tree while enforcing live file-size
-/// limits on redirected output. Descendants are terminated when the direct
-/// child exits, fails, exceeds a limit, or reaches its deadline.
-pub(crate) fn command_status_with_output_limits(
-    command: &mut Command,
-    timeout: Duration,
+#[cfg(unix)]
+#[path = "process_cleanup.rs"]
+mod process_cleanup;
+
+pub(crate) fn terminate_process_tree(
+    child: &mut Child,
     label: &str,
-    limits: &[(&Path, &str, u64)],
+    deadline: Instant,
 ) -> Result<(), String> {
     #[cfg(unix)]
     {
-        use std::os::unix::process::CommandExt as _;
-        command.process_group(0);
-    }
-    let display = format!("{command:?}");
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("failed to run {label} ({display}): {error}"))?;
-    let started = Instant::now();
-    loop {
-        match output_limit_violation(limits, label) {
-            Ok(None) => {}
-            Ok(Some(error)) | Err(error) => return fail_after_cleanup(&mut child, label, error),
-        }
-        let status = match child.try_wait() {
-            Ok(status) => status,
-            Err(error) => {
-                return fail_after_cleanup(
-                    &mut child,
-                    label,
-                    format!("failed to poll {label} ({display}): {error}"),
-                );
-            }
-        };
-        if let Some(status) = status {
-            match output_limit_violation(limits, label) {
-                Ok(None) => {}
-                Ok(Some(error)) | Err(error) => {
-                    return fail_after_cleanup(&mut child, label, error);
-                }
-            }
-            terminate_process_tree(&mut child, label)?;
-            return if status.success() {
-                Ok(())
-            } else {
-                Err(format!("{label} ({display}) exited {status}"))
-            };
-        }
-        if started.elapsed() >= timeout {
-            return fail_after_cleanup(
-                &mut child,
-                label,
-                format!(
-                    "{label} exceeded its external {} second deadline",
-                    timeout.as_secs()
-                ),
-            );
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn output_limit_violation(
-    limits: &[(&Path, &str, u64)],
-    label: &str,
-) -> Result<Option<String>, String> {
-    for (path, stream, limit) in limits {
-        let length = match fs::metadata(path) {
-            Ok(metadata) => metadata.len(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(error) => return Err(format!("cannot inspect {label} {stream}: {error}")),
-        };
-        if length > *limit {
-            return Ok(Some(format!("{label} {stream} exceeded {limit} bytes")));
-        }
-    }
-    Ok(None)
-}
-
-fn fail_after_cleanup(child: &mut Child, label: &str, error: String) -> Result<(), String> {
-    match terminate_process_tree(child, label) {
-        Ok(()) => Err(error),
-        Err(cleanup) => Err(format!("{error}; cleanup failed: {cleanup}")),
-    }
-}
-
-fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> {
-    #[cfg(unix)]
-    {
         let group = format!("-{}", child.id());
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &group])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let mut command = Command::new("/bin/kill");
+        command.args(["-KILL", "--", &group]);
+        // The private runner owns this process group. Signal it only once:
+        // retrying a numeric group after its members exit risks PID reuse.
+        let _ = process_cleanup::bounded_output(&mut command, deadline);
     }
     #[cfg(windows)]
     {
@@ -230,19 +106,53 @@ fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> 
             .status();
     }
     let _ = child.kill();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if child
+    let mut observation_error: Option<String> = None;
+    wait_for_cleanup(deadline, label, || {
+        let reaped = child
             .try_wait()
             .map_err(|error| format!("failed to reap {label}: {error}"))?
-            .is_some()
-        {
+            .is_some();
+        #[cfg(unix)]
+        let quiescent = if observation_error.is_none() {
+            match process_cleanup::group_quiescent(child.id(), deadline) {
+                Ok(quiescent) => quiescent,
+                Err(error) => {
+                    observation_error = Some(error);
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        #[cfg(not(unix))]
+        let quiescent = true;
+        if reaped && let Some(error) = observation_error.take() {
+            return Err(format!(
+                "cannot verify {label} process-group cleanup: {error}"
+            ));
+        }
+        Ok(reaped && quiescent)
+    })
+}
+
+fn wait_for_cleanup(
+    deadline: Instant,
+    label: &str,
+    mut poll: impl FnMut() -> Result<bool, String>,
+) -> Result<(), String> {
+    loop {
+        // Poll once even at expiry so the direct child can still be reaped.
+        let complete = poll()?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "{label} did not finish bounded process-group cleanup"
+            ));
+        }
+        if complete {
             return Ok(());
         }
-        if Instant::now() >= deadline {
-            return Err(format!("failed to reap {label} after bounded cleanup"));
-        }
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(remaining.min(Duration::from_millis(10)));
     }
 }
 
@@ -297,10 +207,12 @@ pub(crate) fn wait_for_child_with_timeout(
     }
 }
 
+#[cfg(test)]
 pub(super) struct TempDir {
     pub(super) path: PathBuf,
 }
 
+#[cfg(test)]
 impl TempDir {
     pub(super) fn new(label: &str) -> Result<Self, String> {
         static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -323,6 +235,7 @@ impl TempDir {
     }
 }
 
+#[cfg(test)]
 impl Drop for TempDir {
     fn drop(&mut self) {
         let is_scoped = self.path.parent() == Some(std::env::temp_dir().as_path())
