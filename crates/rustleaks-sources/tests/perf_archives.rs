@@ -145,7 +145,13 @@ fn expected(seed: &archive_seeds::Seed) -> Result<Vec<Fragment>> {
                 .file_path(path.clone())
                 .start_line(1);
             if cfg!(windows) {
-                builder = builder.windows_file_path(path);
+                // Completed outer segments stay normalized; the current member
+                // retains its native spelling in the Windows metadata field.
+                let native_path = path.rsplit_once('!').map_or_else(
+                    || path.clone(),
+                    |(outer, member)| format!("{outer}!{}", member.replace('/', "\\")),
+                );
+                builder = builder.windows_file_path(native_path);
             }
             builder.build()
         })
@@ -204,7 +210,7 @@ fn representative_archive_fixtures_match_exact_expected_outcomes() -> Result<()>
         let expected = expected(&seed)?;
         let mut source = source(&seed)?;
         let mut actual = collect(&mut source)?;
-        verify(&mut actual, &expected)?;
+        verify(&mut actual, &expected).map_err(|error| format!("{}: {error}", seed.id))?;
         assert!(!seed.payload.is_empty(), "empty compressed fixture");
         assert!(!actual.is_empty(), "fixture emitted no members");
     }
@@ -269,7 +275,7 @@ fn representative_archive_driver() -> Result<()> {
             let outcome = black_box(collect(&mut source));
             elapsed += start.elapsed();
             let mut actual = outcome?;
-            verify(&mut actual, &expected)?;
+            verify(&mut actual, &expected).map_err(|error| format!("{}: {error}", seed.id))?;
             // The one iteration's result and archive state drop outside timing.
         }
         let row = json!({
