@@ -36,7 +36,11 @@ impl DerefMut for ProcessGroup {
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         if !self.cleaned {
-            let _ = crate::tooling::terminate_process_tree(&mut self.child, "private fuzz child");
+            let _ = crate::tooling::terminate_process_tree(
+                &mut self.child,
+                "private fuzz child",
+                Instant::now() + Duration::from_secs(5),
+            );
         }
     }
 }
@@ -219,10 +223,12 @@ pub(crate) fn run_with_files(
     };
     // Also kill descendants after a successful parent exit. A remaining pipe
     // writer must not outlive the command or prevent readers from reaching EOF.
-    let cleanup_failed =
-        crate::tooling::terminate_process_tree(&mut child, "private fuzz child").is_err();
-    child.cleaned = !cleanup_failed;
     let cleanup_deadline = Instant::now() + Duration::from_secs(5);
+    // An attempted bounded cleanup must not gain a second budget in Drop.
+    child.cleaned = true;
+    let cleanup_failed =
+        crate::tooling::terminate_process_tree(&mut child, "private fuzz child", cleanup_deadline)
+            .is_err();
     while completed < 2 {
         if let Some(error) = drain(&receiver, &mut completed) {
             outcome = error;
@@ -235,7 +241,20 @@ pub(crate) fn run_with_files(
             // is a failure, never evidence of complete containment.
             return Ok(Outcome::CleanupFailure);
         }
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(
+            cleanup_deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(5)),
+        );
+    }
+    // Receiving a reader's result precedes that thread's final return. Do not
+    // let a delayed reader join outlive the same cleanup deadline.
+    while readers.iter().any(|reader| !reader.is_finished()) {
+        let remaining = cleanup_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(Outcome::CleanupFailure);
+        }
+        thread::sleep(remaining.min(Duration::from_millis(5)));
     }
     for reader in readers {
         if reader.join().is_err() {
@@ -245,7 +264,7 @@ pub(crate) fn run_with_files(
     if monitor().is_err() && outcome == Outcome::Success {
         outcome = Outcome::CorpusLimit;
     }
-    Ok(if cleanup_failed {
+    Ok(if cleanup_failed || Instant::now() >= cleanup_deadline {
         Outcome::CleanupFailure
     } else {
         outcome

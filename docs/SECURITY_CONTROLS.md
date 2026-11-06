@@ -72,10 +72,21 @@ mode 0600. Children start through a fixed argument-preserving shell wrapper
 with umask 077. Stdout and stderr are captured through pipes into private
 files with a strict combined 4 MiB limit per command. A failed command, output
 failure, output limit, timeout, or preparation error retains the bundle. A
-process group is terminated on every exit, including a successful parent
-exit, and the direct child is reaped. An escaped process holding a pipe is
-reported as a cleanup failure; the runner is not a sandbox against malicious
-same-user processes or processes deliberately escaping their group.
+process group receives a termination signal on every exit, including a
+successful parent exit, and the direct child is reaped. Unix cleanup also
+requires an observed group with no live members. On Linux, a zombie leader is
+accepted only with exactly one remaining thread, because sibling threads can
+outlive the leader. Darwin's zombie state describes process termination.
+The fixed `/bin/ps` observer has a 1 MiB stdout limit, and observation,
+reaping and pipe draining share the five-second cleanup budget. Missing,
+failed or malformed observations and members that remain live cause a cleanup
+failure. An uninterruptible or stopped process is not accepted as terminated.
+The observer requires group/state fields and, on Linux, the `nlwp` thread count.
+It runs only during cleanup, without collecting command lines or environment
+values. The runner retains the existing trusted-host assumption
+for its initial group signal; it is not a sandbox against malicious same-user
+processes or processes deliberately escaping their group. An escaped process
+holding a pipe is reported as a cleanup failure.
 
 Normal output contains only classifications, target names, counts and bundle
 identifiers. Without `--output`, successful smoke bundles are removed; failed
@@ -344,7 +355,7 @@ one active campaign at a time. `--deadline-seconds` can reduce that bound;
 `--seconds` selects 1 through 600 seconds per target. Source/tool identity,
 security checks, build preparation, structured tests, Miri, campaign execution
 and coverage collection share the deadline. Each child receives the remaining
-budget, followed by at most five seconds of pipe cleanup. Pending requested
+budget, followed by a shared five-second process and pipe cleanup budget. Pending requested
 stages become explicitly skipped when time expires, and the overall pass is
 incomplete. An ordinary successful smoke bundle is still removed; a deep report
 is retained even when its output directory was selected automatically.

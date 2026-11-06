@@ -47,6 +47,20 @@ The CLI timeout is cooperative, not a hard wall-clock deadline. Streaming
 sources and reports are intentionally open-ended unless their caller installs
 the relevant outer policy.
 
+## Private maintenance processes
+
+The optional fuzz, security and performance tooling uses process groups on
+supported Unix hosts. Child reaping, bounded process-state observation and
+pipe draining share a five-second cleanup budget. The observer captures only
+process-group identifiers, states and Linux thread counts, with at most 1 MiB
+of stdout. Cleanup fails if it cannot verify that every visible group member
+has stopped executing. Linux zombie leaders require exactly one remaining
+thread; Darwin reports process termination. Orphan zombies may remain until
+the host reaps them. Live, stopped and uninterruptible states do not satisfy
+completion. This is supervised
+cleanup on a trusted host, not process isolation against escaped groups or
+malicious same-user activity. See [security controls](SECURITY_CONTROLS.md).
+
 ## Opt-in source operation budgets
 
 `SourceRunner::new` and `SourceRunner::default` preserve the existing unlimited

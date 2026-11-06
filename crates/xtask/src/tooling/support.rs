@@ -5,7 +5,9 @@ use std::fs;
 use std::path::Path;
 #[cfg(test)]
 use std::path::PathBuf;
-use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(windows)]
+use std::process::Stdio;
+use std::process::{Child, Command, ExitStatus};
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
@@ -77,15 +79,23 @@ pub(crate) fn command_status_with_timeout(
     wait_for_child_with_timeout(&mut child, timeout, label, &display)
 }
 
-pub(crate) fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> {
+#[cfg(unix)]
+#[path = "process_cleanup.rs"]
+mod process_cleanup;
+
+pub(crate) fn terminate_process_tree(
+    child: &mut Child,
+    label: &str,
+    deadline: Instant,
+) -> Result<(), String> {
     #[cfg(unix)]
     {
         let group = format!("-{}", child.id());
-        let _ = Command::new("/bin/kill")
-            .args(["-KILL", "--", &group])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let mut command = Command::new("/bin/kill");
+        command.args(["-KILL", "--", &group]);
+        // The private runner owns this process group. Signal it only once:
+        // retrying a numeric group after its members exit risks PID reuse.
+        let _ = process_cleanup::bounded_output(&mut command, deadline);
     }
     #[cfg(windows)]
     {
@@ -96,19 +106,53 @@ pub(crate) fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(
             .status();
     }
     let _ = child.kill();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if child
+    let mut observation_error: Option<String> = None;
+    wait_for_cleanup(deadline, label, || {
+        let reaped = child
             .try_wait()
             .map_err(|error| format!("failed to reap {label}: {error}"))?
-            .is_some()
-        {
+            .is_some();
+        #[cfg(unix)]
+        let quiescent = if observation_error.is_none() {
+            match process_cleanup::group_quiescent(child.id(), deadline) {
+                Ok(quiescent) => quiescent,
+                Err(error) => {
+                    observation_error = Some(error);
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        #[cfg(not(unix))]
+        let quiescent = true;
+        if reaped && let Some(error) = observation_error.take() {
+            return Err(format!(
+                "cannot verify {label} process-group cleanup: {error}"
+            ));
+        }
+        Ok(reaped && quiescent)
+    })
+}
+
+fn wait_for_cleanup(
+    deadline: Instant,
+    label: &str,
+    mut poll: impl FnMut() -> Result<bool, String>,
+) -> Result<(), String> {
+    loop {
+        // Poll once even at expiry so the direct child can still be reaped.
+        let complete = poll()?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "{label} did not finish bounded process-group cleanup"
+            ));
+        }
+        if complete {
             return Ok(());
         }
-        if Instant::now() >= deadline {
-            return Err(format!("failed to reap {label} after bounded cleanup"));
-        }
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(remaining.min(Duration::from_millis(10)));
     }
 }
 

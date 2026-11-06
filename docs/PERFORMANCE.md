@@ -327,9 +327,11 @@ predeclared characterization, but stops after any integrity or deadline failure.
 There is no retry, candidate comparison, baseline update or release threshold.
 
 The [completed matrix](validation/baseline-observation-windows.md) did not
-qualify the longer length across all guards. P3 remains blocked on qualified
-measurement. Component emission and collector activity can overlap later
-scans, so the observations do not isolate a causal effect of window length.
+qualify the longer length across all guards. The later
+[whole-process CPU investigation](validation/process-cpu-and-completion.md)
+completed with qualified controls and an explicitly rejected candidate.
+Component emission and collector activity can overlap later scans, so the
+window observations do not isolate a causal effect of window length.
 
 ## Whole-span matcher experiment
 
