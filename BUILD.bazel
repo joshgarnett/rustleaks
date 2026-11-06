@@ -88,11 +88,19 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "platform_compile_inputs",
+    srcs = [
+        ":libraries",
+        "//crates/xtask:xtask_compile_check",
+    ],
+)
+
 [
     platform_build(
         name = "build_" + name,
         platform = "//platforms:" + name,
-        target = ":libraries",
+        target = ":platform_compile_inputs",
     )
     for name in [
         "linux_x86_64_gnu",

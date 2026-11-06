@@ -1,5 +1,5 @@
 load("@crates//:defs.bzl", "aliases", "all_crate_deps")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_clippy", "rust_test")
 load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files")
 
 exports_files(["Cargo.toml"])
@@ -20,6 +20,13 @@ rust_binary(
         "//crates/rustleaks-core:campaign_profile_support",
         "//crates/rustleaks-sources:archive_fuzz_support",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# Clippy emits metadata without requiring a foreign-platform executable linker.
+rust_clippy(
+    name = "xtask_compile_check",
+    deps = [":xtask"],
     visibility = ["//visibility:public"],
 )
 

@@ -230,7 +230,7 @@ const PERF_INVARIANTS: &[PerfInvariant] = &[
 ];
 
 #[derive(Clone, Copy)]
-#[cfg(any(target_os = "macos", test))]
+// Reports may validate retained Mac budgets on any supported host.
 struct PerfBudget {
     workload: &'static str,
     median_elapsed_ns: u64,
