@@ -152,10 +152,11 @@ are outside the historical snapshot and results above. Clean candidate
 `85a6e6b7f46353508b54b5982ccf2778c259298b`, passed the full pinned-Go differential,
 including package/external-consumer, API, all eight fuzz smoke targets and
 inherited performance checks. Its clean local release dry run and 28 selected Bazel
-targets also passed. Final CI/security refresh passed; required hosted checks
-and merge qualification remain pending; the [roadmap](../ROADMAP.md#current-local-validation)
-records the related CI and repeated-test source scopes. This section describes
-the finite matrix validated locally.
+targets also passed. Final CI/security refresh passed. The
+[roadmap](../ROADMAP.md#current-local-validation) preserves the related CI and
+repeated-test source scopes; the [completion record](process-cpu-and-completion.md)
+identifies later Rust-owned qualification and hosted delivery. This section
+describes the finite matrix validated locally.
 
 `ArchiveOptions::strict_7z_member_lengths(true)` rejects a member whose bounded
 stream ends before its declared size. The default remains false because the

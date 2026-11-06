@@ -9,8 +9,9 @@ This specification records the source assessment at the commit above. Current de
 
 ## Current implementation status
 
-F0, F2-F4 and S3-S4 have passed local integrated validation and remain in review
-pending hosted checks and merge. Their
+The fifteen selected packets have completed their bounded acceptance scopes.
+The [completion record](../validation/process-cpu-and-completion.md) identifies
+the qualified delivery and P3 candidate rejection. Their
 current contracts are the [native policy](../DETECTION_POLICY.md),
 [pilot rule pack](../../crates/rustleaks-core/default/rustleaks-extra-v1.md),
 [triage contract](../TRIAGE.md), [resource limits](../RESOURCE_LIMITS.md) and
@@ -22,15 +23,16 @@ Earlier results retain their exact source scope, including historical Go
 comparisons. Current qualification is Rust-owned: retirement CI/security,
 55 first-party targets repeated ten times and 16 uncached clean-clone targets
 without Go on PATH or a sibling checkout passed. Complete clean Rust
-qualification also passed after the test-only lint corrections. Hosted checks
-and merge remain pending. Defaults and frozen corpus bytes are unchanged.
+qualification also passed after the test-only lint corrections. Hosted
+qualification and delivery are recorded in the completion record. Defaults and
+frozen corpus bytes are unchanged.
 The F3 pilot implements historical-layout validation with checksum `Unknown`;
 checksum computation and finding suppression are outside that pilot.
 
-P3 retains earlier helper semantics, public checks and profile attribution;
-current source/build bindings and new CPU-time comparison remain pending.
-Primary and guard qualification remain prerequisites to accepting an
-optimization. P4 native collector smoke completed all 23 informational rows,
+P3 completed its final semantic/public checks, targeted CPU profile and fixed
+180-process comparison. Controls qualified, but the first complete-CLI round
+missed the improvement criterion; the candidate was rejected and the production
+helper retained. P4 native collector smoke completed all 23 informational rows,
 cleanup and summary verification; profile import/reparse also passed. These
 results establish no wall-time budget or speedup. Its manual public-artifact
 contract requires seven-day retention and enables no schedule. Historical source
@@ -68,7 +70,7 @@ Rule-source preference: start with pinned static deltas from Gitleaks and MIT-li
 
 Deliver an exact distinction between the existing pinned profile and opt-in native rule/validation policies. Identify versioned rule-pack IDs, collision/override behavior, compatible report behavior, and migration rules. Keep the current default profile and frozen historical evidence under Rust regression protection. Evaluate a separate TOML rules-pack input using existing loader semantics before adding new syntax or a new crate. Existing default behavior remains unchanged; intentional native behavior is explicitly selected and versioned.
 
-Acceptance: every proposed new behavior has an owning layer, explicit selection mechanism, compatibility disposition, and positive/negative tests specified. Existing profile output remains identical. Any public API addition must have a concrete consumer example and package-check plan. The [native policy](../DETECTION_POLICY.md) implements explicit selection, bounded TOML composition, strict native-field validation, collision rejection and exact configuration identity. Local integrated API, package/consumer and compatibility evidence passed; hosted checks and merge qualification remain pending.
+Acceptance: every proposed new behavior has an owning layer, explicit selection mechanism, compatibility disposition, and positive/negative tests specified. Existing profile output remains identical. Any public API addition must have a concrete consumer example and package-check plan. The [native policy](../DETECTION_POLICY.md) implements explicit selection, bounded TOML composition, strict native-field validation, collision rejection and exact configuration identity. Local integrated API, package/consumer and compatibility evidence passed; hosted qualification and delivery are recorded in the completion record.
 
 ### F1 Build independent detection-quality evaluation
 
@@ -82,7 +84,7 @@ Acceptance: evaluator golden tests reproduce hand-calculated TP/FP/FN and unknow
 
 ### F2 Evaluate and ship a small opt-in rules-pack pilot
 
-Implementation: `rustleaks-extra-v1` contains independently authored rules for all three families, explicit format limits, provider references and a 72-case full-default/full-native comparison. Azure rules add provider attribution; MongoDB also adds exact occurrence coverage. The documented single provider-overlap duplicate is retained. The generated report and local integrated quality checks substantiate the bounded corpus result; hosted checks and merge qualification remain pending.
+Implementation: `rustleaks-extra-v1` contains independently authored rules for all three families, explicit format limits, provider references and a 72-case full-default/full-native comparison. Azure rules add provider attribution; MongoDB also adds exact occurrence coverage. The documented single provider-overlap duplicate is retained. The generated report and local integrated quality checks substantiate the bounded corpus result; hosted qualification and delivery are recorded in the completion record.
 
 Freeze the initial experiment at three candidate families: Azure Service Bus/Event Hub connection strings, Azure App Configuration connection strings, and MongoDB credential URIs. Dedicated definitions exist in Betterleaks' catalog (https://raw.githubusercontent.com/betterleaks/betterleaks/main/config/betterleaks.toml), while corresponding dedicated IDs are absent from the current packaged rules. This is a catalog observation, not measured evidence of missed secrets. Ground format cases in Microsoft Service Bus properties (https://learn.microsoft.com/en-us/javascript/api/%40azure/service-bus/servicebusconnectionstringproperties?view=azure-node-latest), Microsoft App Configuration connection setup (https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-app-configuration), and MongoDB connection formats (https://www.mongodb.com/docs/manual/reference/connection-string/). Cover field order, escaping, URI percent encoding, empty credentials, template-only values and actual secret spans. Crates.io tokens remain later format discovery until issuer formats and current generic overlap are established. Check the entire current ruleset, including generic coverage. Candidate discovery must establish exact token structure from primary provider documentation, available parser semantics, existing detection overlap, license and update source. A missing dedicated rule ID alone is not a recall gap. Prefer a rule expressible in the existing TOML format with keyword anchors, precise secret groups, bounded context and near-miss negatives. Add a rule only when the pilot proves incremental detection or more useful provider attribution without unacceptable duplicate alerts.
 
@@ -92,7 +94,7 @@ Acceptance: full-ruleset comparison documents each candidate's baseline, changed
 
 ### F3 Add bounded explanations and conservative offline validation
 
-Implementation: the native envelope carries at most 65,536 source-omitting decision records. Disabled diagnostics perform no offline checks. Historical GitHub classic PAT layout and checksum assessments are separate; checksum remains `Unknown`, and annotations never suppress findings. Local integrated disclosure, partial-outcome and legacy-equivalence checks passed; hosted checks and merge qualification remain pending.
+Implementation: the native envelope carries at most 65,536 source-omitting decision records. Disabled diagnostics perform no offline checks. Historical GitHub classic PAT layout and checksum assessments are separate; checksum remains `Unknown`, and annotations never suppress findings. Local integrated disclosure, partial-outcome and legacy-equivalence checks passed; hosted qualification and delivery are recorded in the completion record.
 
 First add an opt-in explanation channel with bounded records and deterministic reason codes: rule selection, keyword/structure match, entropy threshold, allowlist decision, offline-validator result, budget termination, and policy/rule-pack identity. Expose typed evidence rather than invented probability scores. Omit source bytes, token values and snippets by default. Metadata still has disclosure implications; provide narrow consumer projections. Explanations must not alter legacy findings/serialization, and disabled explanations should avoid retaining extra content.
 
@@ -104,7 +106,7 @@ Acceptance: byte findings and compatibility serialization unchanged when disable
 
 ### F4 Improve triage and embedding workflows
 
-Implementation: versioned records bind policy, actual scan options and caller-provided immutable source identity, with finite reasons and caller-time expiry. Review and grouping preserve every finding and the actual completion state. Bounded report readers/writers and executable embedding examples accompany the core API; local integrated package, consumer and report checks passed; hosted checks and merge qualification remain pending.
+Implementation: versioned records bind policy, actual scan options and caller-provided immutable source identity, with finite reasons and caller-time expiry. Review and grouping preserve every finding and the actual completion state. Bounded report readers/writers and executable embedding examples accompany the core API; local integrated package, consumer and report checks passed; hosted qualification and delivery are recorded in the completion record.
 
 Build on existing baselines and ignores. Add review records with rule-pack/policy identity, reason, expiry and stale-suppression reporting; show newly introduced findings separately from acknowledged findings without calling acknowledged findings safe. Group related provider/generic detections for presentation while preserving every underlying occurrence and its exact span. Keep grouping keys process-local or explicitly keyed and access-controlled; do not emit unsalted hashes of low-entropy secrets as supposedly safe identifiers. Add examples that compile an engine once, share it across caller-managed workers, set scan budgets, inspect partial outcomes, and project safe diagnostics.
 
@@ -146,7 +148,7 @@ Acceptance: the profile runs locally from a clean checkout with reproducible met
 
 ### S3 Target semantic robustness beyond crashes
 
-Implementation: the finite matrix adds mixed-quote Git paths and malformed-hunk boundaries; all nine two-coder Copy/Deflate/LZ4 combinations in single, solid and separate folders; malformed coder graphs; overlapping decode spans and combined budgets; and session insertion/merge permutations. Cyclic 7z graphs are rejected before decoding. Optional strict declared-length checks discard the affected archive before publication while default short-EOF behavior remains unchanged. The [coverage record](../validation/source-semantics-and-dense-profiling.md) separates this implementation from the earlier validated snapshot. Local robustness and full differential checks passed on the recorded clean candidate; hosted checks and merge qualification remain pending.
+Implementation: the finite matrix adds mixed-quote Git paths and malformed-hunk boundaries; all nine two-coder Copy/Deflate/LZ4 combinations in single, solid and separate folders; malformed coder graphs; overlapping decode spans and combined budgets; and session insertion/merge permutations. Cyclic 7z graphs are rejected before decoding. Optional strict declared-length checks discard the affected archive before publication while default short-EOF behavior remains unchanged. The [coverage record](../validation/source-semantics-and-dense-profiling.md) separates this implementation from the earlier validated snapshot. Local robustness and full differential checks passed on the recorded clean candidate; hosted qualification and delivery are recorded in the completion record.
 
 Prioritize decode offset composition, exact raw spans under malformed UTF-8, scan-budget monotonicity, partial-outcome completeness, recursive redaction, source worker cleanup, session state isolation, Git parser boundaries, and archive codec variants missed by adapter-only seeds. Add deterministic metamorphic properties where there is a real invariant; do not assume arbitrary chunk partitioning is semantically equivalent when the documented reader policy cannot preserve an unbounded match. Use Rust replay of frozen historical cases for the existing supported profile; new native behavior has independently specified Rust expectations.
 
@@ -156,7 +158,7 @@ Acceptance: each new property has a demonstrated failure control, deterministic 
 
 ### S4 Design opt-in operation-wide budgets for source consumers
 
-Implementation: `SourceRunner::with_budget` selects `SourceBudget` limits for per-fragment and aggregate decoded bytes, work and finding records, plus original bytes, fragment admissions and retained issues. Each finite aggregate engine dimension requires a finite per-fragment reservation ceiling. Shared reservations settle actual usage and refund unused capacity; partial fragments are discarded and all workers joined. Producer buffering and individual metadata remain outside those counters. Local accounting, cancellation, panic and cleanup checks passed, including the repeated-test gate; hosted checks and merge qualification remain pending.
+Implementation: `SourceRunner::with_budget` selects `SourceBudget` limits for per-fragment and aggregate decoded bytes, work and finding records, plus original bytes, fragment admissions and retained issues. Each finite aggregate engine dimension requires a finite per-fragment reservation ceiling. Shared reservations settle actual usage and refund unused capacity; partial fragments are discarded and all workers joined. Producer buffering and individual metadata remain outside those counters. Local accounting, cancellation, panic and cleanup checks passed, including the repeated-test gate; hosted qualification and delivery are recorded in the completion record.
 
 At the assessed commit, the runner creates ScanControl::cancellable without applying ScanBudget (runner.rs:344), while aggregate operation limits are documented as caller-owned (docs/RESOURCE_LIMITS.md:16-19; README.md:75-80). This is an integration opportunity and documented limitation, not a confirmed vulnerability.
 
@@ -206,7 +208,7 @@ Acceptance: improvement reproduces beyond the calibrated noise band, exact findi
 
 ### P4 Add optional periodic performance reporting
 
-Implementation: the [optional reporting command](../PERFORMANCE_REPORTING.md) collects a bounded legacy matrix or imports supported retained reports. It recomputes derived classifications, separates invariant/execution failure, qualified legacy regression, informational timing, skipped budgets and profile availability, and emits a fixed sanitized summary. Manual public artifacts must contain only the verified summary and use seven-day retention. Native collector smoke completed all 23 informational rows, cleanup and summary verification; native profile import/reparse also passed. Hosted qualification and merge remain pending; no automatic schedule or new release gate is added.
+Implementation: the [optional reporting command](../PERFORMANCE_REPORTING.md) collects a bounded legacy matrix or imports supported retained reports. It recomputes derived classifications, separates invariant/execution failure, qualified legacy regression, informational timing, skipped budgets and profile availability, and emits a fixed sanitized summary. Manual public artifacts must contain only the verified summary and use seven-day retention. Native collector smoke completed all 23 informational rows, cleanup and summary verification; native profile import/reparse also passed. Hosted qualification and delivery are recorded in the completion record; no automatic schedule or new release gate is added.
 
 Acceptance: each run distinguishes invariant failure, measured regression, budget not evaluated, unavailable host/tool and completed profile. Retain bounded raw samples, source/build/corpus identity and profile references; use only synthetic/reviewed inputs and avoid unnecessary environment/path disclosure. Reproduce a deliberate slowdown and unchanged-code noise behavior. No paid runner procurement or external service is included. Current release latency must not grow merely because this optional profile exists.
 

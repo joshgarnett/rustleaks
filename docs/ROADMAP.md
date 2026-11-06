@@ -18,8 +18,9 @@ Independent quality evaluation, fuzz reachability and private reproduction,
 optional deep-security checks, representative benchmarks and native profiling
 are implemented. The [opt-in native policy](DETECTION_POLICY.md), three-family
 rules pilot, bounded explanations, layout annotations, [triage](TRIAGE.md),
-source budgets and finite robustness extensions have passed local integrated
-validation and remain in review pending hosted qualification. The new
+source budgets and finite robustness extensions have completed their bounded
+acceptance scopes. The [completion record](validation/process-cpu-and-completion.md)
+identifies the qualification evidence and delivery pull request. The new
 robustness changes reject cyclic 7z coder graphs and provide opt-in
 declared-length enforcement. The current default
 profile, copied configuration and upstream pin remain unchanged.
@@ -28,27 +29,29 @@ No production optimization has been accepted. The span-only matcher trial
 missed its criterion, the location comparison stopped before candidate timing,
 and the fixed observation-window matrix did not qualify every guard. The
 [window record](validation/baseline-observation-windows.md) preserves all results.
-Further optimization requires a separately reviewed measurement approach.
+The subsequent [whole-process CPU comparison](validation/process-cpu-and-completion.md)
+completed with qualified controls but rejected the candidate after its first
+complete-CLI round missed the criterion. The production helper remains unchanged.
 
 ## Packet status
 
 | Packet | Work | Status | Prerequisites | Evidence and remaining checks |
 | --- | --- | --- | --- | --- |
-| F0 | Native profile and extension contract | In review | Default-preserving opt-in implementation | [Native contract](DETECTION_POLICY.md), exact API, package/external-consumer and compatibility checks pass locally; hosted qualification pending |
+| F0 | Native profile and extension contract | Complete | Default-preserving opt-in implementation | [Native contract](DETECTION_POLICY.md), exact API, package/external-consumer and compatibility evidence; qualified delivery recorded in the [completion record](validation/process-cpu-and-completion.md) |
 | F1 | Independent accuracy evaluator and corpus | Complete | None | Hand-counted scoring tests, unknown/partial/duplicate controls, reproducible full-ruleset and per-rule baseline |
-| F2 | Three-family opt-in rules pilot | In review | F0 identity contract; F1 baseline | [Three bounded rules](../crates/rustleaks-core/default/rustleaks-extra-v1.md), generated 72-case comparison and integrated quality checks pass locally; hosted qualification pending |
-| F3 | Bounded explanations and offline validators | In review | F0 identity contract; F1 | [Historical layout validation](validation/offline-validation.md), bounded diagnostics, disclosure and compatibility checks pass locally; checksum remains `Unknown`; hosted qualification pending |
-| F4 | Triage and embedding workflows | In review | F1; F0/F3 identity and outcome contracts | [Review records and occurrence-preserving groups](TRIAGE.md), stale-state, report, embedding and external-consumer checks pass locally; hosted qualification pending |
+| F2 | Three-family opt-in rules pilot | Complete | F0 identity contract; F1 baseline | [Three bounded rules](../crates/rustleaks-core/default/rustleaks-extra-v1.md), generated 72-case comparison, quality checks and qualified delivery; explicit format gaps and one reviewed duplicate retained |
+| F3 | Bounded explanations and offline validators | Complete | F0 identity contract; F1 | [Historical layout validation](validation/offline-validation.md), bounded diagnostics, disclosure and compatibility checks; checksum remains `Unknown` and findings remain visible |
+| F4 | Triage and embedding workflows | Complete | F1; F0/F3 identity and outcome contracts | [Review records and occurrence-preserving groups](TRIAGE.md), stale-state, report, embedding and external-consumer checks; qualified delivery |
 | S0 | Archive fuzz reachability | Complete | None | Independent format/control selectors, reproducible framed seeds, real decoding and callback-mode tests for supported formats |
 | S1 | Private reproducers and corpus retention | Complete | S0 | Private run/replay/minimize/review/promote/import, real synthetic failure reproduction, command regression and bounded process tests pass |
 | S2 | Optional deep-security profile | Complete | S0; S1 | All eight deeper campaigns pass, 20 structured cases, additional Miri, dependency comparison and recorded deadline exercises |
-| S3 | Semantic robustness campaigns | In review | S0; S1 for infrastructure | Finite archive/Git/decode/budget/session matrix, cyclic coder rejection and opt-in 7z lengths pass local robustness and full differential checks; hosted qualification pending |
-| S4 | Operation-wide source budgets | In review | Explicit source-run policy | Shared accounting, partial outcomes, one/many-worker and cleanup checks pass locally, including ten repetitions of all first-party tests; hosted qualification pending |
+| S3 | Semantic robustness campaigns | Complete | S0; S1 for infrastructure | Finite archive/Git/decode/budget/session matrix, cyclic coder rejection and opt-in 7z lengths; local Rust qualification, historical differential evidence and hosted native checks |
+| S4 | Operation-wide source budgets | Complete | Explicit source-run policy | Shared accounting, partial outcomes, one/many-worker and cleanup controls; repeated-test and hosted checks; qualified delivery |
 | P0 | Authoritative benchmark integration | Complete | None | Bazel runner/tests, real build provenance, preserved invariants and legacy timing scope, unchanged inherited M1 limits with migration evidence |
 | P1 | Representative performance workloads | Complete | P0 | 28 workloads, 103 phases and seven native samples per phase; exact outcomes and unchanged legacy limits pass |
 | P2 | Profiling and regression calibration | Complete | P0; P1 | Usable native CPU/retained-memory evidence and two independently validated A/A/slowdown-control runs |
-| P3 | Measured hotspot optimizations | In progress | Qualified primary and guard measurements | Prior semantic controls and profile attribution retained; current source/build bindings and new CPU-time comparison pending; no optimization accepted |
-| P4 | Optional periodic performance reporting | In review | P0-P2; sanitized retention contract | [Bounded collection/import and manual summary retention](PERFORMANCE_REPORTING.md), native collector smoke, cleanup, profile import/reparse and summary verification pass; hosted qualification and merge pending |
+| P3 | Measured hotspot optimizations | Complete | Qualified primary and guard measurements | [Fixed CPU investigation](validation/process-cpu-and-completion.md) completed with explicit candidate rejection; production helper unchanged and no optimization accepted |
+| P4 | Optional periodic performance reporting | Complete | P0-P2; sanitized retention contract | [Bounded collection/import and manual summary retention](PERFORMANCE_REPORTING.md), actual collector/profile-import/reparse/summary controls and qualified delivery |
 
 Statuses are `Planned`, `In progress`, `In review`, `Complete`, or `Blocked`
 with a concrete prerequisite. `In review` means implementation is present with
@@ -56,13 +59,12 @@ remaining scoped validation, hosted qualification or merge still outstanding. On
 completed required checks and resolved material review findings support
 `Complete`.
 
-Seven of the 15 packets are complete. Eight remain open: F0, F2-F4, S3-S4
-and P3-P4. Seven remain in review; P3 has no qualified new comparison and
-continues as a separate delivery. The S3 finite matrix is specified in the
+All 15 selected packets have completed their bounded acceptance scopes.
+P3 closes with a rejected candidate, not a production optimization. The
+[completion record](validation/process-cpu-and-completion.md) binds the result
+and delivered implementation. The S3 finite matrix remains specified in the
 [source semantics record](validation/source-semantics-and-dense-profiling.md).
-P3 still requires an explicit candidate disposition. Completing one
-investigation does not establish that another candidate meets its acceptance
-criteria. The acceptance sections below retain results for their identified
+These dispositions do not establish that future candidates meet their criteria. The acceptance sections below retain results for their identified
 source snapshots; they do not qualify subsequent changes without the applicable
 checks.
 
@@ -82,7 +84,8 @@ focused formatting, Clippy and xtask unit checks passed. Complete clean Rust
 qualification also passed with Go unavailable on PATH and no sibling checkout,
 including default/all-feature tests, strict lint, MSRV, Miri, public API,
 package consumers, bounded resources, eight fuzz smoke targets and inherited
-performance limits. Required hosted checks and merge remain pending.
+performance limits. Final hosted qualification and the delivered source are
+recorded in the [completion record](validation/process-cpu-and-completion.md).
 
 The following source-bound results predate retirement and retain their original
 Go differential scope.
@@ -98,8 +101,8 @@ The 59-target CI gate and all 54 first-party targets repeated ten times passed
 at `4fd49b0d8c1f5f49ca89527bf15b3b0d0c53761d`. Subsequent changes corrected
 lint-only imports and test assertions; focused follow-up checks passed. The
 final 59-target CI and security refresh passed at
-`84256b85cb3a7440d8f719641035a5612419469f`. Required hosted checks and merge
-qualification remain pending.
+`84256b85cb3a7440d8f719641035a5612419469f`. Later Rust-owned qualification and
+qualified delivery retain their separate source identities.
 Native runtime evidence is for aarch64-apple-darwin; target compilation does not
 establish runtime qualification elsewhere.
 
@@ -109,10 +112,11 @@ process cleanup and sanitized-summary verification completed. Native profile
 import and artifact reparse also passed. This busy-host collection establishes
 collector correctness, not a wall-time budget result or speedup.
 
-Earlier isolated P3 controls covered 730,605 spans, detected the deliberately
-wrong boundary and passed 17 public targets. Profile attribution supports the
-location-lookup investigation. New source/build bindings and CPU-time comparison
-remain pending; no optimization is accepted.
+Final P3 controls covered 730,605 spans, detected the deliberately wrong
+boundary and passed 22 public targets. A targeted cycle-weighted profile and
+the fixed 180-process CPU comparison are recorded in the
+[completion record](validation/process-cpu-and-completion.md). The first CLI
+round failed the fixed improvement criterion; the candidate was rejected.
 
 ## Foundation acceptance record
 
@@ -167,7 +171,7 @@ deep-run and profiling/calibration projections. The longer deep pass used
 explicit 60-second target budgets; the default ten-minute budgets were not run
 in full. No hosted schedule or new release timing threshold was introduced.
 
-## Remaining qualification and implementation
+## Completed investigation scope
 
 The bounded S3 production-contract investigation and the first P3 matcher
 experiment are recorded in [semantic correctness and matching validation](validation/semantics-and-matching.md).
@@ -175,24 +179,18 @@ The four corrections are retained. The matcher and its experiment-only tests
 and fuzz assertion were restored to accepted source after the performance
 criterion failed. The [measurement record](validation/matcher-experiment-2026-11-05.json)
 retains all ordered paired timings, exact invariants and uncalibrated guard
-observations. Neither packet is claimed to be exhausted.
+observations. Later bounded robustness and CPU dispositions are recorded
+separately; these historical observations are unchanged.
 
-The remaining work includes:
+The selected implementation and investigation are complete. The
+[baseline observation-window packet](validation/baseline-observation-windows.md)
+remains an unqualified historical result. The later CPU protocol completed with
+candidate rejection; no threshold was transferred or relaxed. Future capture,
+scratch, normalization or source-scheduling work requires its own profiling,
+semantic controls and measurement contract.
 
-- Complete required hosted checks and merge qualification after live-oracle
-  retirement. Preserve the completed clean Rust qualification, local API,
-  package/consumer, quality, historical differential, robustness and repeated-test
-  evidence. The F3 checksum disposition remains `Unknown`.
-- P3 measurement work follows the unqualified
-  [baseline observation-window packet](validation/baseline-observation-windows.md).
-  A separately justified measurement change and reviewed protocol must qualify
-  the primary and guards before another candidate comparison. Existing bands
-  do not transfer to a different protocol. Capture/scratch or source scheduling
-  changes also require their own profiling and measurements.
-- Complete P4 hosted qualification and merge with its passed collector,
-  profile-import/reparse and summary-verification evidence. Manual public
-  summaries require seven-day artifact retention; no schedule or new release
-  threshold is enabled.
+P4 retains seven-day retention for manually published sanitized summaries.
+No schedule or new release threshold was enabled.
 
 New network verification, external storage, dependencies, compatibility
 exceptions, paid infrastructure and publication remain outside this scope.
@@ -203,7 +201,7 @@ Live verification and revocation require a separately reviewed network boundary
 and explicit credential authorization. Cloud/container integrations, new public
 packages, Python/Wasm bindings, runtime plugins and learned filters require a
 concrete consumer need, safety design, and measured benefit. They are outside
-the eight remaining packets. The current pinned profile remains the default
+the completed fifteen-packet scope. The current pinned profile remains the default
 under the selected opt-in native extension policy.
 
 ## Additional coverage follow-ups
@@ -217,12 +215,12 @@ See the [property validation record](validation/semantic-properties.md) for
 reserved-prefix compatibility and remaining observation limits. Comparison
 tracing and additional sanitizer experiments remain separately scoped work.
 
-F3 precision experiments should include benign Bazel `compile_action_key`
-fingerprints. The repository scanner classified those hashes in temporary
-benchmark provenance logs as generic API keys. Retain this as an adjudicated
-negative case when extending the quality corpus; a contextual filter still
-needs positive and held-out recall checks. Temporary execution logs remain
-outside the source tree without a new scan exclusion.
+The exact benign Bazel `compile_action_key` context remains future quality-
+corpus and contextual-filter work. Existing generic hash and build-identifier
+controls do not claim to cover it. The scanner classified those provenance
+hashes as generic API keys; any contextual filter still needs positive and
+held-out recall checks. Temporary execution logs remain outside the source
+tree without a new scan exclusion.
 
 The native records distinguish runner-only detection from complete source
 traversal and detection. The rejected P3 trial retained that distinction and

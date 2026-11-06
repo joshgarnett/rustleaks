@@ -44,7 +44,8 @@ Exact numeric limits and caller ownership are maintained in
 [`RESOURCE_LIMITS.md`](RESOURCE_LIMITS.md). Dependency reasoning is maintained
 in [`DEPENDENCY_SAFETY.md`](DEPENDENCY_SAFETY.md). New native, triage, source-budget
 and robustness controls are implemented with regression coverage; the
-[roadmap](ROADMAP.md) records their pending integrated qualification.
+[roadmap](ROADMAP.md) and [completion record](validation/process-cpu-and-completion.md)
+identify their local/hosted qualification and delivered scope.
 
 ## Secret handling
 

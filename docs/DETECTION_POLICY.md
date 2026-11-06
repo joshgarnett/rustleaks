@@ -4,8 +4,8 @@ The native policy requires explicit opt-in. Existing `Engine` callers
 retain their configuration and detection behavior. This contract introduces no
 compatibility exception, copied-default change, or provider network operation.
 Local integration, public API, package/consumer and compatibility checks have
-passed. Hosted qualification and merge remain tracked in the
-[roadmap](ROADMAP.md).
+passed. Qualified delivery is recorded in the [roadmap](ROADMAP.md) and
+[completion record](validation/process-cpu-and-completion.md).
 
 ## Profiles and selection
 
@@ -128,10 +128,10 @@ and independently specified Rust contracts.
 
 The native API includes executable documentation examples and focused tests
 for composition, identity changes, unchanged legacy outcomes, partial outcomes,
-bounded diagnostics, decoding, redaction, and uncertainty. The clean local
-candidate passed those checks, exact generated API validation, packaging,
-external Cargo/Bazel consumers and the full pinned-Go differential. The
-[local validation record](ROADMAP.md#current-local-validation) identifies the
-source and remaining hosted checks.
+bounded diagnostics, decoding, redaction, and uncertainty. Source-bound local
+results include exact generated API validation, packaging, external Cargo/Bazel
+consumers and the historical full pinned-Go differential. Current Rust-owned
+qualification and hosted delivery are identified separately in the
+[local validation record](ROADMAP.md#current-local-validation).
 Consumers must reject stale review or cache decisions on identity mismatch;
 matching an identity alone does not establish matching input or scan options.

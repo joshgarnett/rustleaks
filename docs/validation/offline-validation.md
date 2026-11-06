@@ -51,8 +51,9 @@ Per-scan diagnostic capacity also bounds annotation work; zero capacity performs
 no offline checks.
 
 Local integrated tests, exact API validation, packaging, external Cargo/Bazel
-consumers and the full pinned-Go differential passed for the clean candidate
-identified in the [roadmap](../ROADMAP.md#current-local-validation). Hosted
-checks and merge qualification remain pending. Those checks validate the
+consumers and the historical full pinned-Go differential passed for their
+identified candidate. Current Rust-owned qualification and hosted delivery are
+recorded separately in the [roadmap](../ROADMAP.md#current-local-validation) and
+[completion record](process-cpu-and-completion.md). Those checks validate the
 implemented layout contract and unchanged findings; they establish no checksum
 or activation validity.
