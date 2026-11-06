@@ -431,6 +431,7 @@ fn collector_rejects_incomplete_failed_unbounded_or_trailing_output() {
         "hang-after-finished",
         "stdout-over-bound",
         "stderr-over-bound",
+        "stderr-over-bound-parent",
         "descendant-holds-output",
     ] {
         let work = temporary.path.join(case);
@@ -455,41 +456,96 @@ fn collector_rejects_incomplete_failed_unbounded_or_trailing_output() {
         );
         let success = matches!(case, "complete" | "stdout-at-bound" | "stderr-at-bound");
         assert_eq!(result.is_ok(), success, "{case}: {result:?}");
-        let parent: Value =
-            serde_json::from_slice(&fs::read(output.join("parent-completion.json")).unwrap())
-                .unwrap();
+        let parent: Value = serde_json::from_slice(
+            &fs::read(output.join("parent-completion.json")).unwrap_or_else(|error| {
+                panic!("{case}: missing parent completion: {error}; {result:?}")
+            }),
+        )
+        .unwrap_or_else(|error| panic!("{case}: invalid parent completion: {error}; {result:?}"));
         assert_eq!(parent["cleanup_complete"], true, "{case}: {parent}");
+        assert_eq!(parent["deadline_met"], true, "{case}: {parent}");
         assert_eq!(parent["outcome"] == "success", success, "{case}: {parent}");
-        let completion: Value =
-            serde_json::from_slice(&fs::read(output.join("collector-completion.json")).unwrap())
-                .unwrap();
-        assert_eq!(
-            completion["status"],
-            if success { "complete" } else { "failed" },
-            "{case}: {completion}"
-        );
-        assert_eq!(completion["cleanup_complete"], true, "{case}: {completion}");
+        let parent_enforced_limit =
+            parent["outcome"] == "corpus-limit" && parent["monitor_failure"] == "evidence-limit";
+        if parent_enforced_limit {
+            // The parent can kill the collector before its finally block writes
+            // a receipt. Only this independently observed violation permits it.
+            assert!(
+                matches!(case, "stderr-over-bound" | "stderr-over-bound-parent"),
+                "{case}: unexpected parent enforcement: {parent}"
+            );
+            assert_eq!(
+                fs::metadata(output.join("worker-stderr.txt"))
+                    .unwrap()
+                    .len(),
+                65_537,
+                "{case}: parent rejected a different evidence bound: {parent}"
+            );
+        } else {
+            let completion: Value = serde_json::from_slice(
+                &fs::read(output.join("collector-completion.json")).unwrap_or_else(|error| {
+                    panic!("{case}: missing collector completion: {error}; {parent}; {result:?}")
+                }),
+            )
+            .unwrap_or_else(|error| {
+                panic!("{case}: invalid collector completion: {error}; {parent}; {result:?}")
+            });
+            assert_eq!(
+                completion["status"],
+                if success { "complete" } else { "failed" },
+                "{case}: {completion}"
+            );
+            assert_eq!(completion["cleanup_complete"], true, "{case}: {completion}");
+        }
+        if case == "stderr-over-bound-parent" {
+            assert!(parent_enforced_limit, "{case}: {parent}");
+            assert!(
+                !output.join("collector-completion.json").exists(),
+                "stopped collector unexpectedly wrote its completion receipt"
+            );
+        }
         let pid = fs::read_to_string(work.join("worker-pid.txt")).unwrap();
-        let alive = Command::new("/bin/kill")
-            .args(["-0", pid.trim()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap();
-        assert!(!alive.success(), "{case}: worker survived collector return");
+        let worker_exists = || {
+            Command::new("/bin/kill")
+                .args(["-0", pid.trim()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        if worker_exists() {
+            // A group kill can leave an orphan zombie for the host to reap.
+            // A live or stopped worker must still fail, including after SIGSTOP.
+            let state = Command::new("ps")
+                .args(["-o", "stat=", "-p", pid.trim()])
+                .output()
+                .unwrap();
+            let zombie = state.status.success()
+                && String::from_utf8_lossy(&state.stdout)
+                    .trim_start()
+                    .starts_with('Z');
+            assert!(
+                (parent_enforced_limit && zombie) || !worker_exists(),
+                "{case}: worker survived collector return: {state:?}"
+            );
+        }
         let raw = fs::read_to_string(output.join("worker-stdout.jsonl")).unwrap();
         assert!(raw.contains("\"kind\":\"ready\""), "{case}");
-        if !matches!(case, "stdout-over-bound" | "stderr-over-bound") {
+        if !matches!(
+            case,
+            "stdout-over-bound" | "stderr-over-bound" | "stderr-over-bound-parent"
+        ) {
             assert!(raw.contains("\"kind\":\"window-component\""), "{case}");
         }
-        if case == "descendant-holds-output" {
+        if matches!(case, "descendant-holds-output" | "stderr-over-bound-parent") {
             let heartbeat = work.join("heartbeat.txt");
             let after = fs::read(&heartbeat).unwrap();
             std::thread::sleep(Duration::from_millis(150));
             assert_eq!(
                 fs::read(heartbeat).unwrap(),
                 after,
-                "descendant survived cleanup"
+                "{case}: process heartbeat continued after cleanup"
             );
         }
         if let Ok(raw_result) = result {
@@ -560,7 +616,7 @@ fn supervisor_enforces_absolute_deadline_and_its_own_capture_limit() {
 
 #[cfg(unix)]
 const FAKE_WORKER: &str = r#"#!/usr/bin/env python3
-import json, os, pathlib, subprocess, sys, time
+import json, os, pathlib, signal, subprocess, sys, time
 root = pathlib.Path(__file__).parent
 fixture = json.loads((root / 'fixture.json').read_text())
 case = (root / 'case.txt').read_text()
@@ -573,6 +629,14 @@ if case == 'stdout-at-bound':
     ready['padding'] = 'x' * (65536 - len(json.dumps(ready, separators=(',', ':')).encode()) - 1)
 emit(ready)
 assert sys.stdin.readline() == 'window 1 100 0\n'
+if case == 'stderr-over-bound-parent':
+    (root / 'heartbeat.txt').write_text('0')
+    os.kill(os.getppid(), signal.SIGSTOP)
+    sys.stderr.write('x' * 65537)
+    sys.stderr.flush()
+    for n in range(1, 3000):
+        (root / 'heartbeat.txt').write_text(str(n))
+        time.sleep(.02)
 if case == 'stdout-over-bound':
     sys.stdout.write('x' * 65537)
     sys.stdout.flush()

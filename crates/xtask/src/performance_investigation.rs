@@ -238,6 +238,8 @@ fn calibrate_matrix(arguments: &[String]) -> Result<(), String> {
     finish(&output, result)
 }
 
+const COLLECTOR_FILE_LIMIT_ERROR: &str = "observation collector output exceeded its file bound";
+
 fn bounded_collector_files(output: &Path) -> Result<(), String> {
     for entry in fs::read_dir(output).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
@@ -251,7 +253,7 @@ fn bounded_collector_files(output: &Path) -> Result<(), String> {
             16 * 1024 * 1024
         };
         if !metadata.is_file() || metadata.len() > bound {
-            return Err("observation collector output exceeded its file bound".into());
+            return Err(COLLECTOR_FILE_LIMIT_ERROR.into());
         }
     }
     Ok(())
@@ -276,11 +278,19 @@ fn collect_supervised(
     let stdout_path = output.join("parent-stdout.json");
     let stdout = crate::fuzzing::private::file(&stdout_path)?;
     let stderr = crate::fuzzing::private::file(&output.join("parent-stderr.txt"))?;
+    let mut monitor_failure = None;
     let outcome = run_with_files(command, stdout, stderr, remaining, 4 * 1024 * 1024, || {
         if Instant::now() >= deadline {
+            monitor_failure.get_or_insert("absolute-deadline");
             return Err("observation collector absolute deadline expired".into());
         }
-        bounded_collector_files(output)
+        bounded_collector_files(output).inspect_err(|error| {
+            monitor_failure.get_or_insert(if error == COLLECTOR_FILE_LIMIT_ERROR {
+                "evidence-limit"
+            } else {
+                "evidence-inspection"
+            });
+        })
     });
     let deadline_met = Instant::now() < deadline;
     let cleanup_complete = outcome
@@ -290,6 +300,7 @@ fn collect_supervised(
         &output.join("parent-completion.json"),
         &json!({
         "outcome":outcome.as_ref().map_or("supervisor-error", |outcome| outcome.name()),
+        "monitor_failure":monitor_failure,
         "deadline_met":deadline_met,"cleanup_complete":cleanup_complete,
         "scope":"collector and inherited worker process group"}),
     )?;
