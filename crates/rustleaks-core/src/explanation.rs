@@ -235,6 +235,19 @@ impl ExplanationCollector {
             && self.log.events.len() < self.options.maximum
     }
 
+    pub(crate) fn begin_annotation(&mut self) -> bool {
+        if self.options.maximum == 0 {
+            return false;
+        }
+        if !self.has_room() {
+            // The enabled annotation is being omitted even if no later event
+            // reaches record(), as with the last candidate of the final rule.
+            self.log.truncated = true;
+            return false;
+        }
+        true
+    }
+
     pub(crate) fn record(
         &mut self,
         rule_ordinal: Option<usize>,

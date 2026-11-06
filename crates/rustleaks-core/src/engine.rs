@@ -901,7 +901,7 @@ impl Engine {
         }
         explain(ExplanationReason::AllowlistNotMatched);
         explain(ExplanationReason::CandidateAccepted);
-        if context.explanations.github_classic && context.explanations.has_room() {
+        if context.explanations.github_classic && context.explanations.begin_annotation() {
             let isolated = extracted_secret.span.is_some_and(|span| {
                 let start = direct_match_start.checked_add(span.start);
                 let end = direct_match_start.checked_add(span.end);

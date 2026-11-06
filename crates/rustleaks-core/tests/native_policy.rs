@@ -644,3 +644,49 @@ stopwords = ["placeholder"]
         ));
     }
 }
+
+#[test]
+fn omitted_final_annotations_mark_exact_cap_truncation() {
+    let engine = NativePolicy::builder()
+        .with_extension(NativeExtension::GithubClassicPatV1)
+        .build()
+        .unwrap();
+    assert_eq!(
+        engine.engine().config().rules().keys().next_back().unwrap(),
+        "zendesk-secret-key"
+    );
+    let input = format!("zendesk = {}", "ab12".repeat(10));
+    let fragment = Fragment::new(input.as_bytes());
+    let options = ScanOptions::builder().max_decode_depth(0).build();
+    let full = engine.scan_fragment_controlled(
+        &fragment,
+        &options,
+        &ScanControl::unlimited(),
+        ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+    );
+    assert!(full.scan().is_complete());
+    assert_eq!(full.scan().findings().len(), 1);
+    assert!(!full.explanations().is_truncated());
+    let total = full.explanations().events().len();
+    assert!(
+        full.explanations().events()[total - 2..]
+            .iter()
+            .all(|event| { matches!(event.reason(), ExplanationReason::OfflineValidation { .. }) })
+    );
+    for cap in [0, total - 2, total - 1, total] {
+        let bounded = engine.scan_fragment_controlled(
+            &fragment,
+            &options,
+            &ScanControl::unlimited(),
+            ExplanationOptions::bounded(cap),
+        );
+        assert_eq!(bounded.explanations().events().len(), cap.min(total));
+        assert_eq!(
+            bounded.explanations().is_truncated(),
+            cap != 0 && cap < total
+        );
+        assert_eq!(bounded.scan().findings(), full.scan().findings());
+        assert_eq!(bounded.scan().usage(), full.scan().usage());
+        assert_eq!(bounded.scan().termination(), full.scan().termination());
+    }
+}
