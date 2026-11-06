@@ -1,3 +1,4 @@
+frame_v1="RLR\x01"
 eof="\x20"
 error="\x30"
 overreport="\x80"

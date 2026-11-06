@@ -1,0 +1,813 @@
+{
+  "schema_version": 1,
+  "validation_date": "2026-11-05",
+  "candidate_status": "uncommitted working tree",
+  "run_complete": true,
+  "result": "pass-with-explicit-skips",
+  "elapsed_ms": 587837,
+  "whole_run_deadline_seconds": 1800,
+  "campaign_seconds": 60,
+  "seed": 1,
+  "profile": {
+    "archive": {
+      "chunk_bytes": 4096,
+      "depth": 4,
+      "entries": 256,
+      "input_and_spool_bytes": 65536,
+      "member_bytes": 1048576,
+      "total_bytes": 4194304
+    },
+    "fragment": {
+      "decode_depth": 4,
+      "decoded_bytes": 2097152,
+      "finding_records": 512,
+      "input_bytes": 65536,
+      "work_units": 65536
+    },
+    "harness": "deep",
+    "name": "deep",
+    "template": {
+      "actions": 512,
+      "findings": 16,
+      "input_bytes": 65536,
+      "output_bytes": 131072,
+      "source_bytes": 32768
+    },
+    "version": 1
+  },
+  "source_identity": {
+    "cargo": "cargo 1.100.0-nightly (514c56dd7 2026-08-19)\nrelease: 1.100.0-nightly\ncommit-hash: 514c56dd7321eecbfdcf9b6479519cf4edfab906\ncommit-date: 2026-08-19\nhost: aarch64-apple-darwin\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.7.1 (sys:0.4.90+curl-8.21.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nssl: OpenSSL 3.6.3 9 Jun 2026\nos: Mac OS 26.5.2 [64-bit]\n",
+    "cargo_fuzz": "cargo-fuzz 0.13.2",
+    "environment_policy": "clear except PATH HOME CARGO_HOME RUSTUP_HOME TMPDIR; offline Cargo; LC_ALL=C; umask=077",
+    "host": "aarch64-apple-darwin",
+    "locks": {
+      "Cargo.lock": "b214f46fd5ebf8f4aa6b1ffd4271463aa878c0d52b72b479032babd782247fe9",
+      "MODULE.bazel.lock": "6a5a7a0892952dd6cdd9e2c0ae44bc98ef23726b57e1449c0a9c09d8b8b8560e",
+      "cargo-bazel-lock.json": "cc176343c696ed58453e5662505a1d0a56065f72602f0d9c42b9e183d931f900",
+      "crates/rustleaks-core/fuzz/Cargo.lock": "21c3e331b3a1a3f0714c214c114c40c904f93d9d423f622042e89fd4b4f3884c",
+      "crates/rustleaks-report/fuzz/Cargo.lock": "2c58d57c7e16c30df6904fa1b46a794a8d1a5c81f8066da0b76476505327569d",
+      "crates/rustleaks-sources/fuzz/Cargo.lock": "9b232a47bf40af1f640497d47925434e11370adf07d8c0daae1a86a00ab35fb8"
+    },
+    "revision": "48042081719bac70800d8416595941336b2314b8",
+    "rules_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+    "rustc": "rustc 1.100.0-nightly (8925ea358 2026-08-20)\nbinary: rustc\ncommit-hash: 8925ea358a0f265ca61026aadc7ecc506c545cbe\ncommit-date: 2026-08-20\nhost: aarch64-apple-darwin\nrelease: 1.100.0-nightly\nLLVM version: 23.1.0\n",
+    "rustc_binary_sha256": "810c21d31c80aaf16d19821282dc075bac26afec59a60d0404a6da6f89862694",
+    "sanitizer": "address",
+    "source_tree_sha256": "f43c8c92bf84a6d3622b5b6b811e5c6b990c1e91cb0957a92e2d6996f975ddc3",
+    "toolchain": "nightly-2026-08-21",
+    "trace_compares": false
+  },
+  "raw_report_sha256": "b9f582924849029188fcc65a949cd5e0da713d0c5c4d88ad70e64987ac45cf45",
+  "target_results": [
+    {
+      "target": "go_regex",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 5999,
+        "executions": 217568,
+        "features": 29488,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 563008,
+      "initial_files": 3387,
+      "final_bytes": 1142314,
+      "final_files": 5056,
+      "corpus_growth_files": 1669,
+      "artifact_count": 0,
+      "binary_sha256": "e5b4dcd4948938d69907d8f58b808553ebb4cd8c6f79ba85cab797e5e37b42d4"
+    },
+    {
+      "target": "config",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 5287,
+        "executions": 39766,
+        "features": 15652,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 65707,
+      "initial_files": 3,
+      "final_bytes": 10852578,
+      "final_files": 1181,
+      "corpus_growth_files": 1178,
+      "artifact_count": 0,
+      "binary_sha256": "e00a0d76beb3e4b9f16967ab3ad1e30fa344e2e48a71e9c65981cd1e39166d8c"
+    },
+    {
+      "target": "fragment_scan",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 1639,
+        "executions": 1969,
+        "features": 4575,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 65619,
+      "initial_files": 2,
+      "final_bytes": 3583294,
+      "final_files": 243,
+      "corpus_growth_files": 241,
+      "artifact_count": 0,
+      "binary_sha256": "eebce62c13b243749a701e0e77e51a8191df52cc74f2c5962646eab7bf10bfa1"
+    },
+    {
+      "target": "session",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 1902,
+        "executions": 1000000,
+        "features": 4796,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 65582,
+      "initial_files": 2,
+      "final_bytes": 705932,
+      "final_files": 1394,
+      "corpus_growth_files": 1392,
+      "artifact_count": 0,
+      "binary_sha256": "c66196c6c209eb75eef27055f6e8a1e89e52c058869ba2acd8cb0aa320a82579"
+    },
+    {
+      "target": "archive",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 10047,
+        "executions": 715596,
+        "features": 31644,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 71124,
+      "initial_files": 83,
+      "final_bytes": 2062356,
+      "final_files": 3197,
+      "corpus_growth_files": 3114,
+      "artifact_count": 0,
+      "binary_sha256": "3924f53dcb61858e36afd682ec374404bfd55b9f1d005ab8d653e8888b26607e"
+    },
+    {
+      "target": "reader_schedule",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 260,
+        "executions": 3722,
+        "features": 991,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 16435,
+      "initial_files": 2,
+      "final_bytes": 788250,
+      "final_files": 118,
+      "corpus_growth_files": 116,
+      "artifact_count": 0,
+      "binary_sha256": "2b9825b00fb78ff65f17162aa6da56c3c3c7fba40d56a2d4895eba925abc6115"
+    },
+    {
+      "target": "git_patch",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 896,
+        "executions": 890649,
+        "features": 3473,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 34102,
+      "initial_files": 2,
+      "final_bytes": 1889838,
+      "final_files": 971,
+      "corpus_growth_files": 969,
+      "artifact_count": 0,
+      "binary_sha256": "4fa6bdb921a9b2256b453cc3013cf5d26ea90345b7c2e5b53a3d695fc55be71b"
+    },
+    {
+      "target": "template",
+      "classification": "success",
+      "outcome": "success",
+      "limits": {
+        "log_bytes": 4194304,
+        "max_len": 65536,
+        "rss_limit_mb": 2048,
+        "runs": 1000000,
+        "seconds": 60,
+        "seed": 1,
+        "timeout_seconds": 5
+      },
+      "feedback": {
+        "covered_edges": 970,
+        "executions": 1000000,
+        "features": 5114,
+        "scope": "libfuzzer-instrumented-feedback-not-source-coverage"
+      },
+      "initial_bytes": 16500,
+      "initial_files": 3,
+      "final_bytes": 1739695,
+      "final_files": 1043,
+      "corpus_growth_files": 1040,
+      "artifact_count": 0,
+      "binary_sha256": "8b8fff586f9f454066dc9d92d68ccbc48f5cb0d4fbb0b1004c25317c798337de"
+    }
+  ],
+  "total_reported_fuzz_executions": 3869270,
+  "stages": [
+    {
+      "name": "identity",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 1048
+    },
+    {
+      "name": "security-policy",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 41707
+    },
+    {
+      "name": "dependency-evidence",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 6622
+    },
+    {
+      "name": "stress-build",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 7746
+    },
+    {
+      "name": "stress-core",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 5975,
+      "cases": [
+        {
+          "case": "regex-long-haystack",
+          "haystack_bytes": 65530,
+          "input_bytes": 65536,
+          "kind": "security-stress",
+          "last_match_end": 65530,
+          "smoke_input_bytes": 4096,
+          "status": "pass",
+          "termination": "complete"
+        },
+        {
+          "case": "core-full-fragment",
+          "findings": 1,
+          "input_bytes": 65536,
+          "kind": "security-stress",
+          "last_match_end": 65535,
+          "smoke_input_bytes": 8192,
+          "status": "pass",
+          "termination": "complete"
+        },
+        {
+          "boundary": "exact-complete-one-less-partial",
+          "case": "core-nested-decode",
+          "decoded_bytes": 67412,
+          "depth": 3,
+          "input_bytes": 38872,
+          "kind": "security-stress",
+          "smoke_decoded_bytes": 32768,
+          "smoke_input_bytes": 8192,
+          "status": "pass"
+        },
+        {
+          "boundary": "exact-complete-one-less-partial",
+          "case": "core-many-findings",
+          "finding_records": 8192,
+          "input_bytes": 98304,
+          "kind": "security-stress",
+          "smoke_finding_records": 64,
+          "smoke_input_bytes": 8192,
+          "status": "pass"
+        },
+        {
+          "boundary": "inclusive-limit-accepted-one-more-rejected",
+          "case": "core-config-selection",
+          "kind": "security-stress",
+          "selected_rules": 4096,
+          "selected_source_bytes": 8388608,
+          "smoke_input_bytes": 8192,
+          "status": "pass"
+        },
+        {
+          "case": "session-large-metadata",
+          "classification": "baseline-suppressed",
+          "input_bytes": 65536,
+          "kind": "security-stress",
+          "retained_description_bytes": 65531,
+          "smoke_input_bytes": 16384,
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "stress-sources",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 5481,
+      "cases": [
+        {
+          "admitted_frame_bytes": 34310,
+          "case": "archive-full-frame",
+          "emitted_bytes": 32768,
+          "input_bytes": 34310,
+          "kind": "security-stress",
+          "smoke_input_bytes": 8192,
+          "status": "pass",
+          "termination": "complete"
+        },
+        {
+          "case": "archive-member-exact",
+          "emitted_bytes": 1048576,
+          "expanded_bytes": 1048576,
+          "input_bytes": 1046,
+          "kind": "security-stress",
+          "limit": 1048576,
+          "limit_issues": 0,
+          "smoke_member_bytes": 131072,
+          "status": "pass"
+        },
+        {
+          "case": "archive-member-over",
+          "emitted_bytes": 0,
+          "expanded_bytes": 1048577,
+          "input_bytes": 1046,
+          "kind": "security-stress",
+          "limit": 1048576,
+          "limit_issues": 1,
+          "smoke_member_bytes": 131072,
+          "status": "pass"
+        },
+        {
+          "boundary": "exact-complete-one-less-limit-issue",
+          "case": "archive-depth",
+          "depth": 4,
+          "emitted_bytes": 16384,
+          "input_bytes": 22528,
+          "kind": "security-stress",
+          "smoke_depth": 2,
+          "status": "pass"
+        },
+        {
+          "case": "archive-entries-exact",
+          "emitted_entries": 256,
+          "entries": 256,
+          "input_bytes": 263168,
+          "kind": "security-stress",
+          "limit": 256,
+          "limit_issues": 0,
+          "smoke_entries": 8,
+          "status": "pass"
+        },
+        {
+          "case": "archive-entries-over",
+          "emitted_entries": 256,
+          "entries": 257,
+          "input_bytes": 264192,
+          "kind": "security-stress",
+          "limit": 256,
+          "limit_issues": 1,
+          "smoke_entries": 8,
+          "status": "pass"
+        },
+        {
+          "case": "archive-total-exact",
+          "emitted_bytes": 4194304,
+          "expanded_bytes": 4194304,
+          "input_bytes": 4197376,
+          "kind": "security-stress",
+          "limit": 4194304,
+          "limit_issues": 0,
+          "smoke_total_bytes": 131072,
+          "status": "pass"
+        },
+        {
+          "case": "archive-total-over",
+          "emitted_bytes": 4194304,
+          "expanded_bytes": 5242880,
+          "input_bytes": 5246464,
+          "kind": "security-stress",
+          "limit": 4194304,
+          "limit_issues": 1,
+          "smoke_total_bytes": 131072,
+          "status": "pass"
+        },
+        {
+          "case": "reader-long-schedule",
+          "emitted_bytes": 122880,
+          "input_bytes": 16387,
+          "kind": "security-stress",
+          "payload_reads": 122880,
+          "schedule_operations": 8192,
+          "smoke_input_bytes": 4096,
+          "status": "pass",
+          "termination": "complete"
+        }
+      ]
+    },
+    {
+      "name": "stress-report",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 4713,
+      "cases": [
+        {
+          "boundary": "exact-complete-one-less-source-limit",
+          "case": "template-source",
+          "input_bytes": 32768,
+          "kind": "security-stress",
+          "output_bytes": 32768,
+          "smoke_source_bytes": 4096,
+          "status": "pass"
+        },
+        {
+          "case": "template-output-exact",
+          "finding_bytes": 131072,
+          "findings": 16,
+          "kind": "security-stress",
+          "limit": 131072,
+          "output_bytes": 131072,
+          "smoke_output_bytes": 8192,
+          "status": "pass"
+        },
+        {
+          "case": "template-output-over",
+          "finding_bytes": 131072,
+          "findings": 16,
+          "kind": "security-stress",
+          "limit": 131071,
+          "output_bytes": 122880,
+          "smoke_output_bytes": 8192,
+          "status": "pass"
+        },
+        {
+          "actions": 512,
+          "case": "template-actions-exact",
+          "input_bytes": 4608,
+          "kind": "security-stress",
+          "limit": 512,
+          "output_bytes": 512,
+          "smoke_actions": 128,
+          "status": "pass"
+        },
+        {
+          "actions": 512,
+          "case": "template-actions-over",
+          "input_bytes": 4608,
+          "kind": "security-stress",
+          "limit": 511,
+          "output_bytes": 511,
+          "smoke_actions": 128,
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "miri-decoder",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 12810
+    },
+    {
+      "name": "miri-session",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 1387
+    },
+    {
+      "name": "fuzz-go_regex",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 67761
+    },
+    {
+      "name": "coverage-go_regex",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "fuzz-config",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 64980
+    },
+    {
+      "name": "coverage-config",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "fuzz-fragment_scan",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 64518
+    },
+    {
+      "name": "coverage-fragment_scan",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "fuzz-session",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 45822
+    },
+    {
+      "name": "coverage-session",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 24
+    },
+    {
+      "name": "fuzz-archive",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 65788
+    },
+    {
+      "name": "coverage-archive",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "fuzz-reader_schedule",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 64834
+    },
+    {
+      "name": "coverage-reader_schedule",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "fuzz-git_patch",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 64947
+    },
+    {
+      "name": "coverage-git_patch",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 17
+    },
+    {
+      "name": "fuzz-template",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 60384
+    },
+    {
+      "name": "coverage-template",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 34
+    },
+    {
+      "name": "identity-verification",
+      "status": "pass",
+      "required": true,
+      "reason": null,
+      "elapsed_ms": 1076
+    }
+  ],
+  "source_coverage": [
+    {
+      "name": "coverage-go_regex",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "coverage-config",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "coverage-fragment_scan",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "coverage-session",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 24
+    },
+    {
+      "name": "coverage-archive",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "coverage-reader_schedule",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 25
+    },
+    {
+      "name": "coverage-git_patch",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 17
+    },
+    {
+      "name": "coverage-template",
+      "status": "skipped",
+      "required": false,
+      "reason": "matching-llvm-tools-unavailable",
+      "elapsed_ms": 34
+    }
+  ],
+  "dependency_comparison": {
+    "review_status": "unchanged-comparison-only",
+    "meaning": "operator-selected comparison; neither a new audit nor approval of changed dependencies",
+    "baseline_sha256": "cff613c1261252a720bbf38ffbb5d5c76421d1b8936c8043cdbd9483b713a2a8",
+    "current_snapshot_sha256": "1b37b4193871402ffb1777725eaf8b5268f3bf15f9944838341491f2f23c6e3b",
+    "changed_components": [],
+    "package_changes": {
+      "cargo_graph": {
+        "added": [],
+        "changed": [],
+        "removed": []
+      },
+      "locked_packages": {
+        "added": [],
+        "changed": [],
+        "removed": []
+      },
+      "unsafe_packages": {
+        "added": [],
+        "changed": [],
+        "removed": []
+      }
+    }
+  },
+  "metadata_amendment": {
+    "scope": "After this full run, six files added requested/effective deadline metadata, regression checks and replay documentation; no target or mutation-policy change. Final source passed renewed timeout, smoke and CI checks.",
+    "files": {
+      "crates/xtask/src/fuzzing.rs": {
+        "before_sha256": "d5cc7604565e54c58a5f5cce2910f75a2b016ca83829788d9e9698122ac322ad",
+        "after_sha256": "e7319b2bb56ff7d4a6f6334d0e720cc59b7bd13be75d2dba3b4b75cd5637b366"
+      },
+      "crates/xtask/src/fuzzing/profiles.rs": {
+        "before_sha256": "c32e2518f451402b33acb6c44a0e303d35a48080bef4dc6f3bf0ff2477000e25",
+        "after_sha256": "178949622c82d9bb79c60be0784bb41fe39252a253197a0f1d082e3c43adf039"
+      },
+      "crates/xtask/src/fuzzing/tests.rs": {
+        "before_sha256": "54d5d975d8cdde6723493bd357109cc6fc4a2b97ae65a0c95fb676423dd45148",
+        "after_sha256": "0517f0d5ff5301033b42f5926823d1900cd6ef35af44ec3d70dacaf5368a1cd9"
+      },
+      "crates/xtask/src/security_deep.rs": {
+        "before_sha256": "256232fde02daa4a13ec9b800da4e52fe2745e415923ea28afeaa903d8d2cdb4",
+        "after_sha256": "9ca45af1bd928bce2444e53a88288a416467e6ca63d34c63cd26f92360c53bf3"
+      },
+      "crates/xtask/src/security_deep/tests.rs": {
+        "before_sha256": "6c786d2e503bd7a157c48df7668567ec71129e8a0737301231ecd5f68b193fbf",
+        "after_sha256": "575221e8df5092c060c61351c07d6a78e8e7105649484d7362b5694ff70e3714"
+      },
+      "docs/SECURITY_CONTROLS.md": {
+        "before_sha256": "4adbb361c343209e7e8137671b31dfcaa59b92fd3ead9dbe27e104e6a3b0535d",
+        "after_sha256": "4185f8224321f497118d1ac7ba9b718a811aa2385b6ef13ae1525998d57e6d61"
+      }
+    },
+    "all_fuzz_binaries_unchanged": true
+  },
+  "deadline_exercises": {
+    "preparation": {
+      "requested_seconds": 1,
+      "elapsed_ms": 1030,
+      "result": "fail-or-incomplete",
+      "complete": false
+    },
+    "active": {
+      "command_wall_seconds": 11.24212075,
+      "requested_wrapper_seconds": 10,
+      "libfuzzer_seconds": 60,
+      "supervisor": {
+        "cleanup_grace_ms": 5000,
+        "clock": "monotonic; selected before child launch",
+        "deadline_constrained": true,
+        "effective_timeout_ms": 8499,
+        "effective_timeout_ns": 8499132333,
+        "operation_remaining_ns_at_selection": 8499132333,
+        "requested_maximum_ms": 180000
+      },
+      "outcome": "timeout",
+      "executions": 126171
+    }
+  },
+  "memory_scope": "fuzz children retain 2048 MiB RSS limit; trusted builds, security tools and Miri have time/output limits, not a whole-pass RSS quota",
+  "source_coverage_scope": "All eight source-coverage stages explicitly skipped: matching LLVM23 tools unavailable; edge/feature counters are not source coverage."
+}

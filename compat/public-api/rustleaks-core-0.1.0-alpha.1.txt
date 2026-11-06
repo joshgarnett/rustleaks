@@ -224,6 +224,64 @@ impl rustleaks_core::config::ConfigResolver for rustleaks_core::config::VirtualR
 pub fn rustleaks_core::config::VirtualResolver::resolve(&self, core::option::Option<&rustleaks_core::config::ConfigOrigin>, &str) -> core::result::Result<rustleaks_core::config::ResolvedConfig, rustleaks_core::config::ResolverError>
 pub type rustleaks_core::config::AllowlistCondition = rustleaks_core::config::Condition
 pub type rustleaks_core::config::RawAllowlist = rustleaks_core::config::AllowlistSpec
+pub mod rustleaks_core::explanation
+#[non_exhaustive] pub enum rustleaks_core::explanation::ExplanationReason
+pub rustleaks_core::explanation::ExplanationReason::AllowMarkerMatched
+pub rustleaks_core::explanation::ExplanationReason::AllowlistMatched
+pub rustleaks_core::explanation::ExplanationReason::AllowlistNotMatched
+pub rustleaks_core::explanation::ExplanationReason::CandidateAccepted
+pub rustleaks_core::explanation::ExplanationReason::DecodedByteBudgetExceeded
+pub rustleaks_core::explanation::ExplanationReason::DecodedMappingUnavailable
+pub rustleaks_core::explanation::ExplanationReason::EntropyAccepted
+pub rustleaks_core::explanation::ExplanationReason::EntropyNotRequired
+pub rustleaks_core::explanation::ExplanationReason::EntropyRejected
+pub rustleaks_core::explanation::ExplanationReason::FindingBudgetExceeded
+pub rustleaks_core::explanation::ExplanationReason::KeywordMatched
+pub rustleaks_core::explanation::ExplanationReason::KeywordMissed
+pub rustleaks_core::explanation::ExplanationReason::KeywordNotRequired
+pub rustleaks_core::explanation::ExplanationReason::OfflineValidation
+pub rustleaks_core::explanation::ExplanationReason::OfflineValidation::check: rustleaks_core::validation::OfflineCheck
+pub rustleaks_core::explanation::ExplanationReason::OfflineValidation::reason: rustleaks_core::explanation::ValidationReason
+pub rustleaks_core::explanation::ExplanationReason::OfflineValidation::state: rustleaks_core::explanation::ValidationState
+pub rustleaks_core::explanation::ExplanationReason::PathMatched
+pub rustleaks_core::explanation::ExplanationReason::PathMissed
+pub rustleaks_core::explanation::ExplanationReason::PatternMatched
+pub rustleaks_core::explanation::ExplanationReason::PatternMissed
+pub rustleaks_core::explanation::ExplanationReason::RequiredRulesMatched
+pub rustleaks_core::explanation::ExplanationReason::RequiredRulesMissing
+pub rustleaks_core::explanation::ExplanationReason::RuleReportSkipped
+pub rustleaks_core::explanation::ExplanationReason::RuleSelected
+pub rustleaks_core::explanation::ExplanationReason::ScanCancelled
+pub rustleaks_core::explanation::ExplanationReason::SecretGroupUnavailable
+pub rustleaks_core::explanation::ExplanationReason::TargetByteLimit
+pub rustleaks_core::explanation::ExplanationReason::WorkBudgetExceeded
+#[non_exhaustive] pub enum rustleaks_core::explanation::ValidationReason
+pub rustleaks_core::explanation::ValidationReason::AmbiguousBoundary
+pub rustleaks_core::explanation::ValidationReason::HistoricalAlphabetMismatch
+pub rustleaks_core::explanation::ValidationReason::HistoricalLayoutMatched
+pub rustleaks_core::explanation::ValidationReason::UnspecifiedChecksumContract
+pub rustleaks_core::explanation::ValidationReason::UnsupportedFormat
+#[non_exhaustive] pub enum rustleaks_core::explanation::ValidationState
+pub rustleaks_core::explanation::ValidationState::Invalid
+pub rustleaks_core::explanation::ValidationState::Unknown
+pub rustleaks_core::explanation::ValidationState::Valid
+pub struct rustleaks_core::explanation::ExplanationEvent
+impl rustleaks_core::explanation::ExplanationEvent
+pub const fn rustleaks_core::explanation::ExplanationEvent::candidate_ordinal(self) -> core::option::Option<usize>
+pub const fn rustleaks_core::explanation::ExplanationEvent::decoded_pass(self) -> usize
+pub const fn rustleaks_core::explanation::ExplanationEvent::reason(self) -> rustleaks_core::explanation::ExplanationReason
+pub const fn rustleaks_core::explanation::ExplanationEvent::rule_ordinal(self) -> core::option::Option<usize>
+pub struct rustleaks_core::explanation::ExplanationLog
+impl rustleaks_core::explanation::ExplanationLog
+pub fn rustleaks_core::explanation::ExplanationLog::events(&self) -> &[rustleaks_core::explanation::ExplanationEvent]
+pub const fn rustleaks_core::explanation::ExplanationLog::is_enabled(&self) -> bool
+pub const fn rustleaks_core::explanation::ExplanationLog::is_truncated(&self) -> bool
+pub struct rustleaks_core::explanation::ExplanationOptions
+impl rustleaks_core::explanation::ExplanationOptions
+pub const rustleaks_core::explanation::ExplanationOptions::MAX_RECORDS: usize
+pub const fn rustleaks_core::explanation::ExplanationOptions::bounded(usize) -> Self
+pub const fn rustleaks_core::explanation::ExplanationOptions::disabled() -> Self
+pub const fn rustleaks_core::explanation::ExplanationOptions::record_limit(self) -> usize
 pub mod rustleaks_core::model
 #[non_exhaustive] pub enum rustleaks_core::model::FindingRange
 pub rustleaks_core::model::FindingRange::Exact(rustleaks_core::model::ByteRange)
@@ -455,6 +513,55 @@ pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_gitleaks_allow(sel
 pub const fn rustleaks_core::model::ScanOptionsBuilder::max_decode_depth(self, usize) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::max_target_bytes(self, core::option::Option<usize>) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::redaction_percent(self, usize) -> Self
+pub mod rustleaks_core::native
+#[non_exhaustive] pub enum rustleaks_core::native::NativeExtension
+pub rustleaks_core::native::NativeExtension::GithubClassicPatV1
+#[non_exhaustive] pub enum rustleaks_core::native::NativePolicyError
+pub rustleaks_core::native::NativePolicyError::AmbiguousPackField
+pub rustleaks_core::native::NativePolicyError::Config(rustleaks_core::config::ConfigError)
+pub rustleaks_core::native::NativePolicyError::DuplicatePackId
+pub rustleaks_core::native::NativePolicyError::Engine(rustleaks_core::ScanError)
+pub rustleaks_core::native::NativePolicyError::InvalidPackId
+pub rustleaks_core::native::NativePolicyError::InvalidPackStructure
+pub rustleaks_core::native::NativePolicyError::InvalidRuleId
+pub rustleaks_core::native::NativePolicyError::LimitExceeded
+pub rustleaks_core::native::NativePolicyError::RuleCollision
+pub rustleaks_core::native::NativePolicyError::UnknownPackField
+pub rustleaks_core::native::NativePolicyError::UnsupportedPackDirective
+pub struct rustleaks_core::native::NativeEngine
+impl rustleaks_core::native::NativeEngine
+pub const fn rustleaks_core::native::NativeEngine::engine(&self) -> &rustleaks_core::Engine
+pub const fn rustleaks_core::native::NativeEngine::identity(&self) -> &rustleaks_core::native::NativePolicyIdentity
+pub fn rustleaks_core::native::NativeEngine::scan_fragment_controlled(&self, &rustleaks_core::model::Fragment, &rustleaks_core::model::ScanOptions, &rustleaks_core::ScanControl<'_>, rustleaks_core::explanation::ExplanationOptions) -> rustleaks_core::native::NativeScanOutcome
+pub struct rustleaks_core::native::NativePolicy
+impl rustleaks_core::native::NativePolicy
+pub const rustleaks_core::native::NativePolicy::MAX_NATIVE_RULES: usize
+pub const rustleaks_core::native::NativePolicy::MAX_PACKS: usize
+pub const rustleaks_core::native::NativePolicy::MAX_PACK_BYTES: usize
+pub fn rustleaks_core::native::NativePolicy::build(self) -> core::result::Result<rustleaks_core::native::NativeEngine, rustleaks_core::native::NativePolicyError>
+pub fn rustleaks_core::native::NativePolicy::builder() -> Self
+pub const fn rustleaks_core::native::NativePolicy::with_extension(self, rustleaks_core::native::NativeExtension) -> Self
+pub fn rustleaks_core::native::NativePolicy::with_pack(self, &str, &str) -> core::result::Result<Self, rustleaks_core::native::NativePolicyError>
+impl core::fmt::Debug for rustleaks_core::native::NativePolicy
+pub fn rustleaks_core::native::NativePolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::native::NativePolicyIdentity
+impl rustleaks_core::native::NativePolicyIdentity
+pub fn rustleaks_core::native::NativePolicyIdentity::builtin_review_reference(&self) -> core::option::Option<&str>
+pub fn rustleaks_core::native::NativePolicyIdentity::sensitive_exact_bytes(&self) -> &[u8]
+impl core::fmt::Debug for rustleaks_core::native::NativePolicyIdentity
+pub fn rustleaks_core::native::NativePolicyIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::native::NativeScanOutcome
+impl rustleaks_core::native::NativeScanOutcome
+pub const fn rustleaks_core::native::NativeScanOutcome::budget(&self) -> rustleaks_core::ScanBudget
+pub const fn rustleaks_core::native::NativeScanOutcome::explanations(&self) -> &rustleaks_core::explanation::ExplanationLog
+pub const fn rustleaks_core::native::NativeScanOutcome::identity(&self) -> &rustleaks_core::native::NativePolicyIdentity
+pub fn rustleaks_core::native::NativeScanOutcome::into_scan(self) -> rustleaks_core::ScanOutcome
+pub const fn rustleaks_core::native::NativeScanOutcome::offline_annotations_enabled(&self) -> bool
+pub const fn rustleaks_core::native::NativeScanOutcome::options(&self) -> rustleaks_core::model::ScanOptions
+pub const fn rustleaks_core::native::NativeScanOutcome::scan(&self) -> &rustleaks_core::ScanOutcome
+pub const rustleaks_core::native::EXTRA_RULES_V1: &str
+pub const rustleaks_core::native::EXTRA_RULES_V1_SHA256: &str
+pub const rustleaks_core::native::NATIVE_POLICY_VERSION: &str
 pub mod rustleaks_core::session
 pub enum rustleaks_core::session::AddOutcome
 pub rustleaks_core::session::AddOutcome::Accepted
@@ -567,6 +674,93 @@ pub fn rustleaks_core::session::canonical_finding_cmp(&rustleaks_core::model::Fi
 pub fn rustleaks_core::session::global_fingerprint(&rustleaks_core::model::Finding) -> rustleaks_core::model::ByteText
 pub fn rustleaks_core::session::qualified_fingerprint(&rustleaks_core::model::Finding) -> rustleaks_core::model::ByteText
 pub fn rustleaks_core::session::sort_findings_canonical(&mut [rustleaks_core::model::Finding])
+pub mod rustleaks_core::triage
+#[non_exhaustive] pub enum rustleaks_core::triage::RecordState
+pub rustleaks_core::triage::RecordState::Active
+pub rustleaks_core::triage::RecordState::Active::finding_index: usize
+pub rustleaks_core::triage::RecordState::Expired
+pub rustleaks_core::triage::RecordState::StaleOccurrence
+pub rustleaks_core::triage::RecordState::StaleOptions
+pub rustleaks_core::triage::RecordState::StalePolicy
+pub rustleaks_core::triage::RecordState::StaleSource
+pub rustleaks_core::triage::RecordState::UnobservedInPartialScan
+pub enum rustleaks_core::triage::ReviewClassification
+pub rustleaks_core::triage::ReviewClassification::Acknowledged
+pub rustleaks_core::triage::ReviewClassification::Acknowledged::record_index: usize
+pub rustleaks_core::triage::ReviewClassification::New
+#[non_exhaustive] pub enum rustleaks_core::triage::ReviewError
+pub rustleaks_core::triage::ReviewError::CustomPolicyBindingRequired
+pub rustleaks_core::triage::ReviewError::DuplicateRecord
+pub rustleaks_core::triage::ReviewError::InvalidReference
+pub rustleaks_core::triage::ReviewError::LimitExceeded
+pub rustleaks_core::triage::ReviewError::PolicyMismatch
+#[non_exhaustive] pub enum rustleaks_core::triage::ReviewReason
+pub rustleaks_core::triage::ReviewReason::AcceptedRisk
+pub rustleaks_core::triage::ReviewReason::RemediationScheduled
+pub rustleaks_core::triage::ReviewReason::SyntheticFixture
+pub struct rustleaks_core::triage::PresentationGroups<'a>
+impl<'a> rustleaks_core::triage::PresentationGroups<'a>
+pub fn rustleaks_core::triage::PresentationGroups<'a>::findings(&self) -> &[rustleaks_core::model::Finding]
+pub fn rustleaks_core::triage::PresentationGroups<'a>::for_scan(&'a rustleaks_core::ScanOutcome) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub fn rustleaks_core::triage::PresentationGroups<'a>::groups(&self) -> &[alloc::vec::Vec<usize>]
+pub const fn rustleaks_core::triage::PresentationGroups<'a>::is_complete(&self) -> bool
+pub const fn rustleaks_core::triage::PresentationGroups<'a>::termination(&self) -> core::option::Option<&rustleaks_core::ScanTermination>
+impl core::fmt::Debug for rustleaks_core::triage::PresentationGroups<'_>
+pub fn rustleaks_core::triage::PresentationGroups<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::triage::ReviewOccurrence
+impl rustleaks_core::triage::ReviewOccurrence
+pub fn rustleaks_core::triage::ReviewOccurrence::from_finding(rustleaks_core::triage::ReviewSource, &rustleaks_core::model::Finding, usize) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub const fn rustleaks_core::triage::ReviewOccurrence::index(&self) -> usize
+pub const fn rustleaks_core::triage::ReviewOccurrence::location(&self) -> [usize; 4]
+pub const fn rustleaks_core::triage::ReviewOccurrence::match_range(&self) -> core::option::Option<[usize; 2]>
+pub fn rustleaks_core::triage::ReviewOccurrence::new(rustleaks_core::triage::ReviewSource, &str, rustleaks_core::model::Location, rustleaks_core::model::FindingRange, rustleaks_core::model::FindingRange, usize) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub fn rustleaks_core::triage::ReviewOccurrence::rule_id(&self) -> &str
+pub const fn rustleaks_core::triage::ReviewOccurrence::secret_range(&self) -> core::option::Option<[usize; 2]>
+pub const fn rustleaks_core::triage::ReviewOccurrence::source(&self) -> &rustleaks_core::triage::ReviewSource
+pub struct rustleaks_core::triage::ReviewPolicy
+impl rustleaks_core::triage::ReviewPolicy
+pub fn rustleaks_core::triage::ReviewPolicy::caller_bound(&rustleaks_core::native::NativePolicyIdentity, &str) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub fn rustleaks_core::triage::ReviewPolicy::for_builtin(&rustleaks_core::native::NativePolicyIdentity) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub fn rustleaks_core::triage::ReviewPolicy::reference(&self) -> &str
+pub fn rustleaks_core::triage::ReviewPolicy::review<'a>(&self, &'a rustleaks_core::native::NativeScanOutcome, &rustleaks_core::triage::ReviewSource, &[rustleaks_core::triage::ReviewRecord], u64) -> core::result::Result<rustleaks_core::triage::ReviewResult<'a>, rustleaks_core::triage::ReviewError>
+pub struct rustleaks_core::triage::ReviewRecord
+impl rustleaks_core::triage::ReviewRecord
+pub const fn rustleaks_core::triage::ReviewRecord::expires_at(&self) -> u64
+pub fn rustleaks_core::triage::ReviewRecord::new(&str, rustleaks_core::model::ScanOptions, rustleaks_core::triage::ReviewOccurrence, rustleaks_core::triage::ReviewReason, u64) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub const fn rustleaks_core::triage::ReviewRecord::occurrence(&self) -> &rustleaks_core::triage::ReviewOccurrence
+pub const fn rustleaks_core::triage::ReviewRecord::options(&self) -> rustleaks_core::model::ScanOptions
+pub fn rustleaks_core::triage::ReviewRecord::policy_reference(&self) -> &str
+pub const fn rustleaks_core::triage::ReviewRecord::reason(&self) -> rustleaks_core::triage::ReviewReason
+pub struct rustleaks_core::triage::ReviewResult<'a>
+impl rustleaks_core::triage::ReviewResult<'_>
+pub fn rustleaks_core::triage::ReviewResult<'_>::classifications(&self) -> &[rustleaks_core::triage::ReviewClassification]
+pub const fn rustleaks_core::triage::ReviewResult<'_>::findings(&self) -> &[rustleaks_core::model::Finding]
+pub const fn rustleaks_core::triage::ReviewResult<'_>::is_complete(&self) -> bool
+pub fn rustleaks_core::triage::ReviewResult<'_>::occurrences(&self) -> &[rustleaks_core::triage::ReviewOccurrence]
+pub fn rustleaks_core::triage::ReviewResult<'_>::record_states(&self) -> &[rustleaks_core::triage::RecordState]
+impl core::fmt::Debug for rustleaks_core::triage::ReviewResult<'_>
+pub fn rustleaks_core::triage::ReviewResult<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::triage::ReviewSource(_)
+impl rustleaks_core::triage::ReviewSource
+pub fn rustleaks_core::triage::ReviewSource::caller_bound(&str) -> core::result::Result<Self, rustleaks_core::triage::ReviewError>
+pub fn rustleaks_core::triage::ReviewSource::reference(&self) -> &str
+pub const rustleaks_core::triage::MAX_POLICY_REFERENCE_BYTES: usize
+pub const rustleaks_core::triage::MAX_REVIEW_RECORDS: usize
+pub const rustleaks_core::triage::MAX_REVIEW_RULE_BYTES: usize
+pub const rustleaks_core::triage::MAX_SOURCE_REFERENCE_BYTES: usize
+pub const rustleaks_core::triage::MAX_TRIAGE_FINDINGS: usize
+pub const rustleaks_core::triage::REVIEW_SCHEMA_VERSION: u32
+pub fn rustleaks_core::triage::validate_records(&[rustleaks_core::triage::ReviewRecord]) -> core::result::Result<(), rustleaks_core::triage::ReviewError>
+pub mod rustleaks_core::validation
+#[non_exhaustive] pub enum rustleaks_core::validation::OfflineCheck
+pub rustleaks_core::validation::OfflineCheck::GithubClassicPatChecksumV1
+pub rustleaks_core::validation::OfflineCheck::GithubClassicPatLayoutV1
+pub struct rustleaks_core::validation::OfflineAssessment
+impl rustleaks_core::validation::OfflineAssessment
+pub const fn rustleaks_core::validation::OfflineAssessment::check(self) -> rustleaks_core::validation::OfflineCheck
+pub const fn rustleaks_core::validation::OfflineAssessment::reason(self) -> rustleaks_core::explanation::ValidationReason
+pub const fn rustleaks_core::validation::OfflineAssessment::state(self) -> rustleaks_core::explanation::ValidationState
+pub fn rustleaks_core::validation::github_classic_pat(&[u8]) -> [rustleaks_core::validation::OfflineAssessment; 2]
 #[non_exhaustive] pub enum rustleaks_core::ScanBudgetKind
 pub rustleaks_core::ScanBudgetKind::DecodedBytes
 pub rustleaks_core::ScanBudgetKind::FindingRecords

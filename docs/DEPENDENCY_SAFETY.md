@@ -77,6 +77,10 @@ exact-pinned `sha2`; its selected
 portable/hardware dispatch is the principal intentional archive dependency
 unsafe boundary. Archive inputs are additionally constrained by depth, entry,
 member, cumulative, and spool limits and are covered by hostile-input harnesses.
+The owned 7z parser validates unique stream bindings, packed-input references
+and acyclic coder graphs before constructing member or encoded-header decoders.
+This validation uses safe Rust and header-bounded linear work and storage; it
+does not add a dependency or change the selected codec feature graph.
 
 The November 2026 update is reviewed in
 [the dependency delta record](dependency-audits/maintenance-2026-11.md).

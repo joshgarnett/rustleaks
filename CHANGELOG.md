@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Add explicit native policy composition with bounded rule packs, collision checks,
+  exact policy identity, and bounded source-omitting explanations.
+- Add opt-in Azure Service Bus/Event Hubs, Azure App Configuration, and MongoDB
+  credential rules with an independent synthetic quality comparison.
+- Add offline historical GitHub token-layout annotations with explicit unknown
+  checksum status and no finding suppression.
+- Add bounded review records with expiry and stale policy/source/options checks,
+  occurrence-preserving grouping, and JSON persistence.
+- Add per-fragment and aggregate source scan budgets with explicit partial outcomes,
+  cancellation cleanup, and conservative accounting after worker failure.
+- Reject invalid 7z coder graphs and overflowing stream counts; add an opt-in
+  strict member-length policy while preserving the default early-EOF behavior.
+- Correct recursive detected-secret removal, CSV/XML escaping, Git path/hunk
+  handling, worker termination, and archive cancellation.
+- Add optional bounded fuzz, deep-security, profiling, quality-evaluation, and
+  private performance-report workflows with explicit evidence limitations.
+
 ## [0.1.0-alpha.5] - 2026-11-05
 
 - Require Rust 1.95 and align Cargo, Bazel, CI, package consumers, and release

@@ -1,0 +1,283 @@
+{
+  "baseline_eligible": false,
+  "build": {
+    "compiler_sha256": "b829b733131d4e1673eeebd1f34d06ae1e9ff4977b051313cf42e2a9e79ecf1c",
+    "compiler_version": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+    "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+    "executable_sha256": "e260ea2e2853d6c1efbc8f3b062e696e30ef17d9ef73576ee22c930bdc501e00",
+    "lockfiles": {
+      "Cargo.lock": "b214f46fd5ebf8f4aa6b1ffd4271463aa878c0d52b72b479032babd782247fe9",
+      "MODULE.bazel": "dfedb6948645ddb9da5f362ed42438a7c1e74dc30367a08a1ccc071bb1a33e62",
+      "MODULE.bazel.lock": "6a5a7a0892952dd6cdd9e2c0ae44bc98ef23726b57e1449c0a9c09d8b8b8560e",
+      "cargo-bazel-lock.json": "cc176343c696ed58453e5662505a1d0a56065f72602f0d9c42b9e183d931f900",
+      "rust-toolchain.toml": "e3a213e0d222e94d213cafbc20932eb3f76c643b4dd63756acf95192df2aa310"
+    },
+    "rust_action_count": 131,
+    "rust_action_graph_sha256": "c15704a4ff11b2df347872968c8a348e84d4730d5f4e447fcf67778904c7aadb",
+    "rustc_arguments_sha256": "e594549ec2305d1741c3b6f4994dd3441e3cadca67d0f08d3693a325af617304",
+    "system": "bazel",
+    "target": "aarch64-apple-darwin",
+    "workload_definition_sha256": "5a6fc9490f69a2ba57cfab2fbd3d7bd127c9f20c07d5fda681d9368fd19b3354"
+  },
+  "complete_private_build_identity_canonical_json_sha256": "651ba178b73e4ea112c41bd1eb26970c50d1aaf1032f05150d625e4e65d947d2",
+  "controller_sha256": "d344b4c23502e39ada079eaa81218d39ee62ee6cef00c8af1f5ecadd171afbed",
+  "derivation": {
+    "disassembly_instructions_verified_against_matching_executable": 1473,
+    "disassembly_sha256": "771de18fc22c9b9dd987dadb52717e505935bd20d47cf4036fe20add9a4b9005",
+    "generator_sha256": "3cf7a0a02be0e037e22b8779233e6ce143461d0579540c317b5c56b542b82bd3",
+    "inclusive_rule": "Sum exclusive counts where any ancestor or current frame matches the named subtree; these nested metrics overlap and must not be added.",
+    "location_attribution": "Visible detect_rule offsets +1884 and +1904 map to the inlined upstream_location newline enumeration. Grouped and truncated PC lists prevent exact helper-exclusive counts.",
+    "location_loop_function_offsets_decimal": [
+      1796,
+      1908
+    ],
+    "location_loop_source": "crates/rustleaks-core/src/engine.rs:1125",
+    "memory_rule": "Heap totals and rounded VM TOTAL values are re-parsed from hashed native outputs and checked against reports.",
+    "partition_rule": "For each exclusive sample, select engine ancestry first, then find_all, captures_all, detect_rule self, engine other; otherwise outcome_signature, Fixture::validate, other. Each sample is assigned once.",
+    "tree_rule": "Parse indentation before counts; exclusive = frame count minus immediate-child counts; assert nonnegative and conserve thread totals."
+  },
+  "fixture_identity": {
+    "complete": true,
+    "config_fnv1a64": "f8b26dc4f7787416",
+    "decoded_bytes": 0,
+    "errors": 0,
+    "finding_records": 256,
+    "findings": 256,
+    "input_bytes": 16384,
+    "input_fnv1a64": "3e812ba2e5c2f925",
+    "keywords": 0,
+    "outcome_fnv1a64": "b80de9ceab6a9984",
+    "rules": 1,
+    "work_units": 514,
+    "workload": "core-dense-16-kib"
+  },
+  "host": {
+    "arch": "aarch64",
+    "available_parallelism": 10,
+    "cpu": "Apple M1 Max",
+    "os": "macos",
+    "os_version": "26.5.2"
+  },
+  "kind": "dense-profile-sanitized-projection",
+  "limitations": [
+    "CPU counts are samples, not elapsed nanoseconds or statistical confidence intervals.",
+    "Instrumented loop includes hashing, fixture validation and outcome destruction; engine/configuration setup is excluded.",
+    "Dirty source is ineligible as a clean baseline; both profiles use the same instrumented build, not a candidate comparison.",
+    "Retained heap snapshots are not allocation histories, allocation-site attribution or leak freedom evidence.",
+    "Rounded VM values include the process and mapped libraries, not scan-only allocation cost.",
+    "Thermal state and unrelated background load were not controlled by the runner."
+  ],
+  "measured_speedup": null,
+  "measurement_scope": "profile-v1-instrumented-steady-loop",
+  "profiling_instrumentation": {
+    "frame_pointers": true,
+    "line_tables": true
+  },
+  "release_gate": false,
+  "reviewed_source_identity_note": "Relevant current files match the retained final validation snapshot; engine, regex and representative fixture also match the accepted snapshot. Report source digest identifies the measured dirty tree.",
+  "reviewed_source_sha256": {
+    "crates/rustleaks-compat/src/perf/investigation.rs": "567ce7fe11bb2947b590040aaa20846f24eea301ab0a73751ceb918766b5edaa",
+    "crates/rustleaks-compat/src/perf/representative.rs": "4daaa9476e3deddf0fdfc24fce7e7a14a98e3df83bac45be01db573d10a8f5fb",
+    "crates/rustleaks-core/src/engine.rs": "da5afa33ea9f729dc53ef81130cbb459a45146d439938f01d3dd2de2be2f807a",
+    "crates/rustleaks-core/src/regex/mod.rs": "1adbc50af4d42169795cf75dc974c1aeb194efbd9c0bda8a2650356daf3da1fb"
+  },
+  "runs": [
+    {
+      "actual_scan_count": 11906,
+      "artifact_sha256": {
+        "cpu-stacks.txt": "9bb2cdab35a386e1d62dcc84b8fd824f82341ed130fcd95e45b03381a957dfb4",
+        "cpu.txt": "3fb88841205519d62f65f3c090144c685cb5d6db75254ef021c46de58f3ffa77",
+        "heap-after.txt": "044ab43944fa7d41445fb1652ad09de350c3119445c114b3cf42f7fb7ea35fb9",
+        "heap-before.txt": "f2c1cadf274b29d56e17ce59984e4459889afc986e0af99297d6bf6216e3bad4",
+        "report.json": "8604cdca51568ac4fb89e6853a2f4b26b567bf486afb3f3e2772798062e5f3d2",
+        "request.json": "902f8aa3e13fc49584cfba9c4660377d5061c2e18fa30e0b48634579ba1a6cbd",
+        "vm-after.txt": "1be2475888adef996153c130f0e187dc92643e8b936fdb9207f7b6db70d2f5d0",
+        "vm-before.txt": "ff6f0fdb75e2650ea870437a7fa477d7dd74e17e086efa0453ef1070c9f76b49",
+        "worker-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "collector_tool_sha256": {
+        "heap": "d93361c5048ca270a457250065e6deb6348d6f73fd71e03d8585cddf1ba034d5",
+        "sample": "569d1e8f29e32e0557fdfffb7620e20126fab5df90f9e1bce4c6930ccded7363",
+        "vmmap": "9e2b3e0653ca8c4bdde2ea17c01f6f8e1eecab3658aa470b5e6f511c55f59928"
+      },
+      "cpu": {
+        "detect_rule_groups_with_visible_location_loop_offsets": [
+          {
+            "exclusive_samples_in_group": 7,
+            "offset_list_truncated": true,
+            "visible_decimal_offsets": [
+              1888,
+              1904
+            ]
+          },
+          {
+            "exclusive_samples_in_group": 2491,
+            "offset_list_truncated": true,
+            "visible_decimal_offsets": [
+              1904,
+              1884
+            ]
+          }
+        ],
+        "disjoint_partition": {
+          "engine_detect_rule_exclusive_including_inlined_helpers": 2771,
+          "engine_initial_find_all_subtrees": 3052,
+          "engine_other": 1895,
+          "engine_per_finding_captures_subtrees": 2082,
+          "harness_fixture_validation_subtrees": 60,
+          "harness_outcome_signature_subtrees": 1108,
+          "other_including_destruction_and_inlined_harness_work": 90
+        },
+        "exclusive_samples_conserved": true,
+        "inclusive_overlapping_counts_do_not_sum": {
+          "all_capture_subtrees_including_initial_find_all": 5119,
+          "engine_detect_rule": 8675,
+          "engine_lowercase_bytes": 892,
+          "engine_scan": 9800,
+          "hashing_callsite_including_inlined_formatting_and_free": 1111
+        },
+        "location_helper_exclusive_samples": null,
+        "negative_exclusive_rows": 0,
+        "parsed_frame_rows_including_threads": 1232,
+        "thread_samples": 11058
+      },
+      "cpu_sampling_requested_seconds": 15,
+      "id": "dense-profile-1",
+      "retained_memory_after": {
+        "heap": {
+          "live_bytes": 369040,
+          "live_nodes": 2295,
+          "populated_class_rows": 38,
+          "scope": "live retained heap snapshot; not allocation history"
+        },
+        "vm": {
+          "dirty_bytes": 3457024,
+          "populated_region_rows": 28,
+          "regions": 1826,
+          "resident_bytes": 265394586,
+          "scope": "rounded native VM summary; not allocation-site attribution",
+          "virtual_bytes": 1181116006
+        }
+      },
+      "retained_memory_before": {
+        "heap": {
+          "live_bytes": 369040,
+          "live_nodes": 2295,
+          "populated_class_rows": 38,
+          "scope": "live retained heap snapshot; not allocation history"
+        },
+        "vm": {
+          "dirty_bytes": 2965504,
+          "populated_region_rows": 28,
+          "regions": 1823,
+          "resident_bytes": 264870298,
+          "scope": "rounded native VM summary; not allocation-site attribution",
+          "virtual_bytes": 1181116006
+        }
+      },
+      "worker_loop_requested_seconds": 20
+    },
+    {
+      "actual_scan_count": 11775,
+      "artifact_sha256": {
+        "cpu-stacks.txt": "5a5d9c0fa37c236fc7e9ab6d2f8db7a466fc2d8a797a8bf4656013810bdc8c5c",
+        "cpu.txt": "cb6bf72e5dc079ae0e565c542c029ada2c330eceba3327993559fc852ebb44cd",
+        "heap-after.txt": "c3fcc8fd8dfcaae0ad66e503a165c230be29a918c222e32567ad8c59a0656fcd",
+        "heap-before.txt": "fe2fa69236e627be281bc96ab956d00a1e8765247599b513eaa1dd1cd692c04c",
+        "report.json": "494b4857cd64aa4986d140b52ffb5c2c4fdae8717e293e88892961a1ac4c953f",
+        "request.json": "902f8aa3e13fc49584cfba9c4660377d5061c2e18fa30e0b48634579ba1a6cbd",
+        "vm-after.txt": "effae4d59fa8cc66757a46d9acd7c5b21f281a8a9caacb98a4c1de5caeace29c",
+        "vm-before.txt": "24bee3401c7d9a6f0ccca492e26ddd732319f2ec44ffdd6e476a468e92f20638",
+        "worker-stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "collector_tool_sha256": {
+        "heap": "d93361c5048ca270a457250065e6deb6348d6f73fd71e03d8585cddf1ba034d5",
+        "sample": "569d1e8f29e32e0557fdfffb7620e20126fab5df90f9e1bce4c6930ccded7363",
+        "vmmap": "9e2b3e0653ca8c4bdde2ea17c01f6f8e1eecab3658aa470b5e6f511c55f59928"
+      },
+      "cpu": {
+        "detect_rule_groups_with_visible_location_loop_offsets": [
+          {
+            "exclusive_samples_in_group": 14,
+            "offset_list_truncated": true,
+            "visible_decimal_offsets": [
+              1904,
+              1892
+            ]
+          },
+          {
+            "exclusive_samples_in_group": 2515,
+            "offset_list_truncated": true,
+            "visible_decimal_offsets": [
+              1904,
+              1892
+            ]
+          }
+        ],
+        "disjoint_partition": {
+          "engine_detect_rule_exclusive_including_inlined_helpers": 2766,
+          "engine_initial_find_all_subtrees": 3038,
+          "engine_other": 1810,
+          "engine_per_finding_captures_subtrees": 2058,
+          "harness_fixture_validation_subtrees": 70,
+          "harness_outcome_signature_subtrees": 1104,
+          "other_including_destruction_and_inlined_harness_work": 108
+        },
+        "exclusive_samples_conserved": true,
+        "inclusive_overlapping_counts_do_not_sum": {
+          "all_capture_subtrees_including_initial_find_all": 5072,
+          "engine_detect_rule": 8579,
+          "engine_lowercase_bytes": 869,
+          "engine_scan": 9672,
+          "hashing_callsite_including_inlined_formatting_and_free": 1111
+        },
+        "location_helper_exclusive_samples": null,
+        "negative_exclusive_rows": 0,
+        "parsed_frame_rows_including_threads": 1207,
+        "thread_samples": 10954
+      },
+      "cpu_sampling_requested_seconds": 15,
+      "id": "dense-profile-2",
+      "retained_memory_after": {
+        "heap": {
+          "live_bytes": 369040,
+          "live_nodes": 2295,
+          "populated_class_rows": 38,
+          "scope": "live retained heap snapshot; not allocation history"
+        },
+        "vm": {
+          "dirty_bytes": 3293184,
+          "populated_region_rows": 28,
+          "regions": 1823,
+          "resident_bytes": 265814016,
+          "scope": "rounded native VM summary; not allocation-site attribution",
+          "virtual_bytes": 1181116006
+        }
+      },
+      "retained_memory_before": {
+        "heap": {
+          "live_bytes": 369040,
+          "live_nodes": 2295,
+          "populated_class_rows": 38,
+          "scope": "live retained heap snapshot; not allocation history"
+        },
+        "vm": {
+          "dirty_bytes": 2965504,
+          "populated_region_rows": 28,
+          "regions": 1822,
+          "resident_bytes": 265499443,
+          "scope": "rounded native VM summary; not allocation-site attribution",
+          "virtual_bytes": 1181116006
+        }
+      },
+      "worker_loop_requested_seconds": 20
+    }
+  ],
+  "schema_version": 1,
+  "source": {
+    "dirty": true,
+    "input_sha256": "be3cc7975735adc25ce678c04d98ef049e8b80508748e3ced5c35220a4b83dc4",
+    "revision": "48042081719bac70800d8416595941336b2314b8",
+    "status_sha256": "7ee57f34cdf3edf2e342861a237556ce231f314d99a8abeee83ccff7b29d4238"
+  }
+}

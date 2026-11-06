@@ -105,6 +105,7 @@ pub struct ArchiveOptions {
     limits: ArchiveLimits,
     path_config: Option<Arc<CompiledConfig>>,
     emit_limit_issues: bool,
+    strict_7z_member_lengths: bool,
 }
 
 impl ArchiveOptions {
@@ -115,6 +116,7 @@ impl ArchiveOptions {
             limits,
             path_config: None,
             emit_limit_issues: false,
+            strict_7z_member_lengths: false,
         }
     }
 
@@ -132,6 +134,19 @@ impl ArchiveOptions {
     #[must_use]
     pub const fn emit_limit_issues(mut self, enabled: bool) -> Self {
         self.emit_limit_issues = enabled;
+        self
+    }
+
+    /// Requires each 7z member stream to produce its declared uncompressed size.
+    ///
+    /// Disabled by default to preserve the pinned archive backend's acceptance
+    /// of early EOF. When enabled, a size mismatch produces a recoverable decode
+    /// issue and discards every member of that 7z archive before publication.
+    /// Existing member and aggregate ceilings still apply. This does not prove
+    /// archive authenticity or add CRC validation beyond the decoder's checks.
+    #[must_use]
+    pub const fn strict_7z_member_lengths(mut self, enabled: bool) -> Self {
+        self.strict_7z_member_lengths = enabled;
         self
     }
 
@@ -868,7 +883,16 @@ impl ArchiveState<'_> {
                 self.file_options.chunk_size().min(member_limit),
                 cancellation,
             )
-            .map_err(seven_error)?;
+            .map_err(|failure| match failure {
+                MemberReadFailure::Cancelled => {
+                    cancelled = true;
+                    seven_error("source cancelled")
+                }
+                MemberReadFailure::Read(message) => seven_error(message),
+            })?;
+            if self.options.strict_7z_member_lengths && bytes.len() as u64 != entry.size() {
+                return Err(seven_error("7z member length differs from declared size"));
+            }
             local_total = local_total
                 .checked_add(bytes.len())
                 .ok_or_else(|| seven_error("archive resource limit overflow"))?;
@@ -1571,26 +1595,31 @@ fn read_bounded(
     }
 }
 
+enum MemberReadFailure {
+    Cancelled,
+    Read(String),
+}
+
 fn read_member(
     reader: &mut dyn Read,
     limit: usize,
     buffer_size: usize,
     cancellation: &dyn Cancellation,
-) -> Result<(Vec<u8>, Vec<usize>), String> {
+) -> Result<(Vec<u8>, Vec<usize>), MemberReadFailure> {
     let mut output = Vec::new();
     let mut read_chunks = Vec::new();
     let mut buffer = Vec::new();
-    buffer
-        .try_reserve_exact(buffer_size)
-        .map_err(|_| "could not allocate archive member read buffer".to_owned())?;
+    buffer.try_reserve_exact(buffer_size).map_err(|_| {
+        MemberReadFailure::Read("could not allocate archive member read buffer".to_owned())
+    })?;
     buffer.resize(buffer_size, 0);
     loop {
         if cancellation.is_cancelled() {
-            return Err("source cancelled".to_owned());
+            return Err(MemberReadFailure::Cancelled);
         }
         let count = reader
             .read(&mut buffer)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| MemberReadFailure::Read(error.to_string()))?;
         if count == 0 {
             return Ok((output, read_chunks));
         }
@@ -1599,15 +1628,17 @@ fn read_member(
             .checked_add(count)
             .is_none_or(|size| size > limit)
         {
-            return Err("archive member limit exceeded".to_owned());
+            return Err(MemberReadFailure::Read(
+                "archive member limit exceeded".to_owned(),
+            ));
         }
-        output
-            .try_reserve(count)
-            .map_err(|_| "could not allocate archive member buffer".to_owned())?;
+        output.try_reserve(count).map_err(|_| {
+            MemberReadFailure::Read("could not allocate archive member buffer".to_owned())
+        })?;
         output.extend_from_slice(&buffer[..count]);
-        read_chunks
-            .try_reserve(1)
-            .map_err(|_| "could not retain archive member read boundaries".to_owned())?;
+        read_chunks.try_reserve(1).map_err(|_| {
+            MemberReadFailure::Read("could not retain archive member read boundaries".to_owned())
+        })?;
         read_chunks.push(count);
     }
 }

@@ -14,9 +14,10 @@ Budgets are inclusive and aggregate across one fragment scan:
   required findings.
 
 A structured operation split across multiple fragments is outside that
-aggregate. Its caller must additionally cap total original bytes, fragments,
-findings, work, cancellation, and elapsed time. Reusing one per-fragment
-budget does not create an operation-wide limit.
+aggregate. `SourceRunner::with_budget` opts into `SourceBudget` accounting
+across the source operation. Other callers must supply their own operation
+limits. Reusing one per-fragment budget does not create an operation-wide
+limit. The caller continues to own elapsed-time cancellation.
 
 Cancellation is cooperative. It is polled between bounded owned work units,
 including between decoder candidates and encoding transforms; one regex
@@ -36,7 +37,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Files | Bounded chunks, optional per-file maximum, symlink hop limit 64 |
 | Archives | Default depth 8, entries 10,000, member 64 MiB, total 256 MiB, spool 64 MiB |
 | Git | Patch/blob 256 MiB, stderr 1 MiB, metadata 16 MiB, path 1 MiB, files 1,000,000, hunks 2,000,000 |
-| Source runner | Bounded workers/queue and 1,000,000 unique commits; workers and child processes are joined/reaped |
+| Source runner | Bounded workers/queue and 1,000,000 unique commits; optional per-fragment and operation budgets below; workers and child processes are joined/reaped |
 | Templates | Source 1 MiB, actions 1,000,000, output 64 MiB, nesting 128 |
 | CLI | 4,096 arguments; individual text and path values 1 MiB; normalized paths 4,096 components |
 | Streaming reports | Writer capacity, cancellation, and final I/O errors are caller-owned |
@@ -46,12 +47,96 @@ The CLI timeout is cooperative, not a hard wall-clock deadline. Streaming
 sources and reports are intentionally open-ended unless their caller installs
 the relevant outer policy.
 
+## Opt-in source operation budgets
+
+`SourceRunner::new` and `SourceRunner::default` preserve the existing unlimited
+scan policy. Install an explicit policy to limit original fragment bytes,
+total admitted original bytes, admitted fragment count, retained source issues,
+and per-fragment and operation decoded bytes, engine work, and finding records:
+
+```rust
+use rustleaks_core::ScanBudget;
+use rustleaks_sources::{SourceBudget, SourceRunner};
+
+let runner = SourceRunner::new(4, 8)?.with_budget(
+    SourceBudget::unlimited()
+        .max_fragment_bytes(1024 * 1024)
+        .max_original_bytes(128 * 1024 * 1024)
+        .max_fragments(10_000)
+        .max_issues(100)
+        .per_fragment(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(1024 * 1024)
+                .max_work_units(100_000)
+                .max_finding_records(1_000),
+        )
+        .aggregate(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(32 * 1024 * 1024)
+                .max_work_units(10_000_000)
+                .max_finding_records(10_000),
+        ),
+)?;
+```
+
+All limits are inclusive; zero is valid. Each finite aggregate engine limit
+requires a finite matching per-fragment limit. The runner reserves the full
+fragment allowance atomically across every aggregate dimension before scanning.
+After a scan returns, it charges measured usage and returns unused reservation.
+When a full reservation cannot fit while another scan is active, workers wait.
+Once those scans settle, a worker can use the exact remaining capacity. A zero
+allowance can still complete a fragment that does not consume that resource.
+Concurrency can therefore decrease near exhaustion or when fragment ceilings
+are large relative to aggregate ceilings. With sufficient capacity, scans run
+concurrently. Accounted engine consumption never exceeds an aggregate ceiling;
+there is no per-worker allowance added to that ceiling.
+
+Original-byte and fragment admission happens before queueing. Those counters
+include admitted fragments later abandoned in the queue or producer callback.
+The existing `scanned_bytes` accessor also counts admitted error-free fragment
+content, not proof that detection completed. `SourceOutcome::usage` is present
+for an explicit budget and distinguishes admitted and completely scanned
+fragments. Engine usage includes partial scans even though all their findings
+are discarded. Finding records are charged before session suppression, including
+auxiliary and projected records, so an aggregate finding-record limit also
+bounds retained finding counts across workers. It does not limit the bytes in
+individual finding fields.
+
+The first exhausted budget stops production, cancels in-flight scans
+cooperatively, discards queued fragments, and joins every worker. The outcome
+contains `SourceTermination::BudgetExceeded` with scope, resource, limit,
+consumed units and the rejected request. Other reserved scans may consume more
+units before noticing cancellation, always within the shared ceiling; final
+totals are in `SourceUsage`. Only complete fragments contribute findings, and
+the returned subset can depend on scheduling. Finding order remains unspecified.
+Equal fragment and operation ceilings are attributed to the fragment ceiling.
+Reaching an issue cap alone is allowed; rejecting the next source issue returns
+incomplete budget termination instead of silently reporting completion.
+
+Worker panic takes precedence over cancellation, which takes precedence over
+budget termination. A separate terminal source error remains visible. A panic
+keeps that scan's full reservation conservatively charged and marks usage
+inexact; dimensions without an aggregate limit have unknown additional usage.
+The panicking worker's previously collected batch can also be lost. The caller's
+cancellation token is never changed by an internal budget stop or panic.
+
+At most `queue_capacity + workers + 1` error-free fragments are retained by
+the scheduling path, including the producer callback's pending fragment. Source
+adapters can allocate before emitting a fragment or hold additional data, so
+their file, archive, Git and metadata limits still apply. Issue limits bound
+counts, not diagnostic lengths. These controls do not impose a heap quota,
+preempt an indivisible engine operation, or force a custom source to poll its
+cancellation signal. Configure original bytes, fragment count, issues and
+engine limits together for an otherwise open-ended source.
+
 The unpublished compatibility performance runner measures packaged default
 engine construction and no-keyword scans at 1 KiB, 16 KiB, and 1 MiB. Those
 workloads provide reproducible inputs and exact outcome invariants, not
 portable latency guarantees. Callers deciding whether to move synchronous
 scans off an async executor must measure their own target, runtime,
-configuration, and request distribution.
+configuration, and request distribution. The [performance measurement
+contract](PERFORMANCE.md) records build identity, timing scope, and inherited
+host-specific budgets.
 
 Compressed RAR3/RAR5 and 7z dependency calls rely on unwind containment for
 malformed-input panics. The 7z boundary contains both reader construction and
@@ -63,3 +148,13 @@ Owned code forbids unsafe. Feature-selected dependencies can contain reviewed
 unsafe internals and are documented separately. Native Linux/Windows runtime
 measurement remains a nonblocking follow-up; no limit or portability claim is
 derived solely from cross-compilation.
+
+`ArchiveOptions::strict_7z_member_lengths(true)` requires every 7z member to
+produce its declared uncompressed byte count. A mismatch emits a recoverable
+decode issue before any member of that archive is published. The default is
+false, preserving the pinned backend's short-EOF behavior. Both modes retain
+member, aggregate, entry, spool and cancellation limits. Strict lengths do not
+establish authenticity or add CRC verification beyond the codec's checks.
+7z coder graphs reject duplicate bindings, invalid packed inputs and cycles
+before constructing member or encoded-header decoders; validation work and
+storage are linear in the header-bounded stream and coder counts.

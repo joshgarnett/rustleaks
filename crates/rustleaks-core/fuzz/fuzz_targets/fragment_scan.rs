@@ -1,16 +1,21 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
+#[allow(dead_code)]
+#[path = "../../tests/support/campaign_profile.rs"]
+mod campaign_profile;
+
+use campaign_profile::Profile;
+
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use libfuzzer_sys::fuzz_target;
 use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::session::sort_findings_canonical;
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
-use libfuzzer_sys::fuzz_target;
 
-const MAX_ARBITRARY_BYTES: usize = 8 * 1024;
 const DECODE_SUFFIX: &[u8] =
     b"\n7365637265743d46555a5a544f4b454e\nc2VjcmV0PUZVWlpUT0tFTg==\nsecret%3DFUZZTOKEN\n";
 
@@ -40,7 +45,9 @@ fn engine() -> &'static Engine {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let arbitrary = &data[..data.len().min(MAX_ARBITRARY_BYTES)];
+    let profile = Profile::current();
+    let limits = profile.fragment();
+    let arbitrary = &data[..data.len().min(limits.input_bytes)];
     let control = arbitrary.first().copied().unwrap_or_default();
     let mut content = Vec::with_capacity(arbitrary.len() + DECODE_SUFFIX.len());
     content.extend_from_slice(arbitrary);
@@ -58,8 +65,8 @@ fuzz_target!(|data: &[u8]| {
         .start_line(start_line)
         .build();
     let options = ScanOptions::builder()
-        .max_decode_depth(2)
-        .max_target_bytes(Some(MAX_ARBITRARY_BYTES + DECODE_SUFFIX.len()))
+        .max_decode_depth(limits.decode_depth)
+        .max_target_bytes(Some(limits.input_bytes + DECODE_SUFFIX.len()))
         .redaction_percent(usize::from(control % 101))
         .honor_gitleaks_allow(control & 2 == 0)
         .build();
@@ -68,13 +75,18 @@ fuzz_target!(|data: &[u8]| {
         let polls = AtomicUsize::new(0);
         let cancel_after = usize::from(control >> 2).saturating_add(1);
         let cancellation = || polls.fetch_add(1, Ordering::Relaxed) >= cancel_after;
-        let control = ScanControl::cancellable(&cancellation).with_budget(
+        let scan_control = if profile == Profile::Deep && control & 0x80 == 0 {
+            ScanControl::unlimited()
+        } else {
+            ScanControl::cancellable(&cancellation)
+        };
+        let scan_control = scan_control.with_budget(
             ScanBudget::unlimited()
-                .max_decoded_bytes(32 * 1024)
-                .max_work_units(4 * 1024)
-                .max_finding_records(64),
+                .max_decoded_bytes(limits.decoded_bytes)
+                .max_work_units(limits.work_units)
+                .max_finding_records(limits.finding_records),
         );
-        engine().scan_fragment_controlled(&fragment, &options, &control)
+        engine().scan_fragment_controlled(&fragment, &options, &scan_control)
     };
 
     let first = scan();

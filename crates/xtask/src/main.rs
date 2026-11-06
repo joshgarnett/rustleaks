@@ -8,7 +8,10 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod fuzzing;
+mod performance;
 mod release_artifact;
+mod security_deep;
 mod tooling;
 mod workflows;
 
@@ -44,251 +47,6 @@ const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
 const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 const PUBLIC_API_SNAPSHOT: &str = "compat/public-api/rustleaks-core-0.1.0-alpha.1.txt";
-const PERF_WORKLOADS: &[&str] = &[
-    "default-compile",
-    "default-no-keyword-1-kib",
-    "default-no-keyword-16-kib",
-    "default-no-keyword",
-    "default-one-keyword",
-    "default-many-keywords",
-    "default-positive",
-    "regex-hostile-miss",
-    "regex-capture-entropy",
-    "decode-five-level",
-    "decode-large-base64-like",
-    "source-directory-1",
-    "source-directory-4",
-    "report-json",
-    "report-sarif",
-    "bm-0001",
-    "bm-0002",
-    "bm-0003",
-    "bm-0004",
-    "bm-0005",
-    "bm-0006",
-    "bm-0007",
-    "bm-0008",
-];
-
-#[derive(Clone, Copy)]
-struct PerfInvariant {
-    workload: &'static str,
-    logical_bytes: u64,
-    result_count: u64,
-    output_bytes: u64,
-    outcome_fnv1a64: &'static str,
-}
-
-const PERF_INVARIANTS: &[PerfInvariant] = &[
-    PerfInvariant {
-        workload: "default-compile",
-        logical_bytes: 97_731,
-        result_count: 222,
-        output_bytes: 0,
-        outcome_fnv1a64: "bba0f636d5a02d49",
-    },
-    PerfInvariant {
-        workload: "default-no-keyword-1-kib",
-        logical_bytes: 1_024,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "default-no-keyword-16-kib",
-        logical_bytes: 16 * 1_024,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "default-no-keyword",
-        logical_bytes: 1_048_576,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "default-one-keyword",
-        logical_bytes: 1_048_576,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "default-many-keywords",
-        logical_bytes: 1_048_576,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "default-positive",
-        logical_bytes: 143,
-        result_count: 1,
-        output_bytes: 0,
-        outcome_fnv1a64: "58e4f5aab1da7b3f",
-    },
-    PerfInvariant {
-        workload: "regex-hostile-miss",
-        logical_bytes: 262_144,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "regex-capture-entropy",
-        logical_bytes: 65_536,
-        result_count: 1,
-        output_bytes: 0,
-        outcome_fnv1a64: "038649fafe732c81",
-    },
-    PerfInvariant {
-        workload: "decode-five-level",
-        logical_bytes: 12_428,
-        result_count: 128,
-        output_bytes: 0,
-        outcome_fnv1a64: "0d9076d695194702",
-    },
-    PerfInvariant {
-        workload: "decode-large-base64-like",
-        logical_bytes: 1_048_576,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "a8c7f832281a39c5",
-    },
-    PerfInvariant {
-        workload: "source-directory-1",
-        logical_bytes: 8_388_608,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "3cee0642681c47e5",
-    },
-    PerfInvariant {
-        workload: "source-directory-4",
-        logical_bytes: 8_388_608,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "3cee0642681c47e5",
-    },
-    PerfInvariant {
-        workload: "report-json",
-        logical_bytes: 10_000,
-        result_count: 10_000,
-        output_bytes: 4_406_685,
-        outcome_fnv1a64: "13362a3d26854efc",
-    },
-    PerfInvariant {
-        workload: "report-sarif",
-        logical_bytes: 10_000,
-        result_count: 10_000,
-        output_bytes: 7_308_202,
-        outcome_fnv1a64: "8293a2e439c3f929",
-    },
-    PerfInvariant {
-        workload: "bm-0001",
-        logical_bytes: 40,
-        result_count: 1,
-        output_bytes: 0,
-        outcome_fnv1a64: "af63bc4c8601b62c",
-    },
-    PerfInvariant {
-        workload: "bm-0002",
-        logical_bytes: 40,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "af63bd4c8601b7df",
-    },
-    PerfInvariant {
-        workload: "bm-0003",
-        logical_bytes: 1_153,
-        result_count: 24,
-        output_bytes: 0,
-        outcome_fnv1a64: "43b103a307f3ee9d",
-    },
-    PerfInvariant {
-        workload: "bm-0004",
-        logical_bytes: 874,
-        result_count: 68,
-        output_bytes: 0,
-        outcome_fnv1a64: "188c1f945093510b",
-    },
-    PerfInvariant {
-        workload: "bm-0005",
-        logical_bytes: 52,
-        result_count: 1,
-        output_bytes: 0,
-        outcome_fnv1a64: "af63bc4c8601b62c",
-    },
-    PerfInvariant {
-        workload: "bm-0006",
-        logical_bytes: 77,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "af63bd4c8601b7df",
-    },
-    PerfInvariant {
-        workload: "bm-0007",
-        logical_bytes: 44,
-        result_count: 1,
-        output_bytes: 0,
-        outcome_fnv1a64: "af63bc4c8601b62c",
-    },
-    PerfInvariant {
-        workload: "bm-0008",
-        logical_bytes: 82,
-        result_count: 0,
-        output_bytes: 0,
-        outcome_fnv1a64: "af63bd4c8601b7df",
-    },
-];
-
-#[derive(Clone, Copy)]
-#[cfg(any(target_os = "macos", test))]
-struct PerfBudget {
-    workload: &'static str,
-    median_elapsed_ns: u64,
-    peak_rss_bytes: u64,
-}
-
-#[cfg(target_os = "macos")]
-const M1_MAX_PERF_BUDGETS: &[PerfBudget] = &[
-    PerfBudget {
-        workload: "default-compile",
-        median_elapsed_ns: 100_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "default-one-keyword",
-        median_elapsed_ns: 600_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "regex-hostile-miss",
-        median_elapsed_ns: 30_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "decode-five-level",
-        median_elapsed_ns: 10_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "source-directory-1",
-        median_elapsed_ns: 150_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "source-directory-4",
-        median_elapsed_ns: 75_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "report-json",
-        median_elapsed_ns: 30_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-];
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -332,6 +90,9 @@ fn run(args: &[String]) -> Result<(), String> {
             release_artifact::run(&workspace_root()?, arguments)
         }
         [command] if command == "security-check" => security_check(),
+        [command, arguments @ ..] if command == "security-deep" => {
+            security_deep::run(&workspace_root()?, arguments)
+        }
         [command] if command == "rustsec-check" => rustsec_check(),
         [command] if command == "vet-check" => vet_check(),
         [command] if command == "unsafe-inventory-check" => unsafe_inventory_check(),
@@ -342,11 +103,30 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "quality-check" => quality_check(),
         [command] if command == "miri-check" => miri_check(),
         [command] if command == "panic-abort-check" => panic_abort_check(),
+        [command, arguments @ ..] if command == "fuzz" => {
+            fuzzing::run(&workspace_root()?, arguments)
+        }
         [command] if command == "fuzz-check" => fuzz_check(),
         [command] if command == "fuzz-build" => fuzz_build(),
         [command] if command == "fuzz-smoke" => fuzz_smoke(),
-        [command, subcommand] if command == "perf" && subcommand == "run" => perf_run(),
-        [command, subcommand] if command == "perf" && subcommand == "check" => perf_check(),
+        [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "run" => {
+            performance::run(arguments)
+        }
+        [command, subcommand] if command == "perf" && subcommand == "check" => performance::check(),
+        [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "report" => {
+            performance::report(arguments)
+        }
+        [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "profile" => {
+            performance::profile(arguments)
+        }
+        [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "calibrate" => {
+            performance::calibrate(arguments)
+        }
+        [command, subcommand, arguments @ ..]
+            if command == "perf" && subcommand == "representative" =>
+        {
+            performance::representative(arguments)
+        }
         [command, subcommand, flag]
             if command == "oracle" && subcommand == "generate" && flag == "--check" =>
         {
@@ -373,7 +153,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "report" => report_parity(),
         [command, flag, scope] if command == "parity" && flag == "--scope" && scope == "cli" => cli_parity(),
         [command, flag] if command == "parity" && flag == "--all" => full_parity(),
-        _ => Err("usage: cargo xtask {verify-upstream|oracle-vulnerability-check|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|generate <go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|vet-inventory [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT>|perf <run|check>|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
+        _ => Err("usage: cargo xtask {verify-upstream|oracle-vulnerability-check|manifest-check|assertion-check|generator-check|api-check|fixture-check|config-check|regex-check|detect-check|allowlist-check|decoder-check|composite-check|session-check|source-check|git-check|report-check|cli-check|public-api-check|build-system-check|package-check|release-dry-run|release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz <run|replay|minimize|reproduce|tmin|promote> [ARGS]|generate <native-pack-identity [--check]|go-lowercase [--check]|api-dispositions [--check|--self-test|--summary|--output PATH]|assertions|generator-samples [--check|--output PATH|--check-output PATH]|config|composite|regex|detect|allowlist|decoder|session|source|git|report|cli [--check|--output PATH]|inventory [--check [CANDIDATE]|--output PATH]|vet-inventory [--check|--output PATH]|regex-fuzz-seeds REQUESTS OUTPUT|archive-fuzz-seeds OUTPUT [--check]>|perf <run|check|representative|profile|calibrate|report> [ARGS]|oracle generate --check [--skip-git]|parity --scope <bootstrap|config|regex|detect|allowlist|decoder|composite|session|source|git|report|cli>|parity --all}".into()),
     }
 }
 
@@ -570,6 +350,9 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
         "README.md",
         "src/config/eisel_lemire.rs",
         "src/go_lowercase_tables.rs",
+        "default/rustleaks-extra-v1.toml",
+        "default/rustleaks-extra-v1.md",
+        "default/rustleaks-extra-v1.sha256",
     ] {
         if !package_files.lines().any(|path| path == required) {
             return Err(format!(
@@ -883,6 +666,9 @@ fn consumer_source() -> &'static str {
     r#"use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
+use rustleaks_core::explanation::ExplanationOptions;
+use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
+use rustleaks_core::triage::{ReviewPolicy, ReviewSource};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ConfigLoader::new().load_default()?;
@@ -899,6 +685,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert!(outcome.is_complete());
     assert_eq!(outcome.findings()[0].rule_id().as_str()?, "aws-access-token");
+    let native = NativePolicy::builder()
+        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?.build()?;
+    let scan = native.scan_fragment_controlled(
+        &Fragment::new(b"mongodb://synthetic:password123@db.example.invalid/"),
+        &ScanOptions::default(), &control, ExplanationOptions::bounded(32),
+    );
+    assert!(scan.scan().is_complete());
+    assert!(scan.scan().findings().iter().any(|finding|
+        finding.rule_id().as_bytes() == b"rustleaks.mongodb-password"));
+    let policy = ReviewPolicy::for_builtin(native.identity())?;
+    let source = ReviewSource::caller_bound("synthetic-snapshot-v1")?;
+    let review = policy.review(&scan, &source, &[], 1_700_000_000)?;
+    assert!(review.is_complete());
+    assert_eq!(review.occurrences().len(), scan.scan().findings().len());
+    let partial = native.scan_fragment_controlled(
+        &Fragment::new(b"synthetic input"), &ScanOptions::default(),
+        &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(0)),
+        ExplanationOptions::disabled(),
+    );
+    assert!(!policy.review(&partial, &source, &[], 1_700_000_000)?.is_complete());
     Ok(())
 }
 "#
@@ -1689,6 +1495,7 @@ fn owned_safety_check() -> Result<(), String> {
         "crates/rustleaks-cli/src/main.rs",
         "crates/rustleaks-compat/src/lib.rs",
         "crates/rustleaks-compat/src/bin/rustleaks-perf.rs",
+        "crates/rustleaks-compat/src/bin/rustleaks-quality.rs",
         "crates/rustleaks-core/src/lib.rs",
         "crates/rustleaks-rar-codec/src/lib.rs",
         "crates/rustleaks-report/src/lib.rs",
@@ -1749,6 +1556,24 @@ fn run_quality_command(
         Duration::from_mins(20),
         label,
     )
+}
+
+fn run_quality_tests(
+    root: &Path,
+    target: &ScopedTempDir,
+    tools: &performance::QualityTestTools,
+    args: &[&str],
+    label: &str,
+) -> Result<(), String> {
+    tools.unchanged()?;
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(root)
+        .env("CARGO_TARGET_DIR", &target.path)
+        .args(args);
+    tools.bind(&mut command);
+    command_status_with_timeout(&mut command, Duration::from_mins(20), label)?;
+    tools.unchanged()
 }
 
 fn collect_documentation(
@@ -1925,15 +1750,18 @@ fn quality_check() -> Result<(), String> {
         ],
         "warning-denied Clippy",
     )?;
-    run_quality_command(
+    let tools = performance::QualityTestTools::prepare(&root)?;
+    run_quality_tests(
         &root,
         &target,
+        &tools,
         &["test", "--workspace", "--locked", "--offline"],
         "default-feature workspace tests",
     )?;
-    run_quality_command(
+    run_quality_tests(
         &root,
         &target,
+        &tools,
         &[
             "test",
             "--workspace",
@@ -2069,309 +1897,6 @@ fn panic_abort_check() -> Result<(), String> {
     Ok(())
 }
 
-fn validate_perf_record<'a>(
-    record: &'a serde_json::Value,
-    index: usize,
-    expected_rust_revision: &str,
-) -> Result<&'a str, String> {
-    if record["schema_version"] != 1 || record["iterations"] != 1 {
-        return Err(format!(
-            "performance row {index} has an unsupported schema or iteration count"
-        ));
-    }
-    let workload = record["workload"]
-        .as_str()
-        .ok_or_else(|| format!("performance row {index} omits workload"))?;
-    let expected = PERF_INVARIANTS
-        .iter()
-        .find(|candidate| candidate.workload == workload)
-        .ok_or_else(|| format!("unknown performance workload `{workload}`"))?;
-    let exact = record["logical_bytes"].as_u64() == Some(expected.logical_bytes)
-        && record["result_count"].as_u64() == Some(expected.result_count)
-        && record["output_bytes"].as_u64() == Some(expected.output_bytes)
-        && record["outcome_fnv1a64"].as_str() == Some(expected.outcome_fnv1a64);
-    if !exact {
-        return Err(format!(
-            "performance workload `{workload}` differs from its exact outcome invariant"
-        ));
-    }
-    let elapsed = record["elapsed_ns"]
-        .as_u64()
-        .ok_or_else(|| format!("performance workload `{workload}` has invalid elapsed_ns"))?;
-    if record["ns_per_iteration"].as_u64() != Some(elapsed)
-        || record["invariant"].as_str().is_none_or(str::is_empty)
-    {
-        return Err(format!(
-            "performance workload `{workload}` omits its checked timing or invariant"
-        ));
-    }
-    let provenance = &record["provenance"];
-    if provenance["upstream_revision"].as_str() != Some(REVISION)
-        || provenance["default_config_sha256"].as_str() != Some(CONFIG_SHA256)
-        || provenance["package_version"].as_str() != Some(RELEASE_VERSION)
-        || provenance["rust_revision"].as_str() != Some(expected_rust_revision)
-        || provenance["rustc"].as_str().is_none_or(str::is_empty)
-        || provenance["target_os"].as_str().is_none_or(str::is_empty)
-        || provenance["target_arch"].as_str().is_none_or(str::is_empty)
-        || provenance["executable_bytes"]
-            .as_u64()
-            .is_none_or(|bytes| bytes == 0)
-        || !provenance["executable_fnv1a64"]
-            .as_str()
-            .is_some_and(|hash| {
-                hash.len() == 16 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-            })
-    {
-        return Err(format!(
-            "performance workload `{workload}` has mismatched provenance"
-        ));
-    }
-    Ok(workload)
-}
-
-fn validate_perf_records(output: &str, expected_rust_revision: &str) -> Result<(), String> {
-    let expected = PERF_WORKLOADS
-        .iter()
-        .map(|workload| (*workload).to_owned())
-        .collect::<BTreeSet<_>>();
-    let mut actual = BTreeSet::new();
-    for (index, line) in output.lines().enumerate() {
-        let record: serde_json::Value = serde_json::from_str(line)
-            .map_err(|error| format!("invalid performance JSON row {}: {error}", index + 1))?;
-        let workload = validate_perf_record(&record, index + 1, expected_rust_revision)?;
-        if !actual.insert(workload.to_owned()) {
-            return Err(format!("duplicate performance workload `{workload}`"));
-        }
-    }
-    if actual != expected {
-        return Err(format!(
-            "performance workload set mismatch: expected {expected:?}, got {actual:?}"
-        ));
-    }
-    Ok(())
-}
-
-fn current_revision(root: &Path) -> Result<String, String> {
-    command_output(
-        Command::new("git")
-            .current_dir(root)
-            .args(["rev-parse", "HEAD"]),
-    )
-}
-
-fn run_perf_matrix() -> Result<String, String> {
-    command_output(
-        Command::new("cargo")
-            .args([
-                "run",
-                "-p",
-                "rustleaks-compat",
-                "--bin",
-                "rustleaks-perf",
-                "--release",
-                "--offline",
-                "--",
-                "--workload",
-                "all",
-                "--iterations",
-                "1",
-            ])
-            .current_dir(workspace_root()?),
-    )
-}
-
-fn perf_run() -> Result<(), String> {
-    let output = run_perf_matrix()?;
-    println!("{output}");
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn perf_binary(root: &Path) -> Result<PathBuf, String> {
-    command_output(Command::new("cargo").current_dir(root).args([
-        "build",
-        "-p",
-        "rustleaks-compat",
-        "--bin",
-        "rustleaks-perf",
-        "--release",
-        "--locked",
-        "--offline",
-    ]))?;
-    let metadata = command_output(Command::new("cargo").current_dir(root).args([
-        "metadata",
-        "--no-deps",
-        "--format-version",
-        "1",
-        "--offline",
-    ]))?;
-    let metadata: serde_json::Value = serde_json::from_str(&metadata)
-        .map_err(|error| format!("cannot decode cargo metadata: {error}"))?;
-    let target = metadata["target_directory"]
-        .as_str()
-        .ok_or("cargo metadata omits target_directory")?;
-    Ok(Path::new(target)
-        .join("release")
-        .join(format!("rustleaks-perf{}", std::env::consts::EXE_SUFFIX)))
-}
-
-#[cfg(target_os = "macos")]
-fn run_perf_sample(binary: &Path, workload: &str) -> Result<String, String> {
-    command_output(Command::new(binary).args(["--workload", workload, "--iterations", "1"]))
-}
-
-#[cfg(target_os = "macos")]
-fn calibrated_m1_max_host() -> Result<bool, String> {
-    let output =
-        command_output(Command::new("system_profiler").args(["SPHardwareDataType", "-json"]))?;
-    let profile: serde_json::Value = serde_json::from_str(&output)
-        .map_err(|error| format!("cannot decode macOS hardware profile: {error}"))?;
-    let hardware = profile["SPHardwareDataType"]
-        .as_array()
-        .and_then(|rows| rows.first())
-        .ok_or("macOS hardware profile omits its overview")?;
-    Ok(hardware["machine_model"] == "MacBookPro18,2"
-        && hardware["chip_type"] == "Apple M1 Max"
-        && hardware["physical_memory"] == "32 GB"
-        && hardware["number_processors"] == "proc 10:8:2:0")
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::unnecessary_wraps)] // Keep the platform implementations type-identical.
-fn calibrated_m1_max_host() -> Result<bool, String> {
-    Ok(false)
-}
-
-#[cfg(target_os = "macos")]
-fn run_perf_sample_with_rss(binary: &Path, workload: &str) -> Result<(String, u64), String> {
-    const SCRIPT: &str = r#"import resource, subprocess, sys
-p = subprocess.run(sys.argv[1:], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-sys.stderr.buffer.write(p.stderr)
-sys.stdout.buffer.write(p.stdout)
-print("__RUSTLEAKSS_BYTES__=" + str(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss))
-raise SystemExit(p.returncode)
-"#;
-    let display = format!("Python RSS collector for {workload}");
-    let output = Command::new("python3")
-        .arg("-c")
-        .arg(SCRIPT)
-        .arg(binary)
-        .args(["--workload", workload, "--iterations", "1"])
-        .output()
-        .map_err(|error| format!("failed to run {display}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "{display} exited {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let output = String::from_utf8(output.stdout)
-        .map_err(|error| format!("{display} returned non-UTF-8 output: {error}"))?;
-    let (record, rss) = output
-        .trim_end()
-        .rsplit_once('\n')
-        .ok_or_else(|| format!("{display} omitted its RSS record"))?;
-    let rss = rss
-        .strip_prefix("__RUSTLEAKSS_BYTES__=")
-        .ok_or_else(|| format!("{display} returned an invalid RSS record"))?
-        .parse::<u64>()
-        .map_err(|error| format!("{display} returned invalid RSS bytes: {error}"))?;
-    Ok((record.to_owned(), rss))
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn validate_perf_budget(
-    budget: PerfBudget,
-    elapsed: &mut [u64],
-    peak_rss: u64,
-) -> Result<(u64, u64), String> {
-    if elapsed.len() != 7 {
-        return Err(format!(
-            "{} performance budget requires seven fresh elapsed samples",
-            budget.workload
-        ));
-    }
-    elapsed.sort_unstable();
-    let median = elapsed[3];
-    if median > budget.median_elapsed_ns {
-        return Err(format!(
-            "{} median elapsed {median} ns exceeds {} ns",
-            budget.workload, budget.median_elapsed_ns
-        ));
-    }
-    if peak_rss > budget.peak_rss_bytes {
-        return Err(format!(
-            "{} peak RSS {peak_rss} bytes exceeds {} bytes",
-            budget.workload, budget.peak_rss_bytes
-        ));
-    }
-    Ok((median, peak_rss))
-}
-
-#[cfg(target_os = "macos")]
-fn perf_budget_check(root: &Path, expected_revision: &str) -> Result<(), String> {
-    let binary = perf_binary(root)?;
-    for budget in M1_MAX_PERF_BUDGETS {
-        let warmup = run_perf_sample(&binary, budget.workload)?;
-        let warmup: serde_json::Value = serde_json::from_str(&warmup)
-            .map_err(|error| format!("invalid performance warmup JSON: {error}"))?;
-        validate_perf_record(&warmup, 1, expected_revision)?;
-
-        let mut elapsed = Vec::with_capacity(7);
-        let mut peak_rss = 0_u64;
-        for sample in 0..7 {
-            let (record, rss) = if sample < 3 {
-                let (record, rss) = run_perf_sample_with_rss(&binary, budget.workload)?;
-                (record, Some(rss))
-            } else {
-                (run_perf_sample(&binary, budget.workload)?, None)
-            };
-            let record: serde_json::Value = serde_json::from_str(&record)
-                .map_err(|error| format!("invalid performance sample JSON: {error}"))?;
-            validate_perf_record(&record, sample + 1, expected_revision)?;
-            elapsed.push(
-                record["ns_per_iteration"]
-                    .as_u64()
-                    .expect("validated timing"),
-            );
-            if let Some(rss) = rss {
-                peak_rss = peak_rss.max(rss);
-            }
-        }
-        let (median, rss) = validate_perf_budget(*budget, &mut elapsed, peak_rss)?;
-        println!(
-            "{}: median {median} ns, peak RSS {rss} bytes",
-            budget.workload
-        );
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::unnecessary_wraps)] // Keep the platform implementations type-identical.
-fn perf_budget_check(_root: &Path, _expected_revision: &str) -> Result<(), String> {
-    Ok(())
-}
-
-fn perf_check() -> Result<(), String> {
-    let root = workspace_root()?;
-    let revision = current_revision(&root)?;
-    let output = run_perf_matrix()?;
-    validate_perf_records(&output, &revision)?;
-    println!(
-        "all {} performance workloads satisfy exact outcome and provenance invariants",
-        PERF_WORKLOADS.len()
-    );
-    if calibrated_m1_max_host()? {
-        perf_budget_check(&root, &revision)?;
-        println!("calibrated Apple M1 Max elapsed and RSS budgets passed");
-    } else {
-        println!("elapsed and RSS budgets skipped on this uncalibrated host class");
-    }
-    Ok(())
-}
-
 struct ScopedTempDir {
     path: PathBuf,
 }
@@ -2408,36 +1933,6 @@ impl Drop for ScopedTempDir {
     }
 }
 
-fn copy_seed_files(source: &Path, destination: &Path) -> Result<(), String> {
-    std::fs::create_dir(destination).map_err(|error| {
-        format!(
-            "cannot create fuzz corpus {}: {error}",
-            destination.display()
-        )
-    })?;
-    for entry in std::fs::read_dir(source)
-        .map_err(|error| format!("cannot read fuzz seeds {}: {error}", source.display()))?
-    {
-        let entry = entry.map_err(|error| format!("cannot read fuzz seed entry: {error}"))?;
-        let file_type = entry.file_type().map_err(|error| {
-            format!(
-                "cannot inspect fuzz seed {}: {error}",
-                entry.path().display()
-            )
-        })?;
-        if !file_type.is_file() {
-            return Err(format!(
-                "fuzz seed directory contains a non-file entry: {}",
-                entry.path().display()
-            ));
-        }
-        std::fs::copy(entry.path(), destination.join(entry.file_name())).map_err(|error| {
-            format!("cannot copy fuzz seed {}: {error}", entry.path().display())
-        })?;
-    }
-    Ok(())
-}
-
 fn fuzz_build() -> Result<(), String> {
     let root = workspace_root()?;
     let toolchain = format!("+{FUZZ_TOOLCHAIN}");
@@ -2465,120 +1960,8 @@ fn fuzz_build() -> Result<(), String> {
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)] // The explicit eight-target matrix is easier to audit in one gate.
 fn fuzz_smoke() -> Result<(), String> {
-    fuzz_build()?;
-    let root = workspace_root()?;
-    let toolchain = format!("+{FUZZ_TOOLCHAIN}");
-    let smoke = ScopedTempDir::new("fuzz-smoke")?;
-    let runs = fuzz_campaign_bound("RUSTLEAKS_FUZZ_RUNS", 16, 1_000_000)?;
-    let max_total_time = fuzz_campaign_bound("RUSTLEAKS_FUZZ_MAX_TOTAL_TIME", 20, 600)?;
-    let campaign_timeout = Duration::from_secs(max_total_time.saturating_add(120));
-    let targets = [
-        (
-            "crates/rustleaks-core/fuzz",
-            "go_regex",
-            "corpus/go_regex",
-            4096_u32,
-            "dictionaries/go_regex.dict",
-        ),
-        (
-            "crates/rustleaks-core/fuzz",
-            "config",
-            "seeds/config",
-            8192,
-            "dictionaries/config.dict",
-        ),
-        (
-            "crates/rustleaks-core/fuzz",
-            "fragment_scan",
-            "seeds/fragment_scan",
-            8192,
-            "dictionaries/fragment_scan.dict",
-        ),
-        (
-            "crates/rustleaks-core/fuzz",
-            "session",
-            "seeds/session",
-            16_384,
-            "dictionaries/session.dict",
-        ),
-        (
-            "crates/rustleaks-sources/fuzz",
-            "archive",
-            "seeds/archive",
-            8192,
-            "dictionaries/archive.dict",
-        ),
-        (
-            "crates/rustleaks-sources/fuzz",
-            "reader_schedule",
-            "seeds/reader_schedule",
-            4096,
-            "dictionaries/reader_schedule.dict",
-        ),
-        (
-            "crates/rustleaks-sources/fuzz",
-            "git_patch",
-            "seeds/git_patch",
-            16_384,
-            "dictionaries/git_patch.dict",
-        ),
-        (
-            "crates/rustleaks-report/fuzz",
-            "template",
-            "seeds/template",
-            8192,
-            "dictionaries/template.dict",
-        ),
-    ];
-    for (fuzz_dir, target, seeds, max_len, dictionary) in targets {
-        let target_root = smoke.path.join(target);
-        let corpus = target_root.join("corpus");
-        let artifacts = target_root.join("artifacts");
-        std::fs::create_dir_all(&artifacts)
-            .map_err(|error| format!("cannot create fuzz artifact directory: {error}"))?;
-        if target == "go_regex" {
-            tooling::generate_regex_fuzz_seeds(
-                &root.join("compat/regex-corpus/requests-v1.jsonl"),
-                &corpus,
-            )?;
-        } else {
-            copy_seed_files(&root.join(fuzz_dir).join(seeds), &corpus)?;
-        }
-        let artifact_prefix = format!("{}/", artifacts.display());
-        let dictionary = root.join(fuzz_dir).join(dictionary);
-        let runs = format!("-runs={runs}");
-        let max_total_time = format!("-max_total_time={max_total_time}");
-        command_status_with_timeout(
-            Command::new("cargo")
-                .current_dir(&root)
-                .args([
-                    toolchain.as_str(),
-                    "fuzz",
-                    "run",
-                    "--fuzz-dir",
-                    fuzz_dir,
-                    "--no-trace-compares",
-                    target,
-                ])
-                .arg(&corpus)
-                .arg("--")
-                .args([
-                    runs.as_str(),
-                    max_total_time.as_str(),
-                    "-timeout=5",
-                    "-rss_limit_mb=2048",
-                ])
-                .arg(format!("-max_len={max_len}"))
-                .arg(format!("-dict={}", dictionary.display()))
-                .arg(format!("-artifact_prefix={artifact_prefix}")),
-            campaign_timeout,
-            target,
-        )?;
-    }
-    println!("all eight bounded fuzz targets compiled and replayed seed campaigns");
-    Ok(())
+    fuzzing::smoke(&workspace_root()?)
 }
 
 fn fuzz_campaign_bound(name: &str, default: u64, maximum: u64) -> Result<u64, String> {
@@ -3091,7 +2474,7 @@ fn full_parity() -> Result<(), String> {
     supply_chain_check()?;
     panic_abort_check()?;
     fuzz_check()?;
-    perf_check()?;
+    performance::check()?;
     clean_worktree_check()?;
     println!("complete compatibility and local release hardening passed");
     Ok(())
@@ -3105,15 +2488,13 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, CONFIG_SHA256, PERF_INVARIANTS,
-        PUBLIC_API_TOOLCHAIN, PerfBudget, RELEASE_VERSION, REVISION, build_system,
-        composite_test_executable_from_messages, parse_civil_day, public_api_command,
+        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, PUBLIC_API_TOOLCHAIN, RELEASE_VERSION,
+        build_system, composite_test_executable_from_messages, parse_civil_day, public_api_command,
         resource_test_command, reviewed_unsafe_packages, run_resource_test,
         validate_compcol_exemption_scope, validate_core_repository_metadata,
-        validate_dependency_boundaries, validate_owned_unsafe_package, validate_perf_budget,
-        validate_perf_records, validate_publish_policy, validate_regex_backend_metadata,
-        validate_supply_chain_exceptions, validate_unsafe_package_set, validate_vet_exemption,
-        workspace_root,
+        validate_dependency_boundaries, validate_owned_unsafe_package, validate_publish_policy,
+        validate_regex_backend_metadata, validate_supply_chain_exceptions,
+        validate_unsafe_package_set, validate_vet_exemption, workspace_root,
     };
     use crate::tooling::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 
@@ -3402,79 +2783,6 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
 
         let linked = r#"{"packages":[{"name":"native","version":"1.0.0","links":"native"}]}"#;
         assert!(validate_dependency_boundaries(&core, &sources, linked).is_err());
-    }
-
-    #[test]
-    fn performance_record_gate_requires_the_exact_matrix_and_provenance() {
-        let output = PERF_INVARIANTS
-            .iter()
-            .map(|expected| {
-                serde_json::json!({
-                    "schema_version": 1,
-                    "workload": expected.workload,
-                    "iterations": 1,
-                    "elapsed_ns": 1,
-                    "ns_per_iteration": 1,
-                    "logical_bytes": expected.logical_bytes,
-                    "result_count": expected.result_count,
-                    "output_bytes": expected.output_bytes,
-                    "outcome_fnv1a64": expected.outcome_fnv1a64,
-                    "invariant": "exact",
-                    "provenance": {
-                        "upstream_revision": REVISION,
-                        "default_config_sha256": CONFIG_SHA256,
-                        "package_version": RELEASE_VERSION,
-                        "rust_revision": "rust-head",
-                        "rustc": "rustc test",
-                        "target_os": "test",
-                        "target_arch": "test",
-                        "executable_bytes": 1,
-                        "executable_fnv1a64": "0123456789abcdef"
-                    }
-                })
-                .to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        validate_perf_records(&output, "rust-head").unwrap();
-        assert!(
-            validate_perf_records(&output.replacen(REVISION, "wrong", 1), "rust-head").is_err()
-        );
-        assert!(
-            validate_perf_records(
-                &output.replacen("\"result_count\":222", "\"result_count\":221", 1),
-                "rust-head"
-            )
-            .is_err()
-        );
-        assert!(validate_perf_records(&output, "stale-head").is_err());
-        assert!(
-            validate_perf_records(
-                output
-                    .lines()
-                    .skip(1)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    .as_str(),
-                "rust-head"
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn performance_budgets_reject_elapsed_and_rss_regressions() {
-        let budget = PerfBudget {
-            workload: "probe",
-            median_elapsed_ns: 10,
-            peak_rss_bytes: 20,
-        };
-        let mut passing = vec![7, 8, 9, 10, 11, 12, 13];
-        assert_eq!(validate_perf_budget(budget, &mut passing, 20), Ok((10, 20)));
-        let mut slow = vec![11; 7];
-        assert!(validate_perf_budget(budget, &mut slow, 20).is_err());
-        let mut memory = vec![10; 7];
-        assert!(validate_perf_budget(budget, &mut memory, 21).is_err());
     }
 
     #[derive(Default)]

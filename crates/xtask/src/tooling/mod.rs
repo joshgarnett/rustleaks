@@ -1,5 +1,6 @@
 //! Rust-first repository generation and compatibility verification.
 
+mod archive_fuzz_seeds;
 mod artifacts;
 mod cli_corpus;
 mod composite;
@@ -10,6 +11,7 @@ mod generate;
 mod git_corpus;
 mod go_lowercase;
 mod inventory;
+mod native_assets;
 mod oracle;
 mod report;
 mod runtime_provenance;
@@ -19,6 +21,7 @@ mod support;
 mod traceability;
 mod vet_inventory;
 
+pub(crate) use archive_fuzz_seeds::generate_archive_fuzz_seeds;
 pub(crate) use cli_corpus::{check_cli_corpus, write_cli_corpus};
 pub(crate) use composite::{check_composite_corpus, write_composite_corpus};
 pub(crate) use config::{check_config_corpus, write_config_corpus};
@@ -28,6 +31,7 @@ pub(crate) use generate::run as run_generate;
 pub(crate) use git_corpus::{check_git_corpus, write_git_corpus};
 pub(crate) use go_lowercase::generate_go_lowercase;
 pub(crate) use inventory::{check_inventory, write_inventory};
+pub(crate) use native_assets::generate as generate_native_pack_identity;
 pub(crate) use oracle::{Corpus, check_bootstrap_corpus, generate_corpus, replay_corpus};
 pub(crate) use report::{check_report_corpus, write_report_corpus};
 pub(crate) use session::{check_session_corpus, write_session_corpus};
@@ -35,6 +39,7 @@ pub(crate) use source::{check_source_corpus, write_source_corpus};
 #[cfg(test)]
 pub(crate) use support::{TimeoutChild, diagnostic_tail, wait_for_child_with_timeout};
 pub(crate) use support::{command_output, command_status_with_timeout, sha256_file};
+pub(crate) use support::{sha256_bytes, terminate_process_tree};
 pub(crate) use traceability::api::{
     check_api_dispositions, self_test_api_dispositions, summarize_api_dispositions,
     write_api_dispositions,

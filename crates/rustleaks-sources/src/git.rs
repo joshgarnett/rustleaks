@@ -945,7 +945,8 @@ fn parse_patch(
             continue;
         }
         let mut file = ParsedFile {
-            path: parse_diff_fallback(lines[index], limits.path_bytes())?.unwrap_or_default(),
+            path: parse_diff_fallback(lines[index], limits.path_bytes(), cancellation)?
+                .unwrap_or_default(),
             commit: copy_limited(
                 &current_commit,
                 limits.metadata_bytes(),
@@ -1029,21 +1030,25 @@ fn parse_patch(
                 saw_new_mode = true;
             } else if line.starts_with(b"rename from ") {
                 saw_rename_from = true;
-            } else if line.starts_with(b"rename to ") {
+            } else if let Some(value) = line.strip_prefix(b"rename to ") {
                 if !saw_rename_from {
                     return Err(PatchError::Invalid(
                         "Git rename destination has no source".to_owned(),
                     ));
                 }
+                file.path =
+                    decode_patch_path(trim_line(value), false, limits.path_bytes(), cancellation)?;
                 saw_rename_to = true;
             } else if line.starts_with(b"copy from ") {
                 saw_copy_from = true;
-            } else if line.starts_with(b"copy to ") {
+            } else if let Some(value) = line.strip_prefix(b"copy to ") {
                 if !saw_copy_from {
                     return Err(PatchError::Invalid(
                         "Git copy destination has no source".to_owned(),
                     ));
                 }
+                file.path =
+                    decode_patch_path(trim_line(value), false, limits.path_bytes(), cancellation)?;
                 saw_copy_to = true;
             } else if line.starts_with(b"index ")
                 || line.starts_with(b"similarity index ")
@@ -1273,6 +1278,13 @@ fn join_message(
     Ok(title)
 }
 
+fn parse_old_hunk_position(value: &[u8]) -> PatchResult<i64> {
+    std::str::from_utf8(value)
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .ok_or_else(|| PatchError::Invalid("invalid Git old range position".to_owned()))
+}
+
 fn parse_hunk(
     lines: &[&[u8]],
     start: usize,
@@ -1309,6 +1321,7 @@ fn parse_hunk(
         .ok_or_else(|| PatchError::Invalid("invalid Git old range".to_owned()))?;
     let old_range = &minus[..old_end];
     let old_comma = old_range.iter().position(|byte| *byte == b',');
+    parse_old_hunk_position(old_comma.map_or(old_range, |at| &old_range[..at]))?;
     let mut old_remaining = match old_comma {
         Some(at) => parse_usize(&old_range[at + 1..]).map_err(PatchError::Invalid)?,
         None => 1,
@@ -1379,22 +1392,49 @@ fn parse_hunk(
     ))
 }
 
-fn parse_diff_fallback(line: &[u8], path_limit: usize) -> PatchResult<Option<Vec<u8>>> {
+fn parse_diff_fallback(
+    line: &[u8],
+    path_limit: usize,
+    cancellation: &dyn Cancellation,
+) -> PatchResult<Option<Vec<u8>>> {
     let Some(value) = line.strip_prefix(b"diff --git ") else {
         return Ok(None);
     };
     let value = trim_line(value);
-    if value.starts_with(b"\"") {
-        return Ok(None);
-    }
-    let marker = b" b/";
-    let Some(at) = value
-        .windows(marker.len())
-        .rposition(|window| window == marker)
-    else {
+    let split = if value.starts_with(b"\"") {
+        quoted_path_end(value, cancellation)?
+    } else if let Some(quote) = value.iter().position(|byte| *byte == b'"') {
+        quote.saturating_sub(1)
+    } else {
+        // Unquoted paths may contain spaces, including " b/". A default
+        // name exists only when both complete names agree, so its separator
+        // must be the midpoint. Rename/copy headers supply differing names.
+        value.len() / 2
+    };
+    let (old, rest) = value.split_at(split);
+    let Some(new) = rest.strip_prefix(b" ") else {
         return Ok(None);
     };
-    copy_limited(&value[at + marker.len()..], path_limit, "Git fallback path").map(Some)
+    let old = decode_patch_path(old, true, path_limit, cancellation)?;
+    let new = decode_patch_path(new.trim_ascii_start(), true, path_limit, cancellation)?;
+    Ok((old == new).then_some(new))
+}
+
+fn quoted_path_end(value: &[u8], cancellation: &dyn Cancellation) -> PatchResult<usize> {
+    let mut escaped = false;
+    for (index, byte) in value.iter().enumerate().skip(1) {
+        poll_patch_cancellation(cancellation)?;
+        if escaped {
+            escaped = false;
+        } else if *byte == b'\\' {
+            escaped = true;
+        } else if *byte == b'"' {
+            return Ok(index + 1);
+        }
+    }
+    Err(PatchError::Invalid(
+        "unterminated quoted Git path".to_owned(),
+    ))
 }
 
 fn decode_patch_path(
@@ -2073,6 +2113,321 @@ mod tests {
             .expect("repeated slash path"),
             b"repeated/slash"
         );
+    }
+
+    #[test]
+    fn nontext_records_preserve_quoted_and_ambiguous_paths() {
+        // GIT-007/008: the filename is independent of whether a text hunk exists.
+        let paths: &[(&str, &[u8])] = &[
+            ("plain.tar", b"plain.tar"),
+            ("with space.tar", b"with space.tar"),
+            ("folder b/nested.tar", b"folder b/nested.tar"),
+            (r"tab\tname.tar", b"tab\tname.tar"),
+            (r"invalid-\377.tar", b"invalid-\xff.tar"),
+            (r#"quote\"name.tar"#, b"quote\"name.tar"),
+            (r"back\\slash.tar", b"back\\slash.tar"),
+        ];
+        for &(spelling, expected) in paths {
+            let quoted = spelling.contains('\\');
+            let header = if quoted {
+                format!("diff --git \"a/{spelling}\" \"b/{spelling}\"\n")
+            } else {
+                format!("diff --git a/{spelling} b/{spelling}\n")
+            };
+            for suffix in [
+                "new file mode 100644\nBinary files /dev/null and placeholder differ\n",
+                "old mode 100644\nnew mode 100755\n",
+                "new file mode 100644\n",
+            ] {
+                let patch = format!("{header}{suffix}");
+                let limits = GitLimits::default()
+                    .with_parser_limits(20, expected.len(), 1, 1)
+                    .expect("exact path and file limits");
+                let files = parse_patch(patch.as_bytes(), limits, &crate::CancellationToken::new())
+                    .expect("valid nontext patch");
+                assert_eq!(files.len(), 1, "spelling={spelling}, suffix={suffix}");
+                assert_eq!(
+                    files[0].path, expected,
+                    "spelling={spelling}, suffix={suffix}"
+                );
+                assert!(files[0].hunks.is_empty());
+                assert!(matches!(
+                    parse_patch(
+                        patch.repeat(2).as_bytes(),
+                        limits,
+                        &crate::CancellationToken::new()
+                    ),
+                    Err(PatchError::Limit(_))
+                ));
+                let over = limits
+                    .with_parser_limits(20, expected.len() - 1, 1, 1)
+                    .expect("short path limit");
+                assert!(matches!(
+                    parse_patch(patch.as_bytes(), over, &crate::CancellationToken::new()),
+                    Err(PatchError::Limit(_))
+                ));
+            }
+        }
+        for operation in ["rename", "copy"] {
+            let patch = format!(
+                "diff --git a/old.tar \"b/new\\tname.tar\"\n{operation} from old.tar\n{operation} to \"new\\tname.tar\"\nBinary files a/old.tar and \"b/new\\tname.tar\" differ\n"
+            );
+            let files = parse_patch(
+                patch.as_bytes(),
+                GitLimits::default(),
+                &crate::CancellationToken::new(),
+            )
+            .expect("nontext rename/copy patch");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].path, b"new\tname.tar");
+        }
+    }
+
+    #[test]
+    fn mixed_quoted_rename_and_copy_paths_use_exact_decoded_limits() {
+        type PathCase<'a> = (&'a str, &'a str, &'a str, &'a str, &'a [u8], usize);
+        let cases: &[PathCase<'_>] = &[
+            (
+                "a/old",
+                r#""b/new\tlong""#,
+                "old",
+                r#""new\tlong""#,
+                b"new\tlong",
+                8,
+            ),
+            (
+                r#""a/old\tlong""#,
+                "b/new",
+                r#""old\tlong""#,
+                "new",
+                b"new",
+                8,
+            ),
+            (
+                "a/old-long-name",
+                r#""b/n\t""#,
+                "old-long-name",
+                r#""n\t""#,
+                b"n\t",
+                13,
+            ),
+            (
+                r#""a/o\t""#,
+                "b/new-long-name",
+                r#""o\t""#,
+                "new-long-name",
+                b"new-long-name",
+                13,
+            ),
+        ];
+        for &(old, new, from, to, expected, width) in cases {
+            for operation in ["rename", "copy"] {
+                for suffix in [
+                    "Binary files source and destination differ\n",
+                    "old mode 100644\nnew mode 100755\n",
+                    "@@ -0,0 +1 @@\n+new content\n",
+                ] {
+                    let patch = format!(
+                        "diff --git {old} {new}\n{operation} from {from}\n{operation} to {to}\n{suffix}"
+                    );
+                    let exact = GitLimits::default()
+                        .with_parser_limits(20, width, 1, 1)
+                        .unwrap();
+                    let files =
+                        parse_patch(patch.as_bytes(), exact, &crate::CancellationToken::new())
+                            .expect("mixed quoting");
+                    assert_eq!(files.len(), 1);
+                    assert_eq!(files[0].path, expected);
+                    if suffix.starts_with("@@") {
+                        assert_eq!(files[0].hunks[0].added, b"new content\n");
+                    }
+                    let below = exact.with_parser_limits(20, width - 1, 1, 1).unwrap();
+                    assert!(matches!(
+                        parse_patch(patch.as_bytes(), below, &crate::CancellationToken::new()),
+                        Err(PatchError::Limit(_))
+                    ));
+                    assert!(matches!(
+                        parse_patch(
+                            patch.repeat(2).as_bytes(),
+                            exact,
+                            &crate::CancellationToken::new()
+                        ),
+                        Err(PatchError::Limit(_))
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_hunks_cannot_consume_a_later_record_boundary() {
+        let prefix = "diff --git a/first b/first\n--- a/first\n+++ b/first\n";
+        let boundaries = [
+            "",
+            "@@ -0,0 +8 @@\n+next hunk\n",
+            "diff --git a/second b/second\n--- a/second\n+++ b/second\n@@ -0,0 +1 @@\n+next file\n",
+            "commit abc\nAuthor: Synthetic <synthetic@example.invalid>\nDate:   Tue Nov 2 23:37:53 2021 +0000\n\n    synthetic\n\ndiff --git a/second b/second\nnew file mode 100644\n",
+        ];
+        for body in [
+            "@@ -1,2 +1,2 @@\n context\n",
+            "@@ -1 +1 @@\n-old\n",
+            "@@ -0,0 +1,2 @@\n+only one\n",
+            "@@ -1,2 +0,0 @@\n-only one\n",
+            "@@ -0,0 +1 @@\n+complete\n+surplus\n",
+            "@@ -1 +1 @@\n context\n-unexpected\n",
+        ] {
+            for boundary in boundaries {
+                let patch = format!("{prefix}{body}{boundary}");
+                assert!(
+                    matches!(
+                        parse_patch(
+                            patch.as_bytes(),
+                            GitLimits::default(),
+                            &crate::CancellationToken::new()
+                        ),
+                        Err(PatchError::Invalid(_))
+                    ),
+                    "body={body:?}, boundary={boundary:?}"
+                );
+            }
+        }
+        for body in [
+            "@@ -1 +1 @@\n-old\n+new\n",
+            "@@ -0,0 +1 @@\n+new\n\\ No newline at end of file\n",
+        ] {
+            for boundary in boundaries {
+                let patch = format!("{prefix}{body}{boundary}");
+                let files = parse_patch(
+                    patch.as_bytes(),
+                    GitLimits::default(),
+                    &crate::CancellationToken::new(),
+                )
+                .expect("complete control hunk");
+                assert_eq!(files[0].path, b"first");
+                assert_eq!(
+                    files[0].hunks[0].added,
+                    if body.contains("No newline") {
+                        b"new".as_slice()
+                    } else {
+                        b"new\n".as_slice()
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hunk_projection_preserves_compacted_bytes_and_record_boundaries() {
+        // GIT-004/005/006: context and deleted bytes never enter Raw; StartLine
+        // remains the new-range origin even when context precedes additions.
+        for contexts in 0..=2 {
+            for deletions in 0..=2 {
+                for additions in 0..=2 {
+                    if deletions + additions == 0 {
+                        continue;
+                    }
+                    for no_newline in [false, true] {
+                        let mut patch = format!(
+                            "diff --git a/first b/first\n--- a/first\n+++ b/first\n@@ -7,{} +13,{} @@\n",
+                            contexts + deletions, contexts + additions
+                        ).into_bytes();
+                        for _ in 0..contexts {
+                            patch.extend_from_slice(b" context\xff\n");
+                        }
+                        for _ in 0..deletions {
+                            patch.extend_from_slice(b"-deleted\xfe\n");
+                        }
+                        if no_newline && deletions > 0 {
+                            patch.extend_from_slice(b"\\ No newline at end of file\n");
+                        }
+                        let mut expected = b"added\xfd\r\n".repeat(additions);
+                        for _ in 0..additions {
+                            patch.extend_from_slice(b"+added\xfd\r\n");
+                        }
+                        if no_newline && additions > 0 {
+                            patch.extend_from_slice(b"\\ No newline at end of file\n");
+                            expected.pop();
+                        }
+                        let first_end = patch.len();
+                        patch.extend_from_slice(b"@@ -20,0 +88 @@\n+next hunk\n");
+                        patch.extend_from_slice(b"diff --git a/second b/second\n--- a/second\n+++ b/second\n@@ -0,0 +1 @@\n+next file\n");
+                        let limits = GitLimits::default()
+                            .with_parser_limits(20, 6, 2, 3)
+                            .expect("exact aggregate record limits");
+                        let files = parse_patch(&patch, limits, &crate::CancellationToken::new())
+                            .expect("constructed patch");
+                        assert_eq!(files.len(), 2);
+                        assert_eq!(files[0].hunks.len(), 2);
+                        assert_eq!(files[0].hunks[0].added, expected);
+                        assert_eq!(files[0].hunks[0].new_position, 13);
+                        assert_eq!(files[0].hunks[1].added, b"next hunk\n");
+                        assert_eq!(files[0].hunks[1].new_position, 88);
+                        assert_eq!(files[1].path, b"second");
+                        assert_eq!(files[1].hunks[0].added, b"next file\n");
+                        // Removing the final operation or its preceding newline
+                        // leaves a count short; no later record may fill it in.
+                        let mut truncated = patch[..first_end].to_vec();
+                        if no_newline {
+                            let marker = b"\\ No newline at end of file\n";
+                            if truncated.ends_with(marker) {
+                                truncated.truncate(truncated.len() - marker.len());
+                            }
+                        }
+                        truncated.pop();
+                        let last_line = truncated
+                            .iter()
+                            .rposition(|byte| *byte == b'\n')
+                            .expect("header remains")
+                            + 1;
+                        truncated.truncate(last_line);
+                        truncated.extend_from_slice(&patch[first_end..]);
+                        assert!(matches!(
+                            parse_patch(&truncated, limits, &crate::CancellationToken::new()),
+                            Err(PatchError::Invalid(_))
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_old_hunk_positions_are_structured_errors() {
+        for position in [
+            "garbage",
+            "",
+            "9223372036854775808",
+            "184467440737095516160",
+        ] {
+            let patch = format!(
+                "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -{position},1 +1 @@\n-old\n+new\n"
+            );
+            assert!(
+                matches!(
+                    parse_patch(
+                        patch.as_bytes(),
+                        GitLimits::default(),
+                        &crate::CancellationToken::new()
+                    ),
+                    Err(PatchError::Invalid(_))
+                ),
+                "invalid old position must reject the complete patch: {position}"
+            );
+        }
+        // The pinned parser uses signed int64 for this unused old position.
+        for position in ["-1", "+1", "-9223372036854775808", "9223372036854775807"] {
+            let patch = format!(
+                "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -{position},1 +1 @@\n-old\n+new\n"
+            );
+            let files = parse_patch(
+                patch.as_bytes(),
+                GitLimits::default(),
+                &crate::CancellationToken::new(),
+            )
+            .expect("pinned signed old position");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].hunks[0].added, b"new\n");
+        }
     }
 
     #[test]

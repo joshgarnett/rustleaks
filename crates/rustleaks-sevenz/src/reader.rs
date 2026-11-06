@@ -1137,9 +1137,13 @@ impl Archive {
             }
             // Each stream is referenced by a bind-pair/packed-stream entry that consumes
             // header bytes, so the totals cannot legitimately exceed `limit`. Bounding
-            // here also prevents the sums below from overflowing.
-            total_in_streams += coder.num_in_streams;
-            total_out_streams += coder.num_out_streams;
+            // the checked sums also prevents wrapping before the limit check.
+            total_in_streams = total_in_streams
+                .checked_add(coder.num_in_streams)
+                .ok_or_else(|| Error::other("coder stream counts exceed available input"))?;
+            total_out_streams = total_out_streams
+                .checked_add(coder.num_out_streams)
+                .ok_or_else(|| Error::other("coder stream counts exceed available input"))?;
             if total_in_streams > limit as u64 || total_out_streams > limit as u64 {
                 return Err(Error::other("coder stream counts exceed available input"));
             }
@@ -1218,9 +1222,82 @@ impl Archive {
             }
         }
         block.packed_streams = packed_streams;
+        validate_coder_graph(&block)?;
 
         Ok(block)
     }
+}
+
+/// Rejects repeated stream bindings and cycles before constructing any decoder.
+/// The tables and traversal are linear in the header-bounded stream counts.
+fn validate_coder_graph(block: &Block) -> Result<(), Error> {
+    let allocation = "unable to allocate the 7z coder graph";
+    let mut input_owner = try_vec_filled(block.total_input_streams, 0usize, allocation)?;
+    let mut output_owner = try_vec_filled(block.total_output_streams, 0usize, allocation)?;
+    let mut input = 0;
+    let mut output = 0;
+    for (index, coder) in block.coders.iter().enumerate() {
+        let input_end = input + coder.num_in_streams as usize;
+        let output_end = output + coder.num_out_streams as usize;
+        input_owner[input..input_end].fill(index);
+        output_owner[output..output_end].fill(index);
+        input = input_end;
+        output = output_end;
+    }
+    let mut bound_inputs = try_vec_filled(block.total_input_streams, false, allocation)?;
+    let mut bound_outputs = try_vec_filled(block.total_output_streams, false, allocation)?;
+    let mut incoming = try_vec_filled(block.coders.len(), 0usize, allocation)?;
+    let mut first_edge = try_vec_filled(block.coders.len(), None, allocation)?;
+    let mut next_edge = try_vec_with_capacity(block.bind_pairs.len(), allocation)?;
+    for (edge, pair) in block.bind_pairs.iter().enumerate() {
+        let input = pair.in_index as usize;
+        let output = pair.out_index as usize;
+        if std::mem::replace(&mut bound_inputs[input], true)
+            || std::mem::replace(&mut bound_outputs[output], true)
+        {
+            return Err(Error::other("duplicate 7z stream binding"));
+        }
+        let source = output_owner[output];
+        let destination = input_owner[input];
+        incoming[destination] += 1;
+        next_edge.push(first_edge[source].replace(edge));
+    }
+    for &packed in &block.packed_streams {
+        let packed = usize::try_from(packed)
+            .map_err(|_| Error::other("packed stream index out of range"))?;
+        let Some(bound) = bound_inputs.get_mut(packed) else {
+            return Err(Error::other("packed stream index out of range"));
+        };
+        if std::mem::replace(bound, true) {
+            return Err(Error::other("duplicate or bound 7z packed stream"));
+        }
+    }
+    if bound_inputs.iter().any(|bound| !bound) {
+        return Err(Error::other("unbound 7z coder input"));
+    }
+    let mut ready = try_vec_with_capacity(block.coders.len(), allocation)?;
+    for (index, &count) in incoming.iter().enumerate() {
+        if count == 0 {
+            ready.push(index);
+        }
+    }
+    let mut visited = 0;
+    while let Some(coder) = ready.pop() {
+        visited += 1;
+        let mut edge = first_edge[coder];
+        while let Some(index) = edge {
+            let destination = input_owner[block.bind_pairs[index].in_index as usize];
+            incoming[destination] -= 1;
+            if incoming[destination] == 0 {
+                ready.push(destination);
+            }
+            edge = next_edge[index];
+        }
+    }
+    if visited != block.coders.len() {
+        return Err(Error::other("cyclic 7z coder graph"));
+    }
+    Ok(())
 }
 
 /// Validates an attacker-controlled count/size decoded from the header against an upper
@@ -2090,7 +2167,33 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
 
 #[cfg(test)]
 mod tests {
-    use super::try_vec_filled;
+    use super::{Archive, try_vec_filled};
+
+    #[test]
+    fn coder_stream_totals_reject_overflow_before_graph_construction() {
+        for counts in [(2, 1, u64::MAX, 1), (1, 2, 1, u64::MAX)] {
+            let mut header = vec![2];
+            for (inputs, outputs) in [(counts.0, counts.1), (counts.2, counts.3)] {
+                header.extend_from_slice(&[0x11, 0]); // Explicit stream counts, Copy method.
+                for count in [inputs, outputs] {
+                    header.push(0xff); // Full-width 7z integer encoding.
+                    header.extend_from_slice(&count.to_le_bytes());
+                }
+            }
+            header.extend_from_slice(&[0, 0, 0, 1]);
+            assert!(Archive::read_block(&mut header.as_slice(), header.len()).is_err());
+        }
+
+        // Two connected, single-input Copy coders remain valid at the exact
+        // stream-count ceiling, with no additional graph data consumed.
+        let header = [2, 1, 0, 1, 0, 1, 0];
+        let mut input = header.as_slice();
+        let block = Archive::read_block(&mut input, 2).unwrap();
+        assert_eq!(block.total_input_streams, 2);
+        assert_eq!(block.total_output_streams, 2);
+        assert!(input.is_empty());
+        assert!(Archive::read_block(&mut header.as_slice(), 1).is_err());
+    }
 
     #[test]
     fn impossible_parser_allocation_is_an_error() {

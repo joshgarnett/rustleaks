@@ -1,5 +1,14 @@
 # `rustleaks-core` fuzz targets
 
+The limits below describe smoke and extended campaigns. The optional deep
+profile raises each target input cap to 64 KiB. Fragment scanning additionally
+permits depth 4, 2 MiB decoded bytes, 65,536 work units and 512 findings. The
+runner records the selected profile; the test-only shared helper supplies both
+harness limits and synthetic seeds. Large config rules and match suffixes lie
+beyond the smoke boundary. Separate structured cases check decoded-byte,
+finding-record and configuration-selection boundaries. See the
+[structured-case contract](../../../docs/SECURITY_STRESS.md).
+
 This is a standalone `cargo-fuzz` package. Its inner `[workspace]` keeps root
 workspace resolution, commands, and `Cargo.lock` unchanged.
 
@@ -21,25 +30,11 @@ at least two bytes is usable. Pattern bytes are converted with UTF-8 loss
 replacement because Rust patterns must be valid UTF-8; haystack bytes remain
 unchanged, including malformed UTF-8.
 
-Seed the target from the frozen 3,618-request Go regex corpus and run a bounded
-smoke test from the workspace root:
-
-```sh
-cargo xtask generate regex-fuzz-seeds \
-  compat/regex-corpus/requests-v1.jsonl \
-  crates/rustleaks-core/fuzz/corpus/go_regex
-cargo +nightly-2026-08-21 fuzz run --fuzz-dir crates/rustleaks-core/fuzz \
-  go_regex crates/rustleaks-core/fuzz/corpus/go_regex -- \
-  -dict=crates/rustleaks-core/fuzz/dictionaries/go_regex.dict \
-  -max_len=4096 -max_total_time=60 -rss_limit_mb=2048
-```
-
-To replay a saved libFuzzer failure exactly:
-
-```sh
-cargo +nightly-2026-08-21 fuzz run go_regex artifacts/go_regex/crash-<hash> -- \
-  -dict=dictionaries/go_regex.dict
-```
+`just fuzz-smoke` generates the frozen 3,618-request Go regex seed corpus and
+runs all eight bounded targets with private diagnostics. For retained local
+output, run `just fuzz run --output /private/tmp/rustleaks-core-fuzz-run` from
+the repository root. The output path must be new and outside the checkout;
+this example uses macOS's non-symlink temporary directory.
 
 The target intentionally has no semantic assertions: any Go/Rust parity claim
 continues to come from the frozen oracle replay. Fuzzing is for panics, memory
@@ -73,27 +68,19 @@ and finding bytes. It also runs guaranteed baseline and exact-ignore
 suppression cases, repeated immutable-policy classification, and mutable
 session collection.
 
-Run bounded local smoke campaigns from this directory:
+Use the maintained runner from the repository root:
 
 ```sh
-cargo +nightly-2026-08-21 fuzz run config seeds/config -- \
-  -dict=dictionaries/config.dict \
-  -max_len=8192 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
-cargo +nightly-2026-08-21 fuzz run fragment_scan seeds/fragment_scan -- \
-  -dict=dictionaries/fragment_scan.dict \
-  -max_len=8192 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
-cargo +nightly-2026-08-21 fuzz run session seeds/session -- \
-  -dict=dictionaries/session.dict \
-  -max_len=16384 -max_total_time=60 -timeout=5 -rss_limit_mb=2048
+just fuzz-smoke
+just fuzz run --output /private/tmp/rustleaks-core-fuzz-run
 ```
 
-Replay saved artifacts by replacing the seed directory with the artifact path:
-
-```sh
-cargo +nightly-2026-08-21 fuzz run fragment_scan \
-  artifacts/fragment_scan/crash-<hash> -- \
-  -dict=dictionaries/fragment_scan.dict
-```
+Failed runs retain a private reproduction bundle. Explicit-output successful
+runs retain evolved corpora. The [private fuzz workflow](../../../docs/SECURITY_CONTROLS.md#private-local-fuzz-evidence)
+documents exact-option campaign replay, artifact reproduction and crash
+minimization, successful corpus merging, and explicit reviewed local promotion.
+Direct cargo-fuzz commands print raw crash bytes and do not supply that
+retention policy. Treat all crash inputs and diagnostics as sensitive.
 
 The harness caps protect routine fuzz jobs; production boundary behavior still
 requires focused tests at the larger documented limits. OOM may abort and is

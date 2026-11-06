@@ -244,3 +244,147 @@ fn cancellation_is_observed_before_allocation_and_between_rules() {
     assert_eq!(partial.findings().len(), 1);
     assert_eq!(partial.findings()[0].rule_id().as_bytes(), b"a-first");
 }
+
+#[test]
+fn completed_rule_prefixes_preserve_session_filters_duplicates_and_merge_order() {
+    use rustleaks_core::session::{
+        Baseline, IgnoreSet, ScanSession, SessionPolicy, global_fingerprint,
+        sort_findings_canonical,
+    };
+    let engine = two_rule_engine();
+    let outcomes: Vec<_> = (0..3)
+        .map(|index| {
+            let fragment = Fragment::builder(b"A B".to_vec())
+                .file_path(format!("source-{index}"))
+                .build();
+            let control = ScanControl::unlimited()
+                .with_budget(ScanBudget::unlimited().max_finding_records(1));
+            let outcome =
+                engine.scan_fragment_controlled(&fragment, &ScanOptions::default(), &control);
+            assert!(!outcome.is_complete());
+            assert_eq!(outcome.findings().len(), 1);
+            assert_eq!(outcome.findings()[0].rule_id().as_bytes(), b"a-first");
+            outcome
+        })
+        .collect();
+    let permutations = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for ignore in [false, true] {
+        for baseline in [false, true] {
+            let mut builder = SessionPolicy::builder();
+            if ignore {
+                let fingerprint = global_fingerprint(&outcomes[1].findings()[0]);
+                builder =
+                    builder.ignores(IgnoreSet::parse_go_compatible(fingerprint.as_bytes()).ignores);
+            }
+            if baseline {
+                builder = builder.baseline(Baseline::from_findings(outcomes[2].findings()));
+            }
+            let policy = builder.build();
+            let mut expected = Vec::new();
+            for (index, outcome) in outcomes.iter().enumerate() {
+                if (ignore && index == 1) || (baseline && index == 2) {
+                    continue;
+                }
+                let finding = policy
+                    .classify(outcome.findings()[0].clone())
+                    .into_parts()
+                    .0;
+                expected.extend([finding.clone(), finding]);
+            }
+            sort_findings_canonical(&mut expected);
+            for insertion in permutations {
+                for merge in permutations {
+                    let mut batches: Vec<_> = (0..3).map(|_| policy.new_batch()).collect();
+                    for index in insertion {
+                        for batch in [index, (index + 1) % 3] {
+                            batches[batch].add_finding(outcomes[index].findings()[0].clone());
+                        }
+                    }
+                    let mut session = ScanSession::new(policy.clone());
+                    for index in merge {
+                        session.merge(batches[index].clone()).unwrap();
+                    }
+                    // An equal-valued policy is still a distinct session identity.
+                    let before = session.snapshot();
+                    let mut foreign = SessionPolicy::default().new_batch();
+                    foreign.add_finding(outcomes[0].findings()[0].clone());
+                    assert!(session.merge(foreign).is_err());
+                    assert_eq!(session.findings(), before);
+                    let mut actual = session.into_findings();
+                    sort_findings_canonical(&mut actual);
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn nested_decode_cancellation_and_zero_combined_budgets_are_explicit() {
+    let engine = engine(
+        r#"
+[[rules]]
+id = "decoded"
+regex = '''secret=(decoded-secret)'''
+secretGroup = 1
+keywords = ["secret"]
+"#,
+    );
+    let fragment = Fragment::new(b"c2VjcmV0PVpHVmpiMlJsWkMxelpXTnlaWFE9");
+    let options = ScanOptions::builder().max_decode_depth(2).build();
+    let complete = engine.scan_fragment(&fragment, &options);
+    assert_eq!(complete.findings().len(), 1);
+    let mut cancelled = 0;
+    let mut cancelled_after_decode = 0;
+    for after in (0..complete.usage().work_units() + 4).chain(std::iter::once(usize::MAX)) {
+        let polls = AtomicUsize::new(0);
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= after;
+        let control = ScanControl::cancellable(&cancel);
+        let outcome = engine.scan_fragment_controlled(&fragment, &options, &control);
+        if outcome.is_complete() {
+            assert_eq!(outcome, complete);
+        } else {
+            cancelled += 1;
+            if outcome.usage().decoded_bytes() > 0 {
+                cancelled_after_decode += 1;
+            }
+            assert_eq!(outcome.termination(), Some(&ScanTermination::Cancelled));
+            assert!(outcome.findings().is_empty());
+        }
+    }
+    assert!(cancelled > 0 && cancelled_after_decode > 0);
+    let zero = ScanBudget::unlimited()
+        .max_decoded_bytes(0)
+        .max_work_units(0)
+        .max_finding_records(0);
+    let outcome = engine.scan_fragment_controlled(
+        &fragment,
+        &options,
+        &ScanControl::unlimited().with_budget(zero),
+    );
+    assert!(outcome.findings().is_empty());
+    assert_eq!(outcome.usage().work_units(), 0);
+    assert!(matches!(
+        outcome.termination(),
+        Some(ScanTermination::BudgetExceeded {
+            kind: ScanBudgetKind::WorkUnits,
+            limit: 0,
+            consumed: 0,
+            ..
+        })
+    ));
+    let cancel = AtomicBool::new(true);
+    let outcome = engine.scan_fragment_controlled(
+        &fragment,
+        &options,
+        &ScanControl::cancellable(&cancel).with_budget(zero),
+    );
+    assert_eq!(outcome.termination(), Some(&ScanTermination::Cancelled));
+}

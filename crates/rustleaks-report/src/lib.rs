@@ -7,6 +7,7 @@ mod json;
 mod junit;
 mod sarif;
 mod template;
+pub mod triage;
 
 use std::collections::TryReserveError;
 use std::io;

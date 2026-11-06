@@ -26,3 +26,8 @@ filegroup(
     name = "fixtures",
     srcs = glob(["fixtures/**"]),
 )
+
+filegroup(
+    name = "quality_default_config",
+    srcs = ["config-corpus/default-gitleaks.toml"],
+)

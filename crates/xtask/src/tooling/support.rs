@@ -211,11 +211,11 @@ fn fail_after_cleanup(child: &mut Child, label: &str, error: String) -> Result<(
     }
 }
 
-fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> {
+pub(crate) fn terminate_process_tree(child: &mut Child, label: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         let group = format!("-{}", child.id());
-        let _ = Command::new("kill")
+        let _ = Command::new("/bin/kill")
             .args(["-KILL", "--", &group])
             .stdout(Stdio::null())
             .stderr(Stdio::null())

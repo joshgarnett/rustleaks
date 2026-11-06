@@ -147,6 +147,8 @@ fn tags_need_quotes(tags: &[ByteText]) -> bool {
         return false;
     };
     (tags.len() == 1 && first.as_bytes() == br"\.")
+        // Joining a leading empty tag adds an initial space to the CSV field.
+        || (tags.len() > 1 && first.is_empty())
         || first_rune_is_go_space(first.as_bytes())
         || tags.iter().any(|tag| {
             tag.as_bytes()

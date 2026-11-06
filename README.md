@@ -20,6 +20,9 @@ The workspace manifest and changelog identify the current release candidate.
 Availability of a version is established by its crates.io entry and matching
 GitHub release, not by version text in this README.
 
+Planned engineering work and current delivery status are tracked in the
+[development roadmap](docs/ROADMAP.md).
+
 Platform evidence and its limitations are summarized below. Rustleaks is not
 described as production-ready.
 

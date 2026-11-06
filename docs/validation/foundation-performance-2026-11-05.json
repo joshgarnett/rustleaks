@@ -1,0 +1,603 @@
+{
+  "schema_version": 1,
+  "recorded_utc": "2026-11-05T16:44:02.816251+00:00",
+  "base_commit": "48042081719bac70800d8416595941336b2314b8",
+  "candidate_source": {
+    "dirty": true,
+    "input_sha256": "37b61e6e8d4227fabeb1ec6e9a13e0b7266ac744643ec89286bff83f55690587",
+    "revision": "48042081719bac70800d8416595941336b2314b8",
+    "status_sha256": "11feea0ea2cb43456b68307aa80f79c3301c171bee42160209ac6000f8808069"
+  },
+  "host": {
+    "arch": "aarch64",
+    "available_parallelism": 10,
+    "cpu": "Apple M1 Max",
+    "os": "macos",
+    "os_version": "26.5.2"
+  },
+  "binary_sha256": {
+    "cargo": "5acfae2f4f9d9a13d2567cdedbcd6905dc717d47e0780a9615a45b1dab9b23ff",
+    "bazel": "8ea64e0c7913a7114bb20bbd4b5028b6af460c22ee7f04d8b7da3d62950c0835"
+  },
+  "timing_scope": "legacy-v1-includes-verification",
+  "protocol": "One untimed warmup per binary and workload, seven alternating fresh-process samples per binary, peak RSS from first three samples, unchanged source and binaries, Darwin RSS bytes. No other task build/fuzz/profile was running.",
+  "interpretation": "Migration evidence on one host; no scanner speedup or new portable calibration is claimed. Candidate is dirty and not clean-baseline eligible.",
+  "outcome_matrix_workloads": 23,
+  "results": [
+    {
+      "workload": "default-compile",
+      "limits": {
+        "median_elapsed_ns": 100000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 56209292,
+          "peak_rss_bytes": 31948800
+        },
+        "bazel": {
+          "median_elapsed_ns": 55841500,
+          "peak_rss_bytes": 16891904
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 56016416,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 56224291,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 57941667,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 56006792,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 56209292,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 55990459,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 57000041,
+            "peak_rss_bytes": 31932416
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 55751625,
+            "peak_rss_bytes": 16695296
+          },
+          {
+            "elapsed_ns": 55808416,
+            "peak_rss_bytes": 16891904
+          },
+          {
+            "elapsed_ns": 55841500,
+            "peak_rss_bytes": 16613376
+          },
+          {
+            "elapsed_ns": 56675917,
+            "peak_rss_bytes": 17203200
+          },
+          {
+            "elapsed_ns": 56069667,
+            "peak_rss_bytes": 16662528
+          },
+          {
+            "elapsed_ns": 55777542,
+            "peak_rss_bytes": 16973824
+          },
+          {
+            "elapsed_ns": 55847500,
+            "peak_rss_bytes": 16826368
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "workload": "default-one-keyword",
+      "limits": {
+        "median_elapsed_ns": 600000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 49519042,
+          "peak_rss_bytes": 31948800
+        },
+        "bazel": {
+          "median_elapsed_ns": 49080458,
+          "peak_rss_bytes": 20791296
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 49642125,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 49180208,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 49418209,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 49519042,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 49199875,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 49659333,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 49715667,
+            "peak_rss_bytes": 31916032
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 48943792,
+            "peak_rss_bytes": 20267008
+          },
+          {
+            "elapsed_ns": 48882667,
+            "peak_rss_bytes": 20791296
+          },
+          {
+            "elapsed_ns": 49768500,
+            "peak_rss_bytes": 19726336
+          },
+          {
+            "elapsed_ns": 49080458,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 53620167,
+            "peak_rss_bytes": 19791872
+          },
+          {
+            "elapsed_ns": 51094458,
+            "peak_rss_bytes": 19677184
+          },
+          {
+            "elapsed_ns": 48919583,
+            "peak_rss_bytes": 20004864
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "workload": "regex-hostile-miss",
+      "limits": {
+        "median_elapsed_ns": 30000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 14359541,
+          "peak_rss_bytes": 31932416
+        },
+        "bazel": {
+          "median_elapsed_ns": 14383709,
+          "peak_rss_bytes": 8208384
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 14356958,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 14370667,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 14349458,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 14352750,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 14359541,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 14359750,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 14361208,
+            "peak_rss_bytes": 31932416
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 14369542,
+            "peak_rss_bytes": 8208384
+          },
+          {
+            "elapsed_ns": 14412375,
+            "peak_rss_bytes": 8208384
+          },
+          {
+            "elapsed_ns": 14389125,
+            "peak_rss_bytes": 8142848
+          },
+          {
+            "elapsed_ns": 14366292,
+            "peak_rss_bytes": 8142848
+          },
+          {
+            "elapsed_ns": 14370792,
+            "peak_rss_bytes": 8159232
+          },
+          {
+            "elapsed_ns": 14390250,
+            "peak_rss_bytes": 8126464
+          },
+          {
+            "elapsed_ns": 14383709,
+            "peak_rss_bytes": 8192000
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "workload": "decode-five-level",
+      "limits": {
+        "median_elapsed_ns": 10000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 7270958,
+          "peak_rss_bytes": 31948800
+        },
+        "bazel": {
+          "median_elapsed_ns": 7249958,
+          "peak_rss_bytes": 10272768
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 7282083,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 7311417,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 7270958,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 7251750,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 7283208,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 7261375,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 7243292,
+            "peak_rss_bytes": 31932416
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 7272208,
+            "peak_rss_bytes": 10272768
+          },
+          {
+            "elapsed_ns": 7249958,
+            "peak_rss_bytes": 10207232
+          },
+          {
+            "elapsed_ns": 7230583,
+            "peak_rss_bytes": 10141696
+          },
+          {
+            "elapsed_ns": 7239417,
+            "peak_rss_bytes": 10158080
+          },
+          {
+            "elapsed_ns": 7262125,
+            "peak_rss_bytes": 10256384
+          },
+          {
+            "elapsed_ns": 7260458,
+            "peak_rss_bytes": 10240000
+          },
+          {
+            "elapsed_ns": 7238458,
+            "peak_rss_bytes": 10174464
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "workload": "source-directory-1",
+      "limits": {
+        "median_elapsed_ns": 150000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 67516791,
+          "peak_rss_bytes": 31948800
+        },
+        "bazel": {
+          "median_elapsed_ns": 68054458,
+          "peak_rss_bytes": 9551872
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 68247542,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 67969708,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 67222667,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 66794917,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 67516791,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 67590125,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 67507333,
+            "peak_rss_bytes": 31948800
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 67239333,
+            "peak_rss_bytes": 9453568
+          },
+          {
+            "elapsed_ns": 70011792,
+            "peak_rss_bytes": 9551872
+          },
+          {
+            "elapsed_ns": 68173125,
+            "peak_rss_bytes": 9322496
+          },
+          {
+            "elapsed_ns": 68161625,
+            "peak_rss_bytes": 9502720
+          },
+          {
+            "elapsed_ns": 67798541,
+            "peak_rss_bytes": 9568256
+          },
+          {
+            "elapsed_ns": 68049208,
+            "peak_rss_bytes": 9486336
+          },
+          {
+            "elapsed_ns": 68054458,
+            "peak_rss_bytes": 9306112
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "workload": "source-directory-4",
+      "limits": {
+        "median_elapsed_ns": 75000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 17776625,
+          "peak_rss_bytes": 31948800
+        },
+        "bazel": {
+          "median_elapsed_ns": 18080542,
+          "peak_rss_bytes": 11616256
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 17766584,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 17724334,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 18068583,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 17776625,
+            "peak_rss_bytes": 31981568
+          },
+          {
+            "elapsed_ns": 17708083,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 18430959,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 17817667,
+            "peak_rss_bytes": 31932416
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 18080542,
+            "peak_rss_bytes": 11173888
+          },
+          {
+            "elapsed_ns": 18238542,
+            "peak_rss_bytes": 11616256
+          },
+          {
+            "elapsed_ns": 18577000,
+            "peak_rss_bytes": 11599872
+          },
+          {
+            "elapsed_ns": 17989459,
+            "peak_rss_bytes": 12009472
+          },
+          {
+            "elapsed_ns": 17876083,
+            "peak_rss_bytes": 12009472
+          },
+          {
+            "elapsed_ns": 18446917,
+            "peak_rss_bytes": 11599872
+          },
+          {
+            "elapsed_ns": 18023292,
+            "peak_rss_bytes": 11714560
+          }
+        ]
+      },
+      "passed": true
+    },
+    {
+      "workload": "report-json",
+      "limits": {
+        "median_elapsed_ns": 30000000,
+        "peak_rss_bytes": 50331648
+      },
+      "summaries": {
+        "cargo": {
+          "median_elapsed_ns": 17099875,
+          "peak_rss_bytes": 31948800
+        },
+        "bazel": {
+          "median_elapsed_ns": 17659958,
+          "peak_rss_bytes": 22937600
+        }
+      },
+      "samples": {
+        "cargo": [
+          {
+            "elapsed_ns": 17047791,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 16935500,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 17232458,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 17117667,
+            "peak_rss_bytes": 31948800
+          },
+          {
+            "elapsed_ns": 17099875,
+            "peak_rss_bytes": 31916032
+          },
+          {
+            "elapsed_ns": 17394334,
+            "peak_rss_bytes": 31932416
+          },
+          {
+            "elapsed_ns": 17091209,
+            "peak_rss_bytes": 31948800
+          }
+        ],
+        "bazel": [
+          {
+            "elapsed_ns": 17767167,
+            "peak_rss_bytes": 22937600
+          },
+          {
+            "elapsed_ns": 17489458,
+            "peak_rss_bytes": 22921216
+          },
+          {
+            "elapsed_ns": 17659958,
+            "peak_rss_bytes": 22921216
+          },
+          {
+            "elapsed_ns": 17643291,
+            "peak_rss_bytes": 22921216
+          },
+          {
+            "elapsed_ns": 17679792,
+            "peak_rss_bytes": 22953984
+          },
+          {
+            "elapsed_ns": 17642875,
+            "peak_rss_bytes": 22904832
+          },
+          {
+            "elapsed_ns": 17836167,
+            "peak_rss_bytes": 22904832
+          }
+        ]
+      },
+      "passed": true
+    }
+  ],
+  "compiler_version": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+  "target": "aarch64-apple-darwin",
+  "build_flags": [
+    "--compilation_mode=opt",
+    "--stamp=no"
+  ],
+  "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+  "rust_action_graph_sha256": "e34a2ffc981aa59116bfd330ccc2604a1c966949e89ab35ae25e1057ac05d62c",
+  "lockfile_sha256": {
+    "Cargo.lock": "b214f46fd5ebf8f4aa6b1ffd4271463aa878c0d52b72b479032babd782247fe9",
+    "MODULE.bazel": "dfedb6948645ddb9da5f362ed42438a7c1e74dc30367a08a1ccc071bb1a33e62",
+    "MODULE.bazel.lock": "6a5a7a0892952dd6cdd9e2c0ae44bc98ef23726b57e1449c0a9c09d8b8b8560e",
+    "cargo-bazel-lock.json": "cc176343c696ed58453e5662505a1d0a56065f72602f0d9c42b9e183d931f900",
+    "rust-toolchain.toml": "e3a213e0d222e94d213cafbc20932eb3f76c643b4dd63756acf95192df2aa310"
+  }
+}

@@ -1230,9 +1230,39 @@ impl RequiredFinding {
 }
 
 fn remove_detected_secrets(value: &mut ByteText, secrets: &[Vec<u8>]) {
+    let original_len = value.len();
     for secret in secrets {
         *value = replace_all_bytes(value.as_bytes(), secret, b"");
     }
+    if value.len() == original_len
+        || !secrets.iter().any(|secret| {
+            !secret.is_empty()
+                && value
+                    .as_bytes()
+                    .windows(secret.len())
+                    .any(|window| window == secret)
+        })
+    {
+        return;
+    }
+
+    // Keep the established longest-first removal result when it is already
+    // clean. Deletion can otherwise join bytes into a previously removed
+    // sequence, including another occurrence of the same secret. A clean
+    // prefix plus one byte can acquire a match only at its suffix; removing
+    // that suffix restores a clean prefix. Each byte is pushed once, avoiding
+    // repeated whole-buffer passes for nested joins such as a...ab...b.
+    let mut output = Vec::with_capacity(value.len());
+    for &byte in value.as_bytes() {
+        output.push(byte);
+        if let Some(secret) = secrets
+            .iter()
+            .find(|secret| !secret.is_empty() && output.ends_with(secret))
+        {
+            output.truncate(output.len() - secret.len());
+        }
+    }
+    *value = output.into();
 }
 
 fn mask_secret(secret: &[u8], percent: usize) -> Vec<u8> {

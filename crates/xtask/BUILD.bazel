@@ -16,7 +16,10 @@ rust_binary(
         "CARGO_MANIFEST_DIR": "crates/xtask",
         "CARGO_PKG_VERSION": "0.1.0-alpha.5",
     },
-    srcs = glob(["src/**/*.rs"]),
+    srcs = glob(["src/**/*.rs"]) + [
+        "//crates/rustleaks-core:campaign_profile_support",
+        "//crates/rustleaks-sources:archive_fuzz_support",
+    ],
     visibility = ["//visibility:public"],
 )
 

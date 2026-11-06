@@ -3,6 +3,12 @@ load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_inte
 exports_files(["Cargo.toml"])
 rustleaks_build_contract_files()
 
+filegroup(
+    name = "campaign_profile_support",
+    srcs = ["tests/support/campaign_profile.rs"],
+    visibility = ["//visibility:public"],
+)
+
 rustleaks_library(
     name = "rustleaks_core",
     compile_data = glob(["default/**"]) + ["//compat:parity_corpora"],
@@ -21,17 +27,31 @@ rustleaks_library(
         deps = [":rustleaks_core"],
     )
     for test in [
+        "native_policy",
+        "native_rules",
+        "triage",
+
         "allowlist",
         "composite_corpus",
         "config",
         "controlled_scan",
         "default_rule_corpus",
+        "decoded_locations",
         "detect_corpus",
         "engine",
         "model",
+        "location_lookup",
+        "scan_semantics",
         "session_corpus",
     ]
 ]
+
+rustleaks_integration_test(
+    name = "security_stress_test",
+    src = "tests/security_stress.rs",
+    deps = [":rustleaks_core"],
+    srcs = [":campaign_profile_support"],
+)
 
 test_suite(
     name = "parity_tests",
@@ -49,16 +69,24 @@ test_suite(
 test_suite(
     name = "all_tests",
     tests = [
+        ":native_policy_test",
+        ":native_rules_test",
+        ":triage_test",
+
+        ":security_stress_test",
         ":allowlist_test",
         ":composite_corpus_test",
         ":config_test",
         ":controlled_scan_test",
         ":default_rule_corpus_test",
+        ":decoded_locations_test",
         ":detect_corpus_test",
         ":engine_test",
         ":model_test",
+        ":location_lookup_test",
         ":rustleaks_core_doc_test",
         ":rustleaks_core_unit_test",
+        ":scan_semantics_test",
         ":session_corpus_test",
     ],
     visibility = ["//visibility:public"],

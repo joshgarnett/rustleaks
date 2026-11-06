@@ -18,11 +18,10 @@ const REQUIRED_TARGETS: &[&str] = &[
 ];
 
 pub(crate) fn check(root: &Path) -> Result<(), String> {
+    crate::tooling::generate_native_pack_identity(root, true)?;
     let bazel_ignore = fs::read_to_string(root.join(".bazelignore"))
         .map_err(|error| format!("cannot read .bazelignore: {error}"))?;
-    if bazel_ignore.lines().collect::<Vec<_>>() != ["target"] {
-        return Err(".bazelignore must exclude exactly Cargo's target directory".into());
-    }
+    check_bazel_ignore(&bazel_ignore)?;
 
     let workspace = parse_toml(&root.join("Cargo.toml"))?;
     let members = string_array(&workspace, &["workspace", "members"])?;
@@ -50,6 +49,25 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
     println!(
         "Cargo and Bazel sources, features, dependencies, assets, tests, packages, and locks match"
     );
+    Ok(())
+}
+
+fn check_bazel_ignore(source: &str) -> Result<(), String> {
+    // Standalone fuzz workspaces own separate Cargo outputs. Excluding only
+    // these exact directories keeps changing artifacts out of Bazel globs
+    // without allowing source directories to disappear from contract checks.
+    let expected = [
+        "target",
+        "crates/rustleaks-core/fuzz/target",
+        "crates/rustleaks-report/fuzz/target",
+        "crates/rustleaks-sources/fuzz/target",
+    ];
+    if !source.lines().eq(expected) {
+        return Err(
+            ".bazelignore must exclude exactly the workspace and three standalone fuzz Cargo target directories"
+                .into(),
+        );
+    }
     Ok(())
 }
 
@@ -619,6 +637,7 @@ fn check_interface(root: &Path) -> Result<(), String> {
     check_just_interface(root)
 }
 
+#[allow(clippy::too_many_lines)] // Keep the public recipe names and command contract together.
 fn check_just_interface(root: &Path) -> Result<(), String> {
     let justfile = fs::read_to_string(root.join("justfile"))
         .map_err(|error| format!("cannot read justfile: {error}"))?;
@@ -627,6 +646,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         .lines()
         .filter(|line| line.chars().next().is_some_and(|ch| !ch.is_whitespace()))
         .filter_map(|line| line.split_once(':').map(|(name, _)| name))
+        .map(|name| name.strip_suffix(" *arguments").unwrap_or(name))
         .filter(|name| !name.starts_with('[') && !name.chars().any(char::is_whitespace))
         .collect::<BTreeSet<_>>();
     let expected = [
@@ -639,12 +659,21 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "doctor",
         "flake-check",
         "format",
+        "fuzz",
         "fuzz-build",
         "fuzz-smoke",
         "package-check",
         "parity",
+        "perf-calibrate",
+        "perf-check",
+        "perf-profile",
+        "perf-report",
+        "perf-representative",
+        "perf-run",
+        "quality-eval",
         "release-dry-run",
         "security",
+        "security-deep",
         "test",
     ]
     .into_iter()
@@ -667,6 +696,36 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             "bazelisk run //crates/xtask:xtask -- docs-check",
         ),
         ("parity", "bazelisk test //:parity"),
+        (
+            "quality-eval",
+            "bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate",
+        ),
+        ("perf-run", "bazelisk run //crates/xtask:xtask -- perf run"),
+        (
+            "perf-representative",
+            "bazelisk run //crates/xtask:xtask -- perf representative",
+        ),
+        ("fuzz", "bazelisk run //crates/xtask:xtask -- fuzz \"$@\""),
+        (
+            "perf-profile",
+            "bazelisk run //crates/xtask:xtask -- perf profile \"$@\"",
+        ),
+        (
+            "perf-report",
+            "bazelisk run //crates/xtask:xtask -- perf report \"$@\"",
+        ),
+        (
+            "perf-calibrate",
+            "bazelisk run //crates/xtask:xtask -- perf calibrate \"$@\"",
+        ),
+        (
+            "security-deep",
+            "bazelisk run //crates/xtask:xtask -- security-deep \"$@\"",
+        ),
+        (
+            "perf-check",
+            "bazelisk run //crates/xtask:xtask -- perf check",
+        ),
         ("check", "bazelisk test //:check"),
         ("ci", "bazelisk test --jobs=1 //:ci"),
     ] {
@@ -678,6 +737,13 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "just ci test prebuild",
     )?;
     require_contains(&justfile, "go version", "just doctor Go version")?;
+    for recipe in ["fuzz", "perf-profile", "perf-calibrate", "security-deep"] {
+        require_contains(
+            &justfile,
+            &format!("[unix]\n[positional-arguments]\n{recipe} *arguments:"),
+            &format!("private Unix {recipe} argument forwarding"),
+        )?;
+    }
     require_contains(
         &justfile,
         "go env GOVERSION",
@@ -802,5 +868,35 @@ fn require_not_contains(haystack: &str, needle: &str, context: &str) -> Result<(
         Err(format!("{context} unexpectedly contains '{needle}'"))
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_bazel_ignore;
+
+    #[test]
+    fn bazel_ignore_rejects_missing_outputs_and_source_exclusions() {
+        let expected = "target\ncrates/rustleaks-core/fuzz/target\ncrates/rustleaks-report/fuzz/target\ncrates/rustleaks-sources/fuzz/target\n";
+        assert!(check_bazel_ignore(expected).is_ok());
+        let directories = expected.lines().collect::<Vec<_>>();
+        for missing in 0..directories.len() {
+            let incomplete = directories
+                .iter()
+                .enumerate()
+                .filter_map(|(index, directory)| (index != missing).then_some(*directory))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(check_bazel_ignore(&incomplete).is_err());
+        }
+        for forbidden in [
+            "crates",
+            "crates/rustleaks-sources/fuzz",
+            "crates/rustleaks-sources/src",
+            "crates/rustleaks-sources/fuzz/**",
+            "target",
+        ] {
+            assert!(check_bazel_ignore(&format!("{expected}{forbidden}\n")).is_err());
+        }
     }
 }

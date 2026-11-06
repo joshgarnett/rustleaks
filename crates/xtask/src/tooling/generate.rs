@@ -21,8 +21,25 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     run_direct_oracle(root, args)
 }
 
+#[allow(clippy::too_many_lines)] // One dispatch table makes accepted generator forms explicit.
 fn run_repository_artifact(root: &Path, args: &[String]) -> Option<Result<(), String>> {
     match args {
+        [target] if target == "native-pack-identity" => {
+            Some(super::generate_native_pack_identity(root, false))
+        }
+        [target, flag] if target == "native-pack-identity" && flag == "--check" => {
+            Some(super::generate_native_pack_identity(root, true))
+        }
+        [target, output] if target == "archive-fuzz-seeds" => Some(
+            super::generate_archive_fuzz_seeds(root, Path::new(output), false).map(|count| {
+                println!("generated {count} versioned archive seeds and provenance");
+            }),
+        ),
+        [target, output, flag] if target == "archive-fuzz-seeds" && flag == "--check" => Some(
+            super::generate_archive_fuzz_seeds(root, Path::new(output), true).map(|count| {
+                println!("verified {count} versioned archive seeds and provenance");
+            }),
+        ),
         [target] if target == "go-lowercase" => Some(generate_go_lowercase(root, false)),
         [target, flag] if target == "go-lowercase" && flag == "--check" => {
             Some(generate_go_lowercase(root, true))

@@ -1,18 +1,18 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
+#[allow(dead_code)]
+#[path = "../../../rustleaks-core/tests/support/campaign_profile.rs"]
+mod campaign_profile;
+
+use campaign_profile::Profile;
+
 use std::hint::black_box;
 use std::io::{self, Write};
 
+use libfuzzer_sys::fuzz_target;
 use rustleaks_core::model::{Finding, Location};
 use rustleaks_report::{TemplateError, TemplateLimits, TemplateReporter};
-use libfuzzer_sys::fuzz_target;
-
-const MAX_INPUT_BYTES: usize = 8 * 1024;
-const MAX_TEMPLATE_BYTES: usize = 4 * 1024;
-const MAX_ACTIONS: usize = 128;
-const MAX_OUTPUT_BYTES: usize = 8 * 1024;
-const MAX_FINDINGS: usize = 4;
 
 struct RejectAfter {
     remaining: usize,
@@ -53,28 +53,14 @@ fn finding(index: usize, bytes: &[u8]) -> Finding {
         .expect("all required finding fields are present")
 }
 
-fn framed(data: &[u8]) -> (u8, &[u8], &[u8]) {
-    let control = data.first().copied().unwrap_or_default();
-    let rest = &data[data.len().min(1)..];
-    let Some((&low, rest)) = rest.split_first() else {
-        return (control, &[], &[]);
-    };
-    let Some((&high, payload)) = rest.split_first() else {
-        return (control, &[], &[]);
-    };
-    let requested = usize::from(u16::from_le_bytes([low, high]));
-    let template_len = requested.min(MAX_TEMPLATE_BYTES).min(payload.len());
-    let (template, findings) = payload.split_at(template_len);
-    (control, template, findings)
-}
-
 fuzz_target!(|data: &[u8]| {
-    let data = &data[..data.len().min(MAX_INPUT_BYTES)];
-    let (control, template, finding_bytes) = framed(data);
-    let chunk_size = finding_bytes.len().div_ceil(MAX_FINDINGS).max(1);
+    let profile = Profile::current();
+    let caps = profile.template();
+    let (control, template, finding_bytes) = campaign_profile::template_parts(data, profile);
+    let chunk_size = finding_bytes.len().div_ceil(caps.findings).max(1);
     let mut findings = finding_bytes
         .chunks(chunk_size)
-        .take(MAX_FINDINGS)
+        .take(caps.findings)
         .enumerate()
         .map(|(index, bytes)| finding(index, bytes))
         .collect::<Vec<_>>();
@@ -82,11 +68,11 @@ fuzz_target!(|data: &[u8]| {
         findings.push(finding(0, b"SEED"));
     }
 
-    let limits = TemplateLimits::new(MAX_TEMPLATE_BYTES, MAX_ACTIONS, MAX_OUTPUT_BYTES);
+    let limits = TemplateLimits::new(caps.source_bytes, caps.actions, caps.output_bytes);
     if let Ok(reporter) = TemplateReporter::from_bytes(template, limits) {
         let mut output = Vec::new();
         let rendered = reporter.render(&mut output, &findings);
-        assert!(output.len() <= MAX_OUTPUT_BYTES);
+        assert!(output.len() <= caps.output_bytes);
         let _ = black_box(rendered);
 
         let mut failing = RejectAfter {
