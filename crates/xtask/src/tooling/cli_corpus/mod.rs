@@ -98,12 +98,18 @@ pub(crate) fn check_cli_corpus(
             &variant.request,
             &fake_git_binary,
         )?;
-        validation::compare(&variant.id, &actual, &variant.expected, cfg!(windows))?;
+        let (expected, build_version_expectation) = validation::current_build_expectation(
+            &variant.id,
+            &variant.expected,
+            env!("CARGO_PKG_VERSION"),
+        )?;
+        validation::compare(&variant.id, &actual, &expected, cfg!(windows))?;
         executed += 1;
         let disposition = validation::native_disposition(&variant.id, cfg!(windows));
         native_dispositions += usize::from(disposition.is_some());
         records.push(json!({
             "id": variant.id, "status": "executed", "native_disposition": disposition,
+            "build_version_expectation": build_version_expectation,
             "observation": safe_observation_summary(&actual, &variant.id)?
         }));
     }
@@ -113,6 +119,8 @@ pub(crate) fn check_cli_corpus(
     let ledger = json!({
         "schema_version": 1, "mode": "rust-cli-regression",
         "historical_upstream_revision": spec::REVISION,
+        "historical_build_version": spec::BUILD_VERSION,
+        "current_build_version": env!("CARGO_PKG_VERSION"),
         "default_config_sha256": spec::CONFIG_SHA256,
         "frozen_outcomes_sha256": sha256_bytes(&files["outcomes-v1.jsonl"]),
         "cli_binary_sha256": sha256_bytes(&read(&rust_binary)?),

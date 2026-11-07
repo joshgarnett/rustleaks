@@ -93,6 +93,64 @@ pub(super) fn native_disposition(id: &str, windows: bool) -> Option<&'static str
     }
 }
 
+// Keep historical build metadata frozen; derive only these five release-specific
+// expectations from trusted build metadata, never from the observed binary output.
+pub(super) fn current_build_expectation(
+    id: &str,
+    frozen: &Value,
+    build_version: &str,
+) -> Result<(Value, Option<&'static str>), String> {
+    let mut expected = frozen.clone();
+    let marker = match id {
+        "CLI-BB-001/version-command"
+        | "CLI-BB-001/version-flag"
+        | "CLI-BB-001/version-persistent-flag" => {
+            let prefix = if id == "CLI-BB-001/version-flag" {
+                "gitleaks version "
+            } else {
+                ""
+            };
+            let historical = format!("{prefix}{}\n", spec::BUILD_VERSION);
+            if frozen["stdout_base64"] != BASE64.encode(&historical)
+                || frozen["stdout_bytes"] != json!(historical.len())
+                || frozen["stdout_sha256"] != sha256_bytes(historical.as_bytes())
+            {
+                return Err(format!("{id}: historical CLI version output changed"));
+            }
+            let current = format!("{prefix}{build_version}\n");
+            expected["stdout_base64"] = json!(BASE64.encode(&current));
+            expected["stdout_bytes"] = json!(current.len());
+            expected["stdout_sha256"] = json!(sha256_bytes(current.as_bytes()));
+            Some("stdout-current-build-version")
+        }
+        "CLI-BB-007/file-embedded" | "CLI-BB-007/directory-embedded-empty" => {
+            let historical = json!({
+                "severity": "warn", "class": "config.error", "fields": {},
+                "normalized_message_base64": BASE64.encode(build_version_warning(spec::BUILD_VERSION))
+            });
+            if frozen
+                .get("stderr_events")
+                .and_then(Value::as_array)
+                .and_then(|events| events.first())
+                != Some(&historical)
+            {
+                return Err(format!("{id}: historical CLI build warning changed"));
+            }
+            expected["stderr_events"][0]["normalized_message_base64"] =
+                json!(BASE64.encode(build_version_warning(build_version)));
+            Some("embedded-config-current-build-version")
+        }
+        _ => None,
+    };
+    Ok((expected, marker))
+}
+
+fn build_version_warning(build_version: &str) -> String {
+    format!(
+        "config requires a newer Gitleaks version... required=v8.25.0 current={build_version} config path=<embedded-default>"
+    )
+}
+
 pub(super) fn compare(
     id: &str,
     actual: &Value,
@@ -286,6 +344,154 @@ mod tests {
         let bytes = std::fs::read(root.join("outcomes-v1.jsonl")).unwrap();
         let variants = bind_expected(&rows, &bytes).unwrap();
         (rows, variants, bytes)
+    }
+
+    fn set_stdout(observation: &mut Value, bytes: &[u8]) {
+        observation["stdout_base64"] = json!(BASE64.encode(bytes));
+        observation["stdout_bytes"] = json!(bytes.len());
+        observation["stdout_sha256"] = json!(sha256_bytes(bytes));
+    }
+
+    #[test]
+    fn version_stdout_requires_the_current_build_and_exact_framing() {
+        let (_, variants, _) = fixture();
+        for (build_version, plain, qualified) in [
+            (
+                "0.1.0-alpha.6",
+                "0.1.0-alpha.6\n",
+                "gitleaks version 0.1.0-alpha.6\n",
+            ),
+            (
+                "12.34.56-rc.789+review",
+                "12.34.56-rc.789+review\n",
+                "gitleaks version 12.34.56-rc.789+review\n",
+            ),
+        ] {
+            for id in [
+                "CLI-BB-001/version-command",
+                "CLI-BB-001/version-flag",
+                "CLI-BB-001/version-persistent-flag",
+            ] {
+                let frozen = &variants
+                    .iter()
+                    .find(|variant| variant.id == id)
+                    .unwrap()
+                    .expected;
+                let original = frozen.clone();
+                let (expected, marker) =
+                    current_build_expectation(id, frozen, build_version).unwrap();
+                assert_eq!(marker, Some("stdout-current-build-version"));
+                let stdout = if id.ends_with("/version-flag") {
+                    qualified
+                } else {
+                    plain
+                };
+                let mut actual = frozen.clone();
+                set_stdout(&mut actual, stdout.as_bytes());
+                assert_eq!(actual, expected);
+                compare(id, &actual, &expected, false).unwrap();
+                assert!(
+                    compare(id, frozen, &expected, false).is_err(),
+                    "stale build: {id}"
+                );
+                for invalid in [
+                    stdout.trim_end_matches('\n').to_owned(),
+                    format!(" {stdout}"),
+                    format!("{stdout}\n"),
+                    format!("{stdout}unexpected output\n"),
+                    stdout.replace(build_version, "99.0.0-wrong"),
+                ] {
+                    set_stdout(&mut actual, invalid.as_bytes());
+                    assert!(compare(id, &actual, &expected, false).is_err(), "{id}");
+                }
+                for field in ["stdout_base64", "stdout_bytes", "stdout_sha256"] {
+                    let mut changed = frozen.clone();
+                    changed[field] = Value::Null;
+                    assert!(current_build_expectation(id, &changed, build_version).is_err());
+                }
+                assert_eq!(*frozen, original);
+            }
+        }
+    }
+
+    #[test]
+    fn embedded_warnings_require_the_current_build_and_preserve_other_fields() {
+        let (_, variants, _) = fixture();
+        let current = "config requires a newer Gitleaks version... required=v8.25.0 current=12.34.56-rc.789+review config path=<embedded-default>";
+        for id in [
+            "CLI-BB-007/file-embedded",
+            "CLI-BB-007/directory-embedded-empty",
+        ] {
+            let frozen = &variants
+                .iter()
+                .find(|variant| variant.id == id)
+                .unwrap()
+                .expected;
+            let (expected, marker) =
+                current_build_expectation(id, frozen, "12.34.56-rc.789+review").unwrap();
+            assert_eq!(marker, Some("embedded-config-current-build-version"));
+            let mut actual = frozen.clone();
+            actual["stderr_events"][0]["normalized_message_base64"] = json!(BASE64.encode(current));
+            assert_eq!(actual, expected);
+            compare(id, &actual, &expected, false).unwrap();
+            assert!(compare(id, frozen, &expected, false).is_err());
+            for invalid in [
+                format!(" {current}"),
+                format!("{current}\n"),
+                format!("{current} extra"),
+                current.replace("12.34.56-rc.789+review", "99.0.0-wrong"),
+            ] {
+                actual["stderr_events"][0]["normalized_message_base64"] =
+                    json!(BASE64.encode(invalid));
+                assert!(compare(id, &actual, &expected, false).is_err());
+            }
+            for field in ["severity", "class", "fields", "normalized_message_base64"] {
+                let mut changed = frozen.clone();
+                changed["stderr_events"][0][field] = Value::Null;
+                assert!(current_build_expectation(id, &changed, "12.34.56-rc.789+review").is_err());
+            }
+            for malformed in [
+                Value::Null,
+                json!({"0": frozen["stderr_events"][0]}),
+                json!([]),
+            ] {
+                let mut changed = frozen.clone();
+                changed["stderr_events"] = malformed;
+                assert!(current_build_expectation(id, &changed, "12.34.56-rc.789+review").is_err());
+            }
+            for field in [
+                "exit",
+                "report",
+                "findings",
+                "finding_count",
+                "child_reaped",
+            ] {
+                let mut changed = expected.clone();
+                changed[field] = json!({"mutation": true});
+                assert!(compare(id, &changed, &expected, false).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn unrelated_observations_are_not_projected_for_release_versions() {
+        let (_, variants, _) = fixture();
+        let mut projected = 0;
+        for variant in variants {
+            let (expected, marker) =
+                current_build_expectation(&variant.id, &variant.expected, "12.34.56-rc.789+review")
+                    .unwrap();
+            if marker.is_some() {
+                projected += 1;
+                continue;
+            }
+            assert_eq!(expected, variant.expected);
+            compare(&variant.id, &variant.expected, &expected, false).unwrap();
+            let mut changed = variant.expected.clone();
+            set_stdout(&mut changed, b"12.34.56-rc.789+review\n");
+            assert!(compare(&variant.id, &changed, &expected, false).is_err());
+        }
+        assert_eq!(projected, 5);
     }
 
     #[test]
