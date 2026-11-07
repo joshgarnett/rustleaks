@@ -149,15 +149,7 @@ pub(crate) fn run_monitored(
     run_with_files(command, stdout, stderr, timeout, limit, monitor)
 }
 
-pub(crate) fn run_with_files(
-    command: &mut Command,
-    stdout: File,
-    stderr: File,
-    timeout: Duration,
-    limit: u64,
-    mut monitor: impl FnMut() -> Result<(), String>,
-) -> Result<Outcome, String> {
-    private::supported()?;
+fn configure_child(command: &mut Command) {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -167,6 +159,18 @@ pub(crate) fn run_with_files(
         use std::os::unix::process::CommandExt as _;
         command.process_group(0);
     }
+}
+
+pub(crate) fn run_with_files(
+    command: &mut Command,
+    stdout: File,
+    stderr: File,
+    timeout: Duration,
+    limit: u64,
+    mut monitor: impl FnMut() -> Result<(), String>,
+) -> Result<Outcome, String> {
+    private::supported()?;
+    configure_child(command);
     let Ok(child) = command.spawn() else {
         return Ok(Outcome::SpawnFailure);
     };
