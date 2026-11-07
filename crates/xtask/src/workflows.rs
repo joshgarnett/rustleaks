@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-const CODEQL_ACTION_PIN: &str = "9b3254085494b55a0f7c4c2b3d2d52cc712ce370";
+const CODEQL_ACTION_PIN: &str = "1fc58d04a4d4374f921bdac573c3811c240f9c26";
 const SECRET_SCANNING_CONFIG: &str = r#"paths-ignore:
   - "compat/allowlist-corpus/**"
   - "compat/assertion-corpus/**"
@@ -90,7 +90,7 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
 
 fn validate_codeql_workflow(source: &str) -> Result<(), String> {
     for action in ["init", "analyze"] {
-        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.39.1");
+        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.39.2");
         if !source.contains(&required) {
             return Err(format!(
                 "CodeQL workflow omits reviewed action pin {required:?}"
@@ -267,7 +267,7 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
         "security-events: write",
         "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0",
         "publish_results: true",
-        "github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1",
+        "github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2",
     ] {
         if !source.contains(required) {
             return Err(format!(
@@ -871,8 +871,8 @@ mod tests {
     #[test]
     fn requires_reviewed_codeql_commit_pins() {
         let source = format!(
-            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.39.1\n\
-             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.39.1\n"
+            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.39.2\n\
+             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.39.2\n"
         );
         validate_codeql_workflow(&source).unwrap();
         assert!(validate_codeql_workflow(&source.replace(CODEQL_ACTION_PIN, PIN)).is_err());
