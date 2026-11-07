@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.0-alpha.6] - 2026-11-06
 
 - Add explicit native policy composition with bounded rule packs, collision checks,
   exact policy identity, and bounded source-omitting explanations.
@@ -18,6 +18,8 @@
   handling, worker termination, and archive cancellation.
 - Add optional bounded fuzz, deep-security, profiling, quality-evaluation, and
   private performance-report workflows with explicit evidence limitations.
+- Retire the live Go oracle and preserve historical evidence with Rust regression
+  replay and integrity checks.
 
 ## [0.1.0-alpha.5] - 2026-11-05
 
@@ -91,3 +93,4 @@ version and exact source commit.
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.4]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.5]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.5
+[0.1.0-alpha.6]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.6

@@ -74,6 +74,13 @@ negative controls. Current Rust output must never become its own expected
 baseline. This policy preserves the selected regression contracts and ends
 fresh independent Go comparison; it makes no equivalence claim for unseen inputs.
 
+CLI replay derives the expected current build version from package metadata for
+only the three `CLI-BB-001` version outputs and the two `CLI-BB-007` embedded
+configuration warnings. It first validates their exact historical fields, then
+projects the version-dependent expectations without changing recorded output.
+All other fields remain exact. The execution ledger identifies both historical
+and current build versions and marks these five expectations explicitly.
+
 The 6,770 helper samples cover 220 rules; negative helper samples cover 82.
 The two Dropbox default constructors have no helper samples. Source replay
 accounts for all 124 cases with explicit safe and platform dispositions. Git

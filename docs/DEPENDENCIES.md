@@ -3,6 +3,9 @@
 - Prefer small, maintained crates with compatible permissive licenses and a
   current security posture. Record lasting choices in this document and commit
   `Cargo.lock`.
+- `just deps-repin` refreshes workspace and Bazel locks while retaining existing
+  third-party resolutions unless changed requirements require updates. Review
+  every generated lockfile diff, including the standalone fuzz workspaces.
 - `rustleaks-core` must not depend on the CLI, source, report, archive, Git,
   async-runtime, or parallel-runtime crates. Its public API must not expose a
   regex implementation type.
