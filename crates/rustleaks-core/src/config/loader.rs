@@ -863,14 +863,10 @@ fn validate_effective_rules(rules: &BTreeMap<String, CompiledRule>) -> Result<()
                 rule_id: rule.id.clone(),
             });
         }
-        if let Some(regex) = &rule.regex {
-            let captures =
-                validate_pattern(regex).map_err(|message| ConfigError::InvalidPattern {
-                    scope: rule.id.clone(),
-                    field: "regex",
-                    pattern: regex.clone(),
-                    message,
-                })?;
+        if let Some(regex) = &rule.regex_matcher {
+            // Compilation and extension merging keep source and matcher paired.
+            // Reuse the selected expression rather than compiling it a second time.
+            let captures = regex.capture_count();
             if rule.secret_group > i64::try_from(captures).unwrap_or(i64::MAX) {
                 return Err(ConfigError::InvalidSecretGroup {
                     rule_id: rule.id.clone(),

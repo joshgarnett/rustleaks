@@ -40,6 +40,23 @@
   [dependency safety](DEPENDENCY_SAFETY.md) and the codec-adjacent licenses and
   notices.
 
+## Private regex backend
+
+The core and core fuzz manifests enable `regex-automata` features `meta`,
+`hybrid`, `dfa-onepass`, `nfa-backtrack`, and `perf`, alongside the existing
+syntax, Unicode, and PikeVM features. The private meta engine selects pooled
+search caches, literal acceleration, lazy DFA search and bounded capture
+engines. It retains leftmost-first matching and the Go compatibility frontend.
+No `regex`, `grep-regex`, or `grep-searcher` dependency is added.
+
+`dfa-build` remains disabled. The meta configuration also disables full DFA
+construction so downstream feature unification cannot enable it. Lazy-DFA
+cache capacity is explicitly 2 MiB per direction and the optional one-pass
+DFA limit is 1 MiB. These retain the dependency defaults without imposing an
+aggregate heap quota. The [backend review](dependency-audits/regex-meta-backend.md)
+records the selected source paths, minimum-version API check and fallback
+policy. Package versions, sources, checksums and licenses are unchanged.
+
 ## Archive codec decisions
 
 - `compcol 0.7.8` supplies the private RAR2 decoder. Only `alloc`
