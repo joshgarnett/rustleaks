@@ -359,7 +359,7 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
 
 pub(crate) fn check() -> Result<(), String> {
     let request = Request::parse(&[])?;
-    let prepared = prepare(&workspace_root()?)?;
+    let mut prepared = prepare(&workspace_root()?)?;
     let output = run_matrix(&prepared, &request)?;
     validate_records(&output, &prepared, &request)?;
     println!(
@@ -374,6 +374,8 @@ pub(crate) fn check() -> Result<(), String> {
     } else {
         println!("inherited M1 Max elapsed and RSS limits not evaluated on this host class");
     }
+    prepared.build["timing_scope"] = json!("representative-v1-operation-only");
+    representative_suite::fragment_budget_check(&prepared)?;
     prepared.ensure_unchanged()?;
     println!(
         "performance evidence: executable_sha256={} input_sha256={} dirty={}",
@@ -464,6 +466,7 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
             "crates/rustleaks-compat/src/bin/rustleaks-perf.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/benchmark_data.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/representative.rs".to_owned(),
+            "crates/rustleaks-compat/src/perf/fragment_workloads.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/representative_io.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/investigation.rs".to_owned(),
             "crates/rustleaks-sources/tests/perf_archives.rs".to_owned(),
