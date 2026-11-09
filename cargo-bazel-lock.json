@@ -1,5 +1,5 @@
 {
-  "checksum": "7048527d781aff9a8eb9b63c315da7f255a8aad772b8bdfbcd3f0c8959bc1783",
+  "checksum": "ab2ee7d1aeac390ed994cd2e9f89a1133d602cba2de792a86ba557ad5c881c26",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -1760,8 +1760,17 @@
         "crate_features": {
           "common": [
             "alloc",
+            "dfa-onepass",
+            "hybrid",
+            "meta",
+            "nfa-backtrack",
             "nfa-pikevm",
             "nfa-thompson",
+            "perf",
+            "perf-inline",
+            "perf-literal",
+            "perf-literal-multisubstring",
+            "perf-literal-substring",
             "std",
             "syntax",
             "unicode",
@@ -1778,6 +1787,14 @@
         },
         "deps": {
           "common": [
+            {
+              "id": "aho-corasick 1.1.5",
+              "target": "aho_corasick"
+            },
+            {
+              "id": "memchr 2.8.3",
+              "target": "memchr"
+            },
             {
               "id": "regex-syntax 0.8.11",
               "target": "regex_syntax"
