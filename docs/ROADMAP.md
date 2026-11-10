@@ -25,7 +25,10 @@ robustness changes reject cyclic 7z coder graphs and provide opt-in
 declared-length enforcement. The current default
 profile, copied configuration and upstream pin remain unchanged.
 
-No production optimization has been accepted. The span-only matcher trial
+The [fragment throughput](validation/core-fragment-throughput.md),
+[filtering and normalization](validation/core-edge-performance.md) and
+[default-rule throughput](validation/default-rule-throughput.md) records
+accept measured production optimizations. Earlier, the span-only matcher trial
 missed its criterion, the location comparison stopped before candidate timing,
 and the fixed observation-window matrix did not qualify every guard. The
 [window record](validation/baseline-observation-windows.md) preserves all results.

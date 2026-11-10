@@ -327,7 +327,7 @@ bazelisk run //crates/xtask:xtask -- perf representative --workload default-rule
 | `core-thrash-generic-1-mib` | High-variety `generic-api-key` contexts; compare the first-scan and steady-scan phases |
 | `core-multibyte-*-4-mib` | CJK and uppercase Cyrillic prose with U+212A and U+017F keyword variants |
 | `core-groupless-*` | Rules without a capture group: a large private-key block and 4,096 `ghp_` tokens |
-| `core-generic-filter-*` | Generic-named findings retained through the quadratic suppression pass |
+| `core-generic-filter-*` | Generic-named findings retained through the generic suppression pass |
 | `core-minified-findings-*` | Findings on one 1 MiB line, after the last newline, and one 64 KiB secret |
 | `core-realistic-*-256-kib` | Lockfile, `.env`, Kubernetes YAML, JWT log, multi-language, binary and UTF-16 content |
 | `core-custom-config-*` | Generated configurations with 1,000 or 5,000 rules, a large allowlist, or 50 keywordless rules |
@@ -347,8 +347,12 @@ stops working fails the fixture.
 existing fresh-process peak RSS, which covers the whole child process. It is
 not an isolated cache-memory measurement. By construction,
 `core-minified-findings-1024-on-1-mib` copies its 1 MiB line into each of its
-1,024 findings, and `core-generic-filter-*` compares every generic finding with
-every finding, which is quadratic.
+1,024 findings. `core-generic-filter-*` was quadratic before generic suppression
+compared only findings on the same line and commit.
+
+The [default-rule throughput record](validation/default-rule-throughput.md)
+reports baseline and candidate results for these groups, per-change effects,
+rejected changes and remaining limits.
 
 ## CPU and retained-memory investigation
 

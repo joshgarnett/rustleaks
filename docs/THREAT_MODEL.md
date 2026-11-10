@@ -61,6 +61,15 @@ capture lookups remain independent. ASCII fast paths retain the pinned Unicode
 fallback. These changes introduce no dependency, unsafe-code or public API
 boundary.
 
+Literal-anchored enumeration applies only to rules whose prefix shape is proven
+at compile time and only to pure-ASCII passes. It reuses keyword offsets from the
+same pass, runs the unchanged compiled expression on the unsliced haystack, and
+falls back to the unanchored search when its cost charge would exceed the
+haystack length. Configuration is untrusted, so shape analysis is capped by
+choice and step counts, and the full keyword DFA is forced only within keyword
+size and depth limits. Multi-worker source runs now return complete-run
+findings in producer order.
+
 ## Secret handling
 
 The engine returns the matched secret because that is its documented API.
