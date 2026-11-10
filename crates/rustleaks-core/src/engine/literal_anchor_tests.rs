@@ -252,12 +252,61 @@ fn occurrence_limits_saturate_and_inactive_passes_decline() {
     );
 }
 
+fn configured_keywords(engine: &Engine) -> Vec<String> {
+    engine.config.keywords.iter().cloned().collect()
+}
+
 #[test]
 fn default_keywords_build_a_full_dfa_with_bounded_memory() {
     let engine = default_engine();
     let prefilter = engine.prefilter.as_ref().unwrap();
     assert_eq!(prefilter.kind(), AhoCorasickKind::DFA);
     assert!(prefilter.memory_usage() < 1 << 20);
+    assert!(keyword_dfa_is_bounded(&configured_keywords(&engine)));
+}
+
+#[test]
+fn keyword_dfa_build_work_is_bounded_by_summed_prefix_lengths() {
+    let single = |length: usize| keyword_dfa_is_bounded(&["a".repeat(length)]);
+    // A keyword of n bytes has prefixes summing to n(n+1)/2 bytes:
+    // 361 gives 65,341 and 362 gives 65,703, either side of 64 Ki.
+    assert_eq!(KEYWORD_DFA_PREFIX_LIMIT, 65_536);
+    assert!(single(361));
+    assert!(!single(362));
+    assert!(!single(16_000));
+    // Many short keywords fill the byte limit while their prefixes stay small.
+    let short = (0..4_096)
+        .map(|index| format!("{index:04x}"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        short.iter().map(String::len).sum::<usize>(),
+        KEYWORD_DFA_BYTE_LIMIT
+    );
+    assert!(keyword_dfa_is_bounded(&short));
+}
+
+#[test]
+fn long_keywords_keep_the_automatic_automaton_within_the_byte_limit() {
+    // One long keyword makes each of its states follow a failure chain as
+    // long as its depth for every byte class. The set stays below the byte
+    // limit and has more than 100 keywords, so the automatic kind is not a DFA.
+    let short = (0..120)
+        .map(|index| format!("\"z{index:03}\""))
+        .collect::<Vec<_>>();
+    let keywords = format!("\"{}\", {}", "a".repeat(15_000), short.join(", "));
+    let config = format!("[[rules]]\nid = \"probe\"\nregex = '''x'''\nkeywords = [{keywords}]\n");
+    let engine = Engine::builder(ConfigLoader::new().load_toml(&config).unwrap())
+        .build()
+        .unwrap();
+    let keywords = configured_keywords(&engine);
+    let total = keywords.iter().map(String::len).sum::<usize>();
+    assert_eq!(total, 15_480);
+    assert!(total <= KEYWORD_DFA_BYTE_LIMIT);
+    assert!(!keyword_dfa_is_bounded(&keywords));
+    assert_ne!(
+        engine.prefilter.as_ref().unwrap().kind(),
+        AhoCorasickKind::DFA
+    );
 }
 
 #[test]

@@ -34,7 +34,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Surface | Bound or ownership |
 | --- | --- |
 | Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
-| Keyword automaton | Full Aho-Corasick DFA when the configured keywords total at most 16 KiB; the builder's automatic choice above that |
+| Keyword automaton | Full Aho-Corasick DFA when the configured keywords total at most 16 KiB and the lengths of all their prefixes sum to at most 64 Ki bytes; the builder's automatic choice otherwise |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
@@ -74,8 +74,15 @@ DFA construction is disabled, including under downstream feature unification.
 
 The keyword automaton is separate from the regex engines. At the 16 KiB
 keyword limit its full DFA table stays at about 17 MiB, one kilobyte per state
-at most. Above that limit the automaton kind is the builder's automatic choice.
-The automaton kind does not change which keyword hits are reported.
+at most. Building a state's row follows a failure chain for each byte class the
+state has no transition on, and that chain is no longer than the state's depth.
+Every state is a keyword prefix, so the prefix limit bounds the sum of those
+depths; a long keyword counts quadratically. The default keywords total 1,755
+bytes, their prefix lengths sum to 9,339 and the longest is 34 bytes. Outside
+either limit the automaton kind is the builder's automatic choice. That choice
+still builds a full DFA for at most 100 keywords, and these limits do not bound
+its construction work. The automaton kind does not change which keyword hits
+are reported.
 
 Hostile input or large Unicode classes can thrash the lazy cache or cause it
 to give up. Meta falls back to bounded engines and ultimately PikeVM, so one

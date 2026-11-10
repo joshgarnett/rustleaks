@@ -31,6 +31,15 @@ use crate::regex::{ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, Normal
 /// kilobyte per state, so this cap keeps the table at about 17 MiB. Larger
 /// keyword sets keep the automaton kind chosen by the builder.
 const KEYWORD_DFA_BYTE_LIMIT: usize = 16 * 1024;
+/// Largest summed length of all keyword prefixes that receives a full DFA.
+///
+/// Building a state's row follows a failure chain for each byte class the
+/// state has no transition on, and that chain is no longer than the state's
+/// depth. Every state is a keyword prefix, so this sum bounds the summed
+/// depths, and a long keyword counts quadratically. The default keywords
+/// sum to 9,339 and the longest is 34 bytes. Larger sums keep the automaton
+/// kind chosen by the builder.
+const KEYWORD_DFA_PREFIX_LIMIT: usize = 64 * 1024;
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
 
@@ -1550,7 +1559,7 @@ impl EngineBuilder {
         } else {
             let mut builder = AhoCorasickBuilder::new();
             builder.match_kind(MatchKind::Standard);
-            if keywords.iter().map(String::len).sum::<usize>() <= KEYWORD_DFA_BYTE_LIMIT {
+            if keyword_dfa_is_bounded(&keywords) {
                 builder.kind(Some(AhoCorasickKind::DFA));
             }
             Some(
@@ -1570,6 +1579,18 @@ impl EngineBuilder {
             recorded_keywords,
         })
     }
+}
+
+/// Returns whether a full keyword DFA has bounded size and build work.
+fn keyword_dfa_is_bounded(keywords: &[String]) -> bool {
+    let mut bytes = 0_usize;
+    let mut prefixes = 0_usize;
+    for keyword in keywords {
+        let length = keyword.len();
+        bytes = bytes.saturating_add(length);
+        prefixes = prefixes.saturating_add(length.saturating_mul(length.saturating_add(1)) / 2);
+    }
+    bytes <= KEYWORD_DFA_BYTE_LIMIT && prefixes <= KEYWORD_DFA_PREFIX_LIMIT
 }
 
 /// Selects the longest literal-node candidate covered by the rule's keywords.
