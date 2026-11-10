@@ -290,26 +290,33 @@ impl Decoder {
         Ok(segments)
     }
 
+    /// Returns every encoding-regex match in order, one entry per match.
+    fn encoding_candidates<E>(
+        &self,
+        data: &[u8],
+        checkpoint: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<Vec<EncodingMatch>, E> {
+        let spans = self.encodings.find_all(data);
+        let mut all = Vec::with_capacity(spans.len());
+        for span in spans {
+            checkpoint()?;
+            all.push(EncodingMatch {
+                encoding: classify_encoding_span(&data[span.start..span.end]),
+                range: StartEnd {
+                    start: isize::try_from(span.start).unwrap(),
+                    end: isize::try_from(span.end).unwrap(),
+                },
+            });
+        }
+        Ok(all)
+    }
+
     fn find_encoding_matches<E>(
         &self,
         data: &[u8],
         checkpoint: &mut impl FnMut() -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        let mut all = Vec::new();
-        for captures in self.encodings.captures_all(data) {
-            checkpoint()?;
-            for (index, span) in captures.spans().iter().enumerate().skip(1) {
-                if let Some(span) = span {
-                    all.push(EncodingMatch {
-                        encoding: Encoding::ALL[index - 1],
-                        range: StartEnd {
-                            start: isize::try_from(span.start).unwrap(),
-                            end: isize::try_from(span.end).unwrap(),
-                        },
-                    });
-                }
-            }
-        }
+        let all = self.encoding_candidates(data, checkpoint)?;
         if all.len() <= 1 {
             return Ok(all);
         }
@@ -339,6 +346,44 @@ impl Decoder {
 /// `segments` comes from one decode pass, or a contiguous run of one, so the
 /// inclusive [`StartEnd::overlaps`] matches form a contiguous range; see
 /// [`segments_are_ordered_and_disjoint`].
+/// Names the [`ENCODINGS_PATTERN`] alternative that produced one whole match.
+///
+/// `span` must be the bytes of a match of that pattern. Each alternative is its
+/// own whole capture group, so the capture index equals the first alternative
+/// able to match at the span start:
+///
+/// * `%` starts only the percent alternative. No other alternative can begin
+///   with it.
+/// * `\` starts only the second unicode branch. `(?i)` is scoped to that
+///   branch and only affects `u`/`U` and the hex digits inside it.
+/// * `U` starts the first unicode branch or base64. That branch is tried
+///   first and needs one complete `U+hhhh` group, which ends in Go `\s`
+///   (`[\t\n\f\r ]`) or at end of text. So a unicode match has that whitespace
+///   at offset 6 or has length 6, while base64 has at least 16 bytes from its
+///   class, which excludes whitespace, at offset 6.
+/// * Any other first byte is hex or base64. Hex is tried first and is greedy,
+///   so it matches exactly when the maximal hex-digit run from the span start
+///   has at least 32 bytes, in which case the whole span is that run.
+///
+/// `.` and `$` only decide where a match ends, which is already given by
+/// `span`. An invalid UTF-8 byte can only lie inside a percent span, because
+/// the other alternatives are ASCII-only, and a percent span starts at an
+/// ASCII `%` that normalization maps back to the same source byte.
+fn classify_encoding_span(span: &[u8]) -> Encoding {
+    match span.first() {
+        Some(b'%') => Encoding::Percent,
+        Some(b'\\') => Encoding::Unicode,
+        Some(b'U')
+            if span.len() == 6
+                || matches!(span.get(6), Some(b'\t' | b'\n' | 0x0c | b'\r' | b' ')) =>
+        {
+            Encoding::Unicode
+        }
+        _ if span.len() >= 32 && span.iter().all(u8::is_ascii_hexdigit) => Encoding::Hex,
+        _ => Encoding::Base64,
+    }
+}
+
 pub(crate) fn segments_with_decoded_overlap(
     segments: &[EncodedSegment],
     start: usize,
@@ -1034,6 +1079,192 @@ mod tests {
                     "{id} segments {first}..={last}"
                 );
             }
+        }
+    }
+
+    /// The pre-classifier candidate discovery, kept as the differential oracle.
+    fn candidates_from_captures(decoder: &Decoder, data: &[u8]) -> Vec<EncodingMatch> {
+        let mut all = Vec::new();
+        for captures in decoder.encodings.captures_all(data) {
+            let groups = captures.spans()[1..].iter().flatten().count();
+            assert_eq!(groups, 1, "{data:?} produced {groups} groups");
+            for (index, span) in captures.spans().iter().enumerate().skip(1) {
+                if let Some(span) = span {
+                    all.push(EncodingMatch {
+                        encoding: Encoding::ALL[index - 1],
+                        range: StartEnd {
+                            start: isize::try_from(span.start).unwrap(),
+                            end: isize::try_from(span.end).unwrap(),
+                        },
+                    });
+                }
+            }
+        }
+        all
+    }
+
+    fn assert_classifier_matches_captures(decoder: &Decoder, data: &[u8], context: &str) {
+        let classified = decoder
+            .encoding_candidates(data, &mut || Ok::<(), Infallible>(()))
+            .unwrap_or_else(|never| match never {});
+        assert_eq!(
+            classified,
+            candidates_from_captures(decoder, data),
+            "{context}: {data:?}"
+        );
+    }
+
+    #[test]
+    fn classified_candidates_match_the_expected_alternatives() {
+        use Encoding::{Base64, Hex, Percent, Unicode};
+
+        type ExpectedSpan = (Encoding, isize, isize);
+
+        const HEX_32: &[u8; 32] = b"0123456789abcdef0123456789ABCDEF";
+        let hex_32_equals = [HEX_32.as_slice(), b"="].concat();
+        let hex_32_z = [HEX_32.as_slice(), b"Z"].concat();
+        let cases: &[(&[u8], &[ExpectedSpan])] = &[
+            // Percent: `.` stops at a newline but consumes invalid bytes as
+            // single runes, with offsets mapped back to the source bytes.
+            (b"%41%42", &[(Percent, 0, 6)]),
+            (b"%41\n%42", &[(Percent, 0, 3), (Percent, 4, 7)]),
+            (b"%41\xff%42", &[(Percent, 0, 7)]),
+            (b"%41\xff", &[(Percent, 0, 3)]),
+            ("é%41".as_bytes(), &[(Percent, 2, 5)]),
+            (b"%4", &[]),
+            // First unicode branch: end of text, Go whitespace only.
+            (b"U+0041", &[(Unicode, 0, 6)]),
+            (b"U+0041 ", &[(Unicode, 0, 7)]),
+            (b"U+0041\n", &[(Unicode, 0, 7)]),
+            (b"U+0041\t", &[(Unicode, 0, 7)]),
+            (b"U+0041 U+0042", &[(Unicode, 0, 13)]),
+            (b"U+0041 U+0042X", &[(Unicode, 0, 7)]),
+            (b"U+0041\x0b", &[]),
+            (b"U+0041\xff", &[]),
+            (b"u+0041", &[]),
+            // A longer run is base64 once the `U+hhhh` group cannot end.
+            (b"U+00412345678901234", &[(Base64, 0, 19)]),
+            // Second unicode branch: `(?i)` covers only `u` and the digits.
+            (b"\\u0041", &[(Unicode, 0, 6)]),
+            (b"\\U0041", &[(Unicode, 0, 6)]),
+            (b"\\\\u0041", &[(Unicode, 0, 7)]),
+            (b"\\\\\\u0041", &[(Unicode, 1, 8)]),
+            (b"\\uABCD\\uabcd", &[(Unicode, 0, 12)]),
+            (b"\\u004", &[]),
+            // Hex precedes base64 at 32 bytes and base64 takes shorter runs.
+            (HEX_32, &[(Hex, 0, 32)]),
+            (b"0123456789abcdef0123456789ABCDE", &[(Base64, 0, 31)]),
+            (b"0123456789abcdef==", &[(Base64, 0, 18)]),
+            (b"deadbeefdeadbeefg", &[(Base64, 0, 17)]),
+            (hex_32_equals.as_slice(), &[(Hex, 0, 32)]),
+            (hex_32_z.as_slice(), &[(Hex, 0, 32)]),
+            // Base64 alphabet, padding, and invalid bytes around it.
+            (b"abcdefghijklmnop", &[(Base64, 0, 16)]),
+            (b"AB/+-_abcdefghijk", &[(Base64, 0, 17)]),
+            (b"QUJDREVGR0hJSktM===", &[(Base64, 0, 18)]),
+            (b"\xffABCDEFGHIJKLMNOP", &[(Base64, 1, 17)]),
+            (b"ABCDEFGHIJKLMNOP\xff", &[(Base64, 0, 16)]),
+            (b"\xef\xbf\xbdABCDEFGHIJKLMNOP", &[(Base64, 3, 19)]),
+            // Each alternative in one haystack.
+            (
+                b"%41 QUJDREVGR0hJSktMTU5PUA== \\u0041 0123456789abcdef0123456789abcdef U+0041",
+                &[
+                    (Percent, 0, 3),
+                    (Base64, 4, 28),
+                    (Unicode, 29, 35),
+                    (Hex, 36, 68),
+                    (Unicode, 69, 75),
+                ],
+            ),
+        ];
+
+        let decoder = Decoder::new();
+        for &(data, expected) in cases {
+            let expected = expected
+                .iter()
+                .map(|&(encoding, start, end)| EncodingMatch {
+                    encoding,
+                    range: StartEnd { start, end },
+                })
+                .collect::<Vec<_>>();
+            let classified = decoder
+                .encoding_candidates(data, &mut || Ok::<(), Infallible>(()))
+                .unwrap_or_else(|never| match never {});
+            assert_eq!(classified, expected, "{data:?}");
+            assert_eq!(
+                candidates_from_captures(&decoder, data),
+                expected,
+                "{data:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn classifier_matches_capture_groups_on_the_corpus_and_token_grid() {
+        let decoder = Decoder::new();
+        for_each_corpus_pass(|id, input, _predecessors, _output, _segments| {
+            assert_classifier_matches_captures(&decoder, input, id);
+        });
+
+        const TOKENS: &[&[u8]] = &[
+            b"%41",
+            b"%4",
+            b"%",
+            b"%zz",
+            b"U+0041",
+            b"U+00",
+            b"u+0041",
+            b"U+",
+            b"\\u0041",
+            b"\\U00ff",
+            b"\\\\u0041",
+            b"\\u00",
+            b"0123456789abcdef",
+            b"ABCDEF0123456789",
+            b"0123456789abcdef0123456789abcdef",
+            b"gGzZ_/+-wxyzQRST",
+            b"=",
+            b"==",
+            b" ",
+            b"\n",
+            b"\t",
+            b"\r",
+            b"\x0b",
+            b"\x0c",
+            b"\xff",
+            b"\xc3",
+            b"\xe2\x82",
+            b"\xc3\xa9",
+            b"\xef\xbf\xbd",
+            b".",
+            b"-",
+        ];
+        let mut haystack = Vec::new();
+        for first in TOKENS {
+            for second in TOKENS {
+                for third in TOKENS {
+                    haystack.clear();
+                    haystack.extend_from_slice(first);
+                    haystack.extend_from_slice(second);
+                    haystack.extend_from_slice(third);
+                    assert_classifier_matches_captures(&decoder, &haystack, "grid");
+                }
+            }
+        }
+
+        // A deterministic generator over the same tokens exercises longer
+        // repetitions, including unicode runs that span many groups.
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: usize| {
+            state = state.wrapping_mul(0x5851_f42d_4c95_7f2d).wrapping_add(1);
+            usize::try_from((state >> 33) % u64::try_from(bound).unwrap()).unwrap()
+        };
+        for _ in 0..4_000 {
+            haystack.clear();
+            for _ in 0..4 + next(9) {
+                haystack.extend_from_slice(TOKENS[next(TOKENS.len())]);
+            }
+            assert_classifier_matches_captures(&decoder, &haystack, "generated");
         }
     }
 
