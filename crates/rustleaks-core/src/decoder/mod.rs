@@ -202,7 +202,7 @@ impl Decoder {
         predecessors: &[EncodedSegment],
     ) -> (Vec<u8>, Vec<EncodedSegment>) {
         let (output, segments) =
-            match self.decode_controlled(data, predecessors, || Ok::<(), Infallible>(())) {
+            match self.decode_controlled(data, predecessors, |_| Ok::<(), Infallible>(())) {
                 Ok(decoded) => decoded,
                 Err(never) => match never {},
             };
@@ -215,6 +215,9 @@ impl Decoder {
 
     /// Decodes one pass under the caller's checkpoint.
     ///
+    /// `checkpoint(units)` stands for `units` consecutive unit checkpoints and
+    /// must have their observable effect, stopping at the first that fails.
+    ///
     /// When no segment decodes the returned buffer is empty and unallocated:
     /// the caller retains `data` and only reads the buffer once `segments` is
     /// non-empty.
@@ -222,7 +225,7 @@ impl Decoder {
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
-        mut checkpoint: impl FnMut() -> Result<(), E>,
+        mut checkpoint: impl FnMut(usize) -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         let (output, mut segments) =
             self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
@@ -233,7 +236,7 @@ impl Decoder {
         // The output was assembled alongside the candidates; these are the
         // per-segment assembly checkpoints.
         for _ in &segments {
-            checkpoint()?;
+            checkpoint(1)?;
         }
         debug_assert!(segments_are_ordered_and_disjoint(&segments));
         record_line_bounds(&mut segments, &output);
@@ -251,11 +254,12 @@ impl Decoder {
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
-        checkpoint: &mut impl FnMut() -> Result<(), E>,
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         if data.is_empty() {
             return Ok((Vec::new(), Vec::new()));
         }
+        debug_assert!(segments_are_ordered_and_disjoint(predecessors));
 
         let predecessor_depth = predecessors.first().map_or(0, |segment| segment.depth);
         let predecessor_snapshot: Arc<[EncodedSegment]> = Arc::from(predecessors);
@@ -266,7 +270,7 @@ impl Decoder {
         // Bytes of `data` already represented in `output`.
         let mut copied_to = 0;
         for candidate in self.find_encoding_matches(data, checkpoint)? {
-            checkpoint()?;
+            checkpoint(1)?;
             let Some(encoded_range) = candidate.range.as_usize() else {
                 continue;
             };
@@ -304,11 +308,11 @@ impl Decoder {
             let decoded_end = decoded_start + isize::try_from(decoded_value.len()).unwrap();
             let mut encodings = candidate.encoding.bit();
             if !predecessors.is_empty() {
-                for predecessor in predecessors {
-                    checkpoint()?;
-                    if candidate.range.overlaps(predecessor.decoded) {
-                        encodings |= predecessor.encodings;
-                    }
+                // Each visited predecessor is one public work unit.
+                checkpoint(predecessors.len())?;
+                for predecessor in &predecessors[overlapping_indices(predecessors, candidate.range)]
+                {
+                    encodings |= predecessor.encodings;
                 }
             }
             if !decoded_in_output {
@@ -345,12 +349,12 @@ impl Decoder {
     fn encoding_candidates<E>(
         &self,
         data: &[u8],
-        checkpoint: &mut impl FnMut() -> Result<(), E>,
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
         let spans = self.encodings.find_all(data);
         let mut all = Vec::with_capacity(spans.len());
         for span in spans {
-            checkpoint()?;
+            checkpoint(1)?;
             all.push(EncodingMatch {
                 encoding: classify_encoding_span(&data[span.start..span.end]),
                 range: StartEnd {
@@ -365,7 +369,7 @@ impl Decoder {
     fn find_encoding_matches<E>(
         &self,
         data: &[u8],
-        checkpoint: &mut impl FnMut() -> Result<(), E>,
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
         let all = self.encoding_candidates(data, checkpoint)?;
         if all.len() <= 1 {
@@ -374,7 +378,7 @@ impl Decoder {
 
         let mut filtered = Vec::with_capacity(all.len());
         for (index, candidate) in all.iter().copied().enumerate() {
-            checkpoint()?;
+            checkpoint(1)?;
             let shadowed_by_previous = index.checked_sub(1).is_some_and(|previous| {
                 let neighbor = all[previous];
                 candidate.range.overlaps(neighbor.range)
@@ -588,10 +592,10 @@ fn to_original(predecessors: &[EncodedSegment], decoded: StartEnd) -> StartEnd {
         return decoded;
     }
     let mut encoded = StartEnd::default();
-    for predecessor in predecessors {
-        if !predecessor.decoded.overlaps(decoded) {
-            continue;
-        }
+    // Predecessors that do not overlap never affect the mapping, and visiting
+    // the overlapping run in order preserves the first-containing-predecessor
+    // return and the unset-`encoded` handling.
+    for predecessor in &predecessors[overlapping_indices(predecessors, decoded)] {
         if predecessor.decoded.contains(decoded) {
             return predecessor.original;
         }
@@ -1185,7 +1189,7 @@ mod tests {
 
     fn assert_classifier_matches_captures(decoder: &Decoder, data: &[u8], context: &str) {
         let classified = decoder
-            .encoding_candidates(data, &mut || Ok::<(), Infallible>(()))
+            .encoding_candidates(data, &mut |_| Ok::<(), Infallible>(()))
             .unwrap_or_else(|never| match never {});
         assert_eq!(
             classified,
@@ -1268,7 +1272,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let classified = decoder
-                .encoding_candidates(data, &mut || Ok::<(), Infallible>(()))
+                .encoding_candidates(data, &mut |_| Ok::<(), Infallible>(()))
                 .unwrap_or_else(|never| match never {});
             assert_eq!(classified, expected, "{data:?}");
             assert_eq!(
@@ -1350,7 +1354,7 @@ mod tests {
 
     fn controlled_output(decoder: &mut Decoder, data: &[u8]) -> (Vec<u8>, Vec<EncodedSegment>) {
         decoder
-            .decode_controlled(data, &[], || Ok::<(), Infallible>(()))
+            .decode_controlled(data, &[], |_| Ok::<(), Infallible>(()))
             .unwrap_or_else(|never| match never {})
     }
 
@@ -1479,6 +1483,170 @@ mod tests {
         );
         // Unicode escapes keep the prefix they could decode.
         assert_eq!(seeded(append_unicode, b"\\u0041\\x"), b"seedA");
+    }
+
+    /// The pre-search predecessor mapping, kept as the differential oracle.
+    fn original_by_full_scan(predecessors: &[EncodedSegment], decoded: StartEnd) -> StartEnd {
+        if predecessors.is_empty() {
+            return decoded;
+        }
+        let mut encoded = StartEnd::default();
+        for predecessor in predecessors {
+            if !predecessor.decoded.overlaps(decoded) {
+                continue;
+            }
+            if predecessor.decoded.contains(decoded) {
+                return predecessor.original;
+            }
+            let mapped = predecessor
+                .encoded
+                .add(predecessor.decoded.overflow(decoded));
+            encoded = if encoded.end == 0 {
+                mapped
+            } else {
+                encoded.merge(mapped)
+            };
+        }
+        if encoded.end == 0 {
+            return decoded;
+        }
+        original_by_full_scan(&predecessors[0].predecessors, encoded)
+    }
+
+    #[test]
+    fn checkpoints_charge_each_predecessor_visit_at_the_candidate_position() {
+        let predecessor = |start: isize, end: isize, original_start: isize| EncodedSegment {
+            predecessors: Arc::from([]),
+            original: StartEnd {
+                start: original_start,
+                end: original_start + 20,
+            },
+            encoded: StartEnd { start, end },
+            decoded: StartEnd { start, end },
+            decoded_value: Arc::from([]),
+            encodings: Encoding::Hex.bit(),
+            depth: 1,
+            line: LineBounds::default(),
+        };
+        let predecessors = [
+            predecessor(0, 2, 100),
+            predecessor(30, 32, 200),
+            predecessor(60, 62, 300),
+        ];
+        let data = b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0 AAAAAAAAAAAAAAAA";
+
+        let mut charged = Vec::new();
+        let mut decoder = Decoder::new();
+        let (_output, segments) = decoder
+            .decode_controlled(data, &predecessors, |units| {
+                charged.push(units);
+                Ok::<(), Infallible>(())
+            })
+            .unwrap_or_else(|never| match never {});
+
+        // Three regex matches, three shadow-filter visits, a candidate unit
+        // and a run of three predecessor visits for each accepted candidate,
+        // one candidate unit for the rejected value, and two assembly units.
+        assert_eq!(charged, [1, 1, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1]);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].depth(), 2);
+    }
+
+    #[test]
+    fn a_failed_checkpoint_stops_the_pass_at_its_own_unit() {
+        let predecessor = |start, end| EncodedSegment {
+            predecessors: Arc::from([]),
+            original: StartEnd { start, end },
+            encoded: StartEnd { start, end },
+            decoded: StartEnd { start, end },
+            decoded_value: Arc::from([]),
+            encodings: Encoding::Hex.bit(),
+            depth: 1,
+            line: LineBounds::default(),
+        };
+        let predecessors = [predecessor(0, 2), predecessor(30, 32), predecessor(60, 62)];
+        let data = b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0";
+
+        // Failing the bulk predecessor charge returns the caller's error
+        // without assembling or returning any output.
+        let mut decoder = Decoder::new();
+        let error = decoder
+            .decode_controlled(data, &predecessors, |units| {
+                if units == 3 { Err("stop") } else { Ok(()) }
+            })
+            .unwrap_err();
+        assert_eq!(error, "stop");
+    }
+
+    #[test]
+    fn predecessor_mapping_matches_a_full_scan_on_generated_segments() {
+        let mut state = 0x853c_49e6_748f_ea9b_u64;
+        let mut next = move |bound: usize| {
+            state = state.wrapping_mul(0x5851_f42d_4c95_7f2d).wrapping_add(1);
+            usize::try_from((state >> 33) % u64::try_from(bound).unwrap()).unwrap()
+        };
+        fn advance(cursor: &mut isize, by: usize) -> isize {
+            *cursor += isize::try_from(by).unwrap();
+            *cursor
+        }
+        for _ in 0..30_000 {
+            let mut level = |predecessors: &Arc<[EncodedSegment]>| {
+                let mut encoded_cursor = 0isize;
+                let mut decoded_cursor = 0isize;
+                (0..next(14))
+                    .map(|_| {
+                        let encoded_start = advance(&mut encoded_cursor, next(5));
+                        let encoded_end = advance(&mut encoded_cursor, 1 + next(10));
+                        // A zero gap makes the decoded spans adjacent.
+                        let decoded_start = advance(&mut decoded_cursor, next(3));
+                        let decoded_end = advance(&mut decoded_cursor, 1 + next(8));
+                        EncodedSegment {
+                            predecessors: Arc::clone(predecessors),
+                            original: StartEnd {
+                                start: encoded_start + 50,
+                                end: encoded_end + 50,
+                            },
+                            encoded: StartEnd {
+                                start: encoded_start,
+                                end: encoded_end,
+                            },
+                            decoded: StartEnd {
+                                start: decoded_start,
+                                end: decoded_end,
+                            },
+                            decoded_value: Arc::from([]),
+                            encodings: Encoding::Hex.bit(),
+                            depth: 1,
+                            line: LineBounds::default(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let inner: Arc<[EncodedSegment]> = Arc::from(level(&Arc::from([])));
+            let outer = level(&inner);
+            assert!(segments_are_ordered_and_disjoint(&inner));
+            assert!(segments_are_ordered_and_disjoint(&outer));
+
+            let start = isize::try_from(next(60)).unwrap() - 4;
+            let end = start + isize::try_from(next(30)).unwrap();
+            let range = StartEnd { start, end };
+            assert_eq!(
+                to_original(&outer, range),
+                original_by_full_scan(&outer, range),
+                "{outer:?} {range:?}"
+            );
+            let linear = outer
+                .iter()
+                .enumerate()
+                .filter(|(_, segment)| segment.decoded.overlaps(range))
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                overlapping_indices(&outer, range).collect::<Vec<_>>(),
+                linear,
+                "{outer:?} {range:?}"
+            );
+        }
     }
 
     #[test]

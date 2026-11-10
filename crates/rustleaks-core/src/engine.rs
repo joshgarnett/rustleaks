@@ -376,6 +376,34 @@ impl<'a> ScanContext<'a> {
         )
     }
 
+    /// Charges `units` consecutive work checkpoints with the observable
+    /// effect of `units` calls to [`Self::work`].
+    ///
+    /// Without a cancellation signal each call polls nothing and adds one to
+    /// the counter, so the run reduces to one bounded addition that stops at
+    /// the same checkpoint. A signal observes each poll, so that path keeps
+    /// one call per unit.
+    fn work_many(&mut self, units: usize) -> Result<(), ScanTermination> {
+        if self.control.cancellation.is_some() {
+            for _ in 0..units {
+                self.work()?;
+            }
+            return Ok(());
+        }
+        let capacity = self.control.budget.work_units.unwrap_or(usize::MAX);
+        if units <= capacity - self.usage.work_units {
+            self.usage.work_units += units;
+            return Ok(());
+        }
+        self.usage.work_units = capacity;
+        charge_counter(
+            &mut self.usage.work_units,
+            1,
+            self.control.budget.work_units,
+            ScanBudgetKind::WorkUnits,
+        )
+    }
+
     fn decoded_bytes(&mut self, amount: usize) -> Result<(), ScanTermination> {
         self.check_cancelled()?;
         charge_counter(
@@ -606,7 +634,9 @@ impl Engine {
                 return finish_partial(findings, options, context.usage, termination);
             }
             let decode_result =
-                decoder.decode_controlled(&current_raw, &encoded_segments, || context.work());
+                decoder.decode_controlled(&current_raw, &encoded_segments, |units| {
+                    context.work_many(units)
+                });
             let (decoded_output, segments) = match decode_result {
                 Ok(output) => output,
                 Err(termination) => {

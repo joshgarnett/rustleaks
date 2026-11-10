@@ -388,3 +388,110 @@ keywords = ["secret"]
     );
     assert_eq!(outcome.termination(), Some(&ScanTermination::Cancelled));
 }
+
+const DOUBLE_ENCODED_TOKEN: &[u8] = b"ZEc5clpXNDlRVUpEUkVWR1IwaEpTa3RNVFU1UFVBPT0=";
+
+fn double_encoded_token_engine() -> Engine {
+    engine(
+        r#"
+[[rules]]
+id = "token"
+regex = '''token=([A-Z]{16})'''
+secretGroup = 1
+keywords = ["token"]
+"#,
+    )
+}
+
+/// One `k=<token encoded twice>` line per finding, so depth two decodes
+/// `lines` candidates against `lines` predecessors.
+fn double_encoded_lines(lines: usize) -> Fragment {
+    let mut input = Vec::new();
+    for _ in 0..lines {
+        input.extend_from_slice(b"k=");
+        input.extend_from_slice(DOUBLE_ENCODED_TOKEN);
+        input.push(b'\n');
+    }
+    Fragment::new(input)
+}
+
+/// Work from the documented decoder checkpoints for depth two with `lines`
+/// lines and more than one match per pass: `lines * lines` predecessor visits
+/// plus `10 * lines + 6` units for matches, candidates, segments, and passes.
+const fn double_encoded_work(lines: usize) -> usize {
+    lines * lines + 10 * lines + 6
+}
+
+#[test]
+fn predecessor_charging_matches_a_per_unit_signal_at_every_budget() {
+    let engine = double_encoded_token_engine();
+    let options = ScanOptions::builder().max_decode_depth(2).build();
+    let never = || false;
+    for lines in [2, 3] {
+        let fragment = double_encoded_lines(lines);
+        let total = double_encoded_work(lines);
+        let complete =
+            engine.scan_fragment_controlled(&fragment, &options, &ScanControl::unlimited());
+        assert!(complete.is_complete());
+        assert_eq!(complete.findings().len(), lines);
+        assert_eq!(complete.usage().work_units(), total);
+
+        for budget in 0..=total {
+            let limited = ScanBudget::unlimited().max_work_units(budget);
+            let plain = engine.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &ScanControl::unlimited().with_budget(limited),
+            );
+            let polled = engine.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &ScanControl::cancellable(&never).with_budget(limited),
+            );
+            assert_eq!(plain.usage(), polled.usage(), "budget {budget}");
+            assert_eq!(plain.termination(), polled.termination(), "budget {budget}");
+            assert_eq!(plain.findings(), polled.findings(), "budget {budget}");
+            if budget < total {
+                assert_eq!(plain.usage().work_units(), budget, "budget {budget}");
+                assert!(matches!(
+                    plain.termination(),
+                    Some(ScanTermination::BudgetExceeded {
+                        kind: ScanBudgetKind::WorkUnits,
+                        limit,
+                        consumed,
+                        requested: 1,
+                    }) if *limit == budget && *consumed == budget
+                ));
+            } else {
+                assert!(plain.is_complete());
+            }
+        }
+    }
+}
+
+#[test]
+fn predecessor_visits_poll_cancellation_once_per_work_unit() {
+    let engine = double_encoded_token_engine();
+    let options = ScanOptions::builder().max_decode_depth(2).build();
+    for lines in [2, 3, 4, 5] {
+        let polls = AtomicUsize::new(0);
+        let count_polls = || {
+            polls.fetch_add(1, Ordering::SeqCst);
+            false
+        };
+        let outcome = engine.scan_fragment_controlled(
+            &double_encoded_lines(lines),
+            &options,
+            &ScanControl::cancellable(&count_polls),
+        );
+        assert!(outcome.is_complete());
+        // Polls beyond one per work unit: the initial check, two post-decode
+        // checks, two decoded-byte charges, and per finding one record charge
+        // and one final-filter check.
+        assert_eq!(
+            polls.load(Ordering::SeqCst),
+            double_encoded_work(lines) + 5 + 2 * lines,
+            "{lines} lines"
+        );
+    }
+}
