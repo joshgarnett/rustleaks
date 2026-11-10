@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
 
 use crate::config::{
     CompiledAllowlist, CompiledConfig, CompiledRule, Condition, RegexTarget, RequiredRuleSpec,
@@ -25,6 +25,12 @@ use crate::model::{
 };
 use crate::regex::{ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, NormalizedHaystack};
 
+/// Largest total keyword length that receives a full DFA prefilter.
+///
+/// States are bounded by keyword bytes and a full table can reach one
+/// kilobyte per state, so this cap keeps the table at about 17 MiB. Larger
+/// keyword sets keep the automaton kind chosen by the builder.
+const KEYWORD_DFA_BYTE_LIMIT: usize = 16 * 1024;
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
 
@@ -1542,9 +1548,13 @@ impl EngineBuilder {
         let prefilter = if keywords.is_empty() {
             None
         } else {
+            let mut builder = AhoCorasickBuilder::new();
+            builder.match_kind(MatchKind::Standard);
+            if keywords.iter().map(String::len).sum::<usize>() <= KEYWORD_DFA_BYTE_LIMIT {
+                builder.kind(Some(AhoCorasickKind::DFA));
+            }
             Some(
-                AhoCorasickBuilder::new()
-                    .match_kind(MatchKind::Standard)
+                builder
                     .build(&keywords)
                     .map_err(|error| ScanError::Prefilter {
                         message: error.to_string(),

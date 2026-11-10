@@ -34,6 +34,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Surface | Bound or ownership |
 | --- | --- |
 | Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
+| Keyword automaton | Full Aho-Corasick DFA when the configured keywords total at most 16 KiB; the builder's automatic choice above that |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
@@ -68,8 +69,13 @@ across scans of one Engine. Concurrent searches can retain more caches, and
 cloning an Engine creates additional pools while sharing compiled automata.
 Pool bookkeeping, allocator overhead and aggregate configuration memory are
 outside these per-component limits. The optional one-pass DFA has a 1 MiB
-compile limit; failure to build it selects another capture engine. Full DFA
-construction is disabled, including under downstream feature unification.
+compile limit; failure to build it selects another capture engine. Full regex
+DFA construction is disabled, including under downstream feature unification.
+
+The keyword automaton is separate from the regex engines. At the 16 KiB
+keyword limit its full DFA table stays at about 17 MiB, one kilobyte per state
+at most. Above that limit the automaton kind is the builder's automatic choice.
+The automaton kind does not change which keyword hits are reported.
 
 Hostile input or large Unicode classes can thrash the lazy cache or cause it
 to give up. Meta falls back to bounded engines and ultimately PikeVM, so one

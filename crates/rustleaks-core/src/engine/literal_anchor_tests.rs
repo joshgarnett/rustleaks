@@ -252,6 +252,72 @@ fn occurrence_limits_saturate_and_inactive_passes_decline() {
     );
 }
 
+#[test]
+fn default_keywords_build_a_full_dfa_with_bounded_memory() {
+    let engine = default_engine();
+    let prefilter = engine.prefilter.as_ref().unwrap();
+    assert_eq!(prefilter.kind(), AhoCorasickKind::DFA);
+    assert!(prefilter.memory_usage() < 1 << 20);
+}
+
+#[test]
+fn keyword_dfa_kind_matches_the_automatic_kind_on_keyword_hits() {
+    let engine = default_engine();
+    let dfa = engine.prefilter.as_ref().unwrap();
+    let keywords = engine
+        .config
+        .keywords
+        .iter()
+        .filter(|keyword| !keyword.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    let automatic = AhoCorasickBuilder::new()
+        .match_kind(MatchKind::Standard)
+        .build(&keywords)
+        .unwrap();
+    let hits = |automaton: &AhoCorasick, input: &[u8]| {
+        automaton
+            .find_overlapping_iter(input)
+            .map(|found| (found.pattern().as_usize(), found.start(), found.end()))
+            .collect::<Vec<_>>()
+    };
+    let mut compared = 0_usize;
+    for sample in samples().iter().step_by(11) {
+        let input = decoded(sample).to_ascii_lowercase();
+        assert_eq!(hits(dfa, &input), hits(&automatic, &input));
+        compared += 1;
+    }
+    assert!(compared > 300);
+    let dense = b"apikeyauthtokensecretpasswordcredentials".repeat(64);
+    assert_eq!(hits(dfa, &dense), hits(&automatic, &dense));
+}
+
+#[test]
+fn oversized_keyword_sets_keep_the_automatic_automaton() {
+    let long = "k".repeat(96);
+    let keywords = (0..200)
+        .map(|index| format!("\"{long}{index}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let config = format!("[[rules]]\nid = \"probe\"\nregex = '''x'''\nkeywords = [{keywords}]\n");
+    let engine = Engine::builder(ConfigLoader::new().load_toml(&config).unwrap())
+        .build()
+        .unwrap();
+    assert!(
+        engine
+            .config
+            .keywords
+            .iter()
+            .map(String::len)
+            .sum::<usize>()
+            > KEYWORD_DFA_BYTE_LIMIT
+    );
+    assert_ne!(
+        engine.prefilter.as_ref().unwrap().kind(),
+        AhoCorasickKind::DFA
+    );
+}
+
 #[derive(Deserialize)]
 struct Sample {
     rule_id: String,
