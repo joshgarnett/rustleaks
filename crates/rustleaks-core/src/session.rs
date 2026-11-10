@@ -398,53 +398,20 @@ impl BaselineFinding {
 }
 
 /// An immutable collection loaded from a baseline report.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Baseline {
     entries: Vec<BaselineFinding>,
     was_null: bool,
-    // Positions in `entries` ordered by `BaselineKey`. It is derived from
-    // `entries`, so equality and `Debug` do not observe it.
-    index: Vec<usize>,
-}
-
-#[allow(
-    clippy::missing_fields_in_debug,
-    reason = "the derived index is not part of the observable Debug output"
-)]
-impl fmt::Debug for Baseline {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Baseline")
-            .field("entries", &self.entries)
-            .field("was_null", &self.was_null)
-            .finish()
-    }
-}
-
-impl PartialEq for Baseline {
-    fn eq(&self, other: &Self) -> bool {
-        self.entries == other.entries && self.was_null == other.was_null
-    }
 }
 
 impl Baseline {
-    fn indexed(entries: Vec<BaselineFinding>, was_null: bool) -> Self {
-        let mut index = (0..entries.len()).collect::<Vec<_>>();
-        index.sort_unstable_by_key(|&position| entry_key(&entries[position]));
-        Self {
-            entries,
-            was_null,
-            index,
-        }
-    }
-
     /// Builds a baseline from already validated findings.
     #[must_use]
     pub fn from_findings(findings: &[Finding]) -> Self {
-        Self::indexed(
-            findings.iter().map(BaselineFinding::from_finding).collect(),
-            false,
-        )
+        Self {
+            entries: findings.iter().map(BaselineFinding::from_finding).collect(),
+            was_null: false,
+        }
     }
 
     /// Parses the pinned Go report JSON format from bytes.
@@ -458,8 +425,14 @@ impl Baseline {
         let decoded = serde_json::from_str::<Option<Vec<BaselineFindingWire>>>(&normalized)
             .map_err(BaselineParseError::Json)?;
         Ok(match decoded {
-            Some(entries) => Self::indexed(entries.into_iter().map(Into::into).collect(), false),
-            None => Self::indexed(Vec::new(), true),
+            Some(entries) => Self {
+                entries: entries.into_iter().map(Into::into).collect(),
+                was_null: false,
+            },
+            None => Self {
+                entries: Vec::new(),
+                was_null: true,
+            },
         })
     }
 
@@ -505,16 +478,8 @@ impl Baseline {
     /// Returns whether no baseline entry equals the finding.
     #[must_use]
     pub fn is_new(&self, finding: &Finding, redaction_percent: usize) -> bool {
-        // `baseline_equal` requires every key field to match, so an entry
-        // outside the finding's bucket cannot equal it.
-        let key = finding_key(finding);
-        let bucket = self
-            .index
-            .partition_point(|&position| entry_key(&self.entries[position]) < key);
-        self.index[bucket..]
+        self.entries
             .iter()
-            .map(|&position| &self.entries[position])
-            .take_while(|entry| entry_key(entry) == key)
             .all(|entry| !baseline_equal(entry, finding, redaction_percent))
     }
 }
@@ -693,11 +658,55 @@ impl AddOutcome {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 struct PolicyData {
     ignores: IgnoreSet,
     baseline: Option<Baseline>,
     redaction_percent: usize,
+    // Positions in the baseline's entries ordered by `BaselineKey`. It lives
+    // here because it is derived from `baseline`, and a field on the public
+    // type would force hand-written impls into the public API.
+    baseline_index: Vec<usize>,
+}
+
+#[allow(
+    clippy::missing_fields_in_debug,
+    reason = "the derived index is not part of the observable Debug output"
+)]
+impl fmt::Debug for PolicyData {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PolicyData")
+            .field("ignores", &self.ignores)
+            .field("baseline", &self.baseline)
+            .field("redaction_percent", &self.redaction_percent)
+            .finish()
+    }
+}
+
+impl PolicyData {
+    fn baseline_contains(&self, finding: &Finding) -> bool {
+        let Some(baseline) = &self.baseline else {
+            return false;
+        };
+        // `baseline_equal` requires every key field to match, so an entry
+        // outside the finding's bucket cannot equal it.
+        let key = finding_key(finding);
+        let bucket = self
+            .baseline_index
+            .partition_point(|&position| entry_key(&baseline.entries[position]) < key);
+        self.baseline_index[bucket..]
+            .iter()
+            .map(|&position| &baseline.entries[position])
+            .take_while(|entry| entry_key(entry) == key)
+            .any(|entry| baseline_equal(entry, finding, self.redaction_percent))
+    }
+}
+
+fn baseline_index(baseline: &Baseline) -> Vec<usize> {
+    let mut index = (0..baseline.entries.len()).collect::<Vec<_>>();
+    index.sort_unstable_by_key(|&position| entry_key(&baseline.entries[position]));
+    index
 }
 
 /// Immutable filtering policy shared by owned scan batches.
@@ -721,12 +730,7 @@ impl SessionPolicy {
             Some(SuppressionReason::GlobalIgnore)
         } else if !finding.commit().is_empty() && self.0.ignores.contains(qualified.as_bytes()) {
             Some(SuppressionReason::CommitIgnore)
-        } else if self
-            .0
-            .baseline
-            .as_ref()
-            .is_some_and(|baseline| !baseline.is_new(&finding, self.0.redaction_percent))
-        {
+        } else if self.0.baseline_contains(&finding) {
             Some(SuppressionReason::Baseline)
         } else {
             None
@@ -769,6 +773,7 @@ impl SessionPolicyBuilder {
     /// Installs a baseline. An empty baseline remains configured.
     #[must_use]
     pub fn baseline(mut self, baseline: Baseline) -> Self {
+        self.data.baseline_index = baseline_index(&baseline);
         self.data.baseline = Some(baseline);
         self
     }
@@ -1434,14 +1439,60 @@ mod tests {
             .any(|entry| oracle_equal(entry, candidate, redact))
     }
 
-    fn assert_matches_linear_scan(baseline: &Baseline, candidate: &Finding) {
-        for redact in [0, 1, 100] {
+    /// A baseline paired with one policy per redaction mode, so each decision
+    /// is taken through both the linear [`Baseline::is_new`] and the index that
+    /// [`SessionPolicy::classify`] uses.
+    struct BaselineProbe {
+        baseline: Baseline,
+        policies: [(usize, SessionPolicy); 3],
+    }
+
+    impl BaselineProbe {
+        fn new(baseline: Baseline) -> Self {
+            let policies = [0, 1, 100].map(|redact| {
+                let policy = SessionPolicy::builder()
+                    .baseline(baseline.clone())
+                    .redaction_percent(redact)
+                    .build();
+                (redact, policy)
+            });
+            Self { baseline, policies }
+        }
+
+        fn of(findings: &[Finding]) -> Self {
+            Self::new(Baseline::from_findings(findings))
+        }
+
+        /// Returns the decision after checking that both paths agree on it.
+        /// The policies have no ignores, so only the baseline can suppress.
+        fn is_new(&self, candidate: &Finding, redact: usize) -> bool {
+            let (_, policy) = self
+                .policies
+                .iter()
+                .find(|(mode, _)| *mode == redact)
+                .unwrap();
+            let scanned = self.baseline.is_new(candidate, redact);
             assert_eq!(
-                baseline.is_new(candidate, redact),
-                linear_is_new(baseline, candidate, redact),
+                policy
+                    .classify(candidate.clone())
+                    .outcome()
+                    .suppression_reason(),
+                (!scanned).then_some(SuppressionReason::Baseline),
                 "redact {redact}, {} entries",
-                baseline.len()
+                self.baseline.len()
             );
+            scanned
+        }
+
+        fn assert_matches_linear_scan(&self, candidate: &Finding) {
+            for (redact, _) in &self.policies {
+                assert_eq!(
+                    self.is_new(candidate, *redact),
+                    linear_is_new(&self.baseline, candidate, *redact),
+                    "redact {redact}, {} entries",
+                    self.baseline.len()
+                );
+            }
         }
     }
 
@@ -1496,12 +1547,12 @@ mod tests {
 
     #[test]
     fn baseline_index_decides_each_near_miss_by_the_compared_fields() {
-        let baseline = Baseline::from_findings(&[finding()]);
+        let probe = BaselineProbe::of(&[finding()]);
         for (name, candidate, plain, redacted) in near_misses() {
-            assert_eq!(baseline.is_new(&candidate, 0), plain, "{name}");
-            assert_eq!(baseline.is_new(&candidate, 1), redacted, "{name}");
-            assert_eq!(baseline.is_new(&candidate, 100), redacted, "{name}");
-            assert_matches_linear_scan(&baseline, &candidate);
+            assert_eq!(probe.is_new(&candidate, 0), plain, "{name}");
+            assert_eq!(probe.is_new(&candidate, 1), redacted, "{name}");
+            assert_eq!(probe.is_new(&candidate, 100), redacted, "{name}");
+            probe.assert_matches_linear_scan(&candidate);
         }
     }
 
@@ -1511,16 +1562,16 @@ mod tests {
         let candidates = rows.iter().map(|row| row.1.clone()).collect::<Vec<_>>();
         for (index, first) in candidates.iter().enumerate() {
             for second in &candidates[index..] {
-                let baseline = Baseline::from_findings(&[first.clone(), second.clone()]);
+                let probe = BaselineProbe::of(&[first.clone(), second.clone()]);
                 for candidate in &candidates {
-                    assert_matches_linear_scan(&baseline, candidate);
+                    probe.assert_matches_linear_scan(candidate);
                 }
             }
         }
-        let every = Baseline::from_findings(&candidates);
+        let every = BaselineProbe::of(&candidates);
         for candidate in &candidates {
             assert!(!every.is_new(candidate, 0));
-            assert_matches_linear_scan(&every, candidate);
+            every.assert_matches_linear_scan(candidate);
         }
     }
 
@@ -1529,13 +1580,13 @@ mod tests {
         let first = base_finding().message("first").build().unwrap();
         let middle = base_finding().message("middle").build().unwrap();
         let last = base_finding().message("last").build().unwrap();
-        let baseline = Baseline::from_findings(&[first.clone(), middle.clone(), last.clone()]);
+        let probe = BaselineProbe::of(&[first.clone(), middle.clone(), last.clone()]);
         for present in [&first, &middle, &last] {
-            assert!(!baseline.is_new(present, 0));
+            assert!(!probe.is_new(present, 0));
         }
         let absent = base_finding().message("absent").build().unwrap();
-        assert!(baseline.is_new(&absent, 0));
-        assert!(baseline.is_new(&absent, 1));
+        assert!(probe.is_new(&absent, 0));
+        assert!(probe.is_new(&absent, 1));
     }
 
     #[test]
@@ -1561,17 +1612,17 @@ mod tests {
                 findings.push(built.build().unwrap());
             }
         }
-        let complete = Baseline::from_findings(&findings);
+        let complete = BaselineProbe::of(&findings);
         for candidate in &findings {
             assert!(!complete.is_new(candidate, 0));
         }
         for (removed, _) in findings.iter().enumerate() {
             let mut remaining = findings.clone();
             remaining.remove(removed);
-            let baseline = Baseline::from_findings(&remaining);
+            let probe = BaselineProbe::of(&remaining);
             for (index, candidate) in findings.iter().enumerate() {
-                assert_eq!(baseline.is_new(candidate, 0), index == removed);
-                assert_matches_linear_scan(&baseline, candidate);
+                assert_eq!(probe.is_new(candidate, 0), index == removed);
+                probe.assert_matches_linear_scan(candidate);
             }
         }
     }
@@ -1584,8 +1635,9 @@ mod tests {
                 format!(r#"{{"RuleID":"r","File":"f","StartLine":{line},"EndLine":{line}}}"#)
             })
             .collect::<Vec<_>>();
-        let baseline =
-            Baseline::from_go_json(format!("[{}]", entries.join(",")).as_bytes()).unwrap();
+        let probe = BaselineProbe::new(
+            Baseline::from_go_json(format!("[{}]", entries.join(",")).as_bytes()).unwrap(),
+        );
         let cases = [
             (0, false),
             (1, true),
@@ -1600,8 +1652,8 @@ mod tests {
                 .location(Location::new(line, line, 0, 0).unwrap())
                 .build()
                 .unwrap();
-            assert_eq!(baseline.is_new(&candidate, 0), expected, "{line}");
-            assert_matches_linear_scan(&baseline, &candidate);
+            assert_eq!(probe.is_new(&candidate, 0), expected, "{line}");
+            probe.assert_matches_linear_scan(&candidate);
         }
     }
 
@@ -1650,9 +1702,9 @@ mod tests {
             let entries = (0..size)
                 .map(|_| universe[next() % universe.len()].clone())
                 .collect::<Vec<_>>();
-            let baseline = Baseline::from_findings(&entries);
+            let probe = BaselineProbe::of(&entries);
             for candidate in &universe {
-                assert_matches_linear_scan(&baseline, candidate);
+                probe.assert_matches_linear_scan(candidate);
             }
         }
     }
@@ -1676,13 +1728,95 @@ mod tests {
             Baseline::from_go_json(b"[]").unwrap(),
             Baseline::from_go_json(b"null").unwrap(),
         ] {
-            assert!(empty.is_new(&finding(), 0));
-            assert!(empty.is_new(&finding(), 100));
+            let probe = BaselineProbe::new(empty);
+            assert!(probe.is_new(&finding(), 0));
+            assert!(probe.is_new(&finding(), 100));
         }
     }
 
     #[test]
-    fn baseline_debug_and_equality_do_not_observe_the_index() {
+    fn replacing_a_policy_baseline_rebuilds_its_index() {
+        let one = [base_finding().rule_id("only").build().unwrap()];
+        let three = [
+            base_finding().rule_id("a").build().unwrap(),
+            base_finding().rule_id("b").build().unwrap(),
+            finding(),
+        ];
+        for (replaced, installed) in [(&one[..], &three[..]), (&three[..], &one[..])] {
+            let policy = SessionPolicy::builder()
+                .baseline(Baseline::from_findings(replaced))
+                .baseline(Baseline::from_findings(installed))
+                .build();
+            let reason = |candidate: &Finding| {
+                policy
+                    .classify(candidate.clone())
+                    .outcome()
+                    .suppression_reason()
+            };
+            for candidate in installed {
+                assert_eq!(reason(candidate), Some(SuppressionReason::Baseline));
+            }
+            for candidate in replaced {
+                assert_eq!(reason(candidate), None);
+            }
+        }
+    }
+
+    #[test]
+    fn session_policy_debug_omits_the_baseline_index() {
+        assert_eq!(
+            format!("{:?}", SessionPolicy::default()),
+            "SessionPolicy(PolicyData { ignores: IgnoreSet { entries: {} }, baseline: None, \
+             redaction_percent: 0 })"
+        );
+        assert_eq!(
+            format!("{:#?}", SessionPolicy::default()),
+            concat!(
+                "SessionPolicy(\n",
+                "    PolicyData {\n",
+                "        ignores: IgnoreSet {\n",
+                "            entries: {},\n",
+                "        },\n",
+                "        baseline: None,\n",
+                "        redaction_percent: 0,\n",
+                "    },\n",
+                ")",
+            )
+        );
+        assert_eq!(
+            format!("{:?}", SessionPolicy::builder()),
+            "SessionPolicyBuilder { data: PolicyData { ignores: IgnoreSet { entries: {} }, \
+             baseline: None, redaction_percent: 0 } }"
+        );
+
+        let with_null_baseline = SessionPolicy::builder()
+            .baseline(Baseline::from_go_json(b"null").unwrap())
+            .build();
+        assert_eq!(
+            format!("{with_null_baseline:?}"),
+            "SessionPolicy(PolicyData { ignores: IgnoreSet { entries: {} }, baseline: \
+             Some(Baseline { entries: [], was_null: true }), redaction_percent: 0 })"
+        );
+
+        let with_entry = SessionPolicy::builder()
+            .ignores(IgnoreSet::parse_go_compatible(b"a:b:1").ignores)
+            .baseline(Baseline::from_findings(&[finding()]))
+            .redaction_percent(100)
+            .build();
+        assert_eq!(
+            format!("{with_entry:?}"),
+            "SessionPolicy(PolicyData { ignores: IgnoreSet { entries: \
+             {ByteText([97, 58, 98, 58, 49])} }, baseline: Some(Baseline { entries: \
+             [BaselineFinding { rule_id_len: 4, description_len: 11, start_line: 7, end_line: 8, \
+             start_column: 3, end_column: 15, match_len: 12, secret_len: 6, file_len: 14, \
+             symlink_file_len: 0, commit_len: 8, link_len: 0, entropy: 3.25, author_len: 6, \
+             email_len: 21, date_len: 10, message_len: 7, tag_count: 0, fingerprint_len: 0 }], \
+             was_null: false }), redaction_percent: 100 })"
+        );
+    }
+
+    #[test]
+    fn baseline_debug_and_equality_cover_entries_and_null_state() {
         assert_eq!(
             format!("{:?}", Baseline::default()),
             "Baseline { entries: [], was_null: false }"
