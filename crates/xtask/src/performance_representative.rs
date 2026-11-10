@@ -11,6 +11,9 @@ use super::{
     sha256_bytes, sha256_file, workspace_root,
 };
 
+#[path = "performance_source_scale.rs"]
+mod source_scale;
+
 const SCOPE: &str = "representative-v1-operation-only";
 const CLI: &str = "//crates/rustleaks-cli:rustleaks";
 const ARCHIVES: &str = "//crates/rustleaks-sources:perf_archives_test";
@@ -182,7 +185,9 @@ impl Tools {
         let needs_git = workloads
             .iter()
             .any(|id| id.starts_with("git-") || id == "cli-git");
-        let needs_archives = workloads.iter().any(|id| id == "archives-all-formats");
+        let needs_archives = workloads.iter().any(|id| {
+            id == "archives-all-formats" || id.starts_with("archive-") || id == "git-archive-blobs"
+        });
         Ok(Self {
             cli: needs_cli
                 .then(|| build_executable(root, CLI, "rustleaks"))
@@ -357,6 +362,7 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             .into_iter()
             .filter(|id| DECODE_REPORT_WORKLOADS.contains(&id.as_str()))
             .collect(),
+        Some(ref id) if id == source_scale::GROUP => source_scale::workloads(&available)?,
         Some(ref id) if available.contains(id) => vec![id.clone()],
         Some(ref id) => return Err(format!("unknown representative workload {id}")),
         None => available,
@@ -525,6 +531,9 @@ pub(super) fn fragment_budget_check(
 }
 
 pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, String> {
+    if let Some(phases) = source_scale::required_phases(workload) {
+        return Ok(phases);
+    }
     if workload.starts_with("core-workers-") {
         return Ok(vec![
             "config-parse-and-compile",

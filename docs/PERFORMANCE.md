@@ -265,6 +265,47 @@ free memory. Serialization timers use an output buffer sized to the expected
 report, so they exclude buffer growth; session classification times only the
 classification calls.
 
+## Source, Git, archive and CLI scale measurements
+
+The `source-scale` group adds 26 synthetic workloads for traversal, chunking,
+Git history shape, archive limits and CLI behavior. Run it with one iteration:
+
+```sh
+bazelisk run //crates/xtask:xtask -- perf representative --workload source-scale --samples 3 --iterations 1
+```
+
+Every fixture is generated in a temporary directory before its timers start.
+Expected fragments, findings, counts, limit issues and stderr lines come from
+the generator manifest and the documented limits, not from measured output.
+Fragment boundaries come from an independent model of `FileSource`: a
+100,000-byte nominal read, then read-ahead through a 4,096-byte buffered reader
+until a blank line or 25,000 appended bytes. Bytes left in that buffer satisfy
+the next nominal read, which is therefore short. A file with no line breaks
+yields one 125,000-byte fragment and then 28,672-byte fragments, not
+125,000-byte fragments. Blank lines end read-ahead early, so those files
+produce many smaller fragments.
+
+| Family | Shapes |
+| --- | --- |
+| `source-default-config-{1,4,8}-workers` | Packaged rules over 96 files of 128 KiB with planted tokens |
+| `source-blank-lines-12-mib`, `source-no-blank-lines-12-mib` | The same rows with and without blank lines |
+| `source-single-line-64-mib` | One line, with tokens inside fragments and straddling known cuts |
+| `source-many-tiny-50000`, `source-deep-tree`, `source-skewed-sizes` | File count, depth 64, and one 64 MiB file beside 10,000 small files |
+| `source-mostly-ignored`, `source-binary-mix` | 95% allowlisted paths; skipped application and scanned image magic |
+| `git-many-tiny-commits`, `git-wide-commit`, `git-merge-and-rename`, `git-archive-blobs` | History length, width, merges, renames, copies, and archive blobs |
+| `archive-high-ratio-{gzip,zstd,bzip2}` | Zero runs under the member limit, and just over it with one limit issue |
+| `archive-nested-depth-{8,9}`, `archive-tar-{10000,10001}-members` | Depth and entry limits at and past the boundary |
+| `archive-zstd-many-small` | 500 streams of 1 KiB; peak RSS comes from the collector |
+| `cli-many-issues`, `cli-stdin-chunked`, `cli-enable-rule-startup` | Issue output, write fragmentation, and rule selection startup |
+
+Archive and Git archive-blob workloads run through the archive test driver
+because compat does not enable the `archives` source feature. Zstandard and
+bzip2 fixtures are hand-built zero-run streams, since no encoder is available
+without a new dependency. The bzip2 expanded size is the nearest multiple of
+255 bytes. `cli-many-issues` uses sparse files, so its disk use depends on the
+filesystem. These workloads are synthetic shapes and do not establish field
+speed. Freeze their definitions before collecting comparison runs.
+
 ## CPU and retained-memory investigation
 
 The optional investigation commands use the same synthetic core fixtures with a

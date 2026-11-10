@@ -26,6 +26,8 @@ mod edge_workloads;
 mod normalization_workloads;
 #[path = "report_workloads.rs"]
 mod report_workloads;
+#[path = "source_scale_workloads.rs"]
+mod source_scale_workloads;
 #[path = "worker_workloads.rs"]
 mod worker_workloads;
 
@@ -96,6 +98,7 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             .chain(decode_workloads::WORKLOADS)
             .chain(report_workloads::WORKLOADS)
             .chain(representative_io::WORKLOADS)
+            .chain(source_scale_workloads::WORKLOADS)
         {
             println!("{id}");
         }
@@ -134,6 +137,8 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         run(workload, iterations)?
     } else if representative_io::WORKLOADS.contains(&workload) {
         representative_io::run(workload, iterations)?
+    } else if source_scale_workloads::WORKLOADS.contains(&workload) {
+        source_scale_workloads::run(workload, iterations)?
     } else {
         return Err(format!("unknown representative workload {workload}").into());
     };

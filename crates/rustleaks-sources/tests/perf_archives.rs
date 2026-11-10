@@ -7,6 +7,8 @@
 )]
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;
+#[path = "../fuzz/support/archive_scale.rs"]
+mod archive_scale;
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
 
@@ -289,6 +291,36 @@ fn representative_archive_driver() -> Result<()> {
                 "scope": "in-memory archive identification, expansion, fragment emission; no detection or process startup", "method_coverage": "one selected fixture; not every method", "returned_result_destruction": "outside-timer", "internal_temporary_destruction": "inside-timer", "comparison": "exact path-content multiset; member emission order is not a public contract"}
         });
         println!("RUSTLEAKS_PERF_ARCHIVE_PHASE={row}");
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "on-demand performance driver; invoke through just perf-representative"]
+fn representative_archive_scale_driver() -> Result<()> {
+    let iterations: usize = std::env::var("RUSTLEAKS_PERF_ITERATIONS")?.parse()?;
+    let workload = std::env::var("RUSTLEAKS_PERF_ARCHIVE_SCALE_WORKLOAD")?;
+    for row in archive_scale::run(&workload, iterations, archive_scale::Scale::full()?)? {
+        println!("RUSTLEAKS_PERF_ARCHIVE_PHASE={row}");
+    }
+    Ok(())
+}
+
+#[test]
+fn archive_scale_generators_produce_exact_small_scale_outcomes() -> Result<()> {
+    for workload in [
+        "archive-high-ratio-gzip",
+        "archive-high-ratio-zstd",
+        "archive-high-ratio-bzip2",
+        "archive-nested-depth-8",
+        "archive-nested-depth-9",
+        "archive-tar-10000-members",
+        "archive-tar-10001-members",
+        "archive-zstd-many-small",
+    ] {
+        let rows = archive_scale::run(workload, 1, archive_scale::Scale::small()?)
+            .map_err(|error| format!("{workload}: {error}"))?;
+        assert!(!rows.is_empty(), "{workload} produced no phases");
     }
     Ok(())
 }
