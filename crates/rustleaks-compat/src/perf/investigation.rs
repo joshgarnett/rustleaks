@@ -10,7 +10,7 @@ use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde_json::{Value, json};
 
-use super::{Fixture, WORKLOADS, fingerprint, outcome_signature};
+use super::{Fixture, fingerprint, outcome_signature, single_core_workload};
 
 const SCOPE: &str = "investigation-v1-steady-scan-only";
 const WINDOW_SCOPE: &str = "investigation-v2-summed-scan-windows";
@@ -26,7 +26,7 @@ struct Worker {
 
 impl Worker {
     fn new(workload: &str) -> Result<Self, Box<dyn Error>> {
-        if !workload.starts_with("core-") || !WORKLOADS.contains(&workload) {
+        if !workload.starts_with("core-") || !single_core_workload(workload) {
             return Err("investigation requires a representative core workload".into());
         }
         let mut fixture = Fixture::new(workload)?;

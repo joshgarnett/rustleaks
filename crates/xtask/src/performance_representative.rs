@@ -329,6 +329,14 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             .into_iter()
             .filter(|id| id.starts_with("core-fragments-"))
             .collect(),
+        Some(ref id) if id == "edges" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-edge-") || id.starts_with("core-normalization-"))
+            .collect(),
+        Some(ref id) if id == "workers" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-workers-"))
+            .collect(),
         Some(ref id) if available.contains(id) => vec![id.clone()],
         Some(ref id) => return Err(format!("unknown representative workload {id}")),
         None => available,
@@ -497,6 +505,15 @@ pub(super) fn fragment_budget_check(
 }
 
 pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, String> {
+    if workload.starts_with("core-workers-") {
+        return Ok(vec![
+            "config-parse-and-compile",
+            "engine-construction",
+            "engine-clone-setup",
+            "first-scan",
+            "steady-scan",
+        ]);
+    }
     if workload.starts_with("core-") {
         return Ok(vec![
             "config-parse-and-compile",
@@ -571,6 +588,7 @@ pub(super) fn validate(
         let expected_iterations = if [
             "config-parse-and-compile",
             "engine-construction",
+            "engine-clone-setup",
             "first-scan",
         ]
         .contains(&name)
@@ -823,5 +841,21 @@ mod tests {
                 "accepted mutation {pointer}"
             );
         }
+
+        let workload = "core-workers-default-cloned-4";
+        let mut worker_records = records.clone();
+        for record in &mut worker_records {
+            record["workload"] = json!(workload);
+        }
+        let mut cloning = worker_records[1].clone();
+        cloning["phase"]["phase"] = json!("engine-clone-setup");
+        worker_records.insert(2, cloning);
+        worker_records[4]["phase"]["iterations"] = json!(3);
+        validate(&encode(&worker_records), &prepared, workload, 3).unwrap();
+        let mut repeated_setup = worker_records.clone();
+        repeated_setup[2]["phase"]["iterations"] = json!(3);
+        assert!(validate(&encode(&repeated_setup), &prepared, workload, 3).is_err());
+        worker_records.remove(2);
+        assert!(validate(&encode(&worker_records), &prepared, workload, 3).is_err());
     }
 }

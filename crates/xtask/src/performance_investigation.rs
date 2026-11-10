@@ -31,6 +31,13 @@ const WORKLOADS: &[&str] = &[
     "core-mixed-16-kib",
     "core-dense-16-kib",
     "core-decode-depth-5",
+    "core-edge-marker-256-kib",
+    "core-edge-tail-location-256-kib",
+    "core-edge-line-allowlist-invalid-256-kib",
+    "core-edge-stopword-overlap-256-kib",
+    "core-normalization-sparse-invalid-4-mib",
+    "core-normalization-empty-invalid-64-kib",
+    "core-normalization-percent-invalid-prefix-4-mib-depth-1",
 ];
 const CALIBRATION_DEADLINE: u64 = 900;
 const SAMPLE_SCOPE: &str = "investigation-v1-steady-scan-only";

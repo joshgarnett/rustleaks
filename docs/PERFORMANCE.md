@@ -191,6 +191,41 @@ contains the subsequent native CPU/retained-memory observations and two
 independent calibration runs. Its measured candidate remains dirty and the
 empirical bands create no release threshold.
 
+## Adversarial core and worker measurements
+
+The optional edge matrix varies long-line length and candidate count,
+trailing-line location lookups, overlapping stopwords, sparse and dense invalid
+UTF-8, empty matches, and valid
+percent decoding with and without a preserved invalid prefix. Its filtering
+cases retain no findings, separating repeated scans from the cost of copying
+large lines into accepted findings. Independent expected work, finding-record
+and decoded-byte counts are checked after every scan. Small negative controls
+prove that missing suppression and incomplete scans are rejected.
+
+Start with one steady iteration because these cases deliberately expose
+expensive work:
+
+```sh
+bazelisk run //crates/xtask:xtask -- perf representative --workload edges --samples 3 --iterations 1
+bazelisk run //crates/xtask:xtask -- perf representative --workload workers --samples 3 --iterations 1
+```
+
+The worker matrix scans the same 12 MiB in 768 fragments through a shared
+Engine or one clone per worker, using one, four or eight persistent caller
+threads. Thread startup, clone construction and result-buffer allocation are
+outside scan timing. Clone setup has its own phase. The first batch searches
+on the workers without coordinator warmup; subsequent batches reuse those
+threads and caches. Batch wall time includes command dispatch, scanning and
+result collection. Validation, hashing and destruction wait until every worker
+has finished and are outside that timer. All fragment indices must occur once.
+
+Fresh-process peak RSS includes configuration, input, clones, caches and retained
+outcomes. It is not an isolated cache-memory measurement. Single-engine edge
+workloads can also use the existing profiler; its complete loop includes
+validation and destruction, so attribute scan costs using stacks below the
+scan call. Freeze the workload definitions before before/after comparisons,
+retain ordinary controls, and measure serially on a quiet host.
+
 ## CPU and retained-memory investigation
 
 The optional investigation commands use the same synthetic core fixtures with a

@@ -18,6 +18,13 @@ use super::{FNV_OFFSET, SIMPLE_CONFIG, fnv_extend, representative_io};
 #[path = "fragment_workloads.rs"]
 mod fragment_workloads;
 
+#[path = "edge_workloads.rs"]
+mod edge_workloads;
+#[path = "normalization_workloads.rs"]
+mod normalization_workloads;
+#[path = "worker_workloads.rs"]
+mod worker_workloads;
+
 #[path = "investigation.rs"]
 mod investigation;
 pub use investigation::main as investigate;
@@ -79,6 +86,9 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         for id in WORKLOADS
             .iter()
             .chain(fragment_workloads::WORKLOADS)
+            .chain(edge_workloads::WORKLOADS)
+            .chain(normalization_workloads::WORKLOADS)
+            .chain(worker_workloads::WORKLOADS)
             .chain(representative_io::WORKLOADS)
         {
             println!("{id}");
@@ -106,9 +116,11 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     let workload = workload.ok_or("representative requires one --workload")?;
     // Executable hashing is deliberately before preparation and phase timers.
     let provenance = super::provenance()?;
-    let phases = if fragment_workloads::WORKLOADS.contains(&workload) {
+    let phases = if worker_workloads::WORKLOADS.contains(&workload) {
+        worker_workloads::run(workload, iterations)?
+    } else if fragment_workloads::WORKLOADS.contains(&workload) {
         fragment_workloads::run(workload, iterations)?
-    } else if WORKLOADS.contains(&workload) {
+    } else if single_core_workload(workload) {
         run(workload, iterations)?
     } else if representative_io::WORKLOADS.contains(&workload) {
         representative_io::run(workload, iterations)?
@@ -137,6 +149,12 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn single_core_workload(id: &str) -> bool {
+    WORKLOADS.contains(&id)
+        || edge_workloads::WORKLOADS.contains(&id)
+        || normalization_workloads::WORKLOADS.contains(&id)
+}
+
 struct Fixture {
     input: Vec<u8>,
     config: String,
@@ -146,11 +164,18 @@ struct Fixture {
     depth: usize,
     decoded_bytes: usize,
     keyword_count: usize,
+    expected_work: Option<usize>,
 }
 
 impl Fixture {
     #[allow(clippy::too_many_lines)] // Keep fixed fixture construction and expected spans together.
     fn new(id: &str) -> Result<Self, Box<dyn Error>> {
+        if edge_workloads::WORKLOADS.contains(&id) {
+            return edge_workloads::fixture(id);
+        }
+        if normalization_workloads::WORKLOADS.contains(&id) {
+            return normalization_workloads::fixture(id);
+        }
         if id.starts_with("core-default-") {
             return Self::default_control(id);
         }
@@ -173,6 +198,7 @@ impl Fixture {
                 depth,
                 decoded_bytes: if depth == 0 { 0 } else { decoded_bytes },
                 keyword_count: 0,
+                expected_work: None,
             });
         }
         let size = match id {
@@ -246,6 +272,7 @@ impl Fixture {
             depth: 0,
             decoded_bytes: 0,
             keyword_count: 0,
+            expected_work: None,
         })
     }
 
@@ -270,6 +297,7 @@ impl Fixture {
                 "core-default-many-keywords-16-kib" => 64,
                 _ => 0,
             },
+            expected_work: None,
         })
     }
 
@@ -288,6 +316,12 @@ impl Fixture {
         }
         if outcome.usage().decoded_bytes() != self.decoded_bytes {
             return Err("representative decoded-byte count differs".into());
+        }
+        if self.expected_work.is_some_and(|work| {
+            outcome.usage().work_units() != work
+                || outcome.usage().finding_records() != self.expected.len()
+        }) {
+            return Err("representative independent work or finding-record count differs".into());
         }
         if let Some(expected) = self.legacy_fingerprint {
             if outcome.findings().len() != 1
