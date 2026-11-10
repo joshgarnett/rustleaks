@@ -1,4 +1,4 @@
-//! Differential evidence against the former eager PikeVM search path.
+//! Differential evidence against the former eager `PikeVM` search path.
 //!
 //! The frontend is shared deliberately: these tests compare backend selection,
 //! captures, iteration and byte mapping, not the independent Go syntax contract.
