@@ -223,6 +223,18 @@ impl Source for ArchiveSource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        self.visit_with_buffer(&mut Vec::new(), cancellation, emit)
+    }
+}
+
+impl ArchiveSource {
+    /// Visits the input, sharing `nominal` across every scanned member.
+    pub(crate) fn visit_with_buffer(
+        &mut self,
+        nominal: &mut Vec<u8>,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
@@ -239,6 +251,7 @@ impl Source for ArchiveSource {
                 &self.logical_path,
                 self.symlink_path.as_ref(),
                 self.file_options,
+                nominal,
                 cancellation,
                 emit,
             );
@@ -272,6 +285,7 @@ impl Source for ArchiveSource {
             symlink_path: self.symlink_path.as_ref(),
             file_options: self.file_options,
             options: &self.options,
+            nominal,
             entries: 0,
             expanded: 0,
         };
@@ -284,6 +298,7 @@ struct ArchiveState<'a> {
     symlink_path: Option<&'a PathBuf>,
     file_options: FileOptions,
     options: &'a ArchiveOptions,
+    nominal: &'a mut Vec<u8>,
     entries: usize,
     expanded: usize,
 }
@@ -308,6 +323,7 @@ impl ArchiveState<'_> {
                 logical,
                 self.symlink_path,
                 self.file_options,
+                self.nominal,
                 cancellation,
                 emit,
             );
@@ -349,6 +365,7 @@ impl ArchiveState<'_> {
                     logical,
                     self.symlink_path,
                     self.file_options,
+                    self.nominal,
                     cancellation,
                     emit,
                 )
@@ -404,6 +421,7 @@ impl ArchiveState<'_> {
             &logical,
             self.symlink_path,
             self.file_options,
+            self.nominal,
             cancellation,
             emit,
         )
@@ -1605,12 +1623,14 @@ impl DecodeFailure {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plain_source(
     reader: Box<dyn Read + Send>,
     physical: &Path,
     logical: &LogicalPath,
     symlink: Option<&PathBuf>,
     options: FileOptions,
+    nominal: &mut Vec<u8>,
     cancellation: &dyn Cancellation,
     emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
 ) -> Result<SourceControl, SourceError> {
@@ -1619,7 +1639,7 @@ fn plain_source(
     if let Some(symlink) = symlink {
         source = source.with_symlink_path(symlink.clone());
     }
-    source.visit(cancellation, emit)
+    source.visit_with_buffer(nominal, cancellation, emit)
 }
 
 enum ReadBoundedError {
