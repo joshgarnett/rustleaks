@@ -223,8 +223,11 @@ Fresh-process peak RSS includes configuration, input, clones, caches and retaine
 outcomes. It is not an isolated cache-memory measurement. Single-engine edge
 workloads can also use the existing profiler; its complete loop includes
 validation and destruction, so attribute scan costs using stacks below the
-scan call. Freeze the workload definitions before before/after comparisons,
+scan call. Freeze workload definitions before collecting comparison runs,
 retain ordinary controls, and measure serially on a quiet host.
+
+The [filtering and normalization measurements](validation/core-edge-performance.md)
+record synthetic alpha.7 edge cases, measured fixes and remaining limits.
 
 ## CPU and retained-memory investigation
 
