@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn absent_and_empty_stopword_matchers_never_match() {
-        for specification in [r#"paths = ['never']"#, r#"stopwords = [""]"#] {
+        for specification in [r"paths = ['never']", r#"stopwords = [""]"#] {
             let compiled = allowlist(specification);
             assert!(compiled.stopword_matcher.is_none());
             for input in [

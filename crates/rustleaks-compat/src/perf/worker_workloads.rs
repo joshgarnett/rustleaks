@@ -201,16 +201,13 @@ fn with_team<T>(
                             }
                             outcomes
                         }));
-                        match result {
-                            Ok(outcomes) => {
-                                if completed.send(Message::Complete(worker, outcomes)).is_err() {
-                                    return;
-                                }
-                            }
-                            Err(_) => {
-                                let _ = completed.send(Message::Panicked(worker));
+                        if let Ok(outcomes) = result {
+                            if completed.send(Message::Complete(worker, outcomes)).is_err() {
                                 return;
                             }
+                        } else {
+                            let _ = completed.send(Message::Panicked(worker));
+                            return;
                         }
                     }
                 })?;

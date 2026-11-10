@@ -249,6 +249,7 @@ regex = '''(?s:.*?)'''
 
 #[test]
 fn warmed_engine_and_clone_reuse_caches_across_distinct_haystacks() {
+    type ExpectedSpans = (usize, usize, usize, usize);
     let engine = build_engine(
         r#"
 [[rules]]
@@ -257,7 +258,6 @@ regex = '''token=([A-Z]+|\p{Greek}+)'''
 secretGroup = 1
 "#,
     );
-    type ExpectedSpans = (usize, usize, usize, usize);
     let assert_case = |engine: &Engine, raw: &[u8], expected: &[ExpectedSpans]| {
         // One pass, one rule entry, and one work unit per match candidate.
         let work = expected.len() + 2;

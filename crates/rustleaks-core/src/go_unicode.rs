@@ -102,7 +102,7 @@ mod tests {
         // Go simple lowercase maps dotted I to one i and sigma without word
         // context. The decomposed accent remains decomposed; no normalization
         // or Rust full-string lowercase mapping is introduced by either path.
-        let prefix = "AÉİ ΟΣ K E\u{301} ";
+        let prefix = "AÉİ ΟΣ \u{212a} E\u{301} ";
         let expected_prefix = "aéi οσ k e\u{301} ";
         assert_eq!(lowercase(prefix), expected_prefix);
         let malformed: &[(&[u8], &str)] = &[
