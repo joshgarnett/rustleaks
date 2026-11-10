@@ -1215,42 +1215,99 @@ fn filter_findings_cancellable(
     redact: usize,
     control: ScanControl<'_>,
 ) -> (Vec<Finding>, Option<ScanTermination>) {
+    let suppression = GenericSuppression::new(&findings);
     let mut include = Vec::with_capacity(findings.len());
-    for finding in &findings {
+    for index in 0..findings.len() {
         if control.is_cancelled() {
             return (
                 apply_finding_filter(findings, include, redact),
                 Some(ScanTermination::Cancelled),
             );
         }
-        if !contains_bytes(
-            &go_lowercase_bytes(finding.rule_id().as_bytes()),
-            b"generic",
-        ) {
+        if !suppression.is_generic(index) {
             include.push(true);
             continue;
         }
-        let mut retained = true;
-        for other in &findings {
-            if control.is_cancelled() {
-                return (
-                    apply_finding_filter(findings, include, redact),
-                    Some(ScanTermination::Cancelled),
-                );
-            }
-            if finding.location().start_line() == other.location().start_line()
-                && finding.commit() == other.commit()
-                && finding.rule_id() != other.rule_id()
-                && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
-                && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
-            {
-                retained = false;
-                break;
+        let suppressor = suppression.first_suppressor(index);
+        // A caller's signal can count its polls. Keep one poll per finding that
+        // the linear comparison visits, through the first suppressor.
+        if control.cancellation.is_some() {
+            let visited = suppressor.map_or(findings.len(), |other| other + 1);
+            for _ in 0..visited {
+                if control.is_cancelled() {
+                    return (
+                        apply_finding_filter(findings, include, redact),
+                        Some(ScanTermination::Cancelled),
+                    );
+                }
             }
         }
-        include.push(retained);
+        include.push(suppressor.is_none());
     }
     (apply_finding_filter(findings, include, redact), None)
+}
+
+/// Pair selection for generic-rule suppression over one immutable finding list.
+///
+/// A finding can suppress a generic finding only when it is non-generic, has
+/// the same start line, and has the byte-identical commit. Each bucket holds
+/// exactly the non-generic findings for one such key, in list order, so the
+/// remaining predicate terms see the same candidates in the same order.
+struct GenericSuppression<'a> {
+    findings: &'a [Finding],
+    generic: Vec<bool>,
+    specific_by_line_and_commit: BTreeMap<(usize, &'a [u8]), Vec<usize>>,
+}
+
+impl<'a> GenericSuppression<'a> {
+    fn new(findings: &'a [Finding]) -> Self {
+        let mut generic = Vec::with_capacity(findings.len());
+        // Findings arrive grouped by rule; the flag depends only on the ID bytes.
+        let mut previous = None;
+        for finding in findings {
+            let rule_id = finding.rule_id().as_bytes();
+            let flag = match previous {
+                Some((previous_id, flag)) if previous_id == rule_id => flag,
+                _ => contains_bytes(&go_lowercase_bytes(rule_id), b"generic"),
+            };
+            previous = Some((rule_id, flag));
+            generic.push(flag);
+        }
+        let mut specific_by_line_and_commit = BTreeMap::<_, Vec<usize>>::new();
+        if generic.contains(&true) {
+            for (index, finding) in findings.iter().enumerate() {
+                if !generic[index] {
+                    specific_by_line_and_commit
+                        .entry((finding.location().start_line(), finding.commit().as_bytes()))
+                        .or_default()
+                        .push(index);
+                }
+            }
+        }
+        Self {
+            findings,
+            generic,
+            specific_by_line_and_commit,
+        }
+    }
+
+    fn is_generic(&self, index: usize) -> bool {
+        self.generic[index]
+    }
+
+    /// Returns the lowest list index that suppresses the generic finding.
+    fn first_suppressor(&self, index: usize) -> Option<usize> {
+        let finding = &self.findings[index];
+        self.specific_by_line_and_commit
+            .get(&(finding.location().start_line(), finding.commit().as_bytes()))?
+            .iter()
+            .copied()
+            .find(|&candidate| {
+                let other = &self.findings[candidate];
+                finding.rule_id() != other.rule_id()
+                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+            })
+    }
 }
 
 fn apply_finding_filter(findings: Vec<Finding>, include: Vec<bool>, redact: usize) -> Vec<Finding> {
@@ -1271,22 +1328,10 @@ fn apply_finding_filter(findings: Vec<Finding>, include: Vec<bool>, redact: usiz
 }
 
 fn filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
-    let include = findings
-        .iter()
-        .map(|finding| {
-            if !contains_bytes(
-                &go_lowercase_bytes(finding.rule_id().as_bytes()),
-                b"generic",
-            ) {
-                return true;
-            }
-            !findings.iter().any(|other| {
-                finding.location().start_line() == other.location().start_line()
-                    && finding.commit() == other.commit()
-                    && finding.rule_id() != other.rule_id()
-                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
-                    && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
-            })
+    let suppression = GenericSuppression::new(&findings);
+    let include = (0..findings.len())
+        .map(|index| {
+            !suppression.is_generic(index) || suppression.first_suppressor(index).is_none()
         })
         .collect::<Vec<_>>();
 
@@ -1663,6 +1708,7 @@ fn path_finding(fragment: &Fragment, rule: &CompiledRule) -> Option<Finding> {
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::atomic::AtomicUsize;
 
     use base64::Engine as _;
     use serde_json::Value;
@@ -2861,6 +2907,262 @@ paths = ['''C:\\secret\.txt$''']
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].rule_id().as_bytes(), b"specific");
         assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
+    }
+
+    // Frozen quadratic filters, retained only as differential evidence. The
+    // explicit cases below state the expected results independently.
+    fn frozen_filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
+        let include = findings
+            .iter()
+            .map(|finding| {
+                if !contains_bytes(
+                    &go_lowercase_bytes(finding.rule_id().as_bytes()),
+                    b"generic",
+                ) {
+                    return true;
+                }
+                !findings.iter().any(|other| {
+                    finding.location().start_line() == other.location().start_line()
+                        && finding.commit() == other.commit()
+                        && finding.rule_id() != other.rule_id()
+                        && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+                        && !contains_bytes(
+                            &go_lowercase_bytes(other.rule_id().as_bytes()),
+                            b"generic",
+                        )
+                })
+            })
+            .collect::<Vec<_>>();
+        apply_finding_filter(findings, include, redact)
+    }
+
+    fn frozen_filter_findings_cancellable(
+        findings: Vec<Finding>,
+        redact: usize,
+        control: ScanControl<'_>,
+    ) -> (Vec<Finding>, Option<ScanTermination>) {
+        let mut include = Vec::with_capacity(findings.len());
+        for finding in &findings {
+            if control.is_cancelled() {
+                return (
+                    apply_finding_filter(findings, include, redact),
+                    Some(ScanTermination::Cancelled),
+                );
+            }
+            if !contains_bytes(
+                &go_lowercase_bytes(finding.rule_id().as_bytes()),
+                b"generic",
+            ) {
+                include.push(true);
+                continue;
+            }
+            let mut retained = true;
+            for other in &findings {
+                if control.is_cancelled() {
+                    return (
+                        apply_finding_filter(findings, include, redact),
+                        Some(ScanTermination::Cancelled),
+                    );
+                }
+                if finding.location().start_line() == other.location().start_line()
+                    && finding.commit() == other.commit()
+                    && finding.rule_id() != other.rule_id()
+                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+                    && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
+                {
+                    retained = false;
+                    break;
+                }
+            }
+            include.push(retained);
+        }
+        (apply_finding_filter(findings, include, redact), None)
+    }
+
+    fn filter_probe(rule_id: &[u8], start_line: usize, commit: &[u8], secret: &[u8]) -> Finding {
+        Finding::builder()
+            .rule_id(rule_id)
+            .location(Location::new(start_line, start_line, 1, 1).unwrap())
+            .commit(commit)
+            .match_text(secret)
+            .secret(secret)
+            .build()
+            .unwrap()
+    }
+
+    fn generic_filter_prototypes() -> Vec<Finding> {
+        vec![
+            filter_probe(b"generic-a", 1, b"c", b"ab"),
+            filter_probe(b"GENERIC-Upper", 1, b"c", b"ab"),
+            // U+0130 lowercases to one ASCII i under Go's simple mapping.
+            filter_probe("gener\u{130}c-dot".as_bytes(), 1, b"c", b"xaby"),
+            // Invalid rule-ID bytes still lowercase around their replacement.
+            filter_probe(b"\xffGeneric", 1, b"c", b""),
+            filter_probe(b"specific-1", 1, b"c", b"xaby"),
+            filter_probe(b"specific-2", 1, b"c", b"ab"),
+            filter_probe(b"specific-line", 2, b"c", b"xaby"),
+            filter_probe(b"specific-commit", 1, b"d", b"xaby"),
+            filter_probe(b"specific-miss", 1, b"c", b"zz"),
+        ]
+    }
+
+    fn assert_generic_filters_match_frozen(findings: &[Finding]) {
+        for redact in [0, 100] {
+            assert_eq!(
+                filter_findings(findings.to_vec(), redact),
+                frozen_filter_findings(findings.to_vec(), redact),
+                "{findings:?}",
+            );
+        }
+        assert_eq!(
+            filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
+            frozen_filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
+            "{findings:?}",
+        );
+        let run = |limit: usize, frozen: bool| {
+            let polls = AtomicUsize::new(0);
+            let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
+            let control = ScanControl::cancellable(&cancel);
+            let outcome = if frozen {
+                frozen_filter_findings_cancellable(findings.to_vec(), 0, control)
+            } else {
+                filter_findings_cancellable(findings.to_vec(), 0, control)
+            };
+            (outcome, polls.load(Ordering::SeqCst))
+        };
+        let (complete, total) = run(usize::MAX, true);
+        assert_eq!(complete.1, None);
+        for limit in (0..=total + 1).chain([usize::MAX]) {
+            assert_eq!(
+                run(limit, false),
+                run(limit, true),
+                "limit {limit}, {findings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn generic_buckets_match_the_frozen_quadratic_filter_exhaustively() {
+        let prototypes = generic_filter_prototypes();
+        assert_generic_filters_match_frozen(&[]);
+        for first in &prototypes {
+            assert_generic_filters_match_frozen(std::slice::from_ref(first));
+            for second in &prototypes {
+                assert_generic_filters_match_frozen(&[first.clone(), second.clone()]);
+                for third in &prototypes {
+                    assert_generic_filters_match_frozen(&[
+                        first.clone(),
+                        second.clone(),
+                        third.clone(),
+                    ]);
+                }
+            }
+        }
+        // Deterministic longer lists exercise bucket order across repeated keys.
+        let mut state = 0x2545_f491_u32;
+        for _ in 0..32 {
+            let list = (0..6)
+                .map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let choice = usize::try_from(state >> 24).unwrap() % prototypes.len();
+                    prototypes[choice].clone()
+                })
+                .collect::<Vec<_>>();
+            assert_generic_filters_match_frozen(&list);
+        }
+    }
+
+    #[test]
+    fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
+        let generic = || filter_probe(b"generic-a", 7, b"same", b"abc");
+        let specific = || filter_probe(b"specific", 7, b"same", b"xxabcxx");
+        let other_line = || filter_probe(b"specific", 8, b"same", b"xxabcxx");
+        let other_commit = || filter_probe(b"specific", 7, b"other", b"xxabcxx");
+        let another_generic = || filter_probe(b"GENERIC-b", 7, b"same", b"xxabcxx");
+        let empty_secret = || filter_probe(b"generic-empty", 7, b"same", b"");
+
+        let ids = |findings: &[Finding]| {
+            findings
+                .iter()
+                .map(|finding| finding.rule_id().as_bytes().to_vec())
+                .collect::<Vec<_>>()
+        };
+        // Findings, retained rule IDs, and polls with a counting signal.
+        type Case = (Vec<Finding>, Vec<&'static [u8]>, usize);
+        let cases: Vec<Case> = vec![
+            // Suppressor after the generic finding: 1 outer + 2 compared + 1 outer.
+            (vec![generic(), specific()], vec![b"specific".as_slice()], 4),
+            // Suppressor before the generic finding: 1 outer + 1 outer + 1 compared.
+            (vec![specific(), generic()], vec![b"specific".as_slice()], 3),
+            // No suppressor: every finding is compared.
+            (
+                vec![generic(), other_line(), other_commit()],
+                vec![
+                    b"generic-a".as_slice(),
+                    b"specific".as_slice(),
+                    b"specific".as_slice(),
+                ],
+                6,
+            ),
+            // Generic findings do not suppress each other, by either direction.
+            (
+                vec![generic(), another_generic()],
+                vec![b"generic-a".as_slice(), b"GENERIC-b".as_slice()],
+                6,
+            ),
+            // An empty generic secret is contained in every other secret.
+            (
+                vec![empty_secret(), specific()],
+                vec![b"specific".as_slice()],
+                4,
+            ),
+        ];
+        for (findings, retained, expected_polls) in cases {
+            let polls = AtomicUsize::new(0);
+            let count = || {
+                polls.fetch_add(1, Ordering::SeqCst);
+                false
+            };
+            let (filtered, termination) =
+                filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&count));
+            assert_eq!(termination, None);
+            assert_eq!(polls.load(Ordering::SeqCst), expected_polls, "{findings:?}");
+            assert_eq!(ids(&filtered), retained, "{findings:?}");
+            assert_eq!(ids(&filter_findings(findings, 0)), retained);
+        }
+
+        // Polls are numbered from zero: 0 and 1 are the outer checks for the
+        // first two findings, 2 through 4 visit findings 0 through 2 for the
+        // generic comparison, and 5 is the outer check for the last finding.
+        let findings = vec![filter_probe(b"plain", 1, b"", b"p"), generic(), specific()];
+        let plain = vec![b"plain".to_vec()];
+        for (limit, expected) in [
+            (0, Vec::new()),
+            (1, plain.clone()),
+            (2, plain.clone()),
+            (3, plain.clone()),
+            (4, plain.clone()),
+            // The generic finding is finalized as suppressed; the specific one
+            // is not yet finalized, so it is outside the returned prefix.
+            (5, plain.clone()),
+        ] {
+            let polls = AtomicUsize::new(0);
+            let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
+            let (filtered, termination) =
+                filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&cancel));
+            assert_eq!(
+                termination,
+                Some(ScanTermination::Cancelled),
+                "limit {limit}"
+            );
+            assert_eq!(ids(&filtered), expected, "limit {limit}");
+        }
+        let polls = AtomicUsize::new(0);
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 6;
+        let (filtered, termination) =
+            filter_findings_cancellable(findings, 0, ScanControl::cancellable(&cancel));
+        assert_eq!(termination, None);
+        assert_eq!(ids(&filtered), [b"plain".to_vec(), b"specific".to_vec()]);
     }
 
     #[test]
