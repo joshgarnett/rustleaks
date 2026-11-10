@@ -354,6 +354,10 @@ The [default-rule throughput record](validation/default-rule-throughput.md)
 reports baseline and candidate results for these groups, per-change effects,
 rejected changes and remaining limits.
 
+The [comparison against main](validation/main-branch-performance.md) measures
+the complete change across 163 workloads, with separate reverse-order repeats
+and reported construction, Git, archive and startup costs.
+
 ## CPU and retained-memory investigation
 
 The optional investigation commands use the same synthetic core fixtures with a

@@ -10,6 +10,10 @@ clean-source provenance and baseline eligibility. No dependency, feature,
 toolchain, public API, copied configuration or Gitleaks pin changed. All inputs
 are synthetic.
 
+The later [comparison against main](main-branch-performance.md) measures the
+complete change from main through the corrected candidate. The tables below
+retain the baseline and candidate revisions named above.
+
 ## Method
 
 The `fragments`, `edges`, `workers`, `default-rules`, `decode-report` and
