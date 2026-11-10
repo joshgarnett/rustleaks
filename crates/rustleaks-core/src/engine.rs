@@ -1,5 +1,6 @@
 //! Immutable raw-fragment detection engine.
 
+use std::borrow::Cow;
 use std::cell::{Cell, OnceCell};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -517,7 +518,7 @@ impl Engine {
             .record(None, 0, None, ExplanationReason::AllowlistNotMatched);
 
         let mut findings = Vec::new();
-        let mut current_raw = fragment.content().as_bytes().to_vec();
+        let mut current_raw = Cow::Borrowed(fragment.content().as_bytes());
         let original = OriginalFragmentContext::default();
         let mut encoded_segments = Vec::new();
         let mut decoder = Decoder::new();
@@ -526,9 +527,9 @@ impl Engine {
             if let Err(termination) = context.work() {
                 return finish_partial(findings, options, context.usage, termination);
             }
-            let normalized = go_lowercase_bytes(&current_raw);
             let mut matched_keywords = vec![false; self.keyword_ids.len()];
             if let Some(prefilter) = &self.prefilter {
+                let normalized = go_lowercase_bytes(&current_raw);
                 for found in prefilter.find_overlapping_iter(&normalized) {
                     if let Err(termination) = context.work() {
                         return finish_partial(findings, options, context.usage, termination);
@@ -618,7 +619,7 @@ impl Engine {
             if let Err(termination) = context.decoded_bytes(decoded_output.len()) {
                 return finish_partial(findings, options, context.usage, termination);
             }
-            current_raw = decoded_output;
+            current_raw = Cow::Owned(decoded_output);
             encoded_segments = segments;
         }
         finish_complete(findings, options, context)

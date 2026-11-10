@@ -85,6 +85,12 @@ lazily after its gates. Path, allowlist and trimmed-secret searches retain
 their own haystacks and normalization. These buffers remain scan-local; they
 are not retained in the Engine's search caches.
 
+The first pass borrows the original fragment; decoded passes own their output
+buffers. Keyword folding runs only when the keyword prefilter exists, and its
+temporary bytes are dropped before rule matching. ASCII folding uses the same
+ASCII mapping as Go; other characters and malformed bytes retain the pinned
+Go Unicode behavior.
+
 Invalid UTF-8 normalization stores one offset checkpoint per replaced source
 byte instead of one index per normalized byte. Valid UTF-8 runs are copied in
 bulk. Ordered whole matches use a local cursor with a bounded linear prefix

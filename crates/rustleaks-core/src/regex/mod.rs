@@ -572,7 +572,9 @@ impl<'a> NormalizedHaystack<'a> {
             };
         };
 
-        let mut bytes = Vec::with_capacity(original.len());
+        // At least one invalid byte is known, so two expansion bytes avoid a
+        // reallocation when the only invalid byte occurs late in a large input.
+        let mut bytes = Vec::with_capacity(original.len().saturating_add(2));
         let mut replacement_starts = Vec::new();
         // The initial validation already checked this prefix. Copy valid runs
         // in bulk and retain offsets only where normalization expands bytes.
