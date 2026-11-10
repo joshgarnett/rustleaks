@@ -68,6 +68,12 @@
 //! attempt the budget charges an upper bound on how far that attempt can scan.
 //! Enumeration abandons the anchored path when the charges exceed the haystack
 //! length. Falling back affects only cost; both paths return the same matches.
+//!
+//! Analysis itself runs for every compiled expression, including allowlist
+//! and path expressions. It keeps at most [`MAX_CANDIDATES`] choices, spends
+//! at most [`MAX_ENUMERATION_STEPS`] on literal languages, and walks the
+//! remainder after the literal node once for all choices. Stopping early only
+//! drops longer choices; every retained choice remains exact.
 
 use regex_automata::{Anchored, Input};
 use regex_syntax::hir::{Class, Hir, HirKind};
@@ -82,6 +88,17 @@ const MAX_LITERAL_LEN: usize = 64;
 const MAX_WALK_DEPTH: u32 = 32;
 /// Maximum total leading characters accepted by the analysis.
 const MAX_LEADING_CHARS: usize = 4_096;
+/// Maximum literal-node choices retained for one expression.
+///
+/// The default rules need at most 12. Each choice retains at most
+/// [`MAX_LITERALS`] literals of at most [`MAX_LITERAL_LEN`] bytes.
+const MAX_CANDIDATES: usize = 32;
+/// Work units for enumerating literal languages in one expression.
+///
+/// Each visited node costs one unit and each literal a cross product builds
+/// costs one more. The default rules spend at most 168. The largest literal
+/// set, 64 case-insensitive literals of 64 bytes, spends about 8,400.
+const MAX_ENUMERATION_STEPS: usize = 1 << 14;
 /// Membership by byte value. Entries for non-ASCII bytes are always false.
 type ByteSet = [bool; 256];
 
@@ -147,21 +164,47 @@ impl LiteralAnchorShape {
         }
 
         let rest = &children[leading..];
+        let mut steps = MAX_ENUMERATION_STEPS;
         let mut current = vec![Vec::new()];
-        let mut candidates = Vec::new();
+        // Each choice records the child where its literal node ends.
+        let mut choices = Vec::new();
         for (index, child) in rest.iter().enumerate() {
-            let Some(language) = literal_language(child, 0) else {
+            let Some(language) = literal_language(child, 0, &mut steps) else {
                 break;
             };
-            let Some(product) = cross_product(&current, &language) else {
+            // A child that matches only the empty string leaves every literal
+            // unchanged, so its choice would repeat the previous one.
+            if only_empty(&language) {
+                continue;
+            }
+            let Some(product) = cross_product(&current, &language, &mut steps) else {
                 break;
             };
             current = product;
             if current.iter().all(|literal| !literal.is_empty()) {
-                candidates.push(LiteralCandidate::new(&current, &rest[index + 1..]));
+                choices.push((index, current.clone()));
+                if choices.len() == MAX_CANDIDATES {
+                    break;
+                }
             }
         }
-        (!candidates.is_empty()).then_some(Self {
+        let &(last, _) = choices.last()?;
+        // Every child through `last` has a finite language, so all choices
+        // share the first unbounded node. One walk after the longest choice
+        // serves every choice; a shorter one adds the children in between.
+        let shared = TailBound::new(&rest[last + 1..]);
+        let mut between = 0_usize;
+        let mut end = last;
+        let mut candidates = Vec::with_capacity(choices.len());
+        for (index, literals) in choices.into_iter().rev() {
+            between = rest[index + 1..=end].iter().fold(between, |sum, child| {
+                sum.saturating_add(child.properties().maximum_len().unwrap_or(usize::MAX))
+            });
+            end = index;
+            candidates.push(LiteralCandidate::new(&literals, shared.after(between)));
+        }
+        candidates.reverse();
+        Some(Self {
             class,
             max_leading,
             candidates,
@@ -185,14 +228,14 @@ impl LiteralAnchorShape {
 }
 
 impl LiteralCandidate {
-    fn new(literals: &[Vec<u8>], tail: &[Hir]) -> Self {
+    fn new(literals: &[Vec<u8>], tail: TailBound) -> Self {
         Self {
             literals: literals
                 .iter()
                 .map(|literal| literal.as_slice().into())
                 .collect(),
             max_literal_len: literals.iter().map(Vec::len).max().unwrap_or(0),
-            tail: TailBound::new(tail),
+            tail,
         }
     }
 
@@ -219,6 +262,20 @@ impl TailBound {
             bounded_prefix = bounded_prefix.saturating_add(maximum);
         }
         Self::Finite(bounded_prefix)
+    }
+
+    /// Returns this bound for the same remainder after `bounded` more bytes.
+    fn after(&self, bounded: usize) -> Self {
+        match self {
+            Self::Finite(maximum) => Self::Finite(maximum.saturating_add(bounded)),
+            Self::Unbounded {
+                bounded_prefix,
+                run,
+            } => Self::Unbounded {
+                bounded_prefix: bounded_prefix.saturating_add(bounded),
+                run: run.clone(),
+            },
+        }
     }
 }
 
@@ -263,11 +320,13 @@ fn single_position_members(hir: &Hir) -> Option<ByteSet> {
 /// Enumerates the ASCII-lowercased finite language of a literal node.
 ///
 /// `None` means the node is not an eligible literal: it has look-around or a
-/// capture, is unbounded, has no ASCII member, or exceeds the size bounds.
-fn literal_language(hir: &Hir, depth: u32) -> Option<Vec<Vec<u8>>> {
+/// capture, is unbounded, has no ASCII member, or exceeds the size or step
+/// bounds.
+fn literal_language(hir: &Hir, depth: u32, steps: &mut usize) -> Option<Vec<Vec<u8>>> {
     if depth >= MAX_WALK_DEPTH {
         return None;
     }
+    spend(steps, 1)?;
     match hir.kind() {
         HirKind::Empty => Some(vec![Vec::new()]),
         HirKind::Literal(literal) => (literal.0.is_ascii() && literal.0.len() <= MAX_LITERAL_LEN)
@@ -286,14 +345,17 @@ fn literal_language(hir: &Hir, depth: u32) -> Option<Vec<Vec<u8>>> {
         HirKind::Concat(children) => {
             let mut current = vec![Vec::new()];
             for child in children {
-                current = cross_product(&current, &literal_language(child, depth + 1)?)?;
+                let language = literal_language(child, depth + 1, steps)?;
+                if !only_empty(&language) {
+                    current = cross_product(&current, &language, steps)?;
+                }
             }
             Some(current)
         }
         HirKind::Alternation(children) => {
             let mut union = Vec::new();
             for child in children {
-                union.extend(literal_language(child, depth + 1)?);
+                union.extend(literal_language(child, depth + 1, steps)?);
                 if union.len() > MAX_LITERALS {
                     return None;
                 }
@@ -304,7 +366,7 @@ fn literal_language(hir: &Hir, depth: u32) -> Option<Vec<Vec<u8>>> {
         }
         HirKind::Repetition(repetition) => {
             let maximum = repetition.max?;
-            let unit = literal_language(&repetition.sub, depth + 1)?;
+            let unit = literal_language(&repetition.sub, depth + 1, steps)?;
             let mut union = Vec::new();
             let mut power = vec![Vec::new()];
             for count in 0..=maximum {
@@ -315,7 +377,7 @@ fn literal_language(hir: &Hir, depth: u32) -> Option<Vec<Vec<u8>>> {
                     }
                 }
                 if count < maximum {
-                    power = cross_product(&power, &unit)?;
+                    power = cross_product(&power, &unit, steps)?;
                 }
             }
             union.sort_unstable();
@@ -326,11 +388,28 @@ fn literal_language(hir: &Hir, depth: u32) -> Option<Vec<Vec<u8>>> {
     }
 }
 
-fn cross_product(prefixes: &[Vec<u8>], suffixes: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
-    if prefixes.len().checked_mul(suffixes.len())? > MAX_LITERALS {
+/// Returns whether a language contains only the empty string.
+fn only_empty(language: &[Vec<u8>]) -> bool {
+    language.iter().all(Vec::is_empty)
+}
+
+/// Charges `units` against the enumeration budget.
+fn spend(steps: &mut usize, units: usize) -> Option<()> {
+    *steps = steps.checked_sub(units)?;
+    Some(())
+}
+
+fn cross_product(
+    prefixes: &[Vec<u8>],
+    suffixes: &[Vec<u8>],
+    steps: &mut usize,
+) -> Option<Vec<Vec<u8>>> {
+    let size = prefixes.len().checked_mul(suffixes.len())?;
+    if size > MAX_LITERALS {
         return None;
     }
-    let mut product = Vec::with_capacity(prefixes.len() * suffixes.len());
+    spend(steps, size)?;
+    let mut product = Vec::with_capacity(size);
     for prefix in prefixes {
         for suffix in suffixes {
             if prefix.len() + suffix.len() > MAX_LITERAL_LEN {

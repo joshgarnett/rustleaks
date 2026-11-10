@@ -5,7 +5,10 @@ use base64::prelude::BASE64_STANDARD;
 use serde::Deserialize;
 
 use super::super::{ByteSpan, GoRegex, NormalizedHaystack};
-use super::ATTEMPT_COST_FLOOR;
+use super::{
+    ATTEMPT_COST_FLOOR, MAX_CANDIDATES, MAX_ENUMERATION_STEPS, MAX_LITERAL_LEN, MAX_LITERALS,
+    TailBound,
+};
 
 fn compile(pattern: &str) -> GoRegex {
     GoRegex::compile(pattern).unwrap()
@@ -182,9 +185,10 @@ fn analysis_bounds_literal_enumeration() {
             .literal_anchor()
             .is_none()
     );
-    // Over-long literals stop the walk; shorter choices remain sound.
-    let long = "k".repeat(65);
-    let longest = literals(&compile(&format!("(?i)[a-z]{{0,5}}?(?:{long})=x")))
+    // Over-long literals stop the walk; shorter choices remain sound. Each
+    // four-byte child is one choice, so the walk stays below the choice cap.
+    let long = "kkkk(?:|)".repeat(17);
+    let longest = literals(&compile(&format!("[a-z]{{0,5}}?{long}=x")))
         .into_iter()
         .flatten()
         .map(|literal| literal.len())
@@ -197,6 +201,145 @@ fn analysis_bounds_literal_enumeration() {
         )
         .literal_anchor()
         .is_none()
+    );
+}
+
+#[test]
+fn analysis_skips_children_that_match_only_the_empty_string() {
+    // Six two-member classes give 64 one- to six-byte literals, and 58 more
+    // bytes reach the 64-byte literal limit. That is seven choices. An empty
+    // alternation adds no byte, so repeating it adds no choice and retains no
+    // literal copy, however many times it occurs.
+    let prefix = format!("x?{}{}", "[ab]".repeat(6), "c".repeat(58));
+    for repeats in [1, 4_096] {
+        let regex = compile(&format!("{prefix}{}", "(?:|)".repeat(repeats)));
+        let found = literals(&regex);
+        assert_eq!(found.len(), 7, "{repeats} empty alternations");
+        let longest = found.last().unwrap();
+        assert_eq!(longest.len(), MAX_LITERALS);
+        assert!(
+            longest
+                .iter()
+                .all(|literal| literal.len() == MAX_LITERAL_LEN)
+        );
+    }
+    // Empty children between literal positions leave the choices unchanged.
+    assert_eq!(
+        literals(&compile(r"(?i)[a-z]{0,4}?k(?:|)e(?:|)(?:|)y=x")),
+        literals(&compile(r"(?i)[a-z]{0,4}?key=x")),
+    );
+}
+
+#[test]
+fn analysis_retains_at_most_the_candidate_cap() {
+    // Each case-insensitive letter is its own child, so 40 letters offer 40
+    // choices. Only the 32 shortest are kept.
+    let letters = "abcdefghij".repeat(4);
+    let lengths = literals(&compile(&format!("(?i)[a-z]{{0,4}}?{letters}=x")))
+        .iter()
+        .map(|set| set[0].len())
+        .collect::<Vec<_>>();
+    assert_eq!(MAX_CANDIDATES, 32);
+    assert_eq!(lengths, (1..=32).collect::<Vec<_>>());
+    // The widest choices hold 64 literals each, so the cap bounds retained
+    // literal bytes for the expression.
+    let widest = compile(&format!("x?{}{}=x", "[ab]".repeat(6), "c(?:|)".repeat(40)));
+    let found = literals(&widest);
+    assert_eq!(found.len(), MAX_CANDIDATES);
+    assert!(found[5..].iter().all(|set| set.len() == MAX_LITERALS));
+    let retained = found.iter().flatten().map(Vec::len).sum::<usize>();
+    assert!(retained <= MAX_CANDIDATES * MAX_LITERALS * MAX_LITERAL_LEN);
+}
+
+#[test]
+fn analysis_stops_enumerating_at_the_step_budget() {
+    assert_eq!(MAX_ENUMERATION_STEPS, 16_384);
+    // Each empty alternation costs three steps: itself and two empty branches.
+    let few = "(?:|)".repeat(16);
+    let many = "(?:|)".repeat(6_000);
+    let chosen = |pattern: &str| {
+        literals(&compile(pattern))
+            .into_iter()
+            .map(|set| String::from_utf8(set.concat()).unwrap())
+            .collect::<Vec<_>>()
+    };
+    // At the top level, exhausting the budget keeps the choices found so far.
+    assert_eq!(
+        chosen(&format!("(?i)[a-z]{{0,4}}?k{few}ey=x")),
+        ["k", "ke", "key", "key=", "key=x"]
+    );
+    assert_eq!(chosen(&format!("(?i)[a-z]{{0,4}}?k{many}ey=x")), ["k"]);
+    // Inside one literal node, exhausting the budget rejects the node.
+    assert_eq!(
+        literals(&compile(&format!("(?i)[a-z]{{0,4}}?(?:k{few}ey|zz)=x")))[0],
+        [b"key".to_vec(), b"zz".to_vec()]
+    );
+    assert!(
+        compile(&format!("(?i)[a-z]{{0,4}}?(?:k{many}ey|zz)=x"))
+            .literal_anchor()
+            .is_none()
+    );
+}
+
+#[test]
+fn analysis_admits_the_largest_literal_set_within_the_step_budget() {
+    // 64 literals of 64 bytes, each byte a case-insensitive class.
+    let letters = "abcdefgh";
+    let mut words = letters
+        .chars()
+        .flat_map(|first| {
+            letters
+                .chars()
+                .map(move |second| format!("{first}{second}{}", "x".repeat(62)))
+        })
+        .collect::<Vec<_>>();
+    let regex = compile(&format!("(?i)[a-z]{{0,4}}?(?:{})=1", words.join("|")));
+    words.sort_unstable();
+    let expected = words
+        .into_iter()
+        .map(String::into_bytes)
+        .collect::<Vec<_>>();
+    assert_eq!(literals(&regex), [expected]);
+}
+
+#[test]
+fn tail_bounds_are_shared_by_every_choice() {
+    let bounds = |pattern: &str| {
+        compile(pattern)
+            .literal_anchor()
+            .unwrap()
+            .candidates()
+            .iter()
+            .map(|candidate| match &candidate.tail {
+                TailBound::Finite(maximum) => (*maximum, Vec::new()),
+                TailBound::Unbounded {
+                    bounded_prefix,
+                    run,
+                } => (
+                    *bounded_prefix,
+                    (0_u8..=0xFF)
+                        .filter(|byte| run[usize::from(*byte)])
+                        .collect(),
+                ),
+            })
+            .collect::<Vec<_>>()
+    };
+    // After each choice come its unconsumed literal bytes and two digits.
+    assert_eq!(
+        bounds(r"(?i)[a-z]{0,4}?ab=[0-9]{2}"),
+        [(4, Vec::new()), (3, Vec::new()), (2, Vec::new())]
+    );
+    // The unbounded `x*` starts after the same bounded bytes, and from there
+    // only `x`, `X` and `;` can be consumed.
+    let run = b";Xx".to_vec();
+    assert_eq!(
+        bounds(r"(?i)[a-z]{0,4}?abc=[0-9]{2}x*;"),
+        [
+            (5, run.clone()),
+            (4, run.clone()),
+            (3, run.clone()),
+            (2, run)
+        ]
     );
 }
 

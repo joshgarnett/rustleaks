@@ -97,6 +97,14 @@ temporary bytes are dropped before rule matching. ASCII folding uses the same
 ASCII mapping as Go; other characters and malformed bytes retain the pinned
 Go Unicode behavior.
 
+Literal-anchor analysis runs once for every compiled expression, including
+allowlist and path expressions, and its result is retained with the regex. It
+keeps at most 32 literal-node choices, each with at most 64 literals of at most
+64 bytes. Enumerating literal languages spends at most 16,384 steps, one per
+visited node and one per built literal, and the remainder after the literal
+node is walked once for all choices. A child that matches only the empty
+string adds no choice. Stopping at a limit drops only longer choices.
+
 On a pure-ASCII pass, the keyword pass also records the start offset of each
 hit for keywords that literal-anchored rules use. It keeps at most one offset
 per 64 haystack bytes for one keyword and one per 16 bytes across all keywords;
