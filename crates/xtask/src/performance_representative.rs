@@ -17,6 +17,22 @@ const ARCHIVES: &str = "//crates/rustleaks-sources:perf_archives_test";
 const MAX_ITERATIONS: u64 = 1_000;
 const MAX_SAMPLES: u64 = 31;
 const PROCESS_DEADLINE_SECONDS: u64 = 600;
+const DECODE_REPORT_WORKLOADS: &[&str] = &[
+    "core-decode-many-base64-depth-1",
+    "core-decode-many-base64-depth-2",
+    "core-decode-long-line-many-findings",
+    "core-decode-long-line-allowlisted",
+    "core-decode-lookalike-4-mib-depth-1",
+    "core-decode-none-4-mib-depth-5",
+    "core-decode-nested-needle-4-mib-depth-5",
+    "core-decode-hex-unicode-256-kib",
+    "session-classify-baseline-10000x10000",
+    "serialize-json-escape-heavy",
+    "serialize-csv-10000",
+    "serialize-junit-10000",
+    "config-compile-extend-default",
+    "config-compile-allowlist-heavy",
+];
 
 struct Request {
     workload: Option<String>,
@@ -337,6 +353,10 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             .into_iter()
             .filter(|id| id.starts_with("core-workers-"))
             .collect(),
+        Some(ref id) if id == "decode-report" => available
+            .into_iter()
+            .filter(|id| DECODE_REPORT_WORKLOADS.contains(&id.as_str()))
+            .collect(),
         Some(ref id) if available.contains(id) => vec![id.clone()],
         Some(ref id) => return Err(format!("unknown representative workload {id}")),
         None => available,
@@ -531,7 +551,15 @@ pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, Strin
     }
     match workload {
         "session-merge-10000" => Ok(vec!["session-merge"]),
-        "serialize-json-10000" | "serialize-sarif-10000" => Ok(vec!["report-serialization"]),
+        "session-classify-baseline-10000x10000" => Ok(vec!["session-classify"]),
+        "serialize-json-10000"
+        | "serialize-sarif-10000"
+        | "serialize-json-escape-heavy"
+        | "serialize-csv-10000"
+        | "serialize-junit-10000" => Ok(vec!["report-serialization"]),
+        "config-compile-extend-default" | "config-compile-allowlist-heavy" => {
+            Ok(vec!["config-compile"])
+        }
         "git-repeated-blobs" => Ok(vec!["git-history-and-parse", "git-history-and-detection"]),
         "cli-startup" => Ok(vec!["cold-process-version"]),
         "cli-dir" | "cli-stdin" | "cli-git" => Ok(vec!["cold-cli-startup-config-scan-report"]),
@@ -776,6 +804,15 @@ mod tests {
                 Some(std::ffi::OsStr::new("unrelated-directory")),
             )]
         );
+    }
+
+    #[test]
+    fn decode_report_group_is_unique_and_has_required_phases() {
+        let unique = DECODE_REPORT_WORKLOADS.iter().collect::<BTreeSet<_>>();
+        assert_eq!(unique.len(), DECODE_REPORT_WORKLOADS.len());
+        for workload in DECODE_REPORT_WORKLOADS {
+            assert!(!required_phases(workload).unwrap().is_empty(), "{workload}");
+        }
     }
 
     #[test]

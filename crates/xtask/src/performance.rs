@@ -471,6 +471,8 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
             "crates/rustleaks-compat/src/perf/edge_workloads.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/normalization_workloads.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/worker_workloads.rs".to_owned(),
+            "crates/rustleaks-compat/src/perf/decode_workloads.rs".to_owned(),
+            "crates/rustleaks-compat/src/perf/report_workloads.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/representative_io.rs".to_owned(),
             "crates/rustleaks-compat/src/perf/investigation.rs".to_owned(),
             "crates/rustleaks-sources/tests/perf_archives.rs".to_owned(),

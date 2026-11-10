@@ -18,10 +18,14 @@ use super::{FNV_OFFSET, SIMPLE_CONFIG, fnv_extend, representative_io};
 #[path = "fragment_workloads.rs"]
 mod fragment_workloads;
 
+#[path = "decode_workloads.rs"]
+mod decode_workloads;
 #[path = "edge_workloads.rs"]
 mod edge_workloads;
 #[path = "normalization_workloads.rs"]
 mod normalization_workloads;
+#[path = "report_workloads.rs"]
+mod report_workloads;
 #[path = "worker_workloads.rs"]
 mod worker_workloads;
 
@@ -89,6 +93,8 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             .chain(edge_workloads::WORKLOADS)
             .chain(normalization_workloads::WORKLOADS)
             .chain(worker_workloads::WORKLOADS)
+            .chain(decode_workloads::WORKLOADS)
+            .chain(report_workloads::WORKLOADS)
             .chain(representative_io::WORKLOADS)
         {
             println!("{id}");
@@ -116,7 +122,11 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     let workload = workload.ok_or("representative requires one --workload")?;
     // Executable hashing is deliberately before preparation and phase timers.
     let provenance = super::provenance()?;
-    let phases = if worker_workloads::WORKLOADS.contains(&workload) {
+    let phases = if decode_workloads::WORKLOADS.contains(&workload) {
+        decode_workloads::run(workload, iterations)?
+    } else if report_workloads::WORKLOADS.contains(&workload) {
+        report_workloads::run(workload, iterations)?
+    } else if worker_workloads::WORKLOADS.contains(&workload) {
         worker_workloads::run(workload, iterations)?
     } else if fragment_workloads::WORKLOADS.contains(&workload) {
         fragment_workloads::run(workload, iterations)?
