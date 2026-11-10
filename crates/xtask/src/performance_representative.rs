@@ -36,6 +36,25 @@ const DECODE_REPORT_WORKLOADS: &[&str] = &[
     "config-compile-extend-default",
     "config-compile-allowlist-heavy",
 ];
+/// The `default-rules` group selector: synthetic default-config scan workloads.
+const DEFAULT_RULE_PREFIXES: &[&str] = &[
+    "core-admission-",
+    "core-prose-",
+    "core-near-miss-",
+    "core-tiny-",
+    "core-all-admitted-",
+    "core-keyword-run-",
+    "core-prefix-storm-",
+    "core-thrash-",
+    "core-multibyte-",
+    "core-groupless-",
+    "core-generic-filter-",
+    "core-minified-findings-",
+    "core-realistic-",
+    "core-custom-config-",
+    "core-long-lived-",
+    "core-contention-",
+];
 
 struct Request {
     workload: Option<String>,
@@ -363,6 +382,14 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             .filter(|id| DECODE_REPORT_WORKLOADS.contains(&id.as_str()))
             .collect(),
         Some(ref id) if id == source_scale::GROUP => source_scale::workloads(&available)?,
+        Some(ref id) if id == "default-rules" => available
+            .into_iter()
+            .filter(|id| {
+                DEFAULT_RULE_PREFIXES
+                    .iter()
+                    .any(|prefix| id.starts_with(prefix))
+            })
+            .collect(),
         Some(ref id) if available.contains(id) => vec![id.clone()],
         Some(ref id) => return Err(format!("unknown representative workload {id}")),
         None => available,

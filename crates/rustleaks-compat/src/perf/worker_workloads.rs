@@ -67,7 +67,7 @@ enum Message {
     Panicked(usize),
 }
 
-struct Team {
+pub(super) struct Team {
     commands: Vec<SyncSender<Batch>>,
     completed: Receiver<Message>,
     buffers: Vec<Option<Batch>>,
@@ -89,7 +89,7 @@ impl Team {
         Ok(())
     }
 
-    fn batch(
+    pub(super) fn batch(
         &mut self,
         validate: impl Fn(&ScanOutcome) -> Result<(), Box<dyn Error>>,
     ) -> Result<(u64, String), Box<dyn Error>> {
@@ -156,7 +156,7 @@ impl Team {
     }
 }
 
-fn with_team<T>(
+pub(super) fn with_team<T>(
     detector: &Engine,
     clones: &[Engine],
     workers: usize,
@@ -164,7 +164,7 @@ fn with_team<T>(
     control: ScanControl<'static>,
     run: impl FnOnce(&mut Team) -> Result<T, Box<dyn Error>>,
 ) -> Result<T, Box<dyn Error>> {
-    if ![1, 4, 8].contains(&workers) || (!clones.is_empty() && clones.len() != workers) {
+    if ![1, 4, 8, 16, 32].contains(&workers) || (!clones.is_empty() && clones.len() != workers) {
         return Err("invalid worker or engine count".into());
     }
     thread::scope(|scope| {

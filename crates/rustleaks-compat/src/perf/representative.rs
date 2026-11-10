@@ -20,6 +20,8 @@ mod fragment_workloads;
 
 #[path = "decode_workloads.rs"]
 mod decode_workloads;
+#[path = "default_rule_workloads.rs"]
+mod default_rule_workloads;
 #[path = "edge_workloads.rs"]
 mod edge_workloads;
 #[path = "normalization_workloads.rs"]
@@ -97,6 +99,7 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             .chain(worker_workloads::WORKLOADS)
             .chain(decode_workloads::WORKLOADS)
             .chain(report_workloads::WORKLOADS)
+            .chain(default_rule_workloads::WORKLOADS)
             .chain(representative_io::WORKLOADS)
             .chain(source_scale_workloads::WORKLOADS)
         {
@@ -129,6 +132,8 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         decode_workloads::run(workload, iterations)?
     } else if report_workloads::WORKLOADS.contains(&workload) {
         report_workloads::run(workload, iterations)?
+    } else if default_rule_workloads::WORKLOADS.contains(&workload) {
+        default_rule_workloads::run(workload, iterations)?
     } else if worker_workloads::WORKLOADS.contains(&workload) {
         worker_workloads::run(workload, iterations)?
     } else if fragment_workloads::WORKLOADS.contains(&workload) {

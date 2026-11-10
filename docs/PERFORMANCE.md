@@ -306,6 +306,50 @@ without a new dependency. The bzip2 expanded size is the nearest multiple of
 filesystem. These workloads are synthetic shapes and do not establish field
 speed. Freeze their definitions before collecting comparison runs.
 
+## Default-rule scan workloads
+
+The `default-rules` group adds synthetic scan workloads at decode depth zero,
+using the packaged default configuration unless a workload generates its own.
+Run the group, or replace it with one workload identifier:
+
+```sh
+bazelisk run //crates/xtask:xtask -- perf representative --workload default-rules --samples 3 --iterations 1
+```
+
+| Workload family | Coverage |
+| --- | --- |
+| `core-admission-*-rules-4-mib` | 1, 16, 64 or 150 distinct keywords in the first 4 KiB of keyword-free filler, testing whether cost follows admitted rules times bytes |
+| `core-prose-keywords-*` | Documentation text dense in generic keywords, with no assignment operator |
+| `core-near-miss-*-256-kib` | 4,096 `generic-api-key` candidates, each rejected by one filter |
+| `core-tiny-*-b` | 100,000 small fragments, each with a file path and commit |
+| `core-all-admitted-*` | Every default keyword at least once, admitting every rule |
+| `core-keyword-run-*`, `core-prefix-storm-1-mib` | Keyword runs, keywords inside base64-like blobs, and secret prefixes without valid tails |
+| `core-thrash-generic-1-mib` | High-variety `generic-api-key` contexts; compare the first-scan and steady-scan phases |
+| `core-multibyte-*-4-mib` | CJK and uppercase Cyrillic prose with U+212A and U+017F keyword variants |
+| `core-groupless-*` | Rules without a capture group: a large private-key block and 4,096 `ghp_` tokens |
+| `core-generic-filter-*` | Generic-named findings retained through the quadratic suppression pass |
+| `core-minified-findings-*` | Findings on one 1 MiB line, after the last newline, and one 64 KiB secret |
+| `core-realistic-*-256-kib` | Lockfile, `.env`, Kubernetes YAML, JWT log, multi-language, binary and UTF-16 content |
+| `core-custom-config-*` | Generated configurations with 1,000 or 5,000 rules, a large allowlist, or 50 keywordless rules |
+| `core-long-lived-diverse` | 10,000 scans per operation cycling 20 input families on one engine |
+| `core-contention-*` | 16 or 32 threads on 512-byte fragments, and match-dense 4 MiB with 8 shared workers |
+
+Expected findings, byte ranges, locations, entropy and work counts come from
+each generator's plant list and from literal keyword counts over the
+configuration. They are not read back from a scan. Work is one scan pass, plus
+one checkpoint per overlapping keyword occurrence, per admitted rule and per
+regex candidate. Keyword lowercasing, `location()` and Shannon entropy are
+restated in the fixture from the pinned upstream behavior. Small tests include
+a one-byte-flip positive control for each near-miss filter, so suppression that
+stops working fails the fixture.
+
+`core-long-lived-diverse` reports retained behavior through the collector's
+existing fresh-process peak RSS, which covers the whole child process. It is
+not an isolated cache-memory measurement. By construction,
+`core-minified-findings-1024-on-1-mib` copies its 1 MiB line into each of its
+1,024 findings, and `core-generic-filter-*` compares every generic finding with
+every finding, which is quadratic.
+
 ## CPU and retained-memory investigation
 
 The optional investigation commands use the same synthetic core fixtures with a
