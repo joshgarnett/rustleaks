@@ -119,9 +119,7 @@ pub(crate) fn parse_error(
     writer: &mut dyn Write,
     message: impl std::fmt::Display,
 ) -> io::Result<()> {
-    writer.write_all(b"Error: ")?;
-    write_terminal_text(writer, &message.to_string())?;
-    writer.write_all(b"\n")
+    writer.write_all(terminal_line("Error: ", &message.to_string()).as_bytes())
 }
 
 pub(crate) fn root_usage_hint(writer: &mut dyn Write) -> io::Result<()> {
@@ -149,9 +147,7 @@ fn diagnostic(
     prefix: &str,
     message: impl std::fmt::Display,
 ) -> io::Result<()> {
-    writer.write_all(prefix.as_bytes())?;
-    write_terminal_text(writer, &message.to_string())?;
-    writer.write_all(b"\n")
+    writer.write_all(terminal_line(prefix, &message.to_string()).as_bytes())
 }
 
 pub(crate) struct ReportPlan {
@@ -395,24 +391,38 @@ fn write_terminal_bytes(writer: &mut dyn Write, value: &[u8]) -> io::Result<()> 
 }
 
 fn write_terminal_text(writer: &mut dyn Write, value: &str) -> io::Result<()> {
+    let mut escaped = String::with_capacity(value.len());
+    escape_terminal_text(&mut escaped, value);
+    writer.write_all(escaped.as_bytes())
+}
+
+fn terminal_line(prefix: &str, value: &str) -> String {
+    let mut line = String::with_capacity(prefix.len() + value.len() + 1);
+    line.push_str(prefix);
+    escape_terminal_text(&mut line, value);
+    line.push('\n');
+    line
+}
+
+fn escape_terminal_text(output: &mut String, value: &str) {
+    use std::fmt::Write as _;
+
     for character in value.chars() {
         match character {
-            '\n' => writer.write_all(br"\n")?,
-            '\r' => writer.write_all(br"\r")?,
-            '\t' => writer.write_all(br"\t")?,
+            '\n' => output.push_str(r"\n"),
+            '\r' => output.push_str(r"\r"),
+            '\t' => output.push_str(r"\t"),
             character if character.is_ascii_control() => {
-                write!(writer, "\\x{:02x}", u32::from(character))?;
+                // Writing to a String cannot fail.
+                let _ = write!(output, "\\x{:02x}", u32::from(character));
             }
             character if character.is_control() => {
-                write!(writer, "\\u{{{:x}}}", u32::from(character))?;
+                // Writing to a String cannot fail.
+                let _ = write!(output, "\\u{{{:x}}}", u32::from(character));
             }
-            character => {
-                let mut encoded = [0_u8; 4];
-                writer.write_all(character.encode_utf8(&mut encoded).as_bytes())?;
-            }
+            character => output.push(character),
         }
     }
-    Ok(())
 }
 fn trim_raw(bytes: &[u8]) -> &[u8] {
     let Ok(value) = std::str::from_utf8(bytes) else {
@@ -555,6 +565,94 @@ mod tests {
         parse_error(&mut output, "invalid value \u{1b}[2J\nforged").unwrap();
         assert_eq!(output, b"Error: invalid value \\x1b[2J\\nforged\n");
         assert!(!output.contains(&0x1b));
+    }
+
+    #[derive(Default)]
+    struct CountingWriter {
+        bytes: Vec<u8>,
+        writes: usize,
+    }
+
+    impl Write for CountingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.writes += 1;
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct WriteFailure;
+
+    impl Write for WriteFailure {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("injected write failure"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // Every escape class plus multibyte text: LF, CR, TAB, C0 control, DEL,
+    // C1 control, two-byte, three-byte, and four-byte UTF-8.
+    const ESCAPE_INPUT: &str = "a\nb\rc\td\u{1}e\u{7f}f\u{85}g\u{e9}h\u{20ac}i\u{1f600}";
+    const ESCAPE_OUTPUT: &str = "a\\nb\\rc\\td\\x01e\\x7ff\\u{85}g\u{e9}h\u{20ac}i\u{1f600}";
+
+    #[test]
+    fn each_diagnostic_is_one_write_with_exact_bytes() {
+        type Diagnostic = fn(&mut dyn Write, &str) -> io::Result<()>;
+        let cases: [(Diagnostic, &str); 5] = [
+            (|writer, message| error(writer, message), "error "),
+            (|writer, message| fatal(writer, message), "fatal "),
+            (|writer, message| warn(writer, message), "warn "),
+            (|writer, message| info(writer, message), "info "),
+            (|writer, message| parse_error(writer, message), "Error: "),
+        ];
+        for (diagnostic, prefix) in cases {
+            let mut writer = CountingWriter::default();
+            diagnostic(&mut writer, ESCAPE_INPUT).unwrap();
+            assert_eq!(writer.writes, 1, "{prefix}");
+            assert_eq!(
+                writer.bytes,
+                format!("{prefix}{ESCAPE_OUTPUT}\n").into_bytes(),
+                "{prefix}"
+            );
+
+            let mut empty = CountingWriter::default();
+            diagnostic(&mut empty, "").unwrap();
+            assert_eq!(empty.writes, 1, "{prefix}");
+            assert_eq!(empty.bytes, format!("{prefix}\n").into_bytes(), "{prefix}");
+        }
+    }
+
+    #[test]
+    fn display_arguments_are_rendered_before_the_single_write() {
+        let mut writer = CountingWriter::default();
+        warn(&mut writer, format_args!("{} leaks\tfound", 3)).unwrap();
+        assert_eq!(writer.writes, 1);
+        assert_eq!(writer.bytes, b"warn 3 leaks\\tfound\n");
+    }
+
+    #[test]
+    fn diagnostic_write_failures_are_returned() {
+        let failure = error(&mut WriteFailure, "message").unwrap_err();
+        assert_eq!(failure.to_string(), "injected write failure");
+        let failure = parse_error(&mut WriteFailure, "message").unwrap_err();
+        assert_eq!(failure.to_string(), "injected write failure");
+    }
+
+    #[test]
+    fn verbose_labels_keep_exact_escaped_bytes() {
+        let mut writer = CountingWriter::default();
+        label(&mut writer, "Secret:", ESCAPE_INPUT).unwrap();
+        assert_eq!(
+            writer.bytes,
+            format!("{:<12} {ESCAPE_OUTPUT}\n", "Secret:").into_bytes()
+        );
     }
 
     #[test]
