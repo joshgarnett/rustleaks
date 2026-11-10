@@ -2,7 +2,7 @@
   "schema_version": 1,
   "scope": "Synthetic intent labels; no deployment accuracy or live validity claim. Exact-span and case-distinct-value recall are separate metrics.",
   "profile": "gitleaks-b58d3f1",
-  "package_version": "0.1.0-alpha.6",
+  "package_version": "0.1.0-alpha.7",
   "default_config_sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
   "loaded_config_fnv1a64": "2e085b792a5e6cb4",
   "native_pack": "rustleaks-extra-v1",

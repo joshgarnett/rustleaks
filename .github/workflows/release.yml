@@ -244,3 +244,148 @@ jobs:
           done
           ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}")"
           test "$(jq -r '.object.sha' <<<"${ref_json}")" = "${CANDIDATE}"
+
+  verify-native:
+    name: Verify published ${{ matrix.target }}
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15-intel
+            architecture: x86_64
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            architecture: arm64
+            target: aarch64-apple-darwin
+          - runner: windows-2025
+            architecture: X64
+            target: x86_64-pc-windows-msvc
+          - runner: windows-11-arm
+            architecture: Arm64
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CANDIDATE: ${{ inputs.candidate }}
+      EXPECTED_VERSION: ${{ inputs.version }}
+      RELEASE_TARGET: ${{ matrix.target }}
+      EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+    steps:
+      - name: Check out the verified candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the existing verification toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup default 1.95.0
+          cargo fetch --locked
+      - name: Verify public bundle on Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+          stem="rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}"
+          bundle="${RUNNER_TEMP}/published-release"
+          mkdir "${bundle}"
+          gh release download "v${EXPECTED_VERSION}" --repo "${GITHUB_REPOSITORY}" --dir "${bundle}" \
+            --pattern "${stem}.tar.gz" \
+            --pattern "${stem}.cdx.json" \
+            --pattern "${stem}.provenance.json" \
+            --pattern "${stem}.attestation.jsonl" \
+            --pattern "${stem}.SHA256SUMS" \
+            --pattern "${stem}.reproducibility.json" \
+            --pattern "${stem}.manifest.json"
+          mv "${bundle}/${stem}.SHA256SUMS" "${bundle}/SHA256SUMS"
+          mv "${bundle}/${stem}.reproducibility.json" "${bundle}/reproducibility.json"
+          mv "${bundle}/${stem}.manifest.json" "${bundle}/manifest.json"
+          test "$(jq -r '.release.version' "${bundle}/manifest.json")" = "${EXPECTED_VERSION}"
+          test "$(jq -r '.release.sourceCommit' "${bundle}/manifest.json")" = "${CANDIDATE}"
+          test "$(jq -r '.build.target' "${bundle}/manifest.json")" = "${RELEASE_TARGET}"
+          cargo xtask release-artifact verify "${bundle}"
+          gh attestation verify "${bundle}/${stem}.tar.gz" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${bundle}/${stem}.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+            --source-digest "${CANDIDATE}" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+      - name: Smoke public executable on Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          stem="rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}"
+          extracted="${RUNNER_TEMP}/published-extracted"
+          mkdir "${extracted}"
+          tar -xzf "${RUNNER_TEMP}/published-release/${stem}.tar.gz" -C "${extracted}"
+          executable="${extracted}/${stem}/rustleaks"
+          "${executable}" --help
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${executable}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path="${RUNNER_TEMP}/published-smoke.json"
+          grep -q REDACTED "${RUNNER_TEMP}/published-smoke.json"
+          printf 'Published archive verified and native smoke passed: %s at %s\n' "${RELEASE_TARGET}" "${CANDIDATE}" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Verify public bundle on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actual -ne $env:EXPECTED_ARCHITECTURE) { throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual" }
+          $stem = "rustleaks-$env:EXPECTED_VERSION-$env:RELEASE_TARGET"
+          $bundle = Join-Path $env:RUNNER_TEMP published-release
+          New-Item -ItemType Directory -Path $bundle | Out-Null
+          gh release download "v$env:EXPECTED_VERSION" --repo $env:GITHUB_REPOSITORY --dir $bundle --pattern "$stem.tar.gz" --pattern "$stem.cdx.json" --pattern "$stem.provenance.json" --pattern "$stem.attestation.jsonl" --pattern "$stem.SHA256SUMS" --pattern "$stem.reproducibility.json" --pattern "$stem.manifest.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item (Join-Path $bundle "$stem.SHA256SUMS") (Join-Path $bundle SHA256SUMS)
+          Move-Item (Join-Path $bundle "$stem.reproducibility.json") (Join-Path $bundle reproducibility.json)
+          Move-Item (Join-Path $bundle "$stem.manifest.json") (Join-Path $bundle manifest.json)
+          $manifest = Get-Content -Raw (Join-Path $bundle manifest.json) | ConvertFrom-Json
+          if ($manifest.release.version -cne $env:EXPECTED_VERSION) { throw 'published version mismatch' }
+          if ($manifest.release.sourceCommit -cne $env:CANDIDATE) { throw 'published candidate mismatch' }
+          if ($manifest.build.target -cne $env:RELEASE_TARGET) { throw 'published target mismatch' }
+          cargo xtask release-artifact verify $bundle
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh attestation verify (Join-Path $bundle "$stem.tar.gz") --repo $env:GITHUB_REPOSITORY --bundle (Join-Path $bundle "$stem.attestation.jsonl") --signer-workflow "$env:GITHUB_REPOSITORY/.github/workflows/release-dry-run.yml" --source-digest $env:CANDIDATE --source-ref refs/heads/main --deny-self-hosted-runners
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke public executable on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stem = "rustleaks-$env:EXPECTED_VERSION-$env:RELEASE_TARGET"
+          $extracted = Join-Path $env:RUNNER_TEMP published-extracted
+          New-Item -ItemType Directory -Path $extracted | Out-Null
+          tar -xzf (Join-Path $env:RUNNER_TEMP "published-release/$stem.tar.gz") -C $extracted
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $executable = Join-Path $extracted "$stem/rustleaks.exe"
+          & $executable --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $smoke = Join-Path $env:RUNNER_TEMP published-smoke.json
+          ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | & $executable stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=$smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Select-String -Quiet -Pattern REDACTED -Path $smoke)) { throw 'published redacted smoke finding missing' }
+          "Published archive verified and native smoke passed: $env:RELEASE_TARGET at $env:CANDIDATE" >> $env:GITHUB_STEP_SUMMARY

@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-cli"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "rustleaks-core",
  "rustleaks-report",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-compat"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "rustleaks-core",
  "rustleaks-report",
@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-core"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "aho-corasick",
  "base64",
@@ -334,7 +334,7 @@ version = "0.9.3-rustleaks.1"
 
 [[package]]
 name = "rustleaks-report"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "base64",
  "rustleaks-core",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "rustleaks-sources"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "base64",
  "brotli-decompressor",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "base64",
  "flate2",
