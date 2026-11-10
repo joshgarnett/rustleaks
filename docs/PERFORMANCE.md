@@ -359,3 +359,53 @@ threshold is accepted from profiling alone.
 `just perf-report` collects a bounded private report or validates existing evidence.
 See [performance reporting](PERFORMANCE_REPORTING.md) for status definitions,
 import limits, and the reviewed seven-day sanitized-summary retention contract.
+
+## Large in-memory fragment workloads
+
+The representative suite includes `core-fragments-json-*`,
+`core-fragments-log-*`, and `core-fragments-invalid-*`. They use the complete
+packaged default configuration, decode depth zero, one retained engine, and
+synthetic 512-byte records. Thirty-two provider names are spread across each
+16 KiB block. One reviewed private-key sample ends each fragment. Its complete
+finding, byte ranges, line and columns, and entropy are specified independently
+of detection. Literal keyword occurrences and admitted rules independently
+specify the exact work count: one pass, all overlapping keyword occurrences,
+one checkpoint per admitted rule, and one match checkpoint. Every fragment
+must finish with one finding record, no decoded bytes and no termination.
+
+JSON and log cases cover 16 KiB, 256 KiB, 1 MiB and 4 MiB single fragments,
+and 12 MiB operations split into 16 KiB or 256 KiB fragments. Invalid-UTF-8
+log cases cover a 4 MiB fragment and 12 MiB split into 16 KiB fragments.
+The invalid sequences occur throughout the input, independently of the
+ASCII finding. All inputs are synthetic except the existing reviewed key
+fixture. These data do not reproduce private application content.
+
+Run the complete added matrix, or replace `fragments` with an individual
+workload identifier:
+
+```sh
+bazelisk run //crates/xtask:xtask -- perf representative --workload fragments --samples 3 --iterations 1
+```
+
+First-scan and steady-scan phases sum the scan calls for one complete operation.
+Fixture construction, engine compilation, validation, hashing and outcome
+release remain outside those timers. All fragments in an operation and both
+phases reuse one engine, so its backend caches can persist. The collector
+reports fresh-process medians and peak process RSS with its existing source
+and optimized Bazel executable identities. Peak RSS includes setup and does
+not measure retained engine memory. Use the existing `perf profile` heap and
+VM snapshots with `core-default-many-keywords-16-kib` to observe a long-lived
+engine containing the full default configuration and warmed search caches.
+
+`perf check`, and therefore `cargo xtask qualify`, additionally require on
+the calibrated M1 Max host a median no greater than 1.5 seconds for both first
+and steady phases of every 4 MiB and 12 MiB workload, from three independent processes. The existing
+compile, hostile-regex and peak-RSS limits are unchanged. The new target is
+an engineering budget measured on the implementation host, not a portable
+latency promise. Other hosts run the same exact invariants and report medians
+without enforcing this uncalibrated latency threshold. A different host
+budget requires separate measurement and review.
+
+The [fragment throughput record](validation/core-fragment-throughput.md)
+compares the backend and preprocessing stages, exact outcome invariants,
+retained memory and unchanged legacy budgets.

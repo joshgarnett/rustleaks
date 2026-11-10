@@ -20,8 +20,10 @@ limits. Reusing one per-fragment budget does not create an operation-wide
 limit. The caller continues to own elapsed-time cancellation.
 
 Cancellation is cooperative. It is polled between bounded owned work units,
-including between decoder candidates and encoding transforms; one regex
-backend evaluation or individual transform remains indivisible. A partial
+including between decoder candidates and encoding transforms. Regex searches,
+eager enumeration of all matches for one rule, and individual transforms remain
+indivisible. Match checkpoints follow the completed match list; changing the
+backend does not move these checkpoints or make iteration lazy. A partial
 outcome contains findings only from completed top-level rules and carries
 structured termination plus measured usage. Callers must not treat partial
 findings as a complete fragment result. The bounded source runner discards a
@@ -29,7 +31,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 
 | Surface | Bound or ownership |
 | --- | --- |
-| Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, compiled NFA 256 MiB, estimated PikeVM search working set 256 MiB; limits are per expression |
+| Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
@@ -46,6 +48,40 @@ Many ordinary Rust allocations remain infallible; out-of-memory may abort.
 The CLI timeout is cooperative, not a hard wall-clock deadline. Streaming
 sources and reports are intentionally open-ended unless their caller installs
 the relevant outer policy.
+
+## Regex compilation and retained caches
+
+The private meta backend applies `nfa_size_limit` to each NFA it builds,
+including the reverse NFA. The 256 MiB limit is not a combined-NFA or engine
+heap quota. A temporary forward NFA preserves the existing PikeVM working-set
+check before any search cache is allocated. It is dropped before meta
+compilation from the same parsed expression. If the reverse NFA exceeds the
+same limit, compilation retries without DFA acceleration to preserve forward
+pattern acceptance. The source, nesting, repetition and deep-compile thread
+limits remain unchanged.
+
+Each lazy-DFA cache has a 2 MiB transition capacity and grows on demand.
+Forward, reverse and fallback caches are retained by the compiled regex pool
+across scans of one Engine. Concurrent searches can retain more caches, and
+cloning an Engine creates additional pools while sharing compiled automata.
+Pool bookkeeping, allocator overhead and aggregate configuration memory are
+outside these per-component limits. The optional one-pass DFA has a 1 MiB
+compile limit; failure to build it selects another capture engine. Full DFA
+construction is disabled, including under downstream feature unification.
+
+Hostile input or large Unicode classes can thrash the lazy cache or cause it
+to give up. Meta falls back to bounded engines and ultimately PikeVM, so one
+search remains linear in input length for a fixed pattern, but the speedup
+can disappear. This is not a linear bound on an entire eager match enumeration
+or a wall-clock deadline. Retained-memory and latency measurements apply only
+to the measured configuration, input, concurrency and host.
+
+Each scan creates the original-fragment newline index only when a finding
+needs a location, and reuses it across decoded passes and required rules.
+Each pass normalizes its current bytes for regex matching at most once,
+lazily after its gates. Path, allowlist and trimmed-secret searches retain
+their own haystacks and normalization. These buffers remain scan-local; they
+are not retained in the Engine's search caches.
 
 ## Private maintenance processes
 

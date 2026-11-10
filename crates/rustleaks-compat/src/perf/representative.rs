@@ -1,4 +1,4 @@
-//! Versioned, operation-only representative workloads. No release performance gate.
+//! Versioned operation-only workloads, including host-calibrated fragment budgets.
 
 use std::error::Error;
 use std::fmt::Write;
@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{FNV_OFFSET, SIMPLE_CONFIG, fnv_extend, representative_io};
+
+#[path = "fragment_workloads.rs"]
+mod fragment_workloads;
 
 #[path = "investigation.rs"]
 mod investigation;
@@ -73,7 +76,11 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     if arguments == ["--representative-list"] {
-        for id in WORKLOADS.iter().chain(representative_io::WORKLOADS) {
+        for id in WORKLOADS
+            .iter()
+            .chain(fragment_workloads::WORKLOADS)
+            .chain(representative_io::WORKLOADS)
+        {
             println!("{id}");
         }
         return Ok(());
@@ -99,7 +106,9 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     let workload = workload.ok_or("representative requires one --workload")?;
     // Executable hashing is deliberately before preparation and phase timers.
     let provenance = super::provenance()?;
-    let phases = if WORKLOADS.contains(&workload) {
+    let phases = if fragment_workloads::WORKLOADS.contains(&workload) {
+        fragment_workloads::run(workload, iterations)?
+    } else if WORKLOADS.contains(&workload) {
         run(workload, iterations)?
     } else if representative_io::WORKLOADS.contains(&workload) {
         representative_io::run(workload, iterations)?

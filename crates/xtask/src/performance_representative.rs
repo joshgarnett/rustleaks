@@ -325,6 +325,10 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
         return Err("representative workload list is empty or duplicated".into());
     }
     let workloads = match request.workload {
+        Some(ref id) if id == "fragments" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-fragments-"))
+            .collect(),
         Some(ref id) if available.contains(id) => vec![id.clone()],
         Some(ref id) => return Err(format!("unknown representative workload {id}")),
         None => available,
@@ -408,6 +412,87 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
         "{}",
         json!({"schema_version":3,"suite":"representative-v1","kind":"run-complete","source":prepared.source,"executable_sha256":prepared.build["executable_sha256"],"baseline_eligible":prepared.source["dirty"] == false})
     );
+    Ok(())
+}
+
+/// The fragment operation budget supplements, and never replaces, legacy gates.
+pub(super) fn fragment_budget_check(
+    prepared: &Prepared,
+    calibrated_host: bool,
+) -> Result<(), String> {
+    let listed = command_output(Command::new(&prepared.binary).arg("--representative-list"))?;
+    let workloads = listed
+        .lines()
+        .filter(|id| {
+            id.starts_with("core-fragments-") && (id.ends_with("4-mib") || id.contains("12-mib-by"))
+        })
+        .collect::<Vec<_>>();
+    if workloads.len() != 8 {
+        return Err("fragment budget matrix must contain eight large operations".into());
+    }
+    let tools = Tools {
+        cli: None,
+        archives: None,
+        git: None,
+    };
+    for workload in workloads {
+        let mut reference = None;
+        let mut phases = BTreeMap::<String, Vec<u64>>::new();
+        for _ in 0..3 {
+            let (output, _) = collect(
+                prepared,
+                &tools,
+                &[
+                    "--representative".into(),
+                    "--workload".into(),
+                    workload.into(),
+                    "--iterations".into(),
+                    "1".into(),
+                ],
+            )?;
+            let records = validate(&prepared.bind(&output)?, prepared, workload, 1)?;
+            let identity = records.iter().map(stable_identity).collect::<Vec<_>>();
+            if reference
+                .as_ref()
+                .is_some_and(|expected| expected != &identity)
+            {
+                return Err(format!(
+                    "{workload} fragment invariants changed across samples"
+                ));
+            }
+            reference = Some(identity);
+            for record in records {
+                let phase = &record["phase"];
+                let name = phase["phase"].as_str().ok_or("missing fragment phase")?;
+                if matches!(name, "first-scan" | "steady-scan") {
+                    phases.entry(name.to_owned()).or_default().push(
+                        phase["elapsed_ns"]
+                            .as_u64()
+                            .ok_or("missing fragment time")?,
+                    );
+                }
+            }
+        }
+        for (phase, mut samples) in phases {
+            samples.sort_unstable();
+            let median = samples[1];
+            if calibrated_host && median > 1_500_000_000 {
+                return Err(format!(
+                    "{workload} {phase} median {median} ns exceeds 1500000000 ns"
+                ));
+            }
+            println!(
+                "{workload} {phase} median={median} ns; calibrated_host={calibrated_host}; samples={samples:?}"
+            );
+        }
+    }
+    if calibrated_host {
+        println!("M1 Max fragment-operation medians satisfy the 1500000000 ns limit");
+    } else {
+        println!(
+            "fragment invariants passed; M1 Max latency limits not evaluated on this host class"
+        );
+    }
     Ok(())
 }
 

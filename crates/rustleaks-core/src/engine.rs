@@ -1,5 +1,6 @@
 //! Immutable raw-fragment detection engine.
 
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -21,7 +22,7 @@ use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes
 use crate::model::{
     ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
-use crate::regex::{ByteSpan, GoRegex};
+use crate::regex::{ByteSpan, GoRegex, NormalizedHaystack};
 
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
@@ -29,8 +30,10 @@ const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
 /// A synchronous, runtime-independent cancellation signal for one scan.
 ///
 /// The engine polls this signal between bounded units of owned work. A regular
-/// expression backend evaluation and one individual encoding transform are
-/// indivisible; decoder candidate loops are checkpointed between transforms.
+/// expression search, eager enumeration of all matches for one rule, and one
+/// individual encoding transform are indivisible. Candidate checkpoints run
+/// after the complete rule match list has been collected; decoder candidate
+/// loops are checkpointed between transforms.
 /// Cancellation requested inside an indivisible operation is observed at the
 /// next checkpoint.
 pub trait ScanCancellation: Send + Sync {
@@ -279,7 +282,7 @@ pub struct Engine {
 struct DetectionPass<'a> {
     current_raw: &'a [u8],
     encoded_segments: &'a [EncodedSegment],
-    original_newlines: &'a [usize],
+    original_newlines: &'a OnceCell<Vec<usize>>,
     rule_ordinal: usize,
     decoded_pass: usize,
     candidate_ordinal: usize,
@@ -288,6 +291,8 @@ struct DetectionPass<'a> {
 #[derive(Clone, Copy)]
 struct RulePass<'a> {
     current_raw: &'a [u8],
+    normalized: &'a OnceCell<NormalizedHaystack<'a>>,
+    original_newlines: &'a OnceCell<Vec<usize>>,
     encoded_segments: &'a [EncodedSegment],
     inherited_from_finding: bool,
     rule_ordinal: usize,
@@ -416,8 +421,9 @@ impl Engine {
     ///
     /// Cancellation is cooperative. The signal is polled between the work
     /// units documented by [`ScanBudget`], including inside decoder candidate
-    /// loops. One regex backend evaluation, one individual encoding transform,
-    /// finding construction, and redaction of one finding are indivisible.
+    /// loops. Regex searches and eager enumeration of all matches for one rule,
+    /// one individual encoding transform, finding construction, and redaction
+    /// of one finding are indivisible.
     #[must_use]
     pub fn scan_fragment_controlled(
         &self,
@@ -475,6 +481,7 @@ impl Engine {
 
         let mut findings = Vec::new();
         let mut current_raw = fragment.content().as_bytes().to_vec();
+        let original_newlines = OnceCell::new();
         let mut encoded_segments = Vec::new();
         let mut decoder = Decoder::new();
         let mut decode_depth = 0;
@@ -493,59 +500,63 @@ impl Engine {
                 }
             }
 
-            for (rule_ordinal, rule) in self.config.rules.values().enumerate() {
-                context.explanations.record(
-                    Some(rule_ordinal),
-                    decode_depth,
-                    None,
-                    ExplanationReason::RuleSelected,
-                );
-                if !rule.keywords.is_empty()
-                    && !rule.keywords.iter().any(|keyword| {
-                        self.keyword_ids
-                            .get(keyword)
-                            .is_some_and(|index| matched_keywords[*index])
-                    })
-                {
+            {
+                let regex_haystack = OnceCell::new();
+                for (rule_ordinal, rule) in self.config.rules.values().enumerate() {
                     context.explanations.record(
                         Some(rule_ordinal),
                         decode_depth,
                         None,
-                        ExplanationReason::KeywordMissed,
+                        ExplanationReason::RuleSelected,
                     );
-                    continue;
-                }
-                context.explanations.record(
-                    Some(rule_ordinal),
-                    decode_depth,
-                    None,
-                    if rule.keywords.is_empty() {
-                        ExplanationReason::KeywordNotRequired
-                    } else {
-                        ExplanationReason::KeywordMatched
-                    },
-                );
-                let detected = self.detect_rule(
-                    fragment,
-                    options,
-                    rule,
-                    RulePass {
-                        current_raw: &current_raw,
-                        encoded_segments: &encoded_segments,
-                        inherited_from_finding: fragment.inherited_from_finding(),
-                        rule_ordinal,
-                        decoded_pass: decode_depth,
-                    },
-                    context,
-                );
-                match detected {
-                    Ok(detected) => findings.extend(detected),
-                    Err(termination) => {
-                        return finish_partial(findings, options, context.usage, termination);
+                    if !rule.keywords.is_empty()
+                        && !rule.keywords.iter().any(|keyword| {
+                            self.keyword_ids
+                                .get(keyword)
+                                .is_some_and(|index| matched_keywords[*index])
+                        })
+                    {
+                        context.explanations.record(
+                            Some(rule_ordinal),
+                            decode_depth,
+                            None,
+                            ExplanationReason::KeywordMissed,
+                        );
+                        continue;
+                    }
+                    context.explanations.record(
+                        Some(rule_ordinal),
+                        decode_depth,
+                        None,
+                        if rule.keywords.is_empty() {
+                            ExplanationReason::KeywordNotRequired
+                        } else {
+                            ExplanationReason::KeywordMatched
+                        },
+                    );
+                    let detected = self.detect_rule(
+                        fragment,
+                        options,
+                        rule,
+                        RulePass {
+                            current_raw: &current_raw,
+                            normalized: &regex_haystack,
+                            original_newlines: &original_newlines,
+                            encoded_segments: &encoded_segments,
+                            inherited_from_finding: fragment.inherited_from_finding(),
+                            rule_ordinal,
+                            decoded_pass: decode_depth,
+                        },
+                        context,
+                    );
+                    match detected {
+                        Ok(detected) => findings.extend(detected),
+                        Err(termination) => {
+                            return finish_partial(findings, options, context.usage, termination);
+                        }
                     }
                 }
-            }
-
+            } // Drop the normalized pass before replacing decoded content.
             decode_depth += 1;
             if decode_depth > options.max_decode_depth() {
                 break;
@@ -663,16 +674,10 @@ impl Engine {
             return Ok(Vec::new());
         }
 
-        let original_raw = fragment.content().as_bytes();
-        let newlines = original_raw
-            .iter()
-            .enumerate()
-            .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
-            .collect::<Vec<_>>();
         let pass = DetectionPass {
             current_raw: rule_pass.current_raw,
             encoded_segments: rule_pass.encoded_segments,
-            original_newlines: &newlines,
+            original_newlines: rule_pass.original_newlines,
             rule_ordinal: rule_pass.rule_ordinal,
             decoded_pass: rule_pass.decoded_pass,
             candidate_ordinal: 0,
@@ -680,7 +685,11 @@ impl Engine {
         let mut findings = Vec::new();
         let mut any_match = false;
         for (candidate_ordinal, span) in regex
-            .find_all(rule_pass.current_raw)
+            .find_all_normalized(
+                rule_pass
+                    .normalized
+                    .get_or_init(|| NormalizedHaystack::new(rule_pass.current_raw)),
+            )
             .into_iter()
             .enumerate()
         {
@@ -855,12 +864,16 @@ impl Engine {
                     decoder_tags(&overlapping),
                 )
             };
-        let source = upstream_location(
-            pass.original_newlines,
-            original_raw,
-            adjusted_start,
-            adjusted_end,
-        );
+        // Decoded passes project back onto the original fragment. Keep this
+        // index scan-local and construct it only when a candidate needs it.
+        let newlines = pass.original_newlines.get_or_init(|| {
+            original_raw
+                .iter()
+                .enumerate()
+                .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
+                .collect()
+        });
+        let source = upstream_location(newlines, original_raw, adjusted_start, adjusted_end);
         let line = original_raw.get(source.start_line_index..source.end_line_index)?;
         if options.honor_allow_markers()
             && (contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
@@ -1317,7 +1330,7 @@ impl fmt::Display for ScanError {
 
 impl Error for ScanError {}
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SourceLocation {
     start_line: usize,
     end_line: usize,
@@ -1335,47 +1348,46 @@ fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -
     } else {
         newlines
     };
-    let mut previous = 0;
+    let start_line = newlines.partition_point(|newline| *newline <= start);
+    if start_line == newlines.len() {
+        let previous = newlines[newlines.len() - 1];
+        // Preserve the pinned helper's no-line-matched path, including the
+        // zero start index and its special search for a trailing CR or LF.
+        return SourceLocation {
+            start_line,
+            end_line: start_line,
+            start_column: start - previous + 1,
+            end_column: end - previous,
+            start_line_index: 0,
+            end_line_index: raw[end..]
+                .iter()
+                .position(|byte| matches!(byte, b'\n' | b'\r'))
+                .map_or(raw.len(), |distance| end + distance),
+        };
+    }
+
+    let previous = start_line.checked_sub(1).map_or(0, |line| newlines[line]);
     let mut location = SourceLocation {
-        start_line: 0,
-        end_line: 0,
-        start_column: 0,
+        start_line,
+        end_line: start_line,
+        start_column: start - previous + 1,
         end_column: 0,
-        start_line_index: 0,
-        end_line_index: 0,
+        start_line_index: previous,
+        end_line_index: newlines[start_line],
     };
-    let mut line_set = false;
-    let mut last_line = 0;
-    for (line_number, &newline) in newlines.iter().enumerate() {
-        last_line = line_number;
-        if previous <= start && start < newline {
-            line_set = true;
-            location.start_line = line_number;
-            location.end_line = line_number;
-            location.start_column = start - previous + 1;
-            location.start_line_index = previous;
-            location.end_line_index = newline;
-        }
-        if previous < end && end <= newline {
-            location.end_line = line_number;
-            location.end_column = end - previous;
-            location.end_line_index = newline;
-        }
-        previous = newline;
-    }
-    if !line_set {
-        location.start_column = start - previous + 1;
+    let end_line = newlines.partition_point(|newline| *newline < end);
+    if end > 0 && end_line < newlines.len() {
+        let previous = end_line.checked_sub(1).map_or(0, |line| newlines[line]);
         location.end_column = end - previous;
-        location.start_line = last_line + 1;
-        location.end_line = last_line + 1;
-        location.end_line_index = raw[end..]
-            .iter()
-            .position(|byte| matches!(byte, b'\n' | b'\r'))
-            .map_or(raw.len(), |distance| end + distance);
+        // For an empty match on a newline, the old loop set the end column
+        // on the preceding iteration, then overwrote its end line and index
+        // when assigning the start. Preserve that assignment order exactly.
+        if end_line >= start_line {
+            location.end_line = end_line;
+            location.end_line_index = newlines[end_line];
+        }
     }
-    if end > location.end_line_index {
-        location.end_line_index = end;
-    }
+    location.end_line_index = location.end_line_index.max(end);
     location
 }
 
@@ -1401,7 +1413,7 @@ fn extract_secret<'a>(
     matched: &'a [u8],
     secret_group: i64,
 ) -> Option<ExtractedSecret<'a>> {
-    let Some(captures) = regex.captures_all(matched).into_iter().next() else {
+    let Some(captures) = regex.captures(matched) else {
         // Trimming leading/trailing newlines can make an anchored full-match
         // expression stop matching. Go leaves the already-trimmed secret
         // unchanged when FindStringSubmatch consequently returns nil.
@@ -1566,6 +1578,158 @@ mod tests {
             ),
             (2, 1, 2, 4, 40, 56)
         );
+    }
+
+    #[test]
+    fn upstream_location_preserves_newline_and_empty_span_edges() {
+        let raw = b"a\nbc\nd\r";
+        for (start, end, expected) in [
+            (0, 0, (0, 0, 1, 0, 0, 1)),
+            (0, 1, (0, 0, 1, 1, 0, 1)),
+            (1, 1, (1, 1, 1, 1, 1, 4)),
+            (1, 4, (1, 1, 1, 3, 1, 4)),
+            (4, 4, (2, 2, 1, 0, 0, 4)),
+            (4, 5, (2, 2, 1, 1, 0, 6)),
+            (5, 6, (2, 2, 2, 2, 0, 6)),
+            (0, 6, (0, 0, 1, 0, 0, 6)),
+        ] {
+            let location = upstream_location(&[1, 4], raw, start, end);
+            assert_eq!(
+                (
+                    location.start_line,
+                    location.end_line,
+                    location.start_column,
+                    location.end_column,
+                    location.start_line_index,
+                    location.end_line_index
+                ),
+                expected,
+                "span {start}..{end}",
+            );
+        }
+        assert_eq!(
+            upstream_location(&[], b"", 0, 0),
+            SourceLocation {
+                start_line: 1,
+                end_line: 1,
+                start_column: 1,
+                end_column: 0,
+                start_line_index: 0,
+                end_line_index: 0,
+            }
+        );
+        assert_eq!(
+            upstream_location(&[], b"ab", 0, 0),
+            SourceLocation {
+                start_line: 0,
+                end_line: 0,
+                start_column: 1,
+                end_column: 0,
+                start_line_index: 0,
+                end_line_index: 2,
+            }
+        );
+        assert_eq!(
+            upstream_location(&[], b"ab", 2, 2),
+            SourceLocation {
+                start_line: 1,
+                end_line: 1,
+                start_column: 1,
+                end_column: 0,
+                start_line_index: 0,
+                end_line_index: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn indexed_location_matches_the_previous_loop_for_all_small_spans() {
+        for length in 0..=8 {
+            for mask in 0..(1 << length) {
+                let raw = (0..length)
+                    .map(|index| {
+                        if mask & (1 << index) == 0 {
+                            b'x'
+                        } else {
+                            b'\n'
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let newlines = raw
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
+                    .collect::<Vec<_>>();
+                for start in 0..=length {
+                    for end in start..=length {
+                        assert_eq!(
+                            upstream_location(&newlines, &raw, start, end),
+                            linear_upstream_location(&newlines, &raw, start, end),
+                            "length {length}, newline mask {mask}, span {start}..{end}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Frozen previous helper used only as differential evidence. The explicit
+    // edge cases above specify expected results independently of this loop.
+    fn linear_upstream_location(
+        newlines: &[usize],
+        raw: &[u8],
+        start: usize,
+        end: usize,
+    ) -> SourceLocation {
+        let fallback;
+        let newlines = if newlines.is_empty() {
+            fallback = [raw.len()];
+            &fallback[..]
+        } else {
+            newlines
+        };
+        let mut previous = 0;
+        let mut location = SourceLocation {
+            start_line: 0,
+            end_line: 0,
+            start_column: 0,
+            end_column: 0,
+            start_line_index: 0,
+            end_line_index: 0,
+        };
+        let mut line_set = false;
+        let mut last_line = 0;
+        for (line_number, &newline) in newlines.iter().enumerate() {
+            last_line = line_number;
+            if previous <= start && start < newline {
+                line_set = true;
+                location.start_line = line_number;
+                location.end_line = line_number;
+                location.start_column = start - previous + 1;
+                location.start_line_index = previous;
+                location.end_line_index = newline;
+            }
+            if previous < end && end <= newline {
+                location.end_line = line_number;
+                location.end_column = end - previous;
+                location.end_line_index = newline;
+            }
+            previous = newline;
+        }
+        if !line_set {
+            location.start_column = start - previous + 1;
+            location.end_column = end - previous;
+            location.start_line = last_line + 1;
+            location.end_line = last_line + 1;
+            location.end_line_index = raw[end..]
+                .iter()
+                .position(|byte| matches!(byte, b'\n' | b'\r'))
+                .map_or(raw.len(), |distance| end + distance);
+        }
+        if end > location.end_line_index {
+            location.end_line_index = end;
+        }
+        location
     }
 
     #[test]

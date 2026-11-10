@@ -10,13 +10,17 @@
 // consumers.
 #![cfg_attr(not(test), allow(dead_code))]
 
+#[cfg(test)]
+mod differential;
+
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Write as _};
 
 use regex_automata::{
     Input, MatchKind,
-    nfa::thompson::{self, WhichCaptures, pikevm::PikeVM},
+    meta::Regex,
+    nfa::thompson::{self, WhichCaptures},
     util::syntax,
 };
 
@@ -26,6 +30,10 @@ const PATTERN_SIZE_LIMIT: usize = 1 << 20;
 const COMPILED_SIZE_LIMIT: usize = 256 << 20;
 /// Maximum estimated heap used by one `PikeVM` search working set.
 const PIKEVM_WORKING_SIZE_LIMIT: usize = 256 << 20;
+/// Per-direction lazy-DFA cache capacity; retained and grown on demand.
+const HYBRID_CACHE_CAPACITY: usize = 2 << 20;
+/// Optional one-pass DFA compilation limit. Larger expressions use fallback engines.
+const ONEPASS_SIZE_LIMIT: usize = 1 << 20;
 /// Conservative per-state words for sparse sets and epsilon-closure frames.
 const PIKEVM_STATE_WORDS: usize = 10;
 /// Parser nesting bound. Go's syntax parser separately caps repetition at 1000.
@@ -34,7 +42,7 @@ const GO_CAPTURE_NEST_LIMIT: usize = 999;
 const MAX_REPEAT: u32 = 1_000;
 const DEEP_COMPILE_THRESHOLD: usize = 200;
 const DEEP_COMPILE_STACK_SIZE: usize = 32 << 20;
-const BACKEND_VERSION: &str = "regex-automata-pikevm/^0.4.12;regex-syntax/^0.8.5";
+const BACKEND_VERSION: &str = "regex-automata-meta/^0.4.12;regex-syntax/^0.8.5";
 
 /// Private backend requirements retained for compatibility traceability.
 pub(crate) const fn backend_version() -> &'static str {
@@ -260,7 +268,7 @@ impl Error for GoRegexError {}
 #[derive(Clone)]
 pub(crate) struct GoRegex {
     source: Box<str>,
-    backend: PikeVM,
+    backend: Regex,
     capture_names: Vec<Option<Box<str>>>,
 }
 
@@ -323,33 +331,74 @@ impl GoRegex {
         })
     }
 
-    fn build_backend(pattern: &str) -> Result<PikeVM, GoRegexError> {
-        let backend = PikeVM::builder()
-            .configure(PikeVM::config().match_kind(MatchKind::LeftmostFirst))
-            .syntax(
-                syntax::Config::new()
-                    .unicode(true)
-                    .utf8(true)
-                    .nest_limit(NEST_LIMIT),
-            )
-            .thompson(
+    fn build_backend(pattern: &str) -> Result<Regex, GoRegexError> {
+        let hir = syntax::parse_with(
+            pattern,
+            &syntax::Config::new()
+                .unicode(true)
+                .utf8(true)
+                .nest_limit(NEST_LIMIT),
+        )
+        .map_err(|_| GoRegexError::Backend {
+            // Retain the former Thompson compiler's public error text.
+            message: "error parsing regex".into(),
+        })?;
+        // Meta does not expose its forward NFA. Preserve the existing exact
+        // fallback working-set rejection before allocating any search cache.
+        // Parse only once and drop this temporary NFA before meta compilation.
+        let nfa = thompson::NFA::compiler()
+            .configure(
                 thompson::Config::new()
                     .utf8(true)
                     .which_captures(WhichCaptures::All)
                     .nfa_size_limit(Some(COMPILED_SIZE_LIMIT)),
             )
-            .build(pattern)
+            .build_from_hir(&hir)
             .map_err(|error| GoRegexError::Backend {
                 message: error.to_string(),
             })?;
-        let estimated = pikevm_working_size(&backend);
+        let estimated = pikevm_working_size(&nfa);
         if estimated.is_none_or(|size| size > PIKEVM_WORKING_SIZE_LIMIT) {
             return Err(GoRegexError::WorkingSetTooLarge {
                 estimated,
                 limit: PIKEVM_WORKING_SIZE_LIMIT,
             });
         }
-        Ok(backend)
+        drop(nfa);
+        Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)
+    }
+
+    fn build_meta_backend(
+        hir: &regex_syntax::hir::Hir,
+        nfa_size_limit: usize,
+    ) -> Result<Regex, GoRegexError> {
+        let config = Regex::config()
+            .match_kind(MatchKind::LeftmostFirst)
+            .utf8_empty(true)
+            .which_captures(WhichCaptures::All)
+            .nfa_size_limit(Some(nfa_size_limit))
+            .hybrid_cache_capacity(HYBRID_CACHE_CAPACITY)
+            .onepass_size_limit(Some(ONEPASS_SIZE_LIMIT))
+            // Also prevent eager DFA construction under consumer feature unification.
+            .dfa(false);
+        let result = Regex::builder()
+            .configure(config.clone())
+            .build_from_hir(hir);
+        let result = match result {
+            Err(error) if error.size_limit() == Some(nfa_size_limit) => {
+                // The identical forward NFA already passed its limit.
+                // A larger reverse NFA must not reject a formerly accepted
+                // expression. Retry without building a reverse NFA; every
+                // NFA still obeys the same cap.
+                Regex::builder()
+                    .configure(config.hybrid(false))
+                    .build_from_hir(hir)
+            }
+            result => result,
+        };
+        result.map_err(|error| GoRegexError::Backend {
+            message: error.to_string(),
+        })
     }
 
     pub(crate) fn source(&self) -> &str {
@@ -370,17 +419,68 @@ impl GoRegex {
 
     pub(crate) fn is_match(&self, haystack: &[u8]) -> bool {
         let normalized = NormalizedHaystack::new(haystack);
-        let mut cache = self.backend.create_cache();
-        self.backend.find(&mut cache, normalized.bytes()).is_some()
+        self.backend.is_match(normalized.bytes())
     }
 
-    /// Returns all non-overlapping whole-match spans using Go/Rust leftmost-
-    /// first iteration semantics.
+    /// Eagerly returns whole-match spans without computing capture groups.
     pub(crate) fn find_all(&self, haystack: &[u8]) -> Vec<ByteSpan> {
-        self.captures_all(haystack)
-            .into_iter()
-            .map(|captures| captures.whole())
-            .collect()
+        self.find_all_normalized(&NormalizedHaystack::new(haystack))
+    }
+
+    pub(crate) fn find_all_normalized(&self, normalized: &NormalizedHaystack<'_>) -> Vec<ByteSpan> {
+        let bytes = normalized.bytes();
+        let end = bytes.len();
+        let mut position = 0;
+        let mut previous_match_end = None;
+        let mut results = Vec::new();
+        while position <= end {
+            let Some(whole) = self.backend.search(&Input::new(bytes).span(position..end)) else {
+                break;
+            };
+            let mut accept = true;
+            if whole.end() == position {
+                // Go suppresses an empty match at the preceding match end,
+                // then advances one decoded rune. Keep enumeration eager so
+                // the engine's cancellation and work checkpoints do not move.
+                if previous_match_end == Some(whole.start()) {
+                    accept = false;
+                }
+                let width = utf8_rune_width(&bytes[position..]);
+                if width == 0 {
+                    position = end + 1;
+                } else {
+                    position += width;
+                }
+            } else {
+                position = whole.end();
+            }
+            previous_match_end = Some(whole.end());
+            if accept {
+                results.push(normalized.original_span(ByteSpan {
+                    start: whole.start(),
+                    end: whole.end(),
+                }));
+            }
+        }
+        results
+    }
+
+    /// Finds only the first match, treating this slice as its own haystack.
+    pub(crate) fn captures(&self, haystack: &[u8]) -> Option<CaptureSpans> {
+        let normalized = NormalizedHaystack::new(haystack);
+        let mut captures = self.backend.create_captures();
+        self.backend
+            .search_captures(&Input::new(normalized.bytes()), &mut captures);
+        captures.get_group(0)?;
+        Some(CaptureSpans {
+            spans: (0..self.capture_names.len())
+                .map(|index| {
+                    captures
+                        .get_group(index)
+                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+                })
+                .collect(),
+        })
     }
 
     /// Returns every non-overlapping match and all of its capture spans.
@@ -391,15 +491,11 @@ impl GoRegex {
         let mut position = 0;
         let mut previous_match_end = None;
         let mut results = Vec::new();
-        let mut cache = self.backend.create_cache();
         let mut captures = self.backend.create_captures();
 
         while position <= end {
-            self.backend.captures(
-                &mut cache,
-                Input::new(bytes).span(position..end),
-                &mut captures,
-            );
+            self.backend
+                .search_captures(&Input::new(bytes).span(position..end), &mut captures);
             let Some(whole) = captures.get_group(0) else {
                 break;
             };
@@ -445,11 +541,10 @@ impl GoRegex {
 /// one epsilon-closure stack, and caller-visible capture slots. Its private
 /// state identifiers are no wider than `usize`; `PIKEVM_STATE_WORDS`
 /// deliberately overestimates the combined state-set and stack storage.
-fn pikevm_working_size(backend: &PikeVM) -> Option<usize> {
-    let nfa = backend.get_nfa();
+fn pikevm_working_size(nfa: &thompson::NFA) -> Option<usize> {
     let states = nfa.states().len();
     let slots = nfa.group_info().slot_len();
-    let scratch_slots = slots.max(backend.pattern_len().checked_mul(2)?);
+    let scratch_slots = slots.max(nfa.pattern_len().checked_mul(2)?);
     let table_slots = states.checked_mul(slots)?.checked_add(scratch_slots)?;
     let all_slot_words = table_slots.checked_mul(2)?.checked_add(slots)?;
     let state_words = states.checked_mul(PIKEVM_STATE_WORDS)?;
@@ -458,13 +553,13 @@ fn pikevm_working_size(backend: &PikeVM) -> Option<usize> {
         .checked_mul(std::mem::size_of::<usize>())
 }
 
-struct NormalizedHaystack<'a> {
+pub(crate) struct NormalizedHaystack<'a> {
     bytes: Cow<'a, [u8]>,
     original_boundaries: Option<Vec<usize>>,
 }
 
 impl<'a> NormalizedHaystack<'a> {
-    fn new(original: &'a [u8]) -> Self {
+    pub(crate) fn new(original: &'a [u8]) -> Self {
         if std::str::from_utf8(original).is_ok() {
             return Self {
                 bytes: Cow::Borrowed(original),
@@ -1710,7 +1805,7 @@ mod tests {
     fn identifies_the_private_backend_requirements() {
         assert_eq!(
             backend_version(),
-            "regex-automata-pikevm/^0.4.12;regex-syntax/^0.8.5"
+            "regex-automata-meta/^0.4.12;regex-syntax/^0.8.5"
         );
     }
 
@@ -1885,9 +1980,10 @@ mod tests {
     #[test]
     fn bounds_capture_heavy_pikevm_working_sets_before_cache_allocation() {
         let accepted = "()".repeat(512);
+        let reference = regex_automata::nfa::thompson::pikevm::PikeVM::new(&accepted).unwrap();
         let accepted = GoRegex::compile(&accepted).unwrap();
-        let cache = accepted.backend.create_cache();
-        assert!(super::pikevm_working_size(&accepted.backend).unwrap() >= cache.memory_usage());
+        let cache = reference.create_cache();
+        assert!(super::pikevm_working_size(reference.get_nfa()).unwrap() >= cache.memory_usage());
         assert!(accepted.is_match(b""));
 
         let rejected = "()".repeat(4_096);
@@ -1901,6 +1997,33 @@ mod tests {
         };
         assert!(estimated > limit);
         assert_eq!(limit, super::PIKEVM_WORKING_SIZE_LIMIT);
+    }
+
+    #[test]
+    fn reverse_nfa_limit_keeps_forward_compatible_patterns_searchable() {
+        use regex_automata::{Input, meta::Regex, nfa::thompson};
+
+        const LIMIT: usize = 20 << 10;
+        let hir = regex_automata::util::syntax::parse(r"\pL").unwrap();
+        thompson::NFA::compiler()
+            .configure(thompson::Config::new().nfa_size_limit(Some(LIMIT)))
+            .build_from_hir(&hir)
+            .expect("the forward Unicode-letter NFA fits the limit");
+        let error = Regex::builder()
+            .configure(Regex::config().nfa_size_limit(Some(LIMIT)).dfa(false))
+            .build_from_hir(&hir)
+            .expect_err("the reverse Unicode-letter NFA exceeds the limit");
+        assert_eq!(error.size_limit(), Some(LIMIT));
+
+        let backend = GoRegex::build_meta_backend(&hir, LIMIT).unwrap();
+        let mut captures = backend.create_captures();
+        backend.search_captures(&Input::new("1Ωx"), &mut captures);
+        assert_eq!(
+            captures.get_group(0),
+            Some(regex_automata::Span::from(1..3))
+        );
+        assert!(backend.is_match("1Ωx"));
+        assert!(!backend.is_match("123"));
     }
 
     #[test]

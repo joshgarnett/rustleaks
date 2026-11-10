@@ -63,6 +63,16 @@ The publishable core's relevant unsafe-bearing boundary is narrow:
 - proc-macro dependencies run at build time and are not linked into the
   runtime library.
 
+The private regex backend enables meta, hybrid, one-pass, bounded-backtracker
+and literal-performance paths in the existing `regex-automata 0.4.18` package.
+The [backend review](dependency-audits/regex-meta-backend.md) covers newly
+reachable hybrid transition indexing and the dependency's thread-aware cache
+pool. Owned code uses pooled safe search APIs and never mixes explicit caches
+between expressions. The pool retains scratch space across scans; concurrent
+searches and cloned engines can retain additional caches. No native code,
+build script, dependency version or license boundary is added. The existing
+unsafe package set remains a change signal, not proof of this feature review.
+
 The unpublished archive feature adds pure-Rust compression and container
 decoders. `lzma-rust2 0.25.0` has optimization disabled, `lz4_flex` selects
 checked and safe encode/decode features, and the retained in-tree bzip2, RAR,

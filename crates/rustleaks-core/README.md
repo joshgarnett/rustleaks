@@ -13,7 +13,7 @@ exact snapshot; changes remain possible during the alpha series but require an
 explicit reviewed baseline update.
 
 Regular-expression execution is hidden behind a private Go-compatible
-frontend and a direct PikeVM with downstream-compatible `regex-automata`
+frontend and a private pooled meta engine with downstream-compatible `regex-automata`
 `^0.4.12` and `regex-syntax` `^0.8.5` requirements. Unicode properties and
 case folding can therefore include additions after the pinned Go Unicode 15
 baseline. No backend type is part of the public API. Validated allowlists
