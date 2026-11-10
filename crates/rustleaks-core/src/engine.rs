@@ -276,7 +276,9 @@ impl Error for ScanTermination {}
 pub struct Engine {
     config: CompiledConfig,
     prefilter: Option<AhoCorasick>,
-    keyword_ids: BTreeMap<String, usize>,
+    keyword_count: usize,
+    /// Prefilter pattern indexes of each rule, aligned with `config.rules`.
+    rule_keyword_indexes: Vec<Box<[usize]>>,
 }
 
 /// Original-source helpers live for one fragment, including its decoded passes.
@@ -523,11 +525,12 @@ impl Engine {
         let mut encoded_segments = Vec::new();
         let mut decoder = Decoder::new();
         let mut decode_depth = 0;
+        let mut matched_keywords = vec![false; self.keyword_count];
         loop {
             if let Err(termination) = context.work() {
                 return finish_partial(findings, options, context.usage, termination);
             }
-            let mut matched_keywords = vec![false; self.keyword_ids.len()];
+            matched_keywords.fill(false);
             if let Some(prefilter) = &self.prefilter {
                 let normalized = go_lowercase_bytes(&current_raw);
                 for found in prefilter.find_overlapping_iter(&normalized) {
@@ -540,20 +543,20 @@ impl Engine {
 
             {
                 let regex_haystack = OnceCell::new();
-                for (rule_ordinal, rule) in self.config.rules.values().enumerate() {
+                for ((rule_ordinal, rule), keyword_indexes) in self
+                    .config
+                    .rules
+                    .values()
+                    .enumerate()
+                    .zip(&self.rule_keyword_indexes)
+                {
                     context.explanations.record(
                         Some(rule_ordinal),
                         decode_depth,
                         None,
                         ExplanationReason::RuleSelected,
                     );
-                    if !rule.keywords.is_empty()
-                        && !rule.keywords.iter().any(|keyword| {
-                            self.keyword_ids
-                                .get(keyword)
-                                .is_some_and(|index| matched_keywords[*index])
-                        })
-                    {
+                    if !keyword_gate_open(rule, keyword_indexes, &matched_keywords) {
                         context.explanations.record(
                             Some(rule_ordinal),
                             decode_depth,
@@ -1051,6 +1054,12 @@ impl Engine {
     }
 }
 
+/// `rule.keywords` decides whether a gate exists. `indexes` omits keywords with
+/// no prefilter pattern, so a rule with only empty keywords remains closed.
+fn keyword_gate_open(rule: &CompiledRule, indexes: &[usize], matched_keywords: &[bool]) -> bool {
+    rule.keywords.is_empty() || indexes.iter().any(|&index| matched_keywords[index])
+}
+
 fn commit_or_path_allowed(fragment: &Fragment, allowlists: &[CompiledAllowlist]) -> bool {
     // This preserves the pinned Windows-only guard: the original Windows path
     // is not enough to enter the early helper when file and commit are empty.
@@ -1307,7 +1316,19 @@ impl EngineBuilder {
         let keyword_ids = keywords
             .iter()
             .enumerate()
-            .map(|(index, keyword)| (keyword.clone(), index))
+            .map(|(index, keyword)| (keyword.as_str(), index))
+            .collect::<BTreeMap<_, _>>();
+        let keyword_count = keyword_ids.len();
+        let rule_keyword_indexes = self
+            .config
+            .rules
+            .values()
+            .map(|rule| {
+                rule.keywords
+                    .iter()
+                    .filter_map(|keyword| keyword_ids.get(keyword.as_str()).copied())
+                    .collect()
+            })
             .collect();
         let prefilter = if keywords.is_empty() {
             None
@@ -1324,7 +1345,8 @@ impl EngineBuilder {
         Ok(Engine {
             config: self.config,
             prefilter,
-            keyword_ids,
+            keyword_count,
+            rule_keyword_indexes,
         })
     }
 }
@@ -1866,6 +1888,276 @@ regex = '''(?s)\A\nZX9\n\z'''
             finding.match_range(),
             FindingRange::Exact(ByteRange::new(1, 4).unwrap())
         );
+    }
+
+    // Frozen per-rule map lookup, retained only as differential evidence.
+    fn frozen_keyword_gate_open(
+        rule: &CompiledRule,
+        keyword_ids: &BTreeMap<String, usize>,
+        matched_keywords: &[bool],
+    ) -> bool {
+        rule.keywords.is_empty()
+            || rule.keywords.iter().any(|keyword| {
+                keyword_ids
+                    .get(keyword)
+                    .is_some_and(|index| matched_keywords[*index])
+            })
+    }
+
+    fn prefilter_keyword_ids(config: &CompiledConfig) -> BTreeMap<String, usize> {
+        config
+            .keywords
+            .iter()
+            .filter(|keyword| !keyword.is_empty())
+            .cloned()
+            .enumerate()
+            .map(|(index, keyword)| (keyword, index))
+            .collect()
+    }
+
+    #[test]
+    fn keyword_indexes_match_the_frozen_lookup_for_every_matched_subset() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "a-two"
+regex = "A"
+keywords = ["Alpha", "beta"]
+[[rules]]
+id = "b-repeated"
+regex = "B"
+keywords = ["beta", "beta"]
+[[rules]]
+id = "c-none"
+regex = "C"
+[[rules]]
+id = "d-empty"
+regex = "D"
+keywords = [""]
+[[rules]]
+id = "e-empty-and-real"
+regex = "E"
+keywords = ["", "gamma"]
+[[rules]]
+id = "f-go-lowercase"
+regex = "F"
+keywords = ["\U0000212Aey", "\U00000130x"]
+"#,
+        );
+        let keyword_ids = prefilter_keyword_ids(&detector.config);
+        assert_eq!(
+            keyword_ids.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["alpha", "beta", "gamma", "ix", "key"]
+        );
+        assert_eq!(detector.keyword_count, keyword_ids.len());
+        assert_eq!(
+            detector.rule_keyword_indexes.len(),
+            detector.config.rules.len()
+        );
+        for mask in 0_u32..(1 << keyword_ids.len()) {
+            let matched = (0..keyword_ids.len())
+                .map(|index| mask & (1 << index) != 0)
+                .collect::<Vec<_>>();
+            for (rule, indexes) in detector
+                .config
+                .rules
+                .values()
+                .zip(&detector.rule_keyword_indexes)
+            {
+                assert_eq!(
+                    keyword_gate_open(rule, indexes, &matched),
+                    frozen_keyword_gate_open(rule, &keyword_ids, &matched),
+                    "rule {}, mask {mask:b}",
+                    rule.id,
+                );
+            }
+        }
+        // Stated independently of both implementations.
+        let rules = &detector.config.rules;
+        let indexes = |id: &str| {
+            let ordinal = rules.keys().position(|rule| rule == id).unwrap();
+            &*detector.rule_keyword_indexes[ordinal]
+        };
+        assert_eq!(indexes("a-two"), [0, 1]);
+        assert_eq!(indexes("b-repeated"), [1, 1]);
+        assert!(indexes("c-none").is_empty());
+        assert!(indexes("d-empty").is_empty());
+        assert_eq!(indexes("e-empty-and-real"), [2]);
+        assert_eq!(indexes("f-go-lowercase"), [4, 3]);
+        let none = [false; 5];
+        assert!(keyword_gate_open(
+            &rules["c-none"],
+            indexes("c-none"),
+            &none
+        ));
+        assert!(!keyword_gate_open(
+            &rules["d-empty"],
+            indexes("d-empty"),
+            &[true; 5]
+        ));
+    }
+
+    #[test]
+    fn default_rule_keyword_indexes_match_the_frozen_lookup() {
+        let detector = Engine::builder(ConfigLoader::new().load_default().unwrap())
+            .build()
+            .unwrap();
+        let keyword_ids = prefilter_keyword_ids(&detector.config);
+        assert_eq!(detector.keyword_count, keyword_ids.len());
+        assert_eq!(
+            detector.rule_keyword_indexes.len(),
+            detector.config.rules.len()
+        );
+        for (rule, indexes) in detector
+            .config
+            .rules
+            .values()
+            .zip(&detector.rule_keyword_indexes)
+        {
+            let expected = rule
+                .keywords
+                .iter()
+                .filter_map(|keyword| keyword_ids.get(keyword).copied())
+                .collect::<Vec<_>>();
+            assert_eq!(&**indexes, expected.as_slice(), "rule {}", rule.id);
+        }
+    }
+
+    fn explained_keyword_events(
+        detector: &Engine,
+        fragment: &Fragment,
+        options: &ScanOptions,
+    ) -> (ScanOutcome, Vec<(Option<usize>, usize, ExplanationReason)>) {
+        let (outcome, log) = detector.scan_fragment_explained(
+            fragment,
+            options,
+            &ScanControl::unlimited(),
+            ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+            false,
+        );
+        assert!(!log.is_truncated());
+        let events = log
+            .events()
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.reason(),
+                    ExplanationReason::RuleSelected
+                        | ExplanationReason::KeywordMatched
+                        | ExplanationReason::KeywordMissed
+                        | ExplanationReason::KeywordNotRequired
+                )
+            })
+            .map(|event| (event.rule_ordinal(), event.decoded_pass(), event.reason()))
+            .collect();
+        (outcome, events)
+    }
+
+    #[test]
+    fn keyword_gate_explanations_and_work_units_are_pinned() {
+        use ExplanationReason::{KeywordMatched, KeywordMissed, KeywordNotRequired, RuleSelected};
+
+        let detector = engine(
+            r#"
+[[rules]]
+id = "a-two"
+regex = "TOK"
+keywords = ["alpha", "beta"]
+[[rules]]
+id = "b-one"
+regex = "TOK"
+keywords = ["beta"]
+[[rules]]
+id = "c-none"
+regex = "TOK"
+[[rules]]
+id = "d-empty"
+regex = "TOK"
+keywords = [""]
+[[rules]]
+id = "e-miss"
+regex = "TOK"
+keywords = ["gamma"]
+"#,
+        );
+        let (outcome, events) = explained_keyword_events(
+            &detector,
+            &Fragment::new(b"beta TOK"),
+            &ScanOptions::default(),
+        );
+        assert!(outcome.is_complete());
+        assert_eq!(
+            events,
+            [
+                (Some(0), 0, RuleSelected),
+                (Some(0), 0, KeywordMatched),
+                (Some(1), 0, RuleSelected),
+                (Some(1), 0, KeywordMatched),
+                (Some(2), 0, RuleSelected),
+                (Some(2), 0, KeywordNotRequired),
+                (Some(3), 0, RuleSelected),
+                (Some(3), 0, KeywordMissed),
+                (Some(4), 0, RuleSelected),
+                (Some(4), 0, KeywordMissed),
+            ]
+        );
+        assert_eq!(
+            outcome
+                .findings()
+                .iter()
+                .map(|finding| finding.rule_id().as_bytes())
+                .collect::<Vec<_>>(),
+            [
+                b"a-two".as_slice(),
+                b"b-one".as_slice(),
+                b"c-none".as_slice()
+            ]
+        );
+        // One pass start, one emitted keyword, three admitted rules, and one
+        // content match for each admitted rule.
+        assert_eq!(outcome.usage().work_units(), 1 + 1 + 3 + 3);
+    }
+
+    #[test]
+    fn keyword_flags_from_one_pass_do_not_admit_a_later_decoded_pass() {
+        use ExplanationReason::{KeywordMatched, KeywordMissed, KeywordNotRequired, RuleSelected};
+
+        // The keyword exists only in the encoded spelling, so it is absent from
+        // the decoded pass where the rule's expression would otherwise match.
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"hello world, hello");
+        assert!(encoded.to_ascii_lowercase().contains("agvsbg8g"));
+        let detector = engine(
+            r#"
+[[rules]]
+id = "control"
+regex = "hello"
+[[rules]]
+id = "encoded-keyword"
+regex = "hello"
+keywords = ["agvsbg8g"]
+"#,
+        );
+        let options = ScanOptions::builder().max_decode_depth(1).build();
+        let (outcome, events) =
+            explained_keyword_events(&detector, &Fragment::new(encoded.as_bytes()), &options);
+        assert!(outcome.is_complete());
+        assert_eq!(
+            events,
+            [
+                (Some(0), 0, RuleSelected),
+                (Some(0), 0, KeywordNotRequired),
+                (Some(1), 0, RuleSelected),
+                (Some(1), 0, KeywordMatched),
+                (Some(0), 1, RuleSelected),
+                (Some(0), 1, KeywordNotRequired),
+                (Some(1), 1, RuleSelected),
+                (Some(1), 1, KeywordMissed),
+            ]
+        );
+        assert_eq!(outcome.findings().len(), 2);
+        for finding in outcome.findings() {
+            assert_eq!(finding.rule_id().as_bytes(), b"control");
+        }
     }
 
     #[test]
