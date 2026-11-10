@@ -358,6 +358,10 @@ The [comparison against main](validation/main-branch-performance.md) measures
 the complete change across 163 workloads, with separate reverse-order repeats
 and reported construction, Git, archive and startup costs.
 
+The [comparison against alpha.6](validation/alpha6-branch-performance.md)
+measures the combined improvements since the earlier PikeVM implementation,
+with its original dependency features and explicit startup and memory costs.
+
 ## CPU and retained-memory investigation
 
 The optional investigation commands use the same synthetic core fixtures with a

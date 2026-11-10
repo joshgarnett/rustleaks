@@ -17,6 +17,10 @@ This comparison measures the complete branch change. The
 [default-rule throughput](default-rule-throughput.md) records retain their
 original measured commit intervals.
 
+The [comparison against alpha.6](alpha6-branch-performance.md) covers the
+earlier starting point and includes the regex engine changes already present
+in this record's main baseline.
+
 The initial matrix records lower medians for all 117 steady-scan phases,
 116 of 117 first-scan phases, and all 16 directory traversal-and-detection
 phases and 16 runner phases. Engine construction and some Git and startup
