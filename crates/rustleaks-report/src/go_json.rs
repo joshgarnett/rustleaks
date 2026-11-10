@@ -221,24 +221,34 @@ fn write_usize(writer: &mut dyn Write, value: usize) -> Result<(), ReportError> 
     Ok(write!(writer, "{value}")?)
 }
 
+/// Holds the longest `f32` `Display` text, a sign, `0.`, up to 44 zeros, and the
+/// significant digits, and the shorter Go rendering derived from it.
+const FLOAT32_TEXT_CAPACITY: usize = 64;
+
 fn write_float32(writer: &mut dyn Write, value: f32) -> Result<(), ReportError> {
     if !value.is_finite() {
         return Err(ReportError::NonFiniteEntropy(value));
     }
-    let formatted = go_float32(value);
-    Ok(writer.write_all(formatted.as_bytes())?)
+    let mut text = [0_u8; FLOAT32_TEXT_CAPACITY];
+    let mut unused = text.as_mut_slice();
+    go_float32(&mut unused, value)?;
+    let length = FLOAT32_TEXT_CAPACITY - unused.len();
+    Ok(writer.write_all(&text[..length])?)
 }
 
-fn go_float32(value: f32) -> String {
+fn go_float32(output: &mut dyn Write, value: f32) -> Result<(), std::io::Error> {
     if value == 0.0 {
-        return if value.is_sign_negative() {
-            "-0".to_owned()
+        return output.write_all(if value.is_sign_negative() {
+            b"-0"
         } else {
-            "0".to_owned()
-        };
+            b"0"
+        });
     }
-    let shortest = value.to_string();
-    let shortest = shortest.as_str();
+    let mut shortest_text = [0_u8; FLOAT32_TEXT_CAPACITY];
+    let mut unused = shortest_text.as_mut_slice();
+    write!(unused, "{value}")?;
+    let length = FLOAT32_TEXT_CAPACITY - unused.len();
+    let shortest = std::str::from_utf8(&shortest_text[..length]).map_err(std::io::Error::other)?;
     let negative = shortest.starts_with('-');
     let unsigned = shortest.strip_prefix('-').unwrap_or(shortest);
     let (mantissa, exponent) = unsigned
@@ -247,65 +257,58 @@ fn go_float32(value: f32) -> String {
             (mantissa, exponent.parse::<i32>().unwrap_or(0))
         });
     let decimal = mantissa.find('.').unwrap_or(mantissa.len());
-    let mut digits = mantissa
-        .bytes()
-        .filter(|byte| *byte != b'.')
-        .collect::<Vec<_>>();
+    let mut digit_text = [0_u8; FLOAT32_TEXT_CAPACITY];
+    let digit_count = digit_text
+        .iter_mut()
+        .zip(mantissa.bytes().filter(|byte| *byte != b'.'))
+        .fold(0_usize, |count, (slot, byte)| {
+            *slot = byte;
+            count + 1
+        });
+    let mut digits = &digit_text[..digit_count];
     while digits.len() > 1 && digits.last() == Some(&b'0') {
-        digits.pop();
+        digits = &digits[..digits.len() - 1];
     }
     let leading = digits.iter().position(|byte| *byte != b'0').unwrap_or(0);
     let decimal_position = i32::try_from(decimal).unwrap_or(i32::MAX) + exponent
         - i32::try_from(leading).unwrap_or(i32::MAX);
-    if leading != 0 {
-        digits.drain(..leading);
-    }
+    let digits = &digits[leading..];
 
     let use_exponent = value.abs() < 1e-6_f32 || value.abs() >= 1e21_f32;
-    let mut output = String::new();
     if negative {
-        output.push('-');
+        output.write_all(b"-")?;
     }
     if use_exponent {
-        output.push(char::from(digits[0]));
+        output.write_all(&digits[..1])?;
         if digits.len() > 1 {
-            output.push('.');
-            output.extend(digits[1..].iter().map(|byte| char::from(*byte)));
+            output.write_all(b".")?;
+            output.write_all(&digits[1..])?;
         }
         let scientific_exponent = decimal_position - 1;
-        output.push('e');
+        output.write_all(b"e")?;
         if scientific_exponent >= 0 {
-            output.push('+');
+            output.write_all(b"+")?;
         }
-        output.push_str(&scientific_exponent.to_string());
-        return output;
+        return write!(output, "{scientific_exponent}");
     }
     if decimal_position <= 0 {
-        output.push_str("0.");
+        output.write_all(b"0.")?;
         for _ in decimal_position..0 {
-            output.push('0');
+            output.write_all(b"0")?;
         }
-        output.extend(digits.iter().map(|byte| char::from(*byte)));
+        output.write_all(digits)?;
     } else if usize::try_from(decimal_position).unwrap_or(usize::MAX) >= digits.len() {
-        output.extend(digits.iter().map(|byte| char::from(*byte)));
+        output.write_all(digits)?;
         for _ in digits.len()..usize::try_from(decimal_position).unwrap_or(digits.len()) {
-            output.push('0');
+            output.write_all(b"0")?;
         }
     } else {
         let decimal_position = usize::try_from(decimal_position).unwrap_or(0);
-        output.extend(
-            digits[..decimal_position]
-                .iter()
-                .map(|byte| char::from(*byte)),
-        );
-        output.push('.');
-        output.extend(
-            digits[decimal_position..]
-                .iter()
-                .map(|byte| char::from(*byte)),
-        );
+        output.write_all(&digits[..decimal_position])?;
+        output.write_all(b".")?;
+        output.write_all(&digits[decimal_position..])?;
     }
-    output
+    Ok(())
 }
 
 const INDENT_RUN_LEN: usize = 64;
@@ -438,8 +441,9 @@ const fn utf8_width(first: u8) -> usize {
     }
 }
 
-/// The per-byte writers replaced by run-based output, retained verbatim as the
-/// oracle for byte equivalence, with the adversarial inputs they are compared on.
+/// The per-byte writers and allocating float formatter replaced by run-based
+/// and stack-based output, retained verbatim as the oracle for byte equivalence,
+/// with the adversarial inputs they are compared on.
 #[cfg(test)]
 pub(crate) mod reference {
     use std::io::Write;
@@ -474,6 +478,85 @@ pub(crate) mod reference {
         b"\x80\xbf\x80",
         b"\xfe\xff",
     ];
+
+    pub(crate) fn allocating_go_float32(value: f32) -> String {
+        if value == 0.0 {
+            return if value.is_sign_negative() {
+                "-0".to_owned()
+            } else {
+                "0".to_owned()
+            };
+        }
+        let shortest = value.to_string();
+        let shortest = shortest.as_str();
+        let negative = shortest.starts_with('-');
+        let unsigned = shortest.strip_prefix('-').unwrap_or(shortest);
+        let (mantissa, exponent) = unsigned
+            .split_once(['e', 'E'])
+            .map_or((unsigned, 0_i32), |(mantissa, exponent)| {
+                (mantissa, exponent.parse::<i32>().unwrap_or(0))
+            });
+        let decimal = mantissa.find('.').unwrap_or(mantissa.len());
+        let mut digits = mantissa
+            .bytes()
+            .filter(|byte| *byte != b'.')
+            .collect::<Vec<_>>();
+        while digits.len() > 1 && digits.last() == Some(&b'0') {
+            digits.pop();
+        }
+        let leading = digits.iter().position(|byte| *byte != b'0').unwrap_or(0);
+        let decimal_position = i32::try_from(decimal).unwrap_or(i32::MAX) + exponent
+            - i32::try_from(leading).unwrap_or(i32::MAX);
+        if leading != 0 {
+            digits.drain(..leading);
+        }
+
+        let use_exponent = value.abs() < 1e-6_f32 || value.abs() >= 1e21_f32;
+        let mut output = String::new();
+        if negative {
+            output.push('-');
+        }
+        if use_exponent {
+            output.push(char::from(digits[0]));
+            if digits.len() > 1 {
+                output.push('.');
+                output.extend(digits[1..].iter().map(|byte| char::from(*byte)));
+            }
+            let scientific_exponent = decimal_position - 1;
+            output.push('e');
+            if scientific_exponent >= 0 {
+                output.push('+');
+            }
+            output.push_str(&scientific_exponent.to_string());
+            return output;
+        }
+        if decimal_position <= 0 {
+            output.push_str("0.");
+            for _ in decimal_position..0 {
+                output.push('0');
+            }
+            output.extend(digits.iter().map(|byte| char::from(*byte)));
+        } else if usize::try_from(decimal_position).unwrap_or(usize::MAX) >= digits.len() {
+            output.extend(digits.iter().map(|byte| char::from(*byte)));
+            for _ in digits.len()..usize::try_from(decimal_position).unwrap_or(digits.len()) {
+                output.push('0');
+            }
+        } else {
+            let decimal_position = usize::try_from(decimal_position).unwrap_or(0);
+            output.extend(
+                digits[..decimal_position]
+                    .iter()
+                    .map(|byte| char::from(*byte)),
+            );
+            output.push('.');
+            output.extend(
+                digits[decimal_position..]
+                    .iter()
+                    .map(|byte| char::from(*byte)),
+            );
+        }
+        output
+    }
 
     pub(crate) fn per_depth_write_indent(
         writer: &mut dyn Write,
@@ -558,13 +641,41 @@ mod tests {
     use std::io::{self, Write};
 
     use super::reference::{
-        adversarial_inputs, per_byte_write_string_body, per_depth_write_indent,
+        adversarial_inputs, allocating_go_float32, per_byte_write_string_body,
+        per_depth_write_indent,
     };
-    use super::{NEEDS_INSPECTION, go_float32, write_indent, write_string_body};
+    use super::{
+        FLOAT32_TEXT_CAPACITY, NEEDS_INSPECTION, write_float32, write_indent, write_string_body,
+    };
+    use crate::ReportError;
 
     /// Bytes that combine into every UTF-8 boundary and escape class.
     const INTERESTING: &[u8] =
         b"a<>&\"\\\n\x00\x08\x1f\x7f\x80\x9f\xa0\xa8\xa9\xbf\xc0\xc2\xe0\xe2\xed\xf0\xf4\xf5\xff";
+
+    fn go_float32(value: f32) -> String {
+        let mut output = Vec::new();
+        super::go_float32(&mut output, value).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    fn assert_float32_matches_reference(value: f32) {
+        if !value.is_finite() {
+            return;
+        }
+        let expected = allocating_go_float32(value);
+        let bits = value.to_bits();
+        assert_eq!(go_float32(value), expected, "bits {bits:#010x}");
+        let mut written = Vec::new();
+        write_float32(&mut written, value).unwrap();
+        assert_eq!(written, expected.as_bytes(), "bits {bits:#010x}");
+        let negated = -value;
+        assert_eq!(
+            go_float32(negated),
+            allocating_go_float32(negated),
+            "bits {bits:#010x} negated"
+        );
+    }
 
     fn body(input: &[u8]) -> Vec<u8> {
         let mut output = Vec::new();
@@ -814,6 +925,63 @@ mod tests {
                 assert_eq!(current.bytes, complete[..limit], "{limit}");
             }
         }
+    }
+
+    #[test]
+    fn float32_matches_the_allocating_formatter_across_the_bit_space() {
+        for bits in (0..=u32::MAX).step_by(65_521) {
+            assert_float32_matches_reference(f32::from_bits(bits));
+        }
+    }
+
+    #[test]
+    fn float32_matches_the_allocating_formatter_near_decimal_boundaries() {
+        for exponent in -45..=38 {
+            let center = 10_f32.powi(exponent).to_bits();
+            for offset in 0..=128 {
+                assert_float32_matches_reference(f32::from_bits(center.saturating_add(offset)));
+                assert_float32_matches_reference(f32::from_bits(center.saturating_sub(offset)));
+            }
+        }
+        for cutoff in [1e-6_f32, 1e21_f32, f32::MIN_POSITIVE, f32::MAX] {
+            let center = cutoff.to_bits();
+            for offset in 0..=4_096 {
+                assert_float32_matches_reference(f32::from_bits(center.saturating_add(offset)));
+                assert_float32_matches_reference(f32::from_bits(center.saturating_sub(offset)));
+            }
+        }
+        for bits in 0..=4_096 {
+            assert_float32_matches_reference(f32::from_bits(bits));
+        }
+    }
+
+    #[test]
+    fn float32_matches_the_allocating_formatter_on_entropy_values() {
+        for step in 0_u16..=32_768 {
+            assert_float32_matches_reference(f32::from(step) / 4_096.0);
+        }
+    }
+
+    #[test]
+    fn float32_rejects_non_finite_values_before_writing() {
+        let mut output = Vec::new();
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(matches!(
+                write_float32(&mut output, value),
+                Err(ReportError::NonFiniteEntropy(_))
+            ));
+        }
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn float32_text_capacity_exceeds_the_longest_display_form() {
+        let longest = [f32::MIN_POSITIVE, f32::from_bits(1), f32::MAX]
+            .iter()
+            .map(|value| (-value).to_string().len())
+            .max()
+            .unwrap();
+        assert!(longest < FLOAT32_TEXT_CAPACITY, "{longest}");
     }
 
     #[test]
