@@ -23,7 +23,9 @@ Cancellation is cooperative. It is polled between bounded owned work units,
 including between decoder candidates and encoding transforms. Regex searches,
 eager enumeration of all matches for one rule, and individual transforms remain
 indivisible. Match checkpoints follow the completed match list; changing the
-backend does not move these checkpoints or make iteration lazy. A partial
+backend does not move these checkpoints or make iteration lazy. Work-unit and
+finding-record budgets do not bound the temporary eager match-span list.
+Pair them with input and target byte limits. A partial
 outcome contains findings only from completed top-level rules and carries
 structured termination plus measured usage. Callers must not treat partial
 findings as a complete fragment result. The bounded source runner discards a

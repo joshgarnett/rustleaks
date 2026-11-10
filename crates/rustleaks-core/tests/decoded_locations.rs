@@ -281,6 +281,86 @@ fn malformed_utf8_keeps_exact_raw_match_and_capture_ranges() {
 }
 
 #[test]
+fn target_and_decoded_byte_limits_count_pass_bytes_before_utf8_normalization() {
+    use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanControl, ScanTermination};
+
+    let engine = engine(r"v=(AB)");
+    let raw = b"\xffv=AB".as_slice();
+    let encoded = b"\xff%76%3D%41%42".as_slice();
+    // The raw and decoded passes contain five bytes; replacing the invalid
+    // prefix with UTF-8 RuneError would require seven. Percent decoding turns
+    // the twelve-byte candidate into four ASCII bytes and preserves the prefix.
+    let expected = |input: &[u8], end| {
+        Finding::builder()
+            .rule_id("synthetic-location")
+            .location(Location::new(0, 0, 2, end).unwrap())
+            .line(input)
+            .match_text(b"v=AB".as_slice())
+            .secret(b"AB".as_slice())
+            .entropy(1.0)
+    };
+    let direct = expected(raw, 5)
+        .match_range(FindingRange::Exact(ByteRange::new(1, 5).unwrap()))
+        .secret_range(FindingRange::Exact(ByteRange::new(3, 5).unwrap()))
+        .build()
+        .unwrap();
+    let decoded = expected(encoded, 13)
+        .match_range(FindingRange::Unavailable)
+        .secret_range(FindingRange::Unavailable)
+        .tags(["decoded:percent", "decode-depth:1"])
+        .build()
+        .unwrap();
+    // Work counts: each pass and rule entry costs one; the decode attempt,
+    // encoding match, candidate transform and segment splice cost four more;
+    // an accepted match costs one. Charging decoded bytes is not a work unit.
+    for (input, depth, target, decoded_limit, expected_finding, work, bytes, termination) in [
+        (raw, 0, 5, 0, Some(&direct), 3, 0, None),
+        (raw, 0, 4, 0, None, 2, 0, None),
+        (encoded, 1, 5, 5, Some(&decoded), 9, 5, None),
+        (
+            encoded,
+            1,
+            5,
+            4,
+            None,
+            6,
+            0,
+            Some(ScanTermination::BudgetExceeded {
+                kind: ScanBudgetKind::DecodedBytes,
+                limit: 4,
+                consumed: 0,
+                requested: 5,
+            }),
+        ),
+        (encoded, 1, 4, 5, None, 8, 5, None),
+    ] {
+        let options = ScanOptions::builder()
+            .max_decode_depth(depth)
+            .max_target_bytes(Some(target))
+            .build();
+        let control = ScanControl::unlimited().with_budget(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(decoded_limit)
+                .max_work_units(9)
+                .max_finding_records(1),
+        );
+        let outcome = engine.scan_fragment_controlled(&Fragment::new(input), &options, &control);
+        assert_eq!(outcome.is_complete(), termination.is_none());
+        assert_eq!(outcome.termination(), termination.as_ref());
+        assert_eq!(outcome.usage().work_units(), work);
+        assert_eq!(outcome.usage().decoded_bytes(), bytes);
+        assert_eq!(
+            outcome.usage().finding_records(),
+            usize::from(expected_finding.is_some()),
+        );
+        assert_eq!(
+            outcome.findings(),
+            expected_finding.map_or(&[][..], std::slice::from_ref),
+        );
+    }
+}
+
+#[test]
 #[allow(clippy::too_many_lines)] // Keep the finite geometry/encoding matrix and its independent location assertions together.
 fn decoded_match_overlap_geometries_keep_original_envelopes_under_budgets() {
     use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanControl, ScanTermination};

@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 
-use rustleaks_core::Engine;
 use rustleaks_core::config::{ConfigLoader, ConfigOrigin, VirtualResolver};
 use rustleaks_core::model::{ByteRange, ByteText, FindingRange, Fragment, ScanOptions};
+use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
 fn assert_send_sync<T: Send + Sync>() {}
 
@@ -245,6 +245,70 @@ regex = '''(?s:.*?)'''
             }
         }
     });
+}
+
+#[test]
+fn warmed_engine_and_clone_reuse_caches_across_distinct_haystacks() {
+    let engine = build_engine(
+        r#"
+[[rules]]
+id = "token"
+regex = '''token=([A-Z]+|\p{Greek}+)'''
+secretGroup = 1
+"#,
+    );
+    type ExpectedSpans = (usize, usize, usize, usize);
+    let assert_case = |engine: &Engine, raw: &[u8], expected: &[ExpectedSpans]| {
+        // One pass, one rule entry, and one work unit per match candidate.
+        let work = expected.len() + 2;
+        let control = ScanControl::unlimited().with_budget(
+            ScanBudget::unlimited()
+                .max_work_units(work)
+                .max_finding_records(expected.len())
+                .max_decoded_bytes(0),
+        );
+        let outcome =
+            engine.scan_fragment_controlled(&Fragment::new(raw), &ScanOptions::default(), &control);
+        assert!(outcome.is_complete());
+        assert_eq!(outcome.termination(), None);
+        assert_eq!(outcome.usage().work_units(), work);
+        assert_eq!(outcome.usage().finding_records(), expected.len());
+        assert_eq!(outcome.usage().decoded_bytes(), 0);
+        assert_eq!(outcome.findings().len(), expected.len());
+        for (finding, &(start, end, secret_start, secret_end)) in
+            outcome.findings().iter().zip(expected)
+        {
+            assert_eq!(finding.rule_id().as_bytes(), b"token");
+            assert_eq!(
+                finding.match_range(),
+                FindingRange::Exact(ByteRange::new(start, end).unwrap())
+            );
+            assert_eq!(
+                finding.secret_range(),
+                FindingRange::Exact(ByteRange::new(secret_start, secret_end).unwrap())
+            );
+            assert_eq!(finding.match_text().as_bytes(), &raw[start..end]);
+            assert_eq!(finding.secret().as_bytes(), &raw[secret_start..secret_end]);
+        }
+    };
+
+    assert_case(&engine, b"token=ALPHA", &[(0, 11, 6, 11)]);
+    let cloned = engine.clone();
+    let cases: &[(&[u8], &[ExpectedSpans])] = &[
+        (
+            b"xx token=BETA yy token=GAMMA",
+            &[(3, 13, 9, 13), (17, 28, 23, 28)],
+        ),
+        (b"\xfftoken=DELTA\x80", &[(1, 12, 7, 12)]),
+        ("token=αβ".as_bytes(), &[(0, 10, 6, 10)]),
+        (b"nothing useful here", &[]),
+    ];
+    for _ in 0..3 {
+        for ((raw, expected), (other_raw, other_expected)) in cases.iter().zip(cases.iter().rev()) {
+            assert_case(&engine, raw, expected);
+            assert_case(&cloned, other_raw, other_expected);
+        }
+    }
 }
 
 #[test]
