@@ -179,6 +179,23 @@ the source package evidence and uniquely named evidence for all eight native
 targets. It does not rebuild release assets. Publication and GitHub release
 creation are separate protected jobs and require separate exact approvals.
 
+After GitHub publication, the same workflow runs a read-only verification
+matrix on all eight native targets. Each job downloads its seven public
+release assets, restores the original bundle evidence filenames, checks the
+exact version, candidate and target, and verifies checksums, archive contents,
+SBOM and provenance bindings, and the signed archive attestation. Only then
+does it extract and execute the published CLI for help and the representative
+redacted scan. Verification uses the existing Rust toolchain and maintenance
+verifier; it does not rebuild the CLI or request another release-environment
+approval. All eight jobs must succeed before reporting publication verification
+complete.
+
+If a native verification job fails, the release and tag may already exist.
+Investigate the failure and rerun only the failed verification jobs when a
+retry is appropriate. Do not rerun the publication job, recreate the tag, or
+replace public assets as an automatic recovery step. The incident procedure
+below applies to a discrepancy in the published contents.
+
 An initial crate publication may use only the separately approved short-lived
 bootstrap procedure above. Do not add a long-lived registry token as a
 fallback. Immediately after publication, verify the registry owner and

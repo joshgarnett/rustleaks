@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.0-alpha.7] - 2026-11-09
+
+- Use pooled meta regex searches and capture-free whole-match enumeration.
+- Reuse normalized fragment bytes, original newline indexes and compiled
+  capture metadata while retaining finding and budget behavior.
+- Add large-fragment throughput workloads, backend differential regressions
+  and documented cache, compile-time and memory limits.
+- Verify downloaded published CLI archives on all eight native targets.
+
 ## [0.1.0-alpha.6] - 2026-11-06
 
 - Add explicit native policy composition with bounded rule packs, collision checks,
@@ -94,3 +103,5 @@ version and exact source commit.
 [0.1.0-alpha.4]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.5]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.5
 [0.1.0-alpha.6]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.6
+
+[0.1.0-alpha.7]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.7

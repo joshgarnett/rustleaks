@@ -18,7 +18,7 @@ rustleaks_library(
     data = ["//compat:all"],
     deps = _DEPS,
     edition = "2024",
-    version = "0.1.0-alpha.6",
+    version = "0.1.0-alpha.7",
 )
 
 rust_binary(
@@ -31,7 +31,7 @@ rust_binary(
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.6",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.7",
     },
     srcs = glob(["src/**/*.rs"]),
     visibility = ["//visibility:public"],
@@ -47,7 +47,7 @@ rust_binary(
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.6",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.7",
     },
     srcs = glob(["src/**/*.rs"]),
     visibility = ["//visibility:public"],
@@ -90,7 +90,7 @@ rust_test(
     deps = all_crate_deps(normal = True, normal_dev = True) + _DEPS + [":rustleaks_compat"],
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.6",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.7",
     },
     visibility = ["//visibility:public"],
 )

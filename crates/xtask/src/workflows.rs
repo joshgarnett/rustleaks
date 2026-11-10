@@ -250,7 +250,203 @@ fn validate_github_release_workflow(source: &str) -> Result<(), String> {
             ));
         }
     }
+    validate_published_native_verification(source)
+}
+
+fn validate_published_native_verification(source: &str) -> Result<(), String> {
+    let job = workflow_job(source, "verify-native")?;
+    for forbidden in [
+        ": write",
+        "id-token:",
+        "environment:",
+        "continue-on-error:",
+        "if: always()",
+        "gh run download",
+        "gh release create",
+        "gh release upload",
+        "gh release delete",
+        "release-artifact prepare",
+        "bazelisk",
+    ] {
+        if job.contains(forbidden) {
+            return Err(format!(
+                "published native verifier contains forbidden boundary {forbidden:?}"
+            ));
+        }
+    }
+    for required in [
+        "    needs: release\n",
+        "      fail-fast: false\n",
+        "    permissions:\n      contents: read\n",
+        "          ref: ${{ inputs.candidate }}\n",
+        "          persist-credentials: false\n",
+        "      CANDIDATE: ${{ inputs.candidate }}\n",
+        "      EXPECTED_VERSION: ${{ inputs.version }}\n",
+        "      RELEASE_TARGET: ${{ matrix.target }}\n",
+        "      EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}\n",
+        "rustup toolchain install 1.95.0 --profile minimal",
+        "cargo fetch --locked",
+    ] {
+        if !job.contains(required) {
+            return Err(format!(
+                "published native verifier omits required boundary {required:?}"
+            ));
+        }
+    }
+    validate_published_native_matrix(job)?;
+    validate_published_native_steps(job)
+}
+
+fn workflow_job<'a>(source: &'a str, name: &str) -> Result<&'a str, String> {
+    let marker = format!("\n  {name}:\n");
+    if source.matches(&marker).count() != 1 {
+        return Err(format!("workflow must contain exactly one {name} job"));
+    }
+    let (_, tail) = source
+        .split_once(&marker)
+        .ok_or_else(|| format!("workflow omits {name} job"))?;
+    // A next job has exactly two leading spaces; nested YAML keys have more.
+    let end = tail
+        .match_indices("\n  ")
+        .find(|(index, _)| {
+            tail.as_bytes()
+                .get(index + 3)
+                .is_some_and(|byte| !byte.is_ascii_whitespace())
+        })
+        .map_or(tail.len(), |(index, _)| index);
+    Ok(&tail[..end])
+}
+
+fn validate_published_native_matrix(job: &str) -> Result<(), String> {
+    let matrix = job
+        .split_once("        include:\n")
+        .and_then(|(_, tail)| tail.split_once("    runs-on: ${{ matrix.runner }}\n"))
+        .map(|(matrix, _)| matrix)
+        .ok_or("published native verifier omits its explicit runner matrix")?;
+    let targets = [
+        ("ubuntu-24.04", "x86_64", "x86_64-unknown-linux-gnu"),
+        ("ubuntu-24.04-arm", "aarch64", "aarch64-unknown-linux-gnu"),
+        ("ubuntu-24.04", "x86_64", "x86_64-unknown-linux-musl"),
+        ("ubuntu-24.04-arm", "aarch64", "aarch64-unknown-linux-musl"),
+        ("macos-15-intel", "x86_64", "x86_64-apple-darwin"),
+        ("macos-15", "arm64", "aarch64-apple-darwin"),
+        ("windows-2025", "X64", "x86_64-pc-windows-msvc"),
+        ("windows-11-arm", "Arm64", "aarch64-pc-windows-msvc"),
+    ];
+    if matrix.matches("          - runner:").count() != targets.len() {
+        return Err("published native verifier must contain exactly eight targets".into());
+    }
+    for (runner, architecture, target) in targets {
+        let entry = format!(
+            "          - runner: {runner}\n            architecture: {architecture}\n            target: {target}\n"
+        );
+        if matrix.matches(&entry).count() != 1 {
+            return Err(format!(
+                "published native verifier omits exact native mapping for {target}"
+            ));
+        }
+    }
     Ok(())
+}
+
+fn workflow_step<'a>(job: &'a str, name: &str) -> Result<&'a str, String> {
+    let marker = format!("      - name: {name}\n");
+    if job.matches(&marker).count() != 1 {
+        return Err(format!(
+            "published native verifier must contain one {name} step"
+        ));
+    }
+    let (_, tail) = job
+        .split_once(&marker)
+        .ok_or_else(|| format!("published native verifier omits {name} step"))?;
+    Ok(tail.split("\n      - name:").next().unwrap_or(tail))
+}
+
+fn validate_published_native_steps(job: &str) -> Result<(), String> {
+    for platform in ["Linux and macOS", "Windows"] {
+        let verify_name = format!("Verify public bundle on {platform}");
+        let smoke_name = format!("Smoke public executable on {platform}");
+        let verify = workflow_step(job, &verify_name)?;
+        let smoke = workflow_step(job, &smoke_name)?;
+        if job.find(&verify_name) >= job.find(&smoke_name) {
+            return Err(format!("{platform} public smoke precedes verification"));
+        }
+        for required in [
+            "gh release download",
+            ".tar.gz",
+            ".cdx.json",
+            ".provenance.json",
+            ".attestation.jsonl",
+            ".SHA256SUMS",
+            ".reproducibility.json",
+            ".manifest.json",
+            "cargo xtask release-artifact verify",
+            "gh attestation verify",
+            "--signer-workflow",
+            "/.github/workflows/release-dry-run.yml",
+            "--source-digest",
+            "--source-ref refs/heads/main",
+            "--deny-self-hosted-runners",
+        ] {
+            if !verify.contains(required) {
+                return Err(format!("{platform} public verifier omits {required:?}"));
+            }
+        }
+        let condition = if platform == "Windows" {
+            "if: runner.os == 'Windows'"
+        } else {
+            "if: runner.os != 'Windows'"
+        };
+        if !verify.contains(condition) || !smoke.contains(condition) {
+            return Err(format!(
+                "{platform} public verifier has an incorrect platform guard"
+            ));
+        }
+        for required in published_native_bindings(platform) {
+            if !verify.contains(required) {
+                return Err(format!(
+                    "{platform} public verifier omits binding {required:?}"
+                ));
+            }
+        }
+        if verify.contains("tar -xzf") || verify.contains("--help") || smoke.contains("GH_TOKEN") {
+            return Err(format!(
+                "{platform} public verification and execution boundaries overlap"
+            ));
+        }
+        for required in [
+            "tar -xzf",
+            "--help",
+            "stdin --redact",
+            "published-smoke.json",
+            "REDACTED",
+        ] {
+            if !smoke.contains(required) {
+                return Err(format!("{platform} public smoke omits {required:?}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn published_native_bindings(platform: &str) -> &'static [&'static str] {
+    if platform == "Windows" {
+        &[
+            "if ($actual -ne $env:EXPECTED_ARCHITECTURE)",
+            "if ($manifest.release.version -cne $env:EXPECTED_VERSION)",
+            "if ($manifest.release.sourceCommit -cne $env:CANDIDATE)",
+            "if ($manifest.build.target -cne $env:RELEASE_TARGET)",
+            "--source-digest $env:CANDIDATE",
+        ]
+    } else {
+        &[
+            "test \"$(uname -m)\" = \"${EXPECTED_ARCHITECTURE}\"",
+            "test \"$(jq -r '.release.version' \"${bundle}/manifest.json\")\" = \"${EXPECTED_VERSION}\"",
+            "test \"$(jq -r '.release.sourceCommit' \"${bundle}/manifest.json\")\" = \"${CANDIDATE}\"",
+            "test \"$(jq -r '.build.target' \"${bundle}/manifest.json\")\" = \"${RELEASE_TARGET}\"",
+            "--source-digest \"${CANDIDATE}\"",
+        ]
+    }
 }
 
 fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
@@ -852,6 +1048,136 @@ mod tests {
     fn rejects_crate_publication_in_github_release_workflow() {
         let error = validate_github_release_workflow("cargo publish").unwrap_err();
         assert!(error.contains("forbidden trigger or credential"));
+    }
+
+    fn github_release_fixture() -> String {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        std::fs::read_to_string(root.join(".github/workflows/release.yml"))
+            .expect("read GitHub release workflow")
+    }
+
+    fn mutate_native_verifier(source: &str, before: &str, after: &str) -> String {
+        let marker = "\n  verify-native:\n";
+        let (publication, verification) = source.split_once(marker).unwrap();
+        assert!(
+            verification.contains(before),
+            "missing mutation input {before:?}"
+        );
+        format!(
+            "{publication}{marker}{}",
+            verification.replacen(before, after, 1)
+        )
+    }
+
+    #[test]
+    fn published_smoke_requires_every_native_mapping_inside_its_job() {
+        let source = github_release_fixture();
+        validate_github_release_workflow(&source).unwrap();
+        for before in [
+            "          - runner: windows-11-arm\n            architecture: Arm64\n            target: aarch64-pc-windows-msvc\n",
+            "            target: aarch64-unknown-linux-musl\n",
+            "            architecture: arm64\n",
+        ] {
+            let changed = mutate_native_verifier(&source, before, "");
+            assert!(validate_github_release_workflow(&changed).is_err());
+        }
+        let changed =
+            mutate_native_verifier(&source, "runner: windows-11-arm", "runner: windows-2025");
+        assert!(validate_github_release_workflow(&changed).is_err());
+    }
+
+    #[test]
+    fn published_smoke_requires_read_only_post_publication_execution() {
+        let source = github_release_fixture();
+        for (before, after) in [
+            ("    needs: release\n", ""),
+            ("contents: read", "contents: write"),
+            ("contents: read", "contents: read\n      id-token: write"),
+            (
+                "    needs: release\n",
+                "    needs: release\n    environment: release\n",
+            ),
+            (
+                "    needs: release\n",
+                "    needs: release\n    continue-on-error: true\n",
+            ),
+            ("gh release download", "gh run download"),
+        ] {
+            let changed = mutate_native_verifier(&source, before, after);
+            assert!(
+                validate_github_release_workflow(&changed).is_err(),
+                "{before}"
+            );
+        }
+        let changed = mutate_native_verifier(&source, "    needs: release\n", "");
+        let unrelated = format!("{changed}\n  unrelated:\n    needs: release\n");
+        assert!(validate_github_release_workflow(&unrelated).is_err());
+    }
+
+    #[test]
+    fn published_smoke_requires_each_platform_identity_and_attestation() {
+        let source = github_release_fixture();
+        for platform in ["Linux and macOS", "Windows"] {
+            for binding in super::published_native_bindings(platform) {
+                let changed = mutate_native_verifier(&source, binding, "missing-binding");
+                assert!(
+                    validate_github_release_workflow(&changed).is_err(),
+                    "{binding}"
+                );
+            }
+            let name = format!("Verify public bundle on {platform}");
+            let job = super::workflow_job(&source, "verify-native").unwrap();
+            let step = super::workflow_step(job, &name).unwrap();
+            for boundary in [
+                "gh release download",
+                "cargo xtask release-artifact verify",
+                "gh attestation verify",
+                "--signer-workflow",
+                "--source-ref refs/heads/main",
+                "--deny-self-hosted-runners",
+            ] {
+                let changed = source.replace(step, &step.replacen(boundary, "missing-boundary", 1));
+                assert!(
+                    validate_github_release_workflow(&changed).is_err(),
+                    "{name}: {boundary}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn published_smoke_cannot_run_before_verification_or_with_its_token() {
+        let source = github_release_fixture();
+        for platform in ["Linux and macOS", "Windows"] {
+            let verify_name = format!("      - name: Verify public bundle on {platform}\n");
+            let smoke_name = format!("      - name: Smoke public executable on {platform}\n");
+            let verify_start = source.find(&verify_name).unwrap();
+            let smoke_start = source.find(&smoke_name).unwrap();
+            let smoke_end = source[smoke_start + smoke_name.len()..]
+                .find("\n      - name:")
+                .map_or(source.len(), |offset| {
+                    smoke_start + smoke_name.len() + offset + 1
+                });
+            let changed = format!(
+                "{}{}{}{}",
+                &source[..verify_start],
+                &source[smoke_start..smoke_end],
+                &source[verify_start..smoke_start],
+                &source[smoke_end..],
+            );
+            assert!(validate_github_release_workflow(&changed).is_err());
+            let changed = source.replace(
+                &smoke_name,
+                &format!("{smoke_name}        env:\n          GH_TOKEN: ${{{{ github.token }}}}\n"),
+            );
+            assert!(validate_github_release_workflow(&changed).is_err());
+        }
+        let changed = mutate_native_verifier(
+            &source,
+            "          cargo xtask release-artifact verify \"${bundle}\"",
+            "          tar -xzf unverified.tar.gz\n          cargo xtask release-artifact verify \"${bundle}\"",
+        );
+        assert!(validate_github_release_workflow(&changed).is_err());
     }
 
     #[test]
