@@ -48,6 +48,10 @@ pub struct Scale {
 }
 
 impl Scale {
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "fixture constructors share one fallible signature"
+    )]
     pub fn full() -> Result<Self> {
         Ok(Self {
             limits: ArchiveLimits::default(),
@@ -104,6 +108,10 @@ struct RowInput<'a> {
     counts: Value,
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "row builders consume their borrowed inputs"
+)]
 fn row(input: RowInput<'_>) -> Result<Value> {
     Ok(json!({
         "phase": input.phase,
@@ -317,6 +325,10 @@ fn crc32(bytes: &[u8]) -> u32 {
         let mut table = [0_u32; 256];
         let mut index = 0;
         while index < 256 {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "table indices are below 256"
+            )]
             let mut crc = index as u32;
             let mut bit = 0;
             while bit < 8 {
@@ -490,6 +502,10 @@ impl BitWriter {
             self.accumulator = (self.accumulator << 1) | ((value >> shift) & 1);
             self.filled += 1;
             if self.filled == 8 {
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    reason = "eight accumulated bits fit one byte"
+                )]
                 self.output.push(self.accumulator as u8);
                 self.accumulator = 0;
                 self.filled = 0;
@@ -499,6 +515,10 @@ impl BitWriter {
 
     fn finish(mut self) -> Vec<u8> {
         if self.filled > 0 {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "fewer than eight accumulated bits fit one byte"
+            )]
             self.output
                 .push((self.accumulator << (8 - self.filled)) as u8);
         }
@@ -510,6 +530,10 @@ impl BitWriter {
 
 /// Builds `layers` TAR archives nested inside one another, the innermost one
 /// containing `secret.txt`. Layer names are `layer-<i>.tar`.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "fixture constructors share one fallible signature"
+)]
 fn nested_archive(layers: usize, payload: &[u8]) -> Result<Vec<u8>> {
     let mut inner = synthetic_tar(&[("secret.txt", payload)]);
     for layer in (1..layers).rev() {
@@ -524,6 +548,10 @@ fn nested(iterations: usize, scale: Scale, layers: usize) -> Result<Vec<Value>> 
     let archive = nested_archive(layers, &payload)?;
     let mut expected_path = "layer-0.tar".to_owned();
     for layer in 1..layers {
+        #[allow(
+            clippy::format_push_string,
+            reason = "this bounded fixture path is built outside any timer"
+        )]
         expected_path.push_str(&format!("!layer-{layer}.tar"));
     }
     expected_path.push_str("!secret.txt");
@@ -911,7 +939,7 @@ fn git_archive_blobs(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
             .strip_prefix(':')
             .and_then(|rest| rest.split_once(' '))
             .ok_or("malformed Git marks line")?;
-        shas[mark.parse::<usize>()? - 1] = sha.to_owned();
+        sha.clone_into(&mut shas[mark.parse::<usize>()? - 1]);
     }
     let mut expected = Vec::new();
     for (commit, sha) in shas.iter().enumerate() {

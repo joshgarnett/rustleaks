@@ -407,6 +407,10 @@ pub struct Baseline {
     index: Vec<usize>,
 }
 
+#[allow(
+    clippy::missing_fields_in_debug,
+    reason = "the derived index is not part of the observable Debug output"
+)]
 impl fmt::Debug for Baseline {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

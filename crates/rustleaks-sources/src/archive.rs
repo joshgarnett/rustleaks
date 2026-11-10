@@ -2104,7 +2104,7 @@ mod tests {
         zstd_block(last, ZSTD_RAW, payload.len(), payload)
     }
 
-    /// A frame with a Window_Descriptor; the window is `1024 << exponent`.
+    /// A frame with a `Window_Descriptor`; the window is `1024 << exponent`.
     fn zstd_windowed(exponent: u8, blocks: &[Vec<u8>]) -> Vec<u8> {
         let mut frame = ZSTD_MAGIC.to_vec();
         frame.push(0);
@@ -2145,6 +2145,10 @@ mod tests {
     type ZstdCase<'a> = (&'a str, &'a [u8], usize, Result<Vec<u8>, String>);
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one table of crafted frames and expected outcomes"
+    )]
     fn zstd_history_shrink_is_indistinguishable_from_full_limit_history() {
         let ab = [vec![b'a'; 600], vec![b'b'; 400]].concat();
         let one_block = zstd_windowed(0, &[zstd_raw(true, &ab)]);

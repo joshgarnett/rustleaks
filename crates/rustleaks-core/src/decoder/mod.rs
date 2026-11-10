@@ -276,29 +276,28 @@ impl Decoder {
             };
             let encoded_value = &data[encoded_range.clone()];
             let (decoded_value, decoded_in_output): (Arc<[u8]>, bool) =
-                match self.decoded.get(encoded_value) {
-                    Some(cached) => (Arc::clone(cached), false),
-                    None => {
-                        let in_output = !segments.is_empty();
-                        let value: Arc<[u8]> = if in_output {
-                            output.extend_from_slice(&data[copied_to..encoded_range.start]);
-                            copied_to = encoded_range.start;
-                            let value_start = output.len();
-                            candidate
-                                .encoding
-                                .append_decoded(encoded_value, &mut output);
-                            Arc::from(&output[value_start..])
-                        } else {
-                            scratch.clear();
-                            candidate
-                                .encoding
-                                .append_decoded(encoded_value, &mut scratch);
-                            Arc::from(scratch.as_slice())
-                        };
-                        self.decoded
-                            .insert(encoded_value.to_vec(), Arc::clone(&value));
-                        (value, in_output)
-                    }
+                if let Some(cached) = self.decoded.get(encoded_value) {
+                    (Arc::clone(cached), false)
+                } else {
+                    let in_output = !segments.is_empty();
+                    let value: Arc<[u8]> = if in_output {
+                        output.extend_from_slice(&data[copied_to..encoded_range.start]);
+                        copied_to = encoded_range.start;
+                        let value_start = output.len();
+                        candidate
+                            .encoding
+                            .append_decoded(encoded_value, &mut output);
+                        Arc::from(&output[value_start..])
+                    } else {
+                        scratch.clear();
+                        candidate
+                            .encoding
+                            .append_decoded(encoded_value, &mut scratch);
+                        Arc::from(scratch.as_slice())
+                    };
+                    self.decoded
+                        .insert(encoded_value.to_vec(), Arc::clone(&value));
+                    (value, in_output)
                 };
             if decoded_value.is_empty() {
                 continue;
@@ -1284,6 +1283,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::items_after_statements,
+        reason = "the token table reads best beside the grid that uses it"
+    )]
     fn classifier_matches_capture_groups_on_the_corpus_and_token_grid() {
         let decoder = Decoder::new();
         for_each_corpus_pass(|id, input, _predecessors, _output, _segments| {
@@ -1580,15 +1583,16 @@ mod tests {
 
     #[test]
     fn predecessor_mapping_matches_a_full_scan_on_generated_segments() {
+        fn advance(cursor: &mut isize, by: usize) -> isize {
+            *cursor += isize::try_from(by).unwrap();
+            *cursor
+        }
+
         let mut state = 0x853c_49e6_748f_ea9b_u64;
         let mut next = move |bound: usize| {
             state = state.wrapping_mul(0x5851_f42d_4c95_7f2d).wrapping_add(1);
             usize::try_from((state >> 33) % u64::try_from(bound).unwrap()).unwrap()
         };
-        fn advance(cursor: &mut isize, by: usize) -> isize {
-            *cursor += isize::try_from(by).unwrap();
-            *cursor
-        }
         for _ in 0..30_000 {
             let mut level = |predecessors: &Arc<[EncodedSegment]>| {
                 let mut encoded_cursor = 0isize;

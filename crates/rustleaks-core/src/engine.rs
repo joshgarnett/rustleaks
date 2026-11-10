@@ -3509,6 +3509,9 @@ paths = ['''C:\\secret\.txt$''']
 
     #[test]
     fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
+        // Findings, retained rule IDs, and polls with a counting signal.
+        type Case = (Vec<Finding>, Vec<&'static [u8]>, usize);
+
         let generic = || filter_probe(b"generic-a", 7, b"same", b"abc");
         let specific = || filter_probe(b"specific", 7, b"same", b"xxabcxx");
         let other_line = || filter_probe(b"specific", 8, b"same", b"xxabcxx");
@@ -3522,8 +3525,6 @@ paths = ['''C:\\secret\.txt$''']
                 .map(|finding| finding.rule_id().as_bytes().to_vec())
                 .collect::<Vec<_>>()
         };
-        // Findings, retained rule IDs, and polls with a counting signal.
-        type Case = (Vec<Finding>, Vec<&'static [u8]>, usize);
         let cases: Vec<Case> = vec![
             // Suppressor after the generic finding: 1 outer + 2 compared + 1 outer.
             (vec![generic(), specific()], vec![b"specific".as_slice()], 4),

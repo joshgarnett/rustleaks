@@ -827,7 +827,7 @@ fn admission_keywords(config: &CompiledConfig, count: usize) -> Fallible<Vec<&st
                 .rules()
                 .values()
                 .filter(|rule| rule.keywords().iter().any(|owned| owned == keyword))
-                .map(|rule| rule.id())
+                .map(rustleaks_core::config::CompiledRule::id)
                 .collect::<BTreeSet<_>>();
             (keyword, owners)
         })
@@ -920,7 +920,7 @@ impl Forbidden {
             .chain(
                 rule.allowlists()
                     .iter()
-                    .flat_map(|allowlist| allowlist.stop_words()),
+                    .flat_map(rustleaks_core::config::CompiledAllowlist::stop_words),
             )
             .filter(|word| word.bytes().all(|byte| allowed.contains(&byte)))
             .map(|word| word.as_bytes().to_vec())

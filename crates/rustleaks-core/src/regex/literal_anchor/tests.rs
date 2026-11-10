@@ -435,7 +435,7 @@ fn seeded_adversarial_synthetic_expressions_match_the_unanchored_path() {
         state ^= state << 13;
         state ^= state >> 7;
         state ^= state << 17;
-        state as usize
+        usize::try_from(state & 0xffff_ffff).unwrap()
     };
     for pattern in patterns {
         let regex = compile(pattern);

@@ -560,6 +560,10 @@ fn manifest_fingerprint(files: &[(String, Vec<u8>)]) -> String {
     fingerprint(&bytes)
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the fixture takes ownership of its generated file table"
+)]
 fn finish_directory_fixture(
     files: Vec<(String, Vec<u8>)>,
     fragments: Vec<Fragment>,
@@ -1135,7 +1139,7 @@ fn base_file_body(file: usize, edited: Option<(usize, &[u8])>) -> Vec<u8> {
                 body.push(b'\n');
             }
             _ => {
-                body.extend_from_slice(format!("unique base row {file:04} {line:04}\n").as_bytes())
+                body.extend_from_slice(format!("unique base row {file:04} {line:04}\n").as_bytes());
             }
         }
     }
@@ -1327,6 +1331,10 @@ struct GitFixture {
     scope_notes: &'static str,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fast-import stream and its generated oracle stay together"
+)]
 fn import_plan(plan: &GitPlan) -> Result<GitFixture> {
     let executable = representative_io::executable("RUSTLEAKS_PERF_GIT")?;
     let scratch = Scratch::new()?;
@@ -1368,7 +1376,7 @@ fn import_plan(plan: &GitPlan) -> Result<GitFixture> {
             .and_then(|rest| rest.split_once(' '))
             .ok_or("malformed Git marks line")?;
         let mark: usize = mark.parse()?;
-        shas[mark - 1] = sha.to_owned();
+        sha.clone_into(&mut shas[mark - 1]);
     }
     let mut fragments = Vec::new();
     let mut findings = Vec::new();

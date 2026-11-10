@@ -752,6 +752,10 @@ const CRC32C_POLYNOMIAL: u32 = 0x82f6_3b78;
 /// remainder of byte `i` followed by `k` zero bytes.
 static CRC32C_TABLES: [[u32; 256]; 8] = crc32c_tables();
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "table indices are below 256"
+)]
 const fn crc32c_tables() -> [[u32; 256]; 8] {
     let mut tables = [[0; 256]; 8];
     let mut index = 0;
