@@ -1,6 +1,6 @@
 //! Immutable raw-fragment detection engine.
 
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -278,11 +278,48 @@ pub struct Engine {
     keyword_ids: BTreeMap<String, usize>,
 }
 
+/// Original-source helpers live for one fragment, including its decoded passes.
+#[derive(Default)]
+struct OriginalFragmentContext {
+    newlines: OnceCell<Vec<usize>>,
+    marker: Cell<Option<(usize, usize, bool)>>,
+    tail: Cell<Option<(usize, usize)>>,
+}
+
+impl OriginalFragmentContext {
+    fn has_allow_marker(&self, line: &[u8], start: usize, end: usize) -> bool {
+        if let Some((previous_start, previous_end, matched)) = self.marker.get()
+            && previous_start == start
+            && previous_end == end
+        {
+            return matched;
+        }
+        let matched = contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
+            || contains_bytes(line, ALLOW_SIGNATURE);
+        self.marker.set(Some((start, end, matched)));
+        matched
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LineRegexResult<'a> {
+    allowlist: &'a CompiledAllowlist,
+    line: &'a [u8],
+    matched: bool,
+}
+
+/// Only the last line regex result per allowlist is retained within one rule pass.
+#[derive(Default)]
+struct LineAllowlistMemo<'a> {
+    global: Vec<Option<LineRegexResult<'a>>>,
+    rule: Vec<Option<LineRegexResult<'a>>>,
+}
+
 #[derive(Clone, Copy)]
 struct DetectionPass<'a> {
     current_raw: &'a [u8],
     encoded_segments: &'a [EncodedSegment],
-    original_newlines: &'a OnceCell<Vec<usize>>,
+    original: &'a OriginalFragmentContext,
     rule_ordinal: usize,
     decoded_pass: usize,
     candidate_ordinal: usize,
@@ -292,7 +329,7 @@ struct DetectionPass<'a> {
 struct RulePass<'a> {
     current_raw: &'a [u8],
     normalized: &'a OnceCell<NormalizedHaystack<'a>>,
-    original_newlines: &'a OnceCell<Vec<usize>>,
+    original: &'a OriginalFragmentContext,
     encoded_segments: &'a [EncodedSegment],
     inherited_from_finding: bool,
     rule_ordinal: usize,
@@ -481,7 +518,7 @@ impl Engine {
 
         let mut findings = Vec::new();
         let mut current_raw = fragment.content().as_bytes().to_vec();
-        let original_newlines = OnceCell::new();
+        let original = OriginalFragmentContext::default();
         let mut encoded_segments = Vec::new();
         let mut decoder = Decoder::new();
         let mut decode_depth = 0;
@@ -541,7 +578,7 @@ impl Engine {
                         RulePass {
                             current_raw: &current_raw,
                             normalized: &regex_haystack,
-                            original_newlines: &original_newlines,
+                            original: &original,
                             encoded_segments: &encoded_segments,
                             inherited_from_finding: fragment.inherited_from_finding(),
                             rule_ordinal,
@@ -588,12 +625,12 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)] // Rule decisions and their bounded annotations share the same control flow.
-    fn detect_rule(
-        &self,
-        fragment: &Fragment,
+    fn detect_rule<'a>(
+        &'a self,
+        fragment: &'a Fragment,
         options: &ScanOptions,
-        rule: &CompiledRule,
-        rule_pass: RulePass<'_>,
+        rule: &'a CompiledRule,
+        rule_pass: RulePass<'a>,
         context: &mut ScanContext<'_>,
     ) -> Result<Vec<Finding>, ScanTermination> {
         context.work()?;
@@ -677,13 +714,14 @@ impl Engine {
         let pass = DetectionPass {
             current_raw: rule_pass.current_raw,
             encoded_segments: rule_pass.encoded_segments,
-            original_newlines: rule_pass.original_newlines,
+            original: rule_pass.original,
             rule_ordinal: rule_pass.rule_ordinal,
             decoded_pass: rule_pass.decoded_pass,
             candidate_ordinal: 0,
         };
         let mut findings = Vec::new();
         let mut any_match = false;
+        let mut line_allowlists = LineAllowlistMemo::default();
         for (candidate_ordinal, span) in regex
             .find_all_normalized(
                 rule_pass
@@ -710,6 +748,7 @@ impl Engine {
                     ..pass
                 },
                 span,
+                &mut line_allowlists,
                 context,
             ) {
                 context.finding_record()?;
@@ -731,12 +770,12 @@ impl Engine {
         self.project_required_findings(fragment, options, rule, rule_pass, findings, context)
     }
 
-    fn project_required_findings(
-        &self,
-        fragment: &Fragment,
+    fn project_required_findings<'a>(
+        &'a self,
+        fragment: &'a Fragment,
         options: &ScanOptions,
-        primary_rule: &CompiledRule,
-        rule_pass: RulePass<'_>,
+        primary_rule: &'a CompiledRule,
+        rule_pass: RulePass<'a>,
         primary_findings: Vec<Finding>,
         context: &mut ScanContext<'_>,
     ) -> Result<Vec<Finding>, ScanTermination> {
@@ -818,14 +857,15 @@ impl Engine {
         Ok(completed)
     }
 
-    #[allow(clippy::too_many_lines)] // Preserve extraction, location and filtering order alongside their explanation codes.
-    fn content_finding(
-        &self,
-        fragment: &Fragment,
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Keep local caching separate from scan accounting and preserve decision order.
+    fn content_finding<'a>(
+        &'a self,
+        fragment: &'a Fragment,
         options: &ScanOptions,
-        rule: &CompiledRule,
-        pass: DetectionPass<'_>,
+        rule: &'a CompiledRule,
+        pass: DetectionPass<'a>,
         whole: ByteSpan,
+        line_allowlists: &mut LineAllowlistMemo<'a>,
         context: &mut ScanContext<'_>,
     ) -> Option<Finding> {
         let mut explain = |reason| {
@@ -866,18 +906,25 @@ impl Engine {
             };
         // Decoded passes project back onto the original fragment. Keep this
         // index scan-local and construct it only when a candidate needs it.
-        let newlines = pass.original_newlines.get_or_init(|| {
+        let newlines = pass.original.newlines.get_or_init(|| {
             original_raw
                 .iter()
                 .enumerate()
                 .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
                 .collect()
         });
-        let source = upstream_location(newlines, original_raw, adjusted_start, adjusted_end);
+        let source = upstream_location(
+            newlines,
+            original_raw,
+            adjusted_start,
+            adjusted_end,
+            &pass.original.tail,
+        );
         let line = original_raw.get(source.start_line_index..source.end_line_index)?;
         if options.honor_allow_markers()
-            && (contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
-                || contains_bytes(line, ALLOW_SIGNATURE))
+            && pass
+                .original
+                .has_allow_marker(line, source.start_line_index, source.end_line_index)
         {
             explain(ExplanationReason::AllowMarkerMatched);
             return None;
@@ -907,8 +954,15 @@ impl Engine {
             secret,
             allowlist_line,
             &self.config.allowlists,
-        ) || finding_allowed(fragment, trimmed, secret, allowlist_line, &rule.allowlists)
-        {
+            &mut line_allowlists.global,
+        ) || finding_allowed(
+            fragment,
+            trimmed,
+            secret,
+            allowlist_line,
+            &rule.allowlists,
+            &mut line_allowlists.rule,
+        ) {
             explain(ExplanationReason::AllowlistMatched);
             return None;
         }
@@ -1017,20 +1071,22 @@ fn commit_or_path_allowed(fragment: &Fragment, allowlists: &[CompiledAllowlist])
     })
 }
 
-fn finding_allowed(
+fn finding_allowed<'a>(
     fragment: &Fragment,
     full_match: &[u8],
     secret: &[u8],
-    current_line: &[u8],
-    allowlists: &[CompiledAllowlist],
+    current_line: &'a [u8],
+    allowlists: &'a [CompiledAllowlist],
+    line_cache: &mut Vec<Option<LineRegexResult<'a>>>,
 ) -> bool {
-    allowlists.iter().any(|allowlist| {
-        let target = match allowlist.regex_target {
-            RegexTarget::Secret | RegexTarget::Unknown(_) => secret,
-            RegexTarget::Match => full_match,
-            RegexTarget::Line => current_line,
+    allowlists.iter().enumerate().any(|(index, allowlist)| {
+        let regex = match allowlist.regex_target {
+            RegexTarget::Secret | RegexTarget::Unknown(_) => allowlist.regex_allowed(secret),
+            RegexTarget::Match => allowlist.regex_allowed(full_match),
+            RegexTarget::Line => {
+                line_regex_allowed(allowlist, current_line, index, allowlists.len(), line_cache)
+            }
         };
-        let regex = allowlist.regex_allowed(target);
         let stopword = allowlist.contains_stop_word(secret);
         match allowlist.condition {
             Condition::Or => regex || stopword,
@@ -1050,6 +1106,37 @@ fn finding_allowed(
             Condition::Unknown(_) => false,
         }
     })
+}
+
+fn line_regex_allowed<'a>(
+    allowlist: &'a CompiledAllowlist,
+    line: &'a [u8],
+    index: usize,
+    slots: usize,
+    cache: &mut Vec<Option<LineRegexResult<'a>>>,
+) -> bool {
+    if line.is_empty() || allowlist.regex_matcher.is_none() {
+        return false;
+    }
+    if cache.is_empty() {
+        cache.resize(slots, None);
+    }
+    let slot = &mut cache[index];
+    if let Some(previous) = slot
+        && std::ptr::eq(previous.allowlist, allowlist)
+        && std::ptr::eq(previous.line, line)
+    {
+        return previous.matched;
+    }
+    // Preserve this exact slice as the regex haystack, including its anchors
+    // and invalid-byte normalization. No secret-dependent predicate is cached.
+    let matched = allowlist.regex_allowed(line);
+    *slot = Some(LineRegexResult {
+        allowlist,
+        line,
+        matched,
+    });
+    matched
 }
 
 fn within_proximity(
@@ -1340,7 +1427,13 @@ struct SourceLocation {
     end_line_index: usize,
 }
 
-fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> SourceLocation {
+fn upstream_location(
+    newlines: &[usize],
+    raw: &[u8],
+    start: usize,
+    end: usize,
+    tail: &Cell<Option<(usize, usize)>>,
+) -> SourceLocation {
     let fallback;
     let newlines = if newlines.is_empty() {
         fallback = [raw.len()];
@@ -1359,10 +1452,7 @@ fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -
             start_column: start - previous + 1,
             end_column: end - previous,
             start_line_index: 0,
-            end_line_index: raw[end..]
-                .iter()
-                .position(|byte| matches!(byte, b'\n' | b'\r'))
-                .map_or(raw.len(), |distance| end + distance),
+            end_line_index: next_line_break(raw, end, tail),
         };
     }
 
@@ -1389,6 +1479,24 @@ fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -
     }
     location.end_line_index = location.end_line_index.max(end);
     location
+}
+
+fn next_line_break(raw: &[u8], from: usize, cache: &Cell<Option<(usize, usize)>>) -> usize {
+    if let Some((searched_from, next_break)) = cache.get()
+        && searched_from <= from
+        && from <= next_break
+    {
+        return next_break;
+    }
+    let next_break = raw[from..]
+        .iter()
+        .position(|byte| matches!(byte, b'\n' | b'\r'))
+        .map_or(raw.len(), |distance| from + distance);
+    // The interval is inclusive: starting at the break must return that break.
+    // Earlier or later queries rescan, so reordered rules and decoded spans
+    // cannot reuse a result from outside the covered original-source suffix.
+    cache.set(Some((from, next_break)));
+    next_break
 }
 
 fn trim_newlines(mut bytes: &[u8]) -> (usize, &[u8]) {
@@ -1537,6 +1645,15 @@ mod tests {
         Engine::builder(ConfigLoader::new().load_toml(config).unwrap())
             .build()
             .unwrap()
+    }
+
+    fn upstream_location(
+        newlines: &[usize],
+        raw: &[u8],
+        start: usize,
+        end: usize,
+    ) -> SourceLocation {
+        super::upstream_location(newlines, raw, start, end, &Cell::new(None))
     }
 
     #[test]
@@ -1730,6 +1847,335 @@ mod tests {
             location.end_line_index = end;
         }
         location
+    }
+
+    #[test]
+    fn cached_marker_results_use_exact_original_source_bounds() {
+        let context = OriginalFragmentContext::default();
+        let raw = b"Xrustleaks:allowY\nZgitleaks:allowQ\r\n\xff";
+        for (start, end, expected) in [(1, 16, true), (1, 15, false), (2, 16, false), (0, 0, false)]
+        {
+            assert_eq!(
+                context.has_allow_marker(&raw[start..end], start, end),
+                expected
+            );
+        }
+        for start in (0..=raw.len()).rev() {
+            for end in start..=raw.len() {
+                let line = &raw[start..end];
+                let expected = contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
+                    || contains_bytes(line, ALLOW_SIGNATURE);
+                assert_eq!(context.has_allow_marker(line, start, end), expected);
+                assert_eq!(context.has_allow_marker(line, start, end), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn tail_search_reuses_only_its_inclusive_covered_interval() {
+        let raw = b"\nAB\rCD\rEF";
+        let cache = Cell::new(None);
+        for (from, expected, interval) in [
+            (1, 3, (1, 3)),
+            (2, 3, (1, 3)),
+            (3, 3, (1, 3)),
+            (4, 6, (4, 6)),
+            (6, 6, (4, 6)),
+            (7, 9, (7, 9)),
+            (9, 9, (7, 9)),
+            (2, 3, (2, 3)),
+            (0, 0, (0, 0)),
+            (5, 6, (5, 6)),
+        ] {
+            assert_eq!(next_line_break(raw, from, &cache), expected);
+            assert_eq!(cache.get(), Some(interval));
+        }
+    }
+
+    #[test]
+    fn cached_locations_match_pinned_loop_for_reordered_crlf_and_empty_spans() {
+        for raw in [b"".as_slice(), b"abc\rdef", b"\nAB\rCD\rEF", b"a\r\nb\nc\r"] {
+            let newlines = raw
+                .iter()
+                .enumerate()
+                .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
+                .collect::<Vec<_>>();
+            let spans = (0..=raw.len())
+                .flat_map(|start| (start..=raw.len()).map(move |end| (start, end)))
+                .collect::<Vec<_>>();
+            let cache = Cell::new(None);
+            for &(start, end) in spans.iter().chain(spans.iter().rev()) {
+                assert_eq!(
+                    super::upstream_location(&newlines, raw, start, end, &cache),
+                    linear_upstream_location(&newlines, raw, start, end),
+                    "raw {raw:?}, span {start}..{end}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn marker_cache_retains_pinned_prefix_and_disabled_option_behavior() {
+        let detector = engine("[[rules]]\nid = 'probe'\nregex = 'ZX9'\n");
+        let disabled = ScanOptions::builder().honor_allow_markers(false).build();
+        for (raw, suppressed_count, offsets) in [
+            (b"ZX9 rustleaks:allow ZX9".as_slice(), 0, vec![0, 20]),
+            (b"rustleaks:allow\nZX9".as_slice(), 0, vec![16]),
+            (b"rustleaks:allow\nZX9\n".as_slice(), 1, vec![16]),
+        ] {
+            let fragment = Fragment::new(raw);
+            let honored = detector.scan_fragment(&fragment, &ScanOptions::default());
+            assert!(honored.is_complete());
+            assert_eq!(honored.findings().len(), suppressed_count);
+            assert_eq!(honored.usage().finding_records(), suppressed_count);
+            assert_eq!(honored.usage().work_units(), offsets.len() + 2);
+            let ignored = detector.scan_fragment(&fragment, &disabled);
+            assert!(ignored.is_complete());
+            assert_eq!(ignored.usage().work_units(), offsets.len() + 2);
+            assert_eq!(ignored.usage().finding_records(), offsets.len());
+            for (finding, start) in ignored.findings().iter().zip(offsets) {
+                assert_eq!(
+                    finding.match_range().exact().unwrap().as_range(),
+                    start..start + 3
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn line_regex_memo_preserves_slice_length_invalid_bytes_and_multiline_anchors() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''^\x{FFFD}x$''', '''(?s)^A\nB\r\n$''']
+"#,
+        );
+        let allowlist = &detector.config.allowlists[0];
+        let malformed = b"\xffxx";
+        let multiline = b"A\nB\r\n";
+        let mut cache = Vec::new();
+        for (line, expected) in [
+            (&malformed[..2], true),
+            (&malformed[..], false),
+            (&multiline[..], true),
+            (&multiline[..4], false),
+            (&malformed[..2], true),
+            (b"\xffx".as_slice(), true),
+        ] {
+            assert_eq!(
+                line_regex_allowed(allowlist, line, 0, 1, &mut cache),
+                expected
+            );
+            assert_eq!(allowlist.regex_allowed(line), expected);
+            assert!(std::ptr::eq(cache[0].unwrap().line, line));
+        }
+        let mut empty = Vec::new();
+        assert!(!line_regex_allowed(allowlist, b"", 0, 1, &mut empty));
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn line_regex_memo_keeps_global_and_rule_predicates_and_conditions_separate() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''RULE$''']
+stopwords = ["accepted"]
+commits = ["abc"]
+paths = ['''^ok$''']
+[[allowlists]]
+condition = "OR"
+regexTarget = "line"
+regexes = ['''GLOBAL$''']
+stopwords = ["override"]
+"#,
+        );
+        let global = &detector.config.allowlists;
+        let rule = &detector.config.rules["probe"].allowlists;
+        let good = Fragment::builder(b"").file_path("ok").commit("ABC").build();
+        let bad_path = Fragment::builder(b"")
+            .file_path("other")
+            .commit("ABC")
+            .build();
+        let bad_commit = Fragment::builder(b"")
+            .file_path("ok")
+            .commit("other")
+            .build();
+        let mut memo = LineAllowlistMemo::default();
+        for (fragment, secret, line, expected) in [
+            (
+                &good,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, true),
+            ),
+            (
+                &good,
+                b"other".as_slice(),
+                b"RULE".as_slice(),
+                (false, false),
+            ),
+            (
+                &bad_path,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, false),
+            ),
+            (
+                &bad_commit,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, false),
+            ),
+            (
+                &good,
+                b"override".as_slice(),
+                b"RULE".as_slice(),
+                (true, false),
+            ),
+            (
+                &good,
+                b"other".as_slice(),
+                b"GLOBAL".as_slice(),
+                (true, false),
+            ),
+            (
+                &good,
+                b"other".as_slice(),
+                b"none".as_slice(),
+                (false, false),
+            ),
+            (
+                &good,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, true),
+            ),
+        ] {
+            let global_result =
+                finding_allowed(fragment, b"ZX9", secret, line, global, &mut memo.global);
+            let rule_result = finding_allowed(fragment, b"ZX9", secret, line, rule, &mut memo.rule);
+            assert_eq!((global_result, rule_result), expected);
+            assert_eq!(
+                global_result,
+                uncached_finding_allowed(fragment, b"ZX9", secret, line, global)
+            );
+            assert_eq!(
+                rule_result,
+                uncached_finding_allowed(fragment, b"ZX9", secret, line, rule)
+            );
+        }
+        assert_eq!(memo.global.len(), 1);
+        assert_eq!(memo.rule.len(), 1);
+        assert!(!std::ptr::eq(
+            memo.global[0].unwrap().allowlist,
+            memo.rule[0].unwrap().allowlist
+        ));
+    }
+
+    #[test]
+    fn non_line_allowlists_do_not_allocate_line_memo_slots() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[allowlists]]
+regexTarget = "match"
+regexes = ['''ZX9''']
+"#,
+        );
+        let mut cache = Vec::new();
+        assert!(finding_allowed(
+            &Fragment::new(b""),
+            b"ZX9",
+            b"ZX9",
+            b"line",
+            &detector.config.allowlists,
+            &mut cache,
+        ));
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn decoded_line_memo_uses_decoded_slices_and_does_not_escape_a_scan() {
+        let config = r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''^ZX9(?: ZX9){3}$''']
+"#;
+        let detector = engine(config);
+        let decoded = b"ZX9 ZX9 ZX9 ZX9";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(decoded);
+        let fragment = Fragment::new(encoded.as_bytes());
+        let options = ScanOptions::builder().max_decode_depth(1).build();
+        let suppressed = detector.scan_fragment(&fragment, &options);
+        assert!(suppressed.is_complete());
+        assert!(suppressed.findings().is_empty());
+        assert_eq!(suppressed.usage().finding_records(), 0);
+        assert_eq!(suppressed.usage().decoded_bytes(), decoded.len());
+        let negative = engine(&config.replace("^ZX9(?: ZX9){3}$", "^ABSENT$"));
+        let visible = negative.scan_fragment(&fragment, &options);
+        assert!(visible.is_complete());
+        assert_eq!(visible.findings().len(), 4);
+        assert_eq!(visible.usage().finding_records(), 4);
+        for finding in visible.findings() {
+            assert_eq!(finding.match_text().as_bytes(), b"ZX9");
+            assert_eq!(finding.secret().as_bytes(), b"ZX9");
+            assert_eq!(finding.match_range(), FindingRange::Unavailable);
+            assert_eq!(finding.secret_range(), FindingRange::Unavailable);
+        }
+        let next = detector.scan_fragment(&Fragment::new(b"ZX9"), &ScanOptions::default());
+        assert!(next.is_complete());
+        assert_eq!(next.findings().len(), 1);
+    }
+
+    // Frozen uncached predicate used only for comparison with the local memo.
+    fn uncached_finding_allowed(
+        fragment: &Fragment,
+        full_match: &[u8],
+        secret: &[u8],
+        current_line: &[u8],
+        allowlists: &[CompiledAllowlist],
+    ) -> bool {
+        allowlists.iter().any(|allowlist| {
+            let target = match allowlist.regex_target {
+                RegexTarget::Secret | RegexTarget::Unknown(_) => secret,
+                RegexTarget::Match => full_match,
+                RegexTarget::Line => current_line,
+            };
+            let regex = allowlist.regex_allowed(target);
+            let stopword = allowlist.contains_stop_word(secret);
+            match allowlist.condition {
+                Condition::Or => regex || stopword,
+                Condition::And => {
+                    let commit = allowlist.commit_allowed(fragment.commit().as_bytes());
+                    let path = allowlist.path_allowed(fragment.file_path().as_bytes())
+                        || (!fragment.windows_file_path().is_empty()
+                            && allowlist.path_allowed(fragment.windows_file_path().as_bytes()));
+                    (!allowlist.commits.is_empty())
+                        .then_some(commit)
+                        .into_iter()
+                        .chain((!allowlist.paths.is_empty()).then_some(path))
+                        .chain((!allowlist.regexes.is_empty()).then_some(regex))
+                        .chain((!allowlist.stop_words.is_empty()).then_some(stopword))
+                        .all(|check| check)
+                }
+                Condition::Unknown(_) => false,
+            }
+        })
     }
 
     #[test]

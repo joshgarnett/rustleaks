@@ -92,6 +92,14 @@ and binary search for larger jumps; capture offsets use independent binary
 lookups. Each malformed byte still becomes one replacement rune, and all
 reported spans refer to the original bytes.
 
+Original-source helpers cache the last allow-marker result by exact byte range
+and reuse a covered suffix interval for trailing CR/LF lookup. Each rule pass
+lazily retains one line-regex result per evaluated allowlist slot, keyed by
+the exact slice and predicate identity. Secret-dependent criteria are still
+evaluated for every candidate. These caches expire within their fragment or
+rule pass, before decoded bytes are replaced; all work, cancellation and
+explanation checkpoints remain in their existing order.
+
 ## Private maintenance processes
 
 The optional fuzz, security and performance tooling uses process groups on
