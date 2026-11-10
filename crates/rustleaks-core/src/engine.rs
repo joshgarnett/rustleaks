@@ -2083,23 +2083,23 @@ mod tests {
             .map(|(pattern, ..)| (*pattern, GoRegex::compile(pattern).unwrap()))
             .collect::<BTreeMap<_, _>>();
         let mut scratches = BTreeMap::<&str, Option<CaptureScratch>>::new();
-        for &(pattern, matched, secret_group, expected) in cases.iter().chain(cases.iter().rev()) {
+        for &(pattern, matched, group_index, expected) in cases.iter().chain(cases.iter().rev()) {
             let regex = &regexes[pattern];
-            let label = format!("{pattern} on {matched:?}, group {secret_group}");
+            let label = format!("{pattern} on {matched:?}, group {group_index}");
             assert_eq!(
-                extracted_view(frozen_extract_secret(regex, matched, secret_group)),
+                extracted_view(frozen_extract_secret(regex, matched, group_index)),
                 expected,
                 "frozen {label}",
             );
             assert_eq!(
-                extracted_view(extract_secret(regex, matched, secret_group, &mut None)),
+                extracted_view(extract_secret(regex, matched, group_index, &mut None)),
                 expected,
                 "fresh {label}",
             );
             let shared = scratches.entry(pattern).or_default();
             for attempt in ["first", "repeated"] {
                 assert_eq!(
-                    extracted_view(extract_secret(regex, matched, secret_group, shared)),
+                    extracted_view(extract_secret(regex, matched, group_index, shared)),
                     expected,
                     "{attempt} shared {label}",
                 );
