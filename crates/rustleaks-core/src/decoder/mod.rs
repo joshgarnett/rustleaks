@@ -115,12 +115,14 @@ impl Encoding {
         }
     }
 
-    fn decode(self, encoded: &[u8]) -> Vec<u8> {
+    /// Appends the decoded form of `encoded` to `output`, or leaves `output`
+    /// unchanged when `encoded` does not decode to a value.
+    fn append_decoded(self, encoded: &[u8], output: &mut Vec<u8>) {
         match self {
-            Self::Percent => decode_percent(encoded),
-            Self::Unicode => decode_unicode(encoded),
-            Self::Hex => decode_hex(encoded),
-            Self::Base64 => decode_base64(encoded),
+            Self::Percent => append_percent(encoded, output),
+            Self::Unicode => append_unicode(encoded, output),
+            Self::Hex => append_hex(encoded, output),
+            Self::Base64 => append_base64(encoded, output),
         }
     }
 }
@@ -192,70 +194,108 @@ impl Decoder {
         }
     }
 
+    /// Decodes one pass, returning the complete output even when nothing
+    /// decoded. Production scans use [`Self::decode_controlled`].
     pub(crate) fn decode(
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
     ) -> (Vec<u8>, Vec<EncodedSegment>) {
-        match self.decode_controlled(data, predecessors, || Ok::<(), Infallible>(())) {
-            Ok(decoded) => decoded,
-            Err(never) => match never {},
+        let (output, segments) =
+            match self.decode_controlled(data, predecessors, || Ok::<(), Infallible>(())) {
+                Ok(decoded) => decoded,
+                Err(never) => match never {},
+            };
+        if segments.is_empty() {
+            (data.to_vec(), segments)
+        } else {
+            (output, segments)
         }
     }
 
+    /// Decodes one pass under the caller's checkpoint.
+    ///
+    /// When no segment decodes the returned buffer is empty and unallocated:
+    /// the caller retains `data` and only reads the buffer once `segments` is
+    /// non-empty.
     pub(crate) fn decode_controlled<E>(
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
         mut checkpoint: impl FnMut() -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
-        let mut segments = self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
+        let (output, mut segments) =
+            self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
         if segments.is_empty() {
-            return Ok((data.to_vec(), segments));
+            return Ok((output, segments));
         }
 
-        let mut result = Vec::with_capacity(data.len());
-        let mut encoded_start = 0;
-        for segment in &segments {
+        // The output was assembled alongside the candidates; these are the
+        // per-segment assembly checkpoints.
+        for _ in &segments {
             checkpoint()?;
-            let Some(encoded) = segment.encoded.as_usize() else {
-                continue;
-            };
-            result.extend_from_slice(&data[encoded_start..encoded.start]);
-            result.extend_from_slice(&segment.decoded_value);
-            encoded_start = encoded.end;
         }
-        result.extend_from_slice(&data[encoded_start..]);
         debug_assert!(segments_are_ordered_and_disjoint(&segments));
-        record_line_bounds(&mut segments, &result);
-        Ok((result, segments))
+        record_line_bounds(&mut segments, &output);
+        Ok((output, segments))
     }
 
+    /// Decodes every candidate into segments and the pass output.
+    ///
+    /// Decoded values always reach the cache and the segment as `Arc<[u8]>`.
+    /// Before the first accepted segment a miss decodes into `scratch` so a
+    /// pass that decodes nothing never copies `data`. After that a miss
+    /// decodes straight into `output`, since the bytes between candidates are
+    /// needed regardless of whether the candidate is accepted.
     fn find_encoded_segments<E>(
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
         checkpoint: &mut impl FnMut() -> Result<(), E>,
-    ) -> Result<Vec<EncodedSegment>, E> {
+    ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         if data.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         let predecessor_depth = predecessors.first().map_or(0, |segment| segment.depth);
         let predecessor_snapshot: Arc<[EncodedSegment]> = Arc::from(predecessors);
         let mut decoded_shift = 0isize;
         let mut segments = Vec::new();
+        let mut output = Vec::new();
+        let mut scratch = Vec::new();
+        // Bytes of `data` already represented in `output`.
+        let mut copied_to = 0;
         for candidate in self.find_encoding_matches(data, checkpoint)? {
             checkpoint()?;
             let Some(encoded_range) = candidate.range.as_usize() else {
                 continue;
             };
             let encoded_value = &data[encoded_range.clone()];
-            let decoded_value = self
-                .decoded
-                .entry(encoded_value.to_vec())
-                .or_insert_with(|| Arc::from(candidate.encoding.decode(encoded_value)))
-                .clone();
+            let (decoded_value, decoded_in_output): (Arc<[u8]>, bool) =
+                match self.decoded.get(encoded_value) {
+                    Some(cached) => (Arc::clone(cached), false),
+                    None => {
+                        let in_output = !segments.is_empty();
+                        let value: Arc<[u8]> = if in_output {
+                            output.extend_from_slice(&data[copied_to..encoded_range.start]);
+                            copied_to = encoded_range.start;
+                            let value_start = output.len();
+                            candidate
+                                .encoding
+                                .append_decoded(encoded_value, &mut output);
+                            Arc::from(&output[value_start..])
+                        } else {
+                            scratch.clear();
+                            candidate
+                                .encoding
+                                .append_decoded(encoded_value, &mut scratch);
+                            Arc::from(scratch.as_slice())
+                        };
+                        self.decoded
+                            .insert(encoded_value.to_vec(), Arc::clone(&value));
+                        (value, in_output)
+                    }
+                };
             if decoded_value.is_empty() {
                 continue;
             }
@@ -271,6 +311,14 @@ impl Decoder {
                     }
                 }
             }
+            if !decoded_in_output {
+                if segments.is_empty() {
+                    output.reserve(data.len());
+                }
+                output.extend_from_slice(&data[copied_to..encoded_range.start]);
+                output.extend_from_slice(&decoded_value);
+            }
+            copied_to = encoded_range.end;
             segments.push(EncodedSegment {
                 predecessors: Arc::clone(&predecessor_snapshot),
                 original: to_original(predecessors, candidate.range),
@@ -287,7 +335,10 @@ impl Decoder {
             decoded_shift += isize::try_from(decoded_value.len()).unwrap()
                 - isize::try_from(encoded_value.len()).unwrap();
         }
-        Ok(segments)
+        if !segments.is_empty() {
+            output.extend_from_slice(&data[copied_to..]);
+        }
+        Ok((output, segments))
     }
 
     /// Returns every encoding-regex match in order, one entry per match.
@@ -559,8 +610,9 @@ fn to_original(predecessors: &[EncodedSegment], decoded: StartEnd) -> StartEnd {
     to_original(&predecessors[0].predecessors, encoded)
 }
 
-fn decode_percent(encoded: &[u8]) -> Vec<u8> {
-    let mut decoded = Vec::with_capacity(encoded.len());
+fn append_percent(encoded: &[u8], output: &mut Vec<u8>) {
+    let value_start = output.len();
+    output.reserve(encoded.len());
     let mut index = 0;
     while index < encoded.len() {
         if encoded[index] == b'%'
@@ -572,67 +624,74 @@ fn decode_percent(encoded: &[u8]) -> Vec<u8> {
         {
             let byte = (high << 4) | low;
             if !is_printable_ascii(byte) {
-                return Vec::new();
+                output.truncate(value_start);
+                return;
             }
-            decoded.push(byte);
+            output.push(byte);
             index += 3;
             continue;
         }
-        decoded.push(encoded[index]);
+        output.push(encoded[index]);
         index += 1;
     }
-    decoded
 }
 
-fn decode_hex(encoded: &[u8]) -> Vec<u8> {
+fn append_hex(encoded: &[u8], output: &mut Vec<u8>) {
     if !encoded.len().is_multiple_of(2) || !encoded.iter().any(u8::is_ascii_digit) {
-        return Vec::new();
+        return;
     }
-    let mut decoded = Vec::with_capacity(encoded.len() / 2);
+    let value_start = output.len();
+    output.reserve(encoded.len() / 2);
     for pair in encoded.chunks_exact(2) {
         let (Some(high), Some(low)) = (hex_nibble(pair[0]), hex_nibble(pair[1])) else {
-            return Vec::new();
+            output.truncate(value_start);
+            return;
         };
         let byte = (high << 4) | low;
         if !is_printable_ascii(byte) {
-            return Vec::new();
+            output.truncate(value_start);
+            return;
         }
-        decoded.push(byte);
+        output.push(byte);
     }
-    decoded
 }
 
-fn decode_base64(encoded: &[u8]) -> Vec<u8> {
+fn append_base64(encoded: &[u8], output: &mut Vec<u8>) {
     if !encoded
         .iter()
         .any(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'))
     {
-        return Vec::new();
+        return;
     }
+    let value_start = output.len();
     for engine in [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64] {
-        if let Ok(decoded) = engine.decode(encoded)
-            && decoded.iter().copied().all(is_printable_ascii)
+        if engine.decode_vec(encoded, output).is_ok()
+            && output[value_start..]
+                .iter()
+                .copied()
+                .all(is_printable_ascii)
         {
-            return decoded;
+            return;
         }
+        // `decode_vec` leaves a conservatively sized, partly written tail on
+        // failure, so every rejected attempt restores the prior length.
+        output.truncate(value_start);
     }
-    Vec::new()
 }
 
-fn decode_unicode(encoded: &[u8]) -> Vec<u8> {
+fn append_unicode(encoded: &[u8], output: &mut Vec<u8>) {
     if encoded.starts_with(b"U+") {
-        return encoded
+        for digits in encoded
             .split(u8::is_ascii_whitespace)
             .filter(|field| !field.is_empty())
             .filter_map(|field| field.strip_prefix(b"U+"))
             .filter(|digits| digits.len() >= 4)
-            .fold(Vec::new(), |mut decoded, digits| {
-                push_unicode_escape(&mut decoded, &digits[..4]);
-                decoded
-            });
+        {
+            push_unicode_escape(output, &digits[..4]);
+        }
+        return;
     }
 
-    let mut decoded = Vec::new();
     let mut index = 0;
     while index < encoded.len() {
         let slash_count = if encoded[index..].starts_with(b"\\\\") {
@@ -653,10 +712,9 @@ fn decode_unicode(encoded: &[u8]) -> Vec<u8> {
         let Some(digits) = encoded.get(digits_start..digits_start + 4) else {
             break;
         };
-        push_unicode_escape(&mut decoded, digits);
+        push_unicode_escape(output, digits);
         index = digits_start + 4;
     }
-    decoded
 }
 
 fn push_unicode_escape(output: &mut Vec<u8>, digits: &[u8]) {
@@ -762,6 +820,28 @@ mod tests {
         range: [usize; 2],
         adjusted: [usize; 2],
         overlap_segment_indices: Vec<usize>,
+    }
+
+    fn decoded_with(append: fn(&[u8], &mut Vec<u8>), encoded: &[u8]) -> Vec<u8> {
+        let mut output = Vec::new();
+        append(encoded, &mut output);
+        output
+    }
+
+    fn decode_percent(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_percent, encoded)
+    }
+
+    fn decode_hex(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_hex, encoded)
+    }
+
+    fn decode_base64(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_base64, encoded)
+    }
+
+    fn decode_unicode(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_unicode, encoded)
     }
 
     fn oracle_bytes(encoded: &str) -> Vec<u8> {
@@ -1266,6 +1346,139 @@ mod tests {
             }
             assert_classifier_matches_captures(&decoder, &haystack, "generated");
         }
+    }
+
+    fn controlled_output(decoder: &mut Decoder, data: &[u8]) -> (Vec<u8>, Vec<EncodedSegment>) {
+        decoder
+            .decode_controlled(data, &[], || Ok::<(), Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    /// The pre-merge assembly, kept as the expected output for a segment list.
+    fn output_from_segments(data: &[u8], segments: &[EncodedSegment]) -> Vec<u8> {
+        let mut result = Vec::with_capacity(data.len());
+        let mut encoded_start = 0;
+        for segment in segments {
+            let encoded = segment.encoded.as_usize().unwrap();
+            result.extend_from_slice(&data[encoded_start..encoded.start]);
+            result.extend_from_slice(&segment.decoded_value);
+            encoded_start = encoded.end;
+        }
+        result.extend_from_slice(&data[encoded_start..]);
+        result
+    }
+
+    #[test]
+    fn a_pass_that_decodes_nothing_returns_an_unallocated_buffer() {
+        for data in [
+            b"no candidates here".as_slice(),
+            b"AAAAAAAAAAAAAAAA AAAAAAAAAAAAAAAA",
+            b"",
+        ] {
+            let mut decoder = Decoder::new();
+            let (output, segments) = controlled_output(&mut decoder, data);
+            assert!(segments.is_empty(), "{data:?}");
+            assert_eq!(output.capacity(), 0, "{data:?}");
+
+            let (full, segments) = Decoder::new().decode(data, &[]);
+            assert!(segments.is_empty(), "{data:?}");
+            assert_eq!(full, data, "{data:?}");
+        }
+    }
+
+    #[test]
+    fn output_assembly_keeps_rejected_candidates_and_reuses_cached_values() {
+        // In order: a rejected candidate before the first accepted segment, a
+        // decode miss in the first and second accepted positions, a rejected
+        // candidate between accepted segments, and a cache hit last.
+        let data = b"AAAAAAAAAAAAAAAA AB QUJDREVGR0hJSktMTU5PUA== CD dGhpcy1pcy0xMjM0 EF AAAAAAAAAAAAAAAA GH dGhpcy1pcy0xMjM0";
+        let mut decoder = Decoder::new();
+        let (output, segments) = decoder.decode(data, &[]);
+
+        assert_eq!(
+            output,
+            b"AAAAAAAAAAAAAAAA AB ABCDEFGHIJKLMNOP CD this-is-1234 EF AAAAAAAAAAAAAAAA GH this-is-1234"
+        );
+        assert_eq!(output, output_from_segments(data, &segments));
+        assert_eq!(segments.len(), 3);
+
+        // Hand-computed offsets: the first value decodes 24 bytes into 16.
+        assert_eq!(segments[0].encoded, StartEnd { start: 20, end: 44 });
+        assert_eq!(segments[0].decoded, StartEnd { start: 20, end: 36 });
+        assert_eq!(segments[1].encoded, StartEnd { start: 48, end: 64 });
+        assert_eq!(segments[1].decoded, StartEnd { start: 40, end: 52 });
+        assert_eq!(
+            segments[2].encoded,
+            StartEnd {
+                start: 88,
+                end: 104
+            }
+        );
+        assert_eq!(segments[2].decoded, StartEnd { start: 76, end: 88 });
+        assert_eq!(segments[1].decoded_value(), b"this-is-1234");
+        assert!(Arc::ptr_eq(
+            &segments[1].decoded_value,
+            &segments[2].decoded_value
+        ));
+
+        assert_eq!(
+            rust_cache(&decoder),
+            vec![
+                (b"AAAAAAAAAAAAAAAA".to_vec(), Vec::new()),
+                (
+                    b"QUJDREVGR0hJSktMTU5PUA==".to_vec(),
+                    b"ABCDEFGHIJKLMNOP".to_vec()
+                ),
+                (b"dGhpcy1pcy0xMjM0".to_vec(), b"this-is-1234".to_vec()),
+            ]
+        );
+
+        // The first accepted value still decodes when no candidate preceded it.
+        let (output, segments) = Decoder::new().decode(b"QUJDREVGR0hJSktMTU5PUA== tail", &[]);
+        assert_eq!(output, b"ABCDEFGHIJKLMNOP tail");
+        assert_eq!(segments[0].decoded, StartEnd { start: 0, end: 16 });
+    }
+
+    #[test]
+    fn assembled_output_matches_the_segments_across_the_corpus() {
+        for_each_corpus_pass(|id, input, _predecessors, output, segments| {
+            assert_eq!(output, output_from_segments(input, segments), "{id}");
+        });
+        for case in LINE_BOUND_CASES {
+            let (output, segments) = Decoder::new().decode(case, &[]);
+            assert_eq!(output, output_from_segments(case, &segments), "{case:?}");
+        }
+    }
+
+    #[test]
+    fn rejected_values_leave_the_shared_buffer_unchanged() {
+        let seeded = |append: fn(&[u8], &mut Vec<u8>), encoded: &[u8]| {
+            let mut output = b"seed".to_vec();
+            append(encoded, &mut output);
+            output
+        };
+
+        // Rejections that happen after earlier bytes were already written.
+        assert_eq!(seeded(append_percent, b"%41abc%00"), b"seed");
+        assert_eq!(seeded(append_hex, b"41424344454647484900"), b"seed");
+        // Rejections detected before any byte is written.
+        assert_eq!(
+            seeded(append_hex, b"abcdefabcdefabcdefabcdefabcdefab"),
+            b"seed"
+        );
+        assert_eq!(seeded(append_base64, b"AAAAAAAAAAAAAAAA"), b"seed");
+        // Base64 failures that occur after `decode_vec` has grown the buffer.
+        assert_eq!(seeded(append_base64, b"QUJD1!UJD"), b"seed");
+        assert_eq!(seeded(append_base64, b"gIGCg4SFhoeIiYqLjI2Ojw=="), b"seed");
+        // Accepted values append after the seed.
+        assert_eq!(seeded(append_percent, b"%41"), b"seedA");
+        assert_eq!(seeded(append_hex, b"41"), b"seedA");
+        assert_eq!(
+            seeded(append_base64, b"QUJDREVGR0hJSktMTU5PUA=="),
+            b"seedABCDEFGHIJKLMNOP"
+        );
+        // Unicode escapes keep the prefix they could decode.
+        assert_eq!(seeded(append_unicode, b"\\u0041\\x"), b"seedA");
     }
 
     #[test]
