@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::mpsc::{self, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -51,6 +52,7 @@ pub struct SourceOutcome {
 struct SourceStatistics {
     scanned_bytes: u64,
     unique_commits: Vec<ByteText>,
+    commit_index: HashSet<ByteText>,
     maximum_unique_commits: usize,
 }
 
@@ -61,6 +63,7 @@ impl Default for SourceStatistics {
         Self {
             scanned_bytes: 0,
             unique_commits: Vec::new(),
+            commit_index: HashSet::new(),
             maximum_unique_commits: MAX_UNIQUE_COMMITS,
         }
     }
@@ -76,27 +79,46 @@ impl SourceStatistics {
             .checked_add(fragment_bytes)
             .ok_or_else(|| CallbackError::new("source scanned-byte count overflowed"))?;
         if !fragment.commit().is_empty() {
-            let commit = fragment.commit();
-            if !self.unique_commits.iter().any(|known| known == commit) {
-                if self.unique_commits.len() == self.maximum_unique_commits {
-                    return Err(CallbackError::new(format!(
-                        "source unique commit count exceeds the {}-commit safety limit",
-                        self.maximum_unique_commits
-                    )));
-                }
-                self.unique_commits.try_reserve(1).map_err(|error| {
-                    CallbackError::new(format!("could not retain source commit: {error}"))
-                })?;
-                let mut bytes = Vec::new();
-                bytes.try_reserve_exact(commit.len()).map_err(|error| {
-                    CallbackError::new(format!("could not copy source commit: {error}"))
-                })?;
-                bytes.extend_from_slice(commit.as_bytes());
-                self.unique_commits.push(ByteText::new(bytes));
-            }
+            self.observe_commit(fragment.commit())?;
         }
         Ok(())
     }
+
+    fn observe_commit(&mut self, commit: &ByteText) -> Result<(), CallbackError> {
+        // Fragments of one commit are contiguous in Git sources, so the last
+        // discovered identity answers most repeats without hashing.
+        if self.unique_commits.last() == Some(commit)
+            || self.commit_index.contains(commit.as_bytes())
+        {
+            return Ok(());
+        }
+        if self.unique_commits.len() == self.maximum_unique_commits {
+            return Err(CallbackError::new(format!(
+                "source unique commit count exceeds the {}-commit safety limit",
+                self.maximum_unique_commits
+            )));
+        }
+        self.unique_commits.try_reserve(1).map_err(|error| {
+            CallbackError::new(format!("could not retain source commit: {error}"))
+        })?;
+        self.commit_index.try_reserve(1).map_err(|error| {
+            CallbackError::new(format!("could not retain source commit: {error}"))
+        })?;
+        let retained = copy_commit(commit)?;
+        let indexed = copy_commit(commit)?;
+        self.commit_index.insert(indexed);
+        self.unique_commits.push(retained);
+        Ok(())
+    }
+}
+
+fn copy_commit(commit: &ByteText) -> Result<ByteText, CallbackError> {
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(commit.len())
+        .map_err(|error| CallbackError::new(format!("could not copy source commit: {error}")))?;
+    bytes.extend_from_slice(commit.as_bytes());
+    Ok(ByteText::new(bytes))
 }
 
 impl SourceOutcome {
@@ -142,7 +164,7 @@ impl SourceOutcome {
     /// order.
     ///
     /// The borrowed view lets callers compute an exact union with identities
-    /// observed outside the runner without allocating another collection.
+    /// observed outside the runner.
     #[must_use]
     pub fn unique_commits(&self) -> &[ByteText] {
         &self.unique_commits
@@ -571,6 +593,65 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("1-commit safety limit"));
         assert_eq!(statistics.unique_commits.len(), 1);
+    }
+
+    #[test]
+    fn commit_statistics_keep_discovery_order_for_non_contiguous_repeats() {
+        let mut statistics = SourceStatistics::default();
+        for commit in ["b", "a", "b", "c", "a", "", "d", "c"] {
+            statistics
+                .observe(&Fragment::builder("x").commit(commit).build())
+                .unwrap();
+        }
+        let expected = [
+            ByteText::from("b"),
+            ByteText::from("a"),
+            ByteText::from("c"),
+            ByteText::from("d"),
+        ];
+        assert_eq!(statistics.unique_commits, expected);
+        assert_eq!(statistics.scanned_bytes, 8);
+    }
+
+    #[test]
+    fn commit_statistics_match_a_linear_model_at_and_past_the_limit() {
+        // Commit identities repeat at varying distances. The model below is
+        // the specification: first occurrences are retained in order until
+        // the limit, repeats are always accepted, and an unseen commit past
+        // the limit is an error.
+        let mut statistics = SourceStatistics {
+            maximum_unique_commits: 64,
+            ..SourceStatistics::default()
+        };
+        let mut model: Vec<Vec<u8>> = Vec::new();
+        let mut state = 0x9e37_79b9_u32;
+        for step in 0..4096 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let commit = format!("{:02x}", (state >> 24) % 96);
+            let known = model.iter().any(|value| value == commit.as_bytes());
+            let result =
+                statistics.observe(&Fragment::builder("x").commit(commit.as_str()).build());
+            if known || model.len() < 64 {
+                assert!(result.is_ok(), "step {step}");
+                if !known {
+                    model.push(commit.into_bytes());
+                }
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("64-commit safety limit"),
+                    "step {step}"
+                );
+            }
+        }
+        let retained = statistics
+            .unique_commits
+            .iter()
+            .map(|commit| commit.as_bytes().to_vec())
+            .collect::<Vec<_>>();
+        assert_eq!(retained, model);
     }
 
     #[test]

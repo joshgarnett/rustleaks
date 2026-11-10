@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
@@ -24,6 +25,7 @@ const MAX_UNIQUE_EXCLUDED_COMMITS: usize = 1_000_000;
 
 struct CommitCounter {
     values: Vec<ByteText>,
+    index: HashSet<ByteText>,
     maximum: usize,
 }
 
@@ -31,12 +33,16 @@ impl CommitCounter {
     fn new(maximum: usize) -> Self {
         Self {
             values: Vec::new(),
+            index: HashSet::new(),
             maximum,
         }
     }
 
     fn observe(&mut self, value: &ByteText) -> Result<(), CallbackError> {
-        if value.is_empty() || self.values.iter().any(|known| known == value) {
+        if value.is_empty()
+            || self.values.last() == Some(value)
+            || self.index.contains(value.as_bytes())
+        {
             return Ok(());
         }
         if self.values.len() == self.maximum {
@@ -48,14 +54,24 @@ impl CommitCounter {
         self.values.try_reserve(1).map_err(|error| {
             CallbackError::new(format!("could not retain excluded commit: {error}"))
         })?;
-        let mut bytes = Vec::new();
-        bytes.try_reserve_exact(value.len()).map_err(|error| {
-            CallbackError::new(format!("could not copy excluded commit: {error}"))
+        self.index.try_reserve(1).map_err(|error| {
+            CallbackError::new(format!("could not retain excluded commit: {error}"))
         })?;
-        bytes.extend_from_slice(value.as_bytes());
-        self.values.push(ByteText::new(bytes));
+        let retained = copy_commit(value)?;
+        let indexed = copy_commit(value)?;
+        self.index.insert(indexed);
+        self.values.push(retained);
         Ok(())
     }
+}
+
+fn copy_commit(value: &ByteText) -> Result<ByteText, CallbackError> {
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(value.len())
+        .map_err(|error| CallbackError::new(format!("could not copy excluded commit: {error}")))?;
+    bytes.extend_from_slice(value.as_bytes());
+    Ok(ByteText::new(bytes))
 }
 
 impl BuiltSource {
@@ -256,6 +272,25 @@ mod tests {
         let error = commits.observe(&ByteText::from("second")).unwrap_err();
         assert!(error.to_string().contains("1-commit safety limit"));
         assert_eq!(commits.values.len(), 1);
+    }
+
+    #[test]
+    fn excluded_commit_counter_keeps_discovery_order_for_non_contiguous_repeats() {
+        let mut commits = CommitCounter::new(3);
+        for value in ["b", "a", "", "b", "c", "a", "c", "b"] {
+            commits.observe(&ByteText::from(value)).unwrap();
+        }
+        assert_eq!(
+            commits.values,
+            [
+                ByteText::from("b"),
+                ByteText::from("a"),
+                ByteText::from("c")
+            ]
+        );
+        assert!(commits.observe(&ByteText::from("d")).is_err());
+        assert!(commits.observe(&ByteText::from("a")).is_ok());
+        assert_eq!(commits.values.len(), 3);
     }
 
     #[test]
