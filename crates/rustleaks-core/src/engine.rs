@@ -23,7 +23,7 @@ use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes
 use crate::model::{
     ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
-use crate::regex::{ByteSpan, GoRegex, NormalizedHaystack};
+use crate::regex::{ByteSpan, CaptureScratch, GoRegex, NormalizedHaystack};
 
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
@@ -723,6 +723,8 @@ impl Engine {
         let mut findings = Vec::new();
         let mut any_match = false;
         let mut line_allowlists = LineAllowlistMemo::default();
+        // One rule pass searches only this rule's expression.
+        let mut capture_scratch = None;
         for (candidate_ordinal, span) in regex
             .find_all_normalized(
                 rule_pass
@@ -750,6 +752,7 @@ impl Engine {
                 },
                 span,
                 &mut line_allowlists,
+                &mut capture_scratch,
                 context,
             ) {
                 context.finding_record()?;
@@ -867,6 +870,7 @@ impl Engine {
         pass: DetectionPass<'a>,
         whole: ByteSpan,
         line_allowlists: &mut LineAllowlistMemo<'a>,
+        capture_scratch: &mut Option<CaptureScratch>,
         context: &mut ScanContext<'_>,
     ) -> Option<Finding> {
         let mut explain = |reason| {
@@ -931,9 +935,12 @@ impl Engine {
             return None;
         }
 
-        let Some(extracted_secret) =
-            extract_secret(rule.regex_matcher.as_ref()?, trimmed, rule.secret_group)
-        else {
+        let Some(extracted_secret) = extract_secret(
+            rule.regex_matcher.as_ref()?,
+            trimmed,
+            rule.secret_group,
+            capture_scratch,
+        ) else {
             explain(ExplanationReason::SecretGroupUnavailable);
             return None;
         };
@@ -1521,31 +1528,31 @@ fn extract_secret<'a>(
     regex: &GoRegex,
     matched: &'a [u8],
     secret_group: i64,
+    scratch: &mut Option<CaptureScratch>,
 ) -> Option<ExtractedSecret<'a>> {
-    let Some(captures) = regex.captures(matched) else {
+    let whole_match = || ExtractedSecret {
+        bytes: matched,
+        span: Some(ByteSpan {
+            start: 0,
+            end: matched.len(),
+        }),
+    };
+    // A search reports one span per entry in `capture_names`. With fewer than
+    // two entries, a hit and a miss both produce the whole slice and neither
+    // reads `secret_group`, so the search result cannot be observed.
+    if regex.capture_names().len() < 2 {
+        return Some(whole_match());
+    }
+    let scratch = scratch.get_or_insert_with(|| regex.capture_scratch());
+    let Some(spans) = regex.captures_into(matched, scratch) else {
         // Trimming leading/trailing newlines can make an anchored full-match
         // expression stop matching. Go leaves the already-trimmed secret
         // unchanged when FindStringSubmatch consequently returns nil.
-        return Some(ExtractedSecret {
-            bytes: matched,
-            span: Some(ByteSpan {
-                start: 0,
-                end: matched.len(),
-            }),
-        });
+        return Some(whole_match());
     };
-    if captures.spans().len() < 2 {
-        return Some(ExtractedSecret {
-            bytes: matched,
-            span: Some(ByteSpan {
-                start: 0,
-                end: matched.len(),
-            }),
-        });
-    }
     if secret_group > 0 {
         let index = usize::try_from(secret_group).ok()?;
-        let span = captures.spans().get(index)?;
+        let span = spans.get(index)?;
         return match span {
             Some(span) => Some(ExtractedSecret {
                 bytes: matched.get(span.start..span.end)?,
@@ -1560,8 +1567,7 @@ fn extract_secret<'a>(
             }),
         };
     }
-    let span = captures
-        .spans()
+    let span = spans
         .iter()
         .skip(1)
         .flatten()
@@ -1655,6 +1661,211 @@ mod tests {
         end: usize,
     ) -> SourceLocation {
         super::upstream_location(newlines, raw, start, end, &Cell::new(None))
+    }
+
+    // Frozen capture-first extraction, retained only as differential evidence.
+    // The explicit table below states the expected results independently.
+    fn frozen_extract_secret<'a>(
+        regex: &GoRegex,
+        matched: &'a [u8],
+        secret_group: i64,
+    ) -> Option<ExtractedSecret<'a>> {
+        let Some(captures) = regex.captures(matched) else {
+            return Some(ExtractedSecret {
+                bytes: matched,
+                span: Some(ByteSpan {
+                    start: 0,
+                    end: matched.len(),
+                }),
+            });
+        };
+        if captures.spans().len() < 2 {
+            return Some(ExtractedSecret {
+                bytes: matched,
+                span: Some(ByteSpan {
+                    start: 0,
+                    end: matched.len(),
+                }),
+            });
+        }
+        if secret_group > 0 {
+            let index = usize::try_from(secret_group).ok()?;
+            let span = captures.spans().get(index)?;
+            return match span {
+                Some(span) => Some(ExtractedSecret {
+                    bytes: matched.get(span.start..span.end)?,
+                    span: Some(*span),
+                }),
+                None => Some(ExtractedSecret {
+                    bytes: matched.get(..0)?,
+                    span: None,
+                }),
+            };
+        }
+        let span = captures
+            .spans()
+            .iter()
+            .skip(1)
+            .flatten()
+            .find(|span| span.start != span.end)
+            .copied()
+            .unwrap_or(ByteSpan {
+                start: 0,
+                end: matched.len(),
+            });
+        Some(ExtractedSecret {
+            bytes: matched.get(span.start..span.end)?,
+            span: Some(span),
+        })
+    }
+
+    type ExtractedView<'a> = Option<(&'a [u8], Option<(usize, usize)>)>;
+
+    fn extracted_view(extracted: Option<ExtractedSecret<'_>>) -> ExtractedView<'_> {
+        extracted.map(|secret| (secret.bytes, secret.span.map(|span| (span.start, span.end))))
+    }
+
+    #[test]
+    fn extract_secret_preserves_every_group_and_search_branch() {
+        const WHOLE_ABC: ExtractedView<'static> = Some((b"abc", Some((0, 3))));
+        const INNER_B: ExtractedView<'static> = Some((b"b", Some((1, 2))));
+        let cases: &[(&str, &[u8], i64, ExtractedView<'static>)] = &[
+            // Without a group, a hit and a miss both yield the whole slice and
+            // no secret-group value is consulted.
+            ("abc", b"abc", 0, WHOLE_ABC),
+            ("abc", b"abc", 1, WHOLE_ABC),
+            ("abc", b"abc", 99, WHOLE_ABC),
+            ("abc", b"abc", -1, WHOLE_ABC),
+            ("^zzz$", b"abc", 0, WHOLE_ABC),
+            ("^zzz$", b"abc", 1, WHOLE_ABC),
+            ("(?:a)(?:b)c", b"abc", 1, WHOLE_ABC),
+            (".", b"\xff\xfe", 0, Some((b"\xff\xfe", Some((0, 2))))),
+            ("", b"", 0, Some((b"", Some((0, 0))))),
+            ("^x$", b"", 3, Some((b"", Some((0, 0))))),
+            // A group makes the search and every secret-group branch reachable.
+            ("a(b)c", b"abc", 0, INNER_B),
+            ("a(b)c", b"abc", 1, INNER_B),
+            ("a(b)c", b"abc", -1, INNER_B),
+            ("a(b)c", b"abc", 2, None),
+            // A failed search returns before the secret group is validated.
+            ("^(a)$", b"abc", 0, WHOLE_ABC),
+            ("^(a)$", b"abc", 7, WHOLE_ABC),
+            // Nonparticipating groups are empty without a span.
+            ("a(b)?c", b"ac", 1, Some((b"", None))),
+            ("a(b)?c", b"ac", 0, Some((b"ac", Some((0, 2))))),
+            // Empty participating groups keep their span, and are skipped by
+            // the first-nonempty fallback.
+            ("a()c", b"ac", 1, Some((b"", Some((1, 1))))),
+            ("a()c", b"ac", 0, Some((b"ac", Some((0, 2))))),
+            ("(x?)(y)", b"y", 1, Some((b"", Some((0, 0))))),
+            ("(x?)(y)", b"y", 0, Some((b"y", Some((0, 1))))),
+            ("(x?)(y)", b"y", 2, Some((b"y", Some((0, 1))))),
+            // Offsets are reported in the original source bytes.
+            ("(.)x", b"\xffx", 1, Some((b"\xff", Some((0, 1))))),
+            ("(.)x", b"\xc3\xa9x", 1, Some((b"\xc3\xa9", Some((0, 2))))),
+        ];
+        // A scratch is reused only by repeated searches of one expression.
+        let regexes = cases
+            .iter()
+            .map(|(pattern, ..)| (*pattern, GoRegex::compile(pattern).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        let mut scratches = BTreeMap::<&str, Option<CaptureScratch>>::new();
+        for &(pattern, matched, secret_group, expected) in cases.iter().chain(cases.iter().rev()) {
+            let regex = &regexes[pattern];
+            let label = format!("{pattern} on {matched:?}, group {secret_group}");
+            assert_eq!(
+                extracted_view(frozen_extract_secret(regex, matched, secret_group)),
+                expected,
+                "frozen {label}",
+            );
+            assert_eq!(
+                extracted_view(extract_secret(regex, matched, secret_group, &mut None)),
+                expected,
+                "fresh {label}",
+            );
+            let shared = scratches.entry(pattern).or_default();
+            for attempt in ["first", "repeated"] {
+                assert_eq!(
+                    extracted_view(extract_secret(regex, matched, secret_group, shared)),
+                    expected,
+                    "{attempt} shared {label}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn groupless_extraction_does_not_allocate_capture_scratch() {
+        let groupless = GoRegex::compile("(?:a)bc").unwrap();
+        let mut scratch = None;
+        assert!(extract_secret(&groupless, b"abc", 1, &mut scratch).is_some());
+        assert!(scratch.is_none());
+        let grouped = GoRegex::compile("a(b)c").unwrap();
+        assert!(extract_secret(&grouped, b"abc", 1, &mut scratch).is_some());
+        assert!(scratch.is_some());
+    }
+
+    #[test]
+    fn candidates_in_one_rule_pass_do_not_share_capture_results() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "(a)|(b)"
+secretGroup = 2
+"#,
+        );
+        let outcome = detector.scan_fragment(&Fragment::new(b"a b a"), &ScanOptions::default());
+        assert!(outcome.is_complete());
+        let observed = outcome
+            .findings()
+            .iter()
+            .map(|finding| {
+                (
+                    finding.match_text().as_bytes(),
+                    finding.secret().as_bytes(),
+                    finding.secret_range(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed,
+            [
+                (b"a".as_slice(), b"".as_slice(), FindingRange::Unavailable),
+                (
+                    b"b".as_slice(),
+                    b"b".as_slice(),
+                    FindingRange::Exact(ByteRange::new(2, 3).unwrap()),
+                ),
+                (b"a".as_slice(), b"".as_slice(), FindingRange::Unavailable),
+            ]
+        );
+    }
+
+    #[test]
+    fn groupless_rules_keep_trimmed_whole_match_secrets_and_ranges() {
+        let detector = engine(
+            r"
+[[rules]]
+id = 'probe'
+regex = '''(?s)\A\nZX9\n\z'''
+",
+        );
+        let outcome = detector.scan_fragment(&Fragment::new(b"\nZX9\n"), &ScanOptions::default());
+        assert!(outcome.is_complete());
+        let [finding] = outcome.findings() else {
+            panic!("expected one finding, got {}", outcome.findings().len());
+        };
+        // The search over the trimmed slice misses; the secret stays trimmed.
+        assert_eq!(finding.secret().as_bytes(), b"ZX9");
+        assert_eq!(
+            finding.secret_range(),
+            FindingRange::Exact(ByteRange::new(1, 4).unwrap())
+        );
+        assert_eq!(
+            finding.match_range(),
+            FindingRange::Exact(ByteRange::new(1, 4).unwrap())
+        );
     }
 
     #[test]

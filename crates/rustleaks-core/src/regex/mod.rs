@@ -21,7 +21,7 @@ use regex_automata::{
     Input, MatchKind,
     meta::Regex,
     nfa::thompson::{self, WhichCaptures},
-    util::syntax,
+    util::{captures::Captures, syntax},
 };
 
 /// Maximum accepted source-pattern length.
@@ -205,6 +205,16 @@ impl CaptureSpans {
     pub(crate) fn whole(&self) -> ByteSpan {
         self.spans[0].expect("a captures result always contains its whole match")
     }
+}
+
+/// Reusable storage for repeated capture searches with one [`GoRegex`].
+///
+/// A scratch value is valid only for the expression that created it. Every
+/// search resets the whole-match state and rewrites every reported span, so
+/// reuse cannot expose a group from an earlier haystack.
+pub(crate) struct CaptureScratch {
+    captures: Captures,
+    spans: Vec<Option<ByteSpan>>,
 }
 
 /// A fallible Go-regexp-compatible compiler error.
@@ -471,20 +481,43 @@ impl GoRegex {
 
     /// Finds only the first match, treating this slice as its own haystack.
     pub(crate) fn captures(&self, haystack: &[u8]) -> Option<CaptureSpans> {
-        let normalized = NormalizedHaystack::new(haystack);
-        let mut captures = self.backend.create_captures();
-        self.backend
-            .search_captures(&Input::new(normalized.bytes()), &mut captures);
-        captures.get_group(0)?;
+        let mut scratch = self.capture_scratch();
+        self.captures_into(haystack, &mut scratch)?;
         Some(CaptureSpans {
-            spans: (0..self.capture_names.len())
-                .map(|index| {
-                    captures
-                        .get_group(index)
-                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
-                })
-                .collect(),
+            spans: scratch.spans,
         })
+    }
+
+    /// Creates storage for [`Self::captures_into`] on this expression.
+    pub(crate) fn capture_scratch(&self) -> CaptureScratch {
+        CaptureScratch {
+            captures: self.backend.create_captures(),
+            spans: Vec::with_capacity(self.capture_names.len()),
+        }
+    }
+
+    /// Finds only the first match, like [`Self::captures`], using `scratch`.
+    ///
+    /// The returned slice is aligned like [`CaptureSpans::spans`].
+    pub(crate) fn captures_into<'s>(
+        &self,
+        haystack: &[u8],
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
+        let normalized = NormalizedHaystack::new(haystack);
+        self.backend
+            .search_captures(&Input::new(normalized.bytes()), &mut scratch.captures);
+        scratch.captures.get_group(0)?;
+        scratch.spans.clear();
+        scratch
+            .spans
+            .extend((0..self.capture_names.len()).map(|index| {
+                scratch
+                    .captures
+                    .get_group(index)
+                    .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+            }));
+        Some(&scratch.spans)
     }
 
     /// Returns every non-overlapping match and all of its capture spans.
@@ -2676,6 +2709,138 @@ mod tests {
             "(", "[abc", r"\1", r"\8", r"\u1234", "a++", "(?x:a)", "a{1001}",
         ] {
             assert!(GoRegex::compile(pattern).is_err(), "{pattern}");
+        }
+    }
+
+    #[test]
+    fn reused_capture_scratch_never_exposes_an_earlier_search() {
+        let span = |start, end| Some(ByteSpan { start, end });
+        let regex = GoRegex::compile("(a)|(b)").unwrap();
+        let mut scratch = regex.capture_scratch();
+        for (haystack, expected) in [
+            (b"a".as_slice(), Some(vec![span(0, 1), span(0, 1), None])),
+            (b"b".as_slice(), Some(vec![span(0, 1), None, span(0, 1)])),
+            (b"zzz".as_slice(), None),
+            (b"".as_slice(), None),
+            (b"za".as_slice(), Some(vec![span(1, 2), span(1, 2), None])),
+            (
+                b"\xffb".as_slice(),
+                Some(vec![span(1, 2), None, span(1, 2)]),
+            ),
+        ] {
+            assert_eq!(
+                regex
+                    .captures_into(haystack, &mut scratch)
+                    .map(<[_]>::to_vec),
+                expected,
+                "{haystack:?}",
+            );
+        }
+    }
+
+    // Frozen allocation-per-call search, retained only as differential evidence.
+    fn frozen_captures(regex: &GoRegex, haystack: &[u8]) -> Option<Vec<Option<ByteSpan>>> {
+        let normalized = NormalizedHaystack::new(haystack);
+        let mut captures = regex.backend.create_captures();
+        regex.backend.search_captures(
+            &regex_automata::Input::new(normalized.bytes()),
+            &mut captures,
+        );
+        captures.get_group(0)?;
+        Some(
+            (0..regex.capture_names.len())
+                .map(|index| {
+                    captures
+                        .get_group(index)
+                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn reused_capture_scratch_resets_long_pikevm_captures() {
+        // The Unicode classes make the NFA large enough that these match spans
+        // exceed the bounded backtracker's limit. The expression is not
+        // one-pass, so capture resolution reaches the PikeVM's slot handling.
+        let long_a = vec![b'a'; 1 << 14];
+        let long_b = vec![b'1'; 1 << 14];
+        let length = long_a.len();
+        let span = |start, end| Some(ByteSpan { start, end });
+        let regex = GoRegex::compile(r"(\p{L}+?)(\p{L}*)|(\p{N}+)").unwrap();
+        let mut scratch = regex.capture_scratch();
+        for (haystack, expected) in [
+            (
+                long_a.as_slice(),
+                Some(vec![span(0, length), span(0, 1), span(1, length), None]),
+            ),
+            (b"--".as_slice(), None),
+            (
+                long_b.as_slice(),
+                Some(vec![span(0, length), None, None, span(0, length)]),
+            ),
+            (
+                long_a.as_slice(),
+                Some(vec![span(0, length), span(0, 1), span(1, length), None]),
+            ),
+        ] {
+            assert_eq!(frozen_captures(&regex, haystack), expected);
+            assert_eq!(
+                regex
+                    .captures_into(haystack, &mut scratch)
+                    .map(<[_]>::to_vec),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn reused_capture_scratch_matches_the_frozen_fresh_search() {
+        let haystacks: &[&[u8]] = &[
+            b"a",
+            b"b",
+            b"ab",
+            b"zzz",
+            b"",
+            b"c",
+            b"bc",
+            b"ac",
+            b"abc",
+            b"xfooy",
+            b"xfoo",
+            b"\xffa",
+            b"\xc3\xa9b",
+            b"\xe2\x82",
+        ];
+        for pattern in [
+            "(a)|(b)",
+            "^(a)|^(b)",
+            "(a+)|(b+)",
+            "(?P<x>a)?(?P<y>b)?c",
+            r"x(\w+?)(y)?$",
+            "()a",
+        ] {
+            let regex = GoRegex::compile(pattern).unwrap();
+            let mut scratch = regex.capture_scratch();
+            for haystack in haystacks
+                .iter()
+                .chain(haystacks.iter().rev())
+                .chain(haystacks.iter())
+            {
+                let expected = frozen_captures(&regex, haystack);
+                assert_eq!(
+                    regex
+                        .captures_into(haystack, &mut scratch)
+                        .map(<[_]>::to_vec),
+                    expected,
+                    "pattern {pattern}, haystack {haystack:?}",
+                );
+                assert_eq!(
+                    regex.captures(haystack).map(|found| found.spans),
+                    expected,
+                    "pattern {pattern}, haystack {haystack:?}",
+                );
+            }
         }
     }
 
