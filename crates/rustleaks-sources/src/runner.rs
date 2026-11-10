@@ -181,9 +181,12 @@ impl SourceOutcome {
 ///
 /// The runner owns no global pool and exports no synchronization primitive.
 /// Both single-worker and multi-worker operation use the same bounded queue and
-/// session-batch path. Finding order is not a compatibility contract; complete
+/// session-batch path. Findings are merged in producer fragment order, so a
+/// complete run returns the single-worker order for any worker count. Finding
+/// order is not a compatibility contract with the pinned upstream; complete
 /// duplicate-preserving multisets are invariant for complete runs. Budget stops
-/// can return a scheduling-dependent subset of completely scanned fragments.
+/// can return a scheduling-dependent subset of completely scanned fragments,
+/// and their finding order remains unspecified.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SourceRunner {
     workers: NonZeroUsize,
@@ -270,15 +273,16 @@ impl SourceRunner {
         source: &mut dyn Source,
         policy: &SessionPolicy,
         cancellation: &CancellationToken,
-        worker: impl Fn(&Mutex<mpsc::Receiver<Fragment>>) -> SessionBatch + Sync,
+        worker: impl Fn(&Mutex<mpsc::Receiver<Job>>) -> Vec<FragmentBatch> + Sync,
     ) -> SourceOutcome {
-        let (sender, receiver) = mpsc::sync_channel::<Fragment>(self.queue_capacity());
+        let (sender, receiver) = mpsc::sync_channel::<Job>(self.queue_capacity());
         let receiver = Arc::new(Mutex::new(receiver));
         let mut issues = Vec::new();
         let mut source_result = Ok(SourceControl::Continue);
         let mut worker_panicked = false;
         let mut batches = Vec::new();
         let mut statistics = SourceStatistics::default();
+        let mut next_sequence = 0_u64;
 
         thread::scope(|scope| {
             let mut handles = Vec::new();
@@ -338,13 +342,15 @@ impl SourceRunner {
 
                     statistics.observe(&fragment)?;
 
-                    let mut pending = fragment;
+                    let sequence = next_sequence;
+                    next_sequence += 1;
+                    let mut pending = Job { sequence, fragment };
                     loop {
                         ensure_active(cancellation, "source runner cancelled while scheduling")?;
                         match sender.try_send(pending) {
                             Ok(()) => return Ok(SourceControl::Continue),
-                            Err(TrySendError::Full(fragment)) => {
-                                pending = fragment;
+                            Err(TrySendError::Full(job)) => {
+                                pending = job;
                                 thread::yield_now();
                             }
                             Err(TrySendError::Disconnected(_)) => {
@@ -360,7 +366,7 @@ impl SourceRunner {
 
             for handle in handles {
                 match handle.join() {
-                    Ok(batch) => batches.push(batch),
+                    Ok(worker_batches) => batches.extend(worker_batches),
                     Err(_) => worker_panicked = true,
                 }
             }
@@ -397,14 +403,26 @@ fn worker_terminal(message: String) -> SourceError {
     }
 }
 
+/// One fragment and its position in producer order.
+struct Job {
+    sequence: u64,
+    fragment: Fragment,
+}
+
+/// Accepted findings of one completely scanned fragment.
+struct FragmentBatch {
+    sequence: u64,
+    batch: SessionBatch,
+}
+
 fn worker_loop(
-    receiver: &Mutex<mpsc::Receiver<Fragment>>,
+    receiver: &Mutex<mpsc::Receiver<Job>>,
     engine: &Engine,
     scan_options: ScanOptions,
     policy: &SessionPolicy,
     cancellation: &CancellationToken,
-) -> rustleaks_core::session::SessionBatch {
-    let mut batch = policy.new_batch();
+) -> Vec<FragmentBatch> {
+    let mut batches = Vec::new();
     loop {
         if cancellation.is_cancelled() {
             break;
@@ -413,45 +431,59 @@ fn worker_loop(
             Ok(guard) => guard.recv(),
             Err(poisoned) => poisoned.into_inner().recv(),
         };
-        let Ok(fragment) = job else {
+        let Ok(job) = job else {
             break;
         };
         if cancellation.is_cancelled() {
             break;
         }
         let control = ScanControl::cancellable(cancellation);
-        let detected = engine.scan_fragment_controlled(&fragment, &scan_options, &control);
-        if !merge_complete_scan(&mut batch, detected) {
+        let detected = engine.scan_fragment_controlled(&job.fragment, &scan_options, &control);
+        if !merge_complete_scan(&mut batches, policy, job.sequence, detected) {
             break;
         }
         if cancellation.is_cancelled() {
             break;
         }
     }
-    batch
+    batches
 }
 
-fn merge_complete_scan(batch: &mut SessionBatch, outcome: ScanOutcome) -> bool {
+/// Records the findings of a complete scan. Classification is a pure function
+/// of one finding and the immutable policy, so per-fragment batches are
+/// equivalent to one worker-wide batch apart from their merge order.
+fn merge_complete_scan(
+    batches: &mut Vec<FragmentBatch>,
+    policy: &SessionPolicy,
+    sequence: u64,
+    outcome: ScanOutcome,
+) -> bool {
     if !outcome.is_complete() {
         return false;
     }
+    let mut batch = policy.new_batch();
     for finding in outcome.into_findings() {
         batch.add_finding(finding);
+    }
+    if !batch.findings().is_empty() {
+        batches.push(FragmentBatch { sequence, batch });
     }
     true
 }
 
 fn finish_run(
     policy: &SessionPolicy,
-    batches: Vec<rustleaks_core::session::SessionBatch>,
+    mut batches: Vec<FragmentBatch>,
     mut issues: Vec<SourceIssue>,
     source_result: Result<SourceControl, SourceError>,
     worker_panicked: bool,
     cancelled: bool,
     statistics: SourceStatistics,
 ) -> SourceOutcome {
+    // One producer assigns every sequence, so the keys are unique.
+    batches.sort_unstable_by_key(|fragment| fragment.sequence);
     let mut session = ScanSession::new(policy.clone());
-    for batch in batches {
+    for FragmentBatch { batch, .. } in batches {
         if let Err(error) = session.merge(batch) {
             issues.push(SourceIssue::new(
                 SourceStage::Worker,
@@ -503,10 +535,12 @@ impl Default for SourceRunner {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Condvar;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use rustleaks_core::config::ConfigLoader;
+    use rustleaks_core::session::Baseline;
 
     use super::*;
 
@@ -680,8 +714,201 @@ regex = '''B'''
         assert!(!outcome.is_complete());
         assert_eq!(outcome.findings().len(), 1);
 
-        let mut batch = SessionPolicy::default().new_batch();
-        assert!(!merge_complete_scan(&mut batch, outcome));
-        assert!(batch.findings().is_empty());
+        let mut batches = Vec::new();
+        assert!(!merge_complete_scan(
+            &mut batches,
+            &SessionPolicy::default(),
+            0,
+            outcome
+        ));
+        assert!(batches.is_empty());
+    }
+
+    /// Emits `count` fragments whose findings identify their producer position.
+    struct TokenFragments(usize);
+
+    impl Source for TokenFragments {
+        fn visit(
+            &mut self,
+            _: &dyn crate::Cancellation,
+            emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+        ) -> Result<SourceControl, SourceError> {
+            for index in 0..self.0 {
+                let content = format!("token-{index}a token-{index}b\n");
+                let control = emit(SourceEvent::fragment(Fragment::new(content)))
+                    .map_err(SourceError::Callback)?;
+                if control == SourceControl::Stop {
+                    return Ok(control);
+                }
+            }
+            Ok(SourceControl::Continue)
+        }
+    }
+
+    fn token_engine() -> Engine {
+        let config = ConfigLoader::new()
+            .load_toml("[[rules]]\nid = 'token'\nregex = '''token-[0-9]+[ab]'''\n")
+            .unwrap();
+        Engine::builder(config).build().unwrap()
+    }
+
+    /// Source order of the secrets emitted by `TokenFragments`.
+    fn expected_tokens(indices: impl IntoIterator<Item = usize>) -> Vec<String> {
+        indices
+            .into_iter()
+            .flat_map(|index| [format!("token-{index}a"), format!("token-{index}b")])
+            .collect()
+    }
+
+    fn secrets(outcome: &SourceOutcome) -> Vec<String> {
+        outcome
+            .findings()
+            .iter()
+            .map(|finding| finding.secret().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[derive(Default)]
+    struct Latch(Mutex<bool>, Condvar);
+
+    impl Latch {
+        fn open(&self) {
+            *self.0.lock().unwrap() = true;
+            self.1.notify_all();
+        }
+
+        fn wait(&self) {
+            let guard = self.0.lock().unwrap();
+            let (guard, timeout) = self
+                .1
+                .wait_timeout_while(guard, Duration::from_secs(5), |open| !*open)
+                .unwrap();
+            assert!(*guard && !timeout.timed_out(), "latch never opened");
+        }
+    }
+
+    #[test]
+    fn ordered_merge_restores_producer_order_when_workers_finish_out_of_order() {
+        let engine = token_engine();
+        let policy = SessionPolicy::default();
+        let first_taken = Latch::default();
+        let second_taken = Latch::default();
+        let outcome = SourceRunner::new(2, 1).unwrap().run_with_worker(
+            &mut TokenFragments(2),
+            &policy,
+            &CancellationToken::new(),
+            |receiver| {
+                // Worker 1 takes fragment 0 and worker 0 takes fragment 1, so
+                // merging batches in join order would reverse the fragments.
+                let is_worker_one = thread::current().name() == Some("rustleaks-source-1");
+                let mut batches = Vec::new();
+                if !is_worker_one {
+                    first_taken.wait();
+                }
+                let mut taken = 0;
+                loop {
+                    let job = receiver.lock().unwrap().recv();
+                    let Ok(job) = job else {
+                        break;
+                    };
+                    let detected = engine.scan_fragment_controlled(
+                        &job.fragment,
+                        &ScanOptions::default(),
+                        &ScanControl::unlimited(),
+                    );
+                    assert!(merge_complete_scan(
+                        &mut batches,
+                        &policy,
+                        job.sequence,
+                        detected
+                    ));
+                    taken += 1;
+                    if taken == 1 {
+                        if is_worker_one {
+                            first_taken.open();
+                            second_taken.wait();
+                        } else {
+                            second_taken.open();
+                        }
+                    }
+                }
+                batches
+            },
+        );
+        assert_eq!(outcome.termination(), &SourceTermination::Completed);
+        assert_eq!(secrets(&outcome), expected_tokens([0, 1]));
+    }
+
+    #[test]
+    fn any_worker_count_returns_source_order_with_and_without_a_budget() {
+        const FRAGMENTS: usize = 96;
+        let engine = token_engine();
+        for workers in [1, 2, 3, 8] {
+            for capacity in [1, 4] {
+                let run = |runner: SourceRunner| {
+                    runner.run(
+                        &mut TokenFragments(FRAGMENTS),
+                        &engine,
+                        ScanOptions::default(),
+                        &SessionPolicy::default(),
+                        &CancellationToken::new(),
+                    )
+                };
+                let plain = run(SourceRunner::new(workers, capacity).unwrap());
+                assert_eq!(plain.termination(), &SourceTermination::Completed);
+                assert_eq!(
+                    secrets(&plain),
+                    expected_tokens(0..FRAGMENTS),
+                    "{workers}/{capacity}"
+                );
+                let budgeted = run(SourceRunner::new(workers, capacity)
+                    .unwrap()
+                    .with_budget(SourceBudget::unlimited())
+                    .unwrap());
+                assert_eq!(budgeted.termination(), &SourceTermination::Completed);
+                assert_eq!(
+                    secrets(&budgeted),
+                    expected_tokens(0..FRAGMENTS),
+                    "budgeted {workers}/{capacity}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn policy_suppression_is_independent_of_worker_count() {
+        const FRAGMENTS: usize = 48;
+        let engine = token_engine();
+        let reference = SourceRunner::new(1, 1).unwrap().run(
+            &mut TokenFragments(FRAGMENTS),
+            &engine,
+            ScanOptions::default(),
+            &SessionPolicy::default(),
+            &CancellationToken::new(),
+        );
+        let baselined = reference
+            .findings()
+            .iter()
+            .filter(|finding| {
+                let secret = finding.secret().to_string_lossy().into_owned();
+                let digits = secret.trim_start_matches("token-");
+                digits[..digits.len() - 1].parse::<usize>().unwrap() % 3 == 0
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let policy = SessionPolicy::builder()
+            .baseline(Baseline::from_findings(&baselined))
+            .build();
+        let expected = expected_tokens((0..FRAGMENTS).filter(|index| index % 3 != 0));
+        for workers in [1, 4] {
+            let outcome = SourceRunner::new(workers, 2).unwrap().run(
+                &mut TokenFragments(FRAGMENTS),
+                &engine,
+                ScanOptions::default(),
+                &policy,
+                &CancellationToken::new(),
+            );
+            assert_eq!(secrets(&outcome), expected, "{workers} workers");
+        }
     }
 }
