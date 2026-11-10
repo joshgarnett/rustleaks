@@ -948,8 +948,9 @@ impl Engine {
             return None;
         };
         let secret = extracted_secret.bytes;
-        let entropy = shannon_entropy(secret);
-        if rule.entropy != 0.0 && entropy <= rule.entropy {
+        // Only a nonzero threshold reads entropy before finding construction.
+        let threshold_entropy = (rule.entropy != 0.0).then(|| shannon_entropy(secret));
+        if threshold_entropy.is_some_and(|entropy| entropy <= rule.entropy) {
             explain(ExplanationReason::EntropyRejected);
             return None;
         }
@@ -1041,7 +1042,9 @@ impl Engine {
             .file(fragment.file_path().as_bytes())
             .symlink_file(fragment.symlink_file().as_bytes())
             .commit(fragment.commit().as_bytes())
-            .entropy(entropy_to_f32(entropy))
+            .entropy(entropy_to_f32(
+                threshold_entropy.unwrap_or_else(|| shannon_entropy(secret)),
+            ))
             .tags(finding_tags.iter().map(String::as_str));
         if let Some(metadata) = fragment.commit_metadata() {
             builder = builder
@@ -1654,15 +1657,28 @@ fn shannon_entropy(bytes: &[u8]) -> f64 {
     if bytes.is_empty() {
         return 0.0;
     }
+    let inverse_length = 1.0 / usize_to_f64(bytes.len());
+    let add_symbol = |entropy: f64, count: usize| {
+        let frequency = usize_to_f64(count) * inverse_length;
+        entropy - frequency * frequency.log2()
+    };
+    if bytes.is_ascii() {
+        // Each byte is its own symbol. Nonzero counters in index order are the
+        // same counts, in the same ascending symbol order, as the map below.
+        let mut counts = [0_usize; 128];
+        for &byte in bytes {
+            counts[usize::from(byte)] += 1;
+        }
+        return counts
+            .into_iter()
+            .filter(|count| *count != 0)
+            .fold(0.0, add_symbol);
+    }
     let mut counts = BTreeMap::<char, usize>::new();
     for character in go_chars(bytes) {
         *counts.entry(character).or_default() += 1;
     }
-    let inverse_length = 1.0 / usize_to_f64(bytes.len());
-    counts.values().fold(0.0, |entropy, count| {
-        let frequency = usize_to_f64(*count) * inverse_length;
-        entropy - frequency * frequency.log2()
-    })
+    counts.into_values().fold(0.0, add_symbol)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -2204,6 +2220,217 @@ keywords = ["agvsbg8g"]
         for finding in outcome.findings() {
             assert_eq!(finding.rule_id().as_bytes(), b"control");
         }
+    }
+
+    // Frozen ordered-map computation, retained only as differential evidence.
+    fn frozen_shannon_entropy(bytes: &[u8]) -> f64 {
+        if bytes.is_empty() {
+            return 0.0;
+        }
+        let mut counts = BTreeMap::<char, usize>::new();
+        for character in go_chars(bytes) {
+            *counts.entry(character).or_default() += 1;
+        }
+        let inverse_length = 1.0 / usize_to_f64(bytes.len());
+        counts.values().fold(0.0, |entropy, count| {
+            let frequency = usize_to_f64(*count) * inverse_length;
+            entropy - frequency * frequency.log2()
+        })
+    }
+
+    /// The defining sum over counts given in ascending symbol order.
+    fn entropy_of_ordered_counts(counts: &[usize], byte_length: usize) -> f64 {
+        let inverse_length = 1.0 / usize_to_f64(byte_length);
+        counts.iter().fold(0.0, |entropy, count| {
+            let frequency = usize_to_f64(*count) * inverse_length;
+            entropy - frequency * frequency.log2()
+        })
+    }
+
+    #[test]
+    fn entropy_values_are_specified_by_exact_bits() {
+        for (input, expected_bits) in [
+            // Empty, and every single-symbol input, has zero entropy.
+            (b"".as_slice(), 0_u64),
+            (b"a".as_slice(), 0),
+            (b"aaaa".as_slice(), 0),
+            (b"\x00".as_slice(), 0),
+            (b"\x7f\x7f".as_slice(), 0),
+            // Equal frequencies with exact powers of two.
+            (b"ab".as_slice(), 1.0_f64.to_bits()),
+            (b"abcd".as_slice(), 2.0_f64.to_bits()),
+            (b"\x00\x7f".as_slice(), 1.0_f64.to_bits()),
+            // Non-ASCII input divides by byte length, not symbol count.
+            ("\u{e9}".as_bytes(), 0.5_f64.to_bits()),
+            // Each invalid byte is one replacement symbol.
+            (b"\xff\xfe".as_slice(), 0),
+            (b"\xffa".as_slice(), 1.0_f64.to_bits()),
+        ] {
+            let actual = shannon_entropy(input);
+            assert_eq!(actual.to_bits(), expected_bits, "{input:?}");
+            assert_eq!(frozen_shannon_entropy(input).to_bits(), expected_bits);
+        }
+        let every_ascii = (0_u8..128).collect::<Vec<_>>();
+        assert_eq!(
+            shannon_entropy(&every_ascii).to_bits(),
+            7.0_f64.to_bits(),
+            "all 128 ASCII symbols with equal frequency",
+        );
+    }
+
+    #[test]
+    fn ascii_entropy_sums_counts_in_ascending_symbol_order() {
+        // The input lists the most frequent symbol first. These counts make
+        // the sum depend on its order, so the expected bits take the counts
+        // in ascending symbol order, independent of how the input is arranged.
+        let counts = [1, 3, 5_usize];
+        let mut input = Vec::new();
+        for (symbol, count) in (b'a'..=b'c').zip(&counts).rev() {
+            input.extend(std::iter::repeat_n(symbol, *count));
+        }
+        let expected = entropy_of_ordered_counts(&counts, input.len());
+        assert_eq!(shannon_entropy(&input).to_bits(), expected.to_bits());
+        assert_eq!(frozen_shannon_entropy(&input).to_bits(), expected.to_bits());
+    }
+
+    #[test]
+    fn entropy_histogram_is_bit_identical_to_the_frozen_map() {
+        let check = |input: &[u8]| {
+            assert_eq!(
+                shannon_entropy(input).to_bits(),
+                frozen_shannon_entropy(input).to_bits(),
+                "{input:?}",
+            );
+        };
+        check(b"");
+        for first in 0_u8..=255 {
+            check(&[first]);
+            for second in 0_u8..=255 {
+                check(&[first, second]);
+            }
+        }
+        for prefix in [b"".as_slice(), "\u{212a}".as_bytes(), "\u{130}".as_bytes()] {
+            for tail in [b"".as_slice(), b"a", b"\xff", b"\xe2\x82"] {
+                let mut input = prefix.to_vec();
+                input.extend_from_slice(tail);
+                check(&input);
+            }
+        }
+        // Deterministic ASCII inputs over several alphabet and length sizes.
+        let mut state = 0x9e37_79b9_u32;
+        for alphabet in [1_u32, 2, 8, 64, 128] {
+            for length in [1_usize, 2, 7, 31, 32, 33, 128, 1024] {
+                for _ in 0..4 {
+                    let input = (0..length)
+                        .map(|_| {
+                            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                            u8::try_from((state >> 8) % alphabet).unwrap()
+                        })
+                        .collect::<Vec<_>>();
+                    check(&input);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn deferred_entropy_keeps_decisions_explanations_and_finding_values() {
+        use ExplanationReason::{
+            AllowlistMatched, AllowlistNotMatched, CandidateAccepted, EntropyAccepted,
+            EntropyNotRequired, EntropyRejected, KeywordNotRequired, PatternMatched, RuleSelected,
+        };
+
+        let detector = engine(
+            r#"
+[[rules]]
+id = "threshold"
+regex = "x(ab)x|y(abc)y"
+entropy = 1.0
+[[rules]]
+id = "zero"
+regex = "abcd"
+[[rules]]
+id = "zero-allowed"
+regex = "abcd"
+[[rules.allowlists]]
+stopwords = ["abcd"]
+"#,
+        );
+        let (outcome, log) = detector.scan_fragment_explained(
+            &Fragment::new(b"xabx yabcy abcd"),
+            &ScanOptions::default(),
+            &ScanControl::unlimited(),
+            ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+            false,
+        );
+        assert!(outcome.is_complete());
+        let reasons = |ordinal: usize| {
+            log.events()
+                .iter()
+                .filter(|event| event.rule_ordinal() == Some(ordinal))
+                .map(|event| event.reason())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            reasons(0),
+            [
+                RuleSelected,
+                KeywordNotRequired,
+                AllowlistNotMatched,
+                PatternMatched,
+                EntropyRejected,
+                PatternMatched,
+                EntropyAccepted,
+                AllowlistNotMatched,
+                CandidateAccepted,
+            ]
+        );
+        assert_eq!(
+            reasons(1),
+            [
+                RuleSelected,
+                KeywordNotRequired,
+                AllowlistNotMatched,
+                PatternMatched,
+                EntropyNotRequired,
+                AllowlistNotMatched,
+                CandidateAccepted,
+            ]
+        );
+        assert_eq!(
+            reasons(2),
+            [
+                RuleSelected,
+                KeywordNotRequired,
+                AllowlistNotMatched,
+                PatternMatched,
+                EntropyNotRequired,
+                AllowlistMatched,
+            ]
+        );
+
+        let findings = outcome
+            .findings()
+            .iter()
+            .map(|finding| {
+                (
+                    finding.rule_id().as_bytes().to_vec(),
+                    finding.secret().as_bytes().to_vec(),
+                    finding.entropy().to_bits(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            findings,
+            [
+                (
+                    b"threshold".to_vec(),
+                    b"abc".to_vec(),
+                    entropy_to_f32(frozen_shannon_entropy(b"abc")).to_bits(),
+                ),
+                (b"zero".to_vec(), b"abcd".to_vec(), 2.0_f32.to_bits()),
+            ]
+        );
     }
 
     #[test]
