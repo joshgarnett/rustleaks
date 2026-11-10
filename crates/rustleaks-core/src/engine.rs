@@ -23,7 +23,7 @@ use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes
 use crate::model::{
     ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
-use crate::regex::{ByteSpan, CaptureScratch, GoRegex, NormalizedHaystack};
+use crate::regex::{ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, NormalizedHaystack};
 
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
@@ -279,6 +279,90 @@ pub struct Engine {
     keyword_count: usize,
     /// Prefilter pattern indexes of each rule, aligned with `config.rules`.
     rule_keyword_indexes: Vec<Box<[usize]>>,
+    /// Literal-anchored search plan of each rule, aligned with `config.rules`.
+    rule_literal_anchors: Vec<Option<RuleLiteralAnchor>>,
+    /// Prefilter patterns whose occurrences some plan consumes; empty if none.
+    recorded_keywords: Vec<bool>,
+}
+
+/// Where one rule's literal-anchored search takes its occurrences from.
+#[derive(Clone, Debug)]
+struct RuleLiteralAnchor {
+    /// Index into the regex's literal-node candidates.
+    candidate: usize,
+    /// Prefilter patterns covering every literal of that candidate.
+    keyword_indexes: Box<[usize]>,
+}
+
+/// Keyword start offsets recorded by one pure-ASCII keyword pass.
+///
+/// Offsets index the raw haystack: ASCII lowercasing preserves them. A
+/// saturated keyword is too dense for anchored search, so its rules use the
+/// unanchored path. Limits only choose a path and never change results.
+#[derive(Default)]
+struct KeywordOccurrences {
+    active: bool,
+    keyword_count: usize,
+    starts: Vec<Vec<usize>>,
+    saturated: Vec<bool>,
+    per_keyword_limit: usize,
+    remaining: usize,
+}
+
+impl KeywordOccurrences {
+    /// Starts a pass; `ascii_len` is `None` unless occurrences are usable.
+    fn begin_pass(&mut self, ascii_len: Option<usize>, keyword_count: usize) {
+        for starts in &mut self.starts {
+            starts.clear();
+        }
+        self.saturated.fill(false);
+        self.active = ascii_len.is_some();
+        self.keyword_count = keyword_count;
+        let length = ascii_len.unwrap_or(0);
+        self.per_keyword_limit = length / ATTEMPT_COST_FLOOR + 1;
+        self.remaining = length / 16 + 1;
+    }
+
+    fn record(&mut self, keyword: usize, start: usize) {
+        if self.starts.is_empty() {
+            self.starts.resize_with(self.keyword_count, Vec::new);
+            self.saturated.resize(self.keyword_count, false);
+        }
+        let starts = &mut self.starts[keyword];
+        if starts.len() >= self.per_keyword_limit || self.remaining == 0 {
+            self.saturated[keyword] = true;
+            return;
+        }
+        starts.push(start);
+        self.remaining -= 1;
+    }
+
+    /// Returns sorted unique occurrences of `indexes`, or `None` if unusable.
+    fn rule_starts(&self, indexes: &[usize]) -> Option<Cow<'_, [usize]>> {
+        if !self.active {
+            return None;
+        }
+        if indexes
+            .iter()
+            .any(|&index| self.saturated.get(index).copied().unwrap_or(false))
+        {
+            return None;
+        }
+        if let [index] = indexes {
+            return Some(Cow::Borrowed(
+                self.starts.get(*index).map_or(&[], Vec::as_slice),
+            ));
+        }
+        let mut merged = indexes
+            .iter()
+            .filter_map(|&index| self.starts.get(index))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        merged.sort_unstable();
+        merged.dedup();
+        Some(Cow::Owned(merged))
+    }
 }
 
 /// Original-source helpers live for one fragment, including its decoded passes.
@@ -337,6 +421,8 @@ struct RulePass<'a> {
     inherited_from_finding: bool,
     rule_ordinal: usize,
     decoded_pass: usize,
+    literal_anchor: Option<&'a RuleLiteralAnchor>,
+    keyword_occurrences: &'a KeywordOccurrences,
 }
 
 struct ScanContext<'a> {
@@ -554,29 +640,40 @@ impl Engine {
         let mut decoder = Decoder::new();
         let mut decode_depth = 0;
         let mut matched_keywords = vec![false; self.keyword_count];
+        let mut keyword_occurrences = KeywordOccurrences::default();
         loop {
             if let Err(termination) = context.work() {
                 return finish_partial(findings, options, context.usage, termination);
             }
             matched_keywords.fill(false);
+            let record_occurrences = !self.recorded_keywords.is_empty() && current_raw.is_ascii();
+            keyword_occurrences.begin_pass(
+                record_occurrences.then_some(current_raw.len()),
+                self.keyword_count,
+            );
             if let Some(prefilter) = &self.prefilter {
                 let normalized = go_lowercase_bytes(&current_raw);
                 for found in prefilter.find_overlapping_iter(&normalized) {
                     if let Err(termination) = context.work() {
                         return finish_partial(findings, options, context.usage, termination);
                     }
-                    matched_keywords[found.pattern().as_usize()] = true;
+                    let keyword = found.pattern().as_usize();
+                    matched_keywords[keyword] = true;
+                    if record_occurrences && self.recorded_keywords[keyword] {
+                        keyword_occurrences.record(keyword, found.start());
+                    }
                 }
             }
 
             {
                 let regex_haystack = OnceCell::new();
-                for ((rule_ordinal, rule), keyword_indexes) in self
+                for (((rule_ordinal, rule), keyword_indexes), literal_anchor) in self
                     .config
                     .rules
                     .values()
                     .enumerate()
                     .zip(&self.rule_keyword_indexes)
+                    .zip(&self.rule_literal_anchors)
                 {
                     context.explanations.record(
                         Some(rule_ordinal),
@@ -615,6 +712,8 @@ impl Engine {
                             inherited_from_finding: fragment.inherited_from_finding(),
                             rule_ordinal,
                             decoded_pass: decode_depth,
+                            literal_anchor: literal_anchor.as_ref(),
+                            keyword_occurrences: &keyword_occurrences,
                         },
                         context,
                     );
@@ -758,12 +857,7 @@ impl Engine {
         let mut line_allowlists = LineAllowlistMemo::default();
         // One rule pass searches only this rule's expression.
         let mut capture_scratch = None;
-        for (candidate_ordinal, span) in regex
-            .find_all_normalized(
-                rule_pass
-                    .normalized
-                    .get_or_init(|| NormalizedHaystack::new(rule_pass.current_raw)),
-            )
+        for (candidate_ordinal, span) in Self::content_match_spans(regex, rule_pass)
             .into_iter()
             .enumerate()
         {
@@ -807,6 +901,23 @@ impl Engine {
         self.project_required_findings(fragment, options, rule, rule_pass, findings, context)
     }
 
+    /// Enumerates one rule's whole matches for the current pass.
+    fn content_match_spans(regex: &GoRegex, rule_pass: RulePass<'_>) -> Vec<ByteSpan> {
+        let normalized = rule_pass
+            .normalized
+            .get_or_init(|| NormalizedHaystack::new(rule_pass.current_raw));
+        if let Some(anchor) = rule_pass.literal_anchor
+            && let Some(starts) = rule_pass
+                .keyword_occurrences
+                .rule_starts(&anchor.keyword_indexes)
+            && let Some(spans) =
+                regex.find_all_literal_anchored(normalized, anchor.candidate, &starts)
+        {
+            return spans;
+        }
+        regex.find_all_normalized(normalized)
+    }
+
     fn project_required_findings<'a>(
         &'a self,
         fragment: &'a Fragment,
@@ -844,6 +955,9 @@ impl Engine {
                 RulePass {
                     inherited_from_finding: true,
                     rule_ordinal,
+                    // Required rules have no plan lookup here. The unanchored
+                    // path is exact and this runs only after primary findings.
+                    literal_anchor: None,
                     ..rule_pass
                 },
                 context,
@@ -1408,6 +1522,23 @@ impl EngineBuilder {
                     .collect()
             })
             .collect();
+        let rule_literal_anchors = self
+            .config
+            .rules
+            .values()
+            .map(|rule| plan_literal_anchor(rule, &keyword_ids))
+            .collect::<Vec<_>>();
+        let mut recorded_keywords = Vec::new();
+        if rule_literal_anchors.iter().any(Option::is_some) {
+            recorded_keywords = vec![false; keyword_count];
+            for keyword in rule_literal_anchors
+                .iter()
+                .flatten()
+                .flat_map(|plan| plan.keyword_indexes.iter())
+            {
+                recorded_keywords[*keyword] = true;
+            }
+        }
         let prefilter = if keywords.is_empty() {
             None
         } else {
@@ -1425,8 +1556,42 @@ impl EngineBuilder {
             prefilter,
             keyword_count,
             rule_keyword_indexes,
+            rule_literal_anchors,
+            recorded_keywords,
         })
     }
+}
+
+/// Selects the longest literal-node candidate covered by the rule's keywords.
+///
+/// Every literal must be a keyword of this rule, so the keyword pass reports
+/// each occurrence the anchored search depends on.
+fn plan_literal_anchor(
+    rule: &CompiledRule,
+    keyword_ids: &BTreeMap<&str, usize>,
+) -> Option<RuleLiteralAnchor> {
+    let shape = rule.regex_matcher.as_ref()?.literal_anchor()?;
+    shape
+        .candidates()
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(candidate, choice)| {
+            let mut keyword_indexes = Vec::with_capacity(choice.literals().len());
+            for literal in choice.literals() {
+                let literal = std::str::from_utf8(literal).ok()?;
+                if !rule.keywords.iter().any(|keyword| keyword == literal) {
+                    return None;
+                }
+                keyword_indexes.push(*keyword_ids.get(literal)?);
+            }
+            keyword_indexes.sort_unstable();
+            keyword_indexes.dedup();
+            Some(RuleLiteralAnchor {
+                candidate,
+                keyword_indexes: keyword_indexes.into_boxed_slice(),
+            })
+        })
 }
 
 /// Result of one stateless fragment scan.
@@ -1749,6 +1914,9 @@ fn path_finding(fragment: &Fragment, rule: &CompiledRule) -> Option<Finding> {
     }
     builder.build().ok()
 }
+
+#[cfg(test)]
+mod literal_anchor_tests;
 
 #[cfg(test)]
 mod tests {

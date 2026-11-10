@@ -12,10 +12,12 @@
 
 #[cfg(test)]
 mod differential;
+mod literal_anchor;
 
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Write as _};
+use std::sync::Arc;
 
 use regex_automata::{
     Input, MatchKind,
@@ -23,6 +25,8 @@ use regex_automata::{
     nfa::thompson::{self, WhichCaptures},
     util::{captures::Captures, syntax},
 };
+
+pub(crate) use literal_anchor::LiteralAnchorShape;
 
 /// Maximum accepted source-pattern length.
 const PATTERN_SIZE_LIMIT: usize = 1 << 20;
@@ -36,6 +40,12 @@ const HYBRID_CACHE_CAPACITY: usize = 2 << 20;
 const ONEPASS_SIZE_LIMIT: usize = 1 << 20;
 /// Conservative per-state words for sparse sets and epsilon-closure frames.
 const PIKEVM_STATE_WORDS: usize = 10;
+/// Charge for one anchored search before any scanned byte, in byte equivalents.
+///
+/// The cache checkout and start-state lookup of a search are charged as if
+/// they scanned this many bytes. Every attempt costs at least this much, so a
+/// keyword occurring more than once per this many bytes never pays off.
+pub(crate) const ATTEMPT_COST_FLOOR: usize = 64;
 /// Parser nesting bound. Go's syntax parser separately caps repetition at 1000.
 const NEST_LIMIT: u32 = 4_096;
 const GO_CAPTURE_NEST_LIMIT: usize = 999;
@@ -280,6 +290,7 @@ pub(crate) struct GoRegex {
     source: Box<str>,
     backend: Regex,
     capture_names: Vec<Option<Box<str>>>,
+    literal_anchor: Option<Arc<LiteralAnchorShape>>,
 }
 
 impl PartialEq for GoRegex {
@@ -311,7 +322,7 @@ impl GoRegex {
         }
 
         let translated = Translator::new(source).translate()?;
-        let backend = if translated
+        let (backend, literal_anchor) = if translated
             .pattern
             .bytes()
             .filter(|byte| *byte == b'(')
@@ -338,10 +349,11 @@ impl GoRegex {
             source: source.into(),
             backend,
             capture_names: translated.capture_names,
+            literal_anchor: literal_anchor.map(Arc::new),
         })
     }
 
-    fn build_backend(pattern: &str) -> Result<Regex, GoRegexError> {
+    fn build_backend(pattern: &str) -> Result<(Regex, Option<LiteralAnchorShape>), GoRegexError> {
         let hir = syntax::parse_with(
             pattern,
             &syntax::Config::new()
@@ -375,7 +387,9 @@ impl GoRegex {
             });
         }
         drop(nfa);
-        Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)
+        let backend = Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)?;
+        // Analysis runs only after every acceptance decision has been made.
+        Ok((backend, LiteralAnchorShape::analyze(&hir)))
     }
 
     fn build_meta_backend(

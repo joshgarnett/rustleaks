@@ -91,6 +91,16 @@ temporary bytes are dropped before rule matching. ASCII folding uses the same
 ASCII mapping as Go; other characters and malformed bytes retain the pinned
 Go Unicode behavior.
 
+On a pure-ASCII pass, the keyword pass also records the start offset of each
+hit for keywords that literal-anchored rules use. It keeps at most one offset
+per 64 haystack bytes for one keyword and one per 16 bytes across all keywords;
+a rule with a keyword past either limit uses the unanchored search. The offsets
+are scan-local and are dropped before decoded bytes replace the pass. Anchored
+enumeration charges an upper bound on the bytes each attempt can scan and
+falls back to the unanchored search when the charges exceed the haystack
+length. Both paths return identical matches, and neither changes the keyword
+work-unit charge or the match checkpoints.
+
 Invalid UTF-8 normalization stores one offset checkpoint per replaced source
 byte instead of one index per normalized byte. Valid UTF-8 runs are copied in
 bulk. Ordered whole matches use a local cursor with a bounded linear prefix
