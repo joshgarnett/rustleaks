@@ -85,6 +85,13 @@ lazily after its gates. Path, allowlist and trimmed-secret searches retain
 their own haystacks and normalization. These buffers remain scan-local; they
 are not retained in the Engine's search caches.
 
+Invalid UTF-8 normalization stores one offset checkpoint per replaced source
+byte instead of one index per normalized byte. Valid UTF-8 runs are copied in
+bulk. Ordered whole matches use a local cursor with a bounded linear prefix
+and binary search for larger jumps; capture offsets use independent binary
+lookups. Each malformed byte still becomes one replacement rune, and all
+reported spans refer to the original bytes.
+
 ## Private maintenance processes
 
 The optional fuzz, security and performance tooling uses process groups on

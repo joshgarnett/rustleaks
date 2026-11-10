@@ -433,6 +433,7 @@ impl GoRegex {
         let mut position = 0;
         let mut previous_match_end = None;
         let mut results = Vec::new();
+        let mut original_cursor = 0;
         while position <= end {
             let Some(whole) = self.backend.search(&Input::new(bytes).span(position..end)) else {
                 break;
@@ -456,10 +457,13 @@ impl GoRegex {
             }
             previous_match_end = Some(whole.end());
             if accept {
-                results.push(normalized.original_span(ByteSpan {
-                    start: whole.start(),
-                    end: whole.end(),
-                }));
+                results.push(normalized.original_span_in_order(
+                    ByteSpan {
+                        start: whole.start(),
+                        end: whole.end(),
+                    },
+                    &mut original_cursor,
+                ));
             }
         }
         results
@@ -555,38 +559,37 @@ fn pikevm_working_size(nfa: &thompson::NFA) -> Option<usize> {
 
 pub(crate) struct NormalizedHaystack<'a> {
     bytes: Cow<'a, [u8]>,
-    original_boundaries: Option<Vec<usize>>,
+    /// Normalized start of each replacement for one invalid source byte.
+    replacement_starts: Vec<usize>,
 }
 
 impl<'a> NormalizedHaystack<'a> {
     pub(crate) fn new(original: &'a [u8]) -> Self {
-        if std::str::from_utf8(original).is_ok() {
+        let Err(error) = std::str::from_utf8(original) else {
             return Self {
                 bytes: Cow::Borrowed(original),
-                original_boundaries: None,
+                replacement_starts: Vec::new(),
             };
-        }
+        };
 
         let mut bytes = Vec::with_capacity(original.len());
-        let mut original_boundaries = Vec::with_capacity(original.len() + 1);
-        original_boundaries.push(0);
-        let mut offset = 0;
-        while offset < original.len() {
-            let width = utf8_rune_width(&original[offset..]);
-            if width > 1 || original[offset].is_ascii() {
-                bytes.extend_from_slice(&original[offset..offset + width]);
-                original_boundaries.extend((1..=width).map(|step| offset + step));
-                offset += width;
-            } else {
+        let mut replacement_starts = Vec::new();
+        // The initial validation already checked this prefix. Copy valid runs
+        // in bulk and retain offsets only where normalization expands bytes.
+        let valid_prefix = error.valid_up_to();
+        bytes.extend_from_slice(&original[..valid_prefix]);
+        for chunk in original[valid_prefix..].utf8_chunks() {
+            bytes.extend_from_slice(chunk.valid().as_bytes());
+            // A Rust UTF-8 error can cover several source bytes. Go consumes
+            // each malformed or truncated byte as its own RuneError.
+            for _ in chunk.invalid() {
+                replacement_starts.push(bytes.len());
                 bytes.extend_from_slice("\u{fffd}".as_bytes());
-                original_boundaries.extend([offset, offset, offset + 1]);
-                offset += 1;
             }
         }
-        debug_assert_eq!(original_boundaries.len(), bytes.len() + 1);
         Self {
             bytes: Cow::Owned(bytes),
-            original_boundaries: Some(original_boundaries),
+            replacement_starts,
         }
     }
 
@@ -595,12 +598,66 @@ impl<'a> NormalizedHaystack<'a> {
     }
 
     fn original_span(&self, normalized: ByteSpan) -> ByteSpan {
-        let Some(boundaries) = &self.original_boundaries else {
+        if self.replacement_starts.is_empty() {
             return normalized;
-        };
+        }
         ByteSpan {
-            start: boundaries[normalized.start],
-            end: boundaries[normalized.end],
+            start: self.original_offset(normalized.start),
+            end: self.original_offset(normalized.end),
+        }
+    }
+
+    fn original_offset(&self, normalized: usize) -> usize {
+        let count = self
+            .replacement_starts
+            .partition_point(|start| *start <= normalized);
+        self.offset_with_count(normalized, count)
+    }
+
+    fn original_span_in_order(&self, normalized: ByteSpan, cursor: &mut usize) -> ByteSpan {
+        if self.replacement_starts.is_empty() {
+            return normalized;
+        }
+        let start = self.original_offset_in_order(normalized.start, cursor);
+        let end = if normalized.start == normalized.end {
+            start
+        } else {
+            self.original_offset_in_order(normalized.end, cursor)
+        };
+        ByteSpan { start, end }
+    }
+
+    fn original_offset_in_order(&self, normalized: usize, cursor: &mut usize) -> usize {
+        debug_assert!(*cursor == 0 || self.replacement_starts[*cursor - 1] <= normalized);
+        // Whole matches are ordered and nonoverlapping. Nearby endpoints can
+        // advance cheaply; a large jump still uses logarithmic lookup rather
+        // than walking every invalid byte skipped by the regex.
+        for _ in 0..8 {
+            if self
+                .replacement_starts
+                .get(*cursor)
+                .is_none_or(|start| *start > normalized)
+            {
+                return self.offset_with_count(normalized, *cursor);
+            }
+            *cursor += 1;
+        }
+        *cursor += self.replacement_starts[*cursor..].partition_point(|start| *start <= normalized);
+        self.offset_with_count(normalized, *cursor)
+    }
+
+    fn offset_with_count(&self, normalized: usize, count: usize) -> usize {
+        if count == 0 {
+            return normalized;
+        }
+        let last = self.replacement_starts[count - 1];
+        if normalized - last < 3 {
+            // All three boundaries within a replacement map to the invalid
+            // source byte. Its following boundary maps past that byte.
+            last - 2 * (count - 1)
+        } else {
+            // Each preceding replacement expands one source byte into three.
+            normalized - 2 * count
         }
     }
 }
@@ -2250,6 +2307,133 @@ mod tests {
             NormalizedHaystack::new("é".as_bytes()).bytes,
             std::borrow::Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn sparse_normalization_preserves_replacement_interiors_and_literal_rune_errors() {
+        let input = b"\xef\xbf\xbd\xffA\xe2\x82";
+        let normalized = NormalizedHaystack::new(input);
+        // The first RuneError is valid source UTF-8. Only the three invalid
+        // source bytes expand, including each byte of the truncated tail.
+        assert_eq!(
+            normalized.bytes(),
+            "\u{fffd}\u{fffd}A\u{fffd}\u{fffd}".as_bytes()
+        );
+        assert_eq!(normalized.replacement_starts, [3, 7, 10]);
+        let expected = [0, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 6, 7];
+        for (offset, original) in expected.into_iter().enumerate().rev() {
+            assert_eq!(
+                normalized.original_span(ByteSpan {
+                    start: offset,
+                    end: offset
+                }),
+                ByteSpan {
+                    start: original,
+                    end: original
+                },
+                "normalized boundary {offset}",
+            );
+        }
+    }
+
+    #[test]
+    fn sparse_normalization_matches_every_boundary_of_short_byte_inputs() {
+        assert_normalization_matches_per_byte_reference(b"");
+        for first in 0..=u8::MAX {
+            assert_normalization_matches_per_byte_reference(&[first]);
+            for second in 0..=u8::MAX {
+                assert_normalization_matches_per_byte_reference(&[first, second]);
+            }
+        }
+        for input in [
+            "éΩ日本語\u{fffd}😀".as_bytes(),
+            b"\xff\xc3\xa9\x80\xe2\x82\xac\xff\xf0\x9f\x98\x80\xff",
+            b"\xf0\x90\x80A\xed\xa0\x80\xe0\x80\x80\xc0\xaf",
+            b"\xe2\x82",
+            b"\xf0\x9f\x98",
+            b"\xf4\x8f\xbf\xbf\xff\xf4\x90\x80\x80",
+        ] {
+            assert_normalization_matches_per_byte_reference(input);
+        }
+        // Cover late expansion and a long run of adjacent replacements without
+        // putting the multi-megabyte performance fixtures in ordinary tests.
+        let mut late_invalid = vec![b'a'; 4_096];
+        late_invalid.push(0xff);
+        assert_normalization_matches_per_byte_reference(&late_invalid);
+        assert_normalization_matches_per_byte_reference(&[0xff; 4_096]);
+    }
+
+    fn assert_normalization_matches_per_byte_reference(input: &[u8]) {
+        let (expected_bytes, expected_boundaries) = per_byte_normalization(input);
+        let normalized = NormalizedHaystack::new(input);
+        assert_eq!(normalized.bytes(), expected_bytes);
+        let mut cursor = 0;
+        for (offset, &original) in expected_boundaries.iter().enumerate() {
+            assert_eq!(
+                normalized.original_span_in_order(
+                    ByteSpan {
+                        start: offset,
+                        end: offset
+                    },
+                    &mut cursor,
+                ),
+                ByteSpan {
+                    start: original,
+                    end: original
+                },
+            );
+        }
+        assert_eq!(
+            normalized.original_span_in_order(
+                ByteSpan {
+                    start: 0,
+                    end: expected_bytes.len()
+                },
+                &mut 0,
+            ),
+            ByteSpan {
+                start: 0,
+                end: input.len()
+            },
+        );
+        // Reverse traversal also exercises arbitrary endpoint order, as used
+        // by capture groups. No shared monotonic cursor may affect mapping.
+        for (offset, original) in expected_boundaries.into_iter().enumerate().rev() {
+            assert_eq!(
+                normalized.original_span(ByteSpan {
+                    start: offset,
+                    end: offset
+                }),
+                ByteSpan {
+                    start: original,
+                    end: original
+                },
+                "normalized boundary {offset}, input length {}",
+                input.len(),
+            );
+        }
+    }
+
+    // Frozen former per-byte normalization and mapping. Keep it independent
+    // of UTF-8 chunks and sparse checkpoints used by the production path.
+    fn per_byte_normalization(original: &[u8]) -> (Vec<u8>, Vec<usize>) {
+        let mut bytes = Vec::with_capacity(original.len());
+        let mut boundaries = Vec::with_capacity(original.len() + 1);
+        boundaries.push(0);
+        let mut offset = 0;
+        while offset < original.len() {
+            let width = super::utf8_rune_width(&original[offset..]);
+            if width > 1 || original[offset].is_ascii() {
+                bytes.extend_from_slice(&original[offset..offset + width]);
+                boundaries.extend((1..=width).map(|step| offset + step));
+                offset += width;
+            } else {
+                bytes.extend_from_slice("\u{fffd}".as_bytes());
+                boundaries.extend([offset, offset, offset + 1]);
+                offset += 1;
+            }
+        }
+        (bytes, boundaries)
     }
 
     #[test]
