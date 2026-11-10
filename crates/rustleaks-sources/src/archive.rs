@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rustleaks_core::config::CompiledConfig;
+use rustleaks_rar_codec::crc32::crc32;
 
 use crate::{
     CallbackError, Cancellation, FileOptions, FileSource, LogicalPath, Source, SourceConfigError,
@@ -1477,18 +1478,6 @@ fn extend_bounded(output: &mut Vec<u8>, input: &[u8], limit: usize) -> Result<()
     Ok(())
 }
 
-fn crc32(input: &[u8]) -> u32 {
-    let mut crc = u32::MAX;
-    for byte in input {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let polynomial = 0xedb8_8320 & 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ polynomial;
-        }
-    }
-    !crc
-}
-
 enum DecodeFailure {
     Cancelled,
     Limit,
@@ -1960,5 +1949,34 @@ mod tests {
     fn owned_crc32_matches_the_ieee_check_value() {
         assert_eq!(crc32(b""), 0);
         assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+    }
+
+    fn bitwise_crc32(input: &[u8]) -> u32 {
+        let mut crc = u32::MAX;
+        for byte in input {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                let polynomial = 0xedb8_8320 & 0_u32.wrapping_sub(crc & 1);
+                crc = (crc >> 1) ^ polynomial;
+            }
+        }
+        !crc
+    }
+
+    #[test]
+    fn table_crc32_matches_the_retained_bitwise_crc32() {
+        let mut state = 0x1234_5678_u32;
+        let mut bytes = Vec::new();
+        for len in (0..=257).chain([1024, 4095, 4096, 4097, 65_536]) {
+            while bytes.len() < len {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                bytes.push(state.to_be_bytes()[0]);
+            }
+            assert_eq!(
+                crc32(&bytes[..len]),
+                bitwise_crc32(&bytes[..len]),
+                "len {len}"
+            );
+        }
     }
 }
