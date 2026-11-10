@@ -366,7 +366,8 @@ pub(crate) fn check() -> Result<(), String> {
         "all {} performance workloads satisfy exact outcome and Bazel build provenance invariants",
         PERF_WORKLOADS.len()
     );
-    if calibrated_m1_max_host()? {
+    let calibrated_host = calibrated_m1_max_host()?;
+    if calibrated_host {
         perf_budget_check(&prepared)?;
         println!(
             "unchanged inherited M1 Max elapsed and RSS limits passed on the Bazel build; timing scope is {MEASUREMENT_SCOPE}"
@@ -375,7 +376,7 @@ pub(crate) fn check() -> Result<(), String> {
         println!("inherited M1 Max elapsed and RSS limits not evaluated on this host class");
     }
     prepared.build["timing_scope"] = json!("representative-v1-operation-only");
-    representative_suite::fragment_budget_check(&prepared)?;
+    representative_suite::fragment_budget_check(&prepared, calibrated_host)?;
     prepared.ensure_unchanged()?;
     println!(
         "performance evidence: executable_sha256={} input_sha256={} dirty={}",

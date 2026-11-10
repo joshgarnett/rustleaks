@@ -416,7 +416,10 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
 }
 
 /// The fragment operation budget supplements, and never replaces, legacy gates.
-pub(super) fn fragment_budget_check(prepared: &Prepared) -> Result<(), String> {
+pub(super) fn fragment_budget_check(
+    prepared: &Prepared,
+    calibrated_host: bool,
+) -> Result<(), String> {
     let listed = command_output(Command::new(&prepared.binary).arg("--representative-list"))?;
     let workloads = listed
         .lines()
@@ -473,15 +476,22 @@ pub(super) fn fragment_budget_check(prepared: &Prepared) -> Result<(), String> {
         for (phase, mut samples) in phases {
             samples.sort_unstable();
             let median = samples[1];
-            if median > 1_500_000_000 {
+            if calibrated_host && median > 1_500_000_000 {
                 return Err(format!(
                     "{workload} {phase} median {median} ns exceeds 1500000000 ns"
                 ));
             }
             println!(
-                "{workload} {phase} median={median} ns; limit=1500000000 ns; samples={samples:?}"
+                "{workload} {phase} median={median} ns; calibrated_host={calibrated_host}; samples={samples:?}"
             );
         }
+    }
+    if calibrated_host {
+        println!("M1 Max fragment-operation medians satisfy the 1500000000 ns limit");
+    } else {
+        println!(
+            "fragment invariants passed; M1 Max latency limits not evaluated on this host class"
+        );
     }
     Ok(())
 }

@@ -397,9 +397,15 @@ not measure retained engine memory. Use the existing `perf profile` heap and
 VM snapshots with `core-default-many-keywords-16-kib` to observe a long-lived
 engine containing the full default configuration and warmed search caches.
 
-`perf check`, and therefore `cargo xtask qualify`, additionally require a
-median no greater than 1.5 seconds for both first and steady phases of every
-4 MiB and 12 MiB workload, from three independent processes. The existing
+`perf check`, and therefore `cargo xtask qualify`, additionally require on
+the calibrated M1 Max host a median no greater than 1.5 seconds for both first
+and steady phases of every 4 MiB and 12 MiB workload, from three independent processes. The existing
 compile, hostile-regex and peak-RSS limits are unchanged. The new target is
 an engineering budget measured on the implementation host, not a portable
-latency promise; slower host qualification needs an explicit budget decision.
+latency promise. Other hosts run the same exact invariants and report medians
+without enforcing this uncalibrated latency threshold. A different host
+budget requires separate measurement and review.
+
+The [fragment throughput record](validation/core-fragment-throughput.md)
+compares the backend and preprocessing stages, exact outcome invariants,
+retained memory and unchanged legacy budgets.

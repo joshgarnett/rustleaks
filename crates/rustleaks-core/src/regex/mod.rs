@@ -381,25 +381,24 @@ impl GoRegex {
             .onepass_size_limit(Some(ONEPASS_SIZE_LIMIT))
             // Also prevent eager DFA construction under consumer feature unification.
             .dfa(false);
-        Regex::builder()
+        let result = Regex::builder()
             .configure(config.clone())
-            .build_from_hir(hir)
-            .or_else(|error| {
-                if error.size_limit() == Some(nfa_size_limit) {
-                    // The identical forward NFA already passed its limit.
-                    // A larger reverse NFA must not reject a formerly accepted
-                    // expression. Retry without building a reverse NFA; every
-                    // NFA still obeys the same cap.
-                    Regex::builder()
-                        .configure(config.hybrid(false))
-                        .build_from_hir(hir)
-                } else {
-                    Err(error)
-                }
-            })
-            .map_err(|error| GoRegexError::Backend {
-                message: error.to_string(),
-            })
+            .build_from_hir(hir);
+        let result = match result {
+            Err(error) if error.size_limit() == Some(nfa_size_limit) => {
+                // The identical forward NFA already passed its limit.
+                // A larger reverse NFA must not reject a formerly accepted
+                // expression. Retry without building a reverse NFA; every
+                // NFA still obeys the same cap.
+                Regex::builder()
+                    .configure(config.hybrid(false))
+                    .build_from_hir(hir)
+            }
+            result => result,
+        };
+        result.map_err(|error| GoRegexError::Backend {
+            message: error.to_string(),
+        })
     }
 
     pub(crate) fn source(&self) -> &str {
@@ -425,7 +424,10 @@ impl GoRegex {
 
     /// Eagerly returns whole-match spans without computing capture groups.
     pub(crate) fn find_all(&self, haystack: &[u8]) -> Vec<ByteSpan> {
-        let normalized = NormalizedHaystack::new(haystack);
+        self.find_all_normalized(&NormalizedHaystack::new(haystack))
+    }
+
+    pub(crate) fn find_all_normalized(&self, normalized: &NormalizedHaystack<'_>) -> Vec<ByteSpan> {
         let bytes = normalized.bytes();
         let end = bytes.len();
         let mut position = 0;
@@ -461,6 +463,24 @@ impl GoRegex {
             }
         }
         results
+    }
+
+    /// Finds only the first match, treating this slice as its own haystack.
+    pub(crate) fn captures(&self, haystack: &[u8]) -> Option<CaptureSpans> {
+        let normalized = NormalizedHaystack::new(haystack);
+        let mut captures = self.backend.create_captures();
+        self.backend
+            .search_captures(&Input::new(normalized.bytes()), &mut captures);
+        captures.get_group(0)?;
+        Some(CaptureSpans {
+            spans: (0..self.capture_names.len())
+                .map(|index| {
+                    captures
+                        .get_group(index)
+                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+                })
+                .collect(),
+        })
     }
 
     /// Returns every non-overlapping match and all of its capture spans.
@@ -533,13 +553,13 @@ fn pikevm_working_size(nfa: &thompson::NFA) -> Option<usize> {
         .checked_mul(std::mem::size_of::<usize>())
 }
 
-struct NormalizedHaystack<'a> {
+pub(crate) struct NormalizedHaystack<'a> {
     bytes: Cow<'a, [u8]>,
     original_boundaries: Option<Vec<usize>>,
 }
 
 impl<'a> NormalizedHaystack<'a> {
-    fn new(original: &'a [u8]) -> Self {
+    pub(crate) fn new(original: &'a [u8]) -> Self {
         if std::str::from_utf8(original).is_ok() {
             return Self {
                 bytes: Cow::Borrowed(original),

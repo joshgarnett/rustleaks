@@ -1,4 +1,4 @@
-//! Versioned, operation-only representative workloads. No release performance gate.
+//! Versioned operation-only workloads, including host-calibrated fragment budgets.
 
 use std::error::Error;
 use std::fmt::Write;

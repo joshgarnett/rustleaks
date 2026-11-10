@@ -114,11 +114,16 @@ linear bound for an entire eager match-enumeration operation. Cancellation
 remains cooperative, and regex evaluation remains indivisible. Ordinary
 allocation failure and allocator overhead remain outside the numeric limits.
 
-Candidate validation is pending: differential capture and span comparisons,
-frozen compatibility replay, all first-party tests, format/build/lint and
-target checks, package consumers, fuzz build and smoke campaigns including
-`go_regex`, and `just security`. Performance evidence must include the existing
-compile, hostile-miss, and peak-RSS budgets plus warmed Engine retention.
-No new advisory, vetting, unsafe, or compatibility exception is accepted by
-this review. A final passing conclusion requires those results and resolution
-of any unexplained divergence.
+Review result: PASS for the tested macOS arm64 configuration. `just parity`,
+`just test`, `just check`, `just fuzz-build`, `just fuzz-smoke` (including
+`go_regex`), `just package-check`, `just security`, `just ci` and
+`just perf-check` passed. The retained differential tests found no backend divergence
+in the regex/default-rule corpora or synthetic cases. The generated cargo-vet
+inventory was refreshed for the selected features; no exemption changed.
+The [performance record](../validation/core-fragment-throughput.md) reports
+compile and hostile-miss budgets, peak RSS, and stable warmed-worker retention.
+
+No new advisory, vetting, unsafe or compatibility exception is accepted.
+The native evidence is macOS arm64; all eight declared targets compile, and
+native execution on other targets remains a separate hosted check. These
+results do not establish equivalence for every possible input or a heap quota.

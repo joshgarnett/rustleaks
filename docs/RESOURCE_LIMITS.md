@@ -76,6 +76,13 @@ can disappear. This is not a linear bound on an entire eager match enumeration
 or a wall-clock deadline. Retained-memory and latency measurements apply only
 to the measured configuration, input, concurrency and host.
 
+Each scan creates the original-fragment newline index only when a finding
+needs a location, and reuses it across decoded passes and required rules.
+Each pass normalizes its current bytes for regex matching at most once,
+lazily after its gates. Path, allowlist and trimmed-secret searches retain
+their own haystacks and normalization. These buffers remain scan-local; they
+are not retained in the Engine's search caches.
+
 ## Private maintenance processes
 
 The optional fuzz, security and performance tooling uses process groups on

@@ -168,6 +168,11 @@ impl Pair {
         let expected = self.reference.captures_all(input);
         assert_eq!(self.current.captures_all(input), expected, "{id}: captures");
         assert_eq!(
+            self.current.captures(input).as_ref(),
+            expected.first(),
+            "{id}: first captures"
+        );
+        assert_eq!(
             self.current.find_all(input),
             expected.iter().map(CaptureSpans::whole).collect::<Vec<_>>(),
             "{id}: whole matches"

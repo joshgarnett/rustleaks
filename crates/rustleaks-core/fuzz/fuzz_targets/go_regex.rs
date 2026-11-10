@@ -36,5 +36,6 @@ fuzz_target!(|data: &[u8]| {
     black_box(compiled.capture_names());
     black_box(compiled.is_match(haystack));
     black_box(compiled.find_all(haystack));
+    black_box(compiled.captures(haystack));
     black_box(compiled.captures_all(haystack));
 });
