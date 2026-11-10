@@ -491,6 +491,7 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
             "crates/xtask/src/performance_reporting/existing.rs".to_owned(),
             "crates/xtask/src/performance_reporting/tests.rs".to_owned(),
             "crates/xtask/src/performance_representative.rs".to_owned(),
+            "crates/xtask/src/performance_source_scale.rs".to_owned(),
             "crates/xtask/src/performance_investigation.rs".to_owned(),
             "crates/xtask/src/performance_investigation.txt".to_owned(),
             "crates/xtask/src/performance_investigation/window_matrix.rs".to_owned(),

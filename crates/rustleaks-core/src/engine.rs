@@ -1377,36 +1377,61 @@ fn filter_findings_cancellable(
     redact: usize,
     control: ScanControl<'_>,
 ) -> (Vec<Finding>, Option<ScanTermination>) {
-    let suppression = GenericSuppression::new(&findings);
+    if control.cancellation.is_none() {
+        return (filter_findings(findings, redact), None);
+    }
+    // Index construction and a whole bucket search can each visit every
+    // finding. A cancellation signal must run before each comparison, not
+    // after the search has completed, so keep this path interleaved.
+    filter_findings_with_cancellation(findings, redact, control, suppresses_generic_finding)
+}
+
+/// Keeps each potentially expensive comparison behind its cancellation poll.
+fn filter_findings_with_cancellation(
+    findings: Vec<Finding>,
+    redact: usize,
+    control: ScanControl<'_>,
+    mut suppresses: impl FnMut(&Finding, &Finding) -> bool,
+) -> (Vec<Finding>, Option<ScanTermination>) {
     let mut include = Vec::with_capacity(findings.len());
-    for index in 0..findings.len() {
+    for finding in &findings {
         if control.is_cancelled() {
             return (
                 apply_finding_filter(findings, include, redact),
                 Some(ScanTermination::Cancelled),
             );
         }
-        if !suppression.is_generic(index) {
+        if !contains_bytes(
+            &go_lowercase_bytes(finding.rule_id().as_bytes()),
+            b"generic",
+        ) {
             include.push(true);
             continue;
         }
-        let suppressor = suppression.first_suppressor(index);
-        // A caller's signal can count its polls. Keep one poll per finding that
-        // the linear comparison visits, through the first suppressor.
-        if control.cancellation.is_some() {
-            let visited = suppressor.map_or(findings.len(), |other| other + 1);
-            for _ in 0..visited {
-                if control.is_cancelled() {
-                    return (
-                        apply_finding_filter(findings, include, redact),
-                        Some(ScanTermination::Cancelled),
-                    );
-                }
+        let mut retained = true;
+        for other in &findings {
+            if control.is_cancelled() {
+                return (
+                    apply_finding_filter(findings, include, redact),
+                    Some(ScanTermination::Cancelled),
+                );
+            }
+            if suppresses(finding, other) {
+                retained = false;
+                break;
             }
         }
-        include.push(suppressor.is_none());
+        include.push(retained);
     }
     (apply_finding_filter(findings, include, redact), None)
+}
+
+fn suppresses_generic_finding(finding: &Finding, other: &Finding) -> bool {
+    finding.location().start_line() == other.location().start_line()
+        && finding.commit() == other.commit()
+        && finding.rule_id() != other.rule_id()
+        && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+        && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
 }
 
 /// Pair selection for generic-rule suppression over one immutable finding list.
@@ -3525,6 +3550,50 @@ paths = ['''C:\\secret\.txt$''']
                 })
                 .collect::<Vec<_>>();
             assert_generic_filters_match_frozen(&list);
+        }
+    }
+
+    #[test]
+    fn generic_filter_polls_before_each_comparison_and_stops_work_on_cancellation() {
+        let mut findings = vec![
+            filter_probe(b"plain", 1, b"", b"p"),
+            filter_probe(b"generic", 7, b"same", b"absent"),
+        ];
+        findings.extend((0..32).map(|_| filter_probe(b"specific", 7, b"same", b"other")));
+
+        for cancel_at in 0..8 {
+            let polls = AtomicUsize::new(0);
+            let comparisons = AtomicUsize::new(0);
+            let cancel = || {
+                let poll = polls.fetch_add(1, Ordering::SeqCst);
+                // The first two polls enter the plain and generic findings.
+                // Each later poll must precede its comparison, including the
+                // poll that cancels. No bucket may be searched in advance.
+                assert_eq!(comparisons.load(Ordering::SeqCst), poll.saturating_sub(2));
+                poll == cancel_at
+            };
+            let (filtered, termination) = filter_findings_with_cancellation(
+                findings.clone(),
+                100,
+                ScanControl::cancellable(&cancel),
+                |finding, other| {
+                    comparisons.fetch_add(1, Ordering::SeqCst);
+                    suppresses_generic_finding(finding, other)
+                },
+            );
+            assert_eq!(termination, Some(ScanTermination::Cancelled));
+            assert_eq!(polls.load(Ordering::SeqCst), cancel_at + 1);
+            assert_eq!(
+                comparisons.load(Ordering::SeqCst),
+                cancel_at.saturating_sub(2)
+            );
+            if cancel_at == 0 {
+                assert!(filtered.is_empty());
+            } else {
+                assert_eq!(filtered.len(), 1);
+                assert_eq!(filtered[0].rule_id().as_bytes(), b"plain");
+                assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
+            }
         }
     }
 

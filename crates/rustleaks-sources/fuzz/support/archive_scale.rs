@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use rustleaks_core::Engine;
 use rustleaks_core::config::ConfigLoader;
-use rustleaks_core::model::{Finding, Fragment, ScanOptions};
+use rustleaks_core::model::{CommitMetadata, Finding, Fragment, ScanOptions};
 use rustleaks_core::session::SessionPolicy;
 use rustleaks_sources::{
     ArchiveLimits, ArchiveOptions, ArchiveSource, CallbackError, CancellationToken,
@@ -672,19 +672,14 @@ fn zstd_many_small(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
     let scratch = Scratch::new()?;
     let input = scratch.0.join("input");
     fs::create_dir(&input)?;
+    let window_exponent = zstd_window_exponent(scale.limits.maximum_member_bytes());
     let mut expected = Vec::with_capacity(scale.zstd_files);
     for index in 0..scale.zstd_files {
         let mut payload = format!("synthetic zstd member {index:06}\n").into_bytes();
         payload.resize(KIB, b'.');
         payload[KIB - 1] = b'\n';
         let name = format!("blob-{index:06}.zst");
-        fs::write(
-            input.join(&name),
-            zstd_raw_frame(
-                &payload,
-                zstd_window_exponent(scale.limits.maximum_member_bytes()),
-            ),
-        )?;
+        fs::write(input.join(&name), zstd_raw_frame(&payload, window_exponent))?;
         expected.push((format!("input/{name}"), payload));
     }
     let mut elapsed = Duration::ZERO;
@@ -728,7 +723,7 @@ fn zstd_many_small(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
         .as_bytes(),
         outcome: format!("{}:{bytes}", expected.len()).as_bytes(),
         findings: 0,
-        counts: json!({"files": scale.zstd_files, "decoded_bytes_total": bytes, "history_allocation_bytes_per_file": scale.limits.maximum_member_bytes(), "peak_rss": "recorded by the representative collector for the whole child process"}),
+        counts: json!({"files": scale.zstd_files, "decoded_bytes_total": bytes, "maximum_member_bytes": scale.limits.maximum_member_bytes(), "declared_window_bytes": 1024_usize << window_exponent, "peak_rss": "recorded by the representative collector for the whole child process"}),
     })?])
 }
 
@@ -843,7 +838,7 @@ fn git_run(mut command: Command, input: Option<&[u8]>) -> Result<()> {
 }
 
 /// A distinct `.tar.gz` blob holding two members with one planted token each.
-fn git_archive_blob(blob: usize) -> (Vec<u8>, [(String, usize); 2]) {
+fn git_archive_blob(blob: usize) -> (Vec<u8>, [GitArchiveMember; 2]) {
     let first = format!("{}\nblob {blob} body\n", String::from_utf8_lossy(TOKEN));
     let second = format!(
         "blob {blob} heading\n{}\ntail row {blob}\n",
@@ -855,8 +850,68 @@ fn git_archive_blob(blob: usize) -> (Vec<u8>, [(String, usize); 2]) {
     ]);
     (
         gzip_stored(&tar),
-        [("first.txt".to_owned(), 1), ("second.txt".to_owned(), 2)],
+        [
+            GitArchiveMember {
+                name: "first.txt",
+                content: first.into_bytes(),
+                token_line: 1,
+            },
+            GitArchiveMember {
+                name: "second.txt",
+                content: second.into_bytes(),
+                token_line: 2,
+            },
+        ],
     )
+}
+
+struct GitArchiveMember {
+    name: &'static str,
+    content: Vec<u8>,
+    token_line: usize,
+}
+
+fn git_archive_fragment(member: &GitArchiveMember, sha: &str, commit: usize) -> Fragment {
+    let path = format!("pack.tar.gz!{}", member.name);
+    let metadata = CommitMetadata::builder()
+        .sha(sha)
+        .author_name(GIT_AUTHOR)
+        .author_email(GIT_EMAIL)
+        .date(format!(
+            "2000-01-01T{:02}:{:02}:{:02}Z",
+            commit / 3600,
+            commit / 60 % 60,
+            commit % 60
+        ))
+        .message(b"fixture")
+        .build();
+    let mut builder = Fragment::builder(member.content.clone())
+        .file_path(path.clone())
+        .commit(sha)
+        .start_line(1)
+        .commit_metadata(metadata);
+    if cfg!(windows) {
+        builder = builder.windows_file_path(path);
+    }
+    builder.build()
+}
+
+fn sort_git_archive_fragments(fragments: &mut [Fragment]) {
+    fragments.sort_by(|left, right| {
+        left.commit()
+            .cmp(right.commit())
+            .then_with(|| left.file_path().cmp(right.file_path()))
+    });
+}
+
+/// The generated manifest has one fragment per member and unique commit/path
+/// pairs. Compare every retained field after ignoring only emission order.
+fn verify_git_archive_fragments(actual: &mut [Fragment], expected: &[Fragment]) -> Result<()> {
+    sort_git_archive_fragments(actual);
+    if actual != expected {
+        return Err("Git archive fragments differ from the generator manifest".into());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -942,21 +997,25 @@ fn git_archive_blobs(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
         sha.clone_into(&mut shas[mark.parse::<usize>()? - 1]);
     }
     let mut expected = Vec::new();
+    let mut expected_fragments = Vec::new();
     for (commit, sha) in shas.iter().enumerate() {
         let (_, members) = &blobs[commit % blobs.len()];
-        for (member, line) in members {
+        for member in members {
+            expected_fragments.push(git_archive_fragment(member, sha, commit));
             expected.push(FindingKey {
-                file: format!("pack.tar.gz!{member}").into_bytes(),
+                file: format!("pack.tar.gz!{}", member.name).into_bytes(),
                 commit: sha.clone().into_bytes(),
-                line: *line,
+                line: member.token_line,
                 // Line-initial token: column 1 on a fragment's first line,
                 // otherwise start - previous newline + 1, which is 2.
-                column: if *line == 1 { 1 } else { 2 },
+                column: if member.token_line == 1 { 1 } else { 2 },
                 secret: TOKEN.to_vec(),
             });
         }
     }
     expected.sort();
+    sort_git_archive_fragments(&mut expected_fragments);
+    let fragment_manifest = serde_json::to_vec(&expected_fragments)?;
     let source = || -> Result<GitSource> {
         Ok(GitSource::new(&repository)
             .executable(git.clone().into_os_string())
@@ -980,13 +1039,12 @@ fn git_archive_blobs(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
     let cancellation = CancellationToken::new();
     let counts = json!({"commits": scale.git_commits, "distinct_blobs": blobs.len(), "members_per_blob": 2, "tokens_per_blob": 2, "expected_findings": expected.len(), "filesystem_state": "setup-written-cache-uncontrolled", "workers": 1, "queue_capacity": 8});
     let mut parse_elapsed = Duration::ZERO;
-    let mut fragment_count = 0_usize;
     for _ in 0..iterations {
         let mut git_source = source()?;
         let start = Instant::now();
         let result = black_box(collect(&mut git_source));
         parse_elapsed += start.elapsed();
-        let (fragments, issues) = result?;
+        let (mut fragments, issues) = result?;
         if !issues.is_empty() || fragments.len() != expected.len() {
             return Err(format!(
                 "Git archive blobs produced {} fragments and {} issues, manifest expects {}",
@@ -996,7 +1054,7 @@ fn git_archive_blobs(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
             )
             .into());
         }
-        fragment_count = fragments.len();
+        verify_git_archive_fragments(&mut fragments, &expected_fragments)?;
     }
     let mut detection_elapsed = Duration::ZERO;
     let mut outcome = Vec::new();
@@ -1035,7 +1093,7 @@ fn git_archive_blobs(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
             units: bytes,
             input: &stream,
             config: b"no-scan",
-            outcome: format!("{fragment_count}").as_bytes(),
+            outcome: &fragment_manifest,
             findings: 0,
             counts: counts.clone(),
         })?,
@@ -1052,4 +1110,55 @@ fn git_archive_blobs(iterations: usize, scale: Scale) -> Result<Vec<Value>> {
             counts,
         })?,
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_archive_verifier_rejects_changes_that_preserve_fragment_count() {
+        let (_, members) = git_archive_blob(0);
+        let mut expected = members
+            .iter()
+            .map(|member| git_archive_fragment(member, "synthetic-commit", 0))
+            .collect::<Vec<_>>();
+        sort_git_archive_fragments(&mut expected);
+
+        let mut reordered = expected.clone();
+        reordered.reverse();
+        verify_git_archive_fragments(&mut reordered, &expected).unwrap();
+        assert!(verify_git_archive_fragments(&mut expected[..1].to_vec(), &expected).is_err());
+
+        let mut duplicate = vec![expected[0].clone(), expected[0].clone()];
+        assert!(verify_git_archive_fragments(&mut duplicate, &expected).is_err());
+
+        // Preserve both planted tokens while altering only non-token bytes.
+        let changed_member = GitArchiveMember {
+            name: members[0].name,
+            content: [TOKEN.as_slice(), b"\nwrong clean body\n"].concat(),
+            token_line: members[0].token_line,
+        };
+        let wrong_line = Fragment::builder(members[0].content.clone())
+            .file_path(expected[0].file_path().clone())
+            .windows_file_path(expected[0].windows_file_path().clone())
+            .commit(expected[0].commit().clone())
+            .commit_metadata(expected[0].commit_metadata().unwrap().clone())
+            .start_line(2)
+            .build();
+        for replacement in [
+            git_archive_fragment(&changed_member, "synthetic-commit", 0),
+            expected[0].clone().with_source_paths(
+                "wrong-path".into(),
+                expected[0].symlink_file().clone(),
+                expected[0].windows_file_path().clone(),
+            ),
+            git_archive_fragment(&members[0], "wrong-commit", 0),
+            git_archive_fragment(&members[0], "synthetic-commit", 1),
+            wrong_line,
+        ] {
+            let mut changed = vec![replacement, expected[1].clone()];
+            assert!(verify_git_archive_fragments(&mut changed, &expected).is_err());
+        }
+    }
 }

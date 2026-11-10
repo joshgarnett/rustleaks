@@ -395,11 +395,6 @@ impl Decoder {
     }
 }
 
-/// Returns the segments whose decoded span overlaps `start..=end`.
-///
-/// `segments` comes from one decode pass, or a contiguous run of one, so the
-/// inclusive [`StartEnd::overlaps`] matches form a contiguous range; see
-/// [`segments_are_ordered_and_disjoint`].
 /// Names the [`ENCODINGS_PATTERN`] alternative that produced one whole match.
 ///
 /// `span` must be the bytes of a match of that pattern. Each alternative is its
@@ -438,6 +433,11 @@ fn classify_encoding_span(span: &[u8]) -> Encoding {
     }
 }
 
+/// Returns the segments whose decoded span overlaps `start..=end`.
+///
+/// `segments` comes from one decode pass, or a contiguous run of one, so the
+/// inclusive [`StartEnd::overlaps`] matches form a contiguous range; see
+/// [`segments_are_ordered_and_disjoint`].
 pub(crate) fn segments_with_decoded_overlap(
     segments: &[EncodedSegment],
     start: usize,

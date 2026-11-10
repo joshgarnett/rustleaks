@@ -113,10 +113,12 @@ node is walked once for all choices. A child that matches only the empty
 string adds no choice. Stopping at a limit drops only longer choices.
 
 On a pure-ASCII pass, the keyword pass also records the start offset of each
-hit for keywords that literal-anchored rules use. It keeps at most one offset
-per 64 haystack bytes for one keyword and one per 16 bytes across all keywords;
-a rule with a keyword past either limit uses the unanchored search. The offsets
-are scan-local and are dropped before decoded bytes replace the pass. Anchored
+hit for keywords that literal-anchored rules use. For a haystack of `len` bytes,
+each pass records at most `len / 64 + 1` offsets per keyword and `len / 16 + 1`
+across all keywords; a rule with a keyword past either limit uses the
+unanchored search. Recorded offsets remain until the next pass begins, including
+while decoding its input. Their vector capacities are reused across passes and
+released at fragment completion; these length limits are not heap limits. Anchored
 enumeration charges an upper bound on the bytes each attempt can scan and
 falls back to the unanchored search when the charges exceed the haystack
 length. Both paths return identical matches, and neither changes the keyword
