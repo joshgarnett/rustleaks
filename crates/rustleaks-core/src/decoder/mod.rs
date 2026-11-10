@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::ops::Range;
 use std::sync::{Arc, OnceLock};
 
 use base64::Engine as _;
@@ -130,6 +131,16 @@ struct EncodingMatch {
     range: StartEnd,
 }
 
+/// Offsets of the line bounds that [`current_line`] reports for one segment,
+/// recorded once per decode pass against that pass's output.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct LineBounds {
+    /// Last newline at or before the decoded start, or zero.
+    start: usize,
+    /// First newline at or after the decoded end, or the output length.
+    end: usize,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EncodedSegment {
     predecessors: Arc<[Self]>,
@@ -139,6 +150,7 @@ pub(crate) struct EncodedSegment {
     decoded_value: Arc<[u8]>,
     encodings: u8,
     depth: usize,
+    line: LineBounds,
 }
 
 impl EncodedSegment {
@@ -197,7 +209,7 @@ impl Decoder {
         predecessors: &[EncodedSegment],
         mut checkpoint: impl FnMut() -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
-        let segments = self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
+        let mut segments = self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
         if segments.is_empty() {
             return Ok((data.to_vec(), segments));
         }
@@ -214,6 +226,8 @@ impl Decoder {
             encoded_start = encoded.end;
         }
         result.extend_from_slice(&data[encoded_start..]);
+        debug_assert!(segments_are_ordered_and_disjoint(&segments));
+        record_line_bounds(&mut segments, &result);
         Ok((result, segments))
     }
 
@@ -268,6 +282,7 @@ impl Decoder {
                 decoded_value: Arc::clone(&decoded_value),
                 encodings,
                 depth: predecessor_depth + 1,
+                line: LineBounds::default(),
             });
             decoded_shift += isize::try_from(decoded_value.len()).unwrap()
                 - isize::try_from(encoded_value.len()).unwrap();
@@ -319,20 +334,97 @@ impl Decoder {
     }
 }
 
+/// Returns the segments whose decoded span overlaps `start..=end`.
+///
+/// `segments` comes from one decode pass, or a contiguous run of one, so the
+/// inclusive [`StartEnd::overlaps`] matches form a contiguous range; see
+/// [`segments_are_ordered_and_disjoint`].
 pub(crate) fn segments_with_decoded_overlap(
     segments: &[EncodedSegment],
     start: usize,
     end: usize,
-) -> Vec<EncodedSegment> {
+) -> &[EncodedSegment] {
     let range = StartEnd {
         start: isize::try_from(start).unwrap(),
         end: isize::try_from(end).unwrap(),
     };
+    &segments[overlapping_indices(segments, range)]
+}
+
+/// Whether decoded spans are non-empty, strictly ascending, and disjoint.
+/// Adjacent spans (equal end and start) count as disjoint.
+///
+/// This holds by construction for the segments of one decode pass:
+///
+/// * accepted decoded values are non-empty, so every span is non-empty;
+/// * the regex yields ordered, non-overlapping matches, and shadow filtering
+///   only removes matches, so accepted candidates ascend with `end <= next
+///   start`;
+/// * after accepting a segment, `decoded_shift` is the difference between the
+///   decoded and encoded length of all accepted segments, so that segment's
+///   decoded end is its candidate end plus the shift and the next accepted
+///   segment's decoded start is its candidate start plus that same shift.
+///
+/// Consequently `start` and `end` both strictly ascend across the segments.
+/// Asserted in debug builds where segments are built, not per lookup.
+fn segments_are_ordered_and_disjoint(segments: &[EncodedSegment]) -> bool {
     segments
         .iter()
-        .filter(|segment| segment.decoded.overlaps(range))
-        .cloned()
-        .collect()
+        .all(|segment| segment.decoded.start < segment.decoded.end)
+        && segments
+            .windows(2)
+            .all(|pair| pair[0].decoded.end <= pair[1].decoded.start)
+}
+
+/// Returns the index range of `segments` whose decoded span overlaps `range`
+/// under the inclusive [`StartEnd::overlaps`] test, adjacency included.
+///
+/// Both endpoints ascend across ordered disjoint spans, so `end >= range.start`
+/// holds on a suffix and `start <= range.end` holds on a prefix, and the
+/// overlaps are exactly their intersection.
+fn overlapping_indices(segments: &[EncodedSegment], range: StartEnd) -> Range<usize> {
+    let first = segments.partition_point(|segment| segment.decoded.end < range.start);
+    let past_last = segments.partition_point(|segment| segment.decoded.start <= range.end);
+    first..past_last.max(first)
+}
+
+/// Records, for each segment, the same bounds [`current_line`] would find by
+/// scanning outward from that segment alone.
+///
+/// `segments` must be ordered and disjoint against `output`, so the two
+/// scanned positions only move forward and the sweep inspects no output byte
+/// more than twice.
+fn record_line_bounds(segments: &mut [EncodedSegment], output: &[u8]) {
+    let mut previous_newline = 0;
+    let mut scanned_up_to = 0;
+    let mut next_newline = 0;
+    for segment in segments {
+        let decoded_start = usize::try_from(segment.decoded.start).unwrap();
+        let decoded_end = usize::try_from(segment.decoded.end).unwrap();
+
+        if let Some(found) = output[scanned_up_to..=decoded_start]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+        {
+            previous_newline = scanned_up_to + found;
+        }
+        scanned_up_to = decoded_start + 1;
+
+        // A previous answer remains the first newline at or after a larger
+        // end while it is not behind that end. It starts at zero, which is
+        // behind every non-empty span's end, so the first segment scans.
+        if next_newline < decoded_end {
+            next_newline = output[decoded_end..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(output.len(), |offset| decoded_end + offset);
+        }
+
+        segment.line = LineBounds {
+            start: previous_newline,
+            end: next_newline,
+        };
+    }
 }
 
 pub(crate) fn adjust_match_index(
@@ -356,26 +448,27 @@ pub(crate) fn adjust_match_index(
     ))
 }
 
+/// Returns the line around the merged decoded span of `segments`: from the
+/// last newline at or before its start through the byte before the first
+/// newline at or after its end. `current_raw` must be the decode pass output
+/// that produced `segments`.
 pub(crate) fn current_line<'a>(segments: &[EncodedSegment], current_raw: &'a [u8]) -> &'a [u8] {
     if segments.is_empty() {
         return current_raw;
     }
-    let decoded = segments
-        .iter()
-        .skip(1)
-        .fold(segments[0].decoded, |range, segment| {
-            range.merge(segment.decoded)
-        });
-    let decoded_start = usize::try_from(decoded.start).unwrap();
-    let decoded_end = usize::try_from(decoded.end).unwrap();
-    let start = (0..=decoded_start)
-        .rev()
-        .find(|&index| current_raw[index] == b'\n')
-        .unwrap_or(0);
-    let end = (decoded_end..current_raw.len())
-        .find(|&index| current_raw[index] == b'\n')
-        .unwrap_or(current_raw.len());
-    &current_raw[start..end]
+    // The merged span starts at the smallest decoded start and ends at the
+    // largest decoded end. A segment's recorded bounds depend only on those
+    // positions, so the two extreme segments supply the merged bounds.
+    let (mut earliest, mut latest) = (&segments[0], &segments[0]);
+    for segment in &segments[1..] {
+        if segment.decoded.start < earliest.decoded.start {
+            earliest = segment;
+        }
+        if segment.decoded.end > latest.decoded.end {
+            latest = segment;
+        }
+    }
+    &current_raw[earliest.line.start..latest.line.end]
 }
 
 pub(crate) fn tags(segments: &[EncodedSegment]) -> Vec<String> {
@@ -744,6 +837,7 @@ mod tests {
             decoded_value: Arc::from([]),
             encodings: Encoding::Base64.bit(),
             depth: 1,
+            line: LineBounds::default(),
         };
         let first = segment(
             StartEnd { start: 10, end: 20 },
@@ -830,6 +924,245 @@ mod tests {
         assert!(isolated_segments.is_empty());
         assert_eq!(isolated.decoded.len(), 1);
         assert_eq!(decoder.decoded.len(), 3);
+    }
+
+    /// Replays the pass chain of every decode corpus run with an isolated
+    /// decoder, giving each pass its input, predecessors, output, and segments.
+    fn for_each_corpus_pass(
+        mut visit: impl FnMut(&str, &[u8], &[EncodedSegment], &[u8], &[EncodedSegment]),
+    ) {
+        let corpus = include_str!("../../../../compat/decoder-corpus/outcomes-v1.jsonl");
+        for outcome in corpus
+            .lines()
+            .map(|line| serde_json::from_str::<OracleOutcome>(line).unwrap())
+            .filter(|outcome| outcome.operation == "decode")
+        {
+            for run in outcome.runs {
+                let mut decoder = Decoder::new();
+                let mut current = oracle_bytes(&run.input_base64);
+                let mut predecessors = Vec::new();
+                for _ in &run.passes {
+                    let (output, segments) = decoder.decode(&current, &predecessors);
+                    visit(&outcome.id, &current, &predecessors, &output, &segments);
+                    current = output;
+                    predecessors = segments;
+                }
+            }
+        }
+    }
+
+    /// Synthetic passes for line and overlap checks that the corpus does not
+    /// reach: adjacent segments, newlines at segment edges and inside decoded
+    /// values, and files with no newline at all.
+    const LINE_BOUND_CASES: &[&[u8]] = &[
+        b"QUJDREVGR0hJSktMTU5PUA==QUJDREVGR0hJSktMTU5PUA==",
+        b"one\ntwo QUJDREVGR0hJSktMTU5PUA== three\nfour %0Aabc%0A tail\n",
+        b"x%0Aabc%0Ay",
+        b"QUJDREVGR0hJSktMTU5PUA==\nrest",
+        b"head\nQUJDREVGR0hJSktMTU5PUA==",
+        b"\n\nQUJDREVGR0hJSktMTU5PUA==\n\nQUJDREVGR0hJSktMTU5PUA==\n\n",
+        b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0",
+        b"a%0Ab\nQUJDREVGR0hJSktMTU5PUA==%0A\nc",
+    ];
+
+    fn decoded_probe_positions(segments: &[EncodedSegment]) -> Vec<isize> {
+        let mut positions = vec![-1, 0];
+        for segment in segments.iter().take(32) {
+            for boundary in [segment.decoded.start, segment.decoded.end] {
+                positions.extend([boundary - 1, boundary, boundary + 1]);
+            }
+        }
+        if let Some(last) = segments.last() {
+            positions.extend([last.decoded.end, last.decoded.end + 1, last.decoded.end + 2]);
+        }
+        positions.retain(|position| *position >= 0);
+        positions.sort_unstable();
+        positions.dedup();
+        positions
+    }
+
+    /// The pre-memo scan used directly as the behaviour specification.
+    fn line_by_scanning<'a>(segments: &[EncodedSegment], raw: &'a [u8]) -> &'a [u8] {
+        let decoded = segments
+            .iter()
+            .skip(1)
+            .fold(segments[0].decoded, |range, segment| {
+                range.merge(segment.decoded)
+            });
+        let decoded_start = usize::try_from(decoded.start).unwrap();
+        let decoded_end = usize::try_from(decoded.end).unwrap();
+        let start = (0..=decoded_start)
+            .rev()
+            .find(|&index| raw[index] == b'\n')
+            .unwrap_or(0);
+        let end = (decoded_end..raw.len())
+            .find(|&index| raw[index] == b'\n')
+            .unwrap_or(raw.len());
+        &raw[start..end]
+    }
+
+    fn assert_overlap_lookup_matches_linear_filter(id: &str, segments: &[EncodedSegment]) {
+        let positions = decoded_probe_positions(segments);
+        for (index, &start) in positions.iter().enumerate() {
+            for &end in &positions[index..] {
+                let range = StartEnd { start, end };
+                let linear = segments
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, segment)| segment.decoded.overlaps(range))
+                    .map(|(position, _)| position)
+                    .collect::<Vec<_>>();
+                let found = overlapping_indices(segments, range).collect::<Vec<_>>();
+                assert_eq!(found, linear, "{id} probe {start}..{end}");
+                let via_public = segments_with_decoded_overlap(
+                    segments,
+                    usize::try_from(start).unwrap(),
+                    usize::try_from(end).unwrap(),
+                );
+                assert_eq!(via_public.len(), linear.len(), "{id} probe {start}..{end}");
+            }
+        }
+    }
+
+    fn assert_line_matches_scan(id: &str, segments: &[EncodedSegment], output: &[u8]) {
+        for first in 0..segments.len().min(24) {
+            for last in first..segments.len().min(24) {
+                let run = &segments[first..=last];
+                assert_eq!(
+                    current_line(run, output),
+                    line_by_scanning(run, output),
+                    "{id} segments {first}..={last}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn decoded_overlap_is_inclusive_at_both_ends_and_keeps_adjacent_segments() {
+        let segment = |start: isize, end: isize| {
+            let span = StartEnd { start, end };
+            EncodedSegment {
+                predecessors: Arc::from([]),
+                original: span,
+                encoded: span,
+                decoded: span,
+                decoded_value: Arc::from([]),
+                encodings: Encoding::Base64.bit(),
+                depth: 1,
+                line: LineBounds::default(),
+            }
+        };
+        let segments = [segment(10, 15), segment(15, 20), segment(30, 40)];
+        let indices = |start, end| {
+            segments_with_decoded_overlap(&segments, start, end)
+                .iter()
+                .map(|selected| {
+                    segments
+                        .iter()
+                        .position(|candidate| candidate == selected)
+                        .unwrap()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // Touching the shared edge overlaps both adjacent segments.
+        assert_eq!(indices(15, 15), [0, 1]);
+        // Inclusive at the low end of the first segment.
+        assert_eq!(indices(0, 10), [0]);
+        assert_eq!(indices(0, 9), [] as [usize; 0]);
+        // Inclusive at the high end, touching the next segment's start.
+        assert_eq!(indices(20, 30), [1, 2]);
+        assert_eq!(indices(21, 29), [] as [usize; 0]);
+        // Inclusive past the last segment's end.
+        assert_eq!(indices(40, 45), [2]);
+        assert_eq!(indices(41, 45), [] as [usize; 0]);
+        assert_eq!(indices(0, 100), [0, 1, 2]);
+    }
+
+    #[test]
+    fn decoded_overlap_lookup_matches_a_linear_filter() {
+        for case in LINE_BOUND_CASES {
+            let mut decoder = Decoder::new();
+            let (_output, segments) = decoder.decode(case, &[]);
+            assert!(!segments.is_empty());
+            assert_overlap_lookup_matches_linear_filter("synthetic", &segments);
+        }
+        for_each_corpus_pass(|id, _input, _predecessors, _output, segments| {
+            assert_overlap_lookup_matches_linear_filter(id, segments);
+        });
+    }
+
+    #[test]
+    fn every_decoded_pass_yields_ordered_disjoint_segments() {
+        for case in LINE_BOUND_CASES {
+            let mut decoder = Decoder::new();
+            let (_output, segments) = decoder.decode(case, &[]);
+            assert!(segments_are_ordered_and_disjoint(&segments));
+        }
+        for_each_corpus_pass(|id, _input, _predecessors, _output, segments| {
+            assert!(segments_are_ordered_and_disjoint(segments), "{id}");
+        });
+    }
+
+    #[test]
+    fn current_line_matches_the_scanned_line_for_every_segment_run() {
+        for case in LINE_BOUND_CASES {
+            let mut decoder = Decoder::new();
+            let (output, segments) = decoder.decode(case, &[]);
+            assert!(!segments.is_empty());
+            assert_line_matches_scan("synthetic", &segments, &output);
+        }
+        for_each_corpus_pass(|id, _input, _predecessors, output, segments| {
+            if !segments.is_empty() {
+                assert_line_matches_scan(id, segments, output);
+            }
+        });
+    }
+
+    #[test]
+    fn current_line_keeps_the_preceding_newline_and_stops_at_the_following_one() {
+        let single = |input: &[u8]| {
+            let (output, segments) = Decoder::new().decode(input, &[]);
+            assert_eq!(segments.len(), 1, "{input:?}");
+            (output, segments)
+        };
+
+        let (output, segments) = single(b"one\ntwo QUJDREVGR0hJSktMTU5PUA== three\nfour");
+        assert_eq!(output, b"one\ntwo ABCDEFGHIJKLMNOP three\nfour");
+        assert_eq!(
+            current_line(&segments, &output),
+            b"\ntwo ABCDEFGHIJKLMNOP three"
+        );
+
+        // No newline before the segment: the line starts at offset zero.
+        let (output, segments) = single(b"QUJDREVGR0hJSktMTU5PUA==\nrest");
+        assert_eq!(current_line(&segments, &output), b"ABCDEFGHIJKLMNOP");
+
+        // No newline after the segment: the line runs to the end of output.
+        let (output, segments) = single(b"head\nQUJDREVGR0hJSktMTU5PUA==");
+        assert_eq!(current_line(&segments, &output), b"\nABCDEFGHIJKLMNOP");
+
+        // A decoded value that starts with a newline starts the line there,
+        // and the following newline is searched from the decoded end onward.
+        let (output, segments) = single(b"x%0Aabc%0Ay");
+        assert_eq!(output, b"x\nabc\ny");
+        assert_eq!(segments[0].decoded, StartEnd { start: 1, end: 6 });
+        assert_eq!(current_line(&segments, &output), b"\nabc\ny");
+    }
+
+    #[test]
+    fn current_line_merges_the_outermost_bounds_of_a_segment_run() {
+        let (output, segments) = Decoder::new().decode(
+            b"aa\nQUJDREVGR0hJSktMTU5PUA==\nbb\nQUJDREVGR0hJSktMTU5PUA==\ncc",
+            &[],
+        );
+        assert_eq!(segments.len(), 2);
+        assert_eq!(current_line(&segments[..1], &output), b"\nABCDEFGHIJKLMNOP");
+        assert_eq!(current_line(&segments[1..], &output), b"\nABCDEFGHIJKLMNOP");
+        assert_eq!(
+            current_line(&segments, &output),
+            b"\nABCDEFGHIJKLMNOP\nbb\nABCDEFGHIJKLMNOP"
+        );
     }
 
     #[test]

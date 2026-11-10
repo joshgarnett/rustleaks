@@ -904,12 +904,12 @@ impl Engine {
                     explain(ExplanationReason::DecodedMappingUnavailable);
                     return None;
                 }
-                let (start, end) = adjust_match_index(&overlapping, whole.start, whole.end)?;
+                let (start, end) = adjust_match_index(overlapping, whole.start, whole.end)?;
                 (
                     start,
                     end,
-                    Some(current_line(&overlapping, pass.current_raw)),
-                    decoder_tags(&overlapping),
+                    Some(current_line(overlapping, pass.current_raw)),
+                    decoder_tags(overlapping),
                 )
             };
         // Decoded passes project back onto the original fragment. Keep this
