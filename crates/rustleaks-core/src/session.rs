@@ -398,20 +398,49 @@ impl BaselineFinding {
 }
 
 /// An immutable collection loaded from a baseline report.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Default)]
 pub struct Baseline {
     entries: Vec<BaselineFinding>,
     was_null: bool,
+    // Positions in `entries` ordered by `BaselineKey`. It is derived from
+    // `entries`, so equality and `Debug` do not observe it.
+    index: Vec<usize>,
+}
+
+impl fmt::Debug for Baseline {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Baseline")
+            .field("entries", &self.entries)
+            .field("was_null", &self.was_null)
+            .finish()
+    }
+}
+
+impl PartialEq for Baseline {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries == other.entries && self.was_null == other.was_null
+    }
 }
 
 impl Baseline {
+    fn indexed(entries: Vec<BaselineFinding>, was_null: bool) -> Self {
+        let mut index = (0..entries.len()).collect::<Vec<_>>();
+        index.sort_unstable_by_key(|&position| entry_key(&entries[position]));
+        Self {
+            entries,
+            was_null,
+            index,
+        }
+    }
+
     /// Builds a baseline from already validated findings.
     #[must_use]
     pub fn from_findings(findings: &[Finding]) -> Self {
-        Self {
-            entries: findings.iter().map(BaselineFinding::from_finding).collect(),
-            was_null: false,
-        }
+        Self::indexed(
+            findings.iter().map(BaselineFinding::from_finding).collect(),
+            false,
+        )
     }
 
     /// Parses the pinned Go report JSON format from bytes.
@@ -425,14 +454,8 @@ impl Baseline {
         let decoded = serde_json::from_str::<Option<Vec<BaselineFindingWire>>>(&normalized)
             .map_err(BaselineParseError::Json)?;
         Ok(match decoded {
-            Some(entries) => Self {
-                entries: entries.into_iter().map(Into::into).collect(),
-                was_null: false,
-            },
-            None => Self {
-                entries: Vec::new(),
-                was_null: true,
-            },
+            Some(entries) => Self::indexed(entries.into_iter().map(Into::into).collect(), false),
+            None => Self::indexed(Vec::new(), true),
         })
     }
 
@@ -478,10 +501,39 @@ impl Baseline {
     /// Returns whether no baseline entry equals the finding.
     #[must_use]
     pub fn is_new(&self, finding: &Finding, redaction_percent: usize) -> bool {
-        self.entries
+        // `baseline_equal` requires every key field to match, so an entry
+        // outside the finding's bucket cannot equal it.
+        let key = finding_key(finding);
+        let bucket = self
+            .index
+            .partition_point(|&position| entry_key(&self.entries[position]) < key);
+        self.index[bucket..]
             .iter()
+            .map(|&position| &self.entries[position])
+            .take_while(|entry| entry_key(entry) == key)
             .all(|entry| !baseline_equal(entry, finding, redaction_percent))
     }
+}
+
+// Fields that `baseline_equal` compares exactly in every mode: start line, rule
+// ID, and file. Match and secret are skipped under redaction, and entropy uses
+// float equality, so none of them can bucket entries.
+type BaselineKey<'a> = (i128, &'a [u8], &'a [u8]);
+
+fn entry_key(entry: &BaselineFinding) -> BaselineKey<'_> {
+    (
+        entry.start_line,
+        entry.rule_id.as_bytes(),
+        entry.file.as_bytes(),
+    )
+}
+
+fn finding_key(finding: &Finding) -> BaselineKey<'_> {
+    (
+        usize_to_i128(finding.location().start_line()),
+        finding.rule_id().as_bytes(),
+        finding.file().as_bytes(),
+    )
 }
 
 /// A structured baseline JSON parse failure.
@@ -1320,9 +1372,9 @@ fn four_hex(bytes: &[u8]) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Location;
+    use crate::model::{FindingBuilder, Location};
 
-    fn finding() -> Finding {
+    fn base_finding() -> FindingBuilder {
         Finding::builder()
             .rule_id("rule")
             .description("description")
@@ -1337,8 +1389,328 @@ mod tests {
             .email("email@example.invalid")
             .date("2025-01-02")
             .message("message")
-            .build()
-            .unwrap()
+    }
+
+    fn finding() -> Finding {
+        base_finding().build().unwrap()
+    }
+
+    fn located(start_line: usize, end_line: usize, start: usize, end: usize) -> FindingBuilder {
+        base_finding().location(Location::new(start_line, end_line, start, end).unwrap())
+    }
+
+    /// Restates the compared fields through public accessors only, so the index
+    /// is checked against a definition it does not share.
+    #[allow(clippy::float_cmp)] // Upstream compares float32 with `==`.
+    fn oracle_equal(entry: &BaselineFinding, candidate: &Finding, redact: usize) -> bool {
+        let location = candidate.location();
+        let same_match = redact > 0
+            || (entry.match_text().as_bytes() == candidate.match_text().as_bytes()
+                && entry.secret().as_bytes() == candidate.secret().as_bytes());
+        same_match
+            && entry.rule_id().as_bytes() == candidate.rule_id().as_bytes()
+            && entry.description().as_bytes() == candidate.description().as_bytes()
+            && entry.start_line() == i128::try_from(location.start_line()).unwrap()
+            && entry.end_line() == i128::try_from(location.end_line()).unwrap()
+            && entry.start_column() == i128::try_from(location.start_column()).unwrap()
+            && entry.end_column() == i128::try_from(location.end_column()).unwrap()
+            && entry.file().as_bytes() == candidate.file().as_bytes()
+            && entry.commit().as_bytes() == candidate.commit().as_bytes()
+            && entry.author().as_bytes() == candidate.author().as_bytes()
+            && entry.email().as_bytes() == candidate.email().as_bytes()
+            && entry.date().as_bytes() == candidate.date().as_bytes()
+            && entry.message().as_bytes() == candidate.message().as_bytes()
+            && entry.entropy() == candidate.entropy()
+    }
+
+    fn linear_is_new(baseline: &Baseline, candidate: &Finding, redact: usize) -> bool {
+        !baseline
+            .entries()
+            .iter()
+            .any(|entry| oracle_equal(entry, candidate, redact))
+    }
+
+    fn assert_matches_linear_scan(baseline: &Baseline, candidate: &Finding) {
+        for redact in [0, 1, 100] {
+            assert_eq!(
+                baseline.is_new(candidate, redact),
+                linear_is_new(baseline, candidate, redact),
+                "redact {redact}, {} entries",
+                baseline.len()
+            );
+        }
+    }
+
+    /// Each row changes one field of [`finding`]. The flags state whether the
+    /// variant is new against a baseline holding only [`finding`], unredacted
+    /// and redacted.
+    fn near_misses() -> Vec<(&'static str, Finding, bool, bool)> {
+        let row = |name, builder: FindingBuilder, plain, redacted| {
+            (name, builder.build().unwrap(), plain, redacted)
+        };
+        vec![
+            row("identical", base_finding(), false, false),
+            row("rule", base_finding().rule_id("rule2"), true, true),
+            row("rule prefix", base_finding().rule_id("rul"), true, true),
+            row("description", base_finding().description("d"), true, true),
+            row("start line", located(6, 8, 3, 15), true, true),
+            row("end line", located(7, 9, 3, 15), true, true),
+            row("start column", located(7, 8, 2, 15), true, true),
+            row("end column", located(7, 8, 3, 16), true, true),
+            row("match", base_finding().match_text("other"), true, false),
+            row("secret", base_finding().secret("other"), true, false),
+            row("file", base_finding().file("src/secret.txt2"), true, true),
+            row("commit", base_finding().commit("commit-b"), true, true),
+            row("author", base_finding().author("other"), true, true),
+            row("email", base_finding().email("other"), true, true),
+            row("date", base_finding().date("other"), true, true),
+            row("message", base_finding().message("other"), true, true),
+            row("entropy", base_finding().entropy(3.5), true, true),
+            row(
+                "entropy next",
+                base_finding().entropy(3.25_f32.next_up()),
+                true,
+                true,
+            ),
+            row("line text", base_finding().line("other"), false, false),
+            row(
+                "symlink",
+                base_finding().symlink_file("other"),
+                false,
+                false,
+            ),
+            row("link", base_finding().link("other"), false, false),
+            row("tags", base_finding().tags(["other"]), false, false),
+            row(
+                "fingerprint",
+                base_finding().fingerprint("other"),
+                false,
+                false,
+            ),
+        ]
+    }
+
+    #[test]
+    fn baseline_index_decides_each_near_miss_by_the_compared_fields() {
+        let baseline = Baseline::from_findings(&[finding()]);
+        for (name, candidate, plain, redacted) in near_misses() {
+            assert_eq!(baseline.is_new(&candidate, 0), plain, "{name}");
+            assert_eq!(baseline.is_new(&candidate, 1), redacted, "{name}");
+            assert_eq!(baseline.is_new(&candidate, 100), redacted, "{name}");
+            assert_matches_linear_scan(&baseline, &candidate);
+        }
+    }
+
+    #[test]
+    fn baseline_index_matches_a_linear_scan_across_near_miss_pairs() {
+        let rows = near_misses();
+        let candidates = rows.iter().map(|row| row.1.clone()).collect::<Vec<_>>();
+        for (index, first) in candidates.iter().enumerate() {
+            for second in &candidates[index..] {
+                let baseline = Baseline::from_findings(&[first.clone(), second.clone()]);
+                for candidate in &candidates {
+                    assert_matches_linear_scan(&baseline, candidate);
+                }
+            }
+        }
+        let every = Baseline::from_findings(&candidates);
+        for candidate in &candidates {
+            assert!(!every.is_new(candidate, 0));
+            assert_matches_linear_scan(&every, candidate);
+        }
+    }
+
+    #[test]
+    fn baseline_index_scans_the_whole_bucket() {
+        let first = base_finding().message("first").build().unwrap();
+        let middle = base_finding().message("middle").build().unwrap();
+        let last = base_finding().message("last").build().unwrap();
+        let baseline = Baseline::from_findings(&[first.clone(), middle.clone(), last.clone()]);
+        for present in [&first, &middle, &last] {
+            assert!(!baseline.is_new(present, 0));
+        }
+        let absent = base_finding().message("absent").build().unwrap();
+        assert!(baseline.is_new(&absent, 0));
+        assert!(baseline.is_new(&absent, 1));
+    }
+
+    #[test]
+    fn baseline_index_does_not_merge_neighbouring_keys() {
+        let keys: [(&[u8], &[u8]); 8] = [
+            (b"ab", b"c"),
+            (b"a", b"bc"),
+            (b"abc", b""),
+            (b"", b"abc"),
+            (b"ab\x00", b"c"),
+            (b"ab", b"c\x00"),
+            (b"\xff", b"c"),
+            (b"ab", b"\xff"),
+        ];
+        let mut findings = Vec::new();
+        for line in [6, 7, 8] {
+            for (rule, file) in keys {
+                let location = Location::new(line, line, 1, 1).unwrap();
+                let built = Finding::builder()
+                    .rule_id(rule)
+                    .file(file)
+                    .location(location);
+                findings.push(built.build().unwrap());
+            }
+        }
+        let complete = Baseline::from_findings(&findings);
+        for candidate in &findings {
+            assert!(!complete.is_new(candidate, 0));
+        }
+        for (removed, _) in findings.iter().enumerate() {
+            let mut remaining = findings.clone();
+            remaining.remove(removed);
+            let baseline = Baseline::from_findings(&remaining);
+            for (index, candidate) in findings.iter().enumerate() {
+                assert_eq!(baseline.is_new(candidate, 0), index == removed);
+                assert_matches_linear_scan(&baseline, candidate);
+            }
+        }
+    }
+
+    #[test]
+    fn baseline_index_compares_signed_report_lines_with_finding_lines() {
+        let entries = [i64::MIN, -1, 0, 7, i64::MAX]
+            .iter()
+            .map(|line| {
+                format!(r#"{{"RuleID":"r","File":"f","StartLine":{line},"EndLine":{line}}}"#)
+            })
+            .collect::<Vec<_>>();
+        let baseline =
+            Baseline::from_go_json(format!("[{}]", entries.join(",")).as_bytes()).unwrap();
+        let cases = [
+            (0, false),
+            (1, true),
+            (7, false),
+            (usize::try_from(i64::MAX).unwrap(), false),
+            (usize::MAX, true),
+        ];
+        for (line, expected) in cases {
+            let candidate = Finding::builder()
+                .rule_id("r")
+                .file("f")
+                .location(Location::new(line, line, 0, 0).unwrap())
+                .build()
+                .unwrap();
+            assert_eq!(baseline.is_new(&candidate, 0), expected, "{line}");
+            assert_matches_linear_scan(&baseline, &candidate);
+        }
+    }
+
+    fn sweep_universe() -> Vec<Finding> {
+        let mut universe = Vec::new();
+        for rule in [&b"r"[..], b"r2", b"rr"] {
+            for file in [&b"f"[..], b"f\x00", b"\xff"] {
+                for line in [1, 2, 3] {
+                    for (commit, secret) in [("", "s"), ("c", "s"), ("", "t"), ("c", "t")] {
+                        for matched in ["m", "n"] {
+                            for entropy in [0.0, -0.0, 1.5, f32::NAN] {
+                                let location = Location::new(line, line, 1, 2).unwrap();
+                                universe.push(
+                                    Finding::builder()
+                                        .rule_id(rule)
+                                        .file(file)
+                                        .location(location)
+                                        .commit(commit)
+                                        .secret(secret)
+                                        .match_text(matched)
+                                        .entropy(entropy)
+                                        .build()
+                                        .unwrap(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        universe
+    }
+
+    #[test]
+    fn baseline_index_matches_a_linear_scan_across_seeded_baselines() {
+        let universe = sweep_universe();
+        let mut state = 0x2545_f491_u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as usize
+        };
+        for _ in 0..12 {
+            let size = 1 + next() % 120;
+            let entries = (0..size)
+                .map(|_| universe[next() % universe.len()].clone())
+                .collect::<Vec<_>>();
+            let baseline = Baseline::from_findings(&entries);
+            for candidate in &universe {
+                assert_matches_linear_scan(&baseline, candidate);
+            }
+        }
+    }
+
+    #[test]
+    fn baseline_keeps_report_order_duplicates_and_empty_decisions() {
+        let later = base_finding().rule_id("z").build().unwrap();
+        let earlier = base_finding().rule_id("a").build().unwrap();
+        let baseline = Baseline::from_findings(&[later.clone(), earlier, later]);
+        let rules = baseline
+            .entries()
+            .iter()
+            .map(|entry| entry.rule_id().as_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(rules, [b"z".as_slice(), b"a", b"z"]);
+        assert_eq!(baseline.len(), 3);
+
+        for empty in [
+            Baseline::default(),
+            Baseline::from_findings(&[]),
+            Baseline::from_go_json(b"[]").unwrap(),
+            Baseline::from_go_json(b"null").unwrap(),
+        ] {
+            assert!(empty.is_new(&finding(), 0));
+            assert!(empty.is_new(&finding(), 100));
+        }
+    }
+
+    #[test]
+    fn baseline_debug_and_equality_do_not_observe_the_index() {
+        assert_eq!(
+            format!("{:?}", Baseline::default()),
+            "Baseline { entries: [], was_null: false }"
+        );
+        assert_eq!(
+            format!("{:?}", Baseline::from_go_json(b"null").unwrap()),
+            "Baseline { entries: [], was_null: true }"
+        );
+        let first = finding();
+        let second = base_finding().rule_id("a").build().unwrap();
+        let forward = Baseline::from_findings(&[first.clone(), second.clone()]);
+        assert_eq!(
+            format!("{forward:?}"),
+            format!(
+                "Baseline {{ entries: {:?}, was_null: false }}",
+                forward.entries()
+            )
+        );
+        assert_eq!(forward, forward.clone());
+        assert_ne!(forward, Baseline::from_findings(&[second, first]));
+        assert_eq!(
+            Baseline::from_go_json(b"[]").unwrap(),
+            Baseline::from_findings(&[])
+        );
+        assert_ne!(
+            Baseline::from_go_json(b"null").unwrap(),
+            Baseline::from_findings(&[])
+        );
+
+        let nan = base_finding().entropy(f32::NAN).build().unwrap();
+        let unequal = Baseline::from_findings(&[nan]);
+        assert_ne!(unequal, unequal.clone());
     }
 
     #[test]
