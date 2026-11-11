@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.8] - 2026-11-10
+
+- Anchor eligible default-rule searches at keyword hits and precompute keyword
+  indexes, with bounded configuration analysis and exact-match fallbacks.
+- Reduce repeated filtering, normalization, decoding, generic suppression and
+  baseline lookup work while preserving findings, spans and cancellation checks.
+- Reduce report and diagnostic write overhead, reuse file buffers, and improve
+  archive checksum and zstd history handling.
+- Return complete multi-worker source findings in producer order.
+- Add regression coverage and performance measurements against alpha.6 and
+  alpha.7, including configuration, startup and process-memory costs.
+
 ## [0.1.0-alpha.7] - 2026-11-09
 
 - Use pooled meta regex searches and capture-free whole-match enumeration.
@@ -105,3 +117,5 @@ version and exact source commit.
 [0.1.0-alpha.6]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.6
 
 [0.1.0-alpha.7]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.7
+
+[0.1.0-alpha.8]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.8
