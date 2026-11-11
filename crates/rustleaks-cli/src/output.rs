@@ -7,7 +7,7 @@ use std::time::Duration;
 use rustleaks_core::config::CompiledConfig;
 use rustleaks_core::model::{ByteText, Finding};
 use rustleaks_report::{
-    CsvReporter, JsonReporter, JunitReporter, Reporter, SarifReporter, TemplateLimits,
+    CsvReporter, JsonReporter, JunitReporter, ReportError, Reporter, SarifReporter, TemplateLimits,
     TemplateReporter,
 };
 
@@ -61,6 +61,7 @@ const ROOT_HELP_SUFFIX: &str = "      --version                       version fo
 Use \"rustleaks [command] --help\" for more information about a command.
 ";
 const BANNER: &str = "\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    rustleaks\n\n";
+const STDOUT_REPORT_BUFFER_BYTES: usize = 64 * 1024;
 
 pub(crate) fn root_help(writer: &mut dyn Write) -> io::Result<()> {
     writer.write_all(ROOT_HELP_PREFIX.as_bytes())?;
@@ -234,10 +235,31 @@ impl ReportPlan {
 
     pub fn write(&self, stdout: &mut dyn Write, findings: &[Finding]) -> Result<(), String> {
         match &self.target {
-            ReportTarget::Stdout => {
+            ReportTarget::Stdout if self.format == "template" => {
+                // Templates can fail after writing a prefix. Preserve their write
+                // sequence and error precedence through caller-owned buffered sinks.
                 self.reporter
                     .write(stdout, findings)
                     .map_err(|error| error.to_string())?;
+                stdout
+                    .flush()
+                    .map_err(|error| format!("could not flush stdout report: {error}"))
+            }
+            ReportTarget::Stdout => {
+                // Reporters emit small fields and newlines. Batch those writes
+                // before stdout's shared line buffer. Drain pending bytes before
+                // the explicit destination flush; neither operation may fail silently.
+                let mut writer = BufWriter::with_capacity(STDOUT_REPORT_BUFFER_BYTES, stdout);
+                if let Err(error) = self.reporter.write(&mut writer, findings) {
+                    // A failed destination must not receive an implicit retry on drop.
+                    let _ = writer.into_parts();
+                    return Err(error.to_string());
+                }
+                let stdout = writer.into_inner().map_err(|error| {
+                    let (error, writer) = error.into_parts();
+                    let _ = writer.into_parts();
+                    ReportError::Io(error).to_string()
+                })?;
                 stdout
                     .flush()
                     .map_err(|error| format!("could not flush stdout report: {error}"))
@@ -571,6 +593,7 @@ mod tests {
     struct CountingWriter {
         bytes: Vec<u8>,
         writes: usize,
+        flushes: usize,
     }
 
     impl Write for CountingWriter {
@@ -581,6 +604,7 @@ mod tests {
         }
 
         fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
             Ok(())
         }
     }
@@ -696,17 +720,352 @@ mod tests {
         assert!(infer(Path::new("-")).is_err());
     }
 
+    fn report_plans() -> [ReportPlan; 5] {
+        let reporters: [(&str, Box<dyn Reporter>); 5] = [
+            ("json", Box::new(JsonReporter)),
+            ("csv", Box::new(CsvReporter)),
+            ("junit", Box::new(JunitReporter)),
+            ("sarif", Box::new(SarifReporter::default())),
+            (
+                "template",
+                Box::new(
+                    TemplateReporter::from_str(
+                        "{{range .}}{{.RuleID}}\t{{.Secret}}\n{{end}}tail",
+                        TemplateLimits::default(),
+                    )
+                    .unwrap(),
+                ),
+            ),
+        ];
+        reporters.map(|(format, reporter)| ReportPlan {
+            target: ReportTarget::Stdout,
+            reporter,
+            format,
+        })
+    }
+
+    fn report_findings() -> Vec<Finding> {
+        (1..=256)
+            .map(|line| {
+                Finding::builder()
+                    .rule_id("synthetic-rule")
+                    .description("synthetic report finding")
+                    .location(rustleaks_core::model::Location::new(line, line, 1, 5).unwrap())
+                    .match_text(b"synthetic <>&\"\n\\ value \xff".repeat(16))
+                    .secret(b"synthetic <>&\"\n\\ value \xff".repeat(16))
+                    .file("src/input.txt")
+                    .tags(["decoded:base64", "decode-depth:1", "duplicate", "duplicate"])
+                    .entropy(3.25)
+                    .build()
+                    .unwrap()
+            })
+            .collect()
+    }
+
     #[test]
-    fn stdout_report_flush_failures_are_returned() {
+    fn stdout_reports_preserve_bytes_and_batch_line_buffered_writes() {
+        let findings = report_findings();
+        for report in report_plans() {
+            for count in [0, 1, findings.len()] {
+                let findings = &findings[..count];
+                let mut expected = Vec::new();
+                report.reporter.write(&mut expected, findings).unwrap();
+                let mut sink = CountingWriter::default();
+                {
+                    // Model the process stdout handle, including its newline flushes.
+                    let mut stdout = io::LineWriter::new(&mut sink);
+                    report.write(&mut stdout, findings).unwrap();
+                }
+                assert_eq!(sink.bytes, expected, "{}: {count}", report.format);
+                assert_eq!(sink.flushes, 1, "{}: {count}", report.format);
+                // Require batching across many report lines without depending on
+                // the exact buffer capacity or reporter's individual write calls.
+                if report.format != "template" {
+                    assert!(
+                        sink.writes <= expected.len() / 1024 + 2,
+                        "{}: {count}: {} writes for {} bytes",
+                        report.format,
+                        sink.writes,
+                        expected.len()
+                    );
+                }
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum WriteFault {
+        Injected,
+        ZeroProgress,
+        CustomWriteZero,
+    }
+
+    struct ShortWriter {
+        bytes: Vec<u8>,
+        fail_after: Option<usize>,
+        fault: WriteFault,
+        interrupted: bool,
+        failed: bool,
+        writes_after_failure: usize,
+        flushes: usize,
+    }
+
+    impl ShortWriter {
+        fn new(fail_after: Option<usize>, fault: WriteFault) -> Self {
+            Self {
+                bytes: Vec::new(),
+                fail_after,
+                fault,
+                interrupted: false,
+                failed: false,
+                writes_after_failure: 0,
+                flushes: 0,
+            }
+        }
+    }
+
+    impl Write for ShortWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let remaining = if self.failed {
+                self.writes_after_failure += 1;
+                usize::MAX
+            } else {
+                self.fail_after
+                    .map_or(usize::MAX, |limit| limit.saturating_sub(self.bytes.len()))
+            };
+            if remaining == 0 {
+                self.failed = true;
+                return match self.fault {
+                    WriteFault::Injected => Err(io::Error::other("injected late write failure")),
+                    WriteFault::ZeroProgress => Ok(0),
+                    WriteFault::CustomWriteZero => Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "injected custom zero-write failure",
+                    )),
+                };
+            }
+            let written = buffer.len().min(7).min(remaining);
+            self.bytes.extend_from_slice(&buffer[..written]);
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn stdout_reports_handle_short_writes_and_surface_late_write_errors() {
+        let findings = report_findings();
+        for report in report_plans() {
+            let mut expected = Vec::new();
+            report.reporter.write(&mut expected, &findings).unwrap();
+            // Fail both during a large report and at its final buffered byte.
+            for fail_after in [None, Some(17), Some(expected.len() - 1)] {
+                let mut sink = ShortWriter::new(fail_after, WriteFault::Injected);
+                let result = report.write(&mut sink, &findings);
+                if let Some(limit) = fail_after {
+                    let error = result.expect_err("a write failure must be visible");
+                    let prefix = if report.format == "template" {
+                        "could not write template report"
+                    } else {
+                        "could not write report"
+                    };
+                    assert_eq!(error, format!("{prefix}: injected late write failure"));
+                    assert_eq!(sink.bytes, expected[..limit], "{}", report.format);
+                    assert_eq!(sink.writes_after_failure, 0, "{}", report.format);
+                    assert_eq!(sink.flushes, 0, "{}", report.format);
+                } else {
+                    result.unwrap();
+                    assert_eq!(sink.bytes, expected, "{}", report.format);
+                    assert_eq!(sink.flushes, 1, "{}", report.format);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stdout_builtin_reports_surface_line_buffered_write_failures() {
+        let findings = report_findings();
+        for report in report_plans()
+            .into_iter()
+            .filter(|report| report.format != "template")
+        {
+            for count in [0, findings.len()] {
+                let findings = &findings[..count];
+                let mut expected = Vec::new();
+                report.reporter.write(&mut expected, findings).unwrap();
+                if expected.is_empty() {
+                    continue;
+                }
+                for limit in [2, expected.len() - 1] {
+                    let sink = ShortWriter::new(Some(limit), WriteFault::Injected);
+                    let mut stdout = io::LineWriter::with_capacity(1024, sink);
+                    let error = report.write(&mut stdout, findings).unwrap_err();
+                    assert!(error.contains("injected late write failure"), "{error}");
+                    assert_eq!(
+                        stdout.get_ref().bytes,
+                        expected[..limit],
+                        "{}",
+                        report.format
+                    );
+                    // Inspect before dropping the caller-owned LineWriter, which
+                    // retains its own independent buffer and drop behavior.
+                    assert_eq!(
+                        stdout.get_ref().writes_after_failure,
+                        0,
+                        "{}",
+                        report.format
+                    );
+                    assert_eq!(stdout.get_ref().flushes, 0, "{}", report.format);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stdout_builtin_reports_reject_zero_progress_and_preserve_custom_write_zero_errors() {
+        let findings = report_findings();
+        for report in report_plans()
+            .into_iter()
+            .filter(|report| report.format != "template")
+        {
+            // A small report drains at completion; a large report also drains
+            // during rendering. Empty CSV emits no bytes and cannot hit WriteZero.
+            for count in [0, 1, findings.len()] {
+                if count == 0 && report.format == "csv" {
+                    continue;
+                }
+                for fault in [WriteFault::ZeroProgress, WriteFault::CustomWriteZero] {
+                    let mut sink = ShortWriter::new(Some(0), fault);
+                    let error = report.write(&mut sink, &findings[..count]).unwrap_err();
+                    if matches!(fault, WriteFault::CustomWriteZero) {
+                        assert!(
+                            error.contains("injected custom zero-write failure"),
+                            "{error}"
+                        );
+                    }
+                    assert!(sink.bytes.is_empty());
+                    assert_eq!(sink.writes_after_failure, 0, "{}", report.format);
+                    assert_eq!(sink.flushes, 0, "{}", report.format);
+
+                    let sink = ShortWriter::new(Some(0), fault);
+                    let mut stdout = io::LineWriter::with_capacity(1024, sink);
+                    let error = report.write(&mut stdout, &findings[..count]).unwrap_err();
+                    if matches!(fault, WriteFault::CustomWriteZero) {
+                        assert!(
+                            error.contains("injected custom zero-write failure"),
+                            "{error}"
+                        );
+                    }
+                    assert!(stdout.get_ref().bytes.is_empty());
+                    assert_eq!(
+                        stdout.get_ref().writes_after_failure,
+                        0,
+                        "{}",
+                        report.format
+                    );
+                    assert_eq!(stdout.get_ref().flushes, 0, "{}", report.format);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stdout_template_errors_retain_the_rendered_prefix_without_flushing() {
         let report = ReportPlan {
             target: ReportTarget::Stdout,
-            reporter: Box::new(JsonReporter),
-            format: "json",
+            reporter: Box::new(
+                TemplateReporter::from_str(
+                    "prefix{{range .}}tail{{end}}",
+                    TemplateLimits::new(1024, 100, 6),
+                )
+                .unwrap(),
+            ),
+            format: "template",
         };
+        let mut sink = CountingWriter::default();
+        let error = report.write(&mut sink, &report_findings()).unwrap_err();
+        assert_eq!(error, "template exceeded the 6-byte output limit");
+        assert_eq!(sink.bytes, b"prefix");
+        assert_eq!(sink.flushes, 0);
+
         let error = report
-            .write(&mut FlushFailure(Vec::new()), &[])
-            .expect_err("flush failure must be visible");
-        assert!(error.contains("could not flush stdout report"), "{error}");
-        assert!(error.contains("injected flush failure"), "{error}");
+            .write(&mut WriteFailure, &report_findings())
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "could not write template report: injected write failure"
+        );
+    }
+
+    #[test]
+    fn stdout_template_line_write_error_precedes_later_output_limit() {
+        let report = ReportPlan {
+            target: ReportTarget::Stdout,
+            reporter: Box::new(
+                TemplateReporter::from_str(
+                    "prefix\n{{range .}}tail{{end}}",
+                    TemplateLimits::new(1024, 100, 7),
+                )
+                .unwrap(),
+            ),
+            format: "template",
+        };
+        let sink = ShortWriter::new(Some(2), WriteFault::Injected);
+        let mut stdout = io::LineWriter::with_capacity(1024, sink);
+        let error = report.write(&mut stdout, &report_findings()).unwrap_err();
+        assert_eq!(
+            error,
+            "could not write template report: injected late write failure"
+        );
+        assert_eq!(stdout.get_ref().bytes, b"pr");
+        assert_eq!(stdout.get_ref().flushes, 0);
+    }
+
+    #[test]
+    fn stdout_template_limit_does_not_drain_the_callers_pending_line() {
+        let report = ReportPlan {
+            target: ReportTarget::Stdout,
+            reporter: Box::new(
+                TemplateReporter::from_str(
+                    "{{range .}}x{{end}}!",
+                    TemplateLimits::new(1024, 10_000, 1500),
+                )
+                .unwrap(),
+            ),
+            format: "template",
+        };
+        let findings = vec![report_findings().remove(0); 1500];
+        let sink = ShortWriter::new(Some(1100), WriteFault::Injected);
+        let mut stdout = io::LineWriter::with_capacity(1024, sink);
+        let error = report.write(&mut stdout, &findings).unwrap_err();
+        assert_eq!(error, "template exceeded the 1500-byte output limit");
+        assert_eq!(stdout.get_ref().bytes, vec![b'x'; 1024]);
+        assert!(!stdout.get_ref().failed);
+        assert_eq!(stdout.get_ref().flushes, 0);
+    }
+
+    #[test]
+    fn stdout_report_flush_failures_are_returned() {
+        let findings = report_findings();
+        for report in report_plans() {
+            for findings in [&[][..], findings.as_slice()] {
+                let mut expected = Vec::new();
+                report.reporter.write(&mut expected, findings).unwrap();
+                let mut sink = FlushFailure(Vec::new());
+                let error = report
+                    .write(&mut sink, findings)
+                    .expect_err("flush failure must be visible");
+                assert!(error.contains("could not flush stdout report"), "{error}");
+                assert!(error.contains("injected flush failure"), "{error}");
+                assert_eq!(sink.0, expected, "{}", report.format);
+            }
+        }
     }
 }
