@@ -152,6 +152,9 @@ tables, raw numeric data, startup costs, memory costs, and host limitations.
 The [released CLI comparison protocol](docs/PERFORMANCE_COMPARISON.md) uses
 separate whole-command measurements, pinned binaries, synthetic coverage
 checks, and explicit configuration and concurrency profiles.
+The [2026-11-11 results](docs/validation/cross-scanner-2026-11-11.md) compare
+released Rustleaks alpha.6 and alpha.8, Gitleaks 8.30.1, and Betterleaks 1.10.0
+on 19 workloads, with elapsed time, CPU, memory, and finding differences.
 
 ## AI-assisted development
 

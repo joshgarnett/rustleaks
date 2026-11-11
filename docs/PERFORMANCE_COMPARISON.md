@@ -5,6 +5,9 @@ executables on deterministic synthetic inputs. It is separate from the Rust
 compatibility oracle, inherited performance budgets, and release qualification.
 It does not change the accepted Gitleaks revision or packaged default rules.
 
+The [2026-11-11 measurement report](validation/cross-scanner-2026-11-11.md)
+contains all workload results and links to the numeric evidence.
+
 The [version manifest](validation/cross-scanner-versions.json) identifies the
 published macOS arm64 executables selected for this comparison:
 

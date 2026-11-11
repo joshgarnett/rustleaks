@@ -5,3 +5,6 @@ compat/fixtures/oracle/** -text -whitespace
 crates/rustleaks-compcol/src/brotli/dictionary.bin -text -whitespace
 compat/config-corpus/default-gitleaks.toml -text -whitespace
 crates/rustleaks-core/default/gitleaks.toml -text -whitespace
+
+# Preserve the collector's CSV bytes for completion-checksum verification.
+docs/validation/cross-scanner-2026-11-11/samples.csv -text whitespace=cr-at-eol
