@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "suite": "cross-scanner-cli-v1",
+  "platform": "aarch64-apple-darwin",
+  "verification_scope": "Every downloaded release asset matched GitHub API SHA-256 digest; each archive also matched the published release checksum file; Rustleaks extracted binary also matched release manifest binarySha256. No independent signing identity verification performed.",
+  "tools": [
+    {
+      "id": "rustleaks-alpha6",
+      "repository": "https://github.com/joshgarnett/rustleaks",
+      "version": "0.1.0-alpha.6",
+      "tag": "v0.1.0-alpha.6",
+      "source_commit": "0d7ca9254f7ce486e4ee7c3b75395578eef28f76",
+      "release_url": "https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.6",
+      "published_at": "2026-11-07T13:32:26Z",
+      "release_prerelease": true,
+      "binary_sha256": "e925b6e1fcd21a13afd0300713c0699652a79eddd9bebced76bfb42aa67b928a",
+      "binary_bytes": 4491200,
+      "binary_format": "Mach-O 64-bit executable arm64",
+      "archive_sha256": "be3364900dfdf9d16d1160499613f0696c6436eceedfe4846896a86feaadb95a",
+      "compiler": "rustc 1.95.0",
+      "regex_engine": "Rust regex dependency",
+      "default_config": {
+        "source_path": "crates/rustleaks-core/default/gitleaks.toml",
+        "source_url": "https://github.com/joshgarnett/rustleaks/blob/0d7ca9254f7ce486e4ee7c3b75395578eef28f76/crates/rustleaks-core/default/gitleaks.toml",
+        "sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+        "rule_count": 222
+      },
+      "cli_defaults": {
+        "max_target_megabytes": 0,
+        "max_archive_depth": 0,
+        "max_decode_depth": 5,
+        "timeout_seconds": 0,
+        "findings_exit_code": 1,
+        "redaction_percent": 0,
+        "follow_symlinks": false
+      },
+      "concurrency": {
+        "source_workers": 1,
+        "source_queue_capacity": 1,
+        "cli_worker_control": null
+      },
+      "limits": {
+        "archive_entries": 10000,
+        "archive_member_bytes": 67108864,
+        "archive_expanded_total_bytes": 268435456,
+        "archive_spool_bytes": 67108864,
+        "git_patch_bytes": 268435456,
+        "git_patch_lines": 2000000,
+        "git_blob_bytes": 268435456,
+        "git_stderr_bytes": 1048576,
+        "cli_controls": "max-target-megabytes and archive/decode depth only; other adapter defaults not exposed"
+      },
+      "offline_validation": {
+        "live_credential_validation_feature": false
+      },
+      "source_url": "https://github.com/joshgarnett/rustleaks/tree/0d7ca9254f7ce486e4ee7c3b75395578eef28f76",
+      "binary_path": "rustleaks-alpha6/rustleaks",
+      "assets": [
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.attestation.jsonl",
+          "bytes": 11051,
+          "sha256": "027a4560a924699cfcd7e4337df2682287ae11f653365ed89587c64c9436ec4d",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.attestation.jsonl",
+          "api_digest": "sha256:027a4560a924699cfcd7e4337df2682287ae11f653365ed89587c64c9436ec4d"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.cdx.json",
+          "bytes": 32057,
+          "sha256": "648398e9f04513f300a6a22ec61fcb45eddc1b8d9db91f6a50e827e31aa0b134",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.cdx.json",
+          "api_digest": "sha256:648398e9f04513f300a6a22ec61fcb45eddc1b8d9db91f6a50e827e31aa0b134"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.manifest.json",
+          "bytes": 1581,
+          "sha256": "ba26b1157e59954cbfc4d8f33319b584b19cc564d8c255250c0156b918301516",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.manifest.json",
+          "api_digest": "sha256:ba26b1157e59954cbfc4d8f33319b584b19cc564d8c255250c0156b918301516"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.provenance.json",
+          "bytes": 2601,
+          "sha256": "bbd4f6de571cafce11ada18f8aaade88d2a300839e3bab7e868baadf7e8d0879",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.provenance.json",
+          "api_digest": "sha256:bbd4f6de571cafce11ada18f8aaade88d2a300839e3bab7e868baadf7e8d0879"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.reproducibility.json",
+          "bytes": 145,
+          "sha256": "c647a245603ec9247a5c6aa61211c5e199606039e40e8d1e4032a75173ea1a11",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.reproducibility.json",
+          "api_digest": "sha256:c647a245603ec9247a5c6aa61211c5e199606039e40e8d1e4032a75173ea1a11"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.SHA256SUMS",
+          "bytes": 365,
+          "sha256": "97e278e739cf76c5ba8abc2978fb36e6a6319f9b13cffef69bdb24a538ce8a20",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.SHA256SUMS",
+          "api_digest": "sha256:97e278e739cf76c5ba8abc2978fb36e6a6319f9b13cffef69bdb24a538ce8a20"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.tar.gz",
+          "bytes": 1780486,
+          "sha256": "be3364900dfdf9d16d1160499613f0696c6436eceedfe4846896a86feaadb95a",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.6/rustleaks-0.1.0-alpha.6-aarch64-apple-darwin.tar.gz",
+          "api_digest": "sha256:be3364900dfdf9d16d1160499613f0696c6436eceedfe4846896a86feaadb95a"
+        }
+      ]
+    },
+    {
+      "id": "rustleaks-alpha8",
+      "repository": "https://github.com/joshgarnett/rustleaks",
+      "version": "0.1.0-alpha.8",
+      "tag": "v0.1.0-alpha.8",
+      "source_commit": "bcb7590c933d6cb9adfc589cff72813bcaa26168",
+      "release_url": "https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.8",
+      "published_at": "2026-11-11T02:22:10Z",
+      "release_prerelease": true,
+      "binary_sha256": "7ca4491bcc9271ceddb86777d5a7131b32fe82ed2e9f5de1fb86be5898ec2d71",
+      "binary_bytes": 5135296,
+      "binary_format": "Mach-O 64-bit executable arm64",
+      "archive_sha256": "de7940cc22d75296d296add35c1f530240f89e38acdecd547728e1a2d12611bc",
+      "compiler": "rustc 1.95.0",
+      "regex_engine": "Rust regex dependency",
+      "default_config": {
+        "source_path": "crates/rustleaks-core/default/gitleaks.toml",
+        "source_url": "https://github.com/joshgarnett/rustleaks/blob/bcb7590c933d6cb9adfc589cff72813bcaa26168/crates/rustleaks-core/default/gitleaks.toml",
+        "sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+        "rule_count": 222
+      },
+      "cli_defaults": {
+        "max_target_megabytes": 0,
+        "max_archive_depth": 0,
+        "max_decode_depth": 5,
+        "timeout_seconds": 0,
+        "findings_exit_code": 1,
+        "redaction_percent": 0,
+        "follow_symlinks": false
+      },
+      "concurrency": {
+        "source_workers": 1,
+        "source_queue_capacity": 1,
+        "cli_worker_control": null
+      },
+      "limits": {
+        "archive_entries": 10000,
+        "archive_member_bytes": 67108864,
+        "archive_expanded_total_bytes": 268435456,
+        "archive_spool_bytes": 67108864,
+        "git_patch_bytes": 268435456,
+        "git_patch_lines": 2000000,
+        "git_blob_bytes": 268435456,
+        "git_stderr_bytes": 1048576,
+        "cli_controls": "max-target-megabytes and archive/decode depth only; other adapter defaults not exposed"
+      },
+      "offline_validation": {
+        "live_credential_validation_feature": false
+      },
+      "source_url": "https://github.com/joshgarnett/rustleaks/tree/bcb7590c933d6cb9adfc589cff72813bcaa26168",
+      "binary_path": "rustleaks-alpha8/rustleaks",
+      "assets": [
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.attestation.jsonl",
+          "bytes": 10996,
+          "sha256": "ee6378d06aac3107dd0218471e3a2d7a8b174b42da63e69336d2f269da7af683",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.attestation.jsonl",
+          "api_digest": "sha256:ee6378d06aac3107dd0218471e3a2d7a8b174b42da63e69336d2f269da7af683"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.cdx.json",
+          "bytes": 32131,
+          "sha256": "06bf0c12ce81d1b8652cd8a4e42daa33b713b0a81349cf1f6d4d7139dfe6f713",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.cdx.json",
+          "api_digest": "sha256:06bf0c12ce81d1b8652cd8a4e42daa33b713b0a81349cf1f6d4d7139dfe6f713"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.manifest.json",
+          "bytes": 1581,
+          "sha256": "35063b353b96067f2dc11604eaf0dae549f7a48ce62b5edb40669d38b0f4b161",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.manifest.json",
+          "api_digest": "sha256:35063b353b96067f2dc11604eaf0dae549f7a48ce62b5edb40669d38b0f4b161"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.provenance.json",
+          "bytes": 2601,
+          "sha256": "b8359bd0af7a1863a16a58cd7e790fd932b2e09bed4412240a195c72bb4921a3",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.provenance.json",
+          "api_digest": "sha256:b8359bd0af7a1863a16a58cd7e790fd932b2e09bed4412240a195c72bb4921a3"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.reproducibility.json",
+          "bytes": 145,
+          "sha256": "86d8934796ad656a20332880a4652219f77fc75e47732a3d44ca3e01910a7141",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.reproducibility.json",
+          "api_digest": "sha256:86d8934796ad656a20332880a4652219f77fc75e47732a3d44ca3e01910a7141"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.SHA256SUMS",
+          "bytes": 365,
+          "sha256": "42a7a1d2fa89ccf8916596a97f561c1e7f8d1c34da2a22015e2ba75f51e1cc22",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.SHA256SUMS",
+          "api_digest": "sha256:42a7a1d2fa89ccf8916596a97f561c1e7f8d1c34da2a22015e2ba75f51e1cc22"
+        },
+        {
+          "name": "rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.tar.gz",
+          "bytes": 2045917,
+          "sha256": "de7940cc22d75296d296add35c1f530240f89e38acdecd547728e1a2d12611bc",
+          "url": "https://github.com/joshgarnett/rustleaks/releases/download/v0.1.0-alpha.8/rustleaks-0.1.0-alpha.8-aarch64-apple-darwin.tar.gz",
+          "api_digest": "sha256:de7940cc22d75296d296add35c1f530240f89e38acdecd547728e1a2d12611bc"
+        }
+      ]
+    },
+    {
+      "id": "gitleaks",
+      "repository": "https://github.com/gitleaks/gitleaks",
+      "version": "8.30.1",
+      "tag": "v8.30.1",
+      "source_commit": "83d9cd684c87d95d656c1458ef04895a7f1cbd8e",
+      "release_url": "https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1",
+      "published_at": "2026-03-21T02:17:58Z",
+      "release_prerelease": false,
+      "binary_sha256": "ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f",
+      "binary_bytes": 21324882,
+      "binary_format": "Mach-O 64-bit executable arm64",
+      "archive_sha256": "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
+      "compiler": "go1.24.11",
+      "regex_engine": "github.com/wasilibs/go-re2 v1.9.0",
+      "default_config": {
+        "source_path": "config/gitleaks.toml",
+        "source_url": "https://github.com/gitleaks/gitleaks/blob/83d9cd684c87d95d656c1458ef04895a7f1cbd8e/config/gitleaks.toml",
+        "sha256": "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+        "rule_count": 222
+      },
+      "cli_defaults": {
+        "max_target_megabytes": 0,
+        "max_archive_depth": 0,
+        "max_decode_depth": 5,
+        "timeout_seconds": 0,
+        "findings_exit_code": 1,
+        "redaction_percent": 0,
+        "follow_symlinks": false
+      },
+      "concurrency": {
+        "source_semaphore_capacity": 40,
+        "cli_detection_worker_control": null,
+        "gomaxprocs_override_found": false,
+        "gomaxprocs_note": "Go scheduler limit is not a source-worker, OS-thread, or process-tree CPU limit."
+      },
+      "limits": {
+        "cli_controls": "max-target-megabytes and archive/decode depth; no corresponding archive member/total/spool size controls exposed"
+      },
+      "offline_validation": {
+        "live_credential_validation_feature": false
+      },
+      "source_url": "https://github.com/gitleaks/gitleaks/tree/83d9cd684c87d95d656c1458ef04895a7f1cbd8e",
+      "source_snapshot_sha256": "dccad08b346424cea740ba1d9ac8a5d13a5bcdc3424eb27b8a0f3ed1507802f0",
+      "binary_path": "gitleaks/gitleaks",
+      "assets": [
+        {
+          "name": "gitleaks_8.30.1_checksums.txt",
+          "bytes": 999,
+          "sha256": "061476c21adaf5441516f96f185c1a4706a83cd6329b9b38762271b3d4a52fae",
+          "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt",
+          "api_digest": "sha256:061476c21adaf5441516f96f185c1a4706a83cd6329b9b38762271b3d4a52fae"
+        },
+        {
+          "name": "gitleaks_8.30.1_darwin_arm64.tar.gz",
+          "bytes": 7897593,
+          "sha256": "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
+          "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_arm64.tar.gz",
+          "api_digest": "sha256:b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5"
+        }
+      ]
+    },
+    {
+      "id": "betterleaks",
+      "repository": "https://github.com/betterleaks/betterleaks",
+      "version": "1.10.0",
+      "tag": "v1.10.0",
+      "source_commit": "8d77e1712fb06fd14444cc648686f1d5655e28a8",
+      "release_url": "https://github.com/betterleaks/betterleaks/releases/tag/v1.10.0",
+      "published_at": "2026-11-04T20:33:19Z",
+      "release_prerelease": false,
+      "binary_sha256": "2b65a96778271c636ec161d0afd6cf270c41fbfdc37854ffbad774f02fd20834",
+      "binary_bytes": 24023698,
+      "binary_format": "Mach-O 64-bit executable arm64",
+      "archive_sha256": "91eaea97709d3308c7712574a56260539c65fbd0672711537aa68d566ea630b3",
+      "compiler": "go1.27.3",
+      "regex_engine": "github.com/betterleaks/go-re2 v1.11.0-betterleaks.3",
+      "default_config": {
+        "source_path": "config/betterleaks.toml",
+        "source_url": "https://github.com/betterleaks/betterleaks/blob/8d77e1712fb06fd14444cc648686f1d5655e28a8/config/betterleaks.toml",
+        "sha256": "3489c5044d3a6e5abfd17a381e9de188b6f4fdee49f7f44bae89e2f8932464fa",
+        "rule_count": 466
+      },
+      "cli_defaults": {
+        "max_target_megabytes": 0,
+        "max_archive_depth": 8,
+        "max_decode_depth": 5,
+        "timeout_seconds": 0,
+        "findings_exit_code": 1,
+        "redaction_percent": 0,
+        "follow_symlinks": false
+      },
+      "concurrency": {
+        "source_semaphore_capacity": 40,
+        "cli_detection_worker_control": null,
+        "gomaxprocs_override_found": false,
+        "gomaxprocs_note": "Go scheduler limit is not a source-worker, OS-thread, or process-tree CPU limit.",
+        "git_history_workers_default": 0,
+        "git_history_workers_zero_means": "single Git log process",
+        "git_history_worker_flag": "--git-workers",
+        "custom_log_opts_force_one_history_worker": true,
+        "filesystem_walk": "fastwalk.Walk(nil, ...) default parallel walk"
+      },
+      "limits": {
+        "cli_controls": "max-target-megabytes and archive/decode depth; no corresponding archive member/total/spool size controls exposed"
+      },
+      "offline_validation": {
+        "default": false,
+        "explicit_flag": "--validation=false",
+        "validation_environment_binding_found": false,
+        "notes": "No validation pool is created unless Enabled true; exclude remote source commands and HTTP diagnostics. Shared config contains no validation expressions."
+      },
+      "source_url": "https://github.com/betterleaks/betterleaks/tree/8d77e1712fb06fd14444cc648686f1d5655e28a8",
+      "source_snapshot_sha256": "7606dddb77e6b1b0b5fb3b1ecd271661a7b61aa9dde5fd06158fcfdea21aec10",
+      "binary_path": "betterleaks/betterleaks",
+      "assets": [
+        {
+          "name": "betterleaks_1.10.0_darwin_arm64.tar.gz",
+          "bytes": 9759566,
+          "sha256": "91eaea97709d3308c7712574a56260539c65fbd0672711537aa68d566ea630b3",
+          "url": "https://github.com/betterleaks/betterleaks/releases/download/v1.10.0/betterleaks_1.10.0_darwin_arm64.tar.gz",
+          "api_digest": "sha256:91eaea97709d3308c7712574a56260539c65fbd0672711537aa68d566ea630b3"
+        },
+        {
+          "name": "checksums.txt",
+          "bytes": 618,
+          "sha256": "d465c5752b3907183f4143f88fa725077ae23445447e799a812dcd6830828107",
+          "url": "https://github.com/betterleaks/betterleaks/releases/download/v1.10.0/checksums.txt",
+          "api_digest": "sha256:d465c5752b3907183f4143f88fa725077ae23445447e799a812dcd6830828107"
+        },
+        {
+          "name": "checksums.txt.sigstore.json",
+          "bytes": 10239,
+          "sha256": "c5f51e6e1d4f8280e4f1c541954b9c9f081c6fa04de1262b991b5ea0c7e074ea",
+          "url": "https://github.com/betterleaks/betterleaks/releases/download/v1.10.0/checksums.txt.sigstore.json",
+          "api_digest": "sha256:c5f51e6e1d4f8280e4f1c541954b9c9f081c6fa04de1262b991b5ea0c7e074ea"
+        }
+      ]
+    }
+  ]
+}

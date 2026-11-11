@@ -1,0 +1,1082 @@
+# Python 3.9+ standard-library collector, embedded by xtask. Never fetches tools.
+import argparse
+import collections
+import csv
+import fcntl
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import platform
+import re
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+COMPARISON_SCHEMA = 'cross-scanner-cli-v1'
+COMPARISON_TOOL_IDS = ('rustleaks-alpha6', 'rustleaks-alpha8', 'gitleaks', 'betterleaks')
+COMPARISON_VERSIONS = ('0.1.0-alpha.6', '0.1.0-alpha.8', '8.30.1', '1.10.0')
+COMPARISON_PROFILES = ('shared-rules', 'shipped-rules')
+COMPARISON_ORDERS = ((0, 1, 3, 2), (1, 2, 0, 3), (2, 3, 1, 0), (3, 0, 2, 1))
+COMPARISON_FIELDS = ('rule_id', 'path', 'secret_sha256', 'start_line', 'end_line',
+                     'start_column', 'end_column', 'commit', 'decoded')
+COMPARISON_IDENTITY_FIELDS = ('rule_id', 'path', 'secret_sha256', 'commit', 'decoded')
+COMPARISON_CSV_FIELDS = ('profile_index', 'workload_index', 'tool_index', 'sample', 'status_code',
+                        'eligible', 'elapsed_ns', 'cpu_user_ns', 'cpu_system_ns', 'rusage_maxrss_bytes',
+                        'finding_count', 'missing_findings', 'extra_findings',
+                        'identity_missing_findings', 'identity_extra_findings', 'location_differences')
+COMPARISON_RULES = '''title = "Independently authored comparison rules"
+[[rules]]
+id = "github-pat"
+description = "Synthetic GitHub PAT shape"
+keywords = ["ghp_"]
+regex = ''' + "'''ghp_[0-9a-zA-Z]{36}'''" + '''
+[[rules]]
+id = "aws-access-token"
+description = "Synthetic AWS access key shape"
+keywords = ["akia"]
+regex = ''' + "'''AKIA[A-Z2-7]{16}'''" + '''
+[[rules]]
+id = "slack-bot-token"
+description = "Synthetic Slack bot token shape"
+keywords = ["xoxb"]
+regex = ''' + "'''xoxb-[0-9]{12}-[0-9]{12}-[a-zA-Z0-9]{24}'''" + '\n'
+COMPARISON_MARKER = '''
+[[rules]]
+id = "benchmark-coverage"
+description = "Synthetic coverage witness"
+regex = ''' + "'''BSC_[a-z0-9]{16}'''" + '\n'
+
+
+def comparison_hash_bytes(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def comparison_json_bytes(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+
+
+def comparison_hash_file(path):
+    result = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b''):
+            result.update(block)
+    return result.hexdigest()
+
+
+def comparison_payload_sources(root):
+    return {name: comparison_hash_file(root / 'crates' / 'xtask' / 'src' / filename)
+            for name, filename in (('collector', 'performance_comparison.txt'),
+                                   ('fixtures', 'performance_comparison_fixtures.txt'))}
+
+
+def comparison_verify_payloads(root, embedded=None):
+    if embedded is None:
+        embedded = {'collector': globals().get('COMPARISON_COLLECTOR_SHA256'),
+                    'fixtures': globals().get('COMPARISON_FIXTURE_SHA256')}
+    if (set(embedded) != {'collector', 'fixtures'}
+            or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value)
+                   for value in embedded.values())):
+        raise ValueError('embedded comparison payload hashes are missing or malformed')
+    actual = comparison_payload_sources(root)
+    if actual != embedded:
+        raise ValueError('embedded comparison payload differs from source checkout; rebuild xtask')
+    return actual
+
+
+def comparison_write(path, value, json_value=True):
+    data = comparison_json_bytes(value) + b'\n' if json_value else value
+    with open(path, 'xb') as handle:
+        os.chmod(path, 0o600)
+        handle.write(data)
+
+
+def comparison_tree(root, paths=None):
+    digest = hashlib.sha256()
+    count = total = 0
+    iterator = paths if paths is not None else sorted(root.rglob('*'))
+    for path in iterator:
+        metadata = path.lstat()
+        if stat.S_ISDIR(metadata.st_mode):
+            continue
+        if stat.S_ISLNK(metadata.st_mode):
+            content = comparison_hash_bytes(os.fsencode(os.readlink(path)))
+        elif stat.S_ISREG(metadata.st_mode):
+            content = comparison_hash_file(path)
+        else:
+            raise ValueError('unsupported input filesystem object')
+        digest.update(comparison_json_bytes([str(path.relative_to(root)),
+                      stat.S_IMODE(metadata.st_mode), metadata.st_size, content]) + b'\n')
+        count += 1
+        total += metadata.st_size
+    return {'sha256': digest.hexdigest(), 'file_count': count, 'bytes': total}
+
+
+def comparison_environment(base, capped=False):
+    environment = {'PATH': str(base / 'bin') + ':/usr/bin:/bin:/usr/sbin:/sbin',
+                   'HOME': str(base / 'home'), 'TMPDIR': str(base / 'tmp'),
+                   'LC_ALL': 'C', 'TZ': 'UTC', 'GIT_CONFIG_NOSYSTEM': '1',
+                   'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
+    if capped:
+        environment['GOMAXPROCS'] = '1'
+    return environment
+
+
+def comparison_git(git, root, args, environment):
+    return subprocess.check_output([str(git), '-C', str(root)] + args,
+                                   env=environment, stderr=subprocess.DEVNULL)
+
+
+def comparison_source(git, root, environment):
+    status = comparison_git(git, root, ['status', '--porcelain=v1', '--untracked-files=all'], environment)
+    paths = comparison_git(git, root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], environment)
+    files = sorted({root / os.fsdecode(path) for path in paths.split(b'\0') if path})
+    return {'commit': comparison_git(git, root, ['rev-parse', 'HEAD'], environment).decode().strip(),
+            'dirty': bool(status), 'status_sha256': comparison_hash_bytes(status),
+            'inventory': comparison_tree(root, files)}
+
+
+def comparison_active_builds():
+    # Idle Bazel servers are deliberately excluded. Ancestors include `cargo xtask`.
+    output = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,comm='], text=True)
+    processes = {}
+    for line in output.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) == 3:
+            processes[int(parts[0])] = (int(parts[1]), Path(parts[2]).name)
+    ancestors = set()
+    pid = os.getpid()
+    while pid in processes and pid not in ancestors:
+        ancestors.add(pid)
+        pid = processes[pid][0]
+    names = {'cargo', 'rustc', 'bazel', 'bazelisk', 'clang', 'clang++', 'gcc', 'g++', 'ninja', 'make'}
+    return sum(pid not in ancestors and name in names for pid, (_, name) in processes.items())
+
+
+def comparison_kill_group(pid):
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # Darwin's sandbox can deny signaling a group after its last live member
+        # has exited. Only independent process-state evidence permits accepting it.
+        if not comparison_group_quiescent(pid):
+            raise
+
+
+def comparison_group_snapshot_quiescent(text, pid, linux):
+    rows = 0
+    quiescent = True
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) != (3 if linux else 2) or not fields[0].isdigit():
+            raise ValueError('invalid process-group cleanup observation')
+        if linux and (not fields[2].isdigit() or int(fields[2]) < 1):
+            raise ValueError('invalid process-group thread count')
+        rows += 1
+        # Linux can retain a zombie leader while sibling threads remain alive.
+        if int(fields[0]) == pid and (not fields[1].startswith('Z') or linux and int(fields[2]) != 1):
+            quiescent = False
+    if not rows:
+        raise ValueError('empty process-group cleanup observation')
+    return quiescent
+
+
+def comparison_group_quiescent(pid):
+    # Match the repository's existing process-cleanup contract: only absence or
+    # exited zombies establish quiescence. A failed observer never does.
+    fields = 'pgid=,stat=,nlwp=' if sys.platform == 'linux' else 'pgid=,stat='
+    with tempfile.TemporaryFile() as output:
+        subprocess.run(['/bin/ps', '-A', '-o', fields], stdin=subprocess.DEVNULL,
+                       stdout=output, stderr=subprocess.DEVNULL, timeout=2, check=True,
+                       env={'LC_ALL': 'C', 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'})
+        output.seek(0)
+        data = output.read(1024 * 1024 + 1)
+    if len(data) > 1024 * 1024:
+        raise ValueError('process-group cleanup observation exceeds bound')
+    return comparison_group_snapshot_quiescent(data.decode('ascii'), pid, sys.platform == 'linux')
+
+
+def comparison_wait_quiescent(pid):
+    deadline = time.monotonic() + 5
+    while not comparison_group_quiescent(pid):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('process group did not finish bounded cleanup')
+        time.sleep(0.01)
+
+
+def comparison_execute(argv, cwd, environment, report, log, stdin=None,
+                       timeout=120, report_limit=512 * 1024 * 1024, log_limit=16 * 1024 * 1024):
+    """Time exactly spawn through direct-child completion and report-file writes.
+
+    wait4 reaps this exact PID, so maxima never accumulate across samples. The
+    OS may include waited-for descendants in rusage; it is not aggregate RSS.
+    Polling output limits are not filesystem quotas and can overshoot briefly.
+    """
+    completed = threading.Event()
+    boundary = []
+    child = None
+    group_signaled = False
+    cleanup_complete = False
+    group_lock = threading.Lock()
+    supervisor_errors = []
+
+    def signal_group_once():
+        nonlocal group_signaled
+        with group_lock:
+            if not group_signaled:
+                # Do not repeat a numeric group signal after members exit;
+                # adoption, sandbox policy and PID reuse can change its meaning.
+                group_signaled = True
+                comparison_kill_group(child.pid)
+
+    with open(report, 'xb') as out, open(log, 'xb') as err:
+        os.chmod(report, 0o600)
+        os.chmod(log, 0o600)
+        source = open(stdin, 'rb') if stdin is not None else open(os.devnull, 'rb')
+        try:
+            start = time.perf_counter_ns()
+            child = subprocess.Popen(argv, stdin=source, stdout=out, stderr=err,
+                                     cwd=cwd, env=environment, start_new_session=True)
+
+            def supervise():
+                while not completed.wait(0.01):
+                    reason = None
+                    if time.perf_counter_ns() - start > timeout * 1000000000:
+                        reason = 'timeout'
+                    elif os.fstat(out.fileno()).st_size > report_limit or os.fstat(err.fileno()).st_size > log_limit:
+                        reason = 'output-limit'
+                    if reason:
+                        boundary.append(reason)
+                        try:
+                            signal_group_once()
+                        except Exception as error:
+                            supervisor_errors.append(error)
+                            # Keep the exact direct child reapable by wait4. Do
+                            # not use Popen.kill(), which may poll/reap it first.
+                            try:
+                                os.kill(child.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                        return
+
+            watcher = threading.Thread(target=supervise, daemon=True)
+            watcher.start()
+            try:
+                _, status, usage = os.wait4(child.pid, 0)
+                end = time.perf_counter_ns()
+                child.returncode = os.waitstatus_to_exitcode(status)
+            finally:
+                completed.set()
+                watcher.join()
+            if not comparison_group_quiescent(child.pid):
+                boundary.append('orphan-descendants')
+                signal_group_once()
+            comparison_wait_quiescent(child.pid)
+            cleanup_complete = True
+            if supervisor_errors:
+                raise RuntimeError('watchdog could not establish process-group cleanup') from supervisor_errors[0]
+            if end - start > timeout * 1000000000 and 'timeout' not in boundary:
+                boundary.append('timeout')
+            if os.fstat(out.fileno()).st_size > report_limit or os.fstat(err.fileno()).st_size > log_limit:
+                boundary.append('output-limit')
+            return {'status': boundary[0] if boundary else 'completed',
+                    'elapsed_ns': end - start, 'exit_code': child.returncode,
+                    'cpu_user_ns': round(usage.ru_utime * 1000000000),
+                    'cpu_system_ns': round(usage.ru_stime * 1000000000),
+                    'rusage_maxrss_bytes': usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024),
+                    'aggregate_process_tree_peak_bytes': None,
+                    'report_bytes': os.fstat(out.fileno()).st_size,
+                    'log_bytes': os.fstat(err.fileno()).st_size}
+        finally:
+            source.close()
+            if child is not None and not cleanup_complete:
+                signal_group_once()
+                if child.returncode is None:
+                    child.wait(timeout=5)
+                comparison_wait_quiescent(child.pid)
+
+
+def comparison_path(value, workload, target):
+    # Only remove an exact known input prefix. No basename, case, or slash folding.
+    if workload['mode'] == 'stdin':
+        return value
+    prefix = str(target if target.is_dir() else target.parent) + '/'
+    return value[len(prefix):] if value.startswith(prefix) else value
+
+
+def comparison_findings(report, workload, target):
+    with open(report, encoding='utf-8') as handle:
+        values = json.load(handle)
+    if not isinstance(values, list):
+        raise ValueError('report must be a JSON list')
+    records = []
+    for value in values:
+        if not isinstance(value, dict):
+            raise ValueError('finding must be an object')
+        text_fields = ('RuleID', 'File', 'Secret', 'Commit')
+        if any(not isinstance(value.get(key), str) for key in text_fields):
+            raise ValueError('finding text field absent or invalid')
+        record = {'rule_id': value['RuleID'], 'path': comparison_path(value['File'], workload, target),
+                  'secret_sha256': comparison_hash_bytes(value['Secret'].encode()), 'commit': value['Commit']}
+        for public, source in [('start_line', 'StartLine'), ('end_line', 'EndLine'),
+                               ('start_column', 'StartColumn'), ('end_column', 'EndColumn')]:
+            number = value.get(source)
+            if type(number) is not int or number < 0:
+                raise ValueError('finding coordinate absent or invalid')
+            record[public] = number
+        tags = value.get('Tags')
+        if tags is None:
+            tags = []
+        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+            raise ValueError('finding tags invalid')
+        record['decoded'] = any(tag.startswith('decoded:') for tag in tags)
+        records.append(record)
+    return records
+
+
+def comparison_counter(records):
+    return collections.Counter(tuple(row[key] for key in COMPARISON_FIELDS) for row in records)
+
+
+def comparison_difference(expected, observed):
+    wanted, found = comparison_counter(expected), comparison_counter(observed)
+    missing, extra = wanted - found, found - wanted
+    left = collections.Counter(tuple(row[key] for key in COMPARISON_IDENTITY_FIELDS) for row in expected)
+    right = collections.Counter(tuple(row[key] for key in COMPARISON_IDENTITY_FIELDS) for row in observed)
+    exact = sum((wanted & found).values())
+    return {'expected': sum(wanted.values()), 'observed': sum(found.values()),
+            'missing': sum(missing.values()), 'extra': sum(extra.values()),
+            'location_differences': sum((left & right).values()) - exact,
+            'exact': wanted == found,
+            'identity_missing': sum((left - right).values()),
+            'identity_extra': sum((right - left).values()), 'identity_exact': left == right,
+            'expected_identity_multiset_sha256': comparison_hash_bytes(comparison_json_bytes(sorted(left.items()))),
+            'observed_identity_multiset_sha256': comparison_hash_bytes(comparison_json_bytes(sorted(right.items()))),
+            'expected_multiset_sha256': comparison_hash_bytes(comparison_json_bytes(sorted(wanted.items()))),
+            'observed_multiset_sha256': comparison_hash_bytes(comparison_json_bytes(sorted(found.items())))}
+
+
+def comparison_coverage_units(expected, observed):
+    wanted = {(row['path'], row['commit']) for row in expected}
+    found = {(row['path'], row['commit']) for row in observed}
+    return {'expected': len(wanted), 'observed': len(found),
+            'missing': len(wanted - found), 'extra': len(found - wanted), 'exact': wanted == found,
+            'expected_set_sha256': comparison_hash_bytes(comparison_json_bytes(sorted(wanted))),
+            'observed_set_sha256': comparison_hash_bytes(comparison_json_bytes(sorted(found)))}
+
+
+def comparison_counter_evidence(expected, observed):
+    # A missing counter is explicitly unverified, never a fabricated match.
+    status = ('unavailable' if expected is None or observed is None else
+              'matched' if expected == observed else 'mismatched')
+    return {'expected': expected, 'observed': observed, 'status': status}
+
+
+def comparison_coverage_complete(coverage):
+    findings = coverage.get('findings', {})
+    units = coverage.get('coverage_unit_set', {})
+    counters = coverage.get('scope_counters', {})
+    if not counters or any(value['status'] == 'mismatched' for value in counters.values()):
+        return False
+    if coverage.get('empty_input_control'):
+        witnessed = counters['scanned_bytes']['status'] == 'matched' and counters['scanned_bytes']['expected'] == 0
+    else:
+        witnessed = (units.get('exact', False)
+                     and coverage.get('coverage_units_expected', 0) > 0
+                     and units.get('expected') == coverage.get('coverage_units_expected')
+                     and units.get('observed') == coverage.get('coverage_units_expected'))
+    return coverage['status'] == 'complete' and findings.get('identity_exact', False) and witnessed
+
+
+def comparison_classify_coverage(coverage, workload):
+    expected_bytes = (workload['input_bytes'] if workload['archive_depth'] == 0
+                      else workload.get('expanded_bytes'))
+    expected_commits = workload['commit_count'] if workload['mode'] == 'git' else None
+    diagnostics = coverage.get('diagnostics', {})
+    coverage['scope_counters'] = {
+        'scanned_bytes': comparison_counter_evidence(expected_bytes, diagnostics.get('scanned_bytes')),
+        'commits_scanned': comparison_counter_evidence(expected_commits, diagnostics.get('commits_scanned'))}
+    applicable = [value['status'] for value in coverage['scope_counters'].values() if value['expected'] is not None]
+    coverage['scope_counters_status'] = ('mismatched' if 'mismatched' in applicable else
+                                         'unavailable' if 'unavailable' in applicable or not applicable else 'matched')
+    coverage['coverage_units_expected'] = workload['coverage_scope']['expected_units']
+    coverage['empty_input_control'] = workload['input_bytes'] == 0
+    coverage['scope_sha256'] = comparison_hash_bytes(comparison_json_bytes(workload['coverage_scope']))
+    coverage['complete'] = comparison_coverage_complete(coverage)
+    return coverage
+
+
+def comparison_diagnostics(log, finding_count, known_warning=None):
+    text = Path(log).read_text(encoding='utf-8', errors='replace')
+    text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    terminal = re.search(r'(?:no leaks found|leaks found: (\d+))$', lines[-1]) if lines else None
+    terminal_count = (int(terminal.group(1)) if terminal.group(1) else 0) if terminal else None
+    # Go logs exact bytes in parentheses; Rust logs exact bytes before them.
+    scan = re.findall(r'scanned ~[^\n]*?\((\d+) bytes\)', text)
+    rust_scan = re.findall(r'scanned ~(\d+) bytes \(', text)
+    scanned_bytes = int(scan[-1]) if scan else int(rust_scan[-1]) if rust_scan else None
+    commits = re.findall(r'\b(\d+) commits scanned\b', text)
+    warnings = [line for line in lines if re.search(r'\b(?:WRN|ERR|FTL|warn|error|fatal)\b', line)
+                and not re.search(r'\bleaks found: \d+$', line)]
+    known = [line for line in warnings if line == known_warning]
+    bad = [line for line in warnings if line != known_warning] + known[1:]
+    skipped = bool(re.search(r'\b(?:skip|skipped|skipping|truncated|incomplete|timeout|timed out)\b', text, re.I))
+    return {'terminal_count_matches_report': terminal_count == finding_count,
+            'terminal_count': terminal_count, 'scanned_bytes': scanned_bytes,
+            'commits_scanned': int(commits[-1]) if commits else None,
+            'known_version_warning_count': len(known),
+            'known_version_warning_sha256': comparison_hash_bytes(known[0].encode()) if known else None,
+            'unexpected_warning_count': len(bad), 'skip_or_incomplete_diagnostic': skipped,
+            'diagnostics_sha256': comparison_hash_file(log)}
+
+
+def comparison_statistics(values):
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    median = ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    deviations = sorted(abs(value - median) for value in ordered)
+    mad = deviations[middle] if len(ordered) % 2 else (deviations[middle - 1] + deviations[middle]) / 2
+    return {'median': median, 'min': ordered[0], 'max': ordered[-1], 'mad': mad, 'samples': len(values)}
+
+
+def comparison_argv(tool, workload, target, profile, base, coverage=False):
+    argv = [tool['binary_path'], workload['mode']]
+    if workload['mode'] != 'stdin':
+        argv.append(str(target))
+    if workload['mode'] == 'git':
+        if workload.get('git_staged'):
+            argv.append('--staged')
+        else:
+            argv.append('--log-opts=' + workload['git_log_options'])
+    if profile == 'shared-rules' or coverage:
+        name = profile + ('-coverage' if coverage else '') + '.toml'
+        argv += ['--config', str(base / name)]
+    if profile == 'shared-rules':
+        argv += ['--max-decode-depth', str(workload['decode_depth']),
+                 '--max-archive-depth', str(workload['archive_depth'])]
+    else:
+        # Shipped feature defaults are retained except explicit task requirements.
+        for field, flag in [('decode_depth', '--max-decode-depth'), ('archive_depth', '--max-archive-depth')]:
+            default = tool['cli_defaults']['max_' + field]
+            if workload[field] > default:
+                argv += [flag, str(workload[field])]
+    argv += ['--no-banner', '--no-color', '--log-level', 'info', '--report-format', 'json',
+             '--report-path', '-', '--gitleaks-ignore-path', str(base / 'empty-ignore')]
+    if tool['id'] == 'betterleaks':
+        argv.append('--validation=false')
+    return argv
+
+
+def comparison_public_argv(argv, tool, target, base):
+    result = []
+    for arg in argv:
+        if arg == tool['binary_path']:
+            result.append('<tool:' + tool['id'] + '>')
+        elif arg == str(target):
+            result.append('<input>')
+        elif arg.startswith(str(base) + '/'):
+            result.append('<control>/' + Path(arg).name)
+        else:
+            result.append(arg)
+    return result
+
+
+def comparison_validate_matrix(summary):
+    if summary.get('schema_version') != COMPARISON_SCHEMA or summary.get('terminal') != 'complete':
+        raise ValueError('comparison lacks terminal completion')
+    samples = summary['settings']['samples']
+    smoke = summary['settings']['smoke']
+    if type(samples) is not int or not (1 <= samples <= 4 if smoke else 8 <= samples <= 64 and samples % 4 == 0):
+        raise ValueError('invalid sample count for declared collection scale')
+    if summary['tool_order'] != list(COMPARISON_TOOL_IDS):
+        raise ValueError('comparison tool order differs from pinned four-way protocol')
+    workloads = summary['workload_order']
+    if len(workloads) != len(set(workloads)) or not workloads:
+        raise ValueError('missing or duplicate workload identity')
+    planned = {(item['profile'], item['workload'], item['tool']) for item in summary['planned_matrix']}
+    if len(planned) != len(summary['planned_matrix']):
+        raise ValueError('duplicate planned comparison cell')
+    expected_plan = {(profile, workload, tool) for profile in COMPARISON_PROFILES
+                     for workload in workloads for tool in COMPARISON_TOOL_IDS}
+    if planned != expected_plan:
+        raise ValueError('planned matrix is not the complete four-way two-profile matrix')
+    cells = summary['cells']
+    actual = [(cell['profile'], cell['workload'], cell['tool']) for cell in cells]
+    if len(actual) != len(set(actual)) or set(actual) != planned:
+        raise ValueError('missing, duplicate, or unexpected comparison cell')
+    for cell in cells:
+        rows = cell['samples']
+        if [row['sample'] for row in rows] != list(range(summary['settings']['samples'])):
+            raise ValueError('missing or duplicate comparison sample')
+        reasons = comparison_cell_reasons(summary, cell)
+        if cell['eligible'] != (not reasons) or cell['ineligible_reasons'] != reasons:
+            raise ValueError('eligibility does not match provenance, complete samples, and coverage')
+        coverage = cell['coverage']
+        if coverage['complete'] != comparison_coverage_complete(coverage):
+            raise ValueError('coverage label differs from marker identities, units, or counter evidence')
+        for evidence in coverage.get('scope_counters', {}).values():
+            if evidence != comparison_counter_evidence(evidence['expected'], evidence['observed']):
+                raise ValueError('counter verification status is inconsistent')
+        units = coverage.get('coverage_unit_set')
+        if units is not None:
+            same_units = (units['expected'] == units['observed'] and units['missing'] == units['extra'] == 0
+                          and units['expected_set_sha256'] == units['observed_set_sha256'])
+            if units['exact'] != same_units:
+                raise ValueError('coverage unit-set identity is inconsistent')
+        if cell['eligible']:
+            if (any(row['status'] != 'complete' for row in rows) or not cell['coverage']['complete']
+                    or cell['warmup']['status'] != 'complete'
+                    or cell['profile'] == 'shared-rules' and any(not row['findings']['exact'] for row in rows)):
+                raise ValueError('ineligible cell labeled eligible')
+            if any(row.get('elapsed_ns', 0) <= 0 for row in rows):
+                raise ValueError('invalid elapsed time')
+        for row in rows + [cell['warmup'], cell['coverage']]:
+            findings = row.get('findings')
+            if findings is not None:
+                same_hash = findings['expected_multiset_sha256'] == findings['observed_multiset_sha256']
+                same_count = findings['expected'] == findings['observed']
+                no_differences = findings['missing'] == findings['extra'] == findings['location_differences'] == 0
+                if findings['exact'] != (same_hash and same_count and no_differences):
+                    raise ValueError('inconsistent finding identity or multiset counts')
+                same_identity_hash = findings['expected_identity_multiset_sha256'] == findings['observed_identity_multiset_sha256']
+                no_identity_differences = findings['identity_missing'] == findings['identity_extra'] == 0
+                if findings['identity_exact'] != (same_identity_hash and same_count and no_identity_differences):
+                    raise ValueError('inconsistent finding identity projection')
+                if (findings['missing'] != findings['identity_missing'] + findings['location_differences']
+                        or findings['extra'] != findings['identity_extra'] + findings['location_differences']):
+                    raise ValueError('finding identity and coordinate differences do not reconcile')
+
+
+def comparison_validate_artifacts(output):
+    completion = json.loads((output / 'COMPLETE.json').read_text())
+    if completion.get('terminal') != 'complete' or completion.get('schema_version') != COMPARISON_SCHEMA:
+        raise ValueError('missing strict terminal completion marker')
+    for name in ('summary', 'samples'):
+        filename = name + ('.json' if name == 'summary' else '.csv')
+        if comparison_hash_file(output / filename) != completion[name + '_sha256']:
+            raise ValueError('published artifact hash mismatch')
+    summary = json.loads((output / 'summary.json').read_text())
+    comparison_validate_matrix(summary)
+    with open(output / 'samples.csv', newline='') as handle:
+        rows = list(csv.DictReader(handle))
+    expected = [{key: str(value) for key, value in row.items()} for row in comparison_csv_rows(summary)]
+    if rows != expected:
+        raise ValueError('CSV sample identity or numeric values differ from summary')
+    return summary
+
+
+def comparison_public_tools(tools):
+    keys = ('id', 'version', 'tag', 'repository', 'source_commit', 'source_url', 'release_url',
+            'published_at', 'release_prerelease', 'release_immutable', 'binary_sha256', 'binary_bytes',
+            'compiler', 'regex_engine', 'default_config', 'source_snapshot_sha256',
+            'cli_defaults', 'concurrency', 'limits', 'offline_validation')
+    return [{key: tool[key] for key in keys if key in tool} for tool in tools]
+
+
+def comparison_load_tools(path, tool_root):
+    manifest = json.loads(path.read_text())
+    entries = manifest.get('tools')
+    if not isinstance(entries, list) or len(entries) != 4:
+        raise ValueError('exactly four pinned tool entries required')
+    by_id = {entry['id']: entry for entry in entries}
+    if set(by_id) != set(COMPARISON_TOOL_IDS):
+        raise ValueError('unexpected or duplicate tool identity')
+    tools = []
+    for tool_id, version in zip(COMPARISON_TOOL_IDS, COMPARISON_VERSIONS):
+        tool = dict(by_id[tool_id])
+        if tool['version'] != version:
+            raise ValueError('unexpected tool version')
+        candidate = Path(tool['binary_path'])
+        if tool_root is not None:
+            candidate = tool_root / tool_id / candidate.name
+        if not candidate.is_absolute() or not candidate.is_file() or not os.access(candidate, os.X_OK):
+            raise ValueError('tool binary must be an existing absolute executable')
+        tool['binary_path'] = str(candidate.resolve())
+        if comparison_hash_file(candidate) != tool['binary_sha256']:
+            raise ValueError('tool executable hash mismatch')
+        tools.append(tool)
+    return tools
+
+
+def comparison_snapshot(root, corpus, controls, tools, git, environment):
+    return {'source': comparison_source(git, root, environment), 'corpus': comparison_tree(corpus),
+            'source_payloads': comparison_payload_sources(root),
+            'config': {name: comparison_hash_file(controls / name) for name in
+                       ('shared-rules.toml', 'shared-rules-coverage.toml', 'shipped-rules-coverage.toml', 'empty-ignore')},
+            'executables': {tool['id']: comparison_hash_file(tool['binary_path']) for tool in tools},
+            'git_sha256': comparison_hash_file(git),
+            'python_executable_sha256': comparison_hash_file(sys.executable)}
+
+
+def comparison_observe(tool, workload, profile, base, corpus, reports, phase, environment):
+    target = corpus / workload['input']
+    argv = comparison_argv(tool, workload, target, profile, base, phase == 'coverage')
+    stem = '-'.join((profile, workload['id'], tool['id'], phase))
+    report, log = reports / (stem + '.json'), reports / (stem + '.log')
+    comparison_write(reports / (stem + '.argv.json'), argv)
+    result = comparison_execute(argv, base / 'cwd', environment, report, log,
+                                target if workload['mode'] == 'stdin' else None)
+    result['report_sha256'] = comparison_hash_file(report)
+    if result['status'] != 'completed':
+        return result
+    try:
+        records = comparison_findings(report, workload, target)
+        known_warning = None
+        if profile == 'shipped-rules' and tool['id'] in ('rustleaks-alpha6', 'rustleaks-alpha8'):
+            origin = str(base / 'shipped-rules-coverage.toml') if phase == 'coverage' else '<embedded-default>'
+            known_warning = ('warn config requires a newer Gitleaks version... required=v8.25.0 current='
+                             + tool['version'] + ' config path=' + origin)
+        result['diagnostics'] = comparison_diagnostics(log, len(records), known_warning)
+        result['finding_count'] = len(records)
+        if result['exit_code'] != (1 if records else 0):
+            result['status'] = 'unexpected-exit-code'
+        elif (not result['diagnostics']['terminal_count_matches_report']
+              or result['diagnostics']['unexpected_warning_count']
+              or result['diagnostics']['skip_or_incomplete_diagnostic']):
+            result['status'] = 'incomplete-diagnostics'
+        else:
+            result['status'] = 'complete'
+        if phase == 'coverage':
+            markers = [row for row in records if row['rule_id'] == 'benchmark-coverage']
+            result['findings'] = comparison_difference(workload['coverage_markers'], markers)
+            result['coverage_unit_set'] = comparison_coverage_units(workload['coverage_markers'], markers)
+            result['coverage_units_observed'] = result['coverage_unit_set']['observed']
+        else:
+            result['findings'] = comparison_difference(workload['expected_findings'], records)
+        result['finding_records_sha256'] = comparison_hash_bytes(comparison_json_bytes(records))
+    except (ValueError, KeyError, TypeError, UnicodeError):
+        result['status'] = 'invalid-report'
+    return result
+
+
+def comparison_cell_reasons(summary, cell):
+    reasons = []
+    if summary['settings']['smoke']:
+        reasons.append('smoke-run')
+    if summary['settings']['allow_dirty']:
+        reasons.append('allow-dirty-requested')
+    if summary['before']['source']['dirty']:
+        reasons.append('dirty-source')
+    if summary['before'] != summary['after']:
+        reasons.append('provenance-changed')
+    if cell['warmup'].get('status') != 'complete':
+        reasons.append('warmup-failed')
+    if not cell['coverage']['complete']:
+        reasons.append('coverage-incomplete-or-indeterminate')
+    if any(row['status'] != 'complete' for row in cell['samples']):
+        reasons.append('measured-sample-failed-or-not-run')
+    if cell['profile'] == 'shared-rules' and any(not row.get('findings', {}).get('exact', False)
+                                                 for row in [cell['warmup']] + cell['samples']):
+        reasons.append('controlled-finding-mismatch')
+    outcome_hashes = {row.get('findings', {}).get('observed_multiset_sha256') for row in cell['samples']}
+    if len(outcome_hashes) > 1:
+        reasons.append('non-deterministic-measured-findings')
+    return reasons
+
+
+def comparison_csv_rows(summary):
+    for cell in summary['cells']:
+        for row in cell['samples']:
+            yield {'profile_index': COMPARISON_PROFILES.index(cell['profile']),
+                   'workload_index': summary['workload_order'].index(cell['workload']),
+                   'tool_index': COMPARISON_TOOL_IDS.index(cell['tool']), 'sample': row['sample'],
+                   'status_code': 0 if row['status'] == 'complete' else 1,
+                   'eligible': int(cell['eligible']),
+                   **{key: row.get(key, '') for key in COMPARISON_CSV_FIELDS[6:11]},
+                   'missing_findings': row.get('findings', {}).get('missing', ''),
+                   'extra_findings': row.get('findings', {}).get('extra', ''),
+                   'identity_missing_findings': row.get('findings', {}).get('identity_missing', ''),
+                   'identity_extra_findings': row.get('findings', {}).get('identity_extra', ''),
+                   'location_differences': row.get('findings', {}).get('location_differences', '')}
+
+
+def comparison_finish(summary, output):
+    for cell in summary['cells']:
+        reasons = comparison_cell_reasons(summary, cell)
+        cell['eligible'] = not reasons
+        cell['ineligible_reasons'] = reasons
+        # No successful-subset summary can hide a failed repetition.
+        cell['statistics'] = ({key: comparison_statistics([row[key] for row in cell['samples']])
+                               for key in ('elapsed_ns', 'cpu_user_ns', 'cpu_system_ns', 'rusage_maxrss_bytes')}
+                              if all(row['status'] == 'complete' for row in cell['samples']) else None)
+    summary['terminal'] = 'complete'
+    comparison_validate_matrix(summary)
+    comparison_write(output / 'summary.json', summary)
+    with open(output / 'samples.csv', 'x', newline='') as handle:
+        os.chmod(output / 'samples.csv', 0o600)
+        writer = csv.DictWriter(handle, fieldnames=COMPARISON_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(comparison_csv_rows(summary))
+    comparison_write(output / 'COMPLETE.json', {'schema_version': COMPARISON_SCHEMA,
+                     'terminal': 'complete', 'summary_sha256': comparison_hash_file(output / 'summary.json'),
+                     'samples_sha256': comparison_hash_file(output / 'samples.csv')})
+
+
+def comparison_run(args):
+    os.umask(0o077)
+    output = Path(args.output)
+    if not output.is_absolute() or output.exists() or output.parent.resolve() != output.parent:
+        raise ValueError('output must be a new absolute directory with a canonical existing parent')
+    source = Path(args.source_root).resolve()
+    comparison_verify_payloads(source)
+    if source == output or source in output.parents:
+        raise ValueError('private output must be outside the source checkout')
+    tools_path = Path(args.tools).resolve()
+    tools = comparison_load_tools(tools_path, Path(args.tool_root).resolve() if args.tool_root else None)
+    git = Path(args.git or shutil.which('git') or '')
+    if not git.is_absolute() or not git.is_file():
+        raise ValueError('an absolute installed Git executable is required')
+    git = git.resolve()
+    output.mkdir(mode=0o700)
+    args.output_created = True
+    base, corpus, reports = output / 'control', output / 'corpus', output / 'private-reports'
+    for path in (base, reports):
+        path.mkdir(mode=0o700)
+    for name in ('home', 'tmp', 'cwd', 'bin'):
+        (base / name).mkdir(mode=0o700)
+    # Only the pinned Git is discoverable before the fixed operating-system PATH.
+    (base / 'bin' / 'git').symlink_to(git)
+    for name, value in [('shared-rules.toml', COMPARISON_RULES),
+                        ('shared-rules-coverage.toml', COMPARISON_RULES + COMPARISON_MARKER),
+                        ('shipped-rules-coverage.toml', '[extend]\nuseDefault = true\n' + COMPARISON_MARKER),
+                        ('empty-ignore', '')]:
+        comparison_write(base / name, value.encode(), False)
+    environment = comparison_environment(base)
+    source_initial = comparison_source(git, source, environment)
+    if source_initial['dirty'] and not args.allow_dirty:
+        raise ValueError('source must be clean, including untracked files; --allow-dirty is smoke-only')
+    if comparison_active_builds():
+        raise ValueError('active build/compiler processes must finish before collection')
+    fixtures = comparison_prepare_fixtures(corpus, str(git), args.scale)
+    comparison_write(output / 'fixture-manifest.json', fixtures)
+    comparison_write(output / 'tool-manifest.private.json', json.loads(tools_path.read_text()))
+    workloads = fixtures['workloads']
+    ids = [workload['id'] for workload in workloads]
+    if len(ids) != len(set(ids)) or any(not re.fullmatch('[a-z0-9-]+', value) for value in ids):
+        raise ValueError('fixture workload IDs must be unique safe names')
+    selected = set(args.workload or ids)
+    if not selected <= set(ids):
+        raise ValueError('unknown selected workload')
+    # Forbid automatic local config/ignore discovery anywhere in generated inputs.
+    forbidden = {'.gitleaks.toml', '.betterleaks.toml', '.rustleaks.toml', '.gitleaksignore',
+                 '.betterleaksignore', '.rustleaksignore'}
+    if any(path.name in forbidden for path in corpus.rglob('*')):
+        raise ValueError('ambient target configuration or ignore file in corpus')
+    before = comparison_snapshot(source, corpus, base, tools, git, environment)
+    if before['executables'] != {tool['id']: tool['binary_sha256'] for tool in tools}:
+        raise ValueError('pinned tool executable changed during preparation')
+    if not args.allow_dirty and (before['source']['dirty'] or before['source'] != source_initial):
+        raise ValueError('source changed during preparation or is dirty before measurement')
+    settings = {'samples': args.samples, 'smoke': args.scale == 'smoke', 'allow_dirty': args.allow_dirty,
+                'scale': args.scale, 'timeout_seconds': 120, 'report_limit_bytes': 512 * 1024 * 1024,
+                'log_limit_bytes': 16 * 1024 * 1024, 'selected_workloads': sorted(selected),
+                'order': 'Williams ABDC/BCAD/CDBA/DACB, repeated; A/B/C/D follows tool_order',
+                'warmups_per_cell': 1, 'coverage_passes_per_cell': 1,
+                'timing_scope': 'full CLI startup through direct-child exit and JSON writes; no fsync durability guarantee',
+                'memory_scope': 'OS-reported wait4 exact-child maximum; not aggregate process-tree peak',
+                'shared_rules_concurrency': 'GOMAXPROCS=1 for Go scheduler only; not equal workers, OS threads, or CPU quota',
+                'shipped_rules_concurrency': 'shipped defaults; no concurrency environment overrides',
+                'feature_policy': 'shared: explicit task depth 0/1; shipped: preserve defaults, raise only when below required depth',
+                'finding_projection': 'nine benchmark fields, including four exact coordinates; not full report equivalence',
+                'coverage_policy': 'marker identity multiset and exact path/commit unit set; marker coordinate differences remain reported separately; available counter contradictions fail coverage',
+                'coverage_limit': 'untimed marker/config pass preserves global filters; unavailable counters stay unverified; witnesses do not prove every byte was scanned on each timed run',
+                'background_load': 'build-process preflight only; thermal conditions and other host work are not controlled',
+                'output_limit_policy': 'poll every 10ms and after exit; limits are not filesystem quotas',
+                'statistics': 'median, min, max, MAD; even-size median averages middle values; no p95 or significance claim'}
+    planned = [{'profile': profile, 'workload': workload['id'], 'tool': tool['id']}
+               for profile in COMPARISON_PROFILES for workload in workloads for tool in tools]
+    public_workloads = [{key: workload[key] for key in ('id', 'description', 'analogy', 'mode',
+                         'input_bytes', 'file_count', 'commit_count', 'decode_depth', 'archive_depth')}
+                       for workload in workloads]
+    summary = {'schema_version': COMPARISON_SCHEMA, 'terminal': 'pending', 'settings': settings,
+               'tool_order': list(COMPARISON_TOOL_IDS), 'workload_order': ids,
+               'tools': comparison_public_tools(tools), 'workloads': public_workloads,
+               'planned_matrix': planned, 'cells': [], 'before': before,
+               'fixture_manifest_sha256': comparison_hash_file(output / 'fixture-manifest.json'),
+               'tool_manifest_sha256': comparison_hash_file(tools_path),
+               'controller_sha256': globals().get('COMPARISON_COLLECTOR_SHA256'),
+               'fixture_generator_sha256': globals().get('COMPARISON_FIXTURE_SHA256'),
+               'host': {'os': platform.system(), 'release': platform.release(), 'architecture': platform.machine(),
+                        'logical_cpus': os.cpu_count(), 'load_average': list(os.getloadavg()),
+                        'python': platform.python_version()}, 'release_gate': False,
+               'eligibility_scope': 'optional CLI comparison cell under this protocol; not a release-readiness or platform-support gate',
+               'speedups': [], 'speedup_policy': 'not computed; compare only eligible complete cells with equivalent validated outcome and coverage'}
+    comparison_write(output / 'predeclared-plan.json', summary)
+    if args.prepare_only:
+        comparison_write(output / 'PREPARED.json', {'schema_version': COMPARISON_SCHEMA,
+                         'terminal': 'prepared-only', 'planned_cells': len(planned)})
+        print('comparison fixtures prepared; no timings collected')
+        return
+    if comparison_active_builds():
+        raise ValueError('active build/compiler process appeared before timing')
+    comparison_verify_payloads(source)
+    # Process-level advisory lock prevents two collectors measuring concurrently.
+    with open(Path(tempfile.gettempdir()) / 'rustleaks-cross-scanner-cli.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        for profile in COMPARISON_PROFILES:
+            for workload in workloads:
+                cells = []
+                for tool in tools:
+                    target = corpus / workload['input']
+                    argv = comparison_argv(tool, workload, target, profile, base)
+                    cell = {'profile': profile, 'workload': workload['id'], 'tool': tool['id'],
+                            'canonical_argv': comparison_public_argv(argv, tool, target, base),
+                            'effective_decode_depth': workload['decode_depth'] if profile == 'shared-rules' else max(workload['decode_depth'], tool['cli_defaults']['max_decode_depth']),
+                            'effective_archive_depth': workload['archive_depth'] if profile == 'shared-rules' else max(workload['archive_depth'], tool['cli_defaults']['max_archive_depth']),
+                            'environment': {'GOMAXPROCS': '1' if profile == 'shared-rules' and tool['id'] in ('gitleaks', 'betterleaks') else None},
+                            'warmup': {'status': 'not-run'}, 'coverage': {'complete': False, 'status': 'not-run'},
+                            'samples': [], 'eligible': False}
+                    cells.append(cell)
+                    summary['cells'].append(cell)
+                aborted = [None] * 4
+                for index, tool in enumerate(tools):
+                    cell = cells[index]
+                    if workload['id'] not in selected:
+                        aborted[index] = 'not-selected'
+                        continue
+                    env = comparison_environment(base, profile == 'shared-rules' and tool['id'] in ('gitleaks', 'betterleaks'))
+                    coverage = comparison_observe(tool, workload, profile, base, corpus, reports, 'coverage', env)
+                    cell['coverage'] = comparison_classify_coverage(coverage, workload)
+                    if coverage['status'] in ('timeout', 'output-limit', 'orphan-descendants'):
+                        aborted[index] = 'coverage-boundary-failure'
+                        continue
+                    cell['warmup'] = comparison_observe(tool, workload, profile, base, corpus, reports, 'warmup', env)
+                    if cell['warmup']['status'] in ('timeout', 'output-limit', 'orphan-descendants'):
+                        aborted[index] = 'warmup-boundary-failure'
+                for sample in range(args.samples):
+                    for index in COMPARISON_ORDERS[sample % 4]:
+                        tool, cell = tools[index], cells[index]
+                        if aborted[index]:
+                            row = {'status': 'not-run', 'reason': aborted[index]}
+                        else:
+                            if comparison_active_builds():
+                                aborted[index] = 'active-build-process'
+                                row = {'status': 'not-run', 'reason': aborted[index]}
+                            else:
+                                env = comparison_environment(base, profile == 'shared-rules' and tool['id'] in ('gitleaks', 'betterleaks'))
+                                row = comparison_observe(tool, workload, profile, base, corpus, reports, 'sample-' + str(sample), env)
+                                if row['status'] in ('timeout', 'output-limit', 'orphan-descendants'):
+                                    aborted[index] = 'previous-boundary-failure'
+                        row['sample'] = sample
+                        cell['samples'].append(row)
+                # Checkpoint is private, and never masquerades as terminal evidence.
+                comparison_write(output / ('checkpoint-' + profile + '-' + workload['id'] + '.json'), cells)
+                print('comparison cell group complete: ' + profile + '/' + workload['id'], flush=True)
+    summary['after'] = comparison_snapshot(source, corpus, base, tools, git, environment)
+    comparison_finish(summary, output)
+    comparison_validate_artifacts(output)
+    print('comparison complete: summary.json, samples.csv, COMPLETE.json')
+
+
+def comparison_self_test():
+    # Independently specified semantic mutations preserve duplicates and coordinates.
+    row = dict(zip(COMPARISON_FIELDS, ('github-pat', 'a.txt', 'a' * 64, 1, 1, 3, 42, '', False)))
+    assert comparison_difference([row, row], [row])['missing'] == 1
+    assert comparison_difference([row, row], [row])['identity_missing'] == 1
+    assert comparison_difference([row], [row, row])['extra'] == 1
+    assert comparison_difference([row], [row, row])['identity_extra'] == 1
+    wrong = dict(row, secret_sha256='b' * 64)
+    assert not comparison_difference([row], [wrong])['exact']
+    moved = dict(row, start_column=4)
+    assert comparison_difference([row], [moved])['location_differences'] == 1
+    assert comparison_difference([row], [moved])['identity_exact']
+    assert not comparison_difference([row], [moved])['exact']
+    marker = dict(row, rule_id='benchmark-coverage', commit='c' * 40)
+    marker_workload = {'mode': 'git', 'input_bytes': 40, 'archive_depth': 0, 'commit_count': 1,
+                       'coverage_scope': {'unit': 'changed_commit', 'expected_units': 1}}
+
+    def marker_coverage(observed, commits=None, byte_count=40):
+        result = {'status': 'complete', 'findings': comparison_difference([marker], observed),
+                  'coverage_unit_set': comparison_coverage_units([marker], observed),
+                  'diagnostics': {'commits_scanned': commits, 'scanned_bytes': byte_count}}
+        return comparison_classify_coverage(result, marker_workload)
+
+    coverage = marker_coverage([marker])
+    assert coverage['complete']
+    assert coverage['scope_counters']['commits_scanned']['status'] == 'unavailable'
+    assert coverage['scope_counters_status'] == 'unavailable'
+    assert marker_coverage([marker], commits=1)['scope_counters_status'] == 'matched'
+    assert not marker_coverage([marker], commits=2)['complete']
+    assert not marker_coverage([marker], byte_count=41)['complete']
+    moved_marker = marker_coverage([dict(marker, start_column=4)])
+    assert moved_marker['complete'] and moved_marker['findings']['location_differences'] == 1
+    assert moved_marker['findings']['identity_exact'] and not moved_marker['findings']['exact']
+    for incorrect in ([], [marker, marker], [dict(marker, path='wrong.txt')],
+                      [dict(marker, commit='d' * 40)], [dict(marker, secret_sha256='e' * 64)],
+                      [dict(marker, decoded=True)]):
+        rejected = marker_coverage(incorrect)
+        assert not rejected['complete'] and not rejected['findings']['identity_exact']
+    assert comparison_statistics([1, 2, 7, 8]) == {'median': 4.5, 'min': 1, 'max': 8, 'mad': 3.0, 'samples': 4}
+    assert comparison_group_snapshot_quiescent('7 Z\n99 S\n', 7, False)
+    assert comparison_group_snapshot_quiescent('99 S\n', 7, False)
+    assert not comparison_group_snapshot_quiescent('7 T\n99 S\n', 7, False)
+    assert not comparison_group_snapshot_quiescent('7 Z 2\n99 S 1\n', 7, True)
+    assert comparison_group_snapshot_quiescent('7 Z 1\n99 S 1\n', 7, True)
+    for invalid in ('', '7\n', 'bad S\n', '7 Z extra\n'):
+        try:
+            comparison_group_snapshot_quiescent(invalid, 7, False)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('invalid cleanup observation certified quiescence')
+    with tempfile.TemporaryDirectory(prefix='rustleaks-comparison-selftest-') as directory:
+        base = Path(directory)
+        fake_source = base / 'fake-source'
+        payload_directory = fake_source / 'crates' / 'xtask' / 'src'
+        payload_directory.mkdir(parents=True)
+        collector_bytes, fixture_bytes = b'collector fixture\n', b'corpus fixture\n'
+        (payload_directory / 'performance_comparison.txt').write_bytes(collector_bytes)
+        (payload_directory / 'performance_comparison_fixtures.txt').write_bytes(fixture_bytes)
+        correct = {'collector': comparison_hash_bytes(collector_bytes),
+                   'fixtures': comparison_hash_bytes(fixture_bytes)}
+        assert comparison_verify_payloads(fake_source, correct) == correct
+        for invalid in ({}, {'collector': correct['collector']},
+                        dict(correct, collector=None), dict(correct, collector='bad'),
+                        dict(correct, collector='A' * 64), dict(correct, fixtures='0' * 64)):
+            try:
+                comparison_verify_payloads(fake_source, invalid)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('unbound embedded payload accepted')
+        (payload_directory / 'performance_comparison.txt').write_bytes(b'changed after build\n')
+        try:
+            comparison_verify_payloads(fake_source, correct)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('stale embedded payload accepted')
+        def execute(code, name, **kwargs):
+            return comparison_execute([sys.executable, '-c', code], base, {}, base / (name + '.json'),
+                                      base / (name + '.log'), **kwargs)
+        # Files avoid pipe deadlocks. A sleeping descendant must be killed even when parent exits.
+        timed = execute('import time; time.sleep(10)', 'timeout', timeout=0.05)
+        assert timed['status'] == 'timeout' and timed['elapsed_ns'] < 3000000000
+        limited = execute('import os,time; os.write(1,b"x"*100000); time.sleep(10)',
+                          'limit', report_limit=1000, timeout=1)
+        assert limited['status'] == 'output-limit'
+        orphan = execute('import os,time; pid=os.fork(); time.sleep(10) if pid==0 else None', 'orphan')
+        assert orphan['status'] == 'orphan-descendants'
+        heavy = execute('x=bytearray(64*1024*1024); print("[]")', 'heavy')
+        light = execute('print("[]")', 'light')
+        assert heavy['rusage_maxrss_bytes'] > light['rusage_maxrss_bytes'] + 16 * 1024 * 1024
+        assert light['elapsed_ns'] > 0 and light['cpu_user_ns'] >= 0
+        assert light['aggregate_process_tree_peak_bytes'] is None
+        log = base / 'terminal.log'
+        log.write_text('info scanned ~0 bytes (0 bytes) in 1ms\ninfo no leaks found\n')
+        assert comparison_diagnostics(log, 0)['terminal_count_matches_report']
+        assert not comparison_diagnostics(log, 1)['terminal_count_matches_report']
+        log.write_text('info scanned ~0 bytes (0 bytes) in 1ms\n')
+        assert not comparison_diagnostics(log, 0)['terminal_count_matches_report']
+    exact = comparison_difference([row], [row])
+    plan = [{'profile': profile, 'workload': 'tiny', 'tool': tool}
+            for profile in COMPARISON_PROFILES for tool in COMPARISON_TOOL_IDS]
+    summary = {'schema_version': COMPARISON_SCHEMA, 'terminal': 'complete',
+               'settings': {'samples': 8, 'smoke': False, 'allow_dirty': False},
+               'tool_order': list(COMPARISON_TOOL_IDS), 'workload_order': ['tiny'],
+               'before': {'source': {'dirty': False}}, 'after': {'source': {'dirty': False}},
+               'planned_matrix': plan,
+               'cells': [{**item, 'eligible': True,
+                          'ineligible_reasons': [], 'warmup': {'status': 'complete', 'findings': exact},
+                          'coverage': coverage, 'samples': [{'sample': index, 'status': 'complete',
+                          'elapsed_ns': 1, 'findings': exact} for index in range(8)]} for item in plan]}
+    comparison_validate_matrix(summary)
+    mutations = []
+    for mutation in ('missing-cell', 'duplicate-cell', 'missing-sample', 'timeout', 'wrong-finding',
+                     'wrong-hash', 'partial', 'smoke', 'provenance', 'warmup', 'missing-plan',
+                     'identity-hash', 'counter-state', 'coverage-identity'):
+        candidate = json.loads(json.dumps(summary))
+        if mutation == 'missing-cell': candidate['cells'] = []
+        if mutation == 'duplicate-cell': candidate['cells'] *= 2
+        if mutation == 'missing-sample': candidate['cells'][0]['samples'] = []
+        if mutation == 'timeout': candidate['cells'][0]['samples'][0]['status'] = 'timeout'
+        if mutation == 'wrong-finding': candidate['cells'][0]['samples'][0]['findings']['exact'] = False
+        if mutation == 'wrong-hash': candidate['cells'][0]['samples'][0]['findings']['observed_multiset_sha256'] = 'b' * 64
+        if mutation == 'partial': candidate['terminal'] = 'pending'
+        if mutation == 'smoke': candidate['settings']['smoke'] = True
+        if mutation == 'provenance': candidate['after']['source']['dirty'] = True
+        if mutation == 'warmup': candidate['cells'][0]['warmup']['findings']['exact'] = False
+        if mutation == 'missing-plan': candidate['planned_matrix'].pop()
+        if mutation == 'identity-hash': candidate['cells'][0]['samples'][0]['findings']['observed_identity_multiset_sha256'] = 'b' * 64
+        if mutation == 'counter-state': candidate['cells'][0]['coverage']['scope_counters']['commits_scanned']['status'] = 'matched'
+        if mutation == 'coverage-identity': candidate['cells'][0]['coverage']['findings']['identity_exact'] = False
+        try:
+            comparison_validate_matrix(candidate)
+        except ValueError:
+            mutations.append(mutation)
+    assert len(mutations) == 14
+    print('comparison collector regression controls passed')
+
+
+def comparison_main():
+    if sys.version_info < (3, 9) or sys.platform not in ('darwin', 'linux') or not hasattr(os, 'wait4'):
+        raise ValueError('comparison supports Python 3.9+ on macOS/Linux Unix hosts only; no results collected')
+    parser = argparse.ArgumentParser(description='Optional offline four-way released CLI comparison')
+    parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--validate', metavar='COMPLETED_OUTPUT')
+    parser.add_argument('--source-root')
+    parser.add_argument('--tools')
+    parser.add_argument('--tool-root')
+    parser.add_argument('--git')
+    parser.add_argument('--output')
+    parser.add_argument('--prepare-only', action='store_true')
+    parser.add_argument('--scale', choices=('full', 'smoke'), default='full')
+    parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--allow-dirty', action='store_true')
+    parser.add_argument('--samples', type=int)
+    parser.add_argument('--workload', action='append')
+    args = parser.parse_args()
+    if args.self_test:
+        comparison_self_test()
+        return
+    if args.validate:
+        comparison_validate_artifacts(Path(args.validate))
+        print('comparison artifacts have complete matrix, matching hashes, and consistent eligibility')
+        return
+    if not args.source_root or not args.tools or not args.output:
+        parser.error('--source-root, --tools and --output are required')
+    if args.smoke:
+        args.scale = 'smoke'
+    if args.samples is None:
+        args.samples = 1 if args.scale == 'smoke' else 8
+    if not (1 <= args.samples <= 4 if args.scale == 'smoke' else 8 <= args.samples <= 64 and args.samples % 4 == 0):
+        parser.error('full runs require 8..64 samples in multiples of four; smoke permits 1..4')
+    if args.allow_dirty and args.scale != 'smoke':
+        parser.error('--allow-dirty is restricted to ineligible smoke runs')
+    class ComparisonCancelled(Exception):
+        pass
+
+    def cancel(signum, _frame):
+        raise ComparisonCancelled('collector received signal ' + str(signum))
+
+    previous_handlers = {signum: signal.signal(signum, cancel)
+                         for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    try:
+        comparison_run(args)
+    except Exception as error:
+        # Exception class is safe to expose; messages may contain private paths or findings.
+        output = Path(args.output)
+        if getattr(args, 'output_created', False):
+            failure = output / 'FAILED.private.json'
+            if not failure.exists():
+                comparison_write(failure, {'terminal': 'failed', 'exception': type(error).__name__, 'detail': str(error)})
+        print('comparison failed (' + type(error).__name__ + '); see private failure evidence', file=sys.stderr)
+        raise SystemExit(1)
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+
+
+if __name__ == '__main__':
+    comparison_main()

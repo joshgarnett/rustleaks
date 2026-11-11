@@ -10,6 +10,7 @@ use std::time::Duration;
 mod build_system;
 mod fuzzing;
 mod performance;
+mod performance_comparison;
 mod release_artifact;
 mod security_deep;
 mod tooling;
@@ -111,7 +112,10 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
-        _ => Err("usage: cargo xtask {manifest-check|frozen-evidence-check|regression-check|qualify|public-api-check|build-system-check|package-check|release-dry-run|release-artifact [ARGS]|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz [ARGS]|generate [ARGS]|perf <run|check|representative|profile|calibrate|report> [ARGS]}".into()),
+        [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "compare" => {
+            performance_comparison::run(&workspace_root()?, arguments)
+        }
+        _ => Err("usage: cargo xtask {manifest-check|frozen-evidence-check|regression-check|qualify|public-api-check|build-system-check|package-check|release-dry-run|release-artifact [ARGS]|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz [ARGS]|generate [ARGS]|perf <run|check|representative|compare|profile|calibrate|report> [ARGS]}".into()),
     }
 }
 

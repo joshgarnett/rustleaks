@@ -141,6 +141,18 @@ and runs the platform-compatible first-party tests. Cross-compilation remains
 compilation evidence only. See the [architecture](docs/ARCHITECTURE.md) and
 [resource contract](docs/RESOURCE_LIMITS.md).
 
+## Performance evidence
+
+The [measurement guide](docs/PERFORMANCE.md) defines operation timing scopes,
+workloads, and resource accounting. Historical comparisons against
+[alpha.6](docs/validation/alpha6-branch-performance.md) and
+[alpha.7](docs/validation/main-branch-performance.md) include complete phase
+tables, raw numeric data, startup costs, memory costs, and host limitations.
+
+The [released CLI comparison protocol](docs/PERFORMANCE_COMPARISON.md) uses
+separate whole-command measurements, pinned binaries, synthetic coverage
+checks, and explicit configuration and concurrency profiles.
+
 ## AI-assisted development
 
 The initial port was developed with extensive use of OpenAI Codex and

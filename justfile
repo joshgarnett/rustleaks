@@ -61,6 +61,12 @@ perf-check:
 perf-representative:
     bazelisk run //crates/xtask:xtask -- perf representative
 
+# Compare explicitly supplied scanner releases with synthetic CLI workloads.
+[unix]
+[positional-arguments]
+perf-compare *arguments:
+    bazelisk run //crates/xtask:xtask -- perf compare "$@"
+
 # Capture an optional native profile with private output.
 [unix]
 [positional-arguments]

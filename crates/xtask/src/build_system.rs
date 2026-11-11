@@ -662,6 +662,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "parity",
         "perf-calibrate",
         "perf-check",
+        "perf-compare",
         "perf-profile",
         "perf-report",
         "perf-representative",
@@ -701,6 +702,10 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             "perf-representative",
             "bazelisk run //crates/xtask:xtask -- perf representative",
         ),
+        (
+            "perf-compare",
+            "bazelisk run //crates/xtask:xtask -- perf compare \"$@\"",
+        ),
         ("fuzz", "bazelisk run //crates/xtask:xtask -- fuzz \"$@\""),
         (
             "perf-profile",
@@ -733,7 +738,13 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "just ci test prebuild",
     )?;
     require_not_contains(&justfile, "go version", "retired Go doctor requirement")?;
-    for recipe in ["fuzz", "perf-profile", "perf-calibrate", "security-deep"] {
+    for recipe in [
+        "fuzz",
+        "perf-profile",
+        "perf-calibrate",
+        "perf-compare",
+        "security-deep",
+    ] {
         require_contains(
             &justfile,
             &format!("[unix]\n[positional-arguments]\n{recipe} *arguments:"),
