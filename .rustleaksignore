@@ -24,15 +24,19 @@ compat/test-manifest.toml:generic-api-key:42
 compat/test-manifest.toml:generic-api-key:45
 crates/rustleaks-compat/oracle/main_test.go:generic-api-key:646
 crates/rustleaks-compat/oracle/main_test.go:generic-api-key:684
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:844
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:849
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:865
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:869
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1793
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1798
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1814
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1818
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
-crates/rustleaks-core/tests/engine.rs:generic-api-key:289
-crates/rustleaks-core/tests/engine.rs:generic-api-key:299
-crates/rustleaks-core/tests/engine.rs:generic-api-key:346
+crates/rustleaks-core/tests/engine.rs:generic-api-key:353
+crates/rustleaks-core/tests/engine.rs:generic-api-key:363
+crates/rustleaks-core/tests/engine.rs:generic-api-key:410
+
+# Reviewed Git commit identifiers in benchmark provenance.
+docs/validation/default-rule-throughput.md:sourcegraph-access-token:5
+docs/validation/default-rule-throughput.md:sourcegraph-access-token:7
 
 # Reviewed synthetic private-key compatibility fixtures.
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
