@@ -1,0 +1,585 @@
+# Deterministic synthetic CLI corpora. Included before the comparison collector.
+# Python 3.9+ standard library only. Expectations come from construction, never
+# from scanner output. Changing this recipe invalidates all collected cells.
+import base64
+import hashlib
+import json
+import os
+import pathlib
+import stat
+import subprocess
+
+
+COMPARISON_FIXTURE_VERSION = 'cli-synthetic-v1'
+COMPARISON_FIXTURE_SEED = 'rustleaks-cli-comparison-2026-11-v1'
+COMPARISON_FIXTURE_HELDOUT_SEED = 'heldout-independent-2026-11-cobalt-73'
+
+
+def comparison_fixture_sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def comparison_fixture_letters(seed, count, alphabet):
+    # A hash-ordered permutation ensures enough distinct characters for the
+    # shipped rules' entropy thresholds, independently of any scanner result.
+    ordered = sorted(alphabet, key=lambda char: hashlib.sha256(
+        (seed + ':' + char).encode('ascii')).digest())
+    if count > len(ordered):
+        raise ValueError('synthetic token exceeds its alphabet')
+    return ''.join(ordered[:count]).encode('ascii')
+
+
+def comparison_fixture_token(seed, kind='github-pat'):
+    alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    if kind == 'github-pat':
+        return b'ghp_' + comparison_fixture_letters(seed, 36, alphabet)
+    if kind == 'aws-access-token':
+        return b'AKIA' + comparison_fixture_letters(seed, 16, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567')
+    if kind == 'slack-bot-token':
+        digits = hashlib.sha256(seed.encode('ascii')).digest()
+        first = ''.join(str(value % 10) for value in digits[:12]).encode('ascii')
+        second = ''.join(str(value % 10) for value in digits[12:24]).encode('ascii')
+        return b'xoxb-' + first + b'-' + second + b'-' + comparison_fixture_letters(seed, 24, alphabet)
+    raise ValueError('unknown independently specified synthetic token rule')
+
+
+def comparison_fixture_marker(seed):
+    return ('BSC_' + hashlib.sha256(seed.encode('ascii')).hexdigest()[:16]).encode('ascii')
+
+
+def comparison_fixture_finding(path, value, line, column, rule='github-pat',
+                               commit='', decoded=False, end_column=None):
+    return {'rule_id': rule, 'path': path,
+            'secret_sha256': comparison_fixture_sha256(value),
+            'start_line': line, 'end_line': line,
+            'start_column': column,
+            'end_column': column + len(value) - 1 if end_column is None else end_column,
+            'commit': commit, 'decoded': decoded}
+
+
+def comparison_fixture_at(path, data, value, rule='github-pat', commit=''):
+    # Look up the already prescribed literal, not a detector pattern. The
+    # caller specifies every positive and witness before bytes are written.
+    offset = data.index(value)
+    line = data.count(b'\n', 0, offset) + 1
+    column = offset - data.rfind(b'\n', 0, offset)
+    return comparison_fixture_finding(path, value, line, column, rule, commit)
+
+
+def comparison_fixture_write(root, relative, data):
+    path = root / relative
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with path.open('xb') as stream:
+        stream.write(data)
+    path.chmod(0o600)
+    return path
+
+
+def comparison_fixture_workload(identity, description, analogy, mode, relative,
+                                decode_depth=0, archive_depth=0):
+    return {'id': identity, 'description': description, 'analogy': analogy,
+            'mode': mode, 'input': relative, 'input_bytes': 0,
+            'file_count': 0, 'commit_count': 0,
+            'decode_depth': decode_depth, 'archive_depth': archive_depth,
+            'expected_findings': [], 'coverage_markers': [],
+            'coverage_scope': {'unit': 'file', 'expected_units': 0,
+                               'evidence': 'one constructed marker per input file'},
+            'input_bytes_definition': 'sum of physical input file lengths'}
+
+
+def comparison_fixture_add_file(root, workload, relative, data, positives=(),
+                                marker=None, expanded=None):
+    comparison_fixture_write(root, workload['input'] + '/' + relative, data)
+    workload['input_bytes'] += len(data)
+    workload['file_count'] += 1
+    content = data if expanded is None else expanded
+    for rule, value in positives:
+        workload['expected_findings'].append(comparison_fixture_at(relative, content, value, rule))
+    if marker is not None:
+        workload['coverage_markers'].append(comparison_fixture_at(
+            relative, content, marker, 'benchmark-coverage'))
+    workload['coverage_scope']['expected_units'] += 1
+
+
+def comparison_fixture_json_record(index, marker=None, value=None, size=256):
+    # Each record is independently valid JSON and exactly size bytes including
+    # its newline. Provider words exercise negative keyword paths as well.
+    providers = ('github', 'aws', 'slack', 'stripe', 'service', 'database')
+    fields = {'row': index, 'provider': providers[index % len(providers)],
+              'id': 'public-record-%08d' % index, 'active': index % 2 == 0}
+    if marker is not None:
+        fields['coverage'] = marker.decode('ascii')
+    if value is not None:
+        fields['value'] = value.decode('ascii')
+    prefix = json.dumps(fields, separators=(',', ':'), ensure_ascii=True)[:-1].encode('ascii')
+    prefix += b',"padding":"'
+    suffix = b'"}\n'
+    remaining = size - len(prefix) - len(suffix)
+    if remaining < 0:
+        raise ValueError('JSON fixture record exceeds prescribed size')
+    return prefix + b'.' * remaining + suffix
+
+
+def comparison_fixture_zstd(data):
+    # Zstandard magic, descriptor 0, window descriptor 0 (1024-byte window),
+    # and one final raw block. This is the same format construction as
+    # rustleaks-sources/src/archive.rs zstd_windowed/zstd_raw test helpers.
+    # The final raw block header is (payload length << 3) | 1, little endian.
+    if len(data) > 1024:
+        raise ValueError('raw Zstandard fixture exceeds its declared window')
+    return b'\x28\xb5\x2f\xfd\x00\x00' + ((len(data) << 3) | 1).to_bytes(3, 'little') + data
+
+
+def comparison_fixture_source(seed, index, extension, size, marker, positive):
+    value = None if positive is None else positive[1]
+    public_id = hashlib.sha256((seed + ':public:' + str(index)).encode('ascii')).hexdigest()[:12]
+    if extension == 'json':
+        return comparison_fixture_json_record(index, marker, value, size)
+    comment = b'# ' if extension in ('py', 'toml', 'yaml', 'lock', 'sh') else b'// '
+    if extension in ('md', 'txt'):
+        comment = b''
+    prefix = comment + marker + b'\n'
+    if value is not None:
+        # An isolated comment value avoids provider context affecting generic
+        # credential rules; the common patterns match exactly the literal.
+        prefix += comment + value + b'\n'
+    samples = {
+        'rs': 'pub fn record_%d() -> usize { %d }\n' % (index, index),
+        'go': 'package sample\nfunc Record%d() int { return %d }\n' % (index, index),
+        'py': 'def record_%d():\n    return %d\n' % (index, index),
+        'js': 'export const record%d = { retries: 3, enabled: true };\n' % index,
+        'java': 'class Record%d { int retries = 3; boolean enabled = true; }\n' % index,
+        'toml': 'name = "module-%d"\nretries = 3\nenabled = true\n' % index,
+        'yaml': 'name: module-%d\nretries: 3\nenabled: true\n' % index,
+        'lock': '[[package]]\nname = "synthetic-module-%d"\nversion = "1.0.0"\n' % index,
+        'sh': 'printf "module-%d ready\\n"\n' % index,
+        'md': '# Module %d\nPublic documentation for deterministic synthetic records.\n' % index,
+        'txt': 'module %d has public configuration and no live service connection\n' % index,
+    }
+    prefix += samples[extension].encode('ascii')
+    row = (comment + ('public_id=%s route=/v1/items/%d retries=3 enabled=true\n' %
+                     (public_id, index)).encode('ascii'))
+    remaining = size - len(prefix)
+    if remaining < 1:
+        raise ValueError('source fixture exceeds prescribed size')
+    # Keep a newline at EOF, including when the final comment is shortened.
+    padding = (row * ((remaining // len(row)) + 1))[:remaining - 1] + b'\n'
+    return prefix + padding
+
+
+def comparison_fixture_tree(root, identity, seed, count, total_bytes, kinds,
+                            planted=True, heldout=False):
+    workload = comparison_fixture_workload(identity,
+        'Synthetic mixed application tree with sparse provider-shaped plants' if planted else
+        'Synthetic mixed application tree with no prescribed credential positives',
+        'representative application source, configuration, lockfiles, documentation, and generated text',
+        'dir', 'inputs/' + identity)
+    workload['seed'] = seed
+    workload['heldout'] = heldout
+    workload['frozen_before_scanner_output'] = True
+    workload['generator_policy'] = ('Independent fixed seed and file proportions; never tune from scanner output.'
+                                    if heldout else 'Fixed recipe, sizes, and sparse plant schedule.')
+    minimum, remainder = divmod(total_bytes, count)
+    rule_ids = ('github-pat', 'aws-access-token', 'slack-bot-token')
+    # Compact fixtures still cover all three controlled provider patterns.
+    cadence = min(47 if heldout else 67, max(1, count // 4))
+    for index in range(count):
+        extension = kinds[index % len(kinds)]
+        relative = 'module-%03d/record-%05d.%s' % (index // 25, index, extension)
+        marker = comparison_fixture_marker(seed + ':file:' + str(index))
+        positive = None
+        if planted and index % cadence == 0:
+            rule = rule_ids[(index // cadence) % len(rule_ids)]
+            positive = (rule, comparison_fixture_token(seed + ':positive:' + str(index), rule))
+        data = comparison_fixture_source(seed, index, extension,
+            minimum + (index < remainder), marker, positive)
+        comparison_fixture_add_file(root, workload, relative, data,
+            () if positive is None else (positive,), marker)
+    return workload
+
+
+def comparison_fixture_git_environment(root, git):
+    home = root / 'control' / 'home'
+    home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return {'HOME': str(home), 'XDG_CONFIG_HOME': str(home),
+            'PATH': str(pathlib.Path(git).parent) + os.pathsep + '/usr/bin:/bin',
+            'LANG': 'C', 'LC_ALL': 'C', 'TZ': 'UTC',
+            'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull,
+            'GIT_ATTR_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0',
+            'GIT_OPTIONAL_LOCKS': '0', 'GIT_CONFIG_COUNT': '0',
+            'GIT_AUTHOR_NAME': 'Synthetic Benchmark',
+            'GIT_AUTHOR_EMAIL': 'benchmark@example.invalid',
+            'GIT_COMMITTER_NAME': 'Synthetic Benchmark',
+            'GIT_COMMITTER_EMAIL': 'benchmark@example.invalid',
+            'GIT_AUTHOR_DATE': '946684800 +0000',
+            'GIT_COMMITTER_DATE': '946684800 +0000'}
+
+
+def comparison_fixture_git_run(git, repository, environment, arguments, stdin=None):
+    result = subprocess.run([git, '-c', 'core.logAllRefUpdates=false',
+        '-c', 'gc.auto=0', '-c', 'core.autocrlf=false', '-c', 'core.hooksPath=/dev/null',
+        '-C', str(repository)] + arguments, env=environment, stdin=stdin,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=600)
+    if result.returncode:
+        raise RuntimeError('synthetic Git fixture construction failed: ' +
+                           result.stderr.decode('utf-8', errors='replace')[:2000])
+    return result.stdout
+
+
+def comparison_fixture_git_history(root, git, environment, identity, count):
+    repository = root / 'inputs' / identity
+    repository.mkdir(mode=0o700, parents=True)
+    comparison_fixture_git_run(git, repository, environment,
+                               ['init', '--quiet', '--initial-branch=main', '--object-format=sha1'])
+    workload = comparison_fixture_workload(identity,
+        'Deterministic linear Git history; one replaced short file per commit',
+        '20,000-commit Git patch-history CLI analogue', 'git', 'inputs/' + identity)
+    workload['coverage_scope'] = {'unit': 'changed_commit', 'expected_units': count,
+        'evidence': 'one distinct marker in the added lines of every selected commit'}
+    workload['input_bytes_definition'] = 'sum of added blob bytes over selected commits, excluding patch framing'
+    workload['file_count'] = 1
+    workload['commit_count'] = count
+    workload['changed_path'] = 'history/record.txt'
+    workload['git_object_format'] = 'sha1'
+    workload['git_commits'] = []
+    seed = COMPARISON_FIXTURE_SEED + ':' + identity
+    workload['seed'] = seed
+    plants = sorted(set((1, count // 4, count // 2, count * 3 // 4, count - 2)))
+    stream_path = root / 'control' / (identity + '-import.fi')
+    marks_path = root / 'control' / (identity + '-marks.txt')
+    records = []
+    with stream_path.open('xb') as stream:
+        for index in range(count):
+            marker = comparison_fixture_marker(seed + ':commit:' + str(index))
+            value = comparison_fixture_token(seed + ':positive:' + str(index)) if index in plants else None
+            data = marker + b'\n' + (b'public row %05d\n' % index if value is None else value + b'\n')
+            records.append((data, marker, value))
+            stamp = 946684800 + index
+            message = ('synthetic record %05d\n' % index).encode('ascii')
+            stream.write(('commit refs/heads/main\nmark :%d\n'
+                          'author Synthetic Benchmark <benchmark@example.invalid> %d +0000\n'
+                          'committer Synthetic Benchmark <benchmark@example.invalid> %d +0000\n'
+                          'data %d\n' % (index + 1, stamp, stamp, len(message))).encode('ascii'))
+            stream.write(message)
+            if index:
+                stream.write(('from :%d\n' % index).encode('ascii'))
+            stream.write(('M 100644 inline history/record.txt\ndata %d\n' % len(data)).encode('ascii'))
+            stream.write(data + b'\n')
+        stream.write(b'done\n')
+    with stream_path.open('rb') as stream:
+        comparison_fixture_git_run(git, repository, environment,
+            ['fast-import', '--quiet', '--date-format=raw', '--export-marks=' + str(marks_path)], stream)
+    marks = {}
+    for line in marks_path.read_text(encoding='ascii').splitlines():
+        mark, oid = line.split()
+        marks[int(mark[1:])] = oid
+    if len(marks) != count:
+        raise RuntimeError('synthetic Git import did not export every prescribed commit')
+    for index, (data, marker, value) in enumerate(records):
+        commit = marks[index + 1]
+        workload['input_bytes'] += len(data)
+        workload['coverage_markers'].append(comparison_fixture_at(
+            'history/record.txt', data, marker, 'benchmark-coverage', commit))
+        if value is not None:
+            workload['expected_findings'].append(comparison_fixture_at(
+                'history/record.txt', data, value, 'github-pat', commit))
+        blob_oid = hashlib.sha1(b'blob ' + str(len(data)).encode('ascii') + b'\0' + data).hexdigest()
+        workload['git_commits'].append({'commit': commit, 'path': 'history/record.txt',
+            'blob_oid': blob_oid, 'bytes': len(data), 'sha256': comparison_fixture_sha256(data)})
+    workload['git_head'] = marks[count]
+    workload['git_log_options'] = '--full-history ' + marks[count]
+    workload['git_selected_commits_sha256'] = comparison_fixture_sha256(
+        ('\n'.join(marks[index + 1] for index in range(count)) + '\n').encode('ascii'))
+    comparison_fixture_git_run(git, repository, environment, ['reset', '--hard', '--quiet', marks[count]])
+    comparison_fixture_git_run(git, repository, environment, ['gc', '--quiet', '--prune=now'])
+    workload['worktree_bytes'] = len(records[-1][0])
+    return workload
+
+
+def comparison_fixture_inventory(root):
+    inventory = []
+    for directory, directories, files in os.walk(root / 'inputs'):
+        directories[:] = sorted(name for name in directories if name != '.git')
+        for name in sorted(files):
+            path = pathlib.Path(directory) / name
+            metadata = path.lstat()
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError('synthetic corpus contains an unexpected nonregular file')
+            with path.open('rb') as stream:
+                digest = hashlib.sha256()
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    digest.update(block)
+            inventory.append({'path': path.relative_to(root).as_posix(),
+                              'bytes': metadata.st_size, 'sha256': digest.hexdigest()})
+    return sorted(inventory, key=lambda item: item['path'])
+
+
+def comparison_prepare_fixtures(root, git, scale='full'):
+    if scale not in ('full', 'smoke'):
+        raise ValueError('comparison fixture scale must be full or smoke')
+    root = pathlib.Path(root).absolute()
+    git_path = pathlib.Path(git)
+    if not git_path.is_absolute() or not git_path.is_file():
+        raise ValueError('fixture Git executable must be an existing absolute file path')
+    git = str(git_path.resolve())
+    if root.is_symlink():
+        raise ValueError('fixture root must not be a symlink')
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root.chmod(0o700)
+    if any(root.iterdir()):
+        raise ValueError('fixture root must be empty; existing contents are never removed')
+    (root / 'inputs').mkdir(mode=0o700)
+    (root / 'control').mkdir(mode=0o700)
+    old_umask = os.umask(0o077)
+    try:
+        return comparison_fixture_prepare(root, git, scale)
+    finally:
+        os.umask(old_umask)
+
+
+def comparison_fixture_prepare(root, git, scale):
+    full = scale == 'full'
+    seed = COMPARISON_FIXTURE_SEED
+    workloads = []
+
+    # One 4 MiB JSON Lines file, four sparse positives, and a file witness.
+    workload = comparison_fixture_workload('json-4mib', 'One fixed-size JSON Lines file',
+        '4 MiB JSON fragment converted to a file scan', 'dir', 'inputs/json-4mib')
+    size = 4 * 1024 * 1024 if full else 16 * 1024
+    lines = size // 256
+    marker = comparison_fixture_marker(seed + ':json-4mib')
+    positives = []
+    chunks = []
+    for index in range(lines):
+        value = comparison_fixture_token(seed + ':json:' + str(index)) if index % (lines // 4) == 0 else None
+        chunks.append(comparison_fixture_json_record(index, marker if index == 0 else None, value))
+        if value is not None:
+            positives.append(('github-pat', value))
+    comparison_fixture_add_file(root, workload, 'records.jsonl', b''.join(chunks), positives, marker)
+    workloads.append(workload)
+
+    # Encoded findings map to the complete original base64 segment (56 bytes),
+    # including padding, rather than to a fabricated decoded source column.
+    workload = comparison_fixture_workload('base64-20000', 'One file of separately encoded synthetic tokens',
+        '20,000 base64 lines at decode depth 1', 'dir', 'inputs/base64-20000', decode_depth=1)
+    count = 20000 if full else 20
+    marker = comparison_fixture_marker(seed + ':base64-file')
+    chunks = [marker + b'\n']
+    for index in range(count):
+        value = comparison_fixture_token(seed + ':base64:' + str(index))
+        encoded = base64.b64encode(value)
+        chunks.append(encoded + b'\n')
+        workload['expected_findings'].append(comparison_fixture_finding(
+            'encoded.txt', value, index + 2, 1, decoded=True, end_column=len(encoded)))
+    comparison_fixture_add_file(root, workload, 'encoded.txt', b''.join(chunks), marker=marker)
+    workload['encoded_line_count'] = count
+    workload['decoded_token_bytes'] = 40 * count
+    workload['depth_zero_expected_findings'] = []
+    workloads.append(workload)
+
+    workload = comparison_fixture_workload('files-100000', 'Distinct files of exactly 64 bytes each',
+        '100,000 small core fragments converted to files; no per-fragment Git metadata',
+        'dir', 'inputs/files-100000')
+    count = 100000 if full else 40
+    for index in range(count):
+        marker = comparison_fixture_marker(seed + ':small:' + str(index))
+        value = comparison_fixture_token(seed + ':small-positive:' + str(index)) if index % (1000 if full else 10) == 0 else None
+        data = (value + b'\n' + marker + b'\n  ' if value is not None else marker + b'\npublic record %08d\n' % index)
+        data = data + b' ' * (63 - len(data)) + b'\n' if len(data) < 64 else data
+        if len(data) != 64:
+            raise RuntimeError('small-file fixture length is not 64 bytes')
+        comparison_fixture_add_file(root, workload,
+            'batch-%03d/record-%06d.txt' % (index // 1000, index), data,
+            () if value is None else (('github-pat', value),), marker)
+    workloads.append(workload)
+
+    workload = comparison_fixture_workload('findings-10000', 'Scan distinct findings and emit a JSON report',
+        '10,000-finding serializer case converted to scanning plus reporting',
+        'dir', 'inputs/findings-10000')
+    count = 10000 if full else 25
+    marker = comparison_fixture_marker(seed + ':dense-file')
+    values = [comparison_fixture_token(seed + ':dense:' + str(index)) for index in range(count)]
+    data = marker + b'\n' + b''.join(value + b'\n' for value in values)
+    comparison_fixture_add_file(root, workload, 'findings.txt', data, marker=marker)
+    workload['expected_findings'] = [comparison_fixture_finding('findings.txt', value, index + 2, 1)
+                                     for index, value in enumerate(values)]
+    workload['timing_scope'] = 'fresh process startup, configuration, source read, scanning, JSON reporting, exit'
+    workloads.append(workload)
+
+    workload = comparison_fixture_workload('zstd-500', 'Raw-block Zstandard streams with 1 KiB expanded members',
+        '500 small Zstandard streams; marker-bearing derivative of the historical zero-run fixture',
+        'dir', 'inputs/zstd-500', archive_depth=1)
+    count = 500 if full else 5
+    workload['coverage_scope'] = {'unit': 'expanded_stream', 'expected_units': 0,
+        'evidence': 'one marker per named stream after expansion; paths retain the .zst suffix'}
+    for index in range(count):
+        marker = comparison_fixture_marker(seed + ':zstd:' + str(index))
+        value = comparison_fixture_token(seed + ':zstd-positive:' + str(index)) if index % 50 == 0 else None
+        data = marker + b'\n' + (b'' if value is None else value + b'\n')
+        data += b'.' * (1023 - len(data)) + b'\n'
+        comparison_fixture_add_file(root, workload, 'member-%04d.txt.zst' % index,
+            comparison_fixture_zstd(data), () if value is None else (('github-pat', value),),
+            marker, expanded=data)
+    workload['expanded_bytes'] = count * 1024
+    workload['expanded_member_count'] = count
+    workload['depth_zero_expected_findings'] = []
+    workloads.append(workload)
+
+    environment = comparison_fixture_git_environment(root, git)
+    history = comparison_fixture_git_history(root, git, environment, 'git-20000', 20000 if full else 24)
+    workloads.append(history)
+
+    workload = comparison_fixture_workload('json-768-files', 'Fixed 16 KiB JSON files totaling 12 MiB',
+        '12 MiB JSON split into 768 filesystem inputs, not internal CLI chunks',
+        'dir', 'inputs/json-768-files')
+    count = 768 if full else 6
+    for index in range(count):
+        marker = comparison_fixture_marker(seed + ':json-file:' + str(index))
+        value = comparison_fixture_token(seed + ':json-file-positive:' + str(index)) if index % (96 if full else 2) == 0 else None
+        data = comparison_fixture_json_record(index, marker, value, 16 * 1024)
+        comparison_fixture_add_file(root, workload, 'part-%04d.json' % index, data,
+            () if value is None else (('github-pat', value),), marker)
+    workloads.append(workload)
+
+    workload = comparison_fixture_workload('invalid-utf8-4mib', 'Malformed UTF-8 with ASCII plants on both sides',
+        '4 MiB invalid UTF-8 source without NUL or recognized binary magic',
+        'dir', 'inputs/invalid-utf8-4mib')
+    size = 4 * 1024 * 1024 if full else 16 * 1024
+    marker = comparison_fixture_marker(seed + ':invalid-file')
+    before = comparison_fixture_token(seed + ':invalid-before')
+    after = comparison_fixture_token(seed + ':invalid-after')
+    prefix = marker + b'\n' + before + b'\n'
+    suffix = b'\n' + after + b'\n'
+    # Invalid leading bytes, an overlong sequence, and a truncated sequence
+    # occupy their own lines so location expectations never assume UTF-8 repair.
+    bad = b'ordinary text \xff\xfe\xc0\xaf malformed \xe2\x82\n'
+    remaining = size - len(prefix) - len(suffix)
+    middle = (bad * (remaining // len(bad) + 1))[:remaining]
+    data = prefix + middle + suffix
+    comparison_fixture_add_file(root, workload, 'malformed.txt', data,
+        (('github-pat', before), ('github-pat', after)), marker)
+    workload['invalid_byte_patterns_hex'] = ['fffe', 'c0af', 'e282']
+    workload['contains_nul'] = False
+    workloads.append(workload)
+
+    languages = ('rs', 'go', 'py', 'js', 'java', 'toml', 'yaml', 'json')
+    workload = comparison_fixture_tree(root, 'multilanguage-256kib', seed + ':languages',
+        32 if full else 8, 256 * 1024 if full else 16 * 1024, languages)
+    workload['analogy'] = '256 KiB multi-language source converted to a directory of language-specific files'
+    workloads.append(workload)
+
+    workload = comparison_fixture_workload('empty-stdin', 'Empty standard input',
+        'fixed startup and configuration control', 'stdin', 'inputs/empty-stdin/input.txt')
+    comparison_fixture_write(root, workload['input'], b'')
+    workload['coverage_scope'] = {'unit': 'stdin', 'expected_units': 1,
+        'evidence': 'zero input bytes and successful process completion; no marker can exist in empty input'}
+    workloads.append(workload)
+
+    for identity, positive in (('tiny-clean-file', False), ('tiny-positive', True)):
+        workload = comparison_fixture_workload(identity, 'One tiny synthetic text file',
+            'startup, configuration, and ordinary finding control', 'dir', 'inputs/' + identity)
+        marker = comparison_fixture_marker(seed + ':' + identity)
+        value = comparison_fixture_token(seed + ':' + identity) if positive else None
+        data = marker + b'\n' + (value + b'\n' if positive else b'public fixture\n')
+        comparison_fixture_add_file(root, workload, 'record.txt', data,
+            () if value is None else (('github-pat', value),), marker)
+        # Keep the single-file path explicit, exercising file-input invocation.
+        workload['input'] += '/record.txt'
+        workloads.append(workload)
+
+    kinds = ('rs', 'go', 'py', 'js', 'java', 'toml', 'yaml', 'json', 'md', 'lock', 'txt', 'js')
+    workloads.append(comparison_fixture_tree(root, 'tiny-clean-tree', seed + ':tiny-tree',
+        8, 2048, kinds, planted=False))
+    workloads.append(comparison_fixture_tree(root, 'mixed-app-16mib', seed + ':mixed-app',
+        2000 if full else 40, 16 * 1024 * 1024 if full else 128 * 1024, kinds))
+    workloads.append(comparison_fixture_tree(root, 'mixed-clean-4mib', seed + ':mixed-clean',
+        500 if full else 16, 4 * 1024 * 1024 if full else 32 * 1024, kinds, planted=False))
+    heldout_kinds = ('py', 'md', 'js', 'json', 'yaml', 'rs', 'sh', 'txt', 'lock', 'java', 'go')
+    workloads.append(comparison_fixture_tree(root, 'heldout-mixed-8mib',
+        COMPARISON_FIXTURE_HELDOUT_SEED, 1250 if full else 48,
+        8 * 1024 * 1024 if full else 192 * 1024, heldout_kinds, heldout=True))
+
+    # A bounded scope on the same immutable history has a separately prescribed
+    # commit set. The parent is excluded by Git's base..head range convention.
+    bounded = dict(history)
+    bounded['id'] = 'git-bounded-control'
+    bounded['description'] = 'Last eight commits of the fixed linear Git history'
+    bounded['analogy'] = 'bounded history scope control'
+    selected = history['git_commits'][-8:]
+    selected_ids = {item['commit'] for item in selected}
+    bounded['git_base'] = history['git_commits'][-9]['commit']
+    bounded['git_log_options'] = '--full-history ' + bounded['git_base'] + '..' + history['git_head']
+    bounded['commit_count'] = len(selected)
+    bounded['input_bytes'] = sum(item['bytes'] for item in selected)
+    bounded['expected_findings'] = [item for item in history['expected_findings'] if item['commit'] in selected_ids]
+    bounded['coverage_markers'] = [item for item in history['coverage_markers'] if item['commit'] in selected_ids]
+    bounded['coverage_scope'] = {'unit': 'changed_commit', 'expected_units': len(selected),
+        'evidence': 'exact markers and commit IDs from the independently selected suffix'}
+    bounded['git_commits'] = selected
+    bounded['git_selected_commits_sha256'] = comparison_fixture_sha256(
+        ('\n'.join(item['commit'] for item in selected) + '\n').encode('ascii'))
+    workloads.append(bounded)
+
+    # Current-tree scan of the history must miss all historical-only plants.
+    tree = comparison_fixture_workload('git-current-tree-control',
+        'Clean current worktree of a repository with historical positives',
+        'control distinguishes current files from selected Git patch history',
+        'dir', history['input'] + '/history')
+    data = (root / history['input'] / 'history' / 'record.txt').read_bytes()
+    marker = comparison_fixture_marker(history['seed'] + ':commit:' + str(history['commit_count'] - 1))
+    tree['input_bytes'] = len(data)
+    tree['file_count'] = 1
+    tree['coverage_markers'] = [comparison_fixture_at('record.txt', data, marker, 'benchmark-coverage')]
+    tree['coverage_scope']['expected_units'] = 1
+    workloads.append(tree)
+
+    # The staged control deliberately differs from both HEAD and the worktree.
+    staged = comparison_fixture_git_history(root, git, environment, 'git-staged-control', 12)
+    staged_repository = root / staged['input']
+    marker = comparison_fixture_marker(seed + ':staged-only')
+    value = comparison_fixture_token(seed + ':staged-only')
+    staged_data = marker + b'\n' + value + b'\n'
+    staged_path = staged_repository / 'history' / 'record.txt'
+    staged_path.write_bytes(staged_data)
+    comparison_fixture_git_run(git, staged_repository, environment, ['add', '--', 'history/record.txt'])
+    # Leave a clean, different unstaged file. A correct staged scan reads index
+    # bytes, never this worktree marker or the old HEAD/history positives.
+    worktree_marker = comparison_fixture_marker(seed + ':unstaged-only')
+    staged_path.write_bytes(worktree_marker + b'\npublic unstaged record\n')
+    staged['description'] = 'Staged positive differs from HEAD and the clean unstaged file'
+    staged['analogy'] = 'bounded staged/index scope control'
+    staged['git_staged'] = True
+    staged.pop('git_log_options')
+    staged['git_repository_commits'] = staged.pop('git_commits')
+    staged['git_repository_commit_count'] = staged['commit_count']
+    staged.pop('git_selected_commits_sha256')
+    staged['commit_count'] = 0
+    staged['input_bytes'] = len(staged_data)
+    staged['input_bytes_definition'] = 'added staged blob bytes, excluding patch framing'
+    staged['expected_findings'] = [comparison_fixture_at('history/record.txt', staged_data, value)]
+    staged['coverage_markers'] = [comparison_fixture_at('history/record.txt', staged_data, marker, 'benchmark-coverage')]
+    staged['coverage_scope'] = {'unit': 'staged_path', 'expected_units': 1,
+        'evidence': 'index-only marker absent from HEAD and current worktree'}
+    staged['git_index_blobs'] = [{'path': 'history/record.txt', 'bytes': len(staged_data),
+        'sha256': comparison_fixture_sha256(staged_data),
+        'blob_oid': hashlib.sha1(b'blob ' + str(len(staged_data)).encode('ascii') + b'\0' + staged_data).hexdigest()}]
+    staged['worktree_bytes'] = staged_path.stat().st_size
+    workloads.append(staged)
+
+    inventory = comparison_fixture_inventory(root)
+    canonical_inventory = json.dumps(inventory, sort_keys=True, separators=(',', ':')).encode('ascii')
+    git_version = comparison_fixture_git_run(git, root, environment, ['--version']).decode('ascii').strip()
+    return {'schema': 'rustleaks-cli-comparison-fixtures-v1',
+            'generator_version': COMPARISON_FIXTURE_VERSION, 'seed': seed,
+            'heldout_seed': COMPARISON_FIXTURE_HELDOUT_SEED, 'scale': scale,
+            'expected_findings_origin': 'prescribed synthetic construction; no scanner output is consulted',
+            'fixture_root': str(root), 'git_executable': git, 'git_version': git_version,
+            'git_environment': environment, 'workloads': workloads,
+            'inventory': inventory, 'inventory_sha256': comparison_fixture_sha256(canonical_inventory),
+            'inventory_scope': 'physical input files excluding .git storage; Git commit/blob OIDs and index blobs are recorded per workload',
+            'rules': [
+                {'id': 'github-pat', 'regex': 'ghp_[0-9a-zA-Z]{36}', 'secret_group': 0},
+                {'id': 'aws-access-token', 'regex': 'AKIA[A-Z2-7]{16}', 'secret_group': 0},
+                {'id': 'slack-bot-token', 'regex': 'xoxb-[0-9]{12}-[0-9]{12}-[a-zA-Z0-9]{24}', 'secret_group': 0}],
+            'coverage_rule': {'id': 'benchmark-coverage', 'regex': 'BSC_[a-z0-9]{16}', 'secret_group': 0},
+            'coverage_limit': 'Separate untimed witness passes establish requested units, not byte-by-byte coverage of each timed invocation.'}

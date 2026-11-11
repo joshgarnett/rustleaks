@@ -1,5 +1,9 @@
 # Performance measurement
 
+For comparisons between released scanner CLIs, see the separate
+[comparison protocol](PERFORMANCE_COMPARISON.md). It measures whole commands
+and keeps those results separate from the operation timers below.
+
 The unpublished performance runner has 23 deterministic workloads. Normal
 Bazel tests execute their outcome invariants, including report bytes. Run the
 commands below from the repository root. Timing
