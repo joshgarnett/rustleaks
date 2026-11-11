@@ -967,9 +967,7 @@ fn go_lowercase(value: &str) -> String {
 }
 
 fn validate_pattern(pattern: &str) -> Result<usize, String> {
-    GoRegex::compile(pattern)
-        .map(|compiled| compiled.capture_count())
-        .map_err(|error| error.to_string())
+    GoRegex::validate(pattern).map_err(|error| error.to_string())
 }
 
 fn normalize_table_keys(value: &mut toml::Value) {

@@ -576,7 +576,7 @@ fn extract_core_package(staging: &Path) -> Result<PathBuf, String> {
 }
 
 fn consumer_source() -> &'static str {
-    r#"use rustleaks_core::config::ConfigLoader;
+    r#"use rustleaks_core::config::{ConfigError, ConfigLoader};
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use rustleaks_core::explanation::ExplanationOptions;
@@ -584,6 +584,25 @@ use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
 use rustleaks_core::triage::{ReviewPolicy, ReviewSource};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ConfigLoader::new().load_toml(
+        "[[allowlists]]\nregexes = ['(?P<x>a){0}', '\\b\\pL\\b']\n",
+    )?;
+    for (path, field, pattern, message) in [
+        ("(", "path", "(", "regexp compile error: error parsing regex"),
+        ("valid", "regex", "\\", "regexp syntax error at byte 0: trailing backslash"),
+    ] {
+        let source = format!("[[allowlists]]\npaths = ['{path}']\nregexes = ['\\']\n");
+        let error = ConfigLoader::new().load_toml(&source).unwrap_err();
+        let ConfigError::InvalidPattern {
+            scope, field: actual_field, pattern: actual_pattern, message: actual_message,
+        } = error else {
+            panic!("unexpected allowlist error: {error}");
+        };
+        assert_eq!(scope, "[[allowlists]]");
+        assert_eq!(actual_field, field);
+        assert_eq!(actual_pattern, pattern);
+        assert_eq!(actual_message, message);
+    }
     let config = ConfigLoader::new().load_default()?;
     let engine = Engine::builder(config).build()?;
     let control = ScanControl::unlimited().with_budget(

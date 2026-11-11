@@ -598,6 +598,123 @@ fn config_allowlist_fixtures_match_error_categories() {
     }
 }
 
+fn pattern_allowlist_config(local: bool, paths: Vec<String>, regexes: Vec<String>) -> RawConfig {
+    let allowlist = AllowlistSpec {
+        paths,
+        regexes,
+        ..AllowlistSpec::default()
+    };
+    if local {
+        RawConfig {
+            rules: vec![RuleSpec {
+                id: "r".into(),
+                regex: "token".into(),
+                allowlists: vec![allowlist],
+                ..RuleSpec::default()
+            }],
+            ..RawConfig::default()
+        }
+    } else {
+        RawConfig {
+            allowlists: vec![RawGlobalAllowlist {
+                allowlist,
+                ..RawGlobalAllowlist::default()
+            }],
+            ..RawConfig::default()
+        }
+    }
+}
+
+fn assert_allowlist_pattern_error(
+    raw: RawConfig,
+    expected_scope: &str,
+    expected_field: &str,
+    expected_pattern: &str,
+    expected_message: &str,
+) {
+    let error = ConfigLoader::new().compile(raw).unwrap_err();
+    let ConfigError::InvalidPattern {
+        scope,
+        field,
+        pattern,
+        message,
+    } = error
+    else {
+        panic!("unexpected configuration error: {error}");
+    };
+    assert_eq!(scope, expected_scope);
+    assert_eq!(field, expected_field);
+    assert_eq!(pattern, expected_pattern);
+    assert_eq!(message, expected_message);
+}
+
+#[test]
+fn allowlist_pattern_errors_preserve_scope_source_and_validation_order() {
+    for (local, scope) in [(false, "[[allowlists]]"), (true, "r: [[rules.allowlists]]")] {
+        assert_allowlist_pattern_error(
+            pattern_allowlist_config(local, vec!["(".into()], vec!["\\".into()]),
+            scope,
+            "path",
+            "(",
+            "regexp compile error: error parsing regex",
+        );
+        assert_allowlist_pattern_error(
+            pattern_allowlist_config(local, vec!["valid".into()], vec!["\\".into()]),
+            scope,
+            "regex",
+            "\\",
+            "regexp syntax error at byte 0: trailing backslash",
+        );
+    }
+}
+
+#[test]
+fn standalone_regex_error_precedes_joined_path_nesting_error() {
+    // Each source is accepted at the inclusive parser nesting limit. Joining
+    // adds one noncapturing group, which must still be compiled and rejected.
+    let path = "(?:".repeat(4_096) + "a" + &")".repeat(4_096);
+    let joined = format!("(?:{path})");
+    for (local, scope) in [(false, "[[allowlists]]"), (true, "r: [[rules.allowlists]]")] {
+        assert_allowlist_pattern_error(
+            pattern_allowlist_config(local, vec![path.clone()], vec!["\\".into()]),
+            scope,
+            "regex",
+            "\\",
+            "regexp syntax error at byte 0: trailing backslash",
+        );
+        assert_allowlist_pattern_error(
+            pattern_allowlist_config(local, vec![path.clone()], Vec::new()),
+            scope,
+            "path",
+            &joined,
+            "regexp compile error: error parsing regex",
+        );
+    }
+}
+
+#[test]
+fn allowlist_validation_preserves_singleton_duplicate_and_empty_sources() {
+    for local in [false, true] {
+        for sources in [
+            vec![""],
+            vec!["same"],
+            vec!["same", "same"],
+            vec!["", "same"],
+        ] {
+            let sources = sources.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let raw = pattern_allowlist_config(local, sources.clone(), sources.clone());
+            let config = ConfigLoader::new().compile(raw).unwrap();
+            let allowlist = if local {
+                &config.rule("r").unwrap().allowlists()[0]
+            } else {
+                &config.allowlists()[0]
+            };
+            assert_eq!(allowlist.paths(), sources.as_slice());
+            assert_eq!(allowlist.regexes(), sources.as_slice());
+        }
+    }
+}
+
 #[test]
 fn config_extend_003_matches_merge_matrix_and_is_reentrant() {
     // CONFIG-EXTEND-003; TM-0029..TM-0031 and TM-0058..TM-0071.
