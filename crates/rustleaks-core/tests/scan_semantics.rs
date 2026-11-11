@@ -148,6 +148,74 @@ fn every_small_record_boundary_retains_charges_but_rolls_back_unfinished_rules()
 }
 
 #[test]
+fn empty_matches_keep_invalid_byte_progression_and_budget_charges() {
+    let engine = engine("[[rules]]\nid = 'empty'\nregex = 'a*'");
+    let raw = b"\xffaaa\x80";
+    let fragment = Fragment::new(raw);
+    let options = ScanOptions::default();
+    // Each invalid byte is one rune. The empty match at 4 is suppressed
+    // because it abuts 1..4; advancing over the final invalid byte reaches 5.
+    // One pass, one rule and three candidates consume exactly five work units.
+    let complete = engine.scan_fragment_controlled(
+        &fragment,
+        &options,
+        &ScanControl::unlimited().with_budget(
+            ScanBudget::unlimited()
+                .max_work_units(5)
+                .max_finding_records(3)
+                .max_decoded_bytes(0),
+        ),
+    );
+    assert!(complete.is_complete());
+    assert_eq!(complete.termination(), None);
+    assert_eq!(complete.usage().work_units(), 5);
+    assert_eq!(complete.usage().finding_records(), 3);
+    assert_eq!(complete.usage().decoded_bytes(), 0);
+    assert_eq!(complete.findings().len(), 3);
+    for (finding, (range, coordinates)) in complete.findings().iter().zip([
+        (0..0, (0, 0, 1, 0)),
+        (1..4, (0, 0, 2, 4)),
+        (5..5, (1, 1, 1, 0)),
+    ]) {
+        assert_eq!(finding.rule_id().as_bytes(), b"empty");
+        assert_eq!(finding.match_range().exact().unwrap().as_range(), range);
+        assert_eq!(finding.secret_range(), finding.match_range());
+        assert_eq!(finding.match_text().as_bytes(), &raw[range.clone()]);
+        assert_eq!(finding.secret().as_bytes(), &raw[range]);
+        assert_eq!(finding.line().as_bytes(), raw);
+        assert_eq!(finding.entropy().to_bits(), 0);
+        let location = finding.location();
+        assert_eq!(
+            (
+                location.start_line(),
+                location.end_line(),
+                location.start_column(),
+                location.end_column(),
+            ),
+            coordinates,
+        );
+    }
+
+    for (work_limit, record_limit, kind, limit, charged_work) in [
+        (4, 3, ScanBudgetKind::WorkUnits, 4, 4),
+        (5, 2, ScanBudgetKind::FindingRecords, 2, 5),
+    ] {
+        let control = ScanControl::unlimited().with_budget(
+            ScanBudget::unlimited()
+                .max_work_units(work_limit)
+                .max_finding_records(record_limit)
+                .max_decoded_bytes(0),
+        );
+        let partial = engine.scan_fragment_controlled(&fragment, &options, &control);
+        assert_exceeded(&partial, kind, limit, limit, 1);
+        assert!(partial.findings().is_empty());
+        assert_eq!(partial.usage().work_units(), charged_work);
+        assert_eq!(partial.usage().finding_records(), 2);
+        assert_eq!(partial.usage().decoded_bytes(), 0);
+    }
+}
+
+#[test]
 fn nested_decode_limits_charge_whole_passes_before_scanning_them() {
     let engine = engine("[[rules]]\nid = 'decoded'\nregex = 'marker=VALUE'");
     for padding in 0..=3 {

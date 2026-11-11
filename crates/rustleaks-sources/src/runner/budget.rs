@@ -5,7 +5,7 @@ use std::sync::{MutexGuard, PoisonError};
 use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanTermination, ScanUsage};
 
 use super::{
-    Arc, CallbackError, CancellationToken, Engine, Fragment, Mutex, ScanControl, ScanOptions,
+    Arc, CallbackError, CancellationToken, Engine, Fragment, Job, Mutex, ScanControl, ScanOptions,
     ScanOutcome, SessionPolicy, Source, SourceControl, SourceError, SourceEvent, SourceIssue,
     SourceOutcome, SourceRunner, SourceStatistics, SourceTermination, TrySendError, ensure_active,
     finish_run, merge_complete_scan, mpsc, thread, worker_terminal,
@@ -599,10 +599,10 @@ impl Drop for WorkerGuard<'_> {
 
 fn schedule(
     operation: &Operation<'_>,
-    fragment: Fragment,
-    mut try_send: impl FnMut(Fragment) -> Result<(), TrySendError<Fragment>>,
+    job: Job,
+    mut try_send: impl FnMut(Job) -> Result<(), TrySendError<Job>>,
 ) -> Result<SourceControl, CallbackError> {
-    let mut pending = fragment;
+    let mut pending = job;
     loop {
         ensure_active(
             operation.cancellation,
@@ -613,8 +613,8 @@ fn schedule(
         }
         match try_send(pending) {
             Ok(()) => return Ok(SourceControl::Continue),
-            Err(TrySendError::Full(fragment)) => {
-                pending = fragment;
+            Err(TrySendError::Full(job)) => {
+                pending = job;
                 thread::yield_now();
             }
             Err(TrySendError::Disconnected(_)) => {
@@ -665,13 +665,14 @@ fn run_with_scan(
         stopped: AtomicBool::new(false),
         accounting: Mutex::new(Accounting::default()),
     };
-    let (sender, receiver) = mpsc::sync_channel::<Fragment>(runner.queue_capacity());
+    let (sender, receiver) = mpsc::sync_channel::<Job>(runner.queue_capacity());
     let receiver = Arc::new(Mutex::new(receiver));
     let mut issues = Vec::new();
     let mut source_result = Ok(SourceControl::Continue);
     let mut worker_panicked = false;
     let mut batches = Vec::new();
     let mut statistics = SourceStatistics::default();
+    let mut next_sequence = 0_u64;
     thread::scope(|scope| {
         let mut handles = Vec::new();
         let mut setup_error = handles
@@ -687,7 +688,7 @@ fn run_with_scan(
                     .name(format!("rustleaks-source-{index}"))
                     .spawn_scoped(scope, move || {
                         let _guard = WorkerGuard(operation);
-                        let mut batch = policy.new_batch();
+                        let mut batches = Vec::new();
                         loop {
                             if operation.is_cancelled() {
                                 break;
@@ -696,20 +697,20 @@ fn run_with_scan(
                                 .lock()
                                 .unwrap_or_else(PoisonError::into_inner)
                                 .recv();
-                            let Ok(fragment) = job else { break };
+                            let Ok(job) = job else { break };
                             let Some(reservation) = operation.reserve() else {
                                 break;
                             };
                             let signal = || operation.is_cancelled();
                             let control =
                                 ScanControl::cancellable(&signal).with_budget(reservation.budget);
-                            let detected = scan(&fragment, &control);
+                            let detected = scan(&job.fragment, &control);
                             reservation.settle(&detected);
-                            if !merge_complete_scan(&mut batch, detected) {
+                            if !merge_complete_scan(&mut batches, policy, job.sequence, detected) {
                                 break;
                             }
                         }
-                        batch
+                        batches
                     }) {
                     Ok(handle) => handles.push(handle),
                     Err(error) => {
@@ -757,13 +758,17 @@ fn run_with_scan(
                     return Ok(SourceControl::Stop);
                 }
                 statistics.observe(&fragment)?;
-                schedule(&operation, fragment, |pending| sender.try_send(pending))
+                let sequence = next_sequence;
+                next_sequence += 1;
+                schedule(&operation, Job { sequence, fragment }, |pending| {
+                    sender.try_send(pending)
+                })
             });
         }
         drop(sender);
         for handle in handles {
             match handle.join() {
-                Ok(batch) => batches.push(batch),
+                Ok(worker_batches) => batches.extend(worker_batches),
                 Err(_) => worker_panicked = true,
             }
         }
@@ -815,6 +820,13 @@ mod tests {
         .unwrap()
     }
 
+    fn job() -> Job {
+        Job {
+            sequence: 0,
+            fragment: Fragment::new("A"),
+        }
+    }
+
     struct Fragments(usize);
 
     impl Source for Fragments {
@@ -864,7 +876,7 @@ mod tests {
         };
         let (sender, receiver) = mpsc::sync_channel(1);
         let mut receiver = Some(receiver);
-        let scheduled = schedule(&operation, Fragment::new("A"), |pending| {
+        let scheduled = schedule(&operation, job(), |pending| {
             // This closure runs after the scheduling cancellation check. Force
             // the worker's exhaustion and last-receiver drop before try_send.
             assert!(!operation.is_cancelled());
@@ -904,10 +916,7 @@ mod tests {
         };
         let (sender, receiver) = mpsc::sync_channel(1);
         drop(receiver);
-        let error = schedule(&operation, Fragment::new("A"), |pending| {
-            sender.try_send(pending)
-        })
-        .unwrap_err();
+        let error = schedule(&operation, job(), |pending| sender.try_send(pending)).unwrap_err();
         assert_eq!(error.message(), "all source runner workers disconnected");
         assert!(operation.lock().exceeded.is_none());
     }

@@ -50,6 +50,26 @@ and robustness controls are implemented with regression coverage; the
 [roadmap](ROADMAP.md) and [completion record](validation/process-cpu-and-completion.md)
 identify their local/hosted qualification and delivered scope.
 
+Scan-local filtering caches retain only pure decisions for exact immutable
+source slices and allowlist identities. Line-regex memoization ends with each
+rule pass; original-source helpers can persist across decoded passes because
+the original fragment stays unchanged. Secret-dependent criteria and every
+work, cancellation and explanation checkpoint retain their order. Compact
+normalization preserves one replacement rune per invalid byte and original
+byte offsets; its ordered cursor is local to whole-match enumeration, while
+capture lookups remain independent. ASCII fast paths retain the pinned Unicode
+fallback. These changes introduce no dependency, unsafe-code or public API
+boundary.
+
+Literal-anchored enumeration applies only to rules whose prefix shape is proven
+at compile time and only to pure-ASCII passes. It reuses keyword offsets from the
+same pass, runs the unchanged compiled expression on the unsliced haystack, and
+falls back to the unanchored search when its cost charge would exceed the
+haystack length. Configuration is untrusted, so shape analysis is capped by
+choice and step counts, and the full keyword DFA is forced only within keyword
+size and depth limits. Multi-worker source runs now return complete-run
+findings in producer order.
+
 ## Secret handling
 
 The engine returns the matched secret because that is its documented API.

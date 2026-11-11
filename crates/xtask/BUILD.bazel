@@ -88,6 +88,9 @@ rust_test(
         "CARGO_MANIFEST_DIR": "crates/xtask",
         "CARGO_PKG_VERSION": "0.1.0-alpha.7",
     },
+    # Frozen one-second timeout cases require copied helpers to enter main and
+    # record their PIDs before cancellation, including during repeated runs.
+    tags = ["exclusive"],
     visibility = ["//visibility:public"],
 )
 

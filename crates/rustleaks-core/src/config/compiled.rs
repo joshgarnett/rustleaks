@@ -97,6 +97,7 @@ impl CompiledAllowlist {
     ///
     /// The upstream walk selects the earliest ending match and, at a shared
     /// end position, the direct (longest) terminal before suffix links.
+    #[cfg_attr(not(test), allow(dead_code))] // Retain the selected-match compatibility helper.
     pub(crate) fn matched_stop_word(&self, secret: &[u8]) -> Option<Vec<u8>> {
         if secret.is_empty() {
             return None;
@@ -116,7 +117,15 @@ impl CompiledAllowlist {
     }
 
     pub(crate) fn contains_stop_word(&self, secret: &[u8]) -> bool {
-        self.matched_stop_word(secret).is_some()
+        if secret.is_empty() {
+            return false;
+        }
+        let Some(matcher) = self.stopword_matcher.as_ref() else {
+            return false;
+        };
+        let normalized = go_lowercase_bytes(secret);
+        // Presence does not require the selected match's ordering or bytes.
+        matcher.is_match(&normalized)
     }
 }
 
@@ -608,4 +617,89 @@ fn add_allowlist_size(
         size = checked_selection_size(size, value.len())?;
     }
     Ok(size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CompiledAllowlist;
+    use crate::config::ConfigLoader;
+
+    fn allowlist(specification: &str) -> CompiledAllowlist {
+        let config = ConfigLoader::new()
+            .load_toml(&format!(
+                "[[rules]]\nid = \"probe\"\nregex = \".+\"\n\n[[allowlists]]\n{specification}\n"
+            ))
+            .unwrap();
+        config.allowlists.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn stopword_presence_handles_ascii_overlaps_and_empty_input() {
+        let compiled = allowlist(r#"stopwords = ["he", "she", "FaKe"]"#);
+        for (input, expected) in [
+            (b"she".as_slice(), true),
+            (b"SHE".as_slice(), true),
+            (b"prefix FAKE suffix".as_slice(), true),
+            (b"real".as_slice(), false),
+            (b"".as_slice(), false),
+        ] {
+            assert_eq!(compiled.contains_stop_word(input), expected, "{input:?}");
+        }
+        // The selected-match helper retains its independent tie-breaking contract.
+        assert_eq!(compiled.matched_stop_word(b"she"), Some(b"she".to_vec()));
+
+        let overlapping = allowlist(r#"stopwords = ["a", "aa", "aaa", "aaaa"]"#);
+        assert!(overlapping.contains_stop_word(b"aaaaaaaaaaaaaaaa"));
+        assert!(!overlapping.contains_stop_word(b"bbbbbbbbbbbbbbbb"));
+    }
+
+    #[test]
+    fn absent_and_empty_stopword_matchers_never_match() {
+        for specification in [r"paths = ['never']", r#"stopwords = [""]"#] {
+            let compiled = allowlist(specification);
+            assert!(compiled.stopword_matcher.is_none());
+            for input in [
+                b"".as_slice(),
+                b"nonempty".as_slice(),
+                b"\xff\x80".as_slice(),
+            ] {
+                assert!(!compiled.contains_stop_word(input), "{input:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn stopword_presence_uses_go_simple_lowercase_without_normalization() {
+        let compiled = allowlist(r#"stopwords = ["IX", "ÉCOLE"]"#);
+        for (input, expected) in [
+            ("İX", true),
+            ("ix", true),
+            ("ÉCOLE", true),
+            ("école", true),
+            ("i\u{307}x", false),
+            ("E\u{301}COLE", false),
+            ("other", false),
+        ] {
+            assert_eq!(
+                compiled.contains_stop_word(input.as_bytes()),
+                expected,
+                "{input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn stopword_presence_preserves_each_invalid_byte_as_one_rune_error() {
+        let compiled = allowlist(r#"stopwords = ["��"]"#);
+        for (input, expected) in [
+            (b"\xff\x80".as_slice(), true),
+            (b"\xe2\x82".as_slice(), true),
+            (b"\xff".as_slice(), false),
+            ("�".as_bytes(), false),
+            ("é".as_bytes(), false),
+            (b"".as_slice(), false),
+        ] {
+            assert_eq!(compiled.contains_stop_word(input), expected, "{input:?}");
+        }
+    }
 }

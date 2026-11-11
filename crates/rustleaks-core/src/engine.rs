@@ -1,12 +1,13 @@
 //! Immutable raw-fragment detection engine.
 
-use std::cell::OnceCell;
+use std::borrow::Cow;
+use std::cell::{Cell, OnceCell};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
 
 use crate::config::{
     CompiledAllowlist, CompiledConfig, CompiledRule, Condition, RegexTarget, RequiredRuleSpec,
@@ -22,8 +23,23 @@ use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes
 use crate::model::{
     ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
-use crate::regex::{ByteSpan, GoRegex, NormalizedHaystack};
+use crate::regex::{ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, NormalizedHaystack};
 
+/// Largest total keyword length that receives a full DFA prefilter.
+///
+/// States are bounded by keyword bytes and a full table can reach one
+/// kilobyte per state, so this cap keeps the table at about 17 MiB. Larger
+/// keyword sets keep the automaton kind chosen by the builder.
+const KEYWORD_DFA_BYTE_LIMIT: usize = 16 * 1024;
+/// Largest summed length of all keyword prefixes that receives a full DFA.
+///
+/// Building a state's row follows a failure chain for each byte class the
+/// state has no transition on, and that chain is no longer than the state's
+/// depth. Every state is a keyword prefix, so this sum bounds the summed
+/// depths, and a long keyword counts quadratically. The default keywords
+/// sum to 9,339 and the longest is 34 bytes. Larger sums keep the automaton
+/// kind chosen by the builder.
+const KEYWORD_DFA_PREFIX_LIMIT: usize = 64 * 1024;
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
 
@@ -275,14 +291,137 @@ impl Error for ScanTermination {}
 pub struct Engine {
     config: CompiledConfig,
     prefilter: Option<AhoCorasick>,
-    keyword_ids: BTreeMap<String, usize>,
+    keyword_count: usize,
+    /// Prefilter pattern indexes of each rule, aligned with `config.rules`.
+    rule_keyword_indexes: Vec<Box<[usize]>>,
+    /// Literal-anchored search plan of each rule, aligned with `config.rules`.
+    rule_literal_anchors: Vec<Option<RuleLiteralAnchor>>,
+    /// Prefilter patterns whose occurrences some plan consumes; empty if none.
+    recorded_keywords: Vec<bool>,
+}
+
+/// Where one rule's literal-anchored search takes its occurrences from.
+#[derive(Clone, Debug)]
+struct RuleLiteralAnchor {
+    /// Index into the regex's literal-node candidates.
+    candidate: usize,
+    /// Prefilter patterns covering every literal of that candidate.
+    keyword_indexes: Box<[usize]>,
+}
+
+/// Keyword start offsets recorded by one pure-ASCII keyword pass.
+///
+/// Offsets index the raw haystack: ASCII lowercasing preserves them. A
+/// saturated keyword is too dense for anchored search, so its rules use the
+/// unanchored path. Limits only choose a path and never change results.
+#[derive(Default)]
+struct KeywordOccurrences {
+    active: bool,
+    keyword_count: usize,
+    starts: Vec<Vec<usize>>,
+    saturated: Vec<bool>,
+    per_keyword_limit: usize,
+    remaining: usize,
+}
+
+impl KeywordOccurrences {
+    /// Starts a pass; `ascii_len` is `None` unless occurrences are usable.
+    fn begin_pass(&mut self, ascii_len: Option<usize>, keyword_count: usize) {
+        for starts in &mut self.starts {
+            starts.clear();
+        }
+        self.saturated.fill(false);
+        self.active = ascii_len.is_some();
+        self.keyword_count = keyword_count;
+        let length = ascii_len.unwrap_or(0);
+        self.per_keyword_limit = length / ATTEMPT_COST_FLOOR + 1;
+        self.remaining = length / 16 + 1;
+    }
+
+    fn record(&mut self, keyword: usize, start: usize) {
+        if self.starts.is_empty() {
+            self.starts.resize_with(self.keyword_count, Vec::new);
+            self.saturated.resize(self.keyword_count, false);
+        }
+        let starts = &mut self.starts[keyword];
+        if starts.len() >= self.per_keyword_limit || self.remaining == 0 {
+            self.saturated[keyword] = true;
+            return;
+        }
+        starts.push(start);
+        self.remaining -= 1;
+    }
+
+    /// Returns sorted unique occurrences of `indexes`, or `None` if unusable.
+    fn rule_starts(&self, indexes: &[usize]) -> Option<Cow<'_, [usize]>> {
+        if !self.active {
+            return None;
+        }
+        if indexes
+            .iter()
+            .any(|&index| self.saturated.get(index).copied().unwrap_or(false))
+        {
+            return None;
+        }
+        if let [index] = indexes {
+            return Some(Cow::Borrowed(
+                self.starts.get(*index).map_or(&[], Vec::as_slice),
+            ));
+        }
+        let mut merged = indexes
+            .iter()
+            .filter_map(|&index| self.starts.get(index))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        merged.sort_unstable();
+        merged.dedup();
+        Some(Cow::Owned(merged))
+    }
+}
+
+/// Original-source helpers live for one fragment, including its decoded passes.
+#[derive(Default)]
+struct OriginalFragmentContext {
+    newlines: OnceCell<Vec<usize>>,
+    marker: Cell<Option<(usize, usize, bool)>>,
+    tail: Cell<Option<(usize, usize)>>,
+}
+
+impl OriginalFragmentContext {
+    fn has_allow_marker(&self, line: &[u8], start: usize, end: usize) -> bool {
+        if let Some((previous_start, previous_end, matched)) = self.marker.get()
+            && previous_start == start
+            && previous_end == end
+        {
+            return matched;
+        }
+        let matched = contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
+            || contains_bytes(line, ALLOW_SIGNATURE);
+        self.marker.set(Some((start, end, matched)));
+        matched
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LineRegexResult<'a> {
+    allowlist: &'a CompiledAllowlist,
+    line: &'a [u8],
+    matched: bool,
+}
+
+/// Only the last line regex result per allowlist is retained within one rule pass.
+#[derive(Default)]
+struct LineAllowlistMemo<'a> {
+    global: Vec<Option<LineRegexResult<'a>>>,
+    rule: Vec<Option<LineRegexResult<'a>>>,
 }
 
 #[derive(Clone, Copy)]
 struct DetectionPass<'a> {
     current_raw: &'a [u8],
     encoded_segments: &'a [EncodedSegment],
-    original_newlines: &'a OnceCell<Vec<usize>>,
+    original: &'a OriginalFragmentContext,
     rule_ordinal: usize,
     decoded_pass: usize,
     candidate_ordinal: usize,
@@ -292,11 +431,13 @@ struct DetectionPass<'a> {
 struct RulePass<'a> {
     current_raw: &'a [u8],
     normalized: &'a OnceCell<NormalizedHaystack<'a>>,
-    original_newlines: &'a OnceCell<Vec<usize>>,
+    original: &'a OriginalFragmentContext,
     encoded_segments: &'a [EncodedSegment],
     inherited_from_finding: bool,
     rule_ordinal: usize,
     decoded_pass: usize,
+    literal_anchor: Option<&'a RuleLiteralAnchor>,
+    keyword_occurrences: &'a KeywordOccurrences,
 }
 
 struct ScanContext<'a> {
@@ -328,6 +469,34 @@ impl<'a> ScanContext<'a> {
 
     fn work(&mut self) -> Result<(), ScanTermination> {
         self.check_cancelled()?;
+        charge_counter(
+            &mut self.usage.work_units,
+            1,
+            self.control.budget.work_units,
+            ScanBudgetKind::WorkUnits,
+        )
+    }
+
+    /// Charges `units` consecutive work checkpoints with the observable
+    /// effect of `units` calls to [`Self::work`].
+    ///
+    /// Without a cancellation signal each call polls nothing and adds one to
+    /// the counter, so the run reduces to one bounded addition that stops at
+    /// the same checkpoint. A signal observes each poll, so that path keeps
+    /// one call per unit.
+    fn work_many(&mut self, units: usize) -> Result<(), ScanTermination> {
+        if self.control.cancellation.is_some() {
+            for _ in 0..units {
+                self.work()?;
+            }
+            return Ok(());
+        }
+        let capacity = self.control.budget.work_units.unwrap_or(usize::MAX);
+        if units <= capacity - self.usage.work_units {
+            self.usage.work_units += units;
+            return Ok(());
+        }
+        self.usage.work_units = capacity;
         charge_counter(
             &mut self.usage.work_units,
             1,
@@ -480,42 +649,54 @@ impl Engine {
             .record(None, 0, None, ExplanationReason::AllowlistNotMatched);
 
         let mut findings = Vec::new();
-        let mut current_raw = fragment.content().as_bytes().to_vec();
-        let original_newlines = OnceCell::new();
+        let mut current_raw = Cow::Borrowed(fragment.content().as_bytes());
+        let original = OriginalFragmentContext::default();
         let mut encoded_segments = Vec::new();
         let mut decoder = Decoder::new();
         let mut decode_depth = 0;
+        let mut matched_keywords = vec![false; self.keyword_count];
+        let mut keyword_occurrences = KeywordOccurrences::default();
         loop {
             if let Err(termination) = context.work() {
                 return finish_partial(findings, options, context.usage, termination);
             }
-            let normalized = go_lowercase_bytes(&current_raw);
-            let mut matched_keywords = vec![false; self.keyword_ids.len()];
+            matched_keywords.fill(false);
+            let record_occurrences = !self.recorded_keywords.is_empty() && current_raw.is_ascii();
+            keyword_occurrences.begin_pass(
+                record_occurrences.then_some(current_raw.len()),
+                self.keyword_count,
+            );
             if let Some(prefilter) = &self.prefilter {
+                let normalized = go_lowercase_bytes(&current_raw);
                 for found in prefilter.find_overlapping_iter(&normalized) {
                     if let Err(termination) = context.work() {
                         return finish_partial(findings, options, context.usage, termination);
                     }
-                    matched_keywords[found.pattern().as_usize()] = true;
+                    let keyword = found.pattern().as_usize();
+                    matched_keywords[keyword] = true;
+                    if record_occurrences && self.recorded_keywords[keyword] {
+                        keyword_occurrences.record(keyword, found.start());
+                    }
                 }
             }
 
             {
                 let regex_haystack = OnceCell::new();
-                for (rule_ordinal, rule) in self.config.rules.values().enumerate() {
+                for (((rule_ordinal, rule), keyword_indexes), literal_anchor) in self
+                    .config
+                    .rules
+                    .values()
+                    .enumerate()
+                    .zip(&self.rule_keyword_indexes)
+                    .zip(&self.rule_literal_anchors)
+                {
                     context.explanations.record(
                         Some(rule_ordinal),
                         decode_depth,
                         None,
                         ExplanationReason::RuleSelected,
                     );
-                    if !rule.keywords.is_empty()
-                        && !rule.keywords.iter().any(|keyword| {
-                            self.keyword_ids
-                                .get(keyword)
-                                .is_some_and(|index| matched_keywords[*index])
-                        })
-                    {
+                    if !keyword_gate_open(rule, keyword_indexes, &matched_keywords) {
                         context.explanations.record(
                             Some(rule_ordinal),
                             decode_depth,
@@ -541,11 +722,13 @@ impl Engine {
                         RulePass {
                             current_raw: &current_raw,
                             normalized: &regex_haystack,
-                            original_newlines: &original_newlines,
+                            original: &original,
                             encoded_segments: &encoded_segments,
                             inherited_from_finding: fragment.inherited_from_finding(),
                             rule_ordinal,
                             decoded_pass: decode_depth,
+                            literal_anchor: literal_anchor.as_ref(),
+                            keyword_occurrences: &keyword_occurrences,
                         },
                         context,
                     );
@@ -565,7 +748,9 @@ impl Engine {
                 return finish_partial(findings, options, context.usage, termination);
             }
             let decode_result =
-                decoder.decode_controlled(&current_raw, &encoded_segments, || context.work());
+                decoder.decode_controlled(&current_raw, &encoded_segments, |units| {
+                    context.work_many(units)
+                });
             let (decoded_output, segments) = match decode_result {
                 Ok(output) => output,
                 Err(termination) => {
@@ -581,19 +766,19 @@ impl Engine {
             if let Err(termination) = context.decoded_bytes(decoded_output.len()) {
                 return finish_partial(findings, options, context.usage, termination);
             }
-            current_raw = decoded_output;
+            current_raw = Cow::Owned(decoded_output);
             encoded_segments = segments;
         }
         finish_complete(findings, options, context)
     }
 
     #[allow(clippy::too_many_lines)] // Rule decisions and their bounded annotations share the same control flow.
-    fn detect_rule(
-        &self,
-        fragment: &Fragment,
+    fn detect_rule<'a>(
+        &'a self,
+        fragment: &'a Fragment,
         options: &ScanOptions,
-        rule: &CompiledRule,
-        rule_pass: RulePass<'_>,
+        rule: &'a CompiledRule,
+        rule_pass: RulePass<'a>,
         context: &mut ScanContext<'_>,
     ) -> Result<Vec<Finding>, ScanTermination> {
         context.work()?;
@@ -677,19 +862,17 @@ impl Engine {
         let pass = DetectionPass {
             current_raw: rule_pass.current_raw,
             encoded_segments: rule_pass.encoded_segments,
-            original_newlines: rule_pass.original_newlines,
+            original: rule_pass.original,
             rule_ordinal: rule_pass.rule_ordinal,
             decoded_pass: rule_pass.decoded_pass,
             candidate_ordinal: 0,
         };
         let mut findings = Vec::new();
         let mut any_match = false;
-        for (candidate_ordinal, span) in regex
-            .find_all_normalized(
-                rule_pass
-                    .normalized
-                    .get_or_init(|| NormalizedHaystack::new(rule_pass.current_raw)),
-            )
+        let mut line_allowlists = LineAllowlistMemo::default();
+        // One rule pass searches only this rule's expression.
+        let mut capture_scratch = None;
+        for (candidate_ordinal, span) in Self::content_match_spans(regex, rule_pass)
             .into_iter()
             .enumerate()
         {
@@ -710,6 +893,8 @@ impl Engine {
                     ..pass
                 },
                 span,
+                &mut line_allowlists,
+                &mut capture_scratch,
                 context,
             ) {
                 context.finding_record()?;
@@ -731,12 +916,29 @@ impl Engine {
         self.project_required_findings(fragment, options, rule, rule_pass, findings, context)
     }
 
-    fn project_required_findings(
-        &self,
-        fragment: &Fragment,
+    /// Enumerates one rule's whole matches for the current pass.
+    fn content_match_spans(regex: &GoRegex, rule_pass: RulePass<'_>) -> Vec<ByteSpan> {
+        let normalized = rule_pass
+            .normalized
+            .get_or_init(|| NormalizedHaystack::new(rule_pass.current_raw));
+        if let Some(anchor) = rule_pass.literal_anchor
+            && let Some(starts) = rule_pass
+                .keyword_occurrences
+                .rule_starts(&anchor.keyword_indexes)
+            && let Some(spans) =
+                regex.find_all_literal_anchored(normalized, anchor.candidate, &starts)
+        {
+            return spans;
+        }
+        regex.find_all_normalized(normalized)
+    }
+
+    fn project_required_findings<'a>(
+        &'a self,
+        fragment: &'a Fragment,
         options: &ScanOptions,
-        primary_rule: &CompiledRule,
-        rule_pass: RulePass<'_>,
+        primary_rule: &'a CompiledRule,
+        rule_pass: RulePass<'a>,
         primary_findings: Vec<Finding>,
         context: &mut ScanContext<'_>,
     ) -> Result<Vec<Finding>, ScanTermination> {
@@ -768,6 +970,9 @@ impl Engine {
                 RulePass {
                     inherited_from_finding: true,
                     rule_ordinal,
+                    // Required rules have no plan lookup here. The unanchored
+                    // path is exact and this runs only after primary findings.
+                    literal_anchor: None,
                     ..rule_pass
                 },
                 context,
@@ -818,14 +1023,16 @@ impl Engine {
         Ok(completed)
     }
 
-    #[allow(clippy::too_many_lines)] // Preserve extraction, location and filtering order alongside their explanation codes.
-    fn content_finding(
-        &self,
-        fragment: &Fragment,
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Keep local caching separate from scan accounting and preserve decision order.
+    fn content_finding<'a>(
+        &'a self,
+        fragment: &'a Fragment,
         options: &ScanOptions,
-        rule: &CompiledRule,
-        pass: DetectionPass<'_>,
+        rule: &'a CompiledRule,
+        pass: DetectionPass<'a>,
         whole: ByteSpan,
+        line_allowlists: &mut LineAllowlistMemo<'a>,
+        capture_scratch: &mut Option<CaptureScratch>,
         context: &mut ScanContext<'_>,
     ) -> Option<Finding> {
         let mut explain = |reason| {
@@ -856,42 +1063,53 @@ impl Engine {
                     explain(ExplanationReason::DecodedMappingUnavailable);
                     return None;
                 }
-                let (start, end) = adjust_match_index(&overlapping, whole.start, whole.end)?;
+                let (start, end) = adjust_match_index(overlapping, whole.start, whole.end)?;
                 (
                     start,
                     end,
-                    Some(current_line(&overlapping, pass.current_raw)),
-                    decoder_tags(&overlapping),
+                    Some(current_line(overlapping, pass.current_raw)),
+                    decoder_tags(overlapping),
                 )
             };
         // Decoded passes project back onto the original fragment. Keep this
         // index scan-local and construct it only when a candidate needs it.
-        let newlines = pass.original_newlines.get_or_init(|| {
+        let newlines = pass.original.newlines.get_or_init(|| {
             original_raw
                 .iter()
                 .enumerate()
                 .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
                 .collect()
         });
-        let source = upstream_location(newlines, original_raw, adjusted_start, adjusted_end);
+        let source = upstream_location(
+            newlines,
+            original_raw,
+            adjusted_start,
+            adjusted_end,
+            &pass.original.tail,
+        );
         let line = original_raw.get(source.start_line_index..source.end_line_index)?;
         if options.honor_allow_markers()
-            && (contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
-                || contains_bytes(line, ALLOW_SIGNATURE))
+            && pass
+                .original
+                .has_allow_marker(line, source.start_line_index, source.end_line_index)
         {
             explain(ExplanationReason::AllowMarkerMatched);
             return None;
         }
 
-        let Some(extracted_secret) =
-            extract_secret(rule.regex_matcher.as_ref()?, trimmed, rule.secret_group)
-        else {
+        let Some(extracted_secret) = extract_secret(
+            rule.regex_matcher.as_ref()?,
+            trimmed,
+            rule.secret_group,
+            capture_scratch,
+        ) else {
             explain(ExplanationReason::SecretGroupUnavailable);
             return None;
         };
         let secret = extracted_secret.bytes;
-        let entropy = shannon_entropy(secret);
-        if rule.entropy != 0.0 && entropy <= rule.entropy {
+        // Only a nonzero threshold reads entropy before finding construction.
+        let threshold_entropy = (rule.entropy != 0.0).then(|| shannon_entropy(secret));
+        if threshold_entropy.is_some_and(|entropy| entropy <= rule.entropy) {
             explain(ExplanationReason::EntropyRejected);
             return None;
         }
@@ -907,8 +1125,15 @@ impl Engine {
             secret,
             allowlist_line,
             &self.config.allowlists,
-        ) || finding_allowed(fragment, trimmed, secret, allowlist_line, &rule.allowlists)
-        {
+            &mut line_allowlists.global,
+        ) || finding_allowed(
+            fragment,
+            trimmed,
+            secret,
+            allowlist_line,
+            &rule.allowlists,
+            &mut line_allowlists.rule,
+        ) {
             explain(ExplanationReason::AllowlistMatched);
             return None;
         }
@@ -976,7 +1201,9 @@ impl Engine {
             .file(fragment.file_path().as_bytes())
             .symlink_file(fragment.symlink_file().as_bytes())
             .commit(fragment.commit().as_bytes())
-            .entropy(entropy_to_f32(entropy))
+            .entropy(entropy_to_f32(
+                threshold_entropy.unwrap_or_else(|| shannon_entropy(secret)),
+            ))
             .tags(finding_tags.iter().map(String::as_str));
         if let Some(metadata) = fragment.commit_metadata() {
             builder = builder
@@ -987,6 +1214,12 @@ impl Engine {
         }
         builder.build().ok()
     }
+}
+
+/// `rule.keywords` decides whether a gate exists. `indexes` omits keywords with
+/// no prefilter pattern, so a rule with only empty keywords remains closed.
+fn keyword_gate_open(rule: &CompiledRule, indexes: &[usize], matched_keywords: &[bool]) -> bool {
+    rule.keywords.is_empty() || indexes.iter().any(|&index| matched_keywords[index])
 }
 
 fn commit_or_path_allowed(fragment: &Fragment, allowlists: &[CompiledAllowlist]) -> bool {
@@ -1017,20 +1250,22 @@ fn commit_or_path_allowed(fragment: &Fragment, allowlists: &[CompiledAllowlist])
     })
 }
 
-fn finding_allowed(
+fn finding_allowed<'a>(
     fragment: &Fragment,
     full_match: &[u8],
     secret: &[u8],
-    current_line: &[u8],
-    allowlists: &[CompiledAllowlist],
+    current_line: &'a [u8],
+    allowlists: &'a [CompiledAllowlist],
+    line_cache: &mut Vec<Option<LineRegexResult<'a>>>,
 ) -> bool {
-    allowlists.iter().any(|allowlist| {
-        let target = match allowlist.regex_target {
-            RegexTarget::Secret | RegexTarget::Unknown(_) => secret,
-            RegexTarget::Match => full_match,
-            RegexTarget::Line => current_line,
+    allowlists.iter().enumerate().any(|(index, allowlist)| {
+        let regex = match allowlist.regex_target {
+            RegexTarget::Secret | RegexTarget::Unknown(_) => allowlist.regex_allowed(secret),
+            RegexTarget::Match => allowlist.regex_allowed(full_match),
+            RegexTarget::Line => {
+                line_regex_allowed(allowlist, current_line, index, allowlists.len(), line_cache)
+            }
         };
-        let regex = allowlist.regex_allowed(target);
         let stopword = allowlist.contains_stop_word(secret);
         match allowlist.condition {
             Condition::Or => regex || stopword,
@@ -1050,6 +1285,37 @@ fn finding_allowed(
             Condition::Unknown(_) => false,
         }
     })
+}
+
+fn line_regex_allowed<'a>(
+    allowlist: &'a CompiledAllowlist,
+    line: &'a [u8],
+    index: usize,
+    slots: usize,
+    cache: &mut Vec<Option<LineRegexResult<'a>>>,
+) -> bool {
+    if line.is_empty() || allowlist.regex_matcher.is_none() {
+        return false;
+    }
+    if cache.is_empty() {
+        cache.resize(slots, None);
+    }
+    let slot = &mut cache[index];
+    if let Some(previous) = slot
+        && std::ptr::eq(previous.allowlist, allowlist)
+        && std::ptr::eq(previous.line, line)
+    {
+        return previous.matched;
+    }
+    // Preserve this exact slice as the regex haystack, including its anchors
+    // and invalid-byte normalization. No secret-dependent predicate is cached.
+    let matched = allowlist.regex_allowed(line);
+    *slot = Some(LineRegexResult {
+        allowlist,
+        line,
+        matched,
+    });
+    matched
 }
 
 fn within_proximity(
@@ -1111,6 +1377,22 @@ fn filter_findings_cancellable(
     redact: usize,
     control: ScanControl<'_>,
 ) -> (Vec<Finding>, Option<ScanTermination>) {
+    if control.cancellation.is_none() {
+        return (filter_findings(findings, redact), None);
+    }
+    // Index construction and a whole bucket search can each visit every
+    // finding. A cancellation signal must run before each comparison, not
+    // after the search has completed, so keep this path interleaved.
+    filter_findings_with_cancellation(findings, redact, control, suppresses_generic_finding)
+}
+
+/// Keeps each potentially expensive comparison behind its cancellation poll.
+fn filter_findings_with_cancellation(
+    findings: Vec<Finding>,
+    redact: usize,
+    control: ScanControl<'_>,
+    mut suppresses: impl FnMut(&Finding, &Finding) -> bool,
+) -> (Vec<Finding>, Option<ScanTermination>) {
     let mut include = Vec::with_capacity(findings.len());
     for finding in &findings {
         if control.is_cancelled() {
@@ -1134,12 +1416,7 @@ fn filter_findings_cancellable(
                     Some(ScanTermination::Cancelled),
                 );
             }
-            if finding.location().start_line() == other.location().start_line()
-                && finding.commit() == other.commit()
-                && finding.rule_id() != other.rule_id()
-                && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
-                && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
-            {
+            if suppresses(finding, other) {
                 retained = false;
                 break;
             }
@@ -1147,6 +1424,77 @@ fn filter_findings_cancellable(
         include.push(retained);
     }
     (apply_finding_filter(findings, include, redact), None)
+}
+
+fn suppresses_generic_finding(finding: &Finding, other: &Finding) -> bool {
+    finding.location().start_line() == other.location().start_line()
+        && finding.commit() == other.commit()
+        && finding.rule_id() != other.rule_id()
+        && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+        && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
+}
+
+/// Pair selection for generic-rule suppression over one immutable finding list.
+///
+/// A finding can suppress a generic finding only when it is non-generic, has
+/// the same start line, and has the byte-identical commit. Each bucket holds
+/// exactly the non-generic findings for one such key, in list order, so the
+/// remaining predicate terms see the same candidates in the same order.
+struct GenericSuppression<'a> {
+    findings: &'a [Finding],
+    generic: Vec<bool>,
+    specific_by_line_and_commit: BTreeMap<(usize, &'a [u8]), Vec<usize>>,
+}
+
+impl<'a> GenericSuppression<'a> {
+    fn new(findings: &'a [Finding]) -> Self {
+        let mut generic = Vec::with_capacity(findings.len());
+        // Findings arrive grouped by rule; the flag depends only on the ID bytes.
+        let mut previous = None;
+        for finding in findings {
+            let rule_id = finding.rule_id().as_bytes();
+            let flag = match previous {
+                Some((previous_id, flag)) if previous_id == rule_id => flag,
+                _ => contains_bytes(&go_lowercase_bytes(rule_id), b"generic"),
+            };
+            previous = Some((rule_id, flag));
+            generic.push(flag);
+        }
+        let mut specific_by_line_and_commit = BTreeMap::<_, Vec<usize>>::new();
+        if generic.contains(&true) {
+            for (index, finding) in findings.iter().enumerate() {
+                if !generic[index] {
+                    specific_by_line_and_commit
+                        .entry((finding.location().start_line(), finding.commit().as_bytes()))
+                        .or_default()
+                        .push(index);
+                }
+            }
+        }
+        Self {
+            findings,
+            generic,
+            specific_by_line_and_commit,
+        }
+    }
+
+    fn is_generic(&self, index: usize) -> bool {
+        self.generic[index]
+    }
+
+    /// Returns the lowest list index that suppresses the generic finding.
+    fn first_suppressor(&self, index: usize) -> Option<usize> {
+        let finding = &self.findings[index];
+        self.specific_by_line_and_commit
+            .get(&(finding.location().start_line(), finding.commit().as_bytes()))?
+            .iter()
+            .copied()
+            .find(|&candidate| {
+                let other = &self.findings[candidate];
+                finding.rule_id() != other.rule_id()
+                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+            })
+    }
 }
 
 fn apply_finding_filter(findings: Vec<Finding>, include: Vec<bool>, redact: usize) -> Vec<Finding> {
@@ -1167,22 +1515,10 @@ fn apply_finding_filter(findings: Vec<Finding>, include: Vec<bool>, redact: usiz
 }
 
 fn filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
-    let include = findings
-        .iter()
-        .map(|finding| {
-            if !contains_bytes(
-                &go_lowercase_bytes(finding.rule_id().as_bytes()),
-                b"generic",
-            ) {
-                return true;
-            }
-            !findings.iter().any(|other| {
-                finding.location().start_line() == other.location().start_line()
-                    && finding.commit() == other.commit()
-                    && finding.rule_id() != other.rule_id()
-                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
-                    && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
-            })
+    let suppression = GenericSuppression::new(&findings);
+    let include = (0..findings.len())
+        .map(|index| {
+            !suppression.is_generic(index) || suppression.first_suppressor(index).is_none()
         })
         .collect::<Vec<_>>();
 
@@ -1212,14 +1548,47 @@ impl EngineBuilder {
         let keyword_ids = keywords
             .iter()
             .enumerate()
-            .map(|(index, keyword)| (keyword.clone(), index))
+            .map(|(index, keyword)| (keyword.as_str(), index))
+            .collect::<BTreeMap<_, _>>();
+        let keyword_count = keyword_ids.len();
+        let rule_keyword_indexes = self
+            .config
+            .rules
+            .values()
+            .map(|rule| {
+                rule.keywords
+                    .iter()
+                    .filter_map(|keyword| keyword_ids.get(keyword.as_str()).copied())
+                    .collect()
+            })
             .collect();
+        let rule_literal_anchors = self
+            .config
+            .rules
+            .values()
+            .map(|rule| plan_literal_anchor(rule, &keyword_ids))
+            .collect::<Vec<_>>();
+        let mut recorded_keywords = Vec::new();
+        if rule_literal_anchors.iter().any(Option::is_some) {
+            recorded_keywords = vec![false; keyword_count];
+            for keyword in rule_literal_anchors
+                .iter()
+                .flatten()
+                .flat_map(|plan| plan.keyword_indexes.iter())
+            {
+                recorded_keywords[*keyword] = true;
+            }
+        }
         let prefilter = if keywords.is_empty() {
             None
         } else {
+            let mut builder = AhoCorasickBuilder::new();
+            builder.match_kind(MatchKind::Standard);
+            if keyword_dfa_is_bounded(&keywords) {
+                builder.kind(Some(AhoCorasickKind::DFA));
+            }
             Some(
-                AhoCorasickBuilder::new()
-                    .match_kind(MatchKind::Standard)
+                builder
                     .build(&keywords)
                     .map_err(|error| ScanError::Prefilter {
                         message: error.to_string(),
@@ -1229,9 +1598,56 @@ impl EngineBuilder {
         Ok(Engine {
             config: self.config,
             prefilter,
-            keyword_ids,
+            keyword_count,
+            rule_keyword_indexes,
+            rule_literal_anchors,
+            recorded_keywords,
         })
     }
+}
+
+/// Returns whether a full keyword DFA has bounded size and build work.
+fn keyword_dfa_is_bounded(keywords: &[String]) -> bool {
+    let mut bytes = 0_usize;
+    let mut prefixes = 0_usize;
+    for keyword in keywords {
+        let length = keyword.len();
+        bytes = bytes.saturating_add(length);
+        prefixes = prefixes.saturating_add(length.saturating_mul(length.saturating_add(1)) / 2);
+    }
+    bytes <= KEYWORD_DFA_BYTE_LIMIT && prefixes <= KEYWORD_DFA_PREFIX_LIMIT
+}
+
+/// Selects the longest literal-node candidate covered by the rule's keywords.
+///
+/// Every literal must be a keyword of this rule, so the keyword pass reports
+/// each occurrence the anchored search depends on.
+fn plan_literal_anchor(
+    rule: &CompiledRule,
+    keyword_ids: &BTreeMap<&str, usize>,
+) -> Option<RuleLiteralAnchor> {
+    let shape = rule.regex_matcher.as_ref()?.literal_anchor()?;
+    shape
+        .candidates()
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(candidate, choice)| {
+            let mut keyword_indexes = Vec::with_capacity(choice.literals().len());
+            for literal in choice.literals() {
+                let literal = std::str::from_utf8(literal).ok()?;
+                if !rule.keywords.iter().any(|keyword| keyword == literal) {
+                    return None;
+                }
+                keyword_indexes.push(*keyword_ids.get(literal)?);
+            }
+            keyword_indexes.sort_unstable();
+            keyword_indexes.dedup();
+            Some(RuleLiteralAnchor {
+                candidate,
+                keyword_indexes: keyword_indexes.into_boxed_slice(),
+            })
+        })
 }
 
 /// Result of one stateless fragment scan.
@@ -1340,7 +1756,13 @@ struct SourceLocation {
     end_line_index: usize,
 }
 
-fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> SourceLocation {
+fn upstream_location(
+    newlines: &[usize],
+    raw: &[u8],
+    start: usize,
+    end: usize,
+    tail: &Cell<Option<(usize, usize)>>,
+) -> SourceLocation {
     let fallback;
     let newlines = if newlines.is_empty() {
         fallback = [raw.len()];
@@ -1359,10 +1781,7 @@ fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -
             start_column: start - previous + 1,
             end_column: end - previous,
             start_line_index: 0,
-            end_line_index: raw[end..]
-                .iter()
-                .position(|byte| matches!(byte, b'\n' | b'\r'))
-                .map_or(raw.len(), |distance| end + distance),
+            end_line_index: next_line_break(raw, end, tail),
         };
     }
 
@@ -1391,6 +1810,24 @@ fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -
     location
 }
 
+fn next_line_break(raw: &[u8], from: usize, cache: &Cell<Option<(usize, usize)>>) -> usize {
+    if let Some((searched_from, next_break)) = cache.get()
+        && searched_from <= from
+        && from <= next_break
+    {
+        return next_break;
+    }
+    let next_break = raw[from..]
+        .iter()
+        .position(|byte| matches!(byte, b'\n' | b'\r'))
+        .map_or(raw.len(), |distance| from + distance);
+    // The interval is inclusive: starting at the break must return that break.
+    // Earlier or later queries rescan, so reordered rules and decoded spans
+    // cannot reuse a result from outside the covered original-source suffix.
+    cache.set(Some((from, next_break)));
+    next_break
+}
+
 fn trim_newlines(mut bytes: &[u8]) -> (usize, &[u8]) {
     let mut start = 0;
     while bytes.first() == Some(&b'\n') {
@@ -1412,31 +1849,31 @@ fn extract_secret<'a>(
     regex: &GoRegex,
     matched: &'a [u8],
     secret_group: i64,
+    scratch: &mut Option<CaptureScratch>,
 ) -> Option<ExtractedSecret<'a>> {
-    let Some(captures) = regex.captures(matched) else {
+    let whole_match = || ExtractedSecret {
+        bytes: matched,
+        span: Some(ByteSpan {
+            start: 0,
+            end: matched.len(),
+        }),
+    };
+    // A search reports one span per entry in `capture_names`. With fewer than
+    // two entries, a hit and a miss both produce the whole slice and neither
+    // reads `secret_group`, so the search result cannot be observed.
+    if regex.capture_names().len() < 2 {
+        return Some(whole_match());
+    }
+    let scratch = scratch.get_or_insert_with(|| regex.capture_scratch());
+    let Some(spans) = regex.captures_into(matched, scratch) else {
         // Trimming leading/trailing newlines can make an anchored full-match
         // expression stop matching. Go leaves the already-trimmed secret
         // unchanged when FindStringSubmatch consequently returns nil.
-        return Some(ExtractedSecret {
-            bytes: matched,
-            span: Some(ByteSpan {
-                start: 0,
-                end: matched.len(),
-            }),
-        });
+        return Some(whole_match());
     };
-    if captures.spans().len() < 2 {
-        return Some(ExtractedSecret {
-            bytes: matched,
-            span: Some(ByteSpan {
-                start: 0,
-                end: matched.len(),
-            }),
-        });
-    }
     if secret_group > 0 {
         let index = usize::try_from(secret_group).ok()?;
-        let span = captures.spans().get(index)?;
+        let span = spans.get(index)?;
         return match span {
             Some(span) => Some(ExtractedSecret {
                 bytes: matched.get(span.start..span.end)?,
@@ -1451,8 +1888,7 @@ fn extract_secret<'a>(
             }),
         };
     }
-    let span = captures
-        .spans()
+    let span = spans
         .iter()
         .skip(1)
         .flatten()
@@ -1472,15 +1908,28 @@ fn shannon_entropy(bytes: &[u8]) -> f64 {
     if bytes.is_empty() {
         return 0.0;
     }
+    let inverse_length = 1.0 / usize_to_f64(bytes.len());
+    let add_symbol = |entropy: f64, count: usize| {
+        let frequency = usize_to_f64(count) * inverse_length;
+        entropy - frequency * frequency.log2()
+    };
+    if bytes.is_ascii() {
+        // Each byte is its own symbol. Nonzero counters in index order are the
+        // same counts, in the same ascending symbol order, as the map below.
+        let mut counts = [0_usize; 128];
+        for &byte in bytes {
+            counts[usize::from(byte)] += 1;
+        }
+        return counts
+            .into_iter()
+            .filter(|count| *count != 0)
+            .fold(0.0, add_symbol);
+    }
     let mut counts = BTreeMap::<char, usize>::new();
     for character in go_chars(bytes) {
         *counts.entry(character).or_default() += 1;
     }
-    let inverse_length = 1.0 / usize_to_f64(bytes.len());
-    counts.values().fold(0.0, |entropy, count| {
-        let frequency = usize_to_f64(*count) * inverse_length;
-        entropy - frequency * frequency.log2()
-    })
+    counts.into_values().fold(0.0, add_symbol)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -1523,9 +1972,13 @@ fn path_finding(fragment: &Fragment, rule: &CompiledRule) -> Option<Finding> {
 }
 
 #[cfg(test)]
+mod literal_anchor_tests;
+
+#[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::atomic::AtomicUsize;
 
     use base64::Engine as _;
     use serde_json::Value;
@@ -1537,6 +1990,701 @@ mod tests {
         Engine::builder(ConfigLoader::new().load_toml(config).unwrap())
             .build()
             .unwrap()
+    }
+
+    fn upstream_location(
+        newlines: &[usize],
+        raw: &[u8],
+        start: usize,
+        end: usize,
+    ) -> SourceLocation {
+        super::upstream_location(newlines, raw, start, end, &Cell::new(None))
+    }
+
+    // Frozen capture-first extraction, retained only as differential evidence.
+    // The explicit table below states the expected results independently.
+    fn frozen_extract_secret<'a>(
+        regex: &GoRegex,
+        matched: &'a [u8],
+        secret_group: i64,
+    ) -> Option<ExtractedSecret<'a>> {
+        let Some(captures) = regex.captures(matched) else {
+            return Some(ExtractedSecret {
+                bytes: matched,
+                span: Some(ByteSpan {
+                    start: 0,
+                    end: matched.len(),
+                }),
+            });
+        };
+        if captures.spans().len() < 2 {
+            return Some(ExtractedSecret {
+                bytes: matched,
+                span: Some(ByteSpan {
+                    start: 0,
+                    end: matched.len(),
+                }),
+            });
+        }
+        if secret_group > 0 {
+            let index = usize::try_from(secret_group).ok()?;
+            let span = captures.spans().get(index)?;
+            return match span {
+                Some(span) => Some(ExtractedSecret {
+                    bytes: matched.get(span.start..span.end)?,
+                    span: Some(*span),
+                }),
+                None => Some(ExtractedSecret {
+                    bytes: matched.get(..0)?,
+                    span: None,
+                }),
+            };
+        }
+        let span = captures
+            .spans()
+            .iter()
+            .skip(1)
+            .flatten()
+            .find(|span| span.start != span.end)
+            .copied()
+            .unwrap_or(ByteSpan {
+                start: 0,
+                end: matched.len(),
+            });
+        Some(ExtractedSecret {
+            bytes: matched.get(span.start..span.end)?,
+            span: Some(span),
+        })
+    }
+
+    type ExtractedView<'a> = Option<(&'a [u8], Option<(usize, usize)>)>;
+
+    fn extracted_view(extracted: Option<ExtractedSecret<'_>>) -> ExtractedView<'_> {
+        extracted.map(|secret| (secret.bytes, secret.span.map(|span| (span.start, span.end))))
+    }
+
+    #[test]
+    fn extract_secret_preserves_every_group_and_search_branch() {
+        const WHOLE_ABC: ExtractedView<'static> = Some((b"abc", Some((0, 3))));
+        const INNER_B: ExtractedView<'static> = Some((b"b", Some((1, 2))));
+        let cases: &[(&str, &[u8], i64, ExtractedView<'static>)] = &[
+            // Without a group, a hit and a miss both yield the whole slice and
+            // no secret-group value is consulted.
+            ("abc", b"abc", 0, WHOLE_ABC),
+            ("abc", b"abc", 1, WHOLE_ABC),
+            ("abc", b"abc", 99, WHOLE_ABC),
+            ("abc", b"abc", -1, WHOLE_ABC),
+            ("^zzz$", b"abc", 0, WHOLE_ABC),
+            ("^zzz$", b"abc", 1, WHOLE_ABC),
+            ("(?:a)(?:b)c", b"abc", 1, WHOLE_ABC),
+            (".", b"\xff\xfe", 0, Some((b"\xff\xfe", Some((0, 2))))),
+            ("", b"", 0, Some((b"", Some((0, 0))))),
+            ("^x$", b"", 3, Some((b"", Some((0, 0))))),
+            // A group makes the search and every secret-group branch reachable.
+            ("a(b)c", b"abc", 0, INNER_B),
+            ("a(b)c", b"abc", 1, INNER_B),
+            ("a(b)c", b"abc", -1, INNER_B),
+            ("a(b)c", b"abc", 2, None),
+            // A failed search returns before the secret group is validated.
+            ("^(a)$", b"abc", 0, WHOLE_ABC),
+            ("^(a)$", b"abc", 7, WHOLE_ABC),
+            // Nonparticipating groups are empty without a span.
+            ("a(b)?c", b"ac", 1, Some((b"", None))),
+            ("a(b)?c", b"ac", 0, Some((b"ac", Some((0, 2))))),
+            // Empty participating groups keep their span, and are skipped by
+            // the first-nonempty fallback.
+            ("a()c", b"ac", 1, Some((b"", Some((1, 1))))),
+            ("a()c", b"ac", 0, Some((b"ac", Some((0, 2))))),
+            ("(x?)(y)", b"y", 1, Some((b"", Some((0, 0))))),
+            ("(x?)(y)", b"y", 0, Some((b"y", Some((0, 1))))),
+            ("(x?)(y)", b"y", 2, Some((b"y", Some((0, 1))))),
+            // Offsets are reported in the original source bytes.
+            ("(.)x", b"\xffx", 1, Some((b"\xff", Some((0, 1))))),
+            ("(.)x", b"\xc3\xa9x", 1, Some((b"\xc3\xa9", Some((0, 2))))),
+        ];
+        // A scratch is reused only by repeated searches of one expression.
+        let regexes = cases
+            .iter()
+            .map(|(pattern, ..)| (*pattern, GoRegex::compile(pattern).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        let mut scratches = BTreeMap::<&str, Option<CaptureScratch>>::new();
+        for &(pattern, matched, group_index, expected) in cases.iter().chain(cases.iter().rev()) {
+            let regex = &regexes[pattern];
+            let label = format!("{pattern} on {matched:?}, group {group_index}");
+            assert_eq!(
+                extracted_view(frozen_extract_secret(regex, matched, group_index)),
+                expected,
+                "frozen {label}",
+            );
+            assert_eq!(
+                extracted_view(extract_secret(regex, matched, group_index, &mut None)),
+                expected,
+                "fresh {label}",
+            );
+            let shared = scratches.entry(pattern).or_default();
+            for attempt in ["first", "repeated"] {
+                assert_eq!(
+                    extracted_view(extract_secret(regex, matched, group_index, shared)),
+                    expected,
+                    "{attempt} shared {label}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn groupless_extraction_does_not_allocate_capture_scratch() {
+        let groupless = GoRegex::compile("(?:a)bc").unwrap();
+        let mut scratch = None;
+        assert!(extract_secret(&groupless, b"abc", 1, &mut scratch).is_some());
+        assert!(scratch.is_none());
+        let grouped = GoRegex::compile("a(b)c").unwrap();
+        assert!(extract_secret(&grouped, b"abc", 1, &mut scratch).is_some());
+        assert!(scratch.is_some());
+    }
+
+    #[test]
+    fn candidates_in_one_rule_pass_do_not_share_capture_results() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "(a)|(b)"
+secretGroup = 2
+"#,
+        );
+        let outcome = detector.scan_fragment(&Fragment::new(b"a b a"), &ScanOptions::default());
+        assert!(outcome.is_complete());
+        let observed = outcome
+            .findings()
+            .iter()
+            .map(|finding| {
+                (
+                    finding.match_text().as_bytes(),
+                    finding.secret().as_bytes(),
+                    finding.secret_range(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed,
+            [
+                (b"a".as_slice(), b"".as_slice(), FindingRange::Unavailable),
+                (
+                    b"b".as_slice(),
+                    b"b".as_slice(),
+                    FindingRange::Exact(ByteRange::new(2, 3).unwrap()),
+                ),
+                (b"a".as_slice(), b"".as_slice(), FindingRange::Unavailable),
+            ]
+        );
+    }
+
+    #[test]
+    fn groupless_rules_keep_trimmed_whole_match_secrets_and_ranges() {
+        let detector = engine(
+            r"
+[[rules]]
+id = 'probe'
+regex = '''(?s)\A\nZX9\n\z'''
+",
+        );
+        let outcome = detector.scan_fragment(&Fragment::new(b"\nZX9\n"), &ScanOptions::default());
+        assert!(outcome.is_complete());
+        let [finding] = outcome.findings() else {
+            panic!("expected one finding, got {}", outcome.findings().len());
+        };
+        // The search over the trimmed slice misses; the secret stays trimmed.
+        assert_eq!(finding.secret().as_bytes(), b"ZX9");
+        assert_eq!(
+            finding.secret_range(),
+            FindingRange::Exact(ByteRange::new(1, 4).unwrap())
+        );
+        assert_eq!(
+            finding.match_range(),
+            FindingRange::Exact(ByteRange::new(1, 4).unwrap())
+        );
+    }
+
+    // Frozen per-rule map lookup, retained only as differential evidence.
+    fn frozen_keyword_gate_open(
+        rule: &CompiledRule,
+        keyword_ids: &BTreeMap<String, usize>,
+        matched_keywords: &[bool],
+    ) -> bool {
+        rule.keywords.is_empty()
+            || rule.keywords.iter().any(|keyword| {
+                keyword_ids
+                    .get(keyword)
+                    .is_some_and(|index| matched_keywords[*index])
+            })
+    }
+
+    fn prefilter_keyword_ids(config: &CompiledConfig) -> BTreeMap<String, usize> {
+        config
+            .keywords
+            .iter()
+            .filter(|keyword| !keyword.is_empty())
+            .cloned()
+            .enumerate()
+            .map(|(index, keyword)| (keyword, index))
+            .collect()
+    }
+
+    #[test]
+    fn keyword_indexes_match_the_frozen_lookup_for_every_matched_subset() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "a-two"
+regex = "A"
+keywords = ["Alpha", "beta"]
+[[rules]]
+id = "b-repeated"
+regex = "B"
+keywords = ["beta", "beta"]
+[[rules]]
+id = "c-none"
+regex = "C"
+[[rules]]
+id = "d-empty"
+regex = "D"
+keywords = [""]
+[[rules]]
+id = "e-empty-and-real"
+regex = "E"
+keywords = ["", "gamma"]
+[[rules]]
+id = "f-go-lowercase"
+regex = "F"
+keywords = ["\U0000212Aey", "\U00000130x"]
+"#,
+        );
+        let keyword_ids = prefilter_keyword_ids(&detector.config);
+        assert_eq!(
+            keyword_ids.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["alpha", "beta", "gamma", "ix", "key"]
+        );
+        assert_eq!(detector.keyword_count, keyword_ids.len());
+        assert_eq!(
+            detector.rule_keyword_indexes.len(),
+            detector.config.rules.len()
+        );
+        for mask in 0_u32..(1 << keyword_ids.len()) {
+            let matched = (0..keyword_ids.len())
+                .map(|index| mask & (1 << index) != 0)
+                .collect::<Vec<_>>();
+            for (rule, indexes) in detector
+                .config
+                .rules
+                .values()
+                .zip(&detector.rule_keyword_indexes)
+            {
+                assert_eq!(
+                    keyword_gate_open(rule, indexes, &matched),
+                    frozen_keyword_gate_open(rule, &keyword_ids, &matched),
+                    "rule {}, mask {mask:b}",
+                    rule.id,
+                );
+            }
+        }
+        // Stated independently of both implementations.
+        let rules = &detector.config.rules;
+        let indexes = |id: &str| {
+            let ordinal = rules.keys().position(|rule| rule == id).unwrap();
+            &*detector.rule_keyword_indexes[ordinal]
+        };
+        assert_eq!(indexes("a-two"), [0, 1]);
+        assert_eq!(indexes("b-repeated"), [1, 1]);
+        assert!(indexes("c-none").is_empty());
+        assert!(indexes("d-empty").is_empty());
+        assert_eq!(indexes("e-empty-and-real"), [2]);
+        assert_eq!(indexes("f-go-lowercase"), [4, 3]);
+        let none = [false; 5];
+        assert!(keyword_gate_open(
+            &rules["c-none"],
+            indexes("c-none"),
+            &none
+        ));
+        assert!(!keyword_gate_open(
+            &rules["d-empty"],
+            indexes("d-empty"),
+            &[true; 5]
+        ));
+    }
+
+    #[test]
+    fn default_rule_keyword_indexes_match_the_frozen_lookup() {
+        let detector = Engine::builder(ConfigLoader::new().load_default().unwrap())
+            .build()
+            .unwrap();
+        let keyword_ids = prefilter_keyword_ids(&detector.config);
+        assert_eq!(detector.keyword_count, keyword_ids.len());
+        assert_eq!(
+            detector.rule_keyword_indexes.len(),
+            detector.config.rules.len()
+        );
+        for (rule, indexes) in detector
+            .config
+            .rules
+            .values()
+            .zip(&detector.rule_keyword_indexes)
+        {
+            let expected = rule
+                .keywords
+                .iter()
+                .filter_map(|keyword| keyword_ids.get(keyword).copied())
+                .collect::<Vec<_>>();
+            assert_eq!(&**indexes, expected.as_slice(), "rule {}", rule.id);
+        }
+    }
+
+    fn explained_keyword_events(
+        detector: &Engine,
+        fragment: &Fragment,
+        options: &ScanOptions,
+    ) -> (ScanOutcome, Vec<(Option<usize>, usize, ExplanationReason)>) {
+        let (outcome, log) = detector.scan_fragment_explained(
+            fragment,
+            options,
+            &ScanControl::unlimited(),
+            ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+            false,
+        );
+        assert!(!log.is_truncated());
+        let events = log
+            .events()
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.reason(),
+                    ExplanationReason::RuleSelected
+                        | ExplanationReason::KeywordMatched
+                        | ExplanationReason::KeywordMissed
+                        | ExplanationReason::KeywordNotRequired
+                )
+            })
+            .map(|event| (event.rule_ordinal(), event.decoded_pass(), event.reason()))
+            .collect();
+        (outcome, events)
+    }
+
+    #[test]
+    fn keyword_gate_explanations_and_work_units_are_pinned() {
+        use ExplanationReason::{KeywordMatched, KeywordMissed, KeywordNotRequired, RuleSelected};
+
+        let detector = engine(
+            r#"
+[[rules]]
+id = "a-two"
+regex = "TOK"
+keywords = ["alpha", "beta"]
+[[rules]]
+id = "b-one"
+regex = "TOK"
+keywords = ["beta"]
+[[rules]]
+id = "c-none"
+regex = "TOK"
+[[rules]]
+id = "d-empty"
+regex = "TOK"
+keywords = [""]
+[[rules]]
+id = "e-miss"
+regex = "TOK"
+keywords = ["gamma"]
+"#,
+        );
+        let (outcome, events) = explained_keyword_events(
+            &detector,
+            &Fragment::new(b"beta TOK"),
+            &ScanOptions::default(),
+        );
+        assert!(outcome.is_complete());
+        assert_eq!(
+            events,
+            [
+                (Some(0), 0, RuleSelected),
+                (Some(0), 0, KeywordMatched),
+                (Some(1), 0, RuleSelected),
+                (Some(1), 0, KeywordMatched),
+                (Some(2), 0, RuleSelected),
+                (Some(2), 0, KeywordNotRequired),
+                (Some(3), 0, RuleSelected),
+                (Some(3), 0, KeywordMissed),
+                (Some(4), 0, RuleSelected),
+                (Some(4), 0, KeywordMissed),
+            ]
+        );
+        assert_eq!(
+            outcome
+                .findings()
+                .iter()
+                .map(|finding| finding.rule_id().as_bytes())
+                .collect::<Vec<_>>(),
+            [
+                b"a-two".as_slice(),
+                b"b-one".as_slice(),
+                b"c-none".as_slice()
+            ]
+        );
+        // One pass start, one emitted keyword, three admitted rules, and one
+        // content match for each admitted rule.
+        assert_eq!(outcome.usage().work_units(), 1 + 1 + 3 + 3);
+    }
+
+    #[test]
+    fn keyword_flags_from_one_pass_do_not_admit_a_later_decoded_pass() {
+        use ExplanationReason::{KeywordMatched, KeywordMissed, KeywordNotRequired, RuleSelected};
+
+        // The keyword exists only in the encoded spelling, so it is absent from
+        // the decoded pass where the rule's expression would otherwise match.
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"hello world, hello");
+        assert!(encoded.to_ascii_lowercase().contains("agvsbg8g"));
+        let detector = engine(
+            r#"
+[[rules]]
+id = "control"
+regex = "hello"
+[[rules]]
+id = "encoded-keyword"
+regex = "hello"
+keywords = ["agvsbg8g"]
+"#,
+        );
+        let options = ScanOptions::builder().max_decode_depth(1).build();
+        let (outcome, events) =
+            explained_keyword_events(&detector, &Fragment::new(encoded.as_bytes()), &options);
+        assert!(outcome.is_complete());
+        assert_eq!(
+            events,
+            [
+                (Some(0), 0, RuleSelected),
+                (Some(0), 0, KeywordNotRequired),
+                (Some(1), 0, RuleSelected),
+                (Some(1), 0, KeywordMatched),
+                (Some(0), 1, RuleSelected),
+                (Some(0), 1, KeywordNotRequired),
+                (Some(1), 1, RuleSelected),
+                (Some(1), 1, KeywordMissed),
+            ]
+        );
+        assert_eq!(outcome.findings().len(), 2);
+        for finding in outcome.findings() {
+            assert_eq!(finding.rule_id().as_bytes(), b"control");
+        }
+    }
+
+    // Frozen ordered-map computation, retained only as differential evidence.
+    fn frozen_shannon_entropy(bytes: &[u8]) -> f64 {
+        if bytes.is_empty() {
+            return 0.0;
+        }
+        let mut counts = BTreeMap::<char, usize>::new();
+        for character in go_chars(bytes) {
+            *counts.entry(character).or_default() += 1;
+        }
+        let inverse_length = 1.0 / usize_to_f64(bytes.len());
+        counts.values().fold(0.0, |entropy, count| {
+            let frequency = usize_to_f64(*count) * inverse_length;
+            entropy - frequency * frequency.log2()
+        })
+    }
+
+    /// The defining sum over counts given in ascending symbol order.
+    fn entropy_of_ordered_counts(counts: &[usize], byte_length: usize) -> f64 {
+        let inverse_length = 1.0 / usize_to_f64(byte_length);
+        counts.iter().fold(0.0, |entropy, count| {
+            let frequency = usize_to_f64(*count) * inverse_length;
+            entropy - frequency * frequency.log2()
+        })
+    }
+
+    #[test]
+    fn entropy_values_are_specified_by_exact_bits() {
+        for (input, expected_bits) in [
+            // Empty, and every single-symbol input, has zero entropy.
+            (b"".as_slice(), 0_u64),
+            (b"a".as_slice(), 0),
+            (b"aaaa".as_slice(), 0),
+            (b"\x00".as_slice(), 0),
+            (b"\x7f\x7f".as_slice(), 0),
+            // Equal frequencies with exact powers of two.
+            (b"ab".as_slice(), 1.0_f64.to_bits()),
+            (b"abcd".as_slice(), 2.0_f64.to_bits()),
+            (b"\x00\x7f".as_slice(), 1.0_f64.to_bits()),
+            // Non-ASCII input divides by byte length, not symbol count.
+            ("\u{e9}".as_bytes(), 0.5_f64.to_bits()),
+            // Each invalid byte is one replacement symbol.
+            (b"\xff\xfe".as_slice(), 0),
+            (b"\xffa".as_slice(), 1.0_f64.to_bits()),
+        ] {
+            let actual = shannon_entropy(input);
+            assert_eq!(actual.to_bits(), expected_bits, "{input:?}");
+            assert_eq!(frozen_shannon_entropy(input).to_bits(), expected_bits);
+        }
+        let every_ascii = (0_u8..128).collect::<Vec<_>>();
+        assert_eq!(
+            shannon_entropy(&every_ascii).to_bits(),
+            7.0_f64.to_bits(),
+            "all 128 ASCII symbols with equal frequency",
+        );
+    }
+
+    #[test]
+    fn ascii_entropy_sums_counts_in_ascending_symbol_order() {
+        // The input lists the most frequent symbol first. These counts make
+        // the sum depend on its order, so the expected bits take the counts
+        // in ascending symbol order, independent of how the input is arranged.
+        let counts = [1, 3, 5_usize];
+        let mut input = Vec::new();
+        for (symbol, count) in (b'a'..=b'c').zip(&counts).rev() {
+            input.extend(std::iter::repeat_n(symbol, *count));
+        }
+        let expected = entropy_of_ordered_counts(&counts, input.len());
+        assert_eq!(shannon_entropy(&input).to_bits(), expected.to_bits());
+        assert_eq!(frozen_shannon_entropy(&input).to_bits(), expected.to_bits());
+    }
+
+    #[test]
+    fn entropy_histogram_is_bit_identical_to_the_frozen_map() {
+        let check = |input: &[u8]| {
+            assert_eq!(
+                shannon_entropy(input).to_bits(),
+                frozen_shannon_entropy(input).to_bits(),
+                "{input:?}",
+            );
+        };
+        check(b"");
+        for first in 0_u8..=255 {
+            check(&[first]);
+            for second in 0_u8..=255 {
+                check(&[first, second]);
+            }
+        }
+        for prefix in [b"".as_slice(), "\u{212a}".as_bytes(), "\u{130}".as_bytes()] {
+            for tail in [b"".as_slice(), b"a", b"\xff", b"\xe2\x82"] {
+                let mut input = prefix.to_vec();
+                input.extend_from_slice(tail);
+                check(&input);
+            }
+        }
+        // Deterministic ASCII inputs over several alphabet and length sizes.
+        let mut state = 0x9e37_79b9_u32;
+        for alphabet in [1_u32, 2, 8, 64, 128] {
+            for length in [1_usize, 2, 7, 31, 32, 33, 128, 1024] {
+                for _ in 0..4 {
+                    let input = (0..length)
+                        .map(|_| {
+                            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                            u8::try_from((state >> 8) % alphabet).unwrap()
+                        })
+                        .collect::<Vec<_>>();
+                    check(&input);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn deferred_entropy_keeps_decisions_explanations_and_finding_values() {
+        use ExplanationReason::{
+            AllowlistMatched, AllowlistNotMatched, CandidateAccepted, EntropyAccepted,
+            EntropyNotRequired, EntropyRejected, KeywordNotRequired, PatternMatched, RuleSelected,
+        };
+
+        let detector = engine(
+            r#"
+[[rules]]
+id = "threshold"
+regex = "x(ab)x|y(abc)y"
+entropy = 1.0
+[[rules]]
+id = "zero"
+regex = "abcd"
+[[rules]]
+id = "zero-allowed"
+regex = "abcd"
+[[rules.allowlists]]
+stopwords = ["abcd"]
+"#,
+        );
+        let (outcome, log) = detector.scan_fragment_explained(
+            &Fragment::new(b"xabx yabcy abcd"),
+            &ScanOptions::default(),
+            &ScanControl::unlimited(),
+            ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+            false,
+        );
+        assert!(outcome.is_complete());
+        let reasons = |ordinal: usize| {
+            log.events()
+                .iter()
+                .filter(|event| event.rule_ordinal() == Some(ordinal))
+                .map(|event| event.reason())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            reasons(0),
+            [
+                RuleSelected,
+                KeywordNotRequired,
+                AllowlistNotMatched,
+                PatternMatched,
+                EntropyRejected,
+                PatternMatched,
+                EntropyAccepted,
+                AllowlistNotMatched,
+                CandidateAccepted,
+            ]
+        );
+        assert_eq!(
+            reasons(1),
+            [
+                RuleSelected,
+                KeywordNotRequired,
+                AllowlistNotMatched,
+                PatternMatched,
+                EntropyNotRequired,
+                AllowlistNotMatched,
+                CandidateAccepted,
+            ]
+        );
+        assert_eq!(
+            reasons(2),
+            [
+                RuleSelected,
+                KeywordNotRequired,
+                AllowlistNotMatched,
+                PatternMatched,
+                EntropyNotRequired,
+                AllowlistMatched,
+            ]
+        );
+
+        let findings = outcome
+            .findings()
+            .iter()
+            .map(|finding| {
+                (
+                    finding.rule_id().as_bytes().to_vec(),
+                    finding.secret().as_bytes().to_vec(),
+                    finding.entropy().to_bits(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            findings,
+            [
+                (
+                    b"threshold".to_vec(),
+                    b"abc".to_vec(),
+                    entropy_to_f32(frozen_shannon_entropy(b"abc")).to_bits(),
+                ),
+                (b"zero".to_vec(), b"abcd".to_vec(), 2.0_f32.to_bits()),
+            ]
+        );
     }
 
     #[test]
@@ -1733,6 +2881,335 @@ mod tests {
     }
 
     #[test]
+    fn cached_marker_results_use_exact_original_source_bounds() {
+        let context = OriginalFragmentContext::default();
+        let raw = b"Xrustleaks:allowY\nZgitleaks:allowQ\r\n\xff";
+        for (start, end, expected) in [(1, 16, true), (1, 15, false), (2, 16, false), (0, 0, false)]
+        {
+            assert_eq!(
+                context.has_allow_marker(&raw[start..end], start, end),
+                expected
+            );
+        }
+        for start in (0..=raw.len()).rev() {
+            for end in start..=raw.len() {
+                let line = &raw[start..end];
+                let expected = contains_bytes(line, RUSTLEAKS_ALLOW_SIGNATURE)
+                    || contains_bytes(line, ALLOW_SIGNATURE);
+                assert_eq!(context.has_allow_marker(line, start, end), expected);
+                assert_eq!(context.has_allow_marker(line, start, end), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn tail_search_reuses_only_its_inclusive_covered_interval() {
+        let raw = b"\nAB\rCD\rEF";
+        let cache = Cell::new(None);
+        for (from, expected, interval) in [
+            (1, 3, (1, 3)),
+            (2, 3, (1, 3)),
+            (3, 3, (1, 3)),
+            (4, 6, (4, 6)),
+            (6, 6, (4, 6)),
+            (7, 9, (7, 9)),
+            (9, 9, (7, 9)),
+            (2, 3, (2, 3)),
+            (0, 0, (0, 0)),
+            (5, 6, (5, 6)),
+        ] {
+            assert_eq!(next_line_break(raw, from, &cache), expected);
+            assert_eq!(cache.get(), Some(interval));
+        }
+    }
+
+    #[test]
+    fn cached_locations_match_pinned_loop_for_reordered_crlf_and_empty_spans() {
+        for raw in [b"".as_slice(), b"abc\rdef", b"\nAB\rCD\rEF", b"a\r\nb\nc\r"] {
+            let newlines = raw
+                .iter()
+                .enumerate()
+                .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
+                .collect::<Vec<_>>();
+            let spans = (0..=raw.len())
+                .flat_map(|start| (start..=raw.len()).map(move |end| (start, end)))
+                .collect::<Vec<_>>();
+            let cache = Cell::new(None);
+            for &(start, end) in spans.iter().chain(spans.iter().rev()) {
+                assert_eq!(
+                    super::upstream_location(&newlines, raw, start, end, &cache),
+                    linear_upstream_location(&newlines, raw, start, end),
+                    "raw {raw:?}, span {start}..{end}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn marker_cache_retains_pinned_prefix_and_disabled_option_behavior() {
+        let detector = engine("[[rules]]\nid = 'probe'\nregex = 'ZX9'\n");
+        let disabled = ScanOptions::builder().honor_allow_markers(false).build();
+        for (raw, suppressed_count, offsets) in [
+            (b"ZX9 rustleaks:allow ZX9".as_slice(), 0, vec![0, 20]),
+            (b"rustleaks:allow\nZX9".as_slice(), 0, vec![16]),
+            (b"rustleaks:allow\nZX9\n".as_slice(), 1, vec![16]),
+        ] {
+            let fragment = Fragment::new(raw);
+            let honored = detector.scan_fragment(&fragment, &ScanOptions::default());
+            assert!(honored.is_complete());
+            assert_eq!(honored.findings().len(), suppressed_count);
+            assert_eq!(honored.usage().finding_records(), suppressed_count);
+            assert_eq!(honored.usage().work_units(), offsets.len() + 2);
+            let ignored = detector.scan_fragment(&fragment, &disabled);
+            assert!(ignored.is_complete());
+            assert_eq!(ignored.usage().work_units(), offsets.len() + 2);
+            assert_eq!(ignored.usage().finding_records(), offsets.len());
+            for (finding, start) in ignored.findings().iter().zip(offsets) {
+                assert_eq!(
+                    finding.match_range().exact().unwrap().as_range(),
+                    start..start + 3
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn line_regex_memo_preserves_slice_length_invalid_bytes_and_multiline_anchors() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''^\x{FFFD}x$''', '''(?s)^A\nB\r\n$''']
+"#,
+        );
+        let allowlist = &detector.config.allowlists[0];
+        let malformed = b"\xffxx";
+        let multiline = b"A\nB\r\n";
+        let mut cache = Vec::new();
+        for (line, expected) in [
+            (&malformed[..2], true),
+            (&malformed[..], false),
+            (&multiline[..], true),
+            (&multiline[..4], false),
+            (&malformed[..2], true),
+            (b"\xffx".as_slice(), true),
+        ] {
+            assert_eq!(
+                line_regex_allowed(allowlist, line, 0, 1, &mut cache),
+                expected
+            );
+            assert_eq!(allowlist.regex_allowed(line), expected);
+            assert!(std::ptr::eq(cache[0].unwrap().line, line));
+        }
+        let mut empty = Vec::new();
+        assert!(!line_regex_allowed(allowlist, b"", 0, 1, &mut empty));
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn line_regex_memo_keeps_global_and_rule_predicates_and_conditions_separate() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[rules.allowlists]]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''RULE$''']
+stopwords = ["accepted"]
+commits = ["abc"]
+paths = ['''^ok$''']
+[[allowlists]]
+condition = "OR"
+regexTarget = "line"
+regexes = ['''GLOBAL$''']
+stopwords = ["override"]
+"#,
+        );
+        let global = &detector.config.allowlists;
+        let rule = &detector.config.rules["probe"].allowlists;
+        let good = Fragment::builder(b"").file_path("ok").commit("ABC").build();
+        let bad_path = Fragment::builder(b"")
+            .file_path("other")
+            .commit("ABC")
+            .build();
+        let bad_commit = Fragment::builder(b"")
+            .file_path("ok")
+            .commit("other")
+            .build();
+        let mut memo = LineAllowlistMemo::default();
+        for (fragment, secret, line, expected) in [
+            (
+                &good,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, true),
+            ),
+            (
+                &good,
+                b"other".as_slice(),
+                b"RULE".as_slice(),
+                (false, false),
+            ),
+            (
+                &bad_path,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, false),
+            ),
+            (
+                &bad_commit,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, false),
+            ),
+            (
+                &good,
+                b"override".as_slice(),
+                b"RULE".as_slice(),
+                (true, false),
+            ),
+            (
+                &good,
+                b"other".as_slice(),
+                b"GLOBAL".as_slice(),
+                (true, false),
+            ),
+            (
+                &good,
+                b"other".as_slice(),
+                b"none".as_slice(),
+                (false, false),
+            ),
+            (
+                &good,
+                b"accepted".as_slice(),
+                b"RULE".as_slice(),
+                (false, true),
+            ),
+        ] {
+            let global_result =
+                finding_allowed(fragment, b"ZX9", secret, line, global, &mut memo.global);
+            let rule_result = finding_allowed(fragment, b"ZX9", secret, line, rule, &mut memo.rule);
+            assert_eq!((global_result, rule_result), expected);
+            assert_eq!(
+                global_result,
+                uncached_finding_allowed(fragment, b"ZX9", secret, line, global)
+            );
+            assert_eq!(
+                rule_result,
+                uncached_finding_allowed(fragment, b"ZX9", secret, line, rule)
+            );
+        }
+        assert_eq!(memo.global.len(), 1);
+        assert_eq!(memo.rule.len(), 1);
+        assert!(!std::ptr::eq(
+            memo.global[0].unwrap().allowlist,
+            memo.rule[0].unwrap().allowlist
+        ));
+    }
+
+    #[test]
+    fn non_line_allowlists_do_not_allocate_line_memo_slots() {
+        let detector = engine(
+            r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[allowlists]]
+regexTarget = "match"
+regexes = ['''ZX9''']
+"#,
+        );
+        let mut cache = Vec::new();
+        assert!(finding_allowed(
+            &Fragment::new(b""),
+            b"ZX9",
+            b"ZX9",
+            b"line",
+            &detector.config.allowlists,
+            &mut cache,
+        ));
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn decoded_line_memo_uses_decoded_slices_and_does_not_escape_a_scan() {
+        let config = r#"
+[[rules]]
+id = "probe"
+regex = "ZX9"
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''^ZX9(?: ZX9){3}$''']
+"#;
+        let detector = engine(config);
+        let decoded = b"ZX9 ZX9 ZX9 ZX9";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(decoded);
+        let fragment = Fragment::new(encoded.as_bytes());
+        let options = ScanOptions::builder().max_decode_depth(1).build();
+        let suppressed = detector.scan_fragment(&fragment, &options);
+        assert!(suppressed.is_complete());
+        assert!(suppressed.findings().is_empty());
+        assert_eq!(suppressed.usage().finding_records(), 0);
+        assert_eq!(suppressed.usage().decoded_bytes(), decoded.len());
+        let negative = engine(&config.replace("^ZX9(?: ZX9){3}$", "^ABSENT$"));
+        let visible = negative.scan_fragment(&fragment, &options);
+        assert!(visible.is_complete());
+        assert_eq!(visible.findings().len(), 4);
+        assert_eq!(visible.usage().finding_records(), 4);
+        for finding in visible.findings() {
+            assert_eq!(finding.match_text().as_bytes(), b"ZX9");
+            assert_eq!(finding.secret().as_bytes(), b"ZX9");
+            assert_eq!(finding.match_range(), FindingRange::Unavailable);
+            assert_eq!(finding.secret_range(), FindingRange::Unavailable);
+        }
+        let next = detector.scan_fragment(&Fragment::new(b"ZX9"), &ScanOptions::default());
+        assert!(next.is_complete());
+        assert_eq!(next.findings().len(), 1);
+    }
+
+    // Frozen uncached predicate used only for comparison with the local memo.
+    fn uncached_finding_allowed(
+        fragment: &Fragment,
+        full_match: &[u8],
+        secret: &[u8],
+        current_line: &[u8],
+        allowlists: &[CompiledAllowlist],
+    ) -> bool {
+        allowlists.iter().any(|allowlist| {
+            let target = match allowlist.regex_target {
+                RegexTarget::Secret | RegexTarget::Unknown(_) => secret,
+                RegexTarget::Match => full_match,
+                RegexTarget::Line => current_line,
+            };
+            let regex = allowlist.regex_allowed(target);
+            let stopword = allowlist.contains_stop_word(secret);
+            match allowlist.condition {
+                Condition::Or => regex || stopword,
+                Condition::And => {
+                    let commit = allowlist.commit_allowed(fragment.commit().as_bytes());
+                    let path = allowlist.path_allowed(fragment.file_path().as_bytes())
+                        || (!fragment.windows_file_path().is_empty()
+                            && allowlist.path_allowed(fragment.windows_file_path().as_bytes()));
+                    (!allowlist.commits.is_empty())
+                        .then_some(commit)
+                        .into_iter()
+                        .chain((!allowlist.paths.is_empty()).then_some(path))
+                        .chain((!allowlist.regexes.is_empty()).then_some(regex))
+                        .chain((!allowlist.stop_words.is_empty()).then_some(stopword))
+                        .all(|check| check)
+                }
+                Condition::Unknown(_) => false,
+            }
+        })
+    }
+
+    #[test]
     fn joined_allowlist_flags_and_stopword_match_geometry_match_go() {
         let config = ConfigLoader::new()
             .load_toml(
@@ -1911,6 +3388,307 @@ paths = ['''C:\\secret\.txt$''']
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].rule_id().as_bytes(), b"specific");
         assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
+    }
+
+    // Frozen quadratic filters, retained only as differential evidence. The
+    // explicit cases below state the expected results independently.
+    fn frozen_filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
+        let include = findings
+            .iter()
+            .map(|finding| {
+                if !contains_bytes(
+                    &go_lowercase_bytes(finding.rule_id().as_bytes()),
+                    b"generic",
+                ) {
+                    return true;
+                }
+                !findings.iter().any(|other| {
+                    finding.location().start_line() == other.location().start_line()
+                        && finding.commit() == other.commit()
+                        && finding.rule_id() != other.rule_id()
+                        && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+                        && !contains_bytes(
+                            &go_lowercase_bytes(other.rule_id().as_bytes()),
+                            b"generic",
+                        )
+                })
+            })
+            .collect::<Vec<_>>();
+        apply_finding_filter(findings, include, redact)
+    }
+
+    fn frozen_filter_findings_cancellable(
+        findings: Vec<Finding>,
+        redact: usize,
+        control: ScanControl<'_>,
+    ) -> (Vec<Finding>, Option<ScanTermination>) {
+        let mut include = Vec::with_capacity(findings.len());
+        for finding in &findings {
+            if control.is_cancelled() {
+                return (
+                    apply_finding_filter(findings, include, redact),
+                    Some(ScanTermination::Cancelled),
+                );
+            }
+            if !contains_bytes(
+                &go_lowercase_bytes(finding.rule_id().as_bytes()),
+                b"generic",
+            ) {
+                include.push(true);
+                continue;
+            }
+            let mut retained = true;
+            for other in &findings {
+                if control.is_cancelled() {
+                    return (
+                        apply_finding_filter(findings, include, redact),
+                        Some(ScanTermination::Cancelled),
+                    );
+                }
+                if finding.location().start_line() == other.location().start_line()
+                    && finding.commit() == other.commit()
+                    && finding.rule_id() != other.rule_id()
+                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+                    && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
+                {
+                    retained = false;
+                    break;
+                }
+            }
+            include.push(retained);
+        }
+        (apply_finding_filter(findings, include, redact), None)
+    }
+
+    fn filter_probe(rule_id: &[u8], start_line: usize, commit: &[u8], secret: &[u8]) -> Finding {
+        Finding::builder()
+            .rule_id(rule_id)
+            .location(Location::new(start_line, start_line, 1, 1).unwrap())
+            .commit(commit)
+            .match_text(secret)
+            .secret(secret)
+            .build()
+            .unwrap()
+    }
+
+    fn generic_filter_prototypes() -> Vec<Finding> {
+        vec![
+            filter_probe(b"generic-a", 1, b"c", b"ab"),
+            filter_probe(b"GENERIC-Upper", 1, b"c", b"ab"),
+            // U+0130 lowercases to one ASCII i under Go's simple mapping.
+            filter_probe("gener\u{130}c-dot".as_bytes(), 1, b"c", b"xaby"),
+            // Invalid rule-ID bytes still lowercase around their replacement.
+            filter_probe(b"\xffGeneric", 1, b"c", b""),
+            filter_probe(b"specific-1", 1, b"c", b"xaby"),
+            filter_probe(b"specific-2", 1, b"c", b"ab"),
+            filter_probe(b"specific-line", 2, b"c", b"xaby"),
+            filter_probe(b"specific-commit", 1, b"d", b"xaby"),
+            filter_probe(b"specific-miss", 1, b"c", b"zz"),
+        ]
+    }
+
+    fn assert_generic_filters_match_frozen(findings: &[Finding]) {
+        for redact in [0, 100] {
+            assert_eq!(
+                filter_findings(findings.to_vec(), redact),
+                frozen_filter_findings(findings.to_vec(), redact),
+                "{findings:?}",
+            );
+        }
+        assert_eq!(
+            filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
+            frozen_filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
+            "{findings:?}",
+        );
+        let run = |limit: usize, frozen: bool| {
+            let polls = AtomicUsize::new(0);
+            let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
+            let control = ScanControl::cancellable(&cancel);
+            let outcome = if frozen {
+                frozen_filter_findings_cancellable(findings.to_vec(), 0, control)
+            } else {
+                filter_findings_cancellable(findings.to_vec(), 0, control)
+            };
+            (outcome, polls.load(Ordering::SeqCst))
+        };
+        let (complete, total) = run(usize::MAX, true);
+        assert_eq!(complete.1, None);
+        for limit in (0..=total + 1).chain([usize::MAX]) {
+            assert_eq!(
+                run(limit, false),
+                run(limit, true),
+                "limit {limit}, {findings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn generic_buckets_match_the_frozen_quadratic_filter_exhaustively() {
+        let prototypes = generic_filter_prototypes();
+        assert_generic_filters_match_frozen(&[]);
+        for first in &prototypes {
+            assert_generic_filters_match_frozen(std::slice::from_ref(first));
+            for second in &prototypes {
+                assert_generic_filters_match_frozen(&[first.clone(), second.clone()]);
+                for third in &prototypes {
+                    assert_generic_filters_match_frozen(&[
+                        first.clone(),
+                        second.clone(),
+                        third.clone(),
+                    ]);
+                }
+            }
+        }
+        // Deterministic longer lists exercise bucket order across repeated keys.
+        let mut state = 0x2545_f491_u32;
+        for _ in 0..32 {
+            let list = (0..6)
+                .map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let choice = usize::try_from(state >> 24).unwrap() % prototypes.len();
+                    prototypes[choice].clone()
+                })
+                .collect::<Vec<_>>();
+            assert_generic_filters_match_frozen(&list);
+        }
+    }
+
+    #[test]
+    fn generic_filter_polls_before_each_comparison_and_stops_work_on_cancellation() {
+        let mut findings = vec![
+            filter_probe(b"plain", 1, b"", b"p"),
+            filter_probe(b"generic", 7, b"same", b"absent"),
+        ];
+        findings.extend((0..32).map(|_| filter_probe(b"specific", 7, b"same", b"other")));
+
+        for cancel_at in 0..8 {
+            let polls = AtomicUsize::new(0);
+            let comparisons = AtomicUsize::new(0);
+            let cancel = || {
+                let poll = polls.fetch_add(1, Ordering::SeqCst);
+                // The first two polls enter the plain and generic findings.
+                // Each later poll must precede its comparison, including the
+                // poll that cancels. No bucket may be searched in advance.
+                assert_eq!(comparisons.load(Ordering::SeqCst), poll.saturating_sub(2));
+                poll == cancel_at
+            };
+            let (filtered, termination) = filter_findings_with_cancellation(
+                findings.clone(),
+                100,
+                ScanControl::cancellable(&cancel),
+                |finding, other| {
+                    comparisons.fetch_add(1, Ordering::SeqCst);
+                    suppresses_generic_finding(finding, other)
+                },
+            );
+            assert_eq!(termination, Some(ScanTermination::Cancelled));
+            assert_eq!(polls.load(Ordering::SeqCst), cancel_at + 1);
+            assert_eq!(
+                comparisons.load(Ordering::SeqCst),
+                cancel_at.saturating_sub(2)
+            );
+            if cancel_at == 0 {
+                assert!(filtered.is_empty());
+            } else {
+                assert_eq!(filtered.len(), 1);
+                assert_eq!(filtered[0].rule_id().as_bytes(), b"plain");
+                assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
+            }
+        }
+    }
+
+    #[test]
+    fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
+        // Findings, retained rule IDs, and polls with a counting signal.
+        type Case = (Vec<Finding>, Vec<&'static [u8]>, usize);
+
+        let generic = || filter_probe(b"generic-a", 7, b"same", b"abc");
+        let specific = || filter_probe(b"specific", 7, b"same", b"xxabcxx");
+        let other_line = || filter_probe(b"specific", 8, b"same", b"xxabcxx");
+        let other_commit = || filter_probe(b"specific", 7, b"other", b"xxabcxx");
+        let another_generic = || filter_probe(b"GENERIC-b", 7, b"same", b"xxabcxx");
+        let empty_secret = || filter_probe(b"generic-empty", 7, b"same", b"");
+
+        let ids = |findings: &[Finding]| {
+            findings
+                .iter()
+                .map(|finding| finding.rule_id().as_bytes().to_vec())
+                .collect::<Vec<_>>()
+        };
+        let cases: Vec<Case> = vec![
+            // Suppressor after the generic finding: 1 outer + 2 compared + 1 outer.
+            (vec![generic(), specific()], vec![b"specific".as_slice()], 4),
+            // Suppressor before the generic finding: 1 outer + 1 outer + 1 compared.
+            (vec![specific(), generic()], vec![b"specific".as_slice()], 3),
+            // No suppressor: every finding is compared.
+            (
+                vec![generic(), other_line(), other_commit()],
+                vec![
+                    b"generic-a".as_slice(),
+                    b"specific".as_slice(),
+                    b"specific".as_slice(),
+                ],
+                6,
+            ),
+            // Generic findings do not suppress each other, by either direction.
+            (
+                vec![generic(), another_generic()],
+                vec![b"generic-a".as_slice(), b"GENERIC-b".as_slice()],
+                6,
+            ),
+            // An empty generic secret is contained in every other secret.
+            (
+                vec![empty_secret(), specific()],
+                vec![b"specific".as_slice()],
+                4,
+            ),
+        ];
+        for (findings, retained, expected_polls) in cases {
+            let polls = AtomicUsize::new(0);
+            let count = || {
+                polls.fetch_add(1, Ordering::SeqCst);
+                false
+            };
+            let (filtered, termination) =
+                filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&count));
+            assert_eq!(termination, None);
+            assert_eq!(polls.load(Ordering::SeqCst), expected_polls, "{findings:?}");
+            assert_eq!(ids(&filtered), retained, "{findings:?}");
+            assert_eq!(ids(&filter_findings(findings, 0)), retained);
+        }
+
+        // Polls are numbered from zero: 0 and 1 are the outer checks for the
+        // first two findings, 2 through 4 visit findings 0 through 2 for the
+        // generic comparison, and 5 is the outer check for the last finding.
+        let findings = vec![filter_probe(b"plain", 1, b"", b"p"), generic(), specific()];
+        let plain = vec![b"plain".to_vec()];
+        for (limit, expected) in [
+            (0, Vec::new()),
+            (1, plain.clone()),
+            (2, plain.clone()),
+            (3, plain.clone()),
+            (4, plain.clone()),
+            // The generic finding is finalized as suppressed; the specific one
+            // is not yet finalized, so it is outside the returned prefix.
+            (5, plain.clone()),
+        ] {
+            let polls = AtomicUsize::new(0);
+            let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
+            let (filtered, termination) =
+                filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&cancel));
+            assert_eq!(
+                termination,
+                Some(ScanTermination::Cancelled),
+                "limit {limit}"
+            );
+            assert_eq!(ids(&filtered), expected, "limit {limit}");
+        }
+        let polls = AtomicUsize::new(0);
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 6;
+        let (filtered, termination) =
+            filter_findings_cancellable(findings, 0, ScanControl::cancellable(&cancel));
+        assert_eq!(termination, None);
+        assert_eq!(ids(&filtered), [b"plain".to_vec(), b"specific".to_vec()]);
     }
 
     #[test]

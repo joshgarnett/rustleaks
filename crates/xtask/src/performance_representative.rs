@@ -11,12 +11,50 @@ use super::{
     sha256_bytes, sha256_file, workspace_root,
 };
 
+#[path = "performance_source_scale.rs"]
+mod source_scale;
+
 const SCOPE: &str = "representative-v1-operation-only";
 const CLI: &str = "//crates/rustleaks-cli:rustleaks";
 const ARCHIVES: &str = "//crates/rustleaks-sources:perf_archives_test";
 const MAX_ITERATIONS: u64 = 1_000;
 const MAX_SAMPLES: u64 = 31;
 const PROCESS_DEADLINE_SECONDS: u64 = 600;
+const DECODE_REPORT_WORKLOADS: &[&str] = &[
+    "core-decode-many-base64-depth-1",
+    "core-decode-many-base64-depth-2",
+    "core-decode-long-line-many-findings",
+    "core-decode-long-line-allowlisted",
+    "core-decode-lookalike-4-mib-depth-1",
+    "core-decode-none-4-mib-depth-5",
+    "core-decode-nested-needle-4-mib-depth-5",
+    "core-decode-hex-unicode-256-kib",
+    "session-classify-baseline-10000x10000",
+    "serialize-json-escape-heavy",
+    "serialize-csv-10000",
+    "serialize-junit-10000",
+    "config-compile-extend-default",
+    "config-compile-allowlist-heavy",
+];
+/// The `default-rules` group selector: synthetic default-config scan workloads.
+const DEFAULT_RULE_PREFIXES: &[&str] = &[
+    "core-admission-",
+    "core-prose-",
+    "core-near-miss-",
+    "core-tiny-",
+    "core-all-admitted-",
+    "core-keyword-run-",
+    "core-prefix-storm-",
+    "core-thrash-",
+    "core-multibyte-",
+    "core-groupless-",
+    "core-generic-filter-",
+    "core-minified-findings-",
+    "core-realistic-",
+    "core-custom-config-",
+    "core-long-lived-",
+    "core-contention-",
+];
 
 struct Request {
     workload: Option<String>,
@@ -166,7 +204,9 @@ impl Tools {
         let needs_git = workloads
             .iter()
             .any(|id| id.starts_with("git-") || id == "cli-git");
-        let needs_archives = workloads.iter().any(|id| id == "archives-all-formats");
+        let needs_archives = workloads.iter().any(|id| {
+            id == "archives-all-formats" || id.starts_with("archive-") || id == "git-archive-blobs"
+        });
         Ok(Self {
             cli: needs_cli
                 .then(|| build_executable(root, CLI, "rustleaks"))
@@ -328,6 +368,27 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
         Some(ref id) if id == "fragments" => available
             .into_iter()
             .filter(|id| id.starts_with("core-fragments-"))
+            .collect(),
+        Some(ref id) if id == "edges" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-edge-") || id.starts_with("core-normalization-"))
+            .collect(),
+        Some(ref id) if id == "workers" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-workers-"))
+            .collect(),
+        Some(ref id) if id == "decode-report" => available
+            .into_iter()
+            .filter(|id| DECODE_REPORT_WORKLOADS.contains(&id.as_str()))
+            .collect(),
+        Some(ref id) if id == source_scale::GROUP => source_scale::workloads(&available)?,
+        Some(ref id) if id == "default-rules" => available
+            .into_iter()
+            .filter(|id| {
+                DEFAULT_RULE_PREFIXES
+                    .iter()
+                    .any(|prefix| id.starts_with(prefix))
+            })
             .collect(),
         Some(ref id) if available.contains(id) => vec![id.clone()],
         Some(ref id) => return Err(format!("unknown representative workload {id}")),
@@ -497,6 +558,18 @@ pub(super) fn fragment_budget_check(
 }
 
 pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, String> {
+    if let Some(phases) = source_scale::required_phases(workload) {
+        return Ok(phases);
+    }
+    if workload.starts_with("core-workers-") {
+        return Ok(vec![
+            "config-parse-and-compile",
+            "engine-construction",
+            "engine-clone-setup",
+            "first-scan",
+            "steady-scan",
+        ]);
+    }
     if workload.starts_with("core-") {
         return Ok(vec![
             "config-parse-and-compile",
@@ -514,7 +587,15 @@ pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, Strin
     }
     match workload {
         "session-merge-10000" => Ok(vec!["session-merge"]),
-        "serialize-json-10000" | "serialize-sarif-10000" => Ok(vec!["report-serialization"]),
+        "session-classify-baseline-10000x10000" => Ok(vec!["session-classify"]),
+        "serialize-json-10000"
+        | "serialize-sarif-10000"
+        | "serialize-json-escape-heavy"
+        | "serialize-csv-10000"
+        | "serialize-junit-10000" => Ok(vec!["report-serialization"]),
+        "config-compile-extend-default" | "config-compile-allowlist-heavy" => {
+            Ok(vec!["config-compile"])
+        }
         "git-repeated-blobs" => Ok(vec!["git-history-and-parse", "git-history-and-detection"]),
         "cli-startup" => Ok(vec!["cold-process-version"]),
         "cli-dir" | "cli-stdin" | "cli-git" => Ok(vec!["cold-cli-startup-config-scan-report"]),
@@ -571,6 +652,7 @@ pub(super) fn validate(
         let expected_iterations = if [
             "config-parse-and-compile",
             "engine-construction",
+            "engine-clone-setup",
             "first-scan",
         ]
         .contains(&name)
@@ -761,6 +843,15 @@ mod tests {
     }
 
     #[test]
+    fn decode_report_group_is_unique_and_has_required_phases() {
+        let unique = DECODE_REPORT_WORKLOADS.iter().collect::<BTreeSet<_>>();
+        assert_eq!(unique.len(), DECODE_REPORT_WORKLOADS.len());
+        for workload in DECODE_REPORT_WORKLOADS {
+            assert!(!required_phases(workload).unwrap().is_empty(), "{workload}");
+        }
+    }
+
+    #[test]
     fn representative_bounds_and_dispersion_are_explicit() {
         assert!(Request::parse(&["--samples".into(), "2".into()]).is_err());
         assert!(Request::parse(&["--iterations".into(), "1001".into()]).is_err());
@@ -823,5 +914,21 @@ mod tests {
                 "accepted mutation {pointer}"
             );
         }
+
+        let workload = "core-workers-default-cloned-4";
+        let mut worker_records = records.clone();
+        for record in &mut worker_records {
+            record["workload"] = json!(workload);
+        }
+        let mut cloning = worker_records[1].clone();
+        cloning["phase"]["phase"] = json!("engine-clone-setup");
+        worker_records.insert(2, cloning);
+        worker_records[4]["phase"]["iterations"] = json!(3);
+        validate(&encode(&worker_records), &prepared, workload, 3).unwrap();
+        let mut repeated_setup = worker_records.clone();
+        repeated_setup[2]["phase"]["iterations"] = json!(3);
+        assert!(validate(&encode(&repeated_setup), &prepared, workload, 3).is_err());
+        worker_records.remove(2);
+        assert!(validate(&encode(&worker_records), &prepared, workload, 3).is_err());
     }
 }

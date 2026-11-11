@@ -175,6 +175,7 @@ impl DirectorySource {
     fn walk(
         &self,
         path: &Path,
+        nominal: &mut Vec<u8>,
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
@@ -190,7 +191,7 @@ impl DirectorySource {
         };
 
         if metadata.is_dir() {
-            return self.walk_directory(path, cancellation, emit);
+            return self.walk_directory(path, nominal, cancellation, emit);
         }
 
         // Upstream applies these gates to symlink metadata before resolution.
@@ -274,18 +275,19 @@ impl DirectorySource {
             if let Some(alias) = alias {
                 source = source.with_symlink_path(alias);
             }
-            return source.visit(cancellation, emit);
+            return source.visit_with_buffer(nominal, cancellation, emit);
         }
         let mut source = FileSource::with_options(file, target, self.options.file_options);
         if let Some(alias) = alias {
             source = source.with_symlink_path(alias);
         }
-        source.visit(cancellation, emit)
+        source.visit_with_buffer(nominal, cancellation, emit)
     }
 
     fn walk_directory(
         &self,
         path: &Path,
+        nominal: &mut Vec<u8>,
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
@@ -326,7 +328,7 @@ impl DirectorySource {
         }
         children.sort_by_key(fs::DirEntry::file_name);
         for child in children {
-            let control = self.walk(&child.path(), cancellation, emit)?;
+            let control = self.walk(&child.path(), nominal, cancellation, emit)?;
             if control == SourceControl::Stop {
                 return Ok(control);
             }
@@ -370,12 +372,13 @@ impl Source for DirectorySource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        let mut nominal = Vec::new();
         let Some(logical_root) = &self.options.logical_root else {
-            return self.walk(&self.root, cancellation, emit);
+            return self.walk(&self.root, &mut nominal, cancellation, emit);
         };
         let physical = LogicalPath::from_native(&self.root);
         let logical = LogicalPath::from_native(logical_root);
-        self.walk(&self.root, cancellation, &mut |event| {
+        self.walk(&self.root, &mut nominal, cancellation, &mut |event| {
             emit(translate_event(event, &physical, &logical)?)
         })
     }

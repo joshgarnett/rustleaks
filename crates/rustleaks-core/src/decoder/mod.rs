@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::ops::Range;
 use std::sync::{Arc, OnceLock};
 
 use base64::Engine as _;
@@ -114,12 +115,14 @@ impl Encoding {
         }
     }
 
-    fn decode(self, encoded: &[u8]) -> Vec<u8> {
+    /// Appends the decoded form of `encoded` to `output`, or leaves `output`
+    /// unchanged when `encoded` does not decode to a value.
+    fn append_decoded(self, encoded: &[u8], output: &mut Vec<u8>) {
         match self {
-            Self::Percent => decode_percent(encoded),
-            Self::Unicode => decode_unicode(encoded),
-            Self::Hex => decode_hex(encoded),
-            Self::Base64 => decode_base64(encoded),
+            Self::Percent => append_percent(encoded, output),
+            Self::Unicode => append_unicode(encoded, output),
+            Self::Hex => append_hex(encoded, output),
+            Self::Base64 => append_base64(encoded, output),
         }
     }
 }
@@ -128,6 +131,16 @@ impl Encoding {
 struct EncodingMatch {
     encoding: Encoding,
     range: StartEnd,
+}
+
+/// Offsets of the line bounds that [`current_line`] reports for one segment,
+/// recorded once per decode pass against that pass's output.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct LineBounds {
+    /// Last newline at or before the decoded start, or zero.
+    start: usize,
+    /// First newline at or after the decoded end, or the output length.
+    end: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -139,6 +152,7 @@ pub(crate) struct EncodedSegment {
     decoded_value: Arc<[u8]>,
     encodings: u8,
     depth: usize,
+    line: LineBounds,
 }
 
 impl EncodedSegment {
@@ -180,68 +194,111 @@ impl Decoder {
         }
     }
 
+    /// Decodes one pass, returning the complete output even when nothing
+    /// decoded. Production scans use [`Self::decode_controlled`].
     pub(crate) fn decode(
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
     ) -> (Vec<u8>, Vec<EncodedSegment>) {
-        match self.decode_controlled(data, predecessors, || Ok::<(), Infallible>(())) {
-            Ok(decoded) => decoded,
-            Err(never) => match never {},
+        let (output, segments) =
+            match self.decode_controlled(data, predecessors, |_| Ok::<(), Infallible>(())) {
+                Ok(decoded) => decoded,
+                Err(never) => match never {},
+            };
+        if segments.is_empty() {
+            (data.to_vec(), segments)
+        } else {
+            (output, segments)
         }
     }
 
+    /// Decodes one pass under the caller's checkpoint.
+    ///
+    /// `checkpoint(units)` stands for `units` consecutive unit checkpoints and
+    /// must have their observable effect, stopping at the first that fails.
+    ///
+    /// When no segment decodes the returned buffer is empty and unallocated:
+    /// the caller retains `data` and only reads the buffer once `segments` is
+    /// non-empty.
     pub(crate) fn decode_controlled<E>(
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
-        mut checkpoint: impl FnMut() -> Result<(), E>,
+        mut checkpoint: impl FnMut(usize) -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
-        let segments = self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
+        let (output, mut segments) =
+            self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
         if segments.is_empty() {
-            return Ok((data.to_vec(), segments));
+            return Ok((output, segments));
         }
 
-        let mut result = Vec::with_capacity(data.len());
-        let mut encoded_start = 0;
-        for segment in &segments {
-            checkpoint()?;
-            let Some(encoded) = segment.encoded.as_usize() else {
-                continue;
-            };
-            result.extend_from_slice(&data[encoded_start..encoded.start]);
-            result.extend_from_slice(&segment.decoded_value);
-            encoded_start = encoded.end;
+        // The output was assembled alongside the candidates; these are the
+        // per-segment assembly checkpoints.
+        for _ in &segments {
+            checkpoint(1)?;
         }
-        result.extend_from_slice(&data[encoded_start..]);
-        Ok((result, segments))
+        debug_assert!(segments_are_ordered_and_disjoint(&segments));
+        record_line_bounds(&mut segments, &output);
+        Ok((output, segments))
     }
 
+    /// Decodes every candidate into segments and the pass output.
+    ///
+    /// Decoded values always reach the cache and the segment as `Arc<[u8]>`.
+    /// Before the first accepted segment a miss decodes into `scratch` so a
+    /// pass that decodes nothing never copies `data`. After that a miss
+    /// decodes straight into `output`, since the bytes between candidates are
+    /// needed regardless of whether the candidate is accepted.
     fn find_encoded_segments<E>(
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
-        checkpoint: &mut impl FnMut() -> Result<(), E>,
-    ) -> Result<Vec<EncodedSegment>, E> {
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         if data.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
+        debug_assert!(segments_are_ordered_and_disjoint(predecessors));
 
         let predecessor_depth = predecessors.first().map_or(0, |segment| segment.depth);
         let predecessor_snapshot: Arc<[EncodedSegment]> = Arc::from(predecessors);
         let mut decoded_shift = 0isize;
         let mut segments = Vec::new();
+        let mut output = Vec::new();
+        let mut scratch = Vec::new();
+        // Bytes of `data` already represented in `output`.
+        let mut copied_to = 0;
         for candidate in self.find_encoding_matches(data, checkpoint)? {
-            checkpoint()?;
+            checkpoint(1)?;
             let Some(encoded_range) = candidate.range.as_usize() else {
                 continue;
             };
             let encoded_value = &data[encoded_range.clone()];
-            let decoded_value = self
-                .decoded
-                .entry(encoded_value.to_vec())
-                .or_insert_with(|| Arc::from(candidate.encoding.decode(encoded_value)))
-                .clone();
+            let (decoded_value, decoded_in_output): (Arc<[u8]>, bool) =
+                if let Some(cached) = self.decoded.get(encoded_value) {
+                    (Arc::clone(cached), false)
+                } else {
+                    let in_output = !segments.is_empty();
+                    let value: Arc<[u8]> = if in_output {
+                        output.extend_from_slice(&data[copied_to..encoded_range.start]);
+                        copied_to = encoded_range.start;
+                        let value_start = output.len();
+                        candidate
+                            .encoding
+                            .append_decoded(encoded_value, &mut output);
+                        Arc::from(&output[value_start..])
+                    } else {
+                        scratch.clear();
+                        candidate
+                            .encoding
+                            .append_decoded(encoded_value, &mut scratch);
+                        Arc::from(scratch.as_slice())
+                    };
+                    self.decoded
+                        .insert(encoded_value.to_vec(), Arc::clone(&value));
+                    (value, in_output)
+                };
             if decoded_value.is_empty() {
                 continue;
             }
@@ -250,13 +307,21 @@ impl Decoder {
             let decoded_end = decoded_start + isize::try_from(decoded_value.len()).unwrap();
             let mut encodings = candidate.encoding.bit();
             if !predecessors.is_empty() {
-                for predecessor in predecessors {
-                    checkpoint()?;
-                    if candidate.range.overlaps(predecessor.decoded) {
-                        encodings |= predecessor.encodings;
-                    }
+                // Each visited predecessor is one public work unit.
+                checkpoint(predecessors.len())?;
+                for predecessor in &predecessors[overlapping_indices(predecessors, candidate.range)]
+                {
+                    encodings |= predecessor.encodings;
                 }
             }
+            if !decoded_in_output {
+                if segments.is_empty() {
+                    output.reserve(data.len());
+                }
+                output.extend_from_slice(&data[copied_to..encoded_range.start]);
+                output.extend_from_slice(&decoded_value);
+            }
+            copied_to = encoded_range.end;
             segments.push(EncodedSegment {
                 predecessors: Arc::clone(&predecessor_snapshot),
                 original: to_original(predecessors, candidate.range),
@@ -268,40 +333,51 @@ impl Decoder {
                 decoded_value: Arc::clone(&decoded_value),
                 encodings,
                 depth: predecessor_depth + 1,
+                line: LineBounds::default(),
             });
             decoded_shift += isize::try_from(decoded_value.len()).unwrap()
                 - isize::try_from(encoded_value.len()).unwrap();
         }
-        Ok(segments)
+        if !segments.is_empty() {
+            output.extend_from_slice(&data[copied_to..]);
+        }
+        Ok((output, segments))
+    }
+
+    /// Returns every encoding-regex match in order, one entry per match.
+    fn encoding_candidates<E>(
+        &self,
+        data: &[u8],
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<Vec<EncodingMatch>, E> {
+        let spans = self.encodings.find_all(data);
+        let mut all = Vec::with_capacity(spans.len());
+        for span in spans {
+            checkpoint(1)?;
+            all.push(EncodingMatch {
+                encoding: classify_encoding_span(&data[span.start..span.end]),
+                range: StartEnd {
+                    start: isize::try_from(span.start).unwrap(),
+                    end: isize::try_from(span.end).unwrap(),
+                },
+            });
+        }
+        Ok(all)
     }
 
     fn find_encoding_matches<E>(
         &self,
         data: &[u8],
-        checkpoint: &mut impl FnMut() -> Result<(), E>,
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        let mut all = Vec::new();
-        for captures in self.encodings.captures_all(data) {
-            checkpoint()?;
-            for (index, span) in captures.spans().iter().enumerate().skip(1) {
-                if let Some(span) = span {
-                    all.push(EncodingMatch {
-                        encoding: Encoding::ALL[index - 1],
-                        range: StartEnd {
-                            start: isize::try_from(span.start).unwrap(),
-                            end: isize::try_from(span.end).unwrap(),
-                        },
-                    });
-                }
-            }
-        }
+        let all = self.encoding_candidates(data, checkpoint)?;
         if all.len() <= 1 {
             return Ok(all);
         }
 
         let mut filtered = Vec::with_capacity(all.len());
         for (index, candidate) in all.iter().copied().enumerate() {
-            checkpoint()?;
+            checkpoint(1)?;
             let shadowed_by_previous = index.checked_sub(1).is_some_and(|previous| {
                 let neighbor = all[previous];
                 candidate.range.overlaps(neighbor.range)
@@ -319,20 +395,135 @@ impl Decoder {
     }
 }
 
+/// Names the [`ENCODINGS_PATTERN`] alternative that produced one whole match.
+///
+/// `span` must be the bytes of a match of that pattern. Each alternative is its
+/// own whole capture group, so the capture index equals the first alternative
+/// able to match at the span start:
+///
+/// * `%` starts only the percent alternative. No other alternative can begin
+///   with it.
+/// * `\` starts only the second unicode branch. `(?i)` is scoped to that
+///   branch and only affects `u`/`U` and the hex digits inside it.
+/// * `U` starts the first unicode branch or base64. That branch is tried
+///   first and needs one complete `U+hhhh` group, which ends in Go `\s`
+///   (`[\t\n\f\r ]`) or at end of text. So a unicode match has that whitespace
+///   at offset 6 or has length 6, while base64 has at least 16 bytes from its
+///   class, which excludes whitespace, at offset 6.
+/// * Any other first byte is hex or base64. Hex is tried first and is greedy,
+///   so it matches exactly when the maximal hex-digit run from the span start
+///   has at least 32 bytes, in which case the whole span is that run.
+///
+/// `.` and `$` only decide where a match ends, which is already given by
+/// `span`. An invalid UTF-8 byte can only lie inside a percent span, because
+/// the other alternatives are ASCII-only, and a percent span starts at an
+/// ASCII `%` that normalization maps back to the same source byte.
+fn classify_encoding_span(span: &[u8]) -> Encoding {
+    match span.first() {
+        Some(b'%') => Encoding::Percent,
+        Some(b'\\') => Encoding::Unicode,
+        Some(b'U')
+            if span.len() == 6
+                || matches!(span.get(6), Some(b'\t' | b'\n' | 0x0c | b'\r' | b' ')) =>
+        {
+            Encoding::Unicode
+        }
+        _ if span.len() >= 32 && span.iter().all(u8::is_ascii_hexdigit) => Encoding::Hex,
+        _ => Encoding::Base64,
+    }
+}
+
+/// Returns the segments whose decoded span overlaps `start..=end`.
+///
+/// `segments` comes from one decode pass, or a contiguous run of one, so the
+/// inclusive [`StartEnd::overlaps`] matches form a contiguous range; see
+/// [`segments_are_ordered_and_disjoint`].
 pub(crate) fn segments_with_decoded_overlap(
     segments: &[EncodedSegment],
     start: usize,
     end: usize,
-) -> Vec<EncodedSegment> {
+) -> &[EncodedSegment] {
     let range = StartEnd {
         start: isize::try_from(start).unwrap(),
         end: isize::try_from(end).unwrap(),
     };
+    &segments[overlapping_indices(segments, range)]
+}
+
+/// Whether decoded spans are non-empty, strictly ascending, and disjoint.
+/// Adjacent spans (equal end and start) count as disjoint.
+///
+/// This holds by construction for the segments of one decode pass:
+///
+/// * accepted decoded values are non-empty, so every span is non-empty;
+/// * the regex yields ordered, non-overlapping matches, and shadow filtering
+///   only removes matches, so accepted candidates ascend with `end <= next
+///   start`;
+/// * after accepting a segment, `decoded_shift` is the difference between the
+///   decoded and encoded length of all accepted segments, so that segment's
+///   decoded end is its candidate end plus the shift and the next accepted
+///   segment's decoded start is its candidate start plus that same shift.
+///
+/// Consequently `start` and `end` both strictly ascend across the segments.
+/// Asserted in debug builds where segments are built, not per lookup.
+fn segments_are_ordered_and_disjoint(segments: &[EncodedSegment]) -> bool {
     segments
         .iter()
-        .filter(|segment| segment.decoded.overlaps(range))
-        .cloned()
-        .collect()
+        .all(|segment| segment.decoded.start < segment.decoded.end)
+        && segments
+            .windows(2)
+            .all(|pair| pair[0].decoded.end <= pair[1].decoded.start)
+}
+
+/// Returns the index range of `segments` whose decoded span overlaps `range`
+/// under the inclusive [`StartEnd::overlaps`] test, adjacency included.
+///
+/// Both endpoints ascend across ordered disjoint spans, so `end >= range.start`
+/// holds on a suffix and `start <= range.end` holds on a prefix, and the
+/// overlaps are exactly their intersection.
+fn overlapping_indices(segments: &[EncodedSegment], range: StartEnd) -> Range<usize> {
+    let first = segments.partition_point(|segment| segment.decoded.end < range.start);
+    let past_last = segments.partition_point(|segment| segment.decoded.start <= range.end);
+    first..past_last.max(first)
+}
+
+/// Records, for each segment, the same bounds [`current_line`] would find by
+/// scanning outward from that segment alone.
+///
+/// `segments` must be ordered and disjoint against `output`, so the two
+/// scanned positions only move forward and the sweep inspects no output byte
+/// more than twice.
+fn record_line_bounds(segments: &mut [EncodedSegment], output: &[u8]) {
+    let mut previous_newline = 0;
+    let mut scanned_up_to = 0;
+    let mut next_newline = 0;
+    for segment in segments {
+        let decoded_start = usize::try_from(segment.decoded.start).unwrap();
+        let decoded_end = usize::try_from(segment.decoded.end).unwrap();
+
+        if let Some(found) = output[scanned_up_to..=decoded_start]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+        {
+            previous_newline = scanned_up_to + found;
+        }
+        scanned_up_to = decoded_start + 1;
+
+        // A previous answer remains the first newline at or after a larger
+        // end while it is not behind that end. It starts at zero, which is
+        // behind every non-empty span's end, so the first segment scans.
+        if next_newline < decoded_end {
+            next_newline = output[decoded_end..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(output.len(), |offset| decoded_end + offset);
+        }
+
+        segment.line = LineBounds {
+            start: previous_newline,
+            end: next_newline,
+        };
+    }
 }
 
 pub(crate) fn adjust_match_index(
@@ -356,26 +547,27 @@ pub(crate) fn adjust_match_index(
     ))
 }
 
+/// Returns the line around the merged decoded span of `segments`: from the
+/// last newline at or before its start through the byte before the first
+/// newline at or after its end. `current_raw` must be the decode pass output
+/// that produced `segments`.
 pub(crate) fn current_line<'a>(segments: &[EncodedSegment], current_raw: &'a [u8]) -> &'a [u8] {
     if segments.is_empty() {
         return current_raw;
     }
-    let decoded = segments
-        .iter()
-        .skip(1)
-        .fold(segments[0].decoded, |range, segment| {
-            range.merge(segment.decoded)
-        });
-    let decoded_start = usize::try_from(decoded.start).unwrap();
-    let decoded_end = usize::try_from(decoded.end).unwrap();
-    let start = (0..=decoded_start)
-        .rev()
-        .find(|&index| current_raw[index] == b'\n')
-        .unwrap_or(0);
-    let end = (decoded_end..current_raw.len())
-        .find(|&index| current_raw[index] == b'\n')
-        .unwrap_or(current_raw.len());
-    &current_raw[start..end]
+    // The merged span starts at the smallest decoded start and ends at the
+    // largest decoded end. A segment's recorded bounds depend only on those
+    // positions, so the two extreme segments supply the merged bounds.
+    let (mut earliest, mut latest) = (&segments[0], &segments[0]);
+    for segment in &segments[1..] {
+        if segment.decoded.start < earliest.decoded.start {
+            earliest = segment;
+        }
+        if segment.decoded.end > latest.decoded.end {
+            latest = segment;
+        }
+    }
+    &current_raw[earliest.line.start..latest.line.end]
 }
 
 pub(crate) fn tags(segments: &[EncodedSegment]) -> Vec<String> {
@@ -399,10 +591,10 @@ fn to_original(predecessors: &[EncodedSegment], decoded: StartEnd) -> StartEnd {
         return decoded;
     }
     let mut encoded = StartEnd::default();
-    for predecessor in predecessors {
-        if !predecessor.decoded.overlaps(decoded) {
-            continue;
-        }
+    // Predecessors that do not overlap never affect the mapping, and visiting
+    // the overlapping run in order preserves the first-containing-predecessor
+    // return and the unset-`encoded` handling.
+    for predecessor in &predecessors[overlapping_indices(predecessors, decoded)] {
         if predecessor.decoded.contains(decoded) {
             return predecessor.original;
         }
@@ -421,8 +613,9 @@ fn to_original(predecessors: &[EncodedSegment], decoded: StartEnd) -> StartEnd {
     to_original(&predecessors[0].predecessors, encoded)
 }
 
-fn decode_percent(encoded: &[u8]) -> Vec<u8> {
-    let mut decoded = Vec::with_capacity(encoded.len());
+fn append_percent(encoded: &[u8], output: &mut Vec<u8>) {
+    let value_start = output.len();
+    output.reserve(encoded.len());
     let mut index = 0;
     while index < encoded.len() {
         if encoded[index] == b'%'
@@ -434,67 +627,74 @@ fn decode_percent(encoded: &[u8]) -> Vec<u8> {
         {
             let byte = (high << 4) | low;
             if !is_printable_ascii(byte) {
-                return Vec::new();
+                output.truncate(value_start);
+                return;
             }
-            decoded.push(byte);
+            output.push(byte);
             index += 3;
             continue;
         }
-        decoded.push(encoded[index]);
+        output.push(encoded[index]);
         index += 1;
     }
-    decoded
 }
 
-fn decode_hex(encoded: &[u8]) -> Vec<u8> {
+fn append_hex(encoded: &[u8], output: &mut Vec<u8>) {
     if !encoded.len().is_multiple_of(2) || !encoded.iter().any(u8::is_ascii_digit) {
-        return Vec::new();
+        return;
     }
-    let mut decoded = Vec::with_capacity(encoded.len() / 2);
+    let value_start = output.len();
+    output.reserve(encoded.len() / 2);
     for pair in encoded.chunks_exact(2) {
         let (Some(high), Some(low)) = (hex_nibble(pair[0]), hex_nibble(pair[1])) else {
-            return Vec::new();
+            output.truncate(value_start);
+            return;
         };
         let byte = (high << 4) | low;
         if !is_printable_ascii(byte) {
-            return Vec::new();
+            output.truncate(value_start);
+            return;
         }
-        decoded.push(byte);
+        output.push(byte);
     }
-    decoded
 }
 
-fn decode_base64(encoded: &[u8]) -> Vec<u8> {
+fn append_base64(encoded: &[u8], output: &mut Vec<u8>) {
     if !encoded
         .iter()
         .any(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'))
     {
-        return Vec::new();
+        return;
     }
+    let value_start = output.len();
     for engine in [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64] {
-        if let Ok(decoded) = engine.decode(encoded)
-            && decoded.iter().copied().all(is_printable_ascii)
+        if engine.decode_vec(encoded, output).is_ok()
+            && output[value_start..]
+                .iter()
+                .copied()
+                .all(is_printable_ascii)
         {
-            return decoded;
+            return;
         }
+        // `decode_vec` leaves a conservatively sized, partly written tail on
+        // failure, so every rejected attempt restores the prior length.
+        output.truncate(value_start);
     }
-    Vec::new()
 }
 
-fn decode_unicode(encoded: &[u8]) -> Vec<u8> {
+fn append_unicode(encoded: &[u8], output: &mut Vec<u8>) {
     if encoded.starts_with(b"U+") {
-        return encoded
+        for digits in encoded
             .split(u8::is_ascii_whitespace)
             .filter(|field| !field.is_empty())
             .filter_map(|field| field.strip_prefix(b"U+"))
             .filter(|digits| digits.len() >= 4)
-            .fold(Vec::new(), |mut decoded, digits| {
-                push_unicode_escape(&mut decoded, &digits[..4]);
-                decoded
-            });
+        {
+            push_unicode_escape(output, &digits[..4]);
+        }
+        return;
     }
 
-    let mut decoded = Vec::new();
     let mut index = 0;
     while index < encoded.len() {
         let slash_count = if encoded[index..].starts_with(b"\\\\") {
@@ -515,10 +715,9 @@ fn decode_unicode(encoded: &[u8]) -> Vec<u8> {
         let Some(digits) = encoded.get(digits_start..digits_start + 4) else {
             break;
         };
-        push_unicode_escape(&mut decoded, digits);
+        push_unicode_escape(output, digits);
         index = digits_start + 4;
     }
-    decoded
 }
 
 fn push_unicode_escape(output: &mut Vec<u8>, digits: &[u8]) {
@@ -624,6 +823,28 @@ mod tests {
         range: [usize; 2],
         adjusted: [usize; 2],
         overlap_segment_indices: Vec<usize>,
+    }
+
+    fn decoded_with(append: fn(&[u8], &mut Vec<u8>), encoded: &[u8]) -> Vec<u8> {
+        let mut output = Vec::new();
+        append(encoded, &mut output);
+        output
+    }
+
+    fn decode_percent(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_percent, encoded)
+    }
+
+    fn decode_hex(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_hex, encoded)
+    }
+
+    fn decode_base64(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_base64, encoded)
+    }
+
+    fn decode_unicode(encoded: &[u8]) -> Vec<u8> {
+        decoded_with(append_unicode, encoded)
     }
 
     fn oracle_bytes(encoded: &str) -> Vec<u8> {
@@ -744,6 +965,7 @@ mod tests {
             decoded_value: Arc::from([]),
             encodings: Encoding::Base64.bit(),
             depth: 1,
+            line: LineBounds::default(),
         };
         let first = segment(
             StartEnd { start: 10, end: 20 },
@@ -830,6 +1052,733 @@ mod tests {
         assert!(isolated_segments.is_empty());
         assert_eq!(isolated.decoded.len(), 1);
         assert_eq!(decoder.decoded.len(), 3);
+    }
+
+    /// Replays the pass chain of every decode corpus run with an isolated
+    /// decoder, giving each pass its input, predecessors, output, and segments.
+    fn for_each_corpus_pass(
+        mut visit: impl FnMut(&str, &[u8], &[EncodedSegment], &[u8], &[EncodedSegment]),
+    ) {
+        let corpus = include_str!("../../../../compat/decoder-corpus/outcomes-v1.jsonl");
+        for outcome in corpus
+            .lines()
+            .map(|line| serde_json::from_str::<OracleOutcome>(line).unwrap())
+            .filter(|outcome| outcome.operation == "decode")
+        {
+            for run in outcome.runs {
+                let mut decoder = Decoder::new();
+                let mut current = oracle_bytes(&run.input_base64);
+                let mut predecessors = Vec::new();
+                for _ in &run.passes {
+                    let (output, segments) = decoder.decode(&current, &predecessors);
+                    visit(&outcome.id, &current, &predecessors, &output, &segments);
+                    current = output;
+                    predecessors = segments;
+                }
+            }
+        }
+    }
+
+    /// Synthetic passes for line and overlap checks that the corpus does not
+    /// reach: adjacent segments, newlines at segment edges and inside decoded
+    /// values, and files with no newline at all.
+    const LINE_BOUND_CASES: &[&[u8]] = &[
+        b"QUJDREVGR0hJSktMTU5PUA==QUJDREVGR0hJSktMTU5PUA==",
+        b"one\ntwo QUJDREVGR0hJSktMTU5PUA== three\nfour %0Aabc%0A tail\n",
+        b"x%0Aabc%0Ay",
+        b"QUJDREVGR0hJSktMTU5PUA==\nrest",
+        b"head\nQUJDREVGR0hJSktMTU5PUA==",
+        b"\n\nQUJDREVGR0hJSktMTU5PUA==\n\nQUJDREVGR0hJSktMTU5PUA==\n\n",
+        b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0",
+        b"a%0Ab\nQUJDREVGR0hJSktMTU5PUA==%0A\nc",
+    ];
+
+    fn decoded_probe_positions(segments: &[EncodedSegment]) -> Vec<isize> {
+        let mut positions = vec![-1, 0];
+        for segment in segments.iter().take(32) {
+            for boundary in [segment.decoded.start, segment.decoded.end] {
+                positions.extend([boundary - 1, boundary, boundary + 1]);
+            }
+        }
+        if let Some(last) = segments.last() {
+            positions.extend([last.decoded.end, last.decoded.end + 1, last.decoded.end + 2]);
+        }
+        positions.retain(|position| *position >= 0);
+        positions.sort_unstable();
+        positions.dedup();
+        positions
+    }
+
+    /// The pre-memo scan used directly as the behaviour specification.
+    fn line_by_scanning<'a>(segments: &[EncodedSegment], raw: &'a [u8]) -> &'a [u8] {
+        let decoded = segments
+            .iter()
+            .skip(1)
+            .fold(segments[0].decoded, |range, segment| {
+                range.merge(segment.decoded)
+            });
+        let decoded_start = usize::try_from(decoded.start).unwrap();
+        let decoded_end = usize::try_from(decoded.end).unwrap();
+        let start = (0..=decoded_start)
+            .rev()
+            .find(|&index| raw[index] == b'\n')
+            .unwrap_or(0);
+        let end = (decoded_end..raw.len())
+            .find(|&index| raw[index] == b'\n')
+            .unwrap_or(raw.len());
+        &raw[start..end]
+    }
+
+    fn assert_overlap_lookup_matches_linear_filter(id: &str, segments: &[EncodedSegment]) {
+        let positions = decoded_probe_positions(segments);
+        for (index, &start) in positions.iter().enumerate() {
+            for &end in &positions[index..] {
+                let range = StartEnd { start, end };
+                let linear = segments
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, segment)| segment.decoded.overlaps(range))
+                    .map(|(position, _)| position)
+                    .collect::<Vec<_>>();
+                let found = overlapping_indices(segments, range).collect::<Vec<_>>();
+                assert_eq!(found, linear, "{id} probe {start}..{end}");
+                let via_public = segments_with_decoded_overlap(
+                    segments,
+                    usize::try_from(start).unwrap(),
+                    usize::try_from(end).unwrap(),
+                );
+                assert_eq!(via_public.len(), linear.len(), "{id} probe {start}..{end}");
+            }
+        }
+    }
+
+    fn assert_line_matches_scan(id: &str, segments: &[EncodedSegment], output: &[u8]) {
+        for first in 0..segments.len().min(24) {
+            for last in first..segments.len().min(24) {
+                let run = &segments[first..=last];
+                assert_eq!(
+                    current_line(run, output),
+                    line_by_scanning(run, output),
+                    "{id} segments {first}..={last}"
+                );
+            }
+        }
+    }
+
+    /// The pre-classifier candidate discovery, kept as the differential oracle.
+    fn candidates_from_captures(decoder: &Decoder, data: &[u8]) -> Vec<EncodingMatch> {
+        let mut all = Vec::new();
+        for captures in decoder.encodings.captures_all(data) {
+            let groups = captures.spans()[1..].iter().flatten().count();
+            assert_eq!(groups, 1, "{data:?} produced {groups} groups");
+            for (index, span) in captures.spans().iter().enumerate().skip(1) {
+                if let Some(span) = span {
+                    all.push(EncodingMatch {
+                        encoding: Encoding::ALL[index - 1],
+                        range: StartEnd {
+                            start: isize::try_from(span.start).unwrap(),
+                            end: isize::try_from(span.end).unwrap(),
+                        },
+                    });
+                }
+            }
+        }
+        all
+    }
+
+    fn assert_classifier_matches_captures(decoder: &Decoder, data: &[u8], context: &str) {
+        let classified = decoder
+            .encoding_candidates(data, &mut |_| Ok::<(), Infallible>(()))
+            .unwrap_or_else(|never| match never {});
+        assert_eq!(
+            classified,
+            candidates_from_captures(decoder, data),
+            "{context}: {data:?}"
+        );
+    }
+
+    #[test]
+    fn classified_candidates_match_the_expected_alternatives() {
+        use Encoding::{Base64, Hex, Percent, Unicode};
+
+        type ExpectedSpan = (Encoding, isize, isize);
+
+        const HEX_32: &[u8; 32] = b"0123456789abcdef0123456789ABCDEF";
+        let hex_32_equals = [HEX_32.as_slice(), b"="].concat();
+        let hex_32_z = [HEX_32.as_slice(), b"Z"].concat();
+        let cases: &[(&[u8], &[ExpectedSpan])] = &[
+            // Percent: `.` stops at a newline but consumes invalid bytes as
+            // single runes, with offsets mapped back to the source bytes.
+            (b"%41%42", &[(Percent, 0, 6)]),
+            (b"%41\n%42", &[(Percent, 0, 3), (Percent, 4, 7)]),
+            (b"%41\xff%42", &[(Percent, 0, 7)]),
+            (b"%41\xff", &[(Percent, 0, 3)]),
+            ("é%41".as_bytes(), &[(Percent, 2, 5)]),
+            (b"%4", &[]),
+            // First unicode branch: end of text, Go whitespace only.
+            (b"U+0041", &[(Unicode, 0, 6)]),
+            (b"U+0041 ", &[(Unicode, 0, 7)]),
+            (b"U+0041\n", &[(Unicode, 0, 7)]),
+            (b"U+0041\t", &[(Unicode, 0, 7)]),
+            (b"U+0041 U+0042", &[(Unicode, 0, 13)]),
+            (b"U+0041 U+0042X", &[(Unicode, 0, 7)]),
+            (b"U+0041\x0b", &[]),
+            (b"U+0041\xff", &[]),
+            (b"u+0041", &[]),
+            // A longer run is base64 once the `U+hhhh` group cannot end.
+            (b"U+00412345678901234", &[(Base64, 0, 19)]),
+            // Second unicode branch: `(?i)` covers only `u` and the digits.
+            (b"\\u0041", &[(Unicode, 0, 6)]),
+            (b"\\U0041", &[(Unicode, 0, 6)]),
+            (b"\\\\u0041", &[(Unicode, 0, 7)]),
+            (b"\\\\\\u0041", &[(Unicode, 1, 8)]),
+            (b"\\uABCD\\uabcd", &[(Unicode, 0, 12)]),
+            (b"\\u004", &[]),
+            // Hex precedes base64 at 32 bytes and base64 takes shorter runs.
+            (HEX_32, &[(Hex, 0, 32)]),
+            (b"0123456789abcdef0123456789ABCDE", &[(Base64, 0, 31)]),
+            (b"0123456789abcdef==", &[(Base64, 0, 18)]),
+            (b"deadbeefdeadbeefg", &[(Base64, 0, 17)]),
+            (hex_32_equals.as_slice(), &[(Hex, 0, 32)]),
+            (hex_32_z.as_slice(), &[(Hex, 0, 32)]),
+            // Base64 alphabet, padding, and invalid bytes around it.
+            (b"abcdefghijklmnop", &[(Base64, 0, 16)]),
+            (b"AB/+-_abcdefghijk", &[(Base64, 0, 17)]),
+            (b"QUJDREVGR0hJSktM===", &[(Base64, 0, 18)]),
+            (b"\xffABCDEFGHIJKLMNOP", &[(Base64, 1, 17)]),
+            (b"ABCDEFGHIJKLMNOP\xff", &[(Base64, 0, 16)]),
+            (b"\xef\xbf\xbdABCDEFGHIJKLMNOP", &[(Base64, 3, 19)]),
+            // Each alternative in one haystack.
+            (
+                b"%41 QUJDREVGR0hJSktMTU5PUA== \\u0041 0123456789abcdef0123456789abcdef U+0041",
+                &[
+                    (Percent, 0, 3),
+                    (Base64, 4, 28),
+                    (Unicode, 29, 35),
+                    (Hex, 36, 68),
+                    (Unicode, 69, 75),
+                ],
+            ),
+        ];
+
+        let decoder = Decoder::new();
+        for &(data, expected) in cases {
+            let expected = expected
+                .iter()
+                .map(|&(encoding, start, end)| EncodingMatch {
+                    encoding,
+                    range: StartEnd { start, end },
+                })
+                .collect::<Vec<_>>();
+            let classified = decoder
+                .encoding_candidates(data, &mut |_| Ok::<(), Infallible>(()))
+                .unwrap_or_else(|never| match never {});
+            assert_eq!(classified, expected, "{data:?}");
+            assert_eq!(
+                candidates_from_captures(&decoder, data),
+                expected,
+                "{data:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::items_after_statements,
+        reason = "the token table reads best beside the grid that uses it"
+    )]
+    fn classifier_matches_capture_groups_on_the_corpus_and_token_grid() {
+        let decoder = Decoder::new();
+        for_each_corpus_pass(|id, input, _predecessors, _output, _segments| {
+            assert_classifier_matches_captures(&decoder, input, id);
+        });
+
+        const TOKENS: &[&[u8]] = &[
+            b"%41",
+            b"%4",
+            b"%",
+            b"%zz",
+            b"U+0041",
+            b"U+00",
+            b"u+0041",
+            b"U+",
+            b"\\u0041",
+            b"\\U00ff",
+            b"\\\\u0041",
+            b"\\u00",
+            b"0123456789abcdef",
+            b"ABCDEF0123456789",
+            b"0123456789abcdef0123456789abcdef",
+            b"gGzZ_/+-wxyzQRST",
+            b"=",
+            b"==",
+            b" ",
+            b"\n",
+            b"\t",
+            b"\r",
+            b"\x0b",
+            b"\x0c",
+            b"\xff",
+            b"\xc3",
+            b"\xe2\x82",
+            b"\xc3\xa9",
+            b"\xef\xbf\xbd",
+            b".",
+            b"-",
+        ];
+        let mut haystack = Vec::new();
+        for first in TOKENS {
+            for second in TOKENS {
+                for third in TOKENS {
+                    haystack.clear();
+                    haystack.extend_from_slice(first);
+                    haystack.extend_from_slice(second);
+                    haystack.extend_from_slice(third);
+                    assert_classifier_matches_captures(&decoder, &haystack, "grid");
+                }
+            }
+        }
+
+        // A deterministic generator over the same tokens exercises longer
+        // repetitions, including unicode runs that span many groups.
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: usize| {
+            state = state.wrapping_mul(0x5851_f42d_4c95_7f2d).wrapping_add(1);
+            usize::try_from((state >> 33) % u64::try_from(bound).unwrap()).unwrap()
+        };
+        for _ in 0..4_000 {
+            haystack.clear();
+            for _ in 0..4 + next(9) {
+                haystack.extend_from_slice(TOKENS[next(TOKENS.len())]);
+            }
+            assert_classifier_matches_captures(&decoder, &haystack, "generated");
+        }
+    }
+
+    fn controlled_output(decoder: &mut Decoder, data: &[u8]) -> (Vec<u8>, Vec<EncodedSegment>) {
+        decoder
+            .decode_controlled(data, &[], |_| Ok::<(), Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    /// The pre-merge assembly, kept as the expected output for a segment list.
+    fn output_from_segments(data: &[u8], segments: &[EncodedSegment]) -> Vec<u8> {
+        let mut result = Vec::with_capacity(data.len());
+        let mut encoded_start = 0;
+        for segment in segments {
+            let encoded = segment.encoded.as_usize().unwrap();
+            result.extend_from_slice(&data[encoded_start..encoded.start]);
+            result.extend_from_slice(&segment.decoded_value);
+            encoded_start = encoded.end;
+        }
+        result.extend_from_slice(&data[encoded_start..]);
+        result
+    }
+
+    #[test]
+    fn a_pass_that_decodes_nothing_returns_an_unallocated_buffer() {
+        for data in [
+            b"no candidates here".as_slice(),
+            b"AAAAAAAAAAAAAAAA AAAAAAAAAAAAAAAA",
+            b"",
+        ] {
+            let mut decoder = Decoder::new();
+            let (output, segments) = controlled_output(&mut decoder, data);
+            assert!(segments.is_empty(), "{data:?}");
+            assert_eq!(output.capacity(), 0, "{data:?}");
+
+            let (full, segments) = Decoder::new().decode(data, &[]);
+            assert!(segments.is_empty(), "{data:?}");
+            assert_eq!(full, data, "{data:?}");
+        }
+    }
+
+    #[test]
+    fn output_assembly_keeps_rejected_candidates_and_reuses_cached_values() {
+        // In order: a rejected candidate before the first accepted segment, a
+        // decode miss in the first and second accepted positions, a rejected
+        // candidate between accepted segments, and a cache hit last.
+        let data = b"AAAAAAAAAAAAAAAA AB QUJDREVGR0hJSktMTU5PUA== CD dGhpcy1pcy0xMjM0 EF AAAAAAAAAAAAAAAA GH dGhpcy1pcy0xMjM0";
+        let mut decoder = Decoder::new();
+        let (output, segments) = decoder.decode(data, &[]);
+
+        assert_eq!(
+            output,
+            b"AAAAAAAAAAAAAAAA AB ABCDEFGHIJKLMNOP CD this-is-1234 EF AAAAAAAAAAAAAAAA GH this-is-1234"
+        );
+        assert_eq!(output, output_from_segments(data, &segments));
+        assert_eq!(segments.len(), 3);
+
+        // Hand-computed offsets: the first value decodes 24 bytes into 16.
+        assert_eq!(segments[0].encoded, StartEnd { start: 20, end: 44 });
+        assert_eq!(segments[0].decoded, StartEnd { start: 20, end: 36 });
+        assert_eq!(segments[1].encoded, StartEnd { start: 48, end: 64 });
+        assert_eq!(segments[1].decoded, StartEnd { start: 40, end: 52 });
+        assert_eq!(
+            segments[2].encoded,
+            StartEnd {
+                start: 88,
+                end: 104
+            }
+        );
+        assert_eq!(segments[2].decoded, StartEnd { start: 76, end: 88 });
+        assert_eq!(segments[1].decoded_value(), b"this-is-1234");
+        assert!(Arc::ptr_eq(
+            &segments[1].decoded_value,
+            &segments[2].decoded_value
+        ));
+
+        assert_eq!(
+            rust_cache(&decoder),
+            vec![
+                (b"AAAAAAAAAAAAAAAA".to_vec(), Vec::new()),
+                (
+                    b"QUJDREVGR0hJSktMTU5PUA==".to_vec(),
+                    b"ABCDEFGHIJKLMNOP".to_vec()
+                ),
+                (b"dGhpcy1pcy0xMjM0".to_vec(), b"this-is-1234".to_vec()),
+            ]
+        );
+
+        // The first accepted value still decodes when no candidate preceded it.
+        let (output, segments) = Decoder::new().decode(b"QUJDREVGR0hJSktMTU5PUA== tail", &[]);
+        assert_eq!(output, b"ABCDEFGHIJKLMNOP tail");
+        assert_eq!(segments[0].decoded, StartEnd { start: 0, end: 16 });
+    }
+
+    #[test]
+    fn assembled_output_matches_the_segments_across_the_corpus() {
+        for_each_corpus_pass(|id, input, _predecessors, output, segments| {
+            assert_eq!(output, output_from_segments(input, segments), "{id}");
+        });
+        for case in LINE_BOUND_CASES {
+            let (output, segments) = Decoder::new().decode(case, &[]);
+            assert_eq!(output, output_from_segments(case, &segments), "{case:?}");
+        }
+    }
+
+    #[test]
+    fn rejected_values_leave_the_shared_buffer_unchanged() {
+        let seeded = |append: fn(&[u8], &mut Vec<u8>), encoded: &[u8]| {
+            let mut output = b"seed".to_vec();
+            append(encoded, &mut output);
+            output
+        };
+
+        // Rejections that happen after earlier bytes were already written.
+        assert_eq!(seeded(append_percent, b"%41abc%00"), b"seed");
+        assert_eq!(seeded(append_hex, b"41424344454647484900"), b"seed");
+        // Rejections detected before any byte is written.
+        assert_eq!(
+            seeded(append_hex, b"abcdefabcdefabcdefabcdefabcdefab"),
+            b"seed"
+        );
+        assert_eq!(seeded(append_base64, b"AAAAAAAAAAAAAAAA"), b"seed");
+        // Base64 failures that occur after `decode_vec` has grown the buffer.
+        assert_eq!(seeded(append_base64, b"QUJD1!UJD"), b"seed");
+        assert_eq!(seeded(append_base64, b"gIGCg4SFhoeIiYqLjI2Ojw=="), b"seed");
+        // Accepted values append after the seed.
+        assert_eq!(seeded(append_percent, b"%41"), b"seedA");
+        assert_eq!(seeded(append_hex, b"41"), b"seedA");
+        assert_eq!(
+            seeded(append_base64, b"QUJDREVGR0hJSktMTU5PUA=="),
+            b"seedABCDEFGHIJKLMNOP"
+        );
+        // Unicode escapes keep the prefix they could decode.
+        assert_eq!(seeded(append_unicode, b"\\u0041\\x"), b"seedA");
+    }
+
+    /// The pre-search predecessor mapping, kept as the differential oracle.
+    fn original_by_full_scan(predecessors: &[EncodedSegment], decoded: StartEnd) -> StartEnd {
+        if predecessors.is_empty() {
+            return decoded;
+        }
+        let mut encoded = StartEnd::default();
+        for predecessor in predecessors {
+            if !predecessor.decoded.overlaps(decoded) {
+                continue;
+            }
+            if predecessor.decoded.contains(decoded) {
+                return predecessor.original;
+            }
+            let mapped = predecessor
+                .encoded
+                .add(predecessor.decoded.overflow(decoded));
+            encoded = if encoded.end == 0 {
+                mapped
+            } else {
+                encoded.merge(mapped)
+            };
+        }
+        if encoded.end == 0 {
+            return decoded;
+        }
+        original_by_full_scan(&predecessors[0].predecessors, encoded)
+    }
+
+    #[test]
+    fn checkpoints_charge_each_predecessor_visit_at_the_candidate_position() {
+        let predecessor = |start: isize, end: isize, original_start: isize| EncodedSegment {
+            predecessors: Arc::from([]),
+            original: StartEnd {
+                start: original_start,
+                end: original_start + 20,
+            },
+            encoded: StartEnd { start, end },
+            decoded: StartEnd { start, end },
+            decoded_value: Arc::from([]),
+            encodings: Encoding::Hex.bit(),
+            depth: 1,
+            line: LineBounds::default(),
+        };
+        let predecessors = [
+            predecessor(0, 2, 100),
+            predecessor(30, 32, 200),
+            predecessor(60, 62, 300),
+        ];
+        let data = b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0 AAAAAAAAAAAAAAAA";
+
+        let mut charged = Vec::new();
+        let mut decoder = Decoder::new();
+        let (_output, segments) = decoder
+            .decode_controlled(data, &predecessors, |units| {
+                charged.push(units);
+                Ok::<(), Infallible>(())
+            })
+            .unwrap_or_else(|never| match never {});
+
+        // Three regex matches, three shadow-filter visits, a candidate unit
+        // and a run of three predecessor visits for each accepted candidate,
+        // one candidate unit for the rejected value, and two assembly units.
+        assert_eq!(charged, [1, 1, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1]);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].depth(), 2);
+    }
+
+    #[test]
+    fn a_failed_checkpoint_stops_the_pass_at_its_own_unit() {
+        let predecessor = |start, end| EncodedSegment {
+            predecessors: Arc::from([]),
+            original: StartEnd { start, end },
+            encoded: StartEnd { start, end },
+            decoded: StartEnd { start, end },
+            decoded_value: Arc::from([]),
+            encodings: Encoding::Hex.bit(),
+            depth: 1,
+            line: LineBounds::default(),
+        };
+        let predecessors = [predecessor(0, 2), predecessor(30, 32), predecessor(60, 62)];
+        let data = b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0";
+
+        // Failing the bulk predecessor charge returns the caller's error
+        // without assembling or returning any output.
+        let mut decoder = Decoder::new();
+        let error = decoder
+            .decode_controlled(data, &predecessors, |units| {
+                if units == 3 { Err("stop") } else { Ok(()) }
+            })
+            .unwrap_err();
+        assert_eq!(error, "stop");
+    }
+
+    #[test]
+    fn predecessor_mapping_matches_a_full_scan_on_generated_segments() {
+        fn advance(cursor: &mut isize, by: usize) -> isize {
+            *cursor += isize::try_from(by).unwrap();
+            *cursor
+        }
+
+        let mut state = 0x853c_49e6_748f_ea9b_u64;
+        let mut next = move |bound: usize| {
+            state = state.wrapping_mul(0x5851_f42d_4c95_7f2d).wrapping_add(1);
+            usize::try_from((state >> 33) % u64::try_from(bound).unwrap()).unwrap()
+        };
+        for _ in 0..30_000 {
+            let mut level = |predecessors: &Arc<[EncodedSegment]>| {
+                let mut encoded_cursor = 0isize;
+                let mut decoded_cursor = 0isize;
+                (0..next(14))
+                    .map(|_| {
+                        let encoded_start = advance(&mut encoded_cursor, next(5));
+                        let encoded_end = advance(&mut encoded_cursor, 1 + next(10));
+                        // A zero gap makes the decoded spans adjacent.
+                        let decoded_start = advance(&mut decoded_cursor, next(3));
+                        let decoded_end = advance(&mut decoded_cursor, 1 + next(8));
+                        EncodedSegment {
+                            predecessors: Arc::clone(predecessors),
+                            original: StartEnd {
+                                start: encoded_start + 50,
+                                end: encoded_end + 50,
+                            },
+                            encoded: StartEnd {
+                                start: encoded_start,
+                                end: encoded_end,
+                            },
+                            decoded: StartEnd {
+                                start: decoded_start,
+                                end: decoded_end,
+                            },
+                            decoded_value: Arc::from([]),
+                            encodings: Encoding::Hex.bit(),
+                            depth: 1,
+                            line: LineBounds::default(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let inner: Arc<[EncodedSegment]> = Arc::from(level(&Arc::from([])));
+            let outer = level(&inner);
+            assert!(segments_are_ordered_and_disjoint(&inner));
+            assert!(segments_are_ordered_and_disjoint(&outer));
+
+            let start = isize::try_from(next(60)).unwrap() - 4;
+            let end = start + isize::try_from(next(30)).unwrap();
+            let range = StartEnd { start, end };
+            assert_eq!(
+                to_original(&outer, range),
+                original_by_full_scan(&outer, range),
+                "{outer:?} {range:?}"
+            );
+            let linear = outer
+                .iter()
+                .enumerate()
+                .filter(|(_, segment)| segment.decoded.overlaps(range))
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                overlapping_indices(&outer, range).collect::<Vec<_>>(),
+                linear,
+                "{outer:?} {range:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn decoded_overlap_is_inclusive_at_both_ends_and_keeps_adjacent_segments() {
+        let segment = |start: isize, end: isize| {
+            let span = StartEnd { start, end };
+            EncodedSegment {
+                predecessors: Arc::from([]),
+                original: span,
+                encoded: span,
+                decoded: span,
+                decoded_value: Arc::from([]),
+                encodings: Encoding::Base64.bit(),
+                depth: 1,
+                line: LineBounds::default(),
+            }
+        };
+        let segments = [segment(10, 15), segment(15, 20), segment(30, 40)];
+        let indices = |start, end| {
+            segments_with_decoded_overlap(&segments, start, end)
+                .iter()
+                .map(|selected| {
+                    segments
+                        .iter()
+                        .position(|candidate| candidate == selected)
+                        .unwrap()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // Touching the shared edge overlaps both adjacent segments.
+        assert_eq!(indices(15, 15), [0, 1]);
+        // Inclusive at the low end of the first segment.
+        assert_eq!(indices(0, 10), [0]);
+        assert_eq!(indices(0, 9), [] as [usize; 0]);
+        // Inclusive at the high end, touching the next segment's start.
+        assert_eq!(indices(20, 30), [1, 2]);
+        assert_eq!(indices(21, 29), [] as [usize; 0]);
+        // Inclusive past the last segment's end.
+        assert_eq!(indices(40, 45), [2]);
+        assert_eq!(indices(41, 45), [] as [usize; 0]);
+        assert_eq!(indices(0, 100), [0, 1, 2]);
+    }
+
+    #[test]
+    fn decoded_overlap_lookup_matches_a_linear_filter() {
+        for case in LINE_BOUND_CASES {
+            let mut decoder = Decoder::new();
+            let (_output, segments) = decoder.decode(case, &[]);
+            assert!(!segments.is_empty());
+            assert_overlap_lookup_matches_linear_filter("synthetic", &segments);
+        }
+        for_each_corpus_pass(|id, _input, _predecessors, _output, segments| {
+            assert_overlap_lookup_matches_linear_filter(id, segments);
+        });
+    }
+
+    #[test]
+    fn every_decoded_pass_yields_ordered_disjoint_segments() {
+        for case in LINE_BOUND_CASES {
+            let mut decoder = Decoder::new();
+            let (_output, segments) = decoder.decode(case, &[]);
+            assert!(segments_are_ordered_and_disjoint(&segments));
+        }
+        for_each_corpus_pass(|id, _input, _predecessors, _output, segments| {
+            assert!(segments_are_ordered_and_disjoint(segments), "{id}");
+        });
+    }
+
+    #[test]
+    fn current_line_matches_the_scanned_line_for_every_segment_run() {
+        for case in LINE_BOUND_CASES {
+            let mut decoder = Decoder::new();
+            let (output, segments) = decoder.decode(case, &[]);
+            assert!(!segments.is_empty());
+            assert_line_matches_scan("synthetic", &segments, &output);
+        }
+        for_each_corpus_pass(|id, _input, _predecessors, output, segments| {
+            if !segments.is_empty() {
+                assert_line_matches_scan(id, segments, output);
+            }
+        });
+    }
+
+    #[test]
+    fn current_line_keeps_the_preceding_newline_and_stops_at_the_following_one() {
+        let single = |input: &[u8]| {
+            let (output, segments) = Decoder::new().decode(input, &[]);
+            assert_eq!(segments.len(), 1, "{input:?}");
+            (output, segments)
+        };
+
+        let (output, segments) = single(b"one\ntwo QUJDREVGR0hJSktMTU5PUA== three\nfour");
+        assert_eq!(output, b"one\ntwo ABCDEFGHIJKLMNOP three\nfour");
+        assert_eq!(
+            current_line(&segments, &output),
+            b"\ntwo ABCDEFGHIJKLMNOP three"
+        );
+
+        // No newline before the segment: the line starts at offset zero.
+        let (output, segments) = single(b"QUJDREVGR0hJSktMTU5PUA==\nrest");
+        assert_eq!(current_line(&segments, &output), b"ABCDEFGHIJKLMNOP");
+
+        // No newline after the segment: the line runs to the end of output.
+        let (output, segments) = single(b"head\nQUJDREVGR0hJSktMTU5PUA==");
+        assert_eq!(current_line(&segments, &output), b"\nABCDEFGHIJKLMNOP");
+
+        // A decoded value that starts with a newline starts the line there,
+        // and the following newline is searched from the decoded end onward.
+        let (output, segments) = single(b"x%0Aabc%0Ay");
+        assert_eq!(output, b"x\nabc\ny");
+        assert_eq!(segments[0].decoded, StartEnd { start: 1, end: 6 });
+        assert_eq!(current_line(&segments, &output), b"\nabc\ny");
+    }
+
+    #[test]
+    fn current_line_merges_the_outermost_bounds_of_a_segment_run() {
+        let (output, segments) = Decoder::new().decode(
+            b"aa\nQUJDREVGR0hJSktMTU5PUA==\nbb\nQUJDREVGR0hJSktMTU5PUA==\ncc",
+            &[],
+        );
+        assert_eq!(segments.len(), 2);
+        assert_eq!(current_line(&segments[..1], &output), b"\nABCDEFGHIJKLMNOP");
+        assert_eq!(current_line(&segments[1..], &output), b"\nABCDEFGHIJKLMNOP");
+        assert_eq!(
+            current_line(&segments, &output),
+            b"\nABCDEFGHIJKLMNOP\nbb\nABCDEFGHIJKLMNOP"
+        );
     }
 
     #[test]

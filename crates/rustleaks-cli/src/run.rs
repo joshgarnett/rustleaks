@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -364,9 +365,22 @@ fn commit_union_count(
         return None;
     }
     let mut total = included.len().checked_add(excluded_count)?;
-    for commit in excluded {
-        if included.iter().any(|known| known == commit) {
-            total = total.checked_sub(1)?;
+    if excluded.is_empty() {
+        return Some(total);
+    }
+    let mut index = HashSet::new();
+    if index.try_reserve(included.len()).is_ok() {
+        index.extend(included.iter().map(ByteText::as_bytes));
+        for commit in excluded {
+            if index.contains(commit.as_bytes()) {
+                total = total.checked_sub(1)?;
+            }
+        }
+    } else {
+        for commit in excluded {
+            if included.iter().any(|known| known == commit) {
+                total = total.checked_sub(1)?;
+            }
         }
     }
     Some(total)
@@ -839,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_count_is_an_allocation_free_exact_union() {
+    fn commit_count_is_an_exact_union() {
         let included = [ByteText::from("one"), ByteText::from("two")];
         let excluded = [ByteText::from("two"), ByteText::from("three")];
         assert_eq!(
@@ -848,6 +862,31 @@ mod tests {
         );
         assert_eq!(commit_union_count(&included, &[], 0), Some(2));
         assert_eq!(commit_union_count(&included, &excluded, usize::MAX), None);
+    }
+
+    #[test]
+    fn commit_union_counts_each_excluded_commit_found_in_included() {
+        // Excluded values are unique when they come from `CommitCounter`, but
+        // the arithmetic is specified over the slices exactly as given.
+        let included = [
+            ByteText::from("one"),
+            ByteText::from("two"),
+            ByteText::from("three"),
+        ];
+        let excluded = [
+            ByteText::from("two"),
+            ByteText::from("four"),
+            ByteText::from("two"),
+        ];
+        assert_eq!(
+            commit_union_count(&included, &excluded, excluded.len()),
+            Some(4)
+        );
+        assert_eq!(commit_union_count(&[], &excluded, excluded.len()), Some(3));
+        assert_eq!(
+            commit_union_count(&included, &[ByteText::from("two")], usize::MAX),
+            None
+        );
     }
 
     #[test]

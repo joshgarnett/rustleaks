@@ -448,7 +448,7 @@ fn directory(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     Ok(phases)
 }
 
-fn executable(name: &str) -> Result<PathBuf> {
+pub(super) fn executable(name: &str) -> Result<PathBuf> {
     if let Some(path) = std::env::var_os(name) {
         let path = PathBuf::from(path);
         if !path.is_absolute() || !path.is_file() {
@@ -490,7 +490,7 @@ fn executable(name: &str) -> Result<PathBuf> {
     Err(format!("cannot resolve {name} runfile").into())
 }
 
-fn git_environment(root: &Path) -> Vec<(OsString, OsString)> {
+pub(super) fn git_environment(root: &Path) -> Vec<(OsString, OsString)> {
     let text = |s: &str| OsString::from(s);
     vec![
         (text("GIT_CONFIG_NOSYSTEM"), text("1")),
@@ -522,7 +522,7 @@ fn git_environment(root: &Path) -> Vec<(OsString, OsString)> {
     ]
 }
 
-fn command(executable: &Path, root: &Path) -> Command {
+pub(super) fn command(executable: &Path, root: &Path) -> Command {
     let mut command = Command::new(executable);
     command
         .env_clear()
@@ -536,7 +536,7 @@ fn command(executable: &Path, root: &Path) -> Command {
     command
 }
 
-fn output(mut command: Command, input: Option<&[u8]>) -> Result<Output> {
+pub(super) fn output(mut command: Command, input: Option<&[u8]>) -> Result<Output> {
     command
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -627,9 +627,9 @@ fn setup_git() -> Result<Fixture> {
     })
 }
 
-fn git_source(fixture: &Fixture) -> Result<GitSource> {
-    // The parent representative runner launches this child with env_clear. Reject
-    // accidental direct invocation with Git routing or command injection state.
+/// Rejects Git routing or command injection state in an accidental direct run.
+pub(super) fn reject_ambient_git_state() -> Result<()> {
+    // The parent representative runner launches this child with env_clear.
     for (name, _) in std::env::vars_os() {
         if let Some(name) = name.to_str()
             && name.starts_with("GIT_")
@@ -647,6 +647,11 @@ fn git_source(fixture: &Fixture) -> Result<GitSource> {
             );
         }
     }
+    Ok(())
+}
+
+fn git_source(fixture: &Fixture) -> Result<GitSource> {
+    reject_ambient_git_state()?;
     Ok(GitSource::new(fixture.scratch.0.join("repo"))
         .executable(executable("RUSTLEAKS_PERF_GIT")?.into_os_string())
         .mode(GitMode::LogArguments(

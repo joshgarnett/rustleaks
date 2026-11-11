@@ -746,23 +746,117 @@ fn cancelled(cancellation: &dyn Cancellation) -> Result<(), SnappyFailure> {
     }
 }
 
-fn masked_crc32c(input: &[u8]) -> u32 {
-    let mut crc = u32::MAX;
-    for byte in input {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let polynomial = 0x82f6_3b78 & 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ polynomial;
+const CRC32C_POLYNOMIAL: u32 = 0x82f6_3b78;
+
+/// Slice-by-8 tables for reflected CRC-32C. `CRC32C_TABLES[k][i]` is the CRC
+/// remainder of byte `i` followed by `k` zero bytes.
+static CRC32C_TABLES: [[u32; 256]; 8] = crc32c_tables();
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "table indices are below 256"
+)]
+const fn crc32c_tables() -> [[u32; 256]; 8] {
+    let mut tables = [[0; 256]; 8];
+    let mut index = 0;
+    while index < 256 {
+        let mut value = index as u32;
+        let mut bit = 0;
+        while bit < 8 {
+            value = (value >> 1) ^ (CRC32C_POLYNOMIAL & 0_u32.wrapping_sub(value & 1));
+            bit += 1;
         }
+        tables[0][index] = value;
+        index += 1;
     }
-    let crc = !crc;
-    crc.rotate_right(15).wrapping_add(0xa282_ead8)
+    let mut table = 1;
+    while table < 8 {
+        let mut index = 0;
+        while index < 256 {
+            let previous = tables[table - 1][index];
+            tables[table][index] = (previous >> 8) ^ tables[0][(previous & 0xff) as usize];
+            index += 1;
+        }
+        table += 1;
+    }
+    tables
+}
+
+fn crc32c(input: &[u8]) -> u32 {
+    let mut crc = u32::MAX;
+    let mut chunks = input.chunks_exact(8);
+    for chunk in &mut chunks {
+        let head =
+            (u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) ^ crc).to_le_bytes();
+        crc = CRC32C_TABLES[7][usize::from(head[0])]
+            ^ CRC32C_TABLES[6][usize::from(head[1])]
+            ^ CRC32C_TABLES[5][usize::from(head[2])]
+            ^ CRC32C_TABLES[4][usize::from(head[3])]
+            ^ CRC32C_TABLES[3][usize::from(chunk[4])]
+            ^ CRC32C_TABLES[2][usize::from(chunk[5])]
+            ^ CRC32C_TABLES[1][usize::from(chunk[6])]
+            ^ CRC32C_TABLES[0][usize::from(chunk[7])];
+    }
+    for &byte in chunks.remainder() {
+        let index = usize::from(crc.to_le_bytes()[0] ^ byte);
+        crc = (crc >> 8) ^ CRC32C_TABLES[0][index];
+    }
+    !crc
+}
+
+fn masked_crc32c(input: &[u8]) -> u32 {
+    crc32c(input).rotate_right(15).wrapping_add(0xa282_ead8)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::CancellationToken;
+
+    fn bitwise_crc32c(input: &[u8]) -> u32 {
+        let mut crc = u32::MAX;
+        for byte in input {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                let polynomial = CRC32C_POLYNOMIAL & 0_u32.wrapping_sub(crc & 1);
+                crc = (crc >> 1) ^ polynomial;
+            }
+        }
+        !crc
+    }
+
+    fn deterministic_bytes(len: usize) -> Vec<u8> {
+        let mut state = 0x1234_5678_u32;
+        let mut bytes = Vec::with_capacity(len);
+        for _ in 0..len {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            bytes.push(state.to_be_bytes()[0]);
+        }
+        bytes
+    }
+
+    #[test]
+    fn crc32c_matches_published_check_values() {
+        assert_eq!(crc32c(b""), 0);
+        assert_eq!(crc32c(b"123456789"), 0xe306_9283);
+        // RFC 3720 appendix B.4 vectors.
+        assert_eq!(crc32c(&[0; 32]), 0x8a91_36aa);
+        assert_eq!(crc32c(&[0xff; 32]), 0x62a8_ab43);
+    }
+
+    #[test]
+    fn table_crc32c_matches_the_retained_bitwise_crc32c() {
+        for len in (0..=257).chain([1024, 4095, 4096, 4097, 65_536]) {
+            let bytes = deterministic_bytes(len);
+            assert_eq!(crc32c(&bytes), bitwise_crc32c(&bytes), "len {len}");
+        }
+    }
+
+    #[test]
+    fn masked_crc32c_applies_the_framing_rotation_and_offset() {
+        // CRC-32C 0xe3069283 rotated right by 15, plus 0xa282ead8.
+        assert_eq!(masked_crc32c(b"123456789"), 0xc78a_b0e5);
+    }
 
     fn chunk_length(length: usize) -> [u8; 3] {
         [

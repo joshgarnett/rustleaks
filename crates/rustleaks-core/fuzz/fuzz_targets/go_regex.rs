@@ -35,7 +35,13 @@ fuzz_target!(|data: &[u8]| {
     black_box(compiled.capture_count());
     black_box(compiled.capture_names());
     black_box(compiled.is_match(haystack));
-    black_box(compiled.find_all(haystack));
+    let whole_matches = compiled.find_all(haystack);
+    // Literal-anchored enumeration must agree span for span whenever a shape
+    // applies. Any divergence is a correctness bug, not an interesting input.
+    for anchored in compiled.literal_anchored_candidates(haystack) {
+        assert_eq!(anchored, whole_matches);
+    }
+    black_box(whole_matches);
     black_box(compiled.captures(haystack));
     black_box(compiled.captures_all(haystack));
 });

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rustleaks_core::config::CompiledConfig;
+use rustleaks_rar_codec::crc32::crc32;
 
 use crate::{
     CallbackError, Cancellation, FileOptions, FileSource, LogicalPath, Source, SourceConfigError,
@@ -222,6 +223,18 @@ impl Source for ArchiveSource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        self.visit_with_buffer(&mut Vec::new(), cancellation, emit)
+    }
+}
+
+impl ArchiveSource {
+    /// Visits the input, sharing `nominal` across every scanned member.
+    pub(crate) fn visit_with_buffer(
+        &mut self,
+        nominal: &mut Vec<u8>,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
@@ -238,6 +251,7 @@ impl Source for ArchiveSource {
                 &self.logical_path,
                 self.symlink_path.as_ref(),
                 self.file_options,
+                nominal,
                 cancellation,
                 emit,
             );
@@ -271,6 +285,7 @@ impl Source for ArchiveSource {
             symlink_path: self.symlink_path.as_ref(),
             file_options: self.file_options,
             options: &self.options,
+            nominal,
             entries: 0,
             expanded: 0,
         };
@@ -283,6 +298,7 @@ struct ArchiveState<'a> {
     symlink_path: Option<&'a PathBuf>,
     file_options: FileOptions,
     options: &'a ArchiveOptions,
+    nominal: &'a mut Vec<u8>,
     entries: usize,
     expanded: usize,
 }
@@ -307,6 +323,7 @@ impl ArchiveState<'_> {
                 logical,
                 self.symlink_path,
                 self.file_options,
+                self.nominal,
                 cancellation,
                 emit,
             );
@@ -348,6 +365,7 @@ impl ArchiveState<'_> {
                     logical,
                     self.symlink_path,
                     self.file_options,
+                    self.nominal,
                     cancellation,
                     emit,
                 )
@@ -403,6 +421,7 @@ impl ArchiveState<'_> {
             &logical,
             self.symlink_path,
             self.file_options,
+            self.nominal,
             cancellation,
             emit,
         )
@@ -1414,7 +1433,7 @@ fn decode_zstd(
     limit: usize,
     cancellation: &dyn Cancellation,
 ) -> Result<Vec<u8>, DecodeFailure> {
-    let mut history = allocate_zeroed(limit)?;
+    let mut history = allocate_zeroed(zstd_history_len(input, limit))?;
     let mut block = allocate_zeroed(zstd_zero::MAX_BLOCK_SIZE)?;
     let mut literals = allocate_zeroed(zstd_zero::MAX_BLOCK_SIZE)?;
     let mut fse = allocate_zeroed(zstd_zero::FSE_ENTRIES)?;
@@ -1439,6 +1458,81 @@ fn decode_zstd(
     decoder.push(input, &mut append).map_err(zstd_failure)?;
     decoder.finish_with(&mut append).map_err(zstd_failure)?;
     Ok(output)
+}
+
+/// Returns the decoder history length for `input` under a positive `limit`.
+///
+/// The decoder rejects a frame whose window exceeds its history and reports
+/// both lengths, so the full limit stays in place unless the whole stream can
+/// be walked and every window fits. Past that check the history length is not
+/// observable: a match offset is bounded by the frame window, each block
+/// produces at most one window of output, and output is released per block.
+fn zstd_history_len(input: &[u8], limit: usize) -> usize {
+    match zstd_maximum_window(input) {
+        Some(window) if window <= limit => window.max(1),
+        _ => limit,
+    }
+}
+
+/// Follows the decoder's frame and block walk without decoding payloads.
+///
+/// Returns the largest declared window, or `None` unless the walk ends exactly
+/// at the end of `input` after at least one Zstandard frame.
+fn zstd_maximum_window(input: &[u8]) -> Option<usize> {
+    let mut position = 0_usize;
+    let mut maximum = None;
+    while position < input.len() {
+        let zstd_zero::HeaderStatus::Complete { header, size } =
+            zstd_zero::inspect_frame(&input[position..]).ok()?
+        else {
+            return None;
+        };
+        position = position.checked_add(size)?;
+        match header {
+            zstd_zero::StreamHeader::Skippable { size, .. } => {
+                position = position.checked_add(usize::try_from(size).ok()?)?;
+            }
+            zstd_zero::StreamHeader::Zstandard(frame) => {
+                let window = usize::try_from(frame.window_size).ok()?;
+                maximum = maximum.max(Some(window));
+                position = zstd_skip_blocks(input, position)?;
+                if frame.has_checksum {
+                    position = position.checked_add(4)?;
+                }
+            }
+        }
+        if position > input.len() {
+            return None;
+        }
+    }
+    maximum
+}
+
+fn zstd_skip_blocks(input: &[u8], mut position: usize) -> Option<usize> {
+    const RAW: u8 = 0;
+    const RLE: u8 = 1;
+    const COMPRESSED: u8 = 2;
+
+    loop {
+        let header = input.get(position..position.checked_add(3)?)?;
+        let last = header[0] & 1 != 0;
+        let kind = (header[0] >> 1) & 3;
+        let size = usize::from(header[0] >> 3)
+            | usize::from(header[1]) << 5
+            | usize::from(header[2]) << 13;
+        let payload = match kind {
+            RAW | COMPRESSED => size,
+            RLE => 1,
+            _ => return None,
+        };
+        position = position.checked_add(3)?.checked_add(payload)?;
+        if position > input.len() {
+            return None;
+        }
+        if last {
+            return Some(position);
+        }
+    }
 }
 
 fn allocate_zeroed<T: Clone + Default>(size: usize) -> Result<Vec<T>, DecodeFailure> {
@@ -1475,18 +1569,6 @@ fn extend_bounded(output: &mut Vec<u8>, input: &[u8], limit: usize) -> Result<()
         .map_err(|_| DecodeFailure::Limit)?;
     output.extend_from_slice(input);
     Ok(())
-}
-
-fn crc32(input: &[u8]) -> u32 {
-    let mut crc = u32::MAX;
-    for byte in input {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let polynomial = 0xedb8_8320 & 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ polynomial;
-        }
-    }
-    !crc
 }
 
 enum DecodeFailure {
@@ -1541,12 +1623,14 @@ impl DecodeFailure {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plain_source(
     reader: Box<dyn Read + Send>,
     physical: &Path,
     logical: &LogicalPath,
     symlink: Option<&PathBuf>,
     options: FileOptions,
+    nominal: &mut Vec<u8>,
     cancellation: &dyn Cancellation,
     emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
 ) -> Result<SourceControl, SourceError> {
@@ -1555,7 +1639,7 @@ fn plain_source(
     if let Some(symlink) = symlink {
         source = source.with_symlink_path(symlink.clone());
     }
-    source.visit(cancellation, emit)
+    source.visit_with_buffer(nominal, cancellation, emit)
 }
 
 enum ReadBoundedError {
@@ -1960,5 +2044,307 @@ mod tests {
     fn owned_crc32_matches_the_ieee_check_value() {
         assert_eq!(crc32(b""), 0);
         assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+    }
+
+    fn zstd_outcome(result: Result<Vec<u8>, DecodeFailure>) -> Result<Vec<u8>, String> {
+        result.map_err(|failure| match failure {
+            DecodeFailure::Cancelled => "cancelled".to_owned(),
+            DecodeFailure::Limit => "limit".to_owned(),
+            DecodeFailure::Decode(message) => format!("decode: {message}"),
+        })
+    }
+
+    /// The full-limit history decoder that `zstd_history_len` must stay
+    /// indistinguishable from.
+    fn reference_zstd(
+        input: &[u8],
+        limit: usize,
+        cancellation: &dyn Cancellation,
+    ) -> Result<Vec<u8>, DecodeFailure> {
+        let mut history = allocate_zeroed(limit)?;
+        let mut block = allocate_zeroed(zstd_zero::MAX_BLOCK_SIZE)?;
+        let mut literals = allocate_zeroed(zstd_zero::MAX_BLOCK_SIZE)?;
+        let mut fse = allocate_zeroed(zstd_zero::FSE_ENTRIES)?;
+        let mut huffman = allocate_zeroed(zstd_zero::HUFFMAN_ENTRIES)?;
+        let mut fse_scratch = allocate_zeroed(zstd_zero::FSE_SCRATCH_LEN)?;
+        let mut decoder = zstd_zero::Decoder::new(zstd_zero::DecoderBuffers {
+            history: &mut history,
+            block: &mut block,
+            literals: &mut literals,
+            fse: &mut fse,
+            huffman: &mut huffman,
+            fse_scratch: &mut fse_scratch,
+        })
+        .map_err(|error| DecodeFailure::Decode(error.to_string()))?;
+        let mut output = Vec::new();
+        let mut append = |bytes: &[u8]| -> Result<(), DecodeFailure> {
+            if cancellation.is_cancelled() {
+                return Err(DecodeFailure::Cancelled);
+            }
+            extend_bounded(&mut output, bytes, limit)
+        };
+        decoder.push(input, &mut append).map_err(zstd_failure)?;
+        decoder.finish_with(&mut append).map_err(zstd_failure)?;
+        Ok(output)
+    }
+
+    const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
+    const ZSTD_RAW: u32 = 0;
+    const ZSTD_RLE: u32 = 1;
+    const ZSTD_RESERVED: u32 = 3;
+
+    fn zstd_block(last: bool, kind: u32, size: usize, payload: &[u8]) -> Vec<u8> {
+        let header = u32::from(last) | (kind << 1) | (u32::try_from(size).unwrap() << 3);
+        let mut block = header.to_le_bytes()[..3].to_vec();
+        block.extend_from_slice(payload);
+        block
+    }
+
+    fn zstd_raw(last: bool, payload: &[u8]) -> Vec<u8> {
+        zstd_block(last, ZSTD_RAW, payload.len(), payload)
+    }
+
+    /// A frame with a `Window_Descriptor`; the window is `1024 << exponent`.
+    fn zstd_windowed(exponent: u8, blocks: &[Vec<u8>]) -> Vec<u8> {
+        let mut frame = ZSTD_MAGIC.to_vec();
+        frame.push(0);
+        frame.push(exponent << 3);
+        frame.extend(blocks.iter().flatten());
+        frame
+    }
+
+    /// A frame whose window equals its one-byte declared content size.
+    fn zstd_single_segment(content_size: u8, blocks: &[Vec<u8>]) -> Vec<u8> {
+        let mut frame = ZSTD_MAGIC.to_vec();
+        frame.push(0x20);
+        frame.push(content_size);
+        frame.extend(blocks.iter().flatten());
+        frame
+    }
+
+    fn zstd_skippable(payload: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0x50, 0x2a, 0x4d, 0x18];
+        frame.extend_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    fn assert_zstd_matches(
+        name: &str,
+        input: &[u8],
+        limit: usize,
+        expected: &Result<Vec<u8>, String>,
+    ) {
+        let cancellation = crate::CancellationToken::new();
+        let actual = zstd_outcome(decode_zstd(input, limit, &cancellation));
+        let reference = zstd_outcome(reference_zstd(input, limit, &cancellation));
+        assert_eq!(&actual, expected, "{name}");
+        assert_eq!(actual, reference, "{name}: differs from full-limit history");
+    }
+
+    type ZstdCase<'a> = (&'a str, &'a [u8], usize, Result<Vec<u8>, String>);
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one table of crafted frames and expected outcomes"
+    )]
+    fn zstd_history_shrink_is_indistinguishable_from_full_limit_history() {
+        let ab = [vec![b'a'; 600], vec![b'b'; 400]].concat();
+        let one_block = zstd_windowed(0, &[zstd_raw(true, &ab)]);
+
+        // Output past the window wraps the ring without changing the bytes.
+        let block = |fill| vec![fill; 1000];
+        let wrapping = zstd_windowed(
+            0,
+            &[
+                zstd_raw(false, &block(1)),
+                zstd_raw(false, &block(2)),
+                zstd_raw(true, &block(3)),
+            ],
+        );
+        let wrapped_output = [block(1), block(2), block(3)].concat();
+
+        let two_frames = [
+            zstd_windowed(0, &[zstd_raw(true, b"first")]),
+            zstd_windowed(1, &[zstd_raw(true, b"second")]),
+        ]
+        .concat();
+        let skippable_around = [
+            zstd_skippable(b"ignored"),
+            zstd_windowed(0, &[zstd_raw(true, b"body")]),
+            zstd_skippable(b""),
+        ]
+        .concat();
+        let rle = zstd_windowed(0, &[zstd_block(true, ZSTD_RLE, 700, b"z")]);
+        let empty_window = zstd_single_segment(0, &[zstd_raw(true, b"")]);
+
+        let mut truncated = wrapping.clone();
+        truncated.pop();
+        let mut trailing_garbage = one_block.clone();
+        trailing_garbage.extend_from_slice(b"garbage!");
+        let oversized_block = zstd_windowed(0, &[zstd_raw(true, &[7; 1025])]);
+        let reserved_block = zstd_windowed(0, &[zstd_block(true, ZSTD_RESERVED, 0, b"")]);
+
+        let cases: Vec<ZstdCase<'_>> = vec![
+            (
+                "one block, ample limit",
+                &one_block,
+                1 << 20,
+                Ok(ab.clone()),
+            ),
+            ("window equals limit", &one_block, 1024, Ok(ab.clone())),
+            (
+                "window one above limit",
+                &one_block,
+                1023,
+                Err("decode: history buffer is too small: need 1024 bytes, have 1023".to_owned()),
+            ),
+            (
+                "ring wraps within ample limit",
+                &wrapping,
+                1 << 20,
+                Ok(wrapped_output.clone()),
+            ),
+            ("output equals limit", &wrapping, 3000, Ok(wrapped_output)),
+            (
+                "output one above limit",
+                &wrapping,
+                2999,
+                Err("limit".to_owned()),
+            ),
+            (
+                "largest window of two frames",
+                &two_frames,
+                1 << 20,
+                Ok(b"firstsecond".to_vec()),
+            ),
+            (
+                "later frame window above limit",
+                &two_frames,
+                1500,
+                Err("decode: history buffer is too small: need 2048 bytes, have 1500".to_owned()),
+            ),
+            (
+                "skippable frames",
+                &skippable_around,
+                1 << 20,
+                Ok(b"body".to_vec()),
+            ),
+            ("run-length block", &rle, 1 << 20, Ok(vec![b'z'; 700])),
+            ("zero window", &empty_window, 1, Ok(Vec::new())),
+            (
+                "truncated stream",
+                &truncated,
+                1 << 20,
+                Err("decode: unexpected end of zstd stream".to_owned()),
+            ),
+            (
+                "trailing garbage",
+                &trailing_garbage,
+                1 << 20,
+                Err("decode: invalid zstd frame magic".to_owned()),
+            ),
+            (
+                "block larger than window",
+                &oversized_block,
+                1 << 20,
+                Err("decode: invalid zstd block".to_owned()),
+            ),
+            (
+                "reserved block type",
+                &reserved_block,
+                1 << 20,
+                Err("decode: invalid zstd block".to_owned()),
+            ),
+            (
+                "empty input",
+                b"",
+                1 << 20,
+                Err("decode: unexpected end of zstd stream".to_owned()),
+            ),
+        ];
+        for (name, input, limit, expected) in &cases {
+            assert_zstd_matches(name, input, *limit, expected);
+        }
+    }
+
+    #[test]
+    fn zstd_history_len_follows_declared_windows_and_keeps_the_limit_otherwise() {
+        let body = zstd_raw(true, b"x");
+        let window_1k = zstd_windowed(0, std::slice::from_ref(&body));
+        let window_2k = zstd_windowed(1, std::slice::from_ref(&body));
+        let both = [window_1k.clone(), window_2k.clone()].concat();
+
+        assert_eq!(zstd_history_len(&window_1k, 1 << 20), 1024);
+        assert_eq!(zstd_history_len(&both, 1 << 20), 2048);
+        assert_eq!(zstd_history_len(&window_1k, 1024), 1024);
+        // A window above the limit keeps the limit for the decoder's report.
+        assert_eq!(zstd_history_len(&window_2k, 2047), 2047);
+        assert_eq!(zstd_history_len(&both, 1500), 1500);
+        // Zero-length windows still need a nonempty ring.
+        let empty = zstd_single_segment(0, &[zstd_raw(true, b"")]);
+        assert_eq!(zstd_history_len(&empty, 1 << 20), 1);
+
+        // Anything but a complete walk keeps the limit.
+        let mut truncated = window_1k.clone();
+        truncated.pop();
+        let mut garbage = window_1k.clone();
+        garbage.push(0xff);
+        let only_skippable = zstd_skippable(b"ignored");
+        let reserved = zstd_windowed(0, &[zstd_block(true, ZSTD_RESERVED, 0, b"")]);
+        for input in [&truncated, &garbage, &only_skippable, &reserved] {
+            assert_eq!(zstd_history_len(input, 1 << 20), 1 << 20);
+        }
+        assert_eq!(zstd_history_len(b"", 1 << 20), 1 << 20);
+    }
+
+    #[test]
+    fn zstd_compressed_fixture_decodes_identically_with_a_smaller_history() {
+        let input = include_bytes!(concat!(
+            "../../../compat/fixtures/upstream/testdata/archives",
+            "/files/main.go.zst"
+        ));
+        let limit = 64 * 1024 * 1024;
+        let history = zstd_history_len(input, limit);
+        assert!(
+            history < limit,
+            "the fixture must exercise a smaller history"
+        );
+
+        let cancellation = crate::CancellationToken::new();
+        let actual = zstd_outcome(decode_zstd(input, limit, &cancellation));
+        let reference = zstd_outcome(reference_zstd(input, limit, &cancellation));
+        assert!(actual.as_ref().is_ok_and(|bytes| !bytes.is_empty()));
+        assert_eq!(actual, reference);
+    }
+
+    fn bitwise_crc32(input: &[u8]) -> u32 {
+        let mut crc = u32::MAX;
+        for byte in input {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                let polynomial = 0xedb8_8320 & 0_u32.wrapping_sub(crc & 1);
+                crc = (crc >> 1) ^ polynomial;
+            }
+        }
+        !crc
+    }
+
+    #[test]
+    fn table_crc32_matches_the_retained_bitwise_crc32() {
+        let mut state = 0x1234_5678_u32;
+        let mut bytes = Vec::new();
+        for len in (0..=257).chain([1024, 4095, 4096, 4097, 65_536]) {
+            while bytes.len() < len {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                bytes.push(state.to_be_bytes()[0]);
+            }
+            assert_eq!(
+                crc32(&bytes[..len]),
+                bitwise_crc32(&bytes[..len]),
+                "len {len}"
+            );
+        }
     }
 }

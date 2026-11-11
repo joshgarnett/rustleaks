@@ -66,18 +66,18 @@ pub const WORKLOADS: &[&str] = &[
     "core-fragments-invalid-12-mib-by-16-kib",
 ];
 
-struct Fixture {
-    fragments: Vec<Fragment>,
-    input: Vec<u8>,
-    work_per_fragment: usize,
-    keyword_occurrences_per_fragment: usize,
-    admitted_rules: usize,
+pub(super) struct Fixture {
+    pub(super) fragments: Vec<Fragment>,
+    pub(super) input: Vec<u8>,
+    pub(super) work_per_fragment: usize,
+    pub(super) keyword_occurrences_per_fragment: usize,
+    pub(super) admitted_rules: usize,
     expected: Finding,
 }
 
 impl Fixture {
     #[allow(clippy::too_many_lines, clippy::naive_bytecount)]
-    fn new(id: &str, config: &CompiledConfig) -> Result<Self, Box<dyn Error>> {
+    pub(super) fn new(id: &str, config: &CompiledConfig) -> Result<Self, Box<dyn Error>> {
         if !WORKLOADS.contains(&id) {
             return Err("unknown fragment workload".into());
         }
@@ -193,7 +193,7 @@ impl Fixture {
         })
     }
 
-    fn validate(&self, outcome: &ScanOutcome) -> Result<(), Box<dyn Error>> {
+    pub(super) fn validate(&self, outcome: &ScanOutcome) -> Result<(), Box<dyn Error>> {
         if !outcome.is_complete()
             || outcome.termination().is_some()
             || outcome.findings() != std::slice::from_ref(&self.expected)

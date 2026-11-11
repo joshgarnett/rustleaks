@@ -87,7 +87,7 @@ The VCS record resolves the previously missing exact commit for
 
 The local fork replaces decoder `unwrap`, `unreachable!`, and consumption
 assertions on hostile input with structured errors. It replaces `crc32fast`
-with the safe table-free non-reflected CRC in
+with the safe table-driven non-reflected CRC in
 [`crc.rs`](../crates/rustleaks-bzip2/src/crc.rs). It validates block CRCs and
 the combined stream CRC in
 [`block/mod.rs`](../crates/rustleaks-bzip2/src/block/mod.rs). The combined CRC

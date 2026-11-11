@@ -12,17 +12,21 @@
 
 #[cfg(test)]
 mod differential;
+mod literal_anchor;
 
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Write as _};
+use std::sync::Arc;
 
 use regex_automata::{
     Input, MatchKind,
     meta::Regex,
     nfa::thompson::{self, WhichCaptures},
-    util::syntax,
+    util::{captures::Captures, syntax},
 };
+
+pub(crate) use literal_anchor::LiteralAnchorShape;
 
 /// Maximum accepted source-pattern length.
 const PATTERN_SIZE_LIMIT: usize = 1 << 20;
@@ -36,6 +40,12 @@ const HYBRID_CACHE_CAPACITY: usize = 2 << 20;
 const ONEPASS_SIZE_LIMIT: usize = 1 << 20;
 /// Conservative per-state words for sparse sets and epsilon-closure frames.
 const PIKEVM_STATE_WORDS: usize = 10;
+/// Charge for one anchored search before any scanned byte, in byte equivalents.
+///
+/// The cache checkout and start-state lookup of a search are charged as if
+/// they scanned this many bytes. Every attempt costs at least this much, so a
+/// keyword occurring more than once per this many bytes never pays off.
+pub(crate) const ATTEMPT_COST_FLOOR: usize = 64;
 /// Parser nesting bound. Go's syntax parser separately caps repetition at 1000.
 const NEST_LIMIT: u32 = 4_096;
 const GO_CAPTURE_NEST_LIMIT: usize = 999;
@@ -207,6 +217,16 @@ impl CaptureSpans {
     }
 }
 
+/// Reusable storage for repeated capture searches with one [`GoRegex`].
+///
+/// A scratch value is valid only for the expression that created it. Every
+/// search resets the whole-match state and rewrites every reported span, so
+/// reuse cannot expose a group from an earlier haystack.
+pub(crate) struct CaptureScratch {
+    captures: Captures,
+    spans: Vec<Option<ByteSpan>>,
+}
+
 /// A fallible Go-regexp-compatible compiler error.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum GoRegexError {
@@ -270,6 +290,7 @@ pub(crate) struct GoRegex {
     source: Box<str>,
     backend: Regex,
     capture_names: Vec<Option<Box<str>>>,
+    literal_anchor: Option<Arc<LiteralAnchorShape>>,
 }
 
 impl PartialEq for GoRegex {
@@ -301,7 +322,7 @@ impl GoRegex {
         }
 
         let translated = Translator::new(source).translate()?;
-        let backend = if translated
+        let (backend, literal_anchor) = if translated
             .pattern
             .bytes()
             .filter(|byte| *byte == b'(')
@@ -328,10 +349,11 @@ impl GoRegex {
             source: source.into(),
             backend,
             capture_names: translated.capture_names,
+            literal_anchor: literal_anchor.map(Arc::new),
         })
     }
 
-    fn build_backend(pattern: &str) -> Result<Regex, GoRegexError> {
+    fn build_backend(pattern: &str) -> Result<(Regex, Option<LiteralAnchorShape>), GoRegexError> {
         let hir = syntax::parse_with(
             pattern,
             &syntax::Config::new()
@@ -365,7 +387,9 @@ impl GoRegex {
             });
         }
         drop(nfa);
-        Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)
+        let backend = Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)?;
+        // Analysis runs only after every acceptance decision has been made.
+        Ok((backend, LiteralAnchorShape::analyze(&hir)))
     }
 
     fn build_meta_backend(
@@ -433,6 +457,7 @@ impl GoRegex {
         let mut position = 0;
         let mut previous_match_end = None;
         let mut results = Vec::new();
+        let mut original_cursor = 0;
         while position <= end {
             let Some(whole) = self.backend.search(&Input::new(bytes).span(position..end)) else {
                 break;
@@ -456,10 +481,13 @@ impl GoRegex {
             }
             previous_match_end = Some(whole.end());
             if accept {
-                results.push(normalized.original_span(ByteSpan {
-                    start: whole.start(),
-                    end: whole.end(),
-                }));
+                results.push(normalized.original_span_in_order(
+                    ByteSpan {
+                        start: whole.start(),
+                        end: whole.end(),
+                    },
+                    &mut original_cursor,
+                ));
             }
         }
         results
@@ -467,20 +495,43 @@ impl GoRegex {
 
     /// Finds only the first match, treating this slice as its own haystack.
     pub(crate) fn captures(&self, haystack: &[u8]) -> Option<CaptureSpans> {
-        let normalized = NormalizedHaystack::new(haystack);
-        let mut captures = self.backend.create_captures();
-        self.backend
-            .search_captures(&Input::new(normalized.bytes()), &mut captures);
-        captures.get_group(0)?;
+        let mut scratch = self.capture_scratch();
+        self.captures_into(haystack, &mut scratch)?;
         Some(CaptureSpans {
-            spans: (0..self.capture_names.len())
-                .map(|index| {
-                    captures
-                        .get_group(index)
-                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
-                })
-                .collect(),
+            spans: scratch.spans,
         })
+    }
+
+    /// Creates storage for [`Self::captures_into`] on this expression.
+    pub(crate) fn capture_scratch(&self) -> CaptureScratch {
+        CaptureScratch {
+            captures: self.backend.create_captures(),
+            spans: Vec::with_capacity(self.capture_names.len()),
+        }
+    }
+
+    /// Finds only the first match, like [`Self::captures`], using `scratch`.
+    ///
+    /// The returned slice is aligned like [`CaptureSpans::spans`].
+    pub(crate) fn captures_into<'s>(
+        &self,
+        haystack: &[u8],
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
+        let normalized = NormalizedHaystack::new(haystack);
+        self.backend
+            .search_captures(&Input::new(normalized.bytes()), &mut scratch.captures);
+        scratch.captures.get_group(0)?;
+        scratch.spans.clear();
+        scratch
+            .spans
+            .extend((0..self.capture_names.len()).map(|index| {
+                scratch
+                    .captures
+                    .get_group(index)
+                    .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+            }));
+        Some(&scratch.spans)
     }
 
     /// Returns every non-overlapping match and all of its capture spans.
@@ -555,38 +606,39 @@ fn pikevm_working_size(nfa: &thompson::NFA) -> Option<usize> {
 
 pub(crate) struct NormalizedHaystack<'a> {
     bytes: Cow<'a, [u8]>,
-    original_boundaries: Option<Vec<usize>>,
+    /// Normalized start of each replacement for one invalid source byte.
+    replacement_starts: Vec<usize>,
 }
 
 impl<'a> NormalizedHaystack<'a> {
     pub(crate) fn new(original: &'a [u8]) -> Self {
-        if std::str::from_utf8(original).is_ok() {
+        let Err(error) = std::str::from_utf8(original) else {
             return Self {
                 bytes: Cow::Borrowed(original),
-                original_boundaries: None,
+                replacement_starts: Vec::new(),
             };
-        }
+        };
 
-        let mut bytes = Vec::with_capacity(original.len());
-        let mut original_boundaries = Vec::with_capacity(original.len() + 1);
-        original_boundaries.push(0);
-        let mut offset = 0;
-        while offset < original.len() {
-            let width = utf8_rune_width(&original[offset..]);
-            if width > 1 || original[offset].is_ascii() {
-                bytes.extend_from_slice(&original[offset..offset + width]);
-                original_boundaries.extend((1..=width).map(|step| offset + step));
-                offset += width;
-            } else {
+        // At least one invalid byte is known, so two expansion bytes avoid a
+        // reallocation when the only invalid byte occurs late in a large input.
+        let mut bytes = Vec::with_capacity(original.len().saturating_add(2));
+        let mut replacement_starts = Vec::new();
+        // The initial validation already checked this prefix. Copy valid runs
+        // in bulk and retain offsets only where normalization expands bytes.
+        let valid_prefix = error.valid_up_to();
+        bytes.extend_from_slice(&original[..valid_prefix]);
+        for chunk in original[valid_prefix..].utf8_chunks() {
+            bytes.extend_from_slice(chunk.valid().as_bytes());
+            // A Rust UTF-8 error can cover several source bytes. Go consumes
+            // each malformed or truncated byte as its own RuneError.
+            for _ in chunk.invalid() {
+                replacement_starts.push(bytes.len());
                 bytes.extend_from_slice("\u{fffd}".as_bytes());
-                original_boundaries.extend([offset, offset, offset + 1]);
-                offset += 1;
             }
         }
-        debug_assert_eq!(original_boundaries.len(), bytes.len() + 1);
         Self {
             bytes: Cow::Owned(bytes),
-            original_boundaries: Some(original_boundaries),
+            replacement_starts,
         }
     }
 
@@ -595,12 +647,66 @@ impl<'a> NormalizedHaystack<'a> {
     }
 
     fn original_span(&self, normalized: ByteSpan) -> ByteSpan {
-        let Some(boundaries) = &self.original_boundaries else {
+        if self.replacement_starts.is_empty() {
             return normalized;
-        };
+        }
         ByteSpan {
-            start: boundaries[normalized.start],
-            end: boundaries[normalized.end],
+            start: self.original_offset(normalized.start),
+            end: self.original_offset(normalized.end),
+        }
+    }
+
+    fn original_offset(&self, normalized: usize) -> usize {
+        let count = self
+            .replacement_starts
+            .partition_point(|start| *start <= normalized);
+        self.offset_with_count(normalized, count)
+    }
+
+    fn original_span_in_order(&self, normalized: ByteSpan, cursor: &mut usize) -> ByteSpan {
+        if self.replacement_starts.is_empty() {
+            return normalized;
+        }
+        let start = self.original_offset_in_order(normalized.start, cursor);
+        let end = if normalized.start == normalized.end {
+            start
+        } else {
+            self.original_offset_in_order(normalized.end, cursor)
+        };
+        ByteSpan { start, end }
+    }
+
+    fn original_offset_in_order(&self, normalized: usize, cursor: &mut usize) -> usize {
+        debug_assert!(*cursor == 0 || self.replacement_starts[*cursor - 1] <= normalized);
+        // Whole matches are ordered and nonoverlapping. Nearby endpoints can
+        // advance cheaply; a large jump still uses logarithmic lookup rather
+        // than walking every invalid byte skipped by the regex.
+        for _ in 0..8 {
+            if self
+                .replacement_starts
+                .get(*cursor)
+                .is_none_or(|start| *start > normalized)
+            {
+                return self.offset_with_count(normalized, *cursor);
+            }
+            *cursor += 1;
+        }
+        *cursor += self.replacement_starts[*cursor..].partition_point(|start| *start <= normalized);
+        self.offset_with_count(normalized, *cursor)
+    }
+
+    fn offset_with_count(&self, normalized: usize, count: usize) -> usize {
+        if count == 0 {
+            return normalized;
+        }
+        let last = self.replacement_starts[count - 1];
+        if normalized - last < 3 {
+            // All three boundaries within a replacement map to the invalid
+            // source byte. Its following boundary maps past that byte.
+            last - 2 * (count - 1)
+        } else {
+            // Each preceding replacement expands one source byte into three.
+            normalized - 2 * count
         }
     }
 }
@@ -2253,6 +2359,133 @@ mod tests {
     }
 
     #[test]
+    fn sparse_normalization_preserves_replacement_interiors_and_literal_rune_errors() {
+        let input = b"\xef\xbf\xbd\xffA\xe2\x82";
+        let normalized = NormalizedHaystack::new(input);
+        // The first RuneError is valid source UTF-8. Only the three invalid
+        // source bytes expand, including each byte of the truncated tail.
+        assert_eq!(
+            normalized.bytes(),
+            "\u{fffd}\u{fffd}A\u{fffd}\u{fffd}".as_bytes()
+        );
+        assert_eq!(normalized.replacement_starts, [3, 7, 10]);
+        let expected = [0, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 6, 7];
+        for (offset, original) in expected.into_iter().enumerate().rev() {
+            assert_eq!(
+                normalized.original_span(ByteSpan {
+                    start: offset,
+                    end: offset
+                }),
+                ByteSpan {
+                    start: original,
+                    end: original
+                },
+                "normalized boundary {offset}",
+            );
+        }
+    }
+
+    #[test]
+    fn sparse_normalization_matches_every_boundary_of_short_byte_inputs() {
+        assert_normalization_matches_per_byte_reference(b"");
+        for first in 0..=u8::MAX {
+            assert_normalization_matches_per_byte_reference(&[first]);
+            for second in 0..=u8::MAX {
+                assert_normalization_matches_per_byte_reference(&[first, second]);
+            }
+        }
+        for input in [
+            "éΩ日本語\u{fffd}😀".as_bytes(),
+            b"\xff\xc3\xa9\x80\xe2\x82\xac\xff\xf0\x9f\x98\x80\xff",
+            b"\xf0\x90\x80A\xed\xa0\x80\xe0\x80\x80\xc0\xaf",
+            b"\xe2\x82",
+            b"\xf0\x9f\x98",
+            b"\xf4\x8f\xbf\xbf\xff\xf4\x90\x80\x80",
+        ] {
+            assert_normalization_matches_per_byte_reference(input);
+        }
+        // Cover late expansion and a long run of adjacent replacements without
+        // putting the multi-megabyte performance fixtures in ordinary tests.
+        let mut late_invalid = vec![b'a'; 4_096];
+        late_invalid.push(0xff);
+        assert_normalization_matches_per_byte_reference(&late_invalid);
+        assert_normalization_matches_per_byte_reference(&[0xff; 4_096]);
+    }
+
+    fn assert_normalization_matches_per_byte_reference(input: &[u8]) {
+        let (expected_bytes, expected_boundaries) = per_byte_normalization(input);
+        let normalized = NormalizedHaystack::new(input);
+        assert_eq!(normalized.bytes(), expected_bytes);
+        let mut cursor = 0;
+        for (offset, &original) in expected_boundaries.iter().enumerate() {
+            assert_eq!(
+                normalized.original_span_in_order(
+                    ByteSpan {
+                        start: offset,
+                        end: offset
+                    },
+                    &mut cursor,
+                ),
+                ByteSpan {
+                    start: original,
+                    end: original
+                },
+            );
+        }
+        assert_eq!(
+            normalized.original_span_in_order(
+                ByteSpan {
+                    start: 0,
+                    end: expected_bytes.len()
+                },
+                &mut 0,
+            ),
+            ByteSpan {
+                start: 0,
+                end: input.len()
+            },
+        );
+        // Reverse traversal also exercises arbitrary endpoint order, as used
+        // by capture groups. No shared monotonic cursor may affect mapping.
+        for (offset, original) in expected_boundaries.into_iter().enumerate().rev() {
+            assert_eq!(
+                normalized.original_span(ByteSpan {
+                    start: offset,
+                    end: offset
+                }),
+                ByteSpan {
+                    start: original,
+                    end: original
+                },
+                "normalized boundary {offset}, input length {}",
+                input.len(),
+            );
+        }
+    }
+
+    // Frozen former per-byte normalization and mapping. Keep it independent
+    // of UTF-8 chunks and sparse checkpoints used by the production path.
+    fn per_byte_normalization(original: &[u8]) -> (Vec<u8>, Vec<usize>) {
+        let mut bytes = Vec::with_capacity(original.len());
+        let mut boundaries = Vec::with_capacity(original.len() + 1);
+        boundaries.push(0);
+        let mut offset = 0;
+        while offset < original.len() {
+            let width = super::utf8_rune_width(&original[offset..]);
+            if width > 1 || original[offset].is_ascii() {
+                bytes.extend_from_slice(&original[offset..offset + width]);
+                boundaries.extend((1..=width).map(|step| offset + step));
+                offset += width;
+            } else {
+                bytes.extend_from_slice("\u{fffd}".as_bytes());
+                boundaries.extend([offset, offset, offset + 1]);
+                offset += 1;
+            }
+        }
+        (bytes, boundaries)
+    }
+
+    #[test]
     fn classes_and_captures_remap_normalized_runes_to_original_bytes() {
         let input = [0xC3, 0xA9, b'-', 0xFF];
         let class = GoRegex::compile(r"[^a-]").unwrap();
@@ -2490,6 +2723,138 @@ mod tests {
             "(", "[abc", r"\1", r"\8", r"\u1234", "a++", "(?x:a)", "a{1001}",
         ] {
             assert!(GoRegex::compile(pattern).is_err(), "{pattern}");
+        }
+    }
+
+    #[test]
+    fn reused_capture_scratch_never_exposes_an_earlier_search() {
+        let span = |start, end| Some(ByteSpan { start, end });
+        let regex = GoRegex::compile("(a)|(b)").unwrap();
+        let mut scratch = regex.capture_scratch();
+        for (haystack, expected) in [
+            (b"a".as_slice(), Some(vec![span(0, 1), span(0, 1), None])),
+            (b"b".as_slice(), Some(vec![span(0, 1), None, span(0, 1)])),
+            (b"zzz".as_slice(), None),
+            (b"".as_slice(), None),
+            (b"za".as_slice(), Some(vec![span(1, 2), span(1, 2), None])),
+            (
+                b"\xffb".as_slice(),
+                Some(vec![span(1, 2), None, span(1, 2)]),
+            ),
+        ] {
+            assert_eq!(
+                regex
+                    .captures_into(haystack, &mut scratch)
+                    .map(<[_]>::to_vec),
+                expected,
+                "{haystack:?}",
+            );
+        }
+    }
+
+    // Frozen allocation-per-call search, retained only as differential evidence.
+    fn frozen_captures(regex: &GoRegex, haystack: &[u8]) -> Option<Vec<Option<ByteSpan>>> {
+        let normalized = NormalizedHaystack::new(haystack);
+        let mut captures = regex.backend.create_captures();
+        regex.backend.search_captures(
+            &regex_automata::Input::new(normalized.bytes()),
+            &mut captures,
+        );
+        captures.get_group(0)?;
+        Some(
+            (0..regex.capture_names.len())
+                .map(|index| {
+                    captures
+                        .get_group(index)
+                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn reused_capture_scratch_resets_long_pikevm_captures() {
+        // The Unicode classes make the NFA large enough that these match spans
+        // exceed the bounded backtracker's limit. The expression is not
+        // one-pass, so capture resolution reaches the PikeVM's slot handling.
+        let long_a = vec![b'a'; 1 << 14];
+        let long_b = vec![b'1'; 1 << 14];
+        let length = long_a.len();
+        let span = |start, end| Some(ByteSpan { start, end });
+        let regex = GoRegex::compile(r"(\p{L}+?)(\p{L}*)|(\p{N}+)").unwrap();
+        let mut scratch = regex.capture_scratch();
+        for (haystack, expected) in [
+            (
+                long_a.as_slice(),
+                Some(vec![span(0, length), span(0, 1), span(1, length), None]),
+            ),
+            (b"--".as_slice(), None),
+            (
+                long_b.as_slice(),
+                Some(vec![span(0, length), None, None, span(0, length)]),
+            ),
+            (
+                long_a.as_slice(),
+                Some(vec![span(0, length), span(0, 1), span(1, length), None]),
+            ),
+        ] {
+            assert_eq!(frozen_captures(&regex, haystack), expected);
+            assert_eq!(
+                regex
+                    .captures_into(haystack, &mut scratch)
+                    .map(<[_]>::to_vec),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn reused_capture_scratch_matches_the_frozen_fresh_search() {
+        let haystacks: &[&[u8]] = &[
+            b"a",
+            b"b",
+            b"ab",
+            b"zzz",
+            b"",
+            b"c",
+            b"bc",
+            b"ac",
+            b"abc",
+            b"xfooy",
+            b"xfoo",
+            b"\xffa",
+            b"\xc3\xa9b",
+            b"\xe2\x82",
+        ];
+        for pattern in [
+            "(a)|(b)",
+            "^(a)|^(b)",
+            "(a+)|(b+)",
+            "(?P<x>a)?(?P<y>b)?c",
+            r"x(\w+?)(y)?$",
+            "()a",
+        ] {
+            let regex = GoRegex::compile(pattern).unwrap();
+            let mut scratch = regex.capture_scratch();
+            for haystack in haystacks
+                .iter()
+                .chain(haystacks.iter().rev())
+                .chain(haystacks.iter())
+            {
+                let expected = frozen_captures(&regex, haystack);
+                assert_eq!(
+                    regex
+                        .captures_into(haystack, &mut scratch)
+                        .map(<[_]>::to_vec),
+                    expected,
+                    "pattern {pattern}, haystack {haystack:?}",
+                );
+                assert_eq!(
+                    regex.captures(haystack).map(|found| found.spans),
+                    expected,
+                    "pattern {pattern}, haystack {haystack:?}",
+                );
+            }
         }
     }
 

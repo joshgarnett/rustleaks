@@ -23,7 +23,9 @@ Cancellation is cooperative. It is polled between bounded owned work units,
 including between decoder candidates and encoding transforms. Regex searches,
 eager enumeration of all matches for one rule, and individual transforms remain
 indivisible. Match checkpoints follow the completed match list; changing the
-backend does not move these checkpoints or make iteration lazy. A partial
+backend does not move these checkpoints or make iteration lazy. Work-unit and
+finding-record budgets do not bound the temporary eager match-span list.
+Pair them with input and target byte limits. A partial
 outcome contains findings only from completed top-level rules and carries
 structured termination plus measured usage. Callers must not treat partial
 findings as a complete fragment result. The bounded source runner discards a
@@ -32,6 +34,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Surface | Bound or ownership |
 | --- | --- |
 | Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
+| Keyword automaton | Full Aho-Corasick DFA when the configured keywords total at most 16 KiB and the lengths of all their prefixes sum to at most 64 Ki bytes; the builder's automatic choice otherwise |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
@@ -66,8 +69,20 @@ across scans of one Engine. Concurrent searches can retain more caches, and
 cloning an Engine creates additional pools while sharing compiled automata.
 Pool bookkeeping, allocator overhead and aggregate configuration memory are
 outside these per-component limits. The optional one-pass DFA has a 1 MiB
-compile limit; failure to build it selects another capture engine. Full DFA
-construction is disabled, including under downstream feature unification.
+compile limit; failure to build it selects another capture engine. Full regex
+DFA construction is disabled, including under downstream feature unification.
+
+The keyword automaton is separate from the regex engines. At the 16 KiB
+keyword limit its full DFA table stays at about 17 MiB, one kilobyte per state
+at most. Building a state's row follows a failure chain for each byte class the
+state has no transition on, and that chain is no longer than the state's depth.
+Every state is a keyword prefix, so the prefix limit bounds the sum of those
+depths; a long keyword counts quadratically. The default keywords total 1,755
+bytes, their prefix lengths sum to 9,339 and the longest is 34 bytes. Outside
+either limit the automaton kind is the builder's automatic choice. That choice
+still builds a full DFA for at most 100 keywords, and these limits do not bound
+its construction work. The automaton kind does not change which keyword hits
+are reported.
 
 Hostile input or large Unicode classes can thrash the lazy cache or cause it
 to give up. Meta falls back to bounded engines and ultimately PikeVM, so one
@@ -82,6 +97,47 @@ Each pass normalizes its current bytes for regex matching at most once,
 lazily after its gates. Path, allowlist and trimmed-secret searches retain
 their own haystacks and normalization. These buffers remain scan-local; they
 are not retained in the Engine's search caches.
+
+The first pass borrows the original fragment; decoded passes own their output
+buffers. Keyword folding runs only when the keyword prefilter exists, and its
+temporary bytes are dropped before rule matching. ASCII folding uses the same
+ASCII mapping as Go; other characters and malformed bytes retain the pinned
+Go Unicode behavior.
+
+Literal-anchor analysis runs once for every compiled expression, including
+allowlist and path expressions, and its result is retained with the regex. It
+keeps at most 32 literal-node choices, each with at most 64 literals of at most
+64 bytes. Enumerating literal languages spends at most 16,384 steps, one per
+visited node and one per built literal, and the remainder after the literal
+node is walked once for all choices. A child that matches only the empty
+string adds no choice. Stopping at a limit drops only longer choices.
+
+On a pure-ASCII pass, the keyword pass also records the start offset of each
+hit for keywords that literal-anchored rules use. For a haystack of `len` bytes,
+each pass records at most `len / 64 + 1` offsets per keyword and `len / 16 + 1`
+across all keywords; a rule with a keyword past either limit uses the
+unanchored search. Recorded offsets remain until the next pass begins, including
+while decoding its input. Their vector capacities are reused across passes and
+released at fragment completion; these length limits are not heap limits. Anchored
+enumeration charges an upper bound on the bytes each attempt can scan and
+falls back to the unanchored search when the charges exceed the haystack
+length. Both paths return identical matches, and neither changes the keyword
+work-unit charge or the match checkpoints.
+
+Invalid UTF-8 normalization stores one offset checkpoint per replaced source
+byte instead of one index per normalized byte. Valid UTF-8 runs are copied in
+bulk. Ordered whole matches use a local cursor with a bounded linear prefix
+and binary search for larger jumps; capture offsets use independent binary
+lookups. Each malformed byte still becomes one replacement rune, and all
+reported spans refer to the original bytes.
+
+Original-source helpers cache the last allow-marker result by exact byte range
+and reuse a covered suffix interval for trailing CR/LF lookup. Each rule pass
+lazily retains one line-regex result per evaluated allowlist slot, keyed by
+the exact slice and predicate identity. Secret-dependent criteria are still
+evaluated for every candidate. These caches expire within their fragment or
+rule pass, before decoded bytes are replaced; all work, cancellation and
+explanation checkpoints remain in their existing order.
 
 ## Private maintenance processes
 

@@ -131,3 +131,63 @@ fn write_xml(writer: &mut dyn Write, bytes: &[u8]) -> Result<(), std::io::Error>
 const fn is_xml_character(value: char) -> bool {
     matches!(value, '\u{0080}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}')
 }
+
+#[cfg(test)]
+mod tests {
+    use super::XmlEscapingWriter;
+    use crate::go_json::reference::{
+        adversarial_inputs, per_byte_write_string_body, per_depth_write_indent,
+    };
+    use crate::go_json::{write_indent, write_string_body};
+
+    #[test]
+    fn xml_escaping_is_unchanged_by_verbatim_runs() {
+        for input in adversarial_inputs() {
+            let mut current = Vec::new();
+            let mut escaped = XmlEscapingWriter {
+                inner: &mut current,
+            };
+            write_string_body(&mut escaped, &input).unwrap();
+
+            let mut reference = Vec::new();
+            let mut escaped = XmlEscapingWriter {
+                inner: &mut reference,
+            };
+            per_byte_write_string_body(&mut escaped, &input).unwrap();
+
+            assert_eq!(current, reference, "input {input:02x?}");
+        }
+    }
+
+    #[test]
+    fn xml_escaping_preserves_multibyte_scalars_inside_a_run() {
+        let input = "a\u{e9}\u{20ac}\u{1f600}\u{fffe}\u{1fffe}<".as_bytes();
+        let mut output = Vec::new();
+        let mut escaped = XmlEscapingWriter { inner: &mut output };
+        write_string_body(&mut escaped, input).unwrap();
+        assert_eq!(
+            output,
+            "a\u{e9}\u{20ac}\u{1f600}\u{fffd}\u{1fffe}\\u003c".as_bytes()
+        );
+    }
+
+    #[test]
+    fn xml_escaping_expands_each_tab_of_a_static_indent_run() {
+        for depth in [0, 1, 64, 65, 200] {
+            let mut current = Vec::new();
+            let mut escaped = XmlEscapingWriter {
+                inner: &mut current,
+            };
+            write_indent(&mut escaped, b"\t", depth).unwrap();
+
+            let mut reference = Vec::new();
+            let mut escaped = XmlEscapingWriter {
+                inner: &mut reference,
+            };
+            per_depth_write_indent(&mut escaped, b"\t", depth).unwrap();
+
+            assert_eq!(current, b"&#x9;".repeat(depth));
+            assert_eq!(current, reference);
+        }
+    }
+}
