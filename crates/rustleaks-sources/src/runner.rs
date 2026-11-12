@@ -867,9 +867,8 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(1);
         let receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
         assert!(sender.try_send(queue_job(0)).is_ok());
-        let pending = match sender.try_send(queue_job(1)) {
-            Err(TrySendError::Full(job)) => job,
-            _ => panic!("the occupied queue must reject the pending job"),
+        let Err(TrySendError::Full(pending)) = sender.try_send(queue_job(1)) else {
+            panic!("the occupied queue must reject the pending job");
         };
         assert_eq!(receiver.recv().unwrap().sequence, 0);
         let guard = wait.wait(None);
@@ -885,7 +884,7 @@ mod tests {
             ..QueueWait::default()
         };
         let (sender, receiver) = mpsc::sync_channel(1);
-        let (after_receive, received) = mpsc::channel();
+        let (after_receive, dequeued) = mpsc::channel();
         let mut receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
         receiver.after_receive = Some(after_receive);
         assert!(sender.try_send(queue_job(0)).is_ok());
@@ -903,7 +902,7 @@ mod tests {
             });
             // The receive is finished; its normal notification is waiting for
             // this gate. No production callback or hook blocks under the gate.
-            received.recv_timeout(TEST_TIMEOUT).unwrap();
+            dequeued.recv_timeout(TEST_TIMEOUT).unwrap();
             let (done, completion) = mpsc::channel();
             let notification = &wait;
             let watchdog = scope.spawn(move || {
