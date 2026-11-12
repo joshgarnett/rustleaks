@@ -1,407 +1,736 @@
-name: CI
-
-on:
-  pull_request:
-  push:
-    branches:
-      - main
-  schedule:
-    - cron: "29 5 * * 0"
+---
+name: Native runtime input diagnostic
+'on':
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   CARGO_TERM_COLOR: always
-  CARGO_NET_RETRY: "5"
-
+  CARGO_NET_RETRY: '5'
+  DIAGNOSTIC_SOURCE_SHA: c74f50f9da4a21641d1c397a3280874b52f802ca
 jobs:
-  bazel-acceptance:
-    name: Bazel acceptance
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Run the authoritative acceptance gate
-        working-directory: rustleaks
-        run: just ci
-      - name: Verify Cargo and Bazel dependency drift
-        working-directory: rustleaks
-        run: |
-          cargo xtask build-system-check
-          bazelisk query @crates//:srcs >/dev/null
-          git diff --exit-code -- Cargo.lock cargo-bazel-lock.json MODULE.bazel.lock
-
-  toolchains:
-    name: Current stable and MSRV
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Install current stable and MSRV
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup toolchain install 1.95.0 --profile minimal
-      - name: Check current stable feature profiles
-        working-directory: rustleaks
-        run: |
-          cargo +stable check --workspace --all-targets --locked
-          cargo +stable check --workspace --all-targets --all-features --locked
-          cargo +stable check --workspace --all-targets --no-default-features --locked
-      - name: Check the declared MSRV
-        working-directory: rustleaks
-        run: cargo +1.95.0 check --workspace --all-targets --all-features --locked
-
-  security:
-    name: Security policy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Install pinned security tools
-        working-directory: rustleaks
-        run: |
-          cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo install cargo-vet --locked --version 0.10.2
-          cargo install cargo-geiger --locked --version 0.13.0
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
-          cargo +nightly-2026-08-21 miri setup
-      - name: Run dependency and owned-code security policy
-        working-directory: rustleaks
-        run: just security
-
-  fuzz:
-    name: Fuzz build and smoke
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-bazelisk: "false"
-      - name: Install pinned fuzz tools
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Hydrate locked fuzz dependencies
-        working-directory: rustleaks
-        run: |
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
-      - name: Build targets and replay bounded smoke campaigns
-        working-directory: rustleaks
-        run: just fuzz-smoke
-
-  package:
-    name: Package and non-publishing dry run
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Hydrate locked package dependencies
-        working-directory: rustleaks
-        run: cargo fetch --locked
-      - name: Run package consumers and no-upload publish simulation
-        working-directory: rustleaks
-        run: just release-dry-run
-
-  parity:
-    name: Frozen evidence and Rust regression
-    runs-on: macos-15
-    timeout-minutes: 120
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Verify frozen evidence and replay Rust regressions
-        working-directory: rustleaks
-        run: cargo xtask regression-check
-
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          fail-on-severity: low
-
-  native-linux:
-    name: Native ${{ matrix.target }}
+  native-runtime-inputs:
+    name: Runtime inputs ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
-            architecture: x86_64
-            target: x86_64-unknown-linux-gnu
-            config: linux-x86_64-gnu
-            host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_gnu
-          - runner: ubuntu-24.04-arm
-            architecture: aarch64
-            target: aarch64-unknown-linux-gnu
-            config: linux-aarch64-gnu
-            host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_gnu
-          - runner: ubuntu-24.04
-            architecture: x86_64
-            target: x86_64-unknown-linux-musl
-            config: linux-x86_64-musl
-            host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_gnu
-          - runner: ubuntu-24.04-arm
-            architecture: aarch64
-            target: aarch64-unknown-linux-musl
-            config: linux-aarch64-musl
-            host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_gnu
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Build and test the native target
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-        run: |
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 --nozip_undeclared_test_outputs //:test
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
-
-  native-macos:
-    name: Native ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15-intel
-            architecture: x86_64
-            target: x86_64-apple-darwin
-            config: macos-x86_64
-            host_platform: //platforms:macos_x86_64
-            execution_platform: //platforms:macos_x86_64
-            test_compilation_mode: opt
-          - runner: macos-15
-            architecture: arm64
-            target: aarch64-apple-darwin
-            config: macos-aarch64
-            host_platform: //platforms:macos_aarch64
-            execution_platform: //platforms:macos_aarch64
-            test_compilation_mode: fastbuild
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Build and test the native target
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-          TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
-        run: |
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 --nozip_undeclared_test_outputs //:test
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
-
-  native-windows:
-    name: Native ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2025
-            architecture: X64
-            target: x86_64-pc-windows-msvc
-            config: windows-x86_64-msvc
-            host_platform: //platforms:windows_x86_64_msvc
-            execution_platform: //platforms:windows_x86_64_msvc
-          - runner: windows-11-arm
-            architecture: Arm64
-            target: aarch64-pc-windows-msvc
-            config: windows-aarch64-msvc
-            host_platform: //platforms:windows_aarch64_msvc
-            execution_platform: //platforms:windows_aarch64_msvc
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+        - runner: ubuntu-24.04
+          architecture: x86_64
+          target: x86_64-unknown-linux-musl
+          config: release-linux-x86_64-musl
+        - runner: ubuntu-24.04-arm
+          architecture: aarch64
+          target: aarch64-unknown-linux-musl
+          config: release-linux-aarch64-musl
+        - runner: windows-2025
+          architecture: x86_64
+          target: x86_64-pc-windows-msvc
+          config: release-windows-x86_64-msvc
+        - runner: windows-11-arm
+          architecture: aarch64
+          target: aarch64-pc-windows-msvc
+          config: release-windows-aarch64-msvc
+    runs-on: "${{ matrix.runner }}"
+    timeout-minutes: 110
+    defaults:
+      run:
+        shell: python
     env:
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: core.autocrlf
-      GIT_CONFIG_VALUE_0: "false"
+      DIAGNOSTIC_EVIDENCE_SUBDIR: runtime-input-evidence
+      EXPECTED_ARCHITECTURE: "${{ matrix.architecture }}"
+      RELEASE_TARGET: "${{ matrix.target }}"
+      RELEASE_CONFIG: "${{ matrix.config }}"
     steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        shell: pwsh
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: |
-          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-          if ($actual -ne $env:EXPECTED_ARCHITECTURE) {
-            throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual"
-          }
-      - name: Build and test the native target
-        shell: pwsh
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-        run: |
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 --nozip_undeclared_test_outputs //:test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
+    - name: Record runner and workflow identity
+      id: identity
+      timeout-minutes: 2
+      run: |
+        import ctypes
+        import json
+        import os
+        import pathlib
+        import platform
+        import sys
+        import time
 
-  required:
-    name: Required
-    if: always()
-    needs:
-      - bazel-acceptance
-      - toolchains
-      - security
-      - fuzz
-      - package
-      - parity
-      - dependency-review
-      - native-linux
-      - native-macos
-      - native-windows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Require every CI boundary
-        env:
-          BAZEL_ACCEPTANCE: ${{ needs.bazel-acceptance.result }}
-          TOOLCHAINS: ${{ needs.toolchains.result }}
-          SECURITY: ${{ needs.security.result }}
-          FUZZ: ${{ needs.fuzz.result }}
-          PACKAGE: ${{ needs.package.result }}
-          PARITY: ${{ needs.parity.result }}
-          DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
-          NATIVE_LINUX: ${{ needs.native-linux.result }}
-          NATIVE_MACOS: ${{ needs.native-macos.result }}
-          NATIVE_WINDOWS: ${{ needs.native-windows.result }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          for result in \
-            "${BAZEL_ACCEPTANCE}" \
-            "${TOOLCHAINS}" \
-            "${SECURITY}" \
-            "${FUZZ}" \
-            "${PACKAGE}" \
-            "${PARITY}" \
-            "${NATIVE_LINUX}" \
-            "${NATIVE_MACOS}" \
-            "${NATIVE_WINDOWS}"; do
-            test "${result}" = success
-          done
-          if [[ "${EVENT_NAME}" = pull_request ]]; then
-            test "${DEPENDENCY_REVIEW}" = success
-          else
-            test "${DEPENDENCY_REVIEW}" = skipped
-          fi
+        out = pathlib.Path(os.environ['RUNNER_TEMP']) / os.environ['DIAGNOSTIC_EVIDENCE_SUBDIR']
+        out.mkdir(parents=True, exist_ok=True)
+        keys = ('GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT',
+                'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_SHA',
+                'RUNNER_NAME', 'RUNNER_OS', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion')
+        identity = {key: os.environ.get(key, 'unavailable') for key in keys}
+        identity.update(source_sha=os.environ['DIAGNOSTIC_SOURCE_SHA'],
+                        target=os.environ['RELEASE_TARGET'], config=os.environ['RELEASE_CONFIG'],
+                        platform=platform.platform(), python=sys.version, recorded_at=time.time())
+        if os.name == 'nt':
+            class SystemInfo(ctypes.Structure):
+                _fields_ = [('architecture', ctypes.c_uint16), ('reserved', ctypes.c_uint16),
+                            ('page_size', ctypes.c_uint32), ('minimum_address', ctypes.c_void_p),
+                            ('maximum_address', ctypes.c_void_p), ('processor_mask', ctypes.c_void_p),
+                            ('processors', ctypes.c_uint32), ('processor_type', ctypes.c_uint32),
+                            ('allocation_granularity', ctypes.c_uint32), ('level', ctypes.c_uint16),
+                            ('revision', ctypes.c_uint16)]
+            info = SystemInfo()
+            ctypes.windll.kernel32.GetNativeSystemInfo(ctypes.byref(info))
+            architecture = {9: 'x86_64', 12: 'aarch64'}.get(info.architecture, str(info.architecture))
+        else:
+            architecture = os.uname().machine
+            (out / 'os-release.txt').write_bytes(pathlib.Path('/etc/os-release').read_bytes())
+        identity['native_architecture'] = architecture
+        (out / 'runner-and-workflow.json').write_text(json.dumps(identity, indent=2) + '\n')
+        print(json.dumps(identity, indent=2))
+        if os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch':
+            raise SystemExit('Only an explicit workflow dispatch is supported')
+        if architecture != os.environ['EXPECTED_ARCHITECTURE']:
+            raise SystemExit(f'Unexpected native architecture: {architecture}')
+    - name: Check out the exact diagnostic source
+      id: checkout
+      timeout-minutes: 5
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: c74f50f9da4a21641d1c397a3280874b52f802ca
+        path: rustleaks
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Verify and retain the clean source identity
+      id: source
+      timeout-minutes: 3
+      working-directory: rustleaks
+      run: |
+        import hashlib
+        import json
+        import os
+        import pathlib
+        import shutil
+        import subprocess
+
+        out = pathlib.Path(os.environ['RUNNER_TEMP']) / os.environ['DIAGNOSTIC_EVIDENCE_SUBDIR']
+        def git(name, *arguments):
+            result = subprocess.run(['git', *arguments], capture_output=True, check=False)
+            (out / (name + '.stdout')).write_bytes(result.stdout)
+            (out / (name + '.stderr')).write_bytes(result.stderr)
+            (out / (name + '.exit-status')).write_text(str(result.returncode) + '\n')
+            if result.returncode:
+                raise SystemExit(result.returncode)
+            return result.stdout.decode().strip()
+        sha = git('source-head', 'rev-parse', 'HEAD')
+        git('source-tree', 'rev-parse', 'HEAD^{tree}')
+        git('source-commit', 'show', '--no-patch', '--format=fuller', 'HEAD')
+        status = git('source-before', 'status', '--porcelain=v1', '--untracked-files=all')
+        if sha != os.environ['DIAGNOSTIC_SOURCE_SHA'] or status:
+            raise SystemExit('The source must be the exact clean diagnostic commit')
+        files = ['.bazelversion', '.bazelrc', 'rust-toolchain.toml', 'MODULE.bazel',
+                 'MODULE.bazel.lock', 'Cargo.lock', 'cargo-bazel-lock.json',
+                 '.github/actions/setup/action.yml', '.github/workflows/release-dry-run.yml',
+                 'bazel/rust_crate.bzl', 'bazel/BUILD.bazel', 'crates/rustleaks-cli/BUILD.bazel']
+        manifest = []
+        for name in files:
+            path = pathlib.Path(name)
+            destination = out / 'pinned-inputs' / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, destination)
+            manifest.append({'path': name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+        (out / 'pinned-inputs.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    - name: Set up maintained tools from the exact source
+      id: setup
+      timeout-minutes: 15
+      uses: "./rustleaks/.github/actions/setup"
+      with:
+        install-just: 'false'
+    - name: Build CLI once and retain native runtime evidence
+      id: diagnostic
+      timeout-minutes: 70
+      working-directory: rustleaks
+      run: |
+        import csv
+        import hashlib
+        import json
+        import os
+        import pathlib
+        import re
+        import shutil
+        import signal
+        import subprocess
+        import sys
+        import threading
+        import time
+
+        out = pathlib.Path(os.environ['RUNNER_TEMP']) / os.environ['DIAGNOSTIC_EVIDENCE_SUBDIR']
+        commands = out / 'commands'
+        commands.mkdir(parents=True, exist_ok=True)
+        windows = os.name == 'nt'
+        errors = []
+        records = []
+        console_lock = threading.Lock()
+
+        def write_json(name, value):
+            destination = out / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(value, indent=2) + '\n', encoding='utf-8')
+
+        def run(name, argv, timeout=120, required=True, cwd=None):
+            prefix = commands / name
+            prefix.parent.mkdir(parents=True, exist_ok=True)
+            record = {'name': name, 'argv': [str(item) for item in argv],
+                      'cwd': str(cwd or pathlib.Path.cwd()), 'timeout_seconds': timeout}
+            write_json('commands/' + name + '.command.json', record)
+            print('COMMAND ' + json.dumps(record), flush=True)
+            streams = {}
+            start = time.monotonic()
+            try:
+                process = subprocess.Popen(record['argv'], cwd=cwd, stdout=subprocess.PIPE,
+                                           stderr=subprocess.PIPE, start_new_session=not windows)
+                def copy_stream(source, label):
+                    path = pathlib.Path(str(prefix) + '.' + label + '.log')
+                    with path.open('wb') as destination:
+                        while True:
+                            chunk = source.read1(65536)
+                            if not chunk:
+                                break
+                            destination.write(chunk)
+                            destination.flush()
+                            with console_lock:
+                                sys.stdout.write(chunk.decode('utf-8', errors='replace'))
+                                sys.stdout.flush()
+                    streams[label] = path
+                threads = [threading.Thread(target=copy_stream, args=(process.stdout, 'stdout'), daemon=True),
+                           threading.Thread(target=copy_stream, args=(process.stderr, 'stderr'), daemon=True)]
+                for thread in threads:
+                    thread.start()
+                try:
+                    code = process.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    record['timed_out'] = True
+                    if windows:
+                        killed = subprocess.run(['taskkill.exe', '/PID', str(process.pid), '/T', '/F'],
+                                                capture_output=True, timeout=30, check=False)
+                        pathlib.Path(str(prefix) + '.termination.stdout').write_bytes(killed.stdout)
+                        pathlib.Path(str(prefix) + '.termination.stderr').write_bytes(killed.stderr)
+                    else:
+                        os.killpg(process.pid, signal.SIGINT)
+                        try:
+                            process.wait(timeout=30)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=30)
+                    code = 124
+                for thread in threads:
+                    thread.join(timeout=30)
+                if any(thread.is_alive() for thread in threads):
+                    raise RuntimeError('A command output stream did not close')
+            except Exception as error:
+                code = 125
+                record['exception'] = repr(error)
+                print(f'{name}: {error}', file=sys.stderr, flush=True)
+            record.update(exit_status=code, duration_seconds=time.monotonic() - start)
+            records.append(record)
+            write_json('commands/' + name + '.status.json', record)
+            write_json('command-statuses.json', records)
+            if code and required:
+                errors.append(f'{name} exited {code}')
+            output = streams.get('stdout')
+            return output.read_text(encoding='utf-8', errors='replace') if output else ''
+
+        def file_identity(path):
+            path = pathlib.Path(path)
+            canonical = path.resolve(strict=True)
+            digest = hashlib.sha256()
+            with canonical.open('rb') as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    digest.update(block)
+            return {'path': str(path), 'canonical_path': str(canonical),
+                    'size': canonical.stat().st_size, 'sha256': digest.hexdigest()}
+
+        notices = []
+        notice_requests = []
+        def notice(path, origin, required=False):
+            path = pathlib.Path(path)
+            request = {'path': str(path), 'origin': origin, 'required': required}
+            notice_requests.append(request)
+            if not path.is_file():
+                request['status'] = 'missing'
+                write_json('notice-requests.json', notice_requests)
+                if required:
+                    errors.append(f'Required public notice is missing: {path}')
+                return
+            identity = file_identity(path)
+            if identity['size'] > 25 * 1024 * 1024:
+                request['status'] = 'exceeds-size-bound'
+                write_json('notice-requests.json', notice_requests)
+                errors.append(f'Public notice exceeds the evidence bound: {path}')
+                return
+            destination = out / 'public-notices' / (identity['sha256'][:16] + '-' + path.name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, destination)
+            identity.update(origin=origin, required=required, retained_path=str(destination.relative_to(out)))
+            notices.append(identity)
+            request.update(status='retained', retained_path=identity['retained_path'], sha256=identity['sha256'])
+            write_json('public-notices.json', notices)
+            write_json('notice-requests.json', notice_requests)
+
+        def normalize_codegen(arguments):
+            result = []
+            index = 0
+            while index < len(arguments):
+                argument = arguments[index]
+                value = None
+                if argument in ('-C', '--codegen'):
+                    index += 1
+                    if index >= len(arguments):
+                        raise ValueError('Missing value after ' + argument)
+                    value = arguments[index]
+                elif argument.startswith('--codegen='):
+                    value = argument[len('--codegen='):]
+                elif argument.startswith('-C'):
+                    value = argument[2:].removeprefix('=')
+                if value is not None:
+                    key, separator, setting = value.partition('=')
+                    if not separator or not key or not setting:
+                        raise ValueError('Malformed codegen option: ' + value)
+                    result.append((key, setting))
+                index += 1
+            return result
+
+        def selected_linker(codegen):
+            values = {value for key, value in codegen if key == 'linker'}
+            if len(values) != 1:
+                raise ValueError('Actual linker path is missing or ambiguous in the Rustc action')
+            return next(iter(values))
+
+        def missing_rust_object_kind(path, member, output_directory, crate_name, compiler_matches):
+            # Narrow source-backed exceptions for disposable objects emitted by this exact Rustc action.
+            # Rust 1.95 link.rs creates symbols.o below output/rustc*/ and adds local crate objects.
+            # Rust 1.95 config.rs names codegen objects with the .rcgu.o suffix in the output directory.
+            if not compiler_matches or member is not None:
+                return None
+            if (path.name == 'symbols.o' and path.parent.parent == output_directory
+                    and re.fullmatch(r'rustc[A-Za-z0-9._-]+', path.parent.name)):
+                return 'rustc-generated-symbol-retention-object'
+            if (path.parent == output_directory and path.name.startswith(crate_name + '.')
+                    and path.name.endswith('.rcgu.o')):
+                return 'current-cli-crate-codegen-object'
+            return None
+
+        bazel = shutil.which('bazelisk')
+        if not bazel:
+            raise SystemExit('Maintained Bazelisk was not installed')
+        root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'runtime-bazel'
+        startup = [bazel, '--output_user_root=' + str(root)]
+        if windows:
+            startup.append('--windows_enable_symlinks')
+        options = ['--config=' + os.environ['RELEASE_CONFIG']]
+        if windows:
+            options += ['--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0',
+                        '--extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all']
+        flag = '--@rules_rust//rust/settings:experimental_per_crate_rustc_flag=crates/rustleaks-cli/src/main.rs@'
+        options += [flag + '--print=link-args', flag + '-Wlinker-messages']
+        if windows:
+            options += [flag + '-Clink-arg=/VERBOSE:LIB', flag + '-Clink-arg=/MAP:' + str(out / 'link.map')]
+        else:
+            options += [flag + '-Clink-arg=-Wl,--trace',
+                        flag + '-Clink-arg=-Wl,-Map=' + str(out / 'link.map'),
+                        flag + '-Clink-arg=-Wl,--why-extract=' + str(out / 'why-extract.tsv'),
+                        '--sandbox_writable_path=' + str(out)]
+        write_json('bazel-invocation.json', {'startup': startup, 'options': options,
+                                          'target': '//crates/rustleaks-cli:rustleaks'})
+        run('rustup-version', ['rustup', 'show', 'active-toolchain'])
+        run('installed-rustc-version', ['rustc', '-vV'])
+        run('cargo-version', ['cargo', '-vV'])
+        run('bazelisk-version', [bazel, 'bazeliskVersion'])
+        run('bazel-version', startup + ['version'])
+        run('build', startup + ['build'] + options + ['--materialize_param_files',
+            '//crates/rustleaks-cli:rustleaks'], timeout=2700)
+        # These collect the same configured action after a failed build too; no retry occurs.
+        query = run('rustc-aquery', startup + ['aquery'] + options + ['--output=jsonproto',
+            '--include_param_files', 'mnemonic("Rustc", //crates/rustleaks-cli:rustleaks)'], timeout=300)
+        (out / 'rustc-aquery.json').write_text(query, encoding='utf-8')
+        info = {}
+        for key in ('execution_root', 'bazel-bin', 'output_base'):
+            info[key] = run('info-' + key, startup + ['info'] + options + [key], timeout=120).strip()
+        write_json('bazel-paths.json', info)
+        try:
+            graph = json.loads(query)
+            execution_root = pathlib.Path(info['execution_root'])
+            fragments = {str(item['id']): item for item in graph.get('pathFragments', [])}
+            def fragment_path(identifier):
+                item = fragments[str(identifier)]
+                parent = item.get('parentId')
+                return (fragment_path(parent) / item['label']) if parent else pathlib.Path(item['label'])
+            artifacts = {str(item['id']): fragment_path(item['pathFragmentId']) for item in graph.get('artifacts', [])}
+            targets = {str(item['id']): item['label'] for item in graph.get('targets', [])}
+            actions = [item for item in graph.get('actions', []) if item.get('mnemonic') == 'Rustc'
+                       and targets.get(str(item.get('targetId'))) == '//crates/rustleaks-cli:rustleaks']
+            write_json('binary-rustc-actions.json', actions)
+            if len(actions) != 1:
+                raise ValueError(f'Expected exactly one binary Rustc action, got {len(actions)}')
+            action = actions[0]
+            arguments = list(action.get('arguments', []))
+            parameter_records = []
+            for index, parameter in enumerate(action.get('paramFiles', [])):
+                arguments += parameter.get('arguments', [])
+                path = execution_root / parameter['execPath']
+                record = {'exec_path': parameter['execPath'], 'arguments': parameter.get('arguments', [])}
+                if path.is_file():
+                    destination = out / 'parameter-files' / f'{index:03d}.params'
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(path, destination)
+                    record.update(file_identity(path), retained_path=str(destination.relative_to(out)))
+                else:
+                    record['materialized_file_missing'] = True
+                    errors.append('Materialized parameter file is missing: ' + str(path))
+                parameter_records.append(record)
+            write_json('parameter-files.json', parameter_records)
+            def resolution_candidates(value):
+                candidate = pathlib.Path(value.strip('"'))
+                candidate = candidate if candidate.is_absolute() else execution_root / candidate
+                candidates = [candidate]
+                if '/execroot/' in str(candidate):
+                    suffix = str(candidate).split('/execroot/', 1)[1].split('/', 1)
+                    if len(suffix) == 2:
+                        recovered = execution_root / suffix[1]
+                        if recovered != candidate:
+                            candidates.append(recovered)
+                return candidates
+            def resolve(value):
+                candidates = resolution_candidates(value)
+                return next((path for path in candidates if path.exists()), candidates[-1])
+            rustc_values = [item for item in arguments if pathlib.Path(item).name.lower() in ('rustc', 'rustc.exe')]
+            codegen = normalize_codegen(arguments)
+            write_json('normalized-codegen-options.json', codegen)
+            if len(set(rustc_values)) != 1:
+                raise ValueError('Actual compiler path is missing or ambiguous in the Rustc action')
+            rustc = resolve(rustc_values[0])
+            linker = resolve(selected_linker(codegen))
+            write_json('actual-tools.json', {'rustc': file_identity(rustc), 'linker': file_identity(linker)})
+            rust_version = run('actual-rustc-version', [rustc, '-vV'], cwd=execution_root)
+            compiler_matches = 'commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860' in rust_version
+            if not compiler_matches:
+                errors.append('Actual Rust compiler does not report the expected pinned 1.95.0 commit')
+            run('actual-linker-version', [linker, '/?' if windows else '--version'], cwd=execution_root)
+            sysroot = run('actual-rustc-sysroot', [rustc, '--print=sysroot'], cwd=execution_root).strip()
+            if not sysroot:
+                raise ValueError('The actual compiler reported an empty sysroot')
+            rust_docs = resolve(sysroot) / 'share/doc/rust'
+            required_rust_notices = (
+                'COPYRIGHT-library.html', 'licenses/Apache-2.0.txt', 'licenses/MIT.txt',
+                'licenses/Unicode-3.0.txt', 'licenses/BSD-2-Clause.txt',
+            )
+            for name in required_rust_notices:
+                notice(rust_docs / name, 'required Rust distribution notice/supporting text', required=True)
+            # Retain all remaining supporting texts supplied by this exact distribution too.
+            if (rust_docs / 'licenses').is_dir():
+                for path in sorted((rust_docs / 'licenses').glob('*.txt')):
+                    if path.relative_to(rust_docs).as_posix() not in required_rust_notices:
+                        notice(path, 'additional Rust distribution supporting license text')
+            binary = pathlib.Path(info['bazel-bin']) / 'crates/rustleaks-cli' / ('rustleaks.exe' if windows else 'rustleaks')
+            if binary.is_file():
+                write_json('binary.json', file_identity(binary))
+            else:
+                errors.append('Built binary is missing')
+            if not (out / 'link.map').is_file():
+                errors.append('Linker map is missing')
+            build_text = ''.join((commands / ('build.' + stream + '.log')).read_text(encoding='utf-8', errors='replace')
+                                 for stream in ('stdout', 'stderr') if (commands / ('build.' + stream + '.log')).exists())
+            if windows:
+                dumpbin = linker.parent / 'dumpbin.exe'
+                librarian = linker.parent / 'lib.exe'
+                if not dumpbin.is_file() or not librarian.is_file():
+                    raise ValueError('Selected linker siblings dumpbin.exe/lib.exe are missing')
+                write_json('inspection-tools.json', {'dumpbin': file_identity(dumpbin), 'lib': file_identity(librarian)})
+                if binary.is_file():
+                    run('binary-imports', [dumpbin, '/IMPORTS', binary])
+                    run('binary-headers', [dumpbin, '/HEADERS', binary])
+                vswhere = pathlib.Path(os.environ['ProgramFiles(x86)']) / 'Microsoft Visual Studio/Installer/vswhere.exe'
+                write_json('vswhere-tool.json', file_identity(vswhere))
+                run('vs-installation-paths', [vswhere, '-all', '-products', '*', '-property', 'installationPath'])
+                run('vs-installation-versions', [vswhere, '-all', '-products', '*', '-property', 'installationVersion'])
+                ancestors = [linker] + list(linker.parents)
+                toolsets = [path for path in ancestors if path.parent.name.lower() == 'msvc']
+                if len(toolsets) != 1:
+                    raise ValueError('Cannot identify selected MSVC toolset from actual link.exe path')
+                toolset = toolsets[0]
+                vs_root = toolset.parent.parent.parent.parent
+                write_json('selected-visual-studio.json', {'installation_path': str(vs_root), 'toolset_path': str(toolset),
+                                                         'toolset_version': toolset.name})
+                library_dirs = []
+                for variable in action.get('environmentVariables', []):
+                    if variable['key'].upper() == 'LIB':
+                        library_dirs += [pathlib.Path(value) for value in variable['value'].split(';') if value]
+                for item in arguments:
+                    if item.startswith('-Lnative='):
+                        library_dirs.append(resolve(item.split('=', 1)[1]))
+                for key, value in codegen:
+                    if key == 'link-arg':
+                        match = re.match(r'(?i)^/LIBPATH:(.+)$', value)
+                        if match:
+                            library_dirs.append(resolve(match.group(1)))
+                searched = {}
+                loaded = []
+                current = None
+                for line in build_text.splitlines():
+                    match = re.search(r'\bSearching\s+(.+?\.lib)\s*:', line, re.I)
+                    if match:
+                        current = pathlib.Path(match.group(1).strip(' "'))
+                        searched.setdefault(current.name.lower(), set()).add(str(current))
+                    match = re.search(r'\bLoaded\s+(.+?\.lib)\(([^)]+)\)', line, re.I)
+                    if match:
+                        library, member = match.groups()
+                        name = pathlib.Path(library.strip(' "')).name.lower()
+                        candidates = set()
+                        if current is not None and current.name.lower() == name and current.is_file():
+                            candidates = {str(current)}
+                        else:
+                            candidates = set(searched.get(name, set()))
+                            candidates.update(str(directory / pathlib.Path(library).name) for directory in library_dirs
+                                              if (directory / pathlib.Path(library).name).is_file())
+                            if pathlib.Path(library).is_file():
+                                candidates.add(str(pathlib.Path(library)))
+                        canonical = sorted({str(pathlib.Path(path).resolve()) for path in candidates if pathlib.Path(path).is_file()})
+                        loaded.append({'library': library, 'member': member, 'candidate_paths': canonical})
+                write_json('windows-loaded-members.json', loaded)
+                write_json('windows-searched-libraries.json', {name: sorted(paths) for name, paths in searched.items()})
+                if not loaded:
+                    errors.append('No loaded library-member trace was recovered; raw logs and map require review')
+                if any(len(item['candidate_paths']) != 1 for item in loaded):
+                    errors.append('At least one loaded library has unresolved or ambiguous canonical provenance')
+                selected = sorted({path for item in loaded for path in item['candidate_paths']})
+                write_json('selected-libraries.json', [file_identity(path) for path in selected])
+                if len(selected) > 60:
+                    raise ValueError('Selected library count exceeds the bounded 60-library diagnostic')
+                for index, path in enumerate(selected):
+                    run(f'libraries/{index:03d}-members', [librarian, '/NOLOGO', '/LIST', path], timeout=60)
+                    run(f'libraries/{index:03d}-linkermembers', [dumpbin, '/LINKERMEMBER:1', path], timeout=60)
+                    if re.search(r'(?i)(msvcrt|vcruntime|ucrt|libcmt|oldnames|legacy_stdio|msvcprt|libcpmt)', pathlib.Path(path).name):
+                        run(f'libraries/{index:03d}-directives', [dumpbin, '/DIRECTIVES', path], timeout=60)
+                sdk_pairs = set()
+                for path in [str(item) for item in library_dirs] + selected:
+                    match = re.search(r'(?i)(.+[\\/]Windows Kits[\\/]10)[\\/]Lib[\\/]([^\\/]+)', path)
+                    if match:
+                        sdk_pairs.add((match.group(1), match.group(2)))
+                write_json('selected-windows-sdks.json', [{'root': root, 'version': version} for root, version in sorted(sdk_pairs)])
+                if not sdk_pairs:
+                    errors.append('No exact selected Windows SDK version was recovered')
+                # Inspect only selected-installation public terms/notice locations and filenames.
+                roots = [(vs_root / 'Licenses', 5), (toolset / 'crt', 7), (toolset, 1)]
+                redist_root = vs_root / 'VC/Redist/MSVC'
+                if redist_root.is_dir():
+                    redist_versions = sorted(path for path in redist_root.iterdir() if path.is_dir()
+                                             and path.name.split('.')[:2] == toolset.name.split('.')[:2])
+                    roots += [(path, 5) for path in redist_versions]
+                    write_json('matching-vc-redist-directories.json', [str(path) for path in redist_versions])
+                for root_value, version in sorted(sdk_pairs):
+                    sdk = pathlib.Path(root_value)
+                    roots += [(sdk / 'Licenses' / version, 5), (sdk / 'Licenses', 0),
+                              (sdk / 'Redist' / version, 4), (sdk, 0)]
+                public_name = re.compile(r'(?i)(licen[cs]e|eula|redist|third.?party.?notices|notice|copyright)')
+                public_suffixes = {'.txt', '.rtf', '.html', '.htm', '.md', '.docx', '.pdf'}
+                searched_notices = []
+                for root_path, depth_limit in roots:
+                    searched_notices.append({'root': str(root_path), 'exists': root_path.is_dir(), 'maximum_depth': depth_limit})
+                    if not root_path.is_dir():
+                        continue
+                    for directory, subdirs, files in os.walk(root_path, followlinks=False):
+                        depth = len(pathlib.Path(directory).relative_to(root_path).parts)
+                        if depth >= depth_limit:
+                            subdirs.clear()
+                        for name in sorted(files):
+                            path = pathlib.Path(directory) / name
+                            if public_name.search(name) and path.suffix.lower() in public_suffixes:
+                                notice(path, 'selected Windows installation public terms/notice candidate')
+                write_json('windows-notice-search.json', searched_notices)
+                if not any('Windows installation' in item['origin'] for item in notices):
+                    errors.append('No public Windows terms/notice file was found in the bounded selected locations')
+                # Retain source identity and leading comments only, never implementation source bytes.
+                startup_sources = []
+                source_root = toolset / 'crt/src'
+                member_stems = {pathlib.Path(item['member']).stem for item in loaded}
+                if source_root.is_dir():
+                    for directory, _, files in os.walk(source_root, followlinks=False):
+                        for name in files:
+                            path = pathlib.Path(directory) / name
+                            if path.stem not in member_stems or path.suffix.lower() not in ('.c', '.cpp', '.asm'):
+                                continue
+                            leading = []
+                            in_comment = False
+                            for line in path.read_text(encoding='utf-8', errors='replace').splitlines()[:120]:
+                                stripped = line.strip()
+                                if not stripped:
+                                    continue
+                                if stripped.startswith('/*'):
+                                    in_comment = True
+                                if in_comment or stripped.startswith(('//', ';')):
+                                    if in_comment and '*/' in stripped:
+                                        leading.append(line.split('*/', 1)[0] + '*/')
+                                        in_comment = False
+                                    else:
+                                        leading.append(line)
+                                else:
+                                    break
+                            metadata = file_identity(path)
+                            metadata['leading_comment_only'] = '\n'.join(leading)
+                            startup_sources.append(metadata)
+                write_json('startup-source-metadata.json', startup_sources)
+            else:
+                lld = linker.parent / 'ld.lld'
+                if not lld.is_file():
+                    raise ValueError('The selected Clang driver has no adjacent ld.lld')
+                write_json('actual-lld.json', file_identity(lld))
+                run('actual-lld-version', [lld, '--version'], cwd=execution_root)
+                readelf = shutil.which('readelf')
+                if not readelf:
+                    raise ValueError('Preinstalled readelf is unavailable')
+                run('readelf-version', [readelf, '--version'])
+                if binary.is_file():
+                    run('binary-elf', [readelf, '--file-header', '--program-headers', '--dynamic', '--symbols', binary])
+                archive_candidates = [linker.parent / 'llvm-ar', pathlib.Path(shutil.which('ar') or '/nonexistent')]
+                archive_tool = next((path for path in archive_candidates if path.is_file()), None)
+                if archive_tool is None:
+                    raise ValueError('An existing archive-member inspection tool is unavailable')
+                write_json('inspection-tools.json', {'readelf': file_identity(readelf), 'archive_tool': file_identity(archive_tool)})
+                run('archive-tool-version', [archive_tool, '--version'])
+                selected = {}
+                observations = []
+                crate_names = [item.split('=', 1)[1] for item in arguments if item.startswith('--crate-name=')]
+                crate_names += [arguments[index + 1] for index, item in enumerate(arguments[:-1]) if item == '--crate-name']
+                if len(set(crate_names)) != 1 or crate_names[0] != 'rustleaks':
+                    raise ValueError('The selected binary action is not the expected rustleaks crate')
+                output_directory = binary.parent.resolve()
+                def observed(value, kind, member=None):
+                    value = value.strip(' "\t\r\n')
+                    if not value.endswith(('.a', '.rlib', '.o')):
+                        return
+                    candidates = resolution_candidates(value)
+                    path = resolve(value)
+                    record = {'kind': kind, 'path': value, 'member': member,
+                              'attempted_paths': [str(candidate) for candidate in candidates]}
+                    if path.is_file():
+                        canonical = str(path.resolve())
+                        selected[canonical] = path
+                        record.update(status='resolved', canonical_path=canonical)
+                    else:
+                        classification = missing_rust_object_kind(
+                            path.resolve(), member, output_directory, crate_names[0], compiler_matches)
+                        if classification:
+                            record.update(status='known-rustc-transient', classification=classification,
+                                          canonical_path=None, provider_hash_unavailable=True,
+                                          provenance='Rust commit 59807616e1fa2540724bfbac14d7976d7e4a3860; link.rs and config.rs')
+                        else:
+                            record.update(status='unresolved', canonical_path=None)
+                            errors.append(f'Unresolved Linux runtime/link input: {value}; member={member!r}')
+                    observations.append(record)
+                    write_json('linux-runtime-observations.json', observations)
+                why = out / 'why-extract.tsv'
+                if not why.is_file():
+                    errors.append('LLD why-extract output is missing')
+                else:
+                    with why.open(encoding='utf-8', errors='replace') as stream:
+                        for row in csv.reader(stream, delimiter='\t'):
+                            for value in row[:2]:
+                                match = re.match(r'(.+\.(?:a|rlib))\((.+)\)$', value)
+                                if match:
+                                    observed(match.group(1), 'why-extract', match.group(2))
+                                else:
+                                    observed(value, 'why-extract')
+                for line in build_text.splitlines():
+                    value = re.sub(r'^\s*(?:= note:|\|)?\s*', '', line)
+                    match = re.match(r'(.+\.(?:a|rlib))\((.+)\)$', value)
+                    if match:
+                        observed(match.group(1), 'linker-trace', match.group(2))
+                    else:
+                        observed(value, 'linker-trace')
+                write_json('linux-runtime-observations.json', observations)
+                write_json('selected-libraries.json', [file_identity(path) for _, path in sorted(selected.items())])
+                if not any(path.name == 'libc.a' and 'self-contained' in str(path) for path in selected.values()):
+                    errors.append('Trace did not identify the actual Rust self-contained libc.a')
+                if not any(path.suffix == '.o' and path.name.startswith(('crt', 'Scrt', 'rcrt')) for path in selected.values()):
+                    errors.append('Trace did not identify a selected CRT object')
+                if not any('unwind' in path.name for path in selected.values()):
+                    errors.append('Trace did not identify the selected unwind archive')
+                if len(selected) > 150:
+                    raise ValueError('Runtime input count exceeds the bounded 150-input diagnostic')
+                for index, (_, path) in enumerate(sorted(selected.items())):
+                    if path.suffix in ('.a', '.rlib'):
+                        run(f'libraries/{index:03d}-members', [archive_tool, 't', path], timeout=60)
+                external = execution_root / 'external'
+                if external.is_dir():
+                    for repository in sorted(external.iterdir()):
+                        if 'llvm' not in repository.name:
+                            continue
+                        for name in ('compiler-rt/LICENSE.TXT', 'libunwind/LICENSE.TXT',
+                                     'libcxx/LICENSE.TXT', 'libcxxabi/LICENSE.TXT'):
+                            notice(repository / name, 'hydrated LLVM source notice; provider association requires trace review')
+        except Exception as error:
+            errors.append('Evidence collection: ' + repr(error))
+            print(errors[-1], file=sys.stderr, flush=True)
+        finally:
+            write_json('collection-result.json', {'errors': errors, 'command_count': len(records),
+                       'meaning': 'Evidence completeness only; no release qualification or licensing conclusion'})
+        if errors:
+            raise SystemExit(1)
+    - name: Retain final source state and all prior step outcomes
+      id: finalize
+      if: "${{ always() }}"
+      timeout-minutes: 5
+      env:
+        PRIOR_STEP_OUTCOMES: "${{ toJson(steps) }}"
+      run: |
+        import hashlib
+        import json
+        import os
+        import pathlib
+        import subprocess
+
+        out = pathlib.Path(os.environ['RUNNER_TEMP']) / os.environ['DIAGNOSTIC_EVIDENCE_SUBDIR']
+        out.mkdir(parents=True, exist_ok=True)
+        (out / 'step-outcomes.json').write_text(os.environ['PRIOR_STEP_OUTCOMES'] + '\n')
+        source = pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'rustleaks'
+        errors = []
+        if (source / '.git').is_dir():
+            for name, arguments in (('source-after', ['status', '--porcelain=v1', '--untracked-files=all']),
+                                    ('source-head-after', ['rev-parse', 'HEAD']),
+                                    ('source-diff-after', ['diff', '--binary'])):
+                result = subprocess.run(['git', '-C', str(source), *arguments], capture_output=True, check=False)
+                (out / (name + '.stdout')).write_bytes(result.stdout)
+                (out / (name + '.stderr')).write_bytes(result.stderr)
+                (out / (name + '.exit-status')).write_text(str(result.returncode) + '\n')
+                if result.returncode:
+                    errors.append(name + ' failed')
+                if name == 'source-after' and result.stdout.strip():
+                    errors.append('Source checkout changed')
+                if name == 'source-head-after' and result.stdout.decode().strip() != os.environ['DIAGNOSTIC_SOURCE_SHA']:
+                    errors.append('Source commit changed')
+        else:
+            errors.append('Source checkout is missing')
+        (out / 'finalization.json').write_text(json.dumps({'errors': errors}, indent=2) + '\n')
+        inventory = []
+        for path in sorted(out.rglob('*')):
+            if path.is_file() and path.name != 'evidence-inventory.json':
+                inventory.append({'path': str(path.relative_to(out)), 'size': path.stat().st_size,
+                                  'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+        (out / 'evidence-inventory.json').write_text(json.dumps(inventory, indent=2) + '\n')
+        if errors:
+            raise SystemExit(1)
+    - name: Upload all available runtime evidence
+      id: upload
+      if: "${{ always() }}"
+      timeout-minutes: 5
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: runtime-inputs-${{ matrix.target }}-c74f50f-${{ github.run_id }}-${{
+          github.run_attempt }}
+        path: "${{ runner.temp }}/runtime-input-evidence/"
+        if-no-files-found: error
+        include-hidden-files: true
+    - name: Record upload and final step outcomes
+      if: "${{ always() }}"
+      timeout-minutes: 1
+      env:
+        ALL_PRIOR_STEP_OUTCOMES: "${{ toJson(steps) }}"
+      run: |
+        import os
+        import pathlib
+        text = os.environ['ALL_PRIOR_STEP_OUTCOMES']
+        print(text)
+        with pathlib.Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as stream:
+            stream.write('Runtime diagnostic step outcomes, including upload:\n\n```json\n' + text + '\n```\n')
