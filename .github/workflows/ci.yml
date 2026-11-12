@@ -23,14 +23,6 @@ jobs:
           architecture: aarch64
           target: aarch64-unknown-linux-musl
           config: release-linux-aarch64-musl
-        - runner: windows-2025
-          architecture: x86_64
-          target: x86_64-pc-windows-msvc
-          config: release-windows-x86_64-msvc
-        - runner: windows-11-arm
-          architecture: aarch64
-          target: aarch64-pc-windows-msvc
-          config: release-windows-aarch64-msvc
     runs-on: "${{ matrix.runner }}"
     timeout-minutes: 110
     defaults:
@@ -148,7 +140,9 @@ jobs:
         import json
         import os
         import pathlib
+        import posixpath
         import re
+        import shlex
         import shutil
         import signal
         import subprocess
@@ -297,6 +291,105 @@ jobs:
             if len(values) != 1:
                 raise ValueError('Actual linker path is missing or ambiguous in the Rustc action')
             return next(iter(values))
+
+
+        def parse_printed_linker_command(raw_line):
+            if '\x00' in raw_line:
+                raise ValueError('NUL in printed linker command')
+            tokens = shlex.split(raw_line, posix=True)
+            assignments = []
+            index = 0
+            while index < len(tokens) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', tokens[index], re.S):
+                assignments.append(tokens[index])
+                index += 1
+            argv = tokens[index:]
+            if not argv or len(argv) == 1 or argv[0].startswith('-'):
+                raise ValueError('Printed command has no executable and argument sequence')
+            return {'raw_line': raw_line, 'environment_assignments': assignments, 'argv': argv}
+
+        def validate_printed_linker_program(program, selected_program, execution_root):
+            actual = posixpath.normpath(posixpath.join(str(execution_root), program))
+            expected = posixpath.normpath(str(selected_program))
+            if actual != expected:
+                raise ValueError(f'Printed linker {program!r} does not match the selected action linker {selected_program!r}')
+            return actual
+
+        def is_linux_link_input(value):
+            return re.search(r'\.(?:o|a|rlib|so(?:\.[0-9]+)*)$', value) is not None
+
+        def printed_linker_inputs(argv):
+            # Parse explicit file arguments and preserve unresolved library/response requests separately.
+            inputs = []
+            requests = []
+            rejected = []
+            output_operands = {'-o', '--output', '-L', '--library-path', '--sysroot', '-isysroot',
+                               '-target', '--target', '-fuse-ld', '-Map', '--Map', '--why-extract'}
+            operands = []
+            for argument in argv[1:]:
+                operands.extend(argument[len('-Wl,'):].split(',') if argument.startswith('-Wl,') else [argument])
+            index = 0
+            while index < len(operands):
+                argument = operands[index]
+                if argument in output_operands:
+                    if index + 1 >= len(operands):
+                        rejected.append({'argument': argument, 'reason': 'missing option operand'})
+                    index += 2
+                    continue
+                if argument in ('-l', '--library'):
+                    if index + 1 >= len(operands):
+                        rejected.append({'argument': argument, 'reason': 'missing library operand'})
+                    else:
+                        requests.append({'kind': 'library-search-request', 'argument': argument,
+                                         'name': operands[index + 1]})
+                    index += 2
+                    continue
+                if argument.startswith('-l') and len(argument) > 2:
+                    requests.append({'kind': 'library-search-request', 'argument': argument, 'name': argument[2:]})
+                elif argument.startswith('--library='):
+                    requests.append({'kind': 'library-search-request', 'argument': argument,
+                                     'name': argument.split('=', 1)[1]})
+                elif argument.startswith('@'):
+                    rejected.append({'argument': argument, 'reason': 'unexpanded linker response file'})
+                elif is_linux_link_input(argument):
+                    if argument.startswith('-'):
+                        rejected.append({'argument': argument, 'reason': 'unsupported input-bearing option'})
+                    else:
+                        inputs.append(argument)
+                index += 1
+            return {'inputs': inputs, 'library_requests': requests, 'rejected': rejected}
+
+        def linker_stdout_records(text):
+            records = []
+            active = False
+            for number, raw_line in enumerate(text.splitlines(), 1):
+                line = re.sub(r'\x1b\[[0-9;]*m', '', raw_line)
+                prefix = 'warning: linker stdout: '
+                if line.startswith(prefix):
+                    active = True
+                    records.append({'line_number': number, 'raw_line': raw_line, 'payload': line[len(prefix):]})
+                elif active and line.startswith('         '):
+                    records.append({'line_number': number, 'raw_line': raw_line, 'payload': line[9:]})
+                else:
+                    active = False
+            return records
+
+        def parse_linker_trace_input(payload):
+            value = payload.strip()
+            if value.startswith('"') and value.endswith('"'):
+                tokens = shlex.split(value, posix=True)
+                if len(tokens) != 1:
+                    raise ValueError('A linker trace record contains multiple quoted arguments')
+                value = tokens[0]
+            if not value:
+                return None
+            match = re.fullmatch(r'(.+\.(?:a|rlib))\((.+)\)', value)
+            if match:
+                return {'path': match.group(1), 'member': match.group(2)}
+            if is_linux_link_input(value):
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', value) or '" "' in value or value.startswith('-'):
+                    raise ValueError('A linker command or option was supplied as one trace path')
+                return {'path': value, 'member': None}
+            raise ValueError('Unrecognized nonempty linker stdout record')
 
         def missing_rust_object_kind(path, member, output_directory, crate_name, compiler_matches):
             # Narrow source-backed exceptions for disposable objects emitted by this exact Rustc action.
@@ -597,29 +690,61 @@ jobs:
                     raise ValueError('The selected binary action is not the expected rustleaks crate')
                 output_directory = binary.parent.resolve()
                 def observed(value, kind, member=None):
-                    value = value.strip(' "\t\r\n')
-                    if not value.endswith(('.a', '.rlib', '.o')):
+                    value = value.strip()
+                    if not is_linux_link_input(value):
                         return
-                    candidates = resolution_candidates(value)
-                    path = resolve(value)
-                    record = {'kind': kind, 'path': value, 'member': member,
-                              'attempted_paths': [str(candidate) for candidate in candidates]}
-                    if path.is_file():
-                        canonical = str(path.resolve())
-                        selected[canonical] = path
-                        record.update(status='resolved', canonical_path=canonical)
-                    else:
-                        classification = missing_rust_object_kind(
-                            path.resolve(), member, output_directory, crate_names[0], compiler_matches)
-                        if classification:
-                            record.update(status='known-rustc-transient', classification=classification,
-                                          canonical_path=None, provider_hash_unavailable=True,
-                                          provenance='Rust commit 59807616e1fa2540724bfbac14d7976d7e4a3860; link.rs and config.rs')
+                    record = {'kind': kind, 'path': value, 'member': member, 'attempted_paths': []}
+                    try:
+                        candidates = resolution_candidates(value)
+                        record['attempted_paths'] = [str(candidate) for candidate in candidates]
+                        path = resolve(value)
+                        if path.is_file():
+                            canonical = str(path.resolve())
+                            selected[canonical] = path
+                            record.update(status='resolved', canonical_path=canonical)
                         else:
-                            record.update(status='unresolved', canonical_path=None)
-                            errors.append(f'Unresolved Linux runtime/link input: {value}; member={member!r}')
+                            classification = missing_rust_object_kind(
+                                path.resolve(), member, output_directory, crate_names[0], compiler_matches)
+                            if classification:
+                                record.update(status='known-rustc-transient', classification=classification,
+                                              canonical_path=None, provider_hash_unavailable=True,
+                                              provenance='Rust commit 59807616e1fa2540724bfbac14d7976d7e4a3860; link.rs and config.rs')
+                            else:
+                                record.update(status='unresolved', canonical_path=None)
+                                errors.append(f'Unresolved Linux runtime/link input: {value}; member={member!r}')
+                    except (OSError, ValueError) as error:
+                        record.update(status='unresolved', canonical_path=None, resolution_error=repr(error))
+                        errors.append(f'Cannot resolve Linux runtime/link input: {value}; {error!r}')
                     observations.append(record)
                     write_json('linux-runtime-observations.json', observations)
+                # Rustc --print=link-args writes complete shell-quoted commands to build stdout.
+                # Parse these as data before looking at individual file arguments; never execute them.
+                printed_commands = []
+                printed_stdout = (commands / 'build.stdout.log').read_text(encoding='utf-8', errors='replace')
+                for number, raw_line in enumerate(printed_stdout.splitlines(), 1):
+                    if not raw_line.strip():
+                        continue
+                    record = {'stream': 'build.stdout', 'line_number': number, 'raw_line': raw_line}
+                    try:
+                        record.update(parse_printed_linker_command(raw_line))
+                        validate_printed_linker_program(record['argv'][0], linker, execution_root)
+                        actual_program = resolve(record['argv'][0])
+                        if actual_program.resolve(strict=True) != linker.resolve(strict=True) or actual_program.name != linker.name:
+                            raise ValueError('Printed linker canonical identity differs from the selected action linker')
+                        record['status'] = 'validated'
+                        parsed = printed_linker_inputs(record['argv'])
+                        record.update(parsed)
+                        for rejection in parsed['rejected']:
+                            errors.append('Printed linker input: ' + repr(rejection))
+                        for value in parsed['inputs']:
+                            observed(value, 'printed-linker-argument')
+                    except (OSError, ValueError) as error:
+                        record.update(status='unresolved-command', error=repr(error))
+                        errors.append(f'Printed linker command at stdout line {number}: {error!r}')
+                    printed_commands.append(record)
+                    write_json('printed-linker-commands.json', printed_commands)
+                if sum(record['status'] == 'validated' for record in printed_commands) != 1:
+                    errors.append('Expected exactly one validated printed linker command for the CLI binary')
                 why = out / 'why-extract.tsv'
                 if not why.is_file():
                     errors.append('LLD why-extract output is missing')
@@ -632,13 +757,21 @@ jobs:
                                     observed(match.group(1), 'why-extract', match.group(2))
                                 else:
                                     observed(value, 'why-extract')
-                for line in build_text.splitlines():
-                    value = re.sub(r'^\s*(?:= note:|\|)?\s*', '', line)
-                    match = re.match(r'(.+\.(?:a|rlib))\((.+)\)$', value)
-                    if match:
-                        observed(match.group(1), 'linker-trace', match.group(2))
-                    else:
-                        observed(value, 'linker-trace')
+                trace_records = linker_stdout_records((commands / 'build.stderr.log').read_text(encoding='utf-8', errors='replace'))
+                if not trace_records:
+                    errors.append('No linker stdout trace block was recovered from Rustc diagnostics')
+                for record in trace_records:
+                    try:
+                        parsed = parse_linker_trace_input(record['payload'])
+                        if parsed is not None:
+                            record.update(status='parsed', **parsed)
+                            observed(parsed['path'], 'linker-trace', parsed['member'])
+                        else:
+                            record['status'] = 'empty'
+                    except ValueError as error:
+                        record.update(status='unresolved-trace', error=repr(error))
+                        errors.append(f'Unrecognized linker trace at stderr line {record["line_number"]}: {error!r}')
+                write_json('linker-trace-records.json', trace_records)
                 write_json('linux-runtime-observations.json', observations)
                 write_json('selected-libraries.json', [file_identity(path) for _, path in sorted(selected.items())])
                 if not any(path.name == 'libc.a' and 'self-contained' in str(path) for path in selected.values()):
