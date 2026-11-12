@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.0-alpha.9] - 2026-11-12
+
+- Buffer built-in CLI reports written to standard output and preserve rendering,
+  drain and flush error reporting.
+- Avoid constructing discarded regex search engines during allowlist validation
+  while retaining syntax, size and working-set checks.
+- Defer decoder setup until a decode pass is admitted and skip newline-free
+  blocks when indexing original fragment locations.
+- Reduce directory and Git metadata allocations and bound source queue retries
+  before waiting for worker progress.
+- Add regression coverage for output failures, regex validation, byte locations,
+  source paths, queue notifications, cancellation and worker cleanup.
+
 ## [0.1.0-alpha.8] - 2026-11-10
 
 - Anchor eligible default-rule searches at keyword hits and precompute keyword
@@ -119,3 +132,4 @@ version and exact source commit.
 [0.1.0-alpha.7]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.7
 
 [0.1.0-alpha.8]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.8
+[0.1.0-alpha.9]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.9
