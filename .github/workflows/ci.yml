@@ -1,5 +1,5 @@
 ---
-name: Native runtime input diagnostic
+name: Windows runtime input diagnostic
 'on':
   workflow_dispatch:
 permissions:
@@ -10,19 +10,19 @@ env:
   DIAGNOSTIC_SOURCE_SHA: c74f50f9da4a21641d1c397a3280874b52f802ca
 jobs:
   native-runtime-inputs:
-    name: Runtime inputs ${{ matrix.target }}
+    name: Windows runtime inputs ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         include:
-        - runner: ubuntu-24.04
+        - runner: windows-2025
           architecture: x86_64
-          target: x86_64-unknown-linux-musl
-          config: release-linux-x86_64-musl
-        - runner: ubuntu-24.04-arm
+          target: x86_64-pc-windows-msvc
+          config: release-windows-x86_64-msvc
+        - runner: windows-11-arm
           architecture: aarch64
-          target: aarch64-unknown-linux-musl
-          config: release-linux-aarch64-musl
+          target: aarch64-pc-windows-msvc
+          config: release-windows-aarch64-msvc
     runs-on: "${{ matrix.runner }}"
     timeout-minutes: 110
     defaults:
@@ -136,6 +136,7 @@ jobs:
       working-directory: rustleaks
       run: |
         import csv
+        import ctypes
         import hashlib
         import json
         import os
@@ -163,68 +164,119 @@ jobs:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(json.dumps(value, indent=2) + '\n', encoding='utf-8')
 
+        def drain_stream(source, destination_path, error_event, reader_errors, label):
+            try:
+                with destination_path.open('wb') as destination:
+                    while True:
+                        chunk = source.read1(65536)
+                        if not chunk:
+                            break
+                        offset = 0
+                        while offset < len(chunk):
+                            written = destination.write(chunk[offset:])
+                            if written is None or written <= 0:
+                                raise OSError('Native stream write made no progress')
+                            offset += written
+                        destination.flush()
+            except Exception as error:
+                reader_errors.append({'stream': label, 'error': repr(error)})
+                error_event.set()
+            finally:
+                try:
+                    source.close()
+                except Exception as error:
+                    reader_errors.append({'stream': label, 'close_error': repr(error)})
+                    error_event.set()
+
+        def stop_process_tree(process, prefix):
+            cleanup = {'pid': process.pid}
+            try:
+                if windows:
+                    result = subprocess.run(['taskkill.exe', '/PID', str(process.pid), '/T', '/F'],
+                                            capture_output=True, timeout=10, check=False)
+                    pathlib.Path(str(prefix) + '.termination.stdout').write_bytes(result.stdout)
+                    pathlib.Path(str(prefix) + '.termination.stderr').write_bytes(result.stderr)
+                    cleanup['taskkill_exit_status'] = result.returncode
+                elif process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    if windows:
+                        process.kill()
+                    else:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
+            except Exception as error:
+                cleanup['error'] = repr(error)
+            cleanup['final_process_exit_status'] = process.poll()
+            return cleanup
+
         def run(name, argv, timeout=120, required=True, cwd=None):
             prefix = commands / name
             prefix.parent.mkdir(parents=True, exist_ok=True)
             record = {'name': name, 'argv': [str(item) for item in argv],
                       'cwd': str(cwd or pathlib.Path.cwd()), 'timeout_seconds': timeout}
             write_json('commands/' + name + '.command.json', record)
-            print('COMMAND ' + json.dumps(record), flush=True)
-            streams = {}
+            print('COMMAND ' + json.dumps(record, ensure_ascii=True), flush=True)
             start = time.monotonic()
+            process = None
+            threads = []
+            reader_errors = []
+            reader_failed = threading.Event()
+            paths = {label: pathlib.Path(str(prefix) + '.' + label + '.log') for label in ('stdout', 'stderr')}
             try:
                 process = subprocess.Popen(record['argv'], cwd=cwd, stdout=subprocess.PIPE,
                                            stderr=subprocess.PIPE, start_new_session=not windows)
-                def copy_stream(source, label):
-                    path = pathlib.Path(str(prefix) + '.' + label + '.log')
-                    with path.open('wb') as destination:
-                        while True:
-                            chunk = source.read1(65536)
-                            if not chunk:
-                                break
-                            destination.write(chunk)
-                            destination.flush()
-                            with console_lock:
-                                sys.stdout.write(chunk.decode('utf-8', errors='replace'))
-                                sys.stdout.flush()
-                    streams[label] = path
-                threads = [threading.Thread(target=copy_stream, args=(process.stdout, 'stdout'), daemon=True),
-                           threading.Thread(target=copy_stream, args=(process.stderr, 'stderr'), daemon=True)]
+                threads = [threading.Thread(target=drain_stream,
+                           args=(stream, paths[label], reader_failed, reader_errors, label), daemon=True)
+                           for label, stream in (('stdout', process.stdout), ('stderr', process.stderr))]
                 for thread in threads:
                     thread.start()
-                try:
-                    code = process.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    record['timed_out'] = True
-                    if windows:
-                        killed = subprocess.run(['taskkill.exe', '/PID', str(process.pid), '/T', '/F'],
-                                                capture_output=True, timeout=30, check=False)
-                        pathlib.Path(str(prefix) + '.termination.stdout').write_bytes(killed.stdout)
-                        pathlib.Path(str(prefix) + '.termination.stderr').write_bytes(killed.stderr)
-                    else:
-                        os.killpg(process.pid, signal.SIGINT)
-                        try:
-                            process.wait(timeout=30)
-                        except subprocess.TimeoutExpired:
-                            os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=30)
-                    code = 124
+                deadline = start + timeout
+                while True:
+                    if reader_failed.is_set():
+                        record['reader_failure'] = True
+                        record['cleanup'] = stop_process_tree(process, prefix)
+                        code = 125
+                        break
+                    code = process.poll()
+                    if code is not None:
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        record['timed_out'] = True
+                        record['cleanup'] = stop_process_tree(process, prefix)
+                        code = 124
+                        break
+                    reader_failed.wait(min(0.2, remaining))
+                join_deadline = time.monotonic() + 10
                 for thread in threads:
-                    thread.join(timeout=30)
+                    thread.join(timeout=max(0, join_deadline - time.monotonic()))
                 if any(thread.is_alive() for thread in threads):
-                    raise RuntimeError('A command output stream did not close')
+                    record['reader_threads_still_alive'] = True
+                    record['cleanup'] = stop_process_tree(process, prefix)
+                    code = 125
+                if reader_errors:
+                    record['reader_failure'] = True
+                    code = 125
             except Exception as error:
                 code = 125
                 record['exception'] = repr(error)
-                print(f'{name}: {error}', file=sys.stderr, flush=True)
-            record.update(exit_status=code, duration_seconds=time.monotonic() - start)
+                if process is not None:
+                    record['cleanup'] = stop_process_tree(process, prefix)
+            record.update(exit_status=code, duration_seconds=time.monotonic() - start,
+                          reader_errors=reader_errors)
             records.append(record)
             write_json('commands/' + name + '.status.json', record)
             write_json('command-statuses.json', records)
+            print('STATUS ' + json.dumps({'name': name, 'exit_status': code,
+                  'duration_seconds': record['duration_seconds'], 'reader_errors': reader_errors}, ensure_ascii=True), flush=True)
             if code and required:
                 errors.append(f'{name} exited {code}')
-            output = streams.get('stdout')
-            return output.read_text(encoding='utf-8', errors='replace') if output else ''
+            if record.get('reader_threads_still_alive'):
+                raise RuntimeError('Native output draining did not stabilize; available evidence is incomplete')
+            return paths['stdout'].read_text(encoding='utf-8', errors='replace') if paths['stdout'].is_file() else ''
 
         def file_identity(path):
             path = pathlib.Path(path)
@@ -235,6 +287,139 @@ jobs:
                     digest.update(block)
             return {'path': str(path), 'canonical_path': str(canonical),
                     'size': canonical.stat().st_size, 'sha256': digest.hexdigest()}
+
+
+        def windows_file_version(path):
+            from ctypes import wintypes
+            api = ctypes.WinDLL('version', use_last_error=True)
+            api.GetFileVersionInfoSizeW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+            api.GetFileVersionInfoSizeW.restype = wintypes.DWORD
+            api.GetFileVersionInfoW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p]
+            api.GetFileVersionInfoW.restype = wintypes.BOOL
+            api.VerQueryValueW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR,
+                                         ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.UINT)]
+            api.VerQueryValueW.restype = wintypes.BOOL
+            handle = wintypes.DWORD()
+            size = api.GetFileVersionInfoSizeW(str(path), ctypes.byref(handle))
+            if not size:
+                raise ctypes.WinError(ctypes.get_last_error())
+            buffer = ctypes.create_string_buffer(size)
+            if not api.GetFileVersionInfoW(str(path), 0, size, buffer):
+                raise ctypes.WinError(ctypes.get_last_error())
+            class FixedFileInfo(ctypes.Structure):
+                _fields_ = [(name, wintypes.DWORD) for name in (
+                    'signature', 'structure_version', 'file_version_ms', 'file_version_ls',
+                    'product_version_ms', 'product_version_ls', 'flags_mask', 'flags',
+                    'file_os', 'file_type', 'file_subtype', 'date_ms', 'date_ls')]
+            pointer = ctypes.c_void_p()
+            length = wintypes.UINT()
+            if not api.VerQueryValueW(buffer, chr(92), ctypes.byref(pointer), ctypes.byref(length)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if length.value < ctypes.sizeof(FixedFileInfo):
+                raise ValueError('Native linker fixed-version resource is truncated')
+            info = ctypes.cast(pointer, ctypes.POINTER(FixedFileInfo)).contents
+            if info.signature != 0xFEEF04BD:
+                raise ValueError('Native linker fixed-version signature is invalid')
+            def version(ms, ls):
+                return '.'.join(str(value) for value in (ms >> 16, ms & 65535, ls >> 16, ls & 65535))
+            return {'path': str(path), 'file_version': version(info.file_version_ms, info.file_version_ls),
+                    'product_version': version(info.product_version_ms, info.product_version_ls),
+                    'method': 'GetFileVersionInfoW / VerQueryValueW fixed file-version resource'}
+
+        def msvc_library_id(value):
+            name = pathlib.PureWindowsPath(value).name.lower()
+            if name.endswith('.rlib'):
+                return name[:-5]
+            if name.endswith('.lib'):
+                return name[:-4]
+            return name
+
+        def msvc_member_name(value):
+            return pathlib.PureWindowsPath(value).name.lower()
+
+        def parse_msvc_trace(text):
+            result = []
+            for record in linker_stdout_records(text):
+                # Rustc renders the native carriage return as U+240D. Preserve raw text and
+                # remove only that terminal presentation character in the parsed view.
+                value = record['payload'].removesuffix('\u240d').strip()
+                record['parsed_text'] = value
+                if not value:
+                    record['kind'] = 'empty'
+                elif value in ('Searching libraries', 'Finished searching libraries'):
+                    record['kind'] = 'heading'
+                else:
+                    match = re.fullmatch(r'Searching\s+(.+\.(?:lib|rlib)):', value, re.I)
+                    loaded = re.fullmatch(r'Loaded\s+(.+\.(?:lib|rlib))\((.+)\)', value, re.I)
+                    if match:
+                        record.update(kind='search', library=match.group(1), library_id=msvc_library_id(match.group(1)))
+                    elif loaded:
+                        record.update(kind='loaded', library=loaded.group(1), library_id=msvc_library_id(loaded.group(1)),
+                                      member=loaded.group(2), member_name=msvc_member_name(loaded.group(2)))
+                    elif value.startswith('Found '):
+                        record.update(kind='symbol', symbol=value[len('Found '):])
+                    elif value.startswith('Referenced in '):
+                        record.update(kind='reference', reference=value[len('Referenced in '):])
+                    else:
+                        record['kind'] = 'unrecognized'
+                result.append(record)
+            return result
+
+        def parse_msvc_map(text):
+            if 'Lib:Object' not in text:
+                raise ValueError('MSVC map has no Lib:Object header')
+            grouped = {}
+            for number, line in enumerate(text.splitlines(), 1):
+                if not re.match(r'^\s*[0-9A-Fa-f]{4}:[0-9A-Fa-f]{8,16}\s+\S+\s+[0-9A-Fa-f]{8,16}\b', line):
+                    continue
+                origin = line.split()[-1]
+                if ':' not in origin:
+                    continue
+                library, member = origin.rsplit(':', 1)
+                key = (msvc_library_id(library), member)
+                if key not in grouped:
+                    suffix = pathlib.PureWindowsPath(member).suffix.lower()
+                    grouped[key] = {'library': library, 'library_id': key[0], 'member': member,
+                                    'member_name': msvc_member_name(member),
+                                    'member_kind': 'object' if suffix in ('.obj', '.o') else 'import-member' if suffix == '.dll' else 'other',
+                                    'first_map_line': number, 'first_raw_map_line': line, 'symbol_count': 0}
+                grouped[key]['symbol_count'] += 1
+            if not grouped:
+                raise ValueError('No library/object map rows were parsed')
+            return list(grouped.values())
+
+        def legal_comment_ranges(raw):
+            # Return exact original-byte ranges only from initial comment blocks.
+            result = []
+            offset = 3 if raw.startswith(b'\xef\xbb\xbf') else 0
+            while offset < len(raw):
+                while offset < len(raw) and raw[offset:offset + 1] in b' \t\r\n':
+                    offset += 1
+                start = offset
+                if raw.startswith(b'/*', offset):
+                    end = raw.find(b'*/', offset + 2)
+                    if end < 0:
+                        break
+                    offset = end + 2
+                elif raw.startswith(b'//', offset) or raw.startswith(b';', offset):
+                    # Preserve a contiguous run of line comments as one legal header.
+                    marker = b'//' if raw.startswith(b'//', offset) else b';'
+                    while True:
+                        end = raw.find(b'\n', offset)
+                        offset = len(raw) if end < 0 else end + 1
+                        lookahead = offset
+                        while lookahead < len(raw) and raw[lookahead:lookahead + 1] in b' \t':
+                            lookahead += 1
+                        if raw.startswith(marker, lookahead):
+                            offset = lookahead
+                        else:
+                            break
+                else:
+                    break
+                block = raw[start:offset]
+                if re.search(br'copyright|licen[cs]e|permission|rights reserved|redistribut|terms', block, re.I):
+                    result.append((start, offset))
+            return result
 
         notices = []
         notice_requests = []
@@ -500,7 +685,10 @@ jobs:
             compiler_matches = 'commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860' in rust_version
             if not compiler_matches:
                 errors.append('Actual Rust compiler does not report the expected pinned 1.95.0 commit')
-            run('actual-linker-version', [linker, '/?' if windows else '--version'], cwd=execution_root)
+            if windows:
+                write_json('actual-linker-version.json', windows_file_version(linker))
+            else:
+                run('actual-linker-version', [linker, '--version'], cwd=execution_root)
             sysroot = run('actual-rustc-sysroot', [rustc, '--print=sysroot'], cwd=execution_root).strip()
             if not sysroot:
                 raise ValueError('The actual compiler reported an empty sysroot')
@@ -558,39 +746,69 @@ jobs:
                         match = re.match(r'(?i)^/LIBPATH:(.+)$', value)
                         if match:
                             library_dirs.append(resolve(match.group(1)))
+                trace = parse_msvc_trace((commands / 'build.stderr.log').read_text(encoding='utf-8', errors='replace'))
+                write_json('windows-linker-trace.json', trace)
+                if not trace:
+                    errors.append('No MSVC linker stdout trace was recovered')
                 searched = {}
                 loaded = []
                 current = None
-                for line in build_text.splitlines():
-                    match = re.search(r'\bSearching\s+(.+?\.lib)\s*:', line, re.I)
-                    if match:
-                        current = pathlib.Path(match.group(1).strip(' "'))
-                        searched.setdefault(current.name.lower(), set()).add(str(current))
-                    match = re.search(r'\bLoaded\s+(.+?\.lib)\(([^)]+)\)', line, re.I)
-                    if match:
-                        library, member = match.groups()
-                        name = pathlib.Path(library.strip(' "')).name.lower()
+                for record in trace:
+                    if record['kind'] == 'search':
+                        current = resolve(record['library'])
+                        record['attempted_path'] = str(current)
+                        try:
+                            record['canonical_path'] = str(current.resolve(strict=True))
+                            searched.setdefault(record['library_id'], set()).add(record['canonical_path'])
+                        except OSError as error:
+                            record['resolution_error'] = repr(error)
+                            errors.append('Unresolved observed MSVC search path: ' + record['library'])
+                    elif record['kind'] == 'loaded':
                         candidates = set()
-                        if current is not None and current.name.lower() == name and current.is_file():
-                            candidates = {str(current)}
+                        direct = pathlib.Path(record['library'])
+                        if direct.is_absolute() and direct.is_file():
+                            candidates.add(str(direct.resolve()))
+                        elif current is not None and msvc_library_id(str(current)) == record['library_id'] and current.is_file():
+                            candidates.add(str(current.resolve()))
                         else:
-                            candidates = set(searched.get(name, set()))
-                            candidates.update(str(directory / pathlib.Path(library).name) for directory in library_dirs
-                                              if (directory / pathlib.Path(library).name).is_file())
-                            if pathlib.Path(library).is_file():
-                                candidates.add(str(pathlib.Path(library)))
-                        canonical = sorted({str(pathlib.Path(path).resolve()) for path in candidates if pathlib.Path(path).is_file()})
-                        loaded.append({'library': library, 'member': member, 'candidate_paths': canonical})
+                            candidates.update(searched.get(record['library_id'], set()))
+                        record['candidate_paths'] = sorted(candidates)
+                        loaded.append(record)
+                    elif record['kind'] == 'unrecognized':
+                        errors.append('Unrecognized MSVC trace record at line ' + str(record['line_number']))
+                write_json('windows-linker-trace.json', trace)
                 write_json('windows-loaded-members.json', loaded)
                 write_json('windows-searched-libraries.json', {name: sorted(paths) for name, paths in searched.items()})
-                if not loaded:
-                    errors.append('No loaded library-member trace was recovered; raw logs and map require review')
-                if any(len(item['candidate_paths']) != 1 for item in loaded):
-                    errors.append('At least one loaded library has unresolved or ambiguous canonical provenance')
-                selected = sorted({path for item in loaded for path in item['candidate_paths']})
+                map_members = parse_msvc_map((out / 'link.map').read_text(encoding='utf-8', errors='replace'))
+                selected = set()
+                native_members = []
+                for member in map_members:
+                    corroborating = [item for item in loaded if item['library_id'] == member['library_id']
+                                     and item['member_name'] == member['member_name']]
+                    candidates = {path for item in corroborating for path in item['candidate_paths']}
+                    if not candidates:
+                        candidates = set(searched.get(member['library_id'], set()))
+                    member['candidate_paths'] = sorted(candidates)
+                    member['association'] = 'map-and-loaded-trace' if corroborating else 'map-and-observed-search-path'
+                    if len(candidates) != 1:
+                        member['status'] = 'unresolved'
+                        errors.append('Missing or ambiguous provider for map member: ' + member['library'] + ':' + member['member'])
+                        continue
+                    path = pathlib.Path(next(iter(candidates)))
+                    member['status'] = 'resolved'
+                    if path.suffix.lower() == '.lib':
+                        selected.add(str(path))
+                        native_members.append(member)
+                    else:
+                        member['provider_kind'] = 'Rust archive identified by observed search path'
+                write_json('windows-map-members.json', map_members)
+                write_json('windows-native-members.json', native_members)
+                if not any(item['library_id'] == 'msvcrt' and item['member_kind'] == 'object' for item in native_members):
+                    errors.append('No resolved MSVC static startup/support object was recovered')
+                selected = sorted(selected)
                 write_json('selected-libraries.json', [file_identity(path) for path in selected])
                 if len(selected) > 60:
-                    raise ValueError('Selected library count exceeds the bounded 60-library diagnostic')
+                    raise ValueError('Selected native library count exceeds the bounded 60-library diagnostic')
                 for index, path in enumerate(selected):
                     run(f'libraries/{index:03d}-members', [librarian, '/NOLOGO', '/LIST', path], timeout=60)
                     run(f'libraries/{index:03d}-linkermembers', [dumpbin, '/LINKERMEMBER:1', path], timeout=60)
@@ -634,36 +852,40 @@ jobs:
                 write_json('windows-notice-search.json', searched_notices)
                 if not any('Windows installation' in item['origin'] for item in notices):
                     errors.append('No public Windows terms/notice file was found in the bounded selected locations')
-                # Retain source identity and leading comments only, never implementation source bytes.
+                # Retain source identities and exact legal-comment bytes, never implementation source.
                 startup_sources = []
                 source_root = toolset / 'crt/src'
-                member_stems = {pathlib.Path(item['member']).stem for item in loaded}
+                object_members = [item for item in native_members if item['member_kind'] == 'object']
+                by_stem = {}
+                for member in object_members:
+                    stem = pathlib.PureWindowsPath(member['member']).stem.lower()
+                    by_stem.setdefault(stem, []).append(member['library'] + ':' + member['member'])
+                matched_stems = set()
                 if source_root.is_dir():
                     for directory, _, files in os.walk(source_root, followlinks=False):
                         for name in files:
                             path = pathlib.Path(directory) / name
-                            if path.stem not in member_stems or path.suffix.lower() not in ('.c', '.cpp', '.asm'):
+                            stem = path.stem.lower()
+                            if stem not in by_stem or path.suffix.lower() not in ('.c', '.cpp', '.asm'):
                                 continue
-                            leading = []
-                            in_comment = False
-                            for line in path.read_text(encoding='utf-8', errors='replace').splitlines()[:120]:
-                                stripped = line.strip()
-                                if not stripped:
-                                    continue
-                                if stripped.startswith('/*'):
-                                    in_comment = True
-                                if in_comment or stripped.startswith(('//', ';')):
-                                    if in_comment and '*/' in stripped:
-                                        leading.append(line.split('*/', 1)[0] + '*/')
-                                        in_comment = False
-                                    else:
-                                        leading.append(line)
-                                else:
-                                    break
+                            matched_stems.add(stem)
                             metadata = file_identity(path)
-                            metadata['leading_comment_only'] = '\n'.join(leading)
+                            metadata['candidate_archive_members'] = by_stem[stem]
+                            metadata['association_basis'] = 'object basename only; source variant and architecture require review'
+                            metadata['legal_comment_ranges'] = []
+                            raw = path.read_bytes()
+                            for index, (start, end) in enumerate(legal_comment_ranges(raw)):
+                                block = raw[start:end]
+                                destination = out / 'startup-comment-notices' / (metadata['sha256'][:16] + f'-{index:02d}.notice')
+                                destination.parent.mkdir(parents=True, exist_ok=True)
+                                destination.write_bytes(block)
+                                metadata['legal_comment_ranges'].append({'source_byte_start': start,
+                                    'source_byte_end_exclusive': end, 'sha256': hashlib.sha256(block).hexdigest(),
+                                    'retained_path': str(destination.relative_to(out))})
                             startup_sources.append(metadata)
                 write_json('startup-source-metadata.json', startup_sources)
+                write_json('startup-source-search.json', {'source_root': str(source_root),
+                    'requested_member_stems': by_stem, 'unmatched_member_stems': sorted(set(by_stem) - matched_stems)})
             else:
                 lld = linker.parent / 'ld.lld'
                 if not lld.is_file():
@@ -795,7 +1017,7 @@ jobs:
                             notice(repository / name, 'hydrated LLVM source notice; provider association requires trace review')
         except Exception as error:
             errors.append('Evidence collection: ' + repr(error))
-            print(errors[-1], file=sys.stderr, flush=True)
+            print(json.dumps({'collection_error': errors[-1]}, ensure_ascii=True), file=sys.stderr, flush=True)
         finally:
             write_json('collection-result.json', {'errors': errors, 'command_count': len(records),
                        'meaning': 'Evidence completeness only; no release qualification or licensing conclusion'})
