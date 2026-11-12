@@ -316,6 +316,11 @@ impl DirectorySource {
                             emit,
                         );
                     }
+                    #[cfg(not(windows))]
+                    children.push(entry.file_name());
+                    // Windows entries store names inline; owned filenames can
+                    // increase retained memory for wide directories.
+                    #[cfg(windows)]
                     children.push(entry);
                 }
                 Err(error) => {
@@ -326,8 +331,14 @@ impl DirectorySource {
                 }
             }
         }
+        #[cfg(not(windows))]
+        children.sort();
+        #[cfg(windows)]
         children.sort_by_key(fs::DirEntry::file_name);
         for child in children {
+            #[cfg(not(windows))]
+            let control = self.walk(&path.join(child), nominal, cancellation, emit)?;
+            #[cfg(windows)]
             let control = self.walk(&child.path(), nominal, cancellation, emit)?;
             if control == SourceControl::Stop {
                 return Ok(control);
@@ -378,6 +389,11 @@ impl Source for DirectorySource {
         };
         let physical = LogicalPath::from_native(&self.root);
         let logical = LogicalPath::from_native(logical_root);
+        // Native path equality can ignore spelling differences that remain
+        // visible in emitted metadata. LogicalPath compares both byte forms.
+        if physical == logical && logical.normalized().as_bytes() != b"." {
+            return self.walk(&self.root, &mut nominal, cancellation, emit);
+        }
         self.walk(&self.root, &mut nominal, cancellation, &mut |event| {
             emit(translate_event(event, &physical, &logical)?)
         })

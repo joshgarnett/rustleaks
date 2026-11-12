@@ -11,12 +11,11 @@ use rustleaks_core::Engine;
 use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{ByteText, Fragment, ScanOptions};
 use rustleaks_core::session::{IgnoreSet, SessionPolicy};
-#[cfg(windows)]
-use rustleaks_sources::LogicalPath;
 use rustleaks_sources::{
     CallbackError, Cancellation, CancellationToken, DirectoryOptions, DirectorySource, FileOptions,
-    FileSource, ReadOutcome, ReadStatus, Source, SourceControl, SourceError, SourceEvent,
-    SourceIssue, SourceIssueKind, SourceReader, SourceRunner, SourceStage, SourceTermination,
+    FileSource, LogicalPath, ReadOutcome, ReadStatus, Source, SourceControl, SourceError,
+    SourceEvent, SourceIssue, SourceIssueKind, SourceReader, SourceRunner, SourceStage,
+    SourceTermination,
 };
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -224,6 +223,140 @@ fn directory_walk_is_lexical_and_size_equality_is_scanned() {
     assert_eq!(issues, [SourceIssueKind::Limit]);
 }
 
+fn expected_directory_fragment(path: &Path) -> SourceEvent {
+    let logical = LogicalPath::from_native(path);
+    let mut builder = Fragment::builder(b"value\n\n".as_slice())
+        .file_path(logical.normalized().clone())
+        .start_line(1);
+    if let Some(original) = logical.windows_original() {
+        builder = builder.windows_file_path(original.clone());
+    }
+    SourceEvent::fragment(builder.build())
+}
+
+#[test]
+fn directory_walk_preserves_nested_order_path_spelling_and_limit_events() {
+    let tree = TempTree::new("nested-lexical-paths");
+    fs::create_dir(tree.path().join("prefix")).expect("create nested directory");
+    for name in [
+        "z",
+        "prefix-long",
+        "prefix/z",
+        "prefix/a",
+        "a1z",
+        "a1",
+        "a01",
+        "a",
+    ] {
+        fs::write(tree.path().join(name), b"value\n\n").expect("write ordered input");
+    }
+    fs::write(tree.path().join("a0"), b"oversized\n\n").expect("write oversized input");
+    fs::write(tree.path().join("a00"), b"").expect("write empty input");
+
+    for logical_root in [
+        None,
+        Some(tree.path().to_path_buf()),
+        Some(tree.path().join(".")),
+        Some(PathBuf::from(
+            tree.path().to_string_lossy().replace('\\', "/"),
+        )),
+        Some(PathBuf::from("repo")),
+        Some(PathBuf::from(".")),
+    ] {
+        let mut options = DirectoryOptions::default()
+            .max_file_size(Some(7))
+            .emit_limit_issues(true);
+        if let Some(root) = &logical_root {
+            options = options.logical_root(root);
+        }
+        let display_root = match logical_root.as_deref() {
+            Some(root) if root == Path::new(".") => Path::new(""),
+            Some(root) => root,
+            None => tree.path(),
+        };
+        let mut expected = Vec::new();
+        for name in [
+            "a",
+            "a0",
+            "a01",
+            "a1",
+            "a1z",
+            "prefix/a",
+            "prefix/z",
+            "prefix-long",
+            "z",
+        ] {
+            if name == "a0" {
+                expected.push(SourceEvent::Issue(SourceIssue::new(
+                    SourceStage::Limit,
+                    SourceIssueKind::Limit,
+                    Some(tree.path().join(name)),
+                    "skipping file: exceeds maximum file size",
+                )));
+            } else {
+                let path = name
+                    .split('/')
+                    .fold(display_root.to_path_buf(), |path, part| path.join(part));
+                expected.push(expected_directory_fragment(&path));
+            }
+        }
+        let mut source = DirectorySource::with_options(tree.path(), options);
+        let mut events = Vec::new();
+        let control = source
+            .visit(&CancellationToken::new(), &mut |event| {
+                events.push(event);
+                Ok(SourceControl::Continue)
+            })
+            .expect("directory visit succeeds");
+        assert_eq!(control, SourceControl::Continue);
+        assert_eq!(events, expected, "logical root {logical_root:?}");
+    }
+}
+
+#[test]
+fn directory_callback_stop_error_and_cancellation_precede_later_entries() {
+    let tree = TempTree::new("directory-callback-boundaries");
+    fs::write(tree.path().join("z"), b"value\n\n").expect("write later sibling");
+    fs::create_dir(tree.path().join("a")).expect("create first directory");
+    fs::write(tree.path().join("a/z"), b"oversized\n\n").expect("write later limit");
+    fs::write(tree.path().join("a/a"), b"value\n\n").expect("write first fragment");
+
+    for logical_root in [tree.path().to_path_buf(), PathBuf::from("repo")] {
+        for response in [
+            Ok(SourceControl::Stop),
+            Ok(SourceControl::Continue),
+            Err(CallbackError::new("consumer rejected fragment")),
+        ] {
+            let options = DirectoryOptions::default()
+                .logical_root(&logical_root)
+                .max_file_size(Some(7))
+                .emit_limit_issues(true);
+            let mut source = DirectorySource::with_options(tree.path(), options);
+            let token = CancellationToken::new();
+            let mut events = Vec::new();
+            let result = source.visit(&token, &mut |event| {
+                events.push(event);
+                if response == Ok(SourceControl::Continue) {
+                    token.cancel();
+                }
+                response.clone()
+            });
+            let expected_result = match response {
+                Ok(SourceControl::Stop) => Ok(SourceControl::Stop),
+                Ok(SourceControl::Continue) => Err(SourceError::Cancelled),
+                Err(error) => Err(SourceError::Callback(error)),
+            };
+            assert_eq!(result, expected_result);
+            assert_eq!(
+                events,
+                [expected_directory_fragment(
+                    &logical_root.join("a").join("a")
+                )]
+            );
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn directory_source_preserves_invalid_unix_filename_bytes() {
@@ -231,17 +364,30 @@ fn directory_source_preserves_invalid_unix_filename_bytes() {
     use std::os::unix::ffi::OsStringExt;
 
     let tree = TempTree::new("invalid-path");
-    let name = OsString::from_vec(b"invalid-\xff-name".to_vec());
-    fs::write(tree.path().join(&name), b"bytes").expect("write invalid-byte filename");
-    let mut source = DirectorySource::new(tree.path());
+    let root = tree.path().join(OsString::from_vec(b"root-\xff".to_vec()));
+    fs::create_dir(&root).expect("create invalid-byte root");
+    for name in [
+        b"invalid-\xff-name",
+        b"invalid-\xfe-name",
+        b"invalid-a-name",
+    ] {
+        fs::write(root.join(OsString::from_vec(name.to_vec())), b"value\n\n")
+            .expect("write invalid-byte filename");
+    }
+    let options = DirectoryOptions::default().logical_root(&root);
+    let mut source = DirectorySource::with_options(&root, options);
     let (fragments, issues) = collect(&mut source);
-    assert_eq!(fragments.len(), 1);
-    assert!(
-        fragments[0]
-            .file_path()
-            .as_bytes()
-            .ends_with(b"invalid-\xff-name")
-    );
+    let expected = [
+        b"invalid-a-name",
+        b"invalid-\xfe-name",
+        b"invalid-\xff-name",
+    ]
+    .map(|name| expected_directory_fragment(&root.join(OsString::from_vec(name.to_vec()))));
+    let events = fragments
+        .into_iter()
+        .map(SourceEvent::fragment)
+        .collect::<Vec<_>>();
+    assert_eq!(events, expected);
     assert!(issues.is_empty());
 }
 
@@ -352,19 +498,30 @@ fn file_symlinks_preserve_alias_and_target_and_handle_failures() {
     assert!(collect(&mut disabled).0.is_empty());
 
     let options = DirectoryOptions::default().follow_symlinks(true);
-    let mut enabled = DirectorySource::with_options(tree.path(), options.clone());
-    let (fragments, issues) = collect(&mut enabled);
-    assert_eq!(fragments.len(), 1);
-    assert_eq!(fragments[0].content().as_bytes(), b"target bytes");
-    assert_eq!(
-        fragments[0].symlink_file().as_str().expect("UTF-8 alias"),
-        alias.to_string_lossy()
-    );
-    assert_eq!(
-        fragments[0].file_path().as_str().expect("UTF-8 target"),
-        resolved_expected(&target).to_string_lossy()
-    );
-    assert!(issues.is_empty());
+    for (logical_root, expected_alias) in [
+        (None, alias.clone()),
+        (Some(tree.path().to_path_buf()), alias.clone()),
+        (Some(PathBuf::from("repo")), PathBuf::from("repo/alias")),
+        (Some(PathBuf::from(".")), PathBuf::from("alias")),
+    ] {
+        let mut mapped_options = options.clone();
+        if let Some(root) = logical_root {
+            mapped_options = mapped_options.logical_root(root);
+        }
+        let mut enabled = DirectorySource::with_options(tree.path(), mapped_options);
+        let (fragments, issues) = collect(&mut enabled);
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(fragments[0].content().as_bytes(), b"target bytes");
+        assert_eq!(
+            fragments[0].symlink_file().as_str().expect("UTF-8 alias"),
+            expected_alias.to_string_lossy()
+        );
+        assert_eq!(
+            fragments[0].file_path().as_str().expect("UTF-8 target"),
+            resolved_expected(&target).to_string_lossy()
+        );
+        assert!(issues.is_empty());
+    }
 
     let dangling = tree.path().join("dangling");
     create_file_symlink(&tree.path().join("missing"), &dangling);

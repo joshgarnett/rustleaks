@@ -5,10 +5,11 @@ use std::sync::{MutexGuard, PoisonError};
 use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanTermination, ScanUsage};
 
 use super::{
-    Arc, CallbackError, CancellationToken, Engine, Fragment, Job, Mutex, ScanControl, ScanOptions,
-    ScanOutcome, SessionPolicy, Source, SourceControl, SourceError, SourceEvent, SourceIssue,
-    SourceOutcome, SourceRunner, SourceStatistics, SourceTermination, TrySendError, ensure_active,
-    finish_run, merge_complete_scan, mpsc, thread, worker_terminal,
+    Arc, CallbackError, CancellationToken, Engine, Fragment, INITIAL_QUEUE_RETRIES, Job, Mutex,
+    QueueWait, ScanControl, ScanOptions, ScanOutcome, SessionPolicy, Source, SourceControl,
+    SourceError, SourceEvent, SourceIssue, SourceOutcome, SourceRunner, SourceStatistics,
+    SourceTermination, TrySendError, WorkerReceiver, ensure_active, finish_run,
+    merge_complete_scan, mpsc, thread, worker_terminal,
 };
 use crate::Cancellation;
 
@@ -600,14 +601,21 @@ impl Drop for WorkerGuard<'_> {
 fn schedule(
     operation: &Operation<'_>,
     job: Job,
+    queue_wait: &QueueWait,
     mut try_send: impl FnMut(Job) -> Result<(), TrySendError<Job>>,
 ) -> Result<SourceControl, CallbackError> {
     let mut pending = job;
+    let mut waiting = None;
+    let mut remaining_retries = INITIAL_QUEUE_RETRIES;
     loop {
         ensure_active(
             operation.cancellation,
             "source runner cancelled while scheduling",
         )?;
+        #[cfg(test)]
+        if let Some(after_external_check) = &queue_wait.after_external_check {
+            after_external_check();
+        }
         if operation.is_cancelled() {
             return Ok(SourceControl::Stop);
         }
@@ -615,7 +623,7 @@ fn schedule(
             Ok(()) => return Ok(SourceControl::Continue),
             Err(TrySendError::Full(job)) => {
                 pending = job;
-                thread::yield_now();
+                waiting = queue_wait.retry(waiting, &mut remaining_retries);
             }
             Err(TrySendError::Disconnected(_)) => {
                 // The last worker can exhaust its budget or panic after the
@@ -649,8 +657,6 @@ pub(super) fn run(
     )
 }
 
-#[allow(clippy::result_large_err)] // The bounded channel returns ownership of an unsent fragment without another allocation.
-#[allow(clippy::too_many_lines)] // Keep worker creation, producer stop and mandatory joins in one ownership scope.
 fn run_with_scan(
     runner: &SourceRunner,
     source: &mut dyn Source,
@@ -658,6 +664,30 @@ fn run_with_scan(
     cancellation: &CancellationToken,
     budget: SourceBudget,
     scan: impl Fn(&Fragment, &ScanControl<'_>) -> ScanOutcome + Sync,
+) -> SourceOutcome {
+    run_with_scan_setup(
+        runner,
+        source,
+        policy,
+        cancellation,
+        budget,
+        scan,
+        &QueueWait::default(),
+        |_| Ok(()),
+    )
+}
+
+#[allow(clippy::result_large_err)] // The bounded channel returns ownership of an unsent fragment without another allocation.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Keep setup failure injection and mandatory joins in one ownership scope.
+fn run_with_scan_setup(
+    runner: &SourceRunner,
+    source: &mut dyn Source,
+    policy: &SessionPolicy,
+    cancellation: &CancellationToken,
+    budget: SourceBudget,
+    scan: impl Fn(&Fragment, &ScanControl<'_>) -> ScanOutcome + Sync,
+    queue_wait: &QueueWait,
+    before_spawn: impl Fn(usize) -> std::io::Result<()>,
 ) -> SourceOutcome {
     let operation = Operation {
         budget,
@@ -681,37 +711,43 @@ fn run_with_scan(
             .map(|error| worker_terminal(format!("could not allocate worker handles: {error}")));
         if setup_error.is_none() {
             for index in 0..runner.workers() {
-                let receiver = Arc::clone(&receiver);
+                let receiver = WorkerReceiver::new(Arc::clone(&receiver), queue_wait);
                 let operation = &operation;
                 let scan = &scan;
-                match thread::Builder::new()
-                    .name(format!("rustleaks-source-{index}"))
-                    .spawn_scoped(scope, move || {
-                        let _guard = WorkerGuard(operation);
-                        let mut batches = Vec::new();
-                        loop {
-                            if operation.is_cancelled() {
-                                break;
+                match before_spawn(index).and_then(|()| {
+                    thread::Builder::new()
+                        .name(format!("rustleaks-source-{index}"))
+                        .spawn_scoped(scope, move || {
+                            // This local guard publishes panic stop before the
+                            // captured receiver owner drops and notifies.
+                            let _guard = WorkerGuard(operation);
+                            let mut batches = Vec::new();
+                            loop {
+                                if operation.is_cancelled() {
+                                    break;
+                                }
+                                let job = receiver.recv();
+                                let Ok(job) = job else { break };
+                                let Some(reservation) = operation.reserve() else {
+                                    break;
+                                };
+                                let signal = || operation.is_cancelled();
+                                let control = ScanControl::cancellable(&signal)
+                                    .with_budget(reservation.budget);
+                                let detected = scan(&job.fragment, &control);
+                                reservation.settle(&detected);
+                                if !merge_complete_scan(
+                                    &mut batches,
+                                    policy,
+                                    job.sequence,
+                                    detected,
+                                ) {
+                                    break;
+                                }
                             }
-                            let job = receiver
-                                .lock()
-                                .unwrap_or_else(PoisonError::into_inner)
-                                .recv();
-                            let Ok(job) = job else { break };
-                            let Some(reservation) = operation.reserve() else {
-                                break;
-                            };
-                            let signal = || operation.is_cancelled();
-                            let control =
-                                ScanControl::cancellable(&signal).with_budget(reservation.budget);
-                            let detected = scan(&job.fragment, &control);
-                            reservation.settle(&detected);
-                            if !merge_complete_scan(&mut batches, policy, job.sequence, detected) {
-                                break;
-                            }
-                        }
-                        batches
-                    }) {
+                            batches
+                        })
+                }) {
                     Ok(handle) => handles.push(handle),
                     Err(error) => {
                         setup_error = Some(worker_terminal(format!(
@@ -760,9 +796,12 @@ fn run_with_scan(
                 statistics.observe(&fragment)?;
                 let sequence = next_sequence;
                 next_sequence += 1;
-                schedule(&operation, Job { sequence, fragment }, |pending| {
-                    sender.try_send(pending)
-                })
+                schedule(
+                    &operation,
+                    Job { sequence, fragment },
+                    queue_wait,
+                    |pending| sender.try_send(pending),
+                )
             });
         }
         drop(sender);
@@ -827,6 +866,300 @@ mod tests {
         }
     }
 
+    fn unlimited_operation(cancellation: &CancellationToken) -> Operation<'_> {
+        Operation {
+            budget: SourceBudget::unlimited(),
+            cancellation,
+            stopped: AtomicBool::new(false),
+            accounting: Mutex::new(Accounting::default()),
+        }
+    }
+
+    #[test]
+    fn full_queue_cancellation_reaches_source_before_reserved_workers_are_released() {
+        let detector = engine();
+        for workers in [1, 4] {
+            for capacity in [1, 3] {
+                super::super::tests::assert_full_queue_cancellation(
+                    workers,
+                    capacity,
+                    |source, cancellation, wait, held| {
+                        run_with_scan_setup(
+                            &SourceRunner::new(workers, capacity).unwrap(),
+                            source,
+                            &SessionPolicy::default(),
+                            cancellation,
+                            policy(3 * workers, workers),
+                            |fragment, control| {
+                                held.hold();
+                                detector.scan_fragment_controlled(
+                                    fragment,
+                                    &ScanOptions::default(),
+                                    control,
+                                )
+                            },
+                            wait,
+                            |_| Ok(()),
+                        )
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cancellation_between_existing_checks_preserves_normal_callback_stop() {
+        let cancellation = CancellationToken::new();
+        let signal = cancellation.clone();
+        let wait = QueueWait {
+            after_external_check: Some(Box::new(move || signal.cancel())),
+            ..QueueWait::default()
+        };
+        let operation = unlimited_operation(&cancellation);
+        let result = schedule(&operation, job(), &wait, |_| {
+            panic!("the second cancellation check must stop before sending")
+        });
+        assert_eq!(result.unwrap(), SourceControl::Stop);
+        assert!(!operation.stopped.load(Ordering::Acquire));
+        assert!(cancellation.is_cancelled());
+    }
+
+    #[test]
+    fn cancellation_after_checks_does_not_reclassify_a_successful_enqueue() {
+        let cancellation = CancellationToken::new();
+        let operation = unlimited_operation(&cancellation);
+        let wait = QueueWait::default();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let result = schedule(&operation, job(), &wait, |pending| {
+            cancellation.cancel();
+            sender.try_send(pending)
+        });
+        assert_eq!(result.unwrap(), SourceControl::Continue);
+        assert!(receiver.try_recv().is_ok());
+    }
+
+    #[test]
+    fn cancellation_after_checks_does_not_replace_the_disconnect_callback_error() {
+        let cancellation = CancellationToken::new();
+        let operation = unlimited_operation(&cancellation);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        let result = schedule(&operation, job(), &QueueWait::default(), |pending| {
+            cancellation.cancel();
+            sender.try_send(pending)
+        });
+        assert_eq!(
+            result.unwrap_err().message(),
+            "all source runner workers disconnected"
+        );
+        assert!(!operation.stopped.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn external_cancellation_already_present_precedes_internal_stop() {
+        let cancellation = CancellationToken::new();
+        let operation = unlimited_operation(&cancellation);
+        operation.stopped.store(true, Ordering::Release);
+        cancellation.cancel();
+        let result = schedule(&operation, job(), &QueueWait::default(), |_| {
+            panic!("cancelled scheduling must not attempt a send")
+        });
+        assert_eq!(
+            result.unwrap_err().message(),
+            "source runner cancelled while scheduling"
+        );
+    }
+
+    #[test]
+    fn sleeping_producer_observes_internal_stop_without_worker_progress() {
+        let cancellation = CancellationToken::new();
+        let operation = unlimited_operation(&cancellation);
+        let (before_wait, waits) = mpsc::channel();
+        let wait = QueueWait {
+            before_wait: Some(before_wait),
+            ..QueueWait::default()
+        };
+        let (sender, receiver) = mpsc::sync_channel(1);
+        assert!(sender.try_send(job()).is_ok());
+        thread::scope(|scope| {
+            let operation = &operation;
+            let notification = &wait;
+            let (done, completion) = mpsc::channel();
+            let stopper = scope.spawn(move || {
+                waits.recv_timeout(Duration::from_secs(5)).unwrap();
+                operation.stopped.store(true, Ordering::Release);
+                let rescued = completion.recv_timeout(Duration::from_secs(5)).is_err();
+                if rescued {
+                    notification.notify();
+                }
+                rescued
+            });
+            let result = schedule(operation, job(), &wait, |pending| sender.try_send(pending));
+            done.send(()).unwrap();
+            assert_eq!(result.unwrap(), SourceControl::Stop);
+            assert!(
+                !stopper.join().unwrap(),
+                "internal stop must be polled before watchdog notification"
+            );
+        });
+        assert!(!cancellation.is_cancelled());
+        assert!(receiver.try_recv().is_ok());
+    }
+
+    #[test]
+    fn initial_retries_observe_cancellation_and_stop_before_acquiring_the_gate() {
+        for internal_stop in [false, true] {
+            let cancellation = CancellationToken::new();
+            let operation = unlimited_operation(&cancellation);
+            let wait = QueueWait::default();
+            let guard = wait.lock();
+            let (done, completion) = mpsc::channel();
+            thread::scope(|scope| {
+                let signal = &cancellation;
+                let operation = &operation;
+                let notification = &wait;
+                let producer = scope.spawn(move || {
+                    let mut attempts = 0;
+                    let result = schedule(operation, job(), notification, |pending| {
+                        attempts += 1;
+                        if attempts == 2 {
+                            if internal_stop {
+                                operation.stopped.store(true, Ordering::Release);
+                            } else {
+                                signal.cancel();
+                            }
+                        }
+                        Err(TrySendError::Full(pending))
+                    });
+                    let _ = done.send((result, attempts));
+                });
+                let observed = completion.recv_timeout(Duration::from_secs(5));
+                if observed.is_err() {
+                    cancellation.cancel();
+                }
+                // Release the gate and join even if early polling regresses.
+                drop(guard);
+                wait.notify();
+                producer.join().unwrap();
+                let (result, attempts) =
+                    observed.expect("initial retries must poll before acquiring the gate");
+                assert_eq!(attempts, 2);
+                if internal_stop {
+                    assert_eq!(result.unwrap(), SourceControl::Stop);
+                    assert!(!cancellation.is_cancelled());
+                } else {
+                    assert_eq!(
+                        result.unwrap_err().message(),
+                        "source runner cancelled while scheduling"
+                    );
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn initial_retries_are_bounded_across_spurious_notifications_and_timeouts() {
+        for notify in [false, true] {
+            let cancellation = CancellationToken::new();
+            let operation = unlimited_operation(&cancellation);
+            let (before_wait, waits) = mpsc::channel();
+            let (after_yield, yields) = mpsc::channel();
+            let wait = QueueWait {
+                interval: if notify {
+                    Duration::from_secs(30)
+                } else {
+                    Duration::from_micros(100)
+                },
+                before_wait: Some(before_wait),
+                after_yield: Some(after_yield),
+                ..QueueWait::default()
+            };
+            let (sender, receiver) = mpsc::sync_channel(1);
+            assert!(sender.try_send(job()).is_ok());
+            let observed = thread::scope(|scope| {
+                let notification = &wait;
+                let signal = &cancellation;
+                let notifier = scope.spawn(move || {
+                    let observed = (|| {
+                        waits.recv_timeout(Duration::from_secs(5)).ok()?;
+                        let guard = notification.lock();
+                        let initial_yields = yields.try_iter().count();
+                        while waits.try_recv().is_ok() {}
+                        drop(guard);
+                        if notify {
+                            notification.notify();
+                        }
+                        waits.recv_timeout(Duration::from_secs(5)).ok()?;
+                        let guard = notification.lock();
+                        let repeated_yields = yields.try_iter().count();
+                        drop(guard);
+                        Some((initial_yields, repeated_yields))
+                    })();
+                    let guard = notification.lock();
+                    signal.cancel();
+                    notification.changed.notify_one();
+                    drop(guard);
+                    observed
+                });
+                let result = schedule(&operation, job(), &wait, |pending| sender.try_send(pending));
+                let observed = notifier.join().unwrap();
+                assert_eq!(
+                    result.unwrap_err().message(),
+                    "source runner cancelled while scheduling"
+                );
+                observed
+            });
+            assert_eq!(
+                observed,
+                Some((32, 0)),
+                "a full pending job gets one bounded retry phase, including after a wake"
+            );
+            assert!(receiver.try_recv().is_ok());
+            assert!(receiver.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn partial_spawn_failure_skips_source_and_releases_idle_budget_workers() {
+        let (before_receive, receives) = mpsc::channel();
+        let (receiver_dropped, drops) = mpsc::channel();
+        let wait = QueueWait {
+            before_receive: Some(before_receive),
+            receiver_dropped: Some(receiver_dropped),
+            ..QueueWait::default()
+        };
+        let mut source = super::super::tests::UnvisitedSource(false);
+        let cancellation = CancellationToken::new();
+        let outcome = run_with_scan_setup(
+            &SourceRunner::new(4, 1).unwrap(),
+            &mut source,
+            &SessionPolicy::default(),
+            &cancellation,
+            SourceBudget::unlimited(),
+            |_, _| panic!("setup failure must not scan fragments"),
+            &wait,
+            |index| {
+                if index == 1 {
+                    receives.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Err(std::io::Error::other("synthetic spawn failure"))
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert!(!source.0);
+        assert_eq!(drops.try_iter().count(), 2);
+        assert!(!cancellation.is_cancelled());
+        assert_eq!(outcome.usage().unwrap().fragments(), 0);
+        assert!(matches!(
+            outcome.termination(),
+            SourceTermination::SourceError(SourceError::Terminal {
+                stage: SourceStage::Worker,
+                ..
+            })
+        ));
+    }
+
     struct Fragments(usize);
 
     impl Source for Fragments {
@@ -876,7 +1209,7 @@ mod tests {
         };
         let (sender, receiver) = mpsc::sync_channel(1);
         let mut receiver = Some(receiver);
-        let scheduled = schedule(&operation, job(), |pending| {
+        let scheduled = schedule(&operation, job(), &QueueWait::default(), |pending| {
             // This closure runs after the scheduling cancellation check. Force
             // the worker's exhaustion and last-receiver drop before try_send.
             assert!(!operation.is_cancelled());
@@ -916,7 +1249,10 @@ mod tests {
         };
         let (sender, receiver) = mpsc::sync_channel(1);
         drop(receiver);
-        let error = schedule(&operation, job(), |pending| sender.try_send(pending)).unwrap_err();
+        let error = schedule(&operation, job(), &QueueWait::default(), |pending| {
+            sender.try_send(pending)
+        })
+        .unwrap_err();
         assert_eq!(error.message(), "all source runner workers disconnected");
         assert!(operation.lock().exceeded.is_none());
     }

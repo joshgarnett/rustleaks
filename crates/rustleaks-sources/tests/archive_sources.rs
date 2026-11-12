@@ -11,8 +11,8 @@ use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::Fragment;
 use rustleaks_sources::{
     ArchiveLimits, ArchiveOptions, ArchiveSource, Cancellation, CancellationToken,
-    DirectoryOptions, DirectorySource, FileOptions, Source, SourceControl, SourceError,
-    SourceEvent, SourceIssueKind, SourceStage,
+    DirectoryOptions, DirectorySource, FileOptions, LogicalPath, Source, SourceControl,
+    SourceError, SourceEvent, SourceIssueKind, SourceStage,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -398,6 +398,64 @@ fn directory_source_can_opt_into_archive_decoration() {
     let (fragments, issues) = result.expect("directory archive scan");
     assert_eq!(fragments.len(), 4);
     assert!(issues.is_empty());
+}
+
+#[test]
+fn directory_archive_paths_preserve_identity_and_remapped_roots() {
+    let unique = format!("rustleaks-archive-path-test-{}", std::process::id());
+    let root = std::env::temp_dir().join(unique);
+    fs::create_dir(&root).expect("create temporary directory");
+    fs::write(
+        root.join("files.tar"),
+        tar(&[("nested/item", b"value\n\n")]),
+    )
+    .expect("write synthetic archive");
+    for logical_root in [
+        root.clone(),
+        root.join("."),
+        PathBuf::from("repo"),
+        PathBuf::from("."),
+    ] {
+        let options = DirectoryOptions::default()
+            .archives(ArchiveOptions::default())
+            .logical_root(&logical_root);
+        let mut source = DirectorySource::with_options(&root, options);
+        let (fragments, issues) = collect(&mut source).expect("directory archive scan");
+        assert_eq!(fragments.len(), 1);
+        assert!(issues.is_empty());
+        let outer_path = if logical_root == Path::new(".") {
+            PathBuf::from("files.tar")
+        } else {
+            logical_root.join("files.tar")
+        };
+        let mut expected_path = LogicalPath::from_native(&outer_path)
+            .normalized()
+            .as_bytes()
+            .to_vec();
+        expected_path.extend_from_slice(b"!nested/item");
+        assert_eq!(fragments[0].file_path().as_bytes(), expected_path);
+        assert_eq!(fragments[0].content().as_bytes(), b"value\n\n");
+        assert_eq!(fragments[0].start_line(), 1);
+        assert!(fragments[0].symlink_file().is_empty());
+        #[cfg(windows)]
+        {
+            // Archives normalize the completed outer path in the Windows form.
+            // Its slashes no longer match the physical root's backslashes, so
+            // logical-root translation retains that original archive spelling.
+            let mut expected_windows_path = LogicalPath::from_native(&root.join("files.tar"))
+                .normalized()
+                .as_bytes()
+                .to_vec();
+            expected_windows_path.extend_from_slice(b"!nested/item");
+            assert_eq!(
+                fragments[0].windows_file_path().as_bytes(),
+                expected_windows_path
+            );
+        }
+        #[cfg(not(windows))]
+        assert!(fragments[0].windows_file_path().is_empty());
+    }
+    fs::remove_dir_all(root).expect("remove temporary directory");
 }
 
 fn tar(entries: &[(&str, &[u8])]) -> Vec<u8> {

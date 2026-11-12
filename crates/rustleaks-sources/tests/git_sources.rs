@@ -82,6 +82,177 @@ fn collect(source: &mut dyn Source) -> (Vec<Fragment>, Vec<SourceIssueKind>) {
     (fragments, issues)
 }
 
+#[cfg(unix)]
+const SYNTHETIC_HUNK_PATCH: &[u8] = b"commit 0123456789abcdef0123456789abcdef01234567\n\
+Author: Synthetic Test <synthetic@example.com>\n\
+Date:   Tue Nov 2 18:37:53 2021 -0500\n\n\
+\x20\x20\x20\x20synthetic 'hunks'\n\n\
+diff --git a/single.txt b/single.txt\n\
+--- a/single.txt\n\
++++ b/single.txt\n\
+@@ -2,0 +3 @@\n\
++single\n\
+diff --git a/mode.txt b/mode.txt\n\
+old mode 100644\n\
+new mode 100755\n\
+diff --git a/binary.bin b/binary.bin\n\
+Binary files a/binary.bin and b/binary.bin differ\n\
+diff --git a/deleted.txt b/deleted.txt\n\
+deleted file mode 100644\n\
+--- a/deleted.txt\n\
++++ /dev/null\n\
+@@ -1 +0,0 @@\n\
+-deleted\n\
+diff --git a/multi.txt b/multi.txt\n\
+--- a/multi.txt\n\
++++ b/multi.txt\n\
+@@ -3,0 +4 @@\n\
++first\n\
+@@ -7 +7,0 @@\n\
+-removed\n\
+@@ -11,0 +13 @@\n\
++last's line\n\
+\\ No newline at end of file\n";
+
+#[cfg(unix)]
+fn scripted_patch_source(
+    patch: &[u8],
+    stderr: bool,
+    exit_code: u8,
+) -> (TempRepo, rustleaks_sources::GitSource) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let repository = TempRepo(std::env::temp_dir().join(format!(
+        "rustleaks-git-patch-{}-{unique}",
+        std::process::id()
+    )));
+    fs::create_dir(repository.path()).expect("create synthetic patch directory");
+    let executable = repository.path().join("git-fixture");
+    let mut script = b"#!/bin/sh\nprintf '%s' '".to_vec();
+    for byte in patch {
+        if *byte == b'\'' {
+            script.extend_from_slice(b"'\\''");
+        } else {
+            script.push(*byte);
+        }
+    }
+    script.extend_from_slice(b"'\n");
+    if stderr {
+        script.extend_from_slice(b"printf 'synthetic warning\\n' >&2\n");
+    }
+    script.extend_from_slice(format!("exit {exit_code}\n").as_bytes());
+    fs::write(&executable, script).expect("write synthetic Git command");
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+        .expect("make synthetic Git command executable");
+    let source = rustleaks_sources::GitSource::new(repository.path()).executable(executable);
+    (repository, source)
+}
+
+#[cfg(unix)]
+#[test]
+fn single_and_multiple_hunks_preserve_owned_fragment_fields_and_order() {
+    let (_repository, mut source) = scripted_patch_source(SYNTHETIC_HUNK_PATCH, false, 0);
+    let (fragments, issues) = collect(&mut source);
+    assert!(issues.is_empty());
+    let expected = [
+        (b"single.txt".as_slice(), 3, b"single\n".as_slice()),
+        (b"multi.txt".as_slice(), 4, b"first\n".as_slice()),
+        (b"multi.txt".as_slice(), 7, b"".as_slice()),
+        (b"multi.txt".as_slice(), 13, b"last's line".as_slice()),
+    ];
+    assert_eq!(fragments.len(), expected.len());
+    for (fragment, (path, line, bytes)) in fragments.iter().zip(expected) {
+        assert_eq!(fragment.file_path().as_bytes(), path);
+        assert_eq!(fragment.start_line(), line);
+        assert_eq!(fragment.content().as_bytes(), bytes);
+        assert_eq!(
+            fragment.commit().as_bytes(),
+            b"0123456789abcdef0123456789abcdef01234567"
+        );
+        let metadata = fragment.commit_metadata().expect("metadata on every hunk");
+        assert_eq!(metadata.sha().as_bytes(), fragment.commit().as_bytes());
+        assert_eq!(metadata.author_name().as_bytes(), b"Synthetic Test");
+        assert_eq!(metadata.author_email().as_bytes(), b"synthetic@example.com");
+        assert_eq!(metadata.date().as_bytes(), b"2021-11-02T23:37:53Z");
+        assert_eq!(metadata.message().as_bytes(), b"synthetic 'hunks'");
+        assert!(fragment.symlink_file().is_empty());
+        assert!(fragment.windows_file_path().is_empty());
+        assert!(!fragment.inherited_from_finding());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn hunk_emission_stops_on_callback_control_and_failure() {
+    for stop_at in [1, 2, 4] {
+        for fail in [false, true] {
+            let (_repository, mut source) = scripted_patch_source(SYNTHETIC_HUNK_PATCH, false, 0);
+            let mut seen = 0;
+            let result = source.visit(&CancellationToken::new(), &mut |event| {
+                assert!(matches!(event, SourceEvent::Fragment { issue: None, .. }));
+                seen += 1;
+                if seen == stop_at {
+                    if fail {
+                        Err(CallbackError::new("synthetic callback failure"))
+                    } else {
+                        Ok(SourceControl::Stop)
+                    }
+                } else {
+                    Ok(SourceControl::Continue)
+                }
+            });
+            assert_eq!(seen, stop_at);
+            if fail {
+                assert!(matches!(result, Err(SourceError::Callback(_))));
+            } else {
+                assert_eq!(result.expect("normal callback stop"), SourceControl::Stop);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn late_patch_and_command_errors_publish_no_fragments() {
+    let mut truncated = SYNTHETIC_HUNK_PATCH.to_vec();
+    truncated.extend_from_slice(
+        b"diff --git a/broken b/broken\n--- a/broken\n+++ b/broken\n@@ -0,0 +1,2 @@\n+truncated\n",
+    );
+    for (patch, exit_code, stage) in [
+        (truncated.as_slice(), 0, SourceStage::GitParse),
+        (SYNTHETIC_HUNK_PATCH, 7, SourceStage::GitExit),
+    ] {
+        for stderr in [false, true] {
+            let (_repository, mut source) = scripted_patch_source(patch, stderr, exit_code);
+            let mut fragments = 0;
+            let mut issues = Vec::new();
+            let error = source
+                .visit(&CancellationToken::new(), &mut |event| {
+                    match event {
+                        SourceEvent::Fragment { .. } => fragments += 1,
+                        SourceEvent::Issue(issue) => issues.push((issue.stage(), issue.kind())),
+                        _ => panic!("unexpected future Git source event"),
+                    }
+                    Ok(SourceControl::Continue)
+                })
+                .expect_err("late error must remain terminal");
+            assert!(
+                matches!(error, SourceError::Terminal { stage: actual, .. } if actual == stage)
+            );
+            assert_eq!(fragments, 0);
+            if stderr && stage == SourceStage::GitParse {
+                assert_eq!(
+                    issues,
+                    [(SourceStage::GitCommand, SourceIssueKind::GitStderr)]
+                );
+            } else {
+                assert!(issues.is_empty());
+            }
+        }
+    }
+}
+
 #[test]
 fn default_log_matches_current_pinned_added_fragment_stream() {
     let repository = TempRepo::copy_fixture("small");

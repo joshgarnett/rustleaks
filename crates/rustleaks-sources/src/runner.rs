@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::mpsc::{self, TrySendError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 use rustleaks_core::model::{ByteText, Finding, Fragment, ScanOptions};
 use rustleaks_core::session::{ScanSession, SessionBatch, SessionPolicy};
@@ -273,7 +274,27 @@ impl SourceRunner {
         source: &mut dyn Source,
         policy: &SessionPolicy,
         cancellation: &CancellationToken,
-        worker: impl Fn(&Mutex<mpsc::Receiver<Job>>) -> Vec<FragmentBatch> + Sync,
+        worker: impl Fn(&WorkerReceiver<'_>) -> Vec<FragmentBatch> + Sync,
+    ) -> SourceOutcome {
+        self.run_with_worker_setup(
+            source,
+            policy,
+            cancellation,
+            worker,
+            &QueueWait::default(),
+            |_| Ok(()),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // Inject setup failure without changing public runner configuration.
+    fn run_with_worker_setup(
+        &self,
+        source: &mut dyn Source,
+        policy: &SessionPolicy,
+        cancellation: &CancellationToken,
+        worker: impl Fn(&WorkerReceiver<'_>) -> Vec<FragmentBatch> + Sync,
+        queue_wait: &QueueWait,
+        before_spawn: impl Fn(usize) -> std::io::Result<()>,
     ) -> SourceOutcome {
         let (sender, receiver) = mpsc::sync_channel::<Job>(self.queue_capacity());
         let receiver = Arc::new(Mutex::new(receiver));
@@ -294,11 +315,13 @@ impl SourceRunner {
                 });
             if setup_error.is_none() {
                 for index in 0..self.workers() {
-                    let receiver = Arc::clone(&receiver);
+                    let receiver = WorkerReceiver::new(Arc::clone(&receiver), queue_wait);
                     let worker = &worker;
-                    let spawned = thread::Builder::new()
-                        .name(format!("rustleaks-source-{index}"))
-                        .spawn_scoped(scope, move || worker(receiver.as_ref()));
+                    let spawned = before_spawn(index).and_then(|()| {
+                        thread::Builder::new()
+                            .name(format!("rustleaks-source-{index}"))
+                            .spawn_scoped(scope, move || worker(&receiver))
+                    });
                     match spawned {
                         Ok(handle) => handles.push(handle),
                         Err(error) => {
@@ -345,13 +368,15 @@ impl SourceRunner {
                     let sequence = next_sequence;
                     next_sequence += 1;
                     let mut pending = Job { sequence, fragment };
+                    let mut waiting = None;
+                    let mut remaining_retries = INITIAL_QUEUE_RETRIES;
                     loop {
                         ensure_active(cancellation, "source runner cancelled while scheduling")?;
                         match sender.try_send(pending) {
                             Ok(()) => return Ok(SourceControl::Continue),
                             Err(TrySendError::Full(job)) => {
                                 pending = job;
-                                thread::yield_now();
+                                waiting = queue_wait.retry(waiting, &mut remaining_retries);
                             }
                             Err(TrySendError::Disconnected(_)) => {
                                 return Err(CallbackError::new(
@@ -415,8 +440,148 @@ struct FragmentBatch {
     batch: SessionBatch,
 }
 
+const INITIAL_QUEUE_RETRIES: usize = 32;
+
+/// Serializes notifications with the producer's transition from Full to sleep.
+struct QueueWait {
+    gate: Mutex<()>,
+    changed: Condvar,
+    interval: Duration,
+    #[cfg(test)]
+    before_wait: Option<mpsc::Sender<()>>,
+    #[cfg(test)]
+    before_receive: Option<mpsc::Sender<()>>,
+    #[cfg(test)]
+    receiver_dropped: Option<mpsc::Sender<()>>,
+    #[cfg(test)]
+    after_external_check: Option<Box<dyn Fn() + Send + Sync>>,
+    #[cfg(test)]
+    after_yield: Option<mpsc::Sender<()>>,
+}
+
+impl Default for QueueWait {
+    fn default() -> Self {
+        Self {
+            gate: Mutex::new(()),
+            changed: Condvar::new(),
+            // The public cancellation token has no notification registration.
+            interval: Duration::from_micros(100),
+            #[cfg(test)]
+            before_wait: None,
+            #[cfg(test)]
+            before_receive: None,
+            #[cfg(test)]
+            receiver_dropped: None,
+            #[cfg(test)]
+            after_external_check: None,
+            #[cfg(test)]
+            after_yield: None,
+        }
+    }
+}
+
+impl QueueWait {
+    fn lock(&self) -> MutexGuard<'_, ()> {
+        self.gate.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn retry<'a>(
+        &'a self,
+        guard: Option<MutexGuard<'a, ()>>,
+        remaining_retries: &mut usize,
+    ) -> Option<MutexGuard<'a, ()>> {
+        if *remaining_retries != 0 {
+            // Brief handoffs may finish before parking is worthwhile. Spend
+            // this fixed allowance once per pending job, never after a wake.
+            *remaining_retries -= 1;
+            thread::yield_now();
+            #[cfg(test)]
+            if let Some(after_yield) = &self.after_yield {
+                let _ = after_yield.send(());
+            }
+            guard
+        } else {
+            Some(self.wait(guard))
+        }
+    }
+
+    fn wait<'a>(&'a self, guard: Option<MutexGuard<'a, ()>>) -> MutexGuard<'a, ()> {
+        let Some(guard) = guard else {
+            // Retry under the gate before sleeping, in case the ungated Full
+            // raced a dequeue or the last receiver's destruction.
+            return self.lock();
+        };
+        #[cfg(test)]
+        if let Some(before_wait) = &self.before_wait {
+            let _ = before_wait.send(());
+        }
+        self.changed
+            .wait_timeout(guard, self.interval)
+            .unwrap_or_else(PoisonError::into_inner)
+            .0
+    }
+
+    fn notify(&self) {
+        let _guard = self.lock();
+        self.changed.notify_one();
+    }
+}
+
+/// Drops receiver ownership before notifying the producer about worker exit.
+struct WorkerReceiver<'a> {
+    receiver: Option<Arc<Mutex<mpsc::Receiver<Job>>>>,
+    queue_wait: &'a QueueWait,
+    #[cfg(test)]
+    after_receive: Option<mpsc::Sender<()>>,
+}
+
+impl<'a> WorkerReceiver<'a> {
+    fn new(receiver: Arc<Mutex<mpsc::Receiver<Job>>>, queue_wait: &'a QueueWait) -> Self {
+        Self {
+            receiver: Some(receiver),
+            queue_wait,
+            #[cfg(test)]
+            after_receive: None,
+        }
+    }
+
+    fn recv(&self) -> Result<Job, mpsc::RecvError> {
+        #[cfg(test)]
+        if let Some(before_receive) = &self.queue_wait.before_receive {
+            let _ = before_receive.send(());
+        }
+        let received = self
+            .receiver
+            .as_ref()
+            .expect("worker retains its receiver until exit")
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .recv();
+        if received.is_ok() {
+            #[cfg(test)]
+            if let Some(after_receive) = &self.after_receive {
+                let _ = after_receive.send(());
+            }
+            // Release the receiver mutex before acquiring the notification gate.
+            self.queue_wait.notify();
+        }
+        received
+    }
+}
+
+impl Drop for WorkerReceiver<'_> {
+    fn drop(&mut self) {
+        drop(self.receiver.take());
+        #[cfg(test)]
+        if let Some(receiver_dropped) = &self.queue_wait.receiver_dropped {
+            let _ = receiver_dropped.send(());
+        }
+        self.queue_wait.notify();
+    }
+}
+
 fn worker_loop(
-    receiver: &Mutex<mpsc::Receiver<Job>>,
+    receiver: &WorkerReceiver<'_>,
     engine: &Engine,
     scan_options: ScanOptions,
     policy: &SessionPolicy,
@@ -427,10 +592,7 @@ fn worker_loop(
         if cancellation.is_cancelled() {
             break;
         }
-        let job = match receiver.lock() {
-            Ok(guard) => guard.recv(),
-            Err(poisoned) => poisoned.into_inner().recv(),
-        };
+        let job = receiver.recv();
         let Ok(job) = job else {
             break;
         };
@@ -544,6 +706,392 @@ mod tests {
 
     use super::*;
 
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+    const NOTIFICATION_ONLY_INTERVAL: Duration = Duration::from_secs(30);
+
+    fn queue_job(sequence: u64) -> Job {
+        Job {
+            sequence,
+            fragment: Fragment::new("A"),
+        }
+    }
+
+    pub(super) struct HeldWorkers {
+        entered: mpsc::Sender<()>,
+        release: Latch,
+    }
+
+    impl HeldWorkers {
+        pub(super) fn hold(&self) {
+            self.entered.send(()).unwrap();
+            self.release.wait();
+        }
+    }
+
+    struct FullQueueSource {
+        workers: usize,
+        capacity: usize,
+        entered: mpsc::Receiver<()>,
+        ready: mpsc::Sender<()>,
+        schedule: mpsc::Receiver<()>,
+        acknowledged: mpsc::Sender<Result<SourceControl, CallbackError>>,
+    }
+
+    impl Source for FullQueueSource {
+        fn visit(
+            &mut self,
+            _: &dyn crate::Cancellation,
+            emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+        ) -> Result<SourceControl, SourceError> {
+            for _ in 0..self.workers {
+                assert_eq!(
+                    emit(SourceEvent::fragment(Fragment::new("A"))).unwrap(),
+                    SourceControl::Continue
+                );
+            }
+            for _ in 0..self.workers {
+                self.entered.recv_timeout(TEST_TIMEOUT).unwrap();
+            }
+            for _ in 0..self.capacity {
+                assert_eq!(
+                    emit(SourceEvent::fragment(Fragment::new("A"))).unwrap(),
+                    SourceControl::Continue
+                );
+            }
+            self.ready.send(()).unwrap();
+            self.schedule.recv_timeout(TEST_TIMEOUT).unwrap();
+            let result = emit(SourceEvent::fragment(Fragment::new("A")));
+            self.acknowledged.send(result.clone()).unwrap();
+            result.map_err(SourceError::Callback)
+        }
+    }
+
+    pub(super) fn assert_full_queue_cancellation(
+        workers: usize,
+        capacity: usize,
+        run: impl FnOnce(&mut dyn Source, &CancellationToken, &QueueWait, &HeldWorkers) -> SourceOutcome,
+    ) {
+        let (entered, entries) = mpsc::channel();
+        let held = HeldWorkers {
+            entered,
+            release: Latch::default(),
+        };
+        let (ready, readiness) = mpsc::channel();
+        let (schedule, scheduling) = mpsc::channel();
+        let (acknowledged, acknowledgement) = mpsc::channel();
+        let (before_wait, waits) = mpsc::channel();
+        let queue_wait = QueueWait {
+            before_wait: Some(before_wait),
+            ..QueueWait::default()
+        };
+        let cancellation = CancellationToken::new();
+        let mut source = FullQueueSource {
+            workers,
+            capacity,
+            entered: entries,
+            ready,
+            schedule: scheduling,
+            acknowledged,
+        };
+        let (outcome, observed) = thread::scope(|scope| {
+            let signal = &cancellation;
+            let release = &held.release;
+            let notification = &queue_wait;
+            let controller = scope.spawn(move || {
+                let observed = (|| {
+                    readiness.recv_timeout(TEST_TIMEOUT).ok()?;
+                    while waits.try_recv().is_ok() {}
+                    schedule.send(()).ok()?;
+                    waits.recv_timeout(TEST_TIMEOUT).ok()?;
+                    // Publish while the producer is asleep or waiting for its
+                    // gate, so this case cannot select the between-check race.
+                    let guard = notification.lock();
+                    signal.cancel();
+                    drop(guard);
+                    acknowledgement.recv_timeout(TEST_TIMEOUT).ok()
+                })();
+                // Release workers even when the callback failed to respond.
+                release.open();
+                observed
+            });
+            let outcome = run(&mut source, &cancellation, &queue_wait, &held);
+            (outcome, controller.join().unwrap())
+        });
+        let error = observed
+            .expect("source must acknowledge cancellation before workers are released")
+            .unwrap_err();
+        assert_eq!(error.message(), "source runner cancelled while scheduling");
+        assert_eq!(outcome.termination(), &SourceTermination::Cancelled);
+        assert_eq!(
+            outcome.scanned_bytes(),
+            u64::try_from(workers + capacity + 1).unwrap()
+        );
+        if let Some(usage) = outcome.usage() {
+            assert_eq!(usage.fragments(), workers + capacity + 1);
+            assert_eq!(usage.completed_fragments(), 0);
+            assert!(usage.is_exact());
+        }
+    }
+
+    #[test]
+    fn full_queue_cancellation_reaches_source_before_workers_are_released() {
+        for workers in [1, 4] {
+            for capacity in [1, 3] {
+                assert_full_queue_cancellation(
+                    workers,
+                    capacity,
+                    |source, cancellation, wait, held| {
+                        SourceRunner::new(workers, capacity)
+                            .unwrap()
+                            .run_with_worker_setup(
+                                source,
+                                &SessionPolicy::default(),
+                                cancellation,
+                                |receiver| {
+                                    let _job = receiver.recv().unwrap();
+                                    held.hold();
+                                    Vec::new()
+                                },
+                                wait,
+                                |_| Ok(()),
+                            )
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dequeue_before_gated_retry_does_not_require_a_notification_to_be_remembered() {
+        let wait = QueueWait::default();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
+        assert!(sender.try_send(queue_job(0)).is_ok());
+        let pending = match sender.try_send(queue_job(1)) {
+            Err(TrySendError::Full(job)) => job,
+            _ => panic!("the occupied queue must reject the pending job"),
+        };
+        assert_eq!(receiver.recv().unwrap().sequence, 0);
+        let guard = wait.wait(None);
+        assert!(sender.try_send(pending).is_ok());
+        drop(guard);
+        assert_eq!(receiver.recv().unwrap().sequence, 1);
+    }
+
+    #[test]
+    fn dequeue_after_gated_full_notifies_the_atomic_transition_to_sleep() {
+        let wait = QueueWait {
+            interval: NOTIFICATION_ONLY_INTERVAL,
+            ..QueueWait::default()
+        };
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let (after_receive, received) = mpsc::channel();
+        let mut receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
+        receiver.after_receive = Some(after_receive);
+        assert!(sender.try_send(queue_job(0)).is_ok());
+        let guard = wait.wait(None);
+        assert!(matches!(
+            sender.try_send(queue_job(1)),
+            Err(TrySendError::Full(_))
+        ));
+        thread::scope(|scope| {
+            let worker = scope.spawn(move || {
+                let sequence = receiver.recv().unwrap().sequence;
+                // Keep receiver ownership in the join result until the producer
+                // records its wake, so exit notification cannot mask a failure.
+                (sequence, receiver)
+            });
+            // The receive is finished; its normal notification is waiting for
+            // this gate. No production callback or hook blocks under the gate.
+            received.recv_timeout(TEST_TIMEOUT).unwrap();
+            let (done, completion) = mpsc::channel();
+            let notification = &wait;
+            let watchdog = scope.spawn(move || {
+                let rescued = completion.recv_timeout(TEST_TIMEOUT).is_err();
+                if rescued {
+                    notification.notify();
+                }
+                rescued
+            });
+            drop(wait.wait(Some(guard)));
+            let completion_reported = done.send(());
+            let rescued = watchdog.join().unwrap();
+            let (sequence, receiver) = worker.join().unwrap();
+            drop(receiver);
+            assert!(!rescued, "notification must precede the polling timeout");
+            assert!(completion_reported.is_ok());
+            assert_eq!(sequence, 0);
+        });
+    }
+
+    #[test]
+    fn receiver_exit_notifies_only_after_its_channel_ownership_is_dropped() {
+        let (receiver_dropped, dropped) = mpsc::channel();
+        let wait = QueueWait {
+            interval: NOTIFICATION_ONLY_INTERVAL,
+            receiver_dropped: Some(receiver_dropped),
+            ..QueueWait::default()
+        };
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
+        assert!(sender.try_send(queue_job(0)).is_ok());
+        let guard = wait.wait(None);
+        thread::scope(|scope| {
+            let worker = scope.spawn(move || drop(receiver));
+            dropped.recv_timeout(TEST_TIMEOUT).unwrap();
+            assert!(matches!(
+                sender.try_send(queue_job(1)),
+                Err(TrySendError::Disconnected(_))
+            ));
+            let (done, completion) = mpsc::channel();
+            let notification = &wait;
+            let watchdog = scope.spawn(move || {
+                let rescued = completion.recv_timeout(TEST_TIMEOUT).is_err();
+                if rescued {
+                    notification.notify();
+                }
+                rescued
+            });
+            drop(wait.wait(Some(guard)));
+            done.send(()).unwrap();
+            worker.join().unwrap();
+            assert!(
+                !watchdog.join().unwrap(),
+                "receiver exit must notify before the polling timeout"
+            );
+        });
+    }
+
+    #[test]
+    fn one_receiver_exit_keeps_the_surviving_worker_connected() {
+        let wait = QueueWait::default();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let receiver = Arc::new(Mutex::new(receiver));
+        let first = WorkerReceiver::new(Arc::clone(&receiver), &wait);
+        let second = WorkerReceiver::new(receiver, &wait);
+        assert!(sender.try_send(queue_job(0)).is_ok());
+        drop(first);
+        assert!(matches!(
+            sender.try_send(queue_job(1)),
+            Err(TrySendError::Full(_))
+        ));
+        assert_eq!(second.recv().unwrap().sequence, 0);
+        assert!(sender.try_send(queue_job(1)).is_ok());
+        drop(second);
+        assert!(matches!(
+            sender.try_send(queue_job(2)),
+            Err(TrySendError::Disconnected(_))
+        ));
+    }
+
+    #[test]
+    fn poisoned_gate_and_poison_during_wait_are_recovered() {
+        let (before_wait, waits) = mpsc::channel();
+        let wait = QueueWait {
+            interval: NOTIFICATION_ONLY_INTERVAL,
+            before_wait: Some(before_wait),
+            ..QueueWait::default()
+        };
+        thread::scope(|scope| {
+            let waiter = scope.spawn(|| {
+                let mut guard = wait.wait(None);
+                while !wait.gate.is_poisoned() {
+                    guard = wait.wait(Some(guard));
+                }
+                drop(guard);
+            });
+            waits.recv_timeout(TEST_TIMEOUT).unwrap();
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _guard = wait.lock();
+                    panic!("synthetic notification gate poison");
+                }))
+                .is_err()
+            );
+            wait.notify();
+            waiter.join().unwrap();
+        });
+        // The poisoned gate also remains usable by a new producer or exit guard.
+        drop(wait.wait(None));
+        wait.notify();
+    }
+
+    pub(super) struct UnvisitedSource(pub(super) bool);
+
+    impl Source for UnvisitedSource {
+        fn visit(
+            &mut self,
+            _: &dyn crate::Cancellation,
+            _: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+        ) -> Result<SourceControl, SourceError> {
+            self.0 = true;
+            Ok(SourceControl::Continue)
+        }
+    }
+
+    #[test]
+    fn partial_spawn_failure_closes_idle_receivers_and_joins_started_workers() {
+        let (before_receive, receives) = mpsc::channel();
+        let (receiver_dropped, drops) = mpsc::channel();
+        let wait = QueueWait {
+            before_receive: Some(before_receive),
+            receiver_dropped: Some(receiver_dropped),
+            ..QueueWait::default()
+        };
+        let exited = AtomicUsize::new(0);
+        let cancellation = CancellationToken::new();
+        let mut source = UnvisitedSource(false);
+        let outcome = SourceRunner::new(4, 1).unwrap().run_with_worker_setup(
+            &mut source,
+            &SessionPolicy::default(),
+            &cancellation,
+            |receiver| {
+                assert!(receiver.recv().is_err());
+                exited.fetch_add(1, Ordering::SeqCst);
+                Vec::new()
+            },
+            &wait,
+            |index| {
+                if index == 1 {
+                    receives.recv_timeout(TEST_TIMEOUT).unwrap();
+                    Err(std::io::Error::other("synthetic spawn failure"))
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert!(!source.0);
+        assert_eq!(exited.load(Ordering::SeqCst), 1);
+        assert_eq!(drops.try_iter().count(), 2);
+        assert!(!cancellation.is_cancelled());
+        assert!(matches!(
+            outcome.termination(),
+            SourceTermination::SourceError(SourceError::Terminal {
+                stage: SourceStage::Worker,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cancellation_after_sender_closure_is_observed_when_workers_are_joined() {
+        let cancellation = CancellationToken::new();
+        let outcome = SourceRunner::new(1, 1).unwrap().run_with_worker(
+            &mut TokenFragments(1),
+            &SessionPolicy::default(),
+            &cancellation,
+            |receiver| {
+                let _job = receiver.recv().unwrap();
+                // Only source return and sender closure permit this receive to
+                // finish; cancellation is deliberately later than the callback.
+                assert!(receiver.recv().is_err());
+                cancellation.cancel();
+                Vec::new()
+            },
+        );
+        assert_eq!(outcome.termination(), &SourceTermination::Cancelled);
+    }
+
     #[test]
     fn all_workers_panicking_disconnects_the_full_queue_and_joins_every_worker() {
         struct Fragments;
@@ -593,7 +1141,7 @@ mod tests {
                 &cancellation,
                 |receiver| {
                     let _exited = WorkerExited(Arc::clone(&exited));
-                    let _first = receiver.lock().unwrap().recv().unwrap();
+                    let _first = receiver.recv().unwrap();
                     panic!("synthetic detection worker failure");
                 },
             );
@@ -807,7 +1355,7 @@ regex = '''B'''
                 }
                 let mut taken = 0;
                 loop {
-                    let job = receiver.lock().unwrap().recv();
+                    let job = receiver.recv();
                     let Ok(job) = job else {
                         break;
                     };

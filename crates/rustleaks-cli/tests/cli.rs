@@ -250,6 +250,7 @@ fn directory_aliases_emit_the_same_json_and_custom_exit() {
     }
     assert_eq!(reports[0], reports[1]);
     assert_eq!(reports[1], reports[2]);
+    assert!(String::from_utf8_lossy(&reports[0]).contains("\"secret.txt\""));
 }
 
 #[test]
