@@ -410,11 +410,27 @@ fn directory_archive_paths_preserve_identity_and_remapped_roots() {
         tar(&[("nested/item", b"value\n\n")]),
     )
     .expect("write synthetic archive");
-    for logical_root in [
-        root.clone(),
-        root.join("."),
-        PathBuf::from("repo"),
-        PathBuf::from("."),
+    let physical_root = LogicalPath::from_native(&root);
+    let root_bytes = physical_root.normalized().as_bytes();
+    #[cfg(windows)]
+    // The completed outer path uses slashes, but the current TAR member keeps
+    // native separators. The outer slashes do not match the physical root's
+    // backslashes, so logical-root translation retains the physical spelling.
+    let expected_windows_path = [root_bytes, br"/files.tar!nested\item"].concat();
+    for (logical_root, expected_path) in [
+        (
+            root.clone(),
+            [root_bytes, b"/files.tar!nested/item"].concat(),
+        ),
+        (
+            root.join("."),
+            [root_bytes, b"/./files.tar!nested/item"].concat(),
+        ),
+        (
+            PathBuf::from("repo"),
+            b"repo/files.tar!nested/item".to_vec(),
+        ),
+        (PathBuf::from("."), b"files.tar!nested/item".to_vec()),
     ] {
         let options = DirectoryOptions::default()
             .archives(ArchiveOptions::default())
@@ -423,33 +439,20 @@ fn directory_archive_paths_preserve_identity_and_remapped_roots() {
         let (fragments, issues) = collect(&mut source).expect("directory archive scan");
         assert_eq!(fragments.len(), 1);
         assert!(issues.is_empty());
-        let outer_path = if logical_root == Path::new(".") {
-            PathBuf::from("files.tar")
-        } else {
-            logical_root.join("files.tar")
-        };
-        let mut expected_path = LogicalPath::from_native(&outer_path)
-            .normalized()
-            .as_bytes()
-            .to_vec();
-        expected_path.extend_from_slice(b"!nested/item");
-        assert_eq!(fragments[0].file_path().as_bytes(), expected_path);
+        assert_eq!(
+            fragments[0].file_path().as_bytes(),
+            expected_path,
+            "logical root: {logical_root:?}"
+        );
         assert_eq!(fragments[0].content().as_bytes(), b"value\n\n");
         assert_eq!(fragments[0].start_line(), 1);
         assert!(fragments[0].symlink_file().is_empty());
         #[cfg(windows)]
         {
-            // Archives normalize the completed outer path in the Windows form.
-            // Its slashes no longer match the physical root's backslashes, so
-            // logical-root translation retains that original archive spelling.
-            let mut expected_windows_path = LogicalPath::from_native(&root.join("files.tar"))
-                .normalized()
-                .as_bytes()
-                .to_vec();
-            expected_windows_path.extend_from_slice(b"!nested/item");
             assert_eq!(
                 fragments[0].windows_file_path().as_bytes(),
-                expected_windows_path
+                expected_windows_path,
+                "logical root: {logical_root:?}"
             );
         }
         #[cfg(not(windows))]

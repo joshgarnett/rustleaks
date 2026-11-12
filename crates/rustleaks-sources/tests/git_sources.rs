@@ -187,10 +187,14 @@ fn single_and_multiple_hunks_preserve_owned_fragment_fields_and_order() {
 fn hunk_emission_stops_on_callback_control_and_failure() {
     for stop_at in [1, 2, 4] {
         for fail in [false, true] {
-            let (_repository, mut source) = scripted_patch_source(SYNTHETIC_HUNK_PATCH, false, 0);
+            let (repository, mut source) = scripted_patch_source(SYNTHETIC_HUNK_PATCH, false, 0);
             let mut seen = 0;
             let result = source.visit(&CancellationToken::new(), &mut |event| {
-                assert!(matches!(event, SourceEvent::Fragment { issue: None, .. }));
+                assert!(
+                    matches!(event, SourceEvent::Fragment { issue: None, .. }),
+                    "stop_at={stop_at}, fail={fail}, repository={:?}, event={event:?}",
+                    repository.path()
+                );
                 seen += 1;
                 if seen == stop_at {
                     if fail {
@@ -202,11 +206,24 @@ fn hunk_emission_stops_on_callback_control_and_failure() {
                     Ok(SourceControl::Continue)
                 }
             });
-            assert_eq!(seen, stop_at);
+            assert_eq!(
+                seen,
+                stop_at,
+                "stop_at={stop_at}, fail={fail}, repository={:?}, result={result:?}",
+                repository.path()
+            );
             if fail {
-                assert!(matches!(result, Err(SourceError::Callback(_))));
+                assert!(
+                    matches!(result, Err(SourceError::Callback(_))),
+                    "stop_at={stop_at}, repository={:?}, result={result:?}",
+                    repository.path()
+                );
             } else {
-                assert_eq!(result.expect("normal callback stop"), SourceControl::Stop);
+                assert!(
+                    matches!(result, Ok(SourceControl::Stop)),
+                    "stop_at={stop_at}, repository={:?}, result={result:?}",
+                    repository.path()
+                );
             }
         }
     }
@@ -224,7 +241,7 @@ fn late_patch_and_command_errors_publish_no_fragments() {
         (SYNTHETIC_HUNK_PATCH, 7, SourceStage::GitExit),
     ] {
         for stderr in [false, true] {
-            let (_repository, mut source) = scripted_patch_source(patch, stderr, exit_code);
+            let (repository, mut source) = scripted_patch_source(patch, stderr, exit_code);
             let mut fragments = 0;
             let mut issues = Vec::new();
             let error = source
@@ -238,7 +255,9 @@ fn late_patch_and_command_errors_publish_no_fragments() {
                 })
                 .expect_err("late error must remain terminal");
             assert!(
-                matches!(error, SourceError::Terminal { stage: actual, .. } if actual == stage)
+                matches!(error, SourceError::Terminal { stage: actual, .. } if actual == stage),
+                "stage={stage:?}, stderr={stderr}, exit_code={exit_code}, repository={:?}, error={error:?}",
+                repository.path()
             );
             assert_eq!(fragments, 0);
             if stderr && stage == SourceStage::GitParse {
