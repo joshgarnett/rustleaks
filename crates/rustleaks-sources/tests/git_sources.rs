@@ -115,38 +115,71 @@ diff --git a/multi.txt b/multi.txt\n\
 \\ No newline at end of file\n";
 
 #[cfg(unix)]
+fn scripted_git_executable() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/support/git-fixture.sh")
+        .canonicalize()
+        .expect("resolve committed synthetic Git command")
+}
+
+#[cfg(unix)]
 fn scripted_patch_source(
     patch: &[u8],
     stderr: bool,
     exit_code: u8,
 ) -> (TempRepo, rustleaks_sources::GitSource) {
-    use std::os::unix::fs::PermissionsExt as _;
-
     let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
     let repository = TempRepo(std::env::temp_dir().join(format!(
         "rustleaks-git-patch-{}-{unique}",
         std::process::id()
     )));
     fs::create_dir(repository.path()).expect("create synthetic patch directory");
-    let executable = repository.path().join("git-fixture");
-    let mut script = b"#!/bin/sh\nprintf '%s' '".to_vec();
-    for byte in patch {
-        if *byte == b'\'' {
-            script.extend_from_slice(b"'\\''");
-        } else {
-            script.push(*byte);
+    fs::write(repository.path().join("git-fixture.patch"), patch)
+        .expect("write synthetic Git patch");
+    fs::write(
+        repository.path().join("git-fixture.stderr"),
+        if stderr { "synthetic warning\n" } else { "" },
+    )
+    .expect("write synthetic Git stderr");
+    fs::write(
+        repository.path().join("git-fixture.exit"),
+        format!("{exit_code}\n"),
+    )
+    .expect("write synthetic Git exit status");
+    let source =
+        rustleaks_sources::GitSource::new(repository.path()).executable(scripted_git_executable());
+    (repository, source)
+}
+
+#[cfg(unix)]
+#[test]
+fn scripted_git_launcher_preserves_stdout_stderr_and_exit_status() {
+    for patch in [
+        SYNTHETIC_HUNK_PATCH,
+        b"synthetic 'patch'\r\nno final newline\0\xff".as_slice(),
+    ] {
+        for stderr in [false, true] {
+            for exit_code in [0, 7] {
+                let (repository, _source) = scripted_patch_source(patch, stderr, exit_code);
+                let output = std::process::Command::new(scripted_git_executable())
+                    .arg("-C")
+                    .arg(repository.path())
+                    .arg("log")
+                    .output()
+                    .expect("run committed synthetic Git command");
+                assert_eq!(output.stdout, patch);
+                assert_eq!(
+                    output.stderr,
+                    if stderr {
+                        b"synthetic warning\n".as_slice()
+                    } else {
+                        b"".as_slice()
+                    }
+                );
+                assert_eq!(output.status.code(), Some(i32::from(exit_code)));
+            }
         }
     }
-    script.extend_from_slice(b"'\n");
-    if stderr {
-        script.extend_from_slice(b"printf 'synthetic warning\\n' >&2\n");
-    }
-    script.extend_from_slice(format!("exit {exit_code}\n").as_bytes());
-    fs::write(&executable, script).expect("write synthetic Git command");
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
-        .expect("make synthetic Git command executable");
-    let source = rustleaks_sources::GitSource::new(repository.path()).executable(executable);
-    (repository, source)
 }
 
 #[cfg(unix)]

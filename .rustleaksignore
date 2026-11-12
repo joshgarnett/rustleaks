@@ -2,8 +2,8 @@
 README.md:aws-access-token:54
 crates/rustleaks-core/src/lib.rs:aws-access-token:14
 crates/rustleaks-compat/oracle/main_test.go:aws-access-token:498
-crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:321
-crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:395
+crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:354
+crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:428
 crates/xtask/src/tooling/cli_corpus/fixture.rs:aws-access-token:109
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:287
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:289

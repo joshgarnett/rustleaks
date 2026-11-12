@@ -156,7 +156,7 @@ rustleaks_integration_test(
         crate_features = _ARCHIVE_FEATURES,
         data = [
             "//compat:all",
-        ] + _GIT_TEST_DATA,
+        ] + _GIT_TEST_DATA + (["tests/support/git-fixture.sh"] if test == "git_sources" else []),
         deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
         env = _GIT_TEST_ENV,
         srcs = ["tests/support/mod.rs"],
