@@ -11,8 +11,8 @@ use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::Fragment;
 use rustleaks_sources::{
     ArchiveLimits, ArchiveOptions, ArchiveSource, Cancellation, CancellationToken,
-    DirectoryOptions, DirectorySource, FileOptions, Source, SourceControl, SourceError,
-    SourceEvent, SourceIssueKind, SourceStage,
+    DirectoryOptions, DirectorySource, FileOptions, LogicalPath, Source, SourceControl,
+    SourceError, SourceEvent, SourceIssueKind, SourceStage,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -398,6 +398,67 @@ fn directory_source_can_opt_into_archive_decoration() {
     let (fragments, issues) = result.expect("directory archive scan");
     assert_eq!(fragments.len(), 4);
     assert!(issues.is_empty());
+}
+
+#[test]
+fn directory_archive_paths_preserve_identity_and_remapped_roots() {
+    let unique = format!("rustleaks-archive-path-test-{}", std::process::id());
+    let root = std::env::temp_dir().join(unique);
+    fs::create_dir(&root).expect("create temporary directory");
+    fs::write(
+        root.join("files.tar"),
+        tar(&[("nested/item", b"value\n\n")]),
+    )
+    .expect("write synthetic archive");
+    let physical_root = LogicalPath::from_native(&root);
+    let root_bytes = physical_root.normalized().as_bytes();
+    #[cfg(windows)]
+    // The completed outer path uses slashes, but the current TAR member keeps
+    // native separators. The outer slashes do not match the physical root's
+    // backslashes, so logical-root translation retains the physical spelling.
+    let expected_windows_path = [root_bytes, br"/files.tar!nested\item"].concat();
+    for (logical_root, expected_path) in [
+        (
+            root.clone(),
+            [root_bytes, b"/files.tar!nested/item"].concat(),
+        ),
+        (
+            root.join("."),
+            [root_bytes, b"/./files.tar!nested/item"].concat(),
+        ),
+        (
+            PathBuf::from("repo"),
+            b"repo/files.tar!nested/item".to_vec(),
+        ),
+        (PathBuf::from("."), b"files.tar!nested/item".to_vec()),
+    ] {
+        let options = DirectoryOptions::default()
+            .archives(ArchiveOptions::default())
+            .logical_root(&logical_root);
+        let mut source = DirectorySource::with_options(&root, options);
+        let (fragments, issues) = collect(&mut source).expect("directory archive scan");
+        assert_eq!(fragments.len(), 1);
+        assert!(issues.is_empty());
+        assert_eq!(
+            fragments[0].file_path().as_bytes(),
+            expected_path,
+            "logical root: {logical_root:?}"
+        );
+        assert_eq!(fragments[0].content().as_bytes(), b"value\n\n");
+        assert_eq!(fragments[0].start_line(), 1);
+        assert!(fragments[0].symlink_file().is_empty());
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                fragments[0].windows_file_path().as_bytes(),
+                expected_windows_path,
+                "logical root: {logical_root:?}"
+            );
+        }
+        #[cfg(not(windows))]
+        assert!(fragments[0].windows_file_path().is_empty());
+    }
+    fs::remove_dir_all(root).expect("remove temporary directory");
 }
 
 fn tar(entries: &[(&str, &[u8])]) -> Vec<u8> {

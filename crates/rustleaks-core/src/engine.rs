@@ -652,7 +652,7 @@ impl Engine {
         let mut current_raw = Cow::Borrowed(fragment.content().as_bytes());
         let original = OriginalFragmentContext::default();
         let mut encoded_segments = Vec::new();
-        let mut decoder = Decoder::new();
+        let mut decoder = None;
         let mut decode_depth = 0;
         let mut matched_keywords = vec![false; self.keyword_count];
         let mut keyword_occurrences = KeywordOccurrences::default();
@@ -747,10 +747,11 @@ impl Engine {
             if let Err(termination) = context.work() {
                 return finish_partial(findings, options, context.usage, termination);
             }
-            let decode_result =
-                decoder.decode_controlled(&current_raw, &encoded_segments, |units| {
-                    context.work_many(units)
-                });
+            let decode_result = decoder.get_or_insert_with(Decoder::new).decode_controlled(
+                &current_raw,
+                &encoded_segments,
+                |units| context.work_many(units),
+            );
             let (decoded_output, segments) = match decode_result {
                 Ok(output) => output,
                 Err(termination) => {
@@ -1073,13 +1074,10 @@ impl Engine {
             };
         // Decoded passes project back onto the original fragment. Keep this
         // index scan-local and construct it only when a candidate needs it.
-        let newlines = pass.original.newlines.get_or_init(|| {
-            original_raw
-                .iter()
-                .enumerate()
-                .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
-                .collect()
-        });
+        let newlines = pass
+            .original
+            .newlines
+            .get_or_init(|| newline_indices(original_raw));
         let source = upstream_location(
             newlines,
             original_raw,
@@ -1754,6 +1752,31 @@ struct SourceLocation {
     end_column: usize,
     start_line_index: usize,
     end_line_index: usize,
+}
+
+fn newline_indices(raw: &[u8]) -> Vec<usize> {
+    let mut newlines = Vec::new();
+    let (chunks, remainder) = raw.as_chunks::<8>();
+    for (index, chunk) in chunks.iter().enumerate() {
+        let compared = u64::from_ne_bytes(*chunk) ^ 0x0a0a_0a0a_0a0a_0a0a;
+        if compared.wrapping_sub(0x0101_0101_0101_0101) & !compared & 0x8080_8080_8080_8080 == 0 {
+            continue;
+        }
+        // The zero-byte test is endian-independent, but its individual bits
+        // can include adjacent bytes due to borrowing. Check exact bytes.
+        for (offset, byte) in chunk.iter().enumerate() {
+            if *byte == b'\n' {
+                newlines.push(index * 8 + offset);
+            }
+        }
+    }
+    let remainder_start = raw.len() - remainder.len();
+    for (offset, byte) in remainder.iter().enumerate() {
+        if *byte == b'\n' {
+            newlines.push(remainder_start + offset);
+        }
+    }
+    newlines
 }
 
 fn upstream_location(
@@ -2700,6 +2723,58 @@ stopwords = ["abcd"]
     }
 
     #[test]
+    fn newline_indices_preserve_literal_byte_boundaries() {
+        for (raw, expected) in [
+            (b"".as_slice(), vec![]),
+            (b"\n".as_slice(), vec![0]),
+            (b"\r".as_slice(), vec![]),
+            (b"\r\n".as_slice(), vec![1]),
+            (b"\xff\n\x80\r\xfe\n\0".as_slice(), vec![1, 5]),
+            (b"1234567\n\x0b\n\x0b\r\n".as_slice(), vec![7, 9, 12]),
+            (b"\x0b\n\x0b\n\x0b\n\x0b\n".as_slice(), vec![1, 3, 5, 7]),
+            (b"\n\x0b\n\x0b\n\x0b\n\x0b".as_slice(), vec![0, 2, 4, 6]),
+        ] {
+            assert_eq!(newline_indices(raw), expected, "raw {raw:?}");
+        }
+        assert_eq!(newline_indices(&[b'\n'; 129]), (0..129).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn newline_indices_cover_every_byte_alignment_and_remainder() {
+        for byte in 0..=u8::MAX {
+            for alignment in 0..8 {
+                for remainder in 0..8 {
+                    let length = 24 + remainder;
+                    let backing = vec![byte; alignment + length];
+                    let expected = if byte == b'\n' {
+                        (0..length).collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    assert_eq!(
+                        newline_indices(&backing[alignment..]),
+                        expected,
+                        "byte {byte}, alignment {alignment}, remainder {remainder}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn newline_indices_keep_only_the_lf_in_every_chunk_position() {
+        for length in 1..=40 {
+            for newline in 0..length {
+                // XOR with LF makes each neighbor 0x01. Borrowing during the
+                // word test can mark it too, but it is not another newline.
+                let mut raw = vec![0x0b; length];
+                raw[newline] = b'\n';
+                assert_eq!(newline_indices(&raw), vec![newline]);
+            }
+        }
+    }
+
+    #[test]
     fn upstream_location_matches_pinned_helper_assertions() {
         let raw = vec![b'x'; 57];
         let first = upstream_location(&[0, 40, 56], &raw, 35, 38);
@@ -2808,10 +2883,12 @@ stopwords = ["abcd"]
                     .enumerate()
                     .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
                     .collect::<Vec<_>>();
+                let indexed = newline_indices(&raw);
+                assert_eq!(indexed, newlines);
                 for start in 0..=length {
                     for end in start..=length {
                         assert_eq!(
-                            upstream_location(&newlines, &raw, start, end),
+                            upstream_location(&indexed, &raw, start, end),
                             linear_upstream_location(&newlines, &raw, start, end),
                             "length {length}, newline mask {mask}, span {start}..{end}"
                         );

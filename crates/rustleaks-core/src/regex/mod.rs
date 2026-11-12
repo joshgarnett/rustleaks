@@ -13,6 +13,8 @@
 #[cfg(test)]
 mod differential;
 mod literal_anchor;
+#[cfg(test)]
+mod validation_tests;
 
 use std::borrow::Cow;
 use std::error::Error;
@@ -314,36 +316,9 @@ impl fmt::Debug for GoRegex {
 impl GoRegex {
     /// Compiles an untrusted Go regexp without panicking.
     pub(crate) fn compile(source: &str) -> Result<Self, GoRegexError> {
-        if source.len() > PATTERN_SIZE_LIMIT {
-            return Err(GoRegexError::PatternTooLarge {
-                actual: source.len(),
-                limit: PATTERN_SIZE_LIMIT,
-            });
-        }
-
-        let translated = Translator::new(source).translate()?;
-        let (backend, literal_anchor) = if translated
-            .pattern
-            .bytes()
-            .filter(|byte| *byte == b'(')
-            .count()
-            > DEEP_COMPILE_THRESHOLD
-        {
-            let pattern = translated.pattern.clone();
-            std::thread::Builder::new()
-                .name("rustleaks-regex-compile".into())
-                .stack_size(DEEP_COMPILE_STACK_SIZE)
-                .spawn(move || Self::build_backend(&pattern))
-                .map_err(|error| GoRegexError::Backend {
-                    message: format!("cannot start bounded regex compiler: {error}"),
-                })?
-                .join()
-                .map_err(|_| GoRegexError::Backend {
-                    message: "bounded regex compiler panicked".into(),
-                })??
-        } else {
-            Self::build_backend(&translated.pattern)?
-        };
+        let translated = Self::translate(source)?;
+        let (backend, literal_anchor) =
+            Self::on_compile_stack(&translated.pattern, Self::build_backend)?;
 
         Ok(Self {
             source: source.into(),
@@ -353,7 +328,68 @@ impl GoRegex {
         })
     }
 
+    /// Validates a discarded expression and returns its Go capture count.
+    pub(crate) fn validate(source: &str) -> Result<usize, GoRegexError> {
+        let translated = Self::translate(source)?;
+        Self::on_compile_stack(&translated.pattern, |pattern| {
+            Self::preflight(pattern, COMPILED_SIZE_LIMIT).map(drop)
+        })?;
+        // HIR simplification can erase captures, but Go retains their metadata.
+        Ok(translated.capture_names.len() - 1)
+    }
+
+    fn translate(source: &str) -> Result<Translation, GoRegexError> {
+        if source.len() > PATTERN_SIZE_LIMIT {
+            return Err(GoRegexError::PatternTooLarge {
+                actual: source.len(),
+                limit: PATTERN_SIZE_LIMIT,
+            });
+        }
+
+        Translator::new(source).translate()
+    }
+
+    fn on_compile_stack<T: Send + 'static>(
+        pattern: &str,
+        build: fn(&str) -> Result<T, GoRegexError>,
+    ) -> Result<T, GoRegexError> {
+        if pattern.bytes().filter(|byte| *byte == b'(').count() > DEEP_COMPILE_THRESHOLD {
+            let pattern = pattern.to_owned();
+            std::thread::Builder::new()
+                .name("rustleaks-regex-compile".into())
+                .stack_size(DEEP_COMPILE_STACK_SIZE)
+                .spawn(move || build(&pattern))
+                .map_err(|error| GoRegexError::Backend {
+                    message: format!("cannot start bounded regex compiler: {error}"),
+                })?
+                .join()
+                .map_err(|_| GoRegexError::Backend {
+                    message: "bounded regex compiler panicked".into(),
+                })?
+        } else {
+            build(pattern)
+        }
+    }
+
     fn build_backend(pattern: &str) -> Result<(Regex, Option<LiteralAnchorShape>), GoRegexError> {
+        let hir = Self::preflight(pattern, COMPILED_SIZE_LIMIT)?;
+        let backend = Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)?;
+        // Analysis runs only after every acceptance decision has been made.
+        Ok((backend, LiteralAnchorShape::analyze(&hir)))
+    }
+
+    // Validation without a meta matcher depends on the backend's error paths:
+    // its forward NFA uses this same configuration; Unicode boundary support
+    // is a required feature; reverse-NFA size failures retry without hybrid;
+    // full DFA is disabled even under consumer feature unification. Other
+    // acceleration failures do not reject patterns. The NFA byte cap precedes
+    // state-ID exhaustion on both 32-bit and 64-bit targets. Reaudit these
+    // assumptions when dependency versions, features or settings change, and
+    // retain exact validator/full-compile error tests plus independent limits.
+    fn preflight(
+        pattern: &str,
+        nfa_size_limit: usize,
+    ) -> Result<regex_syntax::hir::Hir, GoRegexError> {
         let hir = syntax::parse_with(
             pattern,
             &syntax::Config::new()
@@ -373,7 +409,7 @@ impl GoRegex {
                 thompson::Config::new()
                     .utf8(true)
                     .which_captures(WhichCaptures::All)
-                    .nfa_size_limit(Some(COMPILED_SIZE_LIMIT)),
+                    .nfa_size_limit(Some(nfa_size_limit)),
             )
             .build_from_hir(&hir)
             .map_err(|error| GoRegexError::Backend {
@@ -387,9 +423,7 @@ impl GoRegex {
             });
         }
         drop(nfa);
-        let backend = Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)?;
-        // Analysis runs only after every acceptance decision has been made.
-        Ok((backend, LiteralAnchorShape::analyze(&hir)))
+        Ok(hir)
     }
 
     fn build_meta_backend(
@@ -2051,9 +2085,17 @@ mod tests {
     fn enforces_versioned_pattern_and_nesting_limits_at_the_boundary() {
         let at_pattern_limit = "(?)".repeat((super::PATTERN_SIZE_LIMIT - 1) / 3) + "a";
         assert_eq!(at_pattern_limit.len(), super::PATTERN_SIZE_LIMIT);
+        assert_eq!(GoRegex::validate(&at_pattern_limit), Ok(0));
         assert!(GoRegex::compile(&at_pattern_limit).unwrap().is_match(b"a"));
 
         let above_pattern_limit = at_pattern_limit + "a";
+        assert_eq!(
+            GoRegex::validate(&above_pattern_limit),
+            Err(GoRegexError::PatternTooLarge {
+                actual: super::PATTERN_SIZE_LIMIT + 1,
+                limit: super::PATTERN_SIZE_LIMIT,
+            })
+        );
         assert!(matches!(
             GoRegex::compile(&above_pattern_limit),
             Err(GoRegexError::PatternTooLarge { .. })
@@ -2062,11 +2104,18 @@ mod tests {
         let at_nest_limit = "(?:".repeat(super::NEST_LIMIT as usize)
             + "a"
             + &")".repeat(super::NEST_LIMIT as usize);
+        assert_eq!(GoRegex::validate(&at_nest_limit), Ok(0));
         assert!(GoRegex::compile(&at_nest_limit).unwrap().is_match(b"a"));
 
         let above_nest_limit = "(?:".repeat(super::NEST_LIMIT as usize + 1)
             + "a"
             + &")".repeat(super::NEST_LIMIT as usize + 1);
+        assert_eq!(
+            GoRegex::validate(&above_nest_limit),
+            Err(GoRegexError::Backend {
+                message: "error parsing regex".into(),
+            })
+        );
         assert!(matches!(
             GoRegex::compile(&above_nest_limit),
             Err(GoRegexError::Backend { .. })
@@ -2075,7 +2124,12 @@ mod tests {
 
     #[test]
     fn enforces_go_nested_repeat_product_limit_before_backend_compilation() {
+        assert_eq!(GoRegex::validate(r"(?:a{0,10}){0,100}"), Ok(0));
         assert!(GoRegex::compile(r"(?:a{0,10}){0,100}").is_ok());
+        assert_eq!(
+            GoRegex::validate(r"(?:a{0,200}){0,200}"),
+            GoRegex::compile(r"(?:a{0,200}){0,200}").map(|regex| regex.capture_count())
+        );
         assert!(matches!(
             GoRegex::compile(r"(?:a{0,200}){0,200}"),
             Err(GoRegexError::Syntax { offset: 12, .. })
@@ -2086,6 +2140,7 @@ mod tests {
     #[test]
     fn bounds_capture_heavy_pikevm_working_sets_before_cache_allocation() {
         let accepted = "()".repeat(512);
+        assert_eq!(GoRegex::validate(&accepted), Ok(512));
         let reference = regex_automata::nfa::thompson::pikevm::PikeVM::new(&accepted).unwrap();
         let accepted = GoRegex::compile(&accepted).unwrap();
         let cache = reference.create_cache();
@@ -2094,6 +2149,7 @@ mod tests {
 
         let rejected = "()".repeat(4_096);
         let error = GoRegex::compile(&rejected).unwrap_err();
+        assert_eq!(GoRegex::validate(&rejected), Err(error.clone()));
         let GoRegexError::WorkingSetTooLarge {
             estimated: Some(estimated),
             limit,
@@ -2110,6 +2166,8 @@ mod tests {
         use regex_automata::{Input, meta::Regex, nfa::thompson};
 
         const LIMIT: usize = 20 << 10;
+        GoRegex::preflight(r"\pL", LIMIT)
+            .expect("validation accepts the forward NFA before reverse fallback");
         let hir = regex_automata::util::syntax::parse(r"\pL").unwrap();
         thompson::NFA::compiler()
             .configure(thompson::Config::new().nfa_size_limit(Some(LIMIT)))

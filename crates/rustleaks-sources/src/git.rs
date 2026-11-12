@@ -372,7 +372,9 @@ impl Source for GitSource {
                 ));
             }
         };
-        for file in files {
+        // Parsed files own their bytes; raw command output is no longer needed.
+        drop(output);
+        for mut file in files {
             if cancellation.is_cancelled() {
                 return Err(SourceError::Cancelled);
             }
@@ -391,26 +393,39 @@ impl Source for GitSource {
                 }
                 continue;
             }
-            for hunk in file.hunks {
-                let path = copy_limited(&file.path, self.limits.path_bytes(), "Git fragment path")
+            let mut hunks = file.hunks.into_iter().peekable();
+            while let Some(hunk) = hunks.next() {
+                let (path, commit, metadata) = if hunks.peek().is_none() {
+                    // Parsing already checked these limits. The final hunk can
+                    // consume the fields that earlier hunks still need to copy.
+                    (
+                        std::mem::take(&mut file.path),
+                        std::mem::take(&mut file.commit),
+                        file.metadata.take(),
+                    )
+                } else {
+                    let path =
+                        copy_limited(&file.path, self.limits.path_bytes(), "Git fragment path")
+                            .map_err(|error| patch_error_to_source(error, &self.repository))?;
+                    let commit = copy_limited(
+                        &file.commit,
+                        self.limits.metadata_bytes(),
+                        "Git fragment commit SHA",
+                    )
                     .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                let commit = copy_limited(
-                    &file.commit,
-                    self.limits.metadata_bytes(),
-                    "Git fragment commit SHA",
-                )
-                .map_err(|error| patch_error_to_source(error, &self.repository))?;
+                    let metadata = file
+                        .metadata
+                        .as_ref()
+                        .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
+                        .transpose()
+                        .map_err(|error| patch_error_to_source(error, &self.repository))?;
+                    (path, commit, metadata)
+                };
                 let mut builder = Fragment::builder(hunk.added)
                     .file_path(path)
                     .commit(commit)
                     .start_line(hunk.new_position);
-                if let Some(metadata) = file
-                    .metadata
-                    .as_ref()
-                    .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
-                    .transpose()
-                    .map_err(|error| patch_error_to_source(error, &self.repository))?
-                {
+                if let Some(metadata) = metadata {
                     builder = builder.commit_metadata(metadata);
                 }
                 let control =
