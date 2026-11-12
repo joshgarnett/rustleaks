@@ -1,407 +1,245 @@
-name: CI
+name: Native ARM64 GNU Git diagnostic
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-  schedule:
-    - cron: "29 5 * * 0"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_RETRY: "5"
+  DIAGNOSTIC_SOURCE_SHA: 3abad9be2c5086649d888e7491bec0a7f1540371
+  DIAGNOSTIC_EVIDENCE_DIR: ${{ github.workspace }}/native-diagnostic-evidence
 
 jobs:
-  bazel-acceptance:
-    name: Bazel acceptance
-    runs-on: ubuntu-24.04
+  git-sources-arm64-gnu:
+    name: Native ARM64 GNU Git sources, 100 runs
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Run the authoritative acceptance gate
-        working-directory: rustleaks
-        run: just ci
-      - name: Verify Cargo and Bazel dependency drift
-        working-directory: rustleaks
-        run: |
-          cargo xtask build-system-check
-          bazelisk query @crates//:srcs >/dev/null
-          git diff --exit-code -- Cargo.lock cargo-bazel-lock.json MODULE.bazel.lock
-
-  toolchains:
-    name: Current stable and MSRV
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Install current stable and MSRV
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup toolchain install 1.95.0 --profile minimal
-      - name: Check current stable feature profiles
-        working-directory: rustleaks
-        run: |
-          cargo +stable check --workspace --all-targets --locked
-          cargo +stable check --workspace --all-targets --all-features --locked
-          cargo +stable check --workspace --all-targets --no-default-features --locked
-      - name: Check the declared MSRV
-        working-directory: rustleaks
-        run: cargo +1.95.0 check --workspace --all-targets --all-features --locked
-
-  security:
-    name: Security policy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Install pinned security tools
-        working-directory: rustleaks
-        run: |
-          cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo install cargo-vet --locked --version 0.10.2
-          cargo install cargo-geiger --locked --version 0.13.0
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
-          cargo +nightly-2026-08-21 miri setup
-      - name: Run dependency and owned-code security policy
-        working-directory: rustleaks
-        run: just security
-
-  fuzz:
-    name: Fuzz build and smoke
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-bazelisk: "false"
-      - name: Install pinned fuzz tools
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Hydrate locked fuzz dependencies
-        working-directory: rustleaks
-        run: |
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
-      - name: Build targets and replay bounded smoke campaigns
-        working-directory: rustleaks
-        run: just fuzz-smoke
-
-  package:
-    name: Package and non-publishing dry run
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Hydrate locked package dependencies
-        working-directory: rustleaks
-        run: cargo fetch --locked
-      - name: Run package consumers and no-upload publish simulation
-        working-directory: rustleaks
-        run: just release-dry-run
-
-  parity:
-    name: Frozen evidence and Rust regression
-    runs-on: macos-15
-    timeout-minutes: 120
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Verify frozen evidence and replay Rust regressions
-        working-directory: rustleaks
-        run: cargo xtask regression-check
-
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          fail-on-severity: low
-
-  native-linux:
-    name: Native ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            architecture: x86_64
-            target: x86_64-unknown-linux-gnu
-            config: linux-x86_64-gnu
-            host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_gnu
-          - runner: ubuntu-24.04-arm
-            architecture: aarch64
-            target: aarch64-unknown-linux-gnu
-            config: linux-aarch64-gnu
-            host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_gnu
-          - runner: ubuntu-24.04
-            architecture: x86_64
-            target: x86_64-unknown-linux-musl
-            config: linux-x86_64-musl
-            host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_gnu
-          - runner: ubuntu-24.04-arm
-            architecture: aarch64
-            target: aarch64-unknown-linux-musl
-            config: linux-aarch64-musl
-            host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_gnu
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Build and test the native target
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-        run: |
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 --nozip_undeclared_test_outputs //:test
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
-
-  native-macos:
-    name: Native ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15-intel
-            architecture: x86_64
-            target: x86_64-apple-darwin
-            config: macos-x86_64
-            host_platform: //platforms:macos_x86_64
-            execution_platform: //platforms:macos_x86_64
-            test_compilation_mode: opt
-          - runner: macos-15
-            architecture: arm64
-            target: aarch64-apple-darwin
-            config: macos-aarch64
-            host_platform: //platforms:macos_aarch64
-            execution_platform: //platforms:macos_aarch64
-            test_compilation_mode: fastbuild
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Build and test the native target
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-          TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
-        run: |
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 --nozip_undeclared_test_outputs //:test
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
-
-  native-windows:
-    name: Native ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2025
-            architecture: X64
-            target: x86_64-pc-windows-msvc
-            config: windows-x86_64-msvc
-            host_platform: //platforms:windows_x86_64_msvc
-            execution_platform: //platforms:windows_x86_64_msvc
-          - runner: windows-11-arm
-            architecture: Arm64
-            target: aarch64-pc-windows-msvc
-            config: windows-aarch64-msvc
-            host_platform: //platforms:windows_aarch64_msvc
-            execution_platform: //platforms:windows_aarch64_msvc
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    env:
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: core.autocrlf
-      GIT_CONFIG_VALUE_0: "false"
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        shell: pwsh
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: |
-          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-          if ($actual -ne $env:EXPECTED_ARCHITECTURE) {
-            throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual"
-          }
-      - name: Build and test the native target
-        shell: pwsh
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-        run: |
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 --nozip_undeclared_test_outputs //:test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
-
-  required:
-    name: Required
-    if: always()
-    needs:
-      - bazel-acceptance
-      - toolchains
-      - security
-      - fuzz
-      - package
-      - parity
-      - dependency-review
-      - native-linux
-      - native-macos
-      - native-windows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Require every CI boundary
-        env:
-          BAZEL_ACCEPTANCE: ${{ needs.bazel-acceptance.result }}
-          TOOLCHAINS: ${{ needs.toolchains.result }}
-          SECURITY: ${{ needs.security.result }}
-          FUZZ: ${{ needs.fuzz.result }}
-          PACKAGE: ${{ needs.package.result }}
-          PARITY: ${{ needs.parity.result }}
-          DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
-          NATIVE_LINUX: ${{ needs.native-linux.result }}
-          NATIVE_MACOS: ${{ needs.native-macos.result }}
-          NATIVE_WINDOWS: ${{ needs.native-windows.result }}
-          EVENT_NAME: ${{ github.event_name }}
+      - name: Record workflow and runner identity
+        timeout-minutes: 1
         run: |
           set -euo pipefail
-          for result in \
-            "${BAZEL_ACCEPTANCE}" \
-            "${TOOLCHAINS}" \
-            "${SECURITY}" \
-            "${FUZZ}" \
-            "${PACKAGE}" \
-            "${PARITY}" \
-            "${NATIVE_LINUX}" \
-            "${NATIVE_MACOS}" \
-            "${NATIVE_WINDOWS}"; do
-            test "${result}" = success
-          done
-          if [[ "${EVENT_NAME}" = pull_request ]]; then
-            test "${DEPENDENCY_REVIEW}" = success
+          mkdir -p "${DIAGNOSTIC_EVIDENCE_DIR}"
+          {
+            date --utc --iso-8601=seconds
+            printf 'source_sha=%s\nworkflow_sha=%s\nworkflow_ref=%s\ndispatch_sha=%s\n' \
+              "${DIAGNOSTIC_SOURCE_SHA}" "${GITHUB_WORKFLOW_SHA}" "${GITHUB_WORKFLOW_REF}" "${GITHUB_SHA}"
+            printf 'repository=%s\nrun_id=%s\nrun_attempt=%s\nrunner_name=%s\nrunner_os=%s\nrunner_arch=%s\n' \
+              "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
+              "${RUNNER_NAME}" "${RUNNER_OS}" "${RUNNER_ARCH}"
+            printf 'image_os=%s\nimage_version=%s\n' "${ImageOS:-unavailable}" "${ImageVersion:-unavailable}"
+            uname -a
+            cat /etc/os-release
+            lscpu
+          } 2>&1 | tee "${DIAGNOSTIC_EVIDENCE_DIR}/runner-and-workflow.txt"
+          test "${GITHUB_EVENT_NAME}" = workflow_dispatch
+          test "${RUNNER_OS}:${RUNNER_ARCH}" = Linux:ARM64
+          test "$(uname -m)" = aarch64
+
+      - name: Check out the exact diagnostic source
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 3abad9be2c5086649d888e7491bec0a7f1540371
+          path: rustleaks
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify source identity and clean checkout
+        timeout-minutes: 2
+        working-directory: rustleaks
+        run: |
+          set -euo pipefail
+          git show --no-patch --format=fuller HEAD | tee "${DIAGNOSTIC_EVIDENCE_DIR}/source-commit.txt"
+          git rev-parse HEAD HEAD^{tree} | tee "${DIAGNOSTIC_EVIDENCE_DIR}/source-identifiers.txt"
+          test "$(git rev-parse HEAD)" = "${DIAGNOSTIC_SOURCE_SHA}"
+          git status --porcelain=v1 --untracked-files=all | tee "${DIAGNOSTIC_EVIDENCE_DIR}/source-status-before.txt"
+          test ! -s "${DIAGNOSTIC_EVIDENCE_DIR}/source-status-before.txt"
+          sha256sum .bazelversion .bazelrc rust-toolchain.toml MODULE.bazel MODULE.bazel.lock \
+            Cargo.lock cargo-bazel-lock.json .github/actions/setup/action.yml \
+            .github/workflows/ci.yml bazel/rust_crate.bzl crates/rustleaks-sources/BUILD.bazel \
+            crates/rustleaks-sources/tests/git_sources.rs \
+            > "${DIAGNOSTIC_EVIDENCE_DIR}/source-inputs.sha256"
+
+      - name: Set up maintained tools from the exact source
+        timeout-minutes: 15
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
+
+      - name: Record maintained tool identities
+        timeout-minutes: 3
+        working-directory: rustleaks
+        run: |
+          set -euo pipefail
+          {
+            rustup show active-toolchain
+            rustc -vV
+            cargo -vV
+            bazelisk bazeliskVersion
+            bazelisk version
+            python3 --version
+            timeout --version
+            cat "${HOME}/.bazelrc"
+            cat rust-toolchain.toml .bazelversion
+          } 2>&1 | tee "${DIAGNOSTIC_EVIDENCE_DIR}/tool-identifiers.txt"
+
+      - name: Build only the native Git sources test
+        id: build
+        timeout-minutes: 25
+        working-directory: rustleaks
+        run: |
+          set -uo pipefail
+          set +e
+          timeout --signal=INT --kill-after=30s 20m \
+            bazelisk build --config=linux-aarch64-gnu \
+            --host_platform=//platforms:linux_aarch64_gnu \
+            --extra_execution_platforms=//platforms:linux_aarch64_gnu \
+            --build_tests_only \
+            --build_event_json_file="${DIAGNOSTIC_EVIDENCE_DIR}/build-events.jsonl" \
+            //crates/rustleaks-sources:git_sources_test \
+            2>&1 | tee "${DIAGNOSTIC_EVIDENCE_DIR}/build.log"
+          diagnostic_status=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${diagnostic_status[0]}" > "${DIAGNOSTIC_EVIDENCE_DIR}/build-exit-status.txt"
+          test "${diagnostic_status[1]}" -eq 0
+          exit "${diagnostic_status[0]}"
+
+      - name: Run 100 uncached whole-binary repetitions
+        id: campaign
+        timeout-minutes: 25
+        working-directory: rustleaks
+        run: |
+          set -uo pipefail
+          set +e
+          timeout --signal=INT --kill-after=30s 20m \
+            bazelisk test --config=linux-aarch64-gnu \
+            --host_platform=//platforms:linux_aarch64_gnu \
+            --extra_execution_platforms=//platforms:linux_aarch64_gnu \
+            --jobs=1 --nozip_undeclared_test_outputs \
+            --nocache_test_results --flaky_test_attempts=1 --runs_per_test=100 \
+            --noruns_per_test_detects_flakes --test_keep_going \
+            --build_event_json_file="${DIAGNOSTIC_EVIDENCE_DIR}/test-events.jsonl" \
+            //crates/rustleaks-sources:git_sources_test \
+            2>&1 | tee "${DIAGNOSTIC_EVIDENCE_DIR}/test.log"
+          diagnostic_status=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${diagnostic_status[0]}" > "${DIAGNOSTIC_EVIDENCE_DIR}/test-exit-status.txt"
+          test "${diagnostic_status[1]}" -eq 0
+          exit "${diagnostic_status[0]}"
+
+      - name: Retain all available test outputs and final source state
+        if: ${{ always() }}
+        timeout-minutes: 3
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          CAMPAIGN_OUTCOME: ${{ steps.campaign.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${DIAGNOSTIC_EVIDENCE_DIR}"
+          printf 'build=%s\ncampaign=%s\n' "${BUILD_OUTCOME}" "${CAMPAIGN_OUTCOME}" \
+            > "${DIAGNOSTIC_EVIDENCE_DIR}/step-outcomes.txt"
+          if [[ -d rustleaks/bazel-testlogs/crates/rustleaks-sources/git_sources_test ]]; then
+            tar -chzf "${DIAGNOSTIC_EVIDENCE_DIR}/git_sources_test.tar.gz" \
+              -C rustleaks/bazel-testlogs/crates/rustleaks-sources git_sources_test
+            tar -tzf "${DIAGNOSTIC_EVIDENCE_DIR}/git_sources_test.tar.gz" \
+              > "${DIAGNOSTIC_EVIDENCE_DIR}/test-output-inventory.txt"
           else
-            test "${DEPENDENCY_REVIEW}" = skipped
+            printf 'No test output directory was produced.\n' \
+              > "${DIAGNOSTIC_EVIDENCE_DIR}/test-output-missing.txt"
           fi
+          if [[ -d rustleaks/.git ]]; then
+            git -C rustleaks status --porcelain=v1 --untracked-files=all \
+              | tee "${DIAGNOSTIC_EVIDENCE_DIR}/source-status-after.txt"
+            git -C rustleaks diff --binary > "${DIAGNOSTIC_EVIDENCE_DIR}/source-diff-after.patch"
+            test "$(git -C rustleaks rev-parse HEAD)" = "${DIAGNOSTIC_SOURCE_SHA}"
+            test ! -s "${DIAGNOSTIC_EVIDENCE_DIR}/source-status-after.txt"
+          fi
+
+      - name: Verify all 100 runs and their retained evidence
+        if: ${{ always() }}
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee "${DIAGNOSTIC_EVIDENCE_DIR}/verification.log"
+          import collections
+          import json
+          import os
+          import pathlib
+          import tarfile
+
+          evidence = pathlib.Path(os.environ["DIAGNOSTIC_EVIDENCE_DIR"])
+          label = "//crates/rustleaks-sources:git_sources_test"
+          errors = []
+          results = []
+          summaries = []
+          try:
+              for line in (evidence / "test-events.jsonl").read_text().splitlines():
+                  event = json.loads(line)
+                  identity = event.get("id", {}).get("testResult", {})
+                  if identity.get("label") == label:
+                      results.append({"id": identity, "result": event.get("testResult", {})})
+                  if event.get("id", {}).get("testSummary", {}).get("label") == label:
+                      summaries.append(event.get("testSummary", {}))
+          except (OSError, ValueError) as error:
+              errors.append(f"Cannot read complete test events: {error}")
+          if len(results) != 100:
+              errors.append(f"Expected 100 result events, got {len(results)}")
+          if {item["id"].get("run") for item in results} != set(range(1, 101)):
+              errors.append("Run identifiers do not cover 1 through 100")
+          for item in results:
+              identity, result = item["id"], item["result"]
+              if identity.get("attempt") != 1:
+                  errors.append(f"Unexpected attempt: {identity}")
+              if result.get("status") != "PASSED":
+                  errors.append(f"Non-passing run: {identity}: {result.get('status')}")
+              if result.get("cachedLocally") or result.get("executionInfo", {}).get("cachedRemotely"):
+                  errors.append(f"Cached result: {identity}")
+          if len(summaries) != 1 or summaries[0].get("totalRunCount") != 100:
+              errors.append("Missing or inconsistent 100-run summary")
+          elif summaries[0].get("totalNumCached", 0) != 0 or summaries[0].get("overallStatus") != "PASSED":
+              errors.append("Summary is cached or not entirely passing")
+          try:
+              with tarfile.open(evidence / "git_sources_test.tar.gz", "r:gz") as archive:
+                  names = {item.name for item in archive.getmembers() if item.isfile() or item.islnk()}
+              for run in range(1, 101):
+                  for filename in ("test.log", "test.xml"):
+                      name = f"git_sources_test/run_{run}_of_100/{filename}"
+                      if name not in names:
+                          errors.append(f"Missing archived run output: {name}")
+          except (OSError, tarfile.TarError) as error:
+              errors.append(f"Cannot verify retained outputs: {error}")
+          for phase in ("build", "test"):
+              try:
+                  if (evidence / f"{phase}-exit-status.txt").read_text().strip() != "0":
+                      errors.append(f"{phase} exit status is nonzero")
+              except OSError as error:
+                  errors.append(f"Missing {phase} exit status: {error}")
+          report = {
+              "source_sha": os.environ["DIAGNOSTIC_SOURCE_SHA"],
+              "expected_runs": 100,
+              "observed_runs": len(results),
+              "statuses": dict(collections.Counter(item["result"].get("status", "MISSING") for item in results)),
+              "errors": errors,
+              "results": results,
+              "summaries": summaries,
+          }
+          (evidence / "verification.json").write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps({key: value for key, value in report.items() if key not in ("results", "summaries")}, indent=2))
+          raise SystemExit(bool(errors))
+          PY
+
+      - name: Upload diagnostic evidence including failures
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-arm64-gnu-git-3abad9be-${{ github.run_id }}-${{ github.run_attempt }}
+          path: native-diagnostic-evidence/
+          if-no-files-found: error
