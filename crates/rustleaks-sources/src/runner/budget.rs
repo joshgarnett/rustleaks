@@ -908,6 +908,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn cancellation_between_existing_checks_preserves_normal_callback_stop() {
         let cancellation = CancellationToken::new();
         let signal = cancellation.clone();
@@ -925,6 +926,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn cancellation_after_checks_does_not_reclassify_a_successful_enqueue() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -939,6 +941,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn cancellation_after_checks_does_not_replace_the_disconnect_callback_error() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -956,6 +959,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn external_cancellation_already_present_precedes_internal_stop() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -971,6 +975,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn sleeping_producer_observes_internal_stop_without_worker_progress() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -1007,6 +1012,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn initial_retries_observe_cancellation_and_stop_before_acquiring_the_gate() {
         for internal_stop in [false, true] {
             let cancellation = CancellationToken::new();
@@ -1058,6 +1064,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn initial_retries_are_bounded_across_spurious_notifications_and_timeouts() {
         for notify in [false, true] {
             let cancellation = CancellationToken::new();
