@@ -65,6 +65,7 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
     let secret_scanning = fs::read_to_string(root.join(".github/secret_scanning.yml"))
         .map_err(|error| format!("cannot read secret-scanning configuration: {error}"))?;
     validate_ci_matrix(&ci)?;
+    validate_notice_catalog_gate(&ci, "bazel-acceptance")?;
     validate_release_workflow(&dry_run)?;
     validate_github_release_workflow(&release)?;
     validate_publish_workflow(&publish)?;
@@ -213,7 +214,10 @@ fn validate_github_release_workflow(source: &str) -> Result<(), String> {
         "gh release create \"${tag}\"",
         "--target \"${CANDIDATE}\"",
         "--prerelease",
-        "test \"$(jq '.assets | length' <<<\"${release_json}\")\" = 60",
+        "test \"$(jq '.assets | length' <<<\"${release_json}\")\" = 63",
+        "source_name=\"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
+        "cmp \"${bundle}/${source_name}\" \"${assets}/${source_name}\"",
+        "install -m 0644 \"${bundle}/source-relink.json\" \"${assets}/${stem}.source-relink.json\"",
         "test \"$(jq -r '.object.sha' <<<\"${ref_json}\")\" = \"${CANDIDATE}\"",
     ] {
         if !source.contains(required) {
@@ -371,8 +375,20 @@ fn validate_published_native_steps(job: &str) -> Result<(), String> {
         if job.find(&verify_name) >= job.find(&smoke_name) {
             return Err(format!("{platform} public smoke precedes verification"));
         }
+        let primary_download = if platform == "Windows" {
+            "          gh release download \"v$env:EXPECTED_VERSION\" --repo $env:GITHUB_REPOSITORY --dir $bundle --pattern \"$stem.tar.gz\""
+        } else {
+            "          gh release download \"v${EXPECTED_VERSION}\" --repo \"${GITHUB_REPOSITORY}\" --dir \"${bundle}\" \\"
+        };
+        if !verify
+            .lines()
+            .any(|line| line.starts_with(primary_download))
+        {
+            return Err(format!(
+                "{platform} public verifier omits its bound primary native bundle download"
+            ));
+        }
         for required in [
-            "gh release download",
             ".tar.gz",
             ".cdx.json",
             ".provenance.json",
@@ -407,6 +423,21 @@ fn validate_published_native_steps(job: &str) -> Result<(), String> {
                 return Err(format!(
                     "{platform} public verifier omits binding {required:?}"
                 ));
+            }
+        }
+        if platform == "Linux and macOS" {
+            for required in [
+                "if [[ \"${RELEASE_TARGET}\" = *-linux-gnu ]]; then",
+                "\n            gh release download \"v${EXPECTED_VERSION}\" --repo \"${GITHUB_REPOSITORY}\" --dir \"${bundle}\" \\\n",
+                "--pattern \"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
+                "--pattern \"${stem}.source-relink.json\"",
+                "mv \"${bundle}/${stem}.source-relink.json\" \"${bundle}/source-relink.json\"",
+            ] {
+                if !verify.contains(required) {
+                    return Err(format!(
+                        "public GNU verifier omits corresponding-source boundary {required:?}"
+                    ));
+                }
             }
         }
         if verify.contains("tar -xzf") || verify.contains("--help") || smoke.contains("GH_TOKEN") {
@@ -475,6 +506,7 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
 }
 
 fn validate_release_workflow(source: &str) -> Result<(), String> {
+    validate_notice_catalog_gate(source, "acceptance")?;
     for required in [
         "candidate:",
         "version:",
@@ -543,8 +575,42 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_notice_catalog_gate(source: &str, job_name: &str) -> Result<(), String> {
+    let job = workflow_job(source, job_name)?;
+    let step = workflow_step(job, "Check native notice source completeness")?;
+    for required in [
+        "working-directory: rustleaks",
+        "cargo xtask release-artifact notices --check",
+    ] {
+        if !step.contains(required) {
+            return Err(format!(
+                "{job_name} notice completeness gate omits {required:?}"
+            ));
+        }
+    }
+    if step.contains("continue-on-error") || step.contains("        if:") || step.contains("||") {
+        return Err(format!(
+            "{job_name} notice completeness gate must run unconditionally and fail closed"
+        ));
+    }
+    let hydrate = job.find("cargo fetch --locked").ok_or_else(|| {
+        format!("{job_name} notice completeness gate omits locked archive hydration")
+    })?;
+    let check = job
+        .find("cargo xtask release-artifact notices --check")
+        .ok_or("notice completeness command disappeared")?;
+    if hydrate >= check {
+        return Err(format!(
+            "{job_name} must hydrate locked archives before checking notice completeness"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
     validate_release_qualification_setup(source)?;
+    validate_corresponding_source_workflow(source)?;
+    validate_windows_runtime_evidence(source)?;
     let native_attestation_steps = source
         .split("- name: Verify and retain the release archive attestation")
         .skip(1)
@@ -583,6 +649,92 @@ fn validate_release_evidence_boundaries(source: &str) -> Result<(), String> {
                 "release dry run contains live publication command {forbidden:?}"
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_windows_runtime_evidence(source: &str) -> Result<(), String> {
+    let windows = workflow_job(source, "native-windows")?;
+    for required in [
+        "if ((Test-Path $firstRoot) -or (Test-Path $secondRoot))",
+        "if ((Test-Path $firstMap) -or (Test-Path $secondMap))",
+        "crates/rustleaks-cli/src/main.rs@-Wlinker-messages",
+        "crates/rustleaks-cli/src/main.rs@-Clink-arg=/VERBOSE:LIB",
+        "crates/rustleaks-cli/src/main.rs@-Clink-arg=/MAP:rustleaks-runtime.map",
+        "Copy-Item $firstMap (Join-Path $firstEvidence link.map)",
+        "Copy-Item $secondMap (Join-Path $secondEvidence link.map)",
+        "Tee-Object -FilePath $firstTrace",
+        "Tee-Object -FilePath $secondTrace",
+        "cargo xtask release-artifact prepare-windows $first $firstRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle) $firstMap $firstTrace",
+        "cargo xtask release-artifact prepare-windows $second $secondRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle-repeat) $secondMap $secondTrace",
+    ] {
+        if !windows.contains(required) {
+            return Err(format!("Windows runtime identity gate omits {required:?}"));
+        }
+    }
+    if windows
+        .lines()
+        .filter(|line| line.contains(" build ") && line.contains("@runtimeFlags"))
+        .count()
+        != 2
+        || windows.find("if ((Test-Path $firstMap)")
+            >= windows.find("--windows_enable_symlinks build")
+    {
+        return Err("both fresh Windows builds must capture native runtime evidence".into());
+    }
+    for output in ["execution_root", "bazel-bin"] {
+        let suffix = format!("@runtimeFlags {output}");
+        if windows
+            .lines()
+            .filter(|line| line.contains(" info ") && line.trim_end().ends_with(&suffix))
+            .count()
+            != 2
+        {
+            return Err(format!(
+                "both Windows {output} queries must use the native runtime build flags"
+            ));
+        }
+    }
+    let retained = workflow_step(windows, "Retain Windows runtime provider evidence")?;
+    for required in [
+        "if: always()",
+        "name: runtime-provider-evidence-${{ matrix.target }}-${{ inputs.candidate }}",
+        "path: ${{ runner.temp }}/release-work/runtime-evidence",
+    ] {
+        if !retained.contains(required) {
+            return Err(format!(
+                "separate Windows diagnostic artifact omits {required:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_corresponding_source_workflow(source: &str) -> Result<(), String> {
+    let linux = workflow_job(source, "native-linux")?;
+    for required in [
+        "if [[ \"${RELEASE_LIBC}\" = gnu ]]; then",
+        "cargo xtask release-artifact fetch-source \"${first_cache}\"",
+        "cargo xtask release-artifact fetch-source \"${second_cache}\"",
+        "cargo xtask release-artifact prepare-source \"${first_cache}\" \"${CANDIDATE}\" \"${work}/source\"",
+        "cargo xtask release-artifact relink-source \"${source_archive}\" \"${CANDIDATE}\" \"${RELEASE_TARGET}\" \"${work}/source-relink-work\" \"${work}/source-relink.json\"",
+        "source_args=(\"${work}/source-relink.json\")",
+    ] {
+        if !linux.contains(required) {
+            return Err(format!(
+                "GNU corresponding-source workflow omits {required:?}"
+            ));
+        }
+    }
+    if linux.matches("\"${glibc}\" \"${source_args[@]}\"").count() != 2 {
+        return Err("both GNU bundle preparations must bind the native source relink proof".into());
+    }
+    if linux.find("cargo xtask release-artifact relink-source")
+        >= linux.find("cargo xtask release-artifact prepare \"")
+    {
+        return Err(
+            "GNU corresponding-source relink proof must precede native bundle preparation".into(),
+        );
     }
     Ok(())
 }
@@ -1048,6 +1200,106 @@ mod tests {
     fn rejects_crate_publication_in_github_release_workflow() {
         let error = validate_github_release_workflow("cargo publish").unwrap_err();
         assert!(error.contains("forbidden trigger or credential"));
+    }
+
+    #[test]
+    fn gnu_source_delivery_requires_native_relink_before_both_bundle_preparations() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source =
+            std::fs::read_to_string(root.join(".github/workflows/release-dry-run.yml")).unwrap();
+        super::validate_corresponding_source_workflow(&source).unwrap();
+        for removed in [
+            "cargo xtask release-artifact fetch-source \"${first_cache}\"",
+            "cargo xtask release-artifact prepare-source",
+            "cargo xtask release-artifact relink-source",
+            "source_args=(\"${work}/source-relink.json\")",
+            "\"${source_args[@]}\"",
+        ] {
+            let changed = source.replacen(removed, "missing", 1);
+            assert!(
+                super::validate_corresponding_source_workflow(&changed).is_err(),
+                "accepted omission of {removed}"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_runtime_gate_requires_actual_fresh_maps_traces_and_separate_retention() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source =
+            std::fs::read_to_string(root.join(".github/workflows/release-dry-run.yml")).unwrap();
+        super::validate_windows_runtime_evidence(&source).unwrap();
+        for removed in [
+            "if ((Test-Path $firstRoot) -or (Test-Path $secondRoot))",
+            "if ((Test-Path $firstMap) -or (Test-Path $secondMap))",
+            "crates/rustleaks-cli/src/main.rs@-Wlinker-messages",
+            "crates/rustleaks-cli/src/main.rs@-Clink-arg=/MAP:rustleaks-runtime.map",
+            "@runtimeFlags //crates/rustleaks-cli:rustleaks",
+            "@runtimeFlags execution_root",
+            "@runtimeFlags bazel-bin",
+            "cargo xtask release-artifact prepare-windows $first",
+            "$firstMap $firstTrace",
+            "path: ${{ runner.temp }}/release-work/runtime-evidence",
+        ] {
+            assert!(
+                super::validate_windows_runtime_evidence(&source.replacen(removed, "missing", 1))
+                    .is_err(),
+                "accepted missing Windows runtime boundary {removed}"
+            );
+        }
+    }
+
+    #[test]
+    fn ci_and_release_require_source_recomputed_notice_catalog_checks() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (file, job) in [
+            ("ci.yml", "bazel-acceptance"),
+            ("release-dry-run.yml", "acceptance"),
+        ] {
+            let source =
+                std::fs::read_to_string(root.join(".github/workflows").join(file)).unwrap();
+            super::validate_notice_catalog_gate(&source, job).unwrap();
+            for (before, after) in [
+                (
+                    "cargo xtask release-artifact notices --check",
+                    "cargo xtask release-artifact notices",
+                ),
+                (
+                    "Check native notice source completeness\n",
+                    "Check native notice source completeness\n        continue-on-error: true\n",
+                ),
+                (
+                    "Check native notice source completeness\n",
+                    "Check native notice source completeness\n        if: false\n",
+                ),
+                ("cargo fetch --locked", "echo omitted archive hydration"),
+            ] {
+                assert!(
+                    super::validate_notice_catalog_gate(&source.replace(before, after), job)
+                        .is_err(),
+                    "accepted weakened {job} gate: {after}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn published_source_assets_require_deduplication_and_native_downloads() {
+        let source = github_release_fixture();
+        validate_github_release_workflow(&source).unwrap();
+        for removed in [
+            "cmp \"${bundle}/${source_name}\" \"${assets}/${source_name}\"",
+            "install -m 0644 \"${bundle}/source-relink.json\"",
+            "\n            gh release download",
+            "--pattern \"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
+            "--pattern \"${stem}.source-relink.json\"",
+        ] {
+            let changed = source.replacen(removed, "missing", 1);
+            assert!(
+                validate_github_release_workflow(&changed).is_err(),
+                "accepted omission of {removed}"
+            );
+        }
     }
 
     fn github_release_fixture() -> String {

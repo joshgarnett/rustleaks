@@ -1,0 +1,6 @@
+/*
+ * Shared data between expf, exp2f and powf.
+ *
+ * Copyright (c) 2017-2018, Arm Limited.
+ * SPDX-License-Identifier: MIT
+ */

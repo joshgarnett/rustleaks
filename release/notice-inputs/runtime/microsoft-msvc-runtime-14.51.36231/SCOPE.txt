@@ -1,0 +1,5 @@
+The Windows executable includes Microsoft Visual C++ runtime startup and support components from MSVC 14.51.36231, supplied by msvcrt.lib and vcruntime.lib. Copyright notices for these Microsoft components are included in this directory.
+
+Use of the Microsoft components is subject to the accompanying Microsoft Visual C++ V14 Redistributable and Runtime terms. By using those components, you agree to those terms. Redistribution of the Microsoft components as part of this application is governed by the accompanying Visual Studio 2026 Distributable Code section. Distributors must preserve the applicable notices and require their distributors and external end users to agree to terms that protect the Microsoft components as required by that section. The runtime use terms alone do not grant standalone redistribution rights.
+
+These Microsoft terms apply only to the Microsoft components. Rustleaks and the other components remain under their respective licenses identified in the notice index. Microsoft DLLs listed as external imports are supplied separately by the Windows/runtime environment and are not included in this archive.

@@ -200,6 +200,15 @@ jobs:
             install -m 0644 "${bundle}/SHA256SUMS" "${assets}/${stem}.SHA256SUMS"
             install -m 0644 "${bundle}/reproducibility.json" "${assets}/${stem}.reproducibility.json"
             install -m 0644 "${bundle}/manifest.json" "${assets}/${stem}.manifest.json"
+            if [[ "${target}" = *-linux-gnu ]]; then
+              source_name="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
+              if [[ -f "${assets}/${source_name}" ]]; then
+                cmp "${bundle}/${source_name}" "${assets}/${source_name}"
+              else
+                install -m 0644 "${bundle}/${source_name}" "${assets}/"
+              fi
+              install -m 0644 "${bundle}/source-relink.json" "${assets}/${stem}.source-relink.json"
+            fi
           done
           awk -v heading="## [${EXPECTED_VERSION}]" '
             index($0, heading) == 1 { found = 1; print; next }
@@ -224,7 +233,7 @@ jobs:
             exit 1
           fi
           assets="${RUNNER_TEMP}/release-assets"
-          test "$(find "${assets}" -maxdepth 1 -type f | wc -l | tr -d ' ')" = 60
+          test "$(find "${assets}" -maxdepth 1 -type f | wc -l | tr -d ' ')" = 63
           gh release create "${tag}" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${CANDIDATE}" \
@@ -237,7 +246,7 @@ jobs:
           test "$(jq -r '.target_commitish' <<<"${release_json}")" = "${CANDIDATE}"
           test "$(jq -r '.draft' <<<"${release_json}")" = false
           test "$(jq -r '.prerelease' <<<"${release_json}")" = true
-          test "$(jq '.assets | length' <<<"${release_json}")" = 60
+          test "$(jq '.assets | length' <<<"${release_json}")" = 63
           for asset in "${assets}/"*; do
             jq -e --arg name "$(basename "${asset}")" \
               '.assets | any(.name == $name)' <<<"${release_json}" >/dev/null
@@ -321,6 +330,12 @@ jobs:
           mv "${bundle}/${stem}.SHA256SUMS" "${bundle}/SHA256SUMS"
           mv "${bundle}/${stem}.reproducibility.json" "${bundle}/reproducibility.json"
           mv "${bundle}/${stem}.manifest.json" "${bundle}/manifest.json"
+          if [[ "${RELEASE_TARGET}" = *-linux-gnu ]]; then
+            gh release download "v${EXPECTED_VERSION}" --repo "${GITHUB_REPOSITORY}" --dir "${bundle}" \
+              --pattern "rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz" \
+              --pattern "${stem}.source-relink.json"
+            mv "${bundle}/${stem}.source-relink.json" "${bundle}/source-relink.json"
+          fi
           test "$(jq -r '.release.version' "${bundle}/manifest.json")" = "${EXPECTED_VERSION}"
           test "$(jq -r '.release.sourceCommit' "${bundle}/manifest.json")" = "${CANDIDATE}"
           test "$(jq -r '.build.target' "${bundle}/manifest.json")" = "${RELEASE_TARGET}"

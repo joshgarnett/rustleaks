@@ -1,0 +1,15 @@
+/*-
+ * ====================================================
+ * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+ * Copyright (c) 2009-2011, Bruce D. Evans, Steven G. Kargl, David Schultz.
+ *
+ * Developed at SunPro, a Sun Microsystems, Inc. business.
+ * Permission to use, copy, modify, and distribute this
+ * software is freely granted, provided that this notice
+ * is preserved.
+ * ====================================================
+ *
+ * The argument reduction and testing for exceptional cases was
+ * written by Steven G. Kargl with input from Bruce D. Evans
+ * and David A. Schultz.
+ */

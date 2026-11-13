@@ -164,5 +164,7 @@ controls](docs/SECURITY_CONTROLS.md).
 Independent Rustleaks code is licensed under the MIT License. Copied Gitleaks
 configuration, fixtures, and test-derived material retain their applicable MIT
 terms. Adapted Go material retains its BSD terms. Codec fixtures and forks keep
-their own recorded licenses. See [LICENSE](LICENSE), [NOTICE](NOTICE), and the
-license files beside third-party material.
+their own recorded licenses. Native archives include `licenses/index.json`
+and the corresponding exact license and attribution texts. See
+[LICENSE](LICENSE), [NOTICE](NOTICE), and the license files beside third-party
+material.
