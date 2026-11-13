@@ -765,12 +765,18 @@ fn modified_startup(original: &[u8], architecture: &str) -> Result<Vec<u8>, Stri
     } else {
         "ENTRY (_start)\n"
     };
-    if source.matches(label).count() != 1 {
+    let mut entries = source
+        .match_indices(label)
+        .filter(|(offset, _)| *offset == 0 || source.as_bytes()[offset - 1] == b'\n');
+    let Some((offset, _)) = entries.next() else {
+        return Err("glibc startup entry label is absent or ambiguous".into());
+    };
+    if entries.next().is_some() {
         return Err("glibc startup entry label is absent or ambiguous".into());
     }
-    Ok(source
-        .replacen(label, &format!("{label}{}", "\tnop\n".repeat(16)), 1)
-        .into_bytes())
+    let mut modified = source.to_owned();
+    modified.insert_str(offset + label.len(), &"\tnop\n".repeat(16));
+    Ok(modified.into_bytes())
 }
 
 fn entry_marker(architecture: &str) -> Vec<u8> {
@@ -1233,13 +1239,33 @@ mod tests {
 
     #[test]
     fn startup_edit_preserves_code_and_requires_unique_label() {
-        let source = b"/* Original copyright. */\n_start:\n\tmov x29, #0\n";
+        let source = b"/* Original copyright. */\n_start:\n\tmov x29, #0\n\t.data\n__data_start:\n\t.long 0\n";
         let modified = modified_startup(source, "aarch64").unwrap();
         let text = String::from_utf8(modified).unwrap();
-        assert!(text.starts_with("/* Original copyright. */\n_start:\n\tnop\n"));
-        assert!(text.ends_with("\tmov x29, #0\n"));
+        assert_eq!(
+            text,
+            format!(
+                "/* Original copyright. */\n_start:\n{}\tmov x29, #0\n\t.data\n__data_start:\n\t.long 0\n",
+                "\tnop\n".repeat(16)
+            )
+        );
         assert_eq!(text.matches("\tnop\n").count(), 16);
         assert!(modified_startup(b"_start:\n_start:\n", "aarch64").is_err());
+        assert!(modified_startup(b"__data_start:\n", "aarch64").is_err());
         assert!(modified_startup(b"missing label", "x86_64").is_err());
+    }
+
+    #[test]
+    fn startup_edit_ignores_a_label_suffix_before_the_entry() {
+        let source = b"__data_start:\n\t.long 0\n_start:\n\tmov x29, #0\n";
+        let modified = modified_startup(source, "aarch64").unwrap();
+        assert_eq!(
+            modified,
+            format!(
+                "__data_start:\n\t.long 0\n_start:\n{}\tmov x29, #0\n",
+                "\tnop\n".repeat(16)
+            )
+            .into_bytes()
+        );
     }
 }
