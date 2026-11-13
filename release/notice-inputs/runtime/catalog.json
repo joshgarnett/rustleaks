@@ -1,0 +1,2962 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "glibc-2.28",
+      "name": "GNU C Library startup and nonshared support",
+      "version": "2.28",
+      "license_expression": null,
+      "targets": [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/bminor/glibc/archive/92d25389c255b0da9b56bc05694f0702cd22921a.tar.gz",
+        "revision": "92d25389c255b0da9b56bc05694f0702cd22921a",
+        "archive_sha256": "f4cf37f12e0c3a81485ea8743dc41dbcec31ae326b22d6265e724c7ee753529e",
+        "archive_prefix": "glibc-92d25389c255b0da9b56bc05694f0702cd22921a",
+        "provider_module": "llvm",
+        "provider_version": "0.8.11"
+      },
+      "coverage": {
+        "text": "Static startup and nonshared support supplied by the pinned hermetic GNU link configuration. COPYING.LIB and LICENSES retain the upstream terms. Exact source comments preserve file-specific exceptions where present; no exception is asserted for files that do not contain one. Dynamic system libc and related shared libraries are imports, not archive members.",
+        "inputs": [
+          "Scrt1.o or crt1.o: architecture start.S and csu/init.c",
+          "libc_nonshared.a: selected io wrappers and stack_chk_fail_local.c"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "COPYING.LIB",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/COPYING.LIB",
+          "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+        },
+        {
+          "original_path": "LICENSES",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/LICENSES",
+          "sha256": "35bdb41dc0bcb10702ddacbd51ec4c0fe6fb3129f734e8c85fc02e4d3eb0ce3f"
+        },
+        {
+          "original_path": "csu/init.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/csu/init.c.notice",
+          "sha256": "84ee4a5bf096e286e48987507944790e7bf236e84c2dadfa9bb2b88139291adb",
+          "original_file_sha256": "f04d24cc3166a109a6adb8e9dfa57f6f109eadcf9fca11e936ce964b5cf016a4",
+          "source_byte_range": {
+            "start": 0,
+            "end": 815
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "debug/stack_chk_fail_local.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/debug/stack_chk_fail_local.c.notice",
+          "sha256": "48bed510530cf54fd13cf3726f920c2f7abe2d27e31e0ac489c190e1bd159f5e",
+          "original_file_sha256": "560193f32d14b3365802eb4f8cd61b207b917a03155c188fd806f9a9aaa19b9b",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/fstat.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/fstat.c.notice",
+          "sha256": "416b25d14d01e127a3f48d374e94e857c19120120a25dce3d4d3a20e1bc595f4",
+          "original_file_sha256": "6798d61cfbe58dd9aa78e1295a10d27f1691aee0029face58d8614159bd1e912",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/fstat64.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/fstat64.c.notice",
+          "sha256": "416b25d14d01e127a3f48d374e94e857c19120120a25dce3d4d3a20e1bc595f4",
+          "original_file_sha256": "ed00090e7eaf8b9743aa94d8e909c2df9ae8ade554bc7b0a6ec055b5a9d2e449",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/fstatat.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/fstatat.c.notice",
+          "sha256": "48bed510530cf54fd13cf3726f920c2f7abe2d27e31e0ac489c190e1bd159f5e",
+          "original_file_sha256": "560682030e39b0b8589bb71cea46a6a3a8da759a11018b96eb3e22f24493a8f8",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/fstatat64.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/fstatat64.c.notice",
+          "sha256": "48bed510530cf54fd13cf3726f920c2f7abe2d27e31e0ac489c190e1bd159f5e",
+          "original_file_sha256": "6e1768ea0bdfb1472abb12ebe0373eac3fdbc4a7a61c4aab97bb5d6553ab5520",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/lstat.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/lstat.c.notice",
+          "sha256": "416b25d14d01e127a3f48d374e94e857c19120120a25dce3d4d3a20e1bc595f4",
+          "original_file_sha256": "ed20a3df1e5c16d00f6d6487faa6ff82b45a1a7fbccef0c29dc09099672909e5",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/lstat64.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/lstat64.c.notice",
+          "sha256": "416b25d14d01e127a3f48d374e94e857c19120120a25dce3d4d3a20e1bc595f4",
+          "original_file_sha256": "03557cfe6bcfa457873aa23d87adf15d645162bf69e48967460686969a29c27e",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/mknod.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/mknod.c.notice",
+          "sha256": "957f60414cd9f7e1ca39219acd797a316df4f36966c3a7619537cfd6ed38a249",
+          "original_file_sha256": "ede5c8f79db35c88493eb13ff1163e6237b71071f66352efa48ae07ee9c6c0cd",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/mknodat.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/mknodat.c.notice",
+          "sha256": "957f60414cd9f7e1ca39219acd797a316df4f36966c3a7619537cfd6ed38a249",
+          "original_file_sha256": "4a175b81a1436e183abef5fcb72a320009adf170ea2bf44c32ebf7d802ac5b3e",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/stat.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/stat.c.notice",
+          "sha256": "416b25d14d01e127a3f48d374e94e857c19120120a25dce3d4d3a20e1bc595f4",
+          "original_file_sha256": "3ab7c2a483bcab98097ea66713d6572e8c00a5103a2531cc68bf4d6f1f0f4f47",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "io/stat64.c",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/io/stat64.c.notice",
+          "sha256": "416b25d14d01e127a3f48d374e94e857c19120120a25dce3d4d3a20e1bc595f4",
+          "original_file_sha256": "b0dade1d077697b5b5e4fc5e6ccfeb0342d12b5cb41c5d8a7cf3f23e1042f106",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1695
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "sysdeps/aarch64/start.S",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/sysdeps/aarch64/start.S.notice",
+          "sha256": "1071b2f5f113a1aefa14c2f031a5fe8b42cf339d1c11525f6d07a6477fe3e91e",
+          "original_file_sha256": "5e26fab3490c25240bbf806146860ea3d6596988e16a27da52bd428e116a5cc3",
+          "source_byte_range": {
+            "start": 0,
+            "end": 789
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "sysdeps/x86_64/start.S",
+          "input_path": "release/notice-inputs/runtime/glibc-2.28/sysdeps/x86_64/start.S.notice",
+          "sha256": "33a7845176a088ed5e6eab208060235b1bd222cac3497d21818f5e0ed9cacdf3",
+          "original_file_sha256": "95293b62857d9b4d3d1b0c9fefc7f0676ed69d65d8dbc35f3a125624e878bfc7",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1797
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "hermetic-glibc-support-0.8.11",
+      "name": "GNU C Library support retained in the hermetic LLVM module",
+      "version": "0.8.11",
+      "license_expression": null,
+      "targets": [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.11/hermetic-llvm-v0.8.11.tar.gz",
+        "revision": "v0.8.11",
+        "archive_sha256": "781670efedbcffe9e6bedd086a8037a3fe467baec16d24124534062e36e727a4",
+        "archive_prefix": "hermetic-llvm-0.8.11",
+        "registry_source_url": "https://bcr.bazel.build/modules/llvm/0.8.11/source.json",
+        "registry_source_sha256": "b40edb2bb2ed271bf613b396d245cb473c42fb057a2b26a3bc7d7e8bfcf6aa71"
+      },
+      "coverage": {
+        "text": "Exact glibc source notice comments for startup and nonshared support retained by the selected LLVM module. The corresponding complete LGPL text is supplied by the glibc-2.28 component. These notices preserve the individual linking exceptions without assigning one blanket exception to every glibc object.",
+        "inputs": [
+          "Scrt1.o or crt1.o: abi-note-2.31.S",
+          "libc_nonshared.a: elf-init-2.31.c, atexit.c, at_quick_exit.c and pthread_atfork.c"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "3rd_party/libc/glibc/csu/abi-note-2.31.S",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/csu/abi-note-2.31.S.notice",
+          "sha256": "d7be7ddffa81b7e952fe6e6e9c2b690ba333be9b5156c29e386ea7a71fb399db",
+          "original_file_sha256": "9abb7d71812ff5009197a67c57e3f8ae3138dd5be57c1a8e534e859c6e689ffc",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1327
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "3rd_party/libc/glibc/csu/elf-init-2.31.c",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/csu/elf-init-2.31.c.notice",
+          "sha256": "d9643283950e81f005007b472c8f50a28eb43ffea2ea81756ebd840bd4b6e597",
+          "original_file_sha256": "2d9b3d9b6af5d2ad6bf8a881e3c34f0bd7478f9709b62dfe9d48a749a5768519",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1771
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "3rd_party/libc/glibc/nptl/pthread_atfork.c",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/nptl/pthread_atfork.c.notice",
+          "sha256": "247599f053b9266806c7f12832d313bb8e73e1e3e2d4b97079ee2d92664beda8",
+          "original_file_sha256": "8717275bee70990f7f0defee218d4e43d8d9699a3948f337c09cb578df6fab21",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1757
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "3rd_party/libc/glibc/stdlib/at_quick_exit.c",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/stdlib/at_quick_exit.c.notice",
+          "sha256": "bfc2e15bad7d0aecb02e01168cab54b5451877a3a37d37a831b390ab905efbac",
+          "original_file_sha256": "17ac10bc7d05b9e737e7ec96acc09f989278b09e8aab425eb32611f7b5e45652",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1696
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "3rd_party/libc/glibc/stdlib/atexit.c",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/stdlib/atexit.c.notice",
+          "sha256": "bfc2e15bad7d0aecb02e01168cab54b5451877a3a37d37a831b390ab905efbac",
+          "original_file_sha256": "17874dda5fa44a2f737473c25fa34ed674728d00e5c48235463f3101ac3506ae",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1696
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "hermetic-llvm-compiler-rt-22.1.8",
+      "name": "Hermetic LLVM compiler-rt",
+      "version": "22.1.8",
+      "license_expression": "Apache-2.0 WITH LLVM-exception",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
+        "revision": "llvmorg-22.1.8-r1",
+        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
+        "archive_prefix": "llvm-project-22.1.8.src",
+        "provider_module": "llvm",
+        "provider_version": "0.8.11"
+      },
+      "coverage": {
+        "text": "Selected hermetic compiler runtime and CRT source notices.",
+        "inputs": [
+          "libclang_rt.builtins.static.a",
+          "hermetic Linux compiler-rt CRT objects"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "compiler-rt/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-compiler-rt-22.1.8/compiler-rt/LICENSE.TXT",
+          "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+        }
+      ],
+      "disposition": "supplied-runtime-input-notices",
+      "status": "complete"
+    },
+    {
+      "id": "hermetic-llvm-libcxx-22.1.8",
+      "name": "Hermetic LLVM libcxx",
+      "version": "22.1.8",
+      "license_expression": "Apache-2.0 WITH LLVM-exception",
+      "targets": [
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
+        "revision": "llvmorg-22.1.8-r1",
+        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
+        "archive_prefix": "llvm-project-22.1.8.src",
+        "provider_module": "llvm",
+        "provider_version": "0.8.11"
+      },
+      "coverage": {
+        "text": "Conservative notices for static runtime libraries supplied by the selected Linux C++ toolchain. Supplied linker inputs are broader than incorporated code; this record does not claim that every object from the archive is embedded.",
+        "inputs": [
+          "libcxx.static"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "libcxx/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libcxx-22.1.8/libcxx/LICENSE.TXT",
+          "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b"
+        }
+      ],
+      "disposition": "supplied-runtime-input-notices",
+      "status": "complete"
+    },
+    {
+      "id": "hermetic-llvm-libcxxabi-22.1.8",
+      "name": "Hermetic LLVM libcxxabi",
+      "version": "22.1.8",
+      "license_expression": "Apache-2.0 WITH LLVM-exception",
+      "targets": [
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
+        "revision": "llvmorg-22.1.8-r1",
+        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
+        "archive_prefix": "llvm-project-22.1.8.src",
+        "provider_module": "llvm",
+        "provider_version": "0.8.11"
+      },
+      "coverage": {
+        "text": "Conservative notices for static runtime libraries supplied by the selected Linux C++ toolchain. Supplied linker inputs are broader than incorporated code; this record does not claim that every object from the archive is embedded.",
+        "inputs": [
+          "libcxxabi.static"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "libcxxabi/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libcxxabi-22.1.8/libcxxabi/LICENSE.TXT",
+          "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c"
+        }
+      ],
+      "disposition": "supplied-runtime-input-notices",
+      "status": "complete"
+    },
+    {
+      "id": "hermetic-llvm-libunwind-22.1.8",
+      "name": "Hermetic LLVM libunwind",
+      "version": "22.1.8",
+      "license_expression": "Apache-2.0 WITH LLVM-exception",
+      "targets": [
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
+        "revision": "llvmorg-22.1.8-r1",
+        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
+        "archive_prefix": "llvm-project-22.1.8.src",
+        "provider_module": "llvm",
+        "provider_version": "0.8.11"
+      },
+      "coverage": {
+        "text": "Static LLVM unwind implementation in the selected Linux binaries. Native musl linker maps identify UnwindLevel1, UnwindLevel1-gcc-ext, UnwindRegistersSave, UnwindRegistersRestore and libunwind object contributions from this provider. The GNU artifact and selected-source review also identifies static LLVM unwind. This record does not claim that every archive member is incorporated.",
+        "inputs": [
+          "libunwind.static"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "libunwind/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libunwind-22.1.8/libunwind/LICENSE.TXT",
+          "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "microsoft-msvc-runtime-14.51.36231",
+      "name": "Microsoft Visual C++ runtime startup and support",
+      "version": "14.51.36231",
+      "license_expression": null,
+      "targets": [
+        "aarch64-pc-windows-msvc",
+        "x86_64-pc-windows-msvc"
+      ],
+      "source": {
+        "kind": "native-toolset-runtime-and-official-terms",
+        "provider": "Microsoft",
+        "toolset_version": "14.51.36231",
+        "visual_studio_edition": "Enterprise",
+        "visual_studio_version": "18.11.12328.437",
+        "linker_file_version": "14.51.36260.0",
+        "windows_sdk_version": "10.0.26100.0",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43254996361",
+        "diagnostic_workflow_commit": "dcfe1ee6f97053fe0bdae994afe41099c70bf510",
+        "target_input_files": {
+          "aarch64-pc-windows-msvc": [
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/ucrt/arm64/ucrt.lib",
+              "sha256": "c2c1328647f4454f71a68e8e194f89eef7d3fdf2661192ab8d87fba395ee13fa",
+              "size": 563640,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/arm64/UserEnv.Lib",
+              "sha256": "141ac8b3b11d0b3c8401bdaff00e61fd94b38e69315ceae8df0e651c3e333094",
+              "size": 39578,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/arm64/WS2_32.Lib",
+              "sha256": "fe613a96abc988494101a6244fd95b767520f5430feaafe9a70572e46da34f66",
+              "size": 561672,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/arm64/kernel32.Lib",
+              "sha256": "1110e8f9bf593d2bc051a4be0660cf1d9af123975a0508f9cb2a9e83ad58adcf",
+              "size": 652320,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/arm64/ntdll.lib",
+              "sha256": "f7e921d14727b57ac63b01972c039c204aad91cd9c1cfaf8416b3440ba424f44",
+              "size": 1089480,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "VC/Tools/MSVC/14.51.36231/lib/arm64/msvcrt.lib",
+              "sha256": "2e6c38644a08c32a66411ed20477ec3bbfe484fe12578da2009af1788ce0f64c",
+              "size": 22918354,
+              "role": "embedded-startup-support"
+            },
+            {
+              "original_path": "VC/Tools/MSVC/14.51.36231/lib/arm64/vcruntime.lib",
+              "sha256": "feb98ea7e5d8cc4f2c1e4d6007db28c35d8605db305002e7f58c29d966e685b3",
+              "size": 1190056,
+              "role": "embedded-guard-support-data-and-external-runtime-imports"
+            }
+          ],
+          "x86_64-pc-windows-msvc": [
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/ucrt/x64/ucrt.lib",
+              "sha256": "7ef4eac926bf597d2f243f16cdfed7e0db22cb3ca34a1d7e088a84c994a03d66",
+              "size": 285588,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/x64/UserEnv.Lib",
+              "sha256": "2ae9d85e10d7536662b2657462ea6e4394c0143a187a75229e4e14599f6e4f2d",
+              "size": 19480,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/x64/WS2_32.Lib",
+              "sha256": "6919f635d58cbb78eca1a1d8cb27617ca674bdced820a54e40aa0fe9bccbff55",
+              "size": 263492,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/x64/kernel32.Lib",
+              "sha256": "842f5ce7ad8cf5aab7491b791e7968d2be510ae93f4019d3311797289399d221",
+              "size": 311908,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "Windows Kits/10/Lib/10.0.26100.0/um/x64/ntdll.lib",
+              "sha256": "a373f724ef6d8ea11a8b03de653ac1b4f111522f59a1f4b787ec9d93f31fe7c1",
+              "size": 517236,
+              "role": "external-system-runtime-import-library-input"
+            },
+            {
+              "original_path": "VC/Tools/MSVC/14.51.36231/lib/x64/msvcrt.lib",
+              "sha256": "d3f725923c6dd639bb5e5c52f3122c6fe084471f7ab0ef5f27d054f56b4d8a7e",
+              "size": 8228734,
+              "role": "embedded-startup-support"
+            },
+            {
+              "original_path": "VC/Tools/MSVC/14.51.36231/lib/x64/vcruntime.lib",
+              "sha256": "d772e963458246dd6dd5a7969c0f08e461ccb8b64cb54e9a67317cafffc22ec9",
+              "size": 287794,
+              "role": "embedded-guard-support-data-and-external-runtime-imports"
+            }
+          ]
+        },
+        "runtime_terms": {
+          "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "document_sha256": "08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783",
+          "terms_date": "2025-10-01"
+        },
+        "application_distribution_terms": {
+          "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual_Studio_2026-License-Enterprise_Professional_ENU.docx",
+          "document_sha256": "dd2ab92a7c2bb90dd509e16572707a34b13bc0bc09b9199d115f25594ac39053",
+          "terms_date": "2025-10-01",
+          "selected_section": "II.7 Distributable Code"
+        },
+        "static_link_deployment_guidance": "https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp",
+        "target_linker_files": {
+          "aarch64-pc-windows-msvc": {
+            "original_path": "VC/Tools/MSVC/14.51.36231/bin/HostX64/arm64/link.exe",
+            "sha256": "4ae486e94ab81a897b5f746f376b2418d4e6b582e258b7155f11079746e69de0",
+            "size": 3701128,
+            "file_version": "14.51.36260.0"
+          },
+          "x86_64-pc-windows-msvc": {
+            "original_path": "VC/Tools/MSVC/14.51.36231/bin/HostX64/x64/link.exe",
+            "sha256": "a8c42e25c91ca2453e1110540ac08f0fc12d7539454a11b9af8baeecb469837d",
+            "size": 3701088,
+            "file_version": "14.51.36260.0"
+          }
+        }
+      },
+      "coverage": {
+        "text": "Embedded MSVC startup/support object contributions from msvcrt.lib and guard-pointer data from vcruntime.lib. Source copyright excerpts cover recovered generic CRT attribution candidates; source occurrences record their observed targets and do not claim complete compiled-source provenance. SDK import-library inputs and external DLLs are distinguished from incorporated runtime implementation.",
+        "inputs": [
+          "msvcrt.lib static startup/support objects",
+          "vcruntime.lib softmemtag.obj guard-pointer data"
+        ],
+        "external_import_inputs": [
+          "ucrt.lib",
+          "UserEnv.Lib",
+          "WS2_32.Lib",
+          "kernel32.Lib",
+          "ntdll.lib"
+        ],
+        "declared_terms": "Microsoft Visual C++ V14 Redistributable and Runtime recipient terms; application redistribution under Visual Studio 2026 section II.7. Microsoft terms apply only to Microsoft components."
+      },
+      "documents": [
+        {
+          "original_path": "SCOPE.txt",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/SCOPE.txt",
+          "sha256": "9946d83cc491c388102d449fa5331914db163f6f4ce9b289ad39279c03452885",
+          "provenance": "Project-authored scope notice for the selected Microsoft components; operative Microsoft terms are preserved separately."
+        },
+        {
+          "original_path": "crt/src/vcruntime/gs_cookie.c",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/copyright/003922d8654c2fedb1e6cd5143fea6cd30ca6bf50ff5c23953408a9a45f0e4f7.notice",
+          "sha256": "003922d8654c2fedb1e6cd5143fea6cd30ca6bf50ff5c23953408a9a45f0e4f7",
+          "original_file_sha256": "5726c7b87f74bd970a771edeb4d193ad7ab788ff1ae462ba95ab8a90617185eb",
+          "source_byte_range": {
+            "start": 64,
+            "end": 132
+          },
+          "extraction": "Exact contiguous copyright-line bytes from the recorded source range; end offset is exclusive. Identical bytes are deduplicated with all observed source occurrences retained.",
+          "source_occurrences": [
+            {
+              "original_path": "crt/src/vcruntime/gs_cookie.c",
+              "original_file_sha256": "5726c7b87f74bd970a771edeb4d193ad7ab788ff1ae462ba95ab8a90617185eb",
+              "source_byte_range": {
+                "start": 64,
+                "end": 132
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:gs_cookie.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/gs_support.c",
+              "original_file_sha256": "c2491ccc54630fa30a7484bdf5da9481822f9e8597e8775540975a1b573e49fe",
+              "source_byte_range": {
+                "start": 79,
+                "end": 147
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:gs_support.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/guard_support.c",
+              "original_file_sha256": "d838f2632e98cc690aaae725237509f47c092bbc50079b3a5ce28d264579df7e",
+              "source_byte_range": {
+                "start": 85,
+                "end": 153
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:guard_support.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/loadcfg.c",
+              "original_file_sha256": "e04bb4473a7bf6bf9b330ad495a546fcf121cf8b6c3692854edc40553eacda05",
+              "source_byte_range": {
+                "start": 21,
+                "end": 89
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:loadcfg.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            }
+          ]
+        },
+        {
+          "original_path": "crt/src/vcruntime/tlssup.cpp",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/copyright/07d2225105285b8013ea3d55a8a1b1a3f3c1fb4f8ec610261ef90738d4221e94.notice",
+          "sha256": "07d2225105285b8013ea3d55a8a1b1a3f3c1fb4f8ec610261ef90738d4221e94",
+          "original_file_sha256": "9da99f37299cebf3c4685ae16f3f5dc997bf2dd1f08034fb5a9ddf18eda43d8f",
+          "source_byte_range": {
+            "start": 69,
+            "end": 136
+          },
+          "extraction": "Exact contiguous copyright-line bytes from the recorded source range; end offset is exclusive. Identical bytes are deduplicated with all observed source occurrences retained.",
+          "source_occurrences": [
+            {
+              "original_path": "crt/src/vcruntime/tlssup.cpp",
+              "original_file_sha256": "9da99f37299cebf3c4685ae16f3f5dc997bf2dd1f08034fb5a9ddf18eda43d8f",
+              "source_byte_range": {
+                "start": 69,
+                "end": 136
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:tlssup.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            }
+          ]
+        },
+        {
+          "original_path": "crt/src/vcruntime/argv_mode.cpp",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/copyright/6cd372cbdd6bfa1a8d95cf640e84ba5bfd4efdd1b6e717f1a932f81432de00e2.notice",
+          "sha256": "6cd372cbdd6bfa1a8d95cf640e84ba5bfd4efdd1b6e717f1a932f81432de00e2",
+          "original_file_sha256": "6b5e8f1f0fe7eb4c44351be482847fc7c6393eef3d91c89bd89a52d3510c50ed",
+          "source_byte_range": {
+            "start": 26,
+            "end": 93
+          },
+          "extraction": "Exact contiguous copyright-line bytes from the recorded source range; end offset is exclusive. Identical bytes are deduplicated with all observed source occurrences retained.",
+          "source_occurrences": [
+            {
+              "original_path": "crt/src/vcruntime/argv_mode.cpp",
+              "original_file_sha256": "6b5e8f1f0fe7eb4c44351be482847fc7c6393eef3d91c89bd89a52d3510c50ed",
+              "source_byte_range": {
+                "start": 26,
+                "end": 93
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:argv_mode.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/commit_mode.cpp",
+              "original_file_sha256": "5208d462ec44c3697db822e338af1964985ac83ebe9da100c4a6b20fbbd332c0",
+              "source_byte_range": {
+                "start": 28,
+                "end": 95
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:commit_mode.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/delete_scalar.cpp",
+              "original_file_sha256": "2b6434312792f6a340719b6e6c46b148411e2dcf792cbc1f5ae9c5d9980d5b43",
+              "source_byte_range": {
+                "start": 30,
+                "end": 97
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:delete_scalar.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/delete_scalar_size.cpp",
+              "original_file_sha256": "24757c77073aa388f5556b858b9f4dc13b8b0c7cf5ad82c0d2a9544970c7b022",
+              "source_byte_range": {
+                "start": 35,
+                "end": 102
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:delete_scalar_size.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/denormal_control.cpp",
+              "original_file_sha256": "06a7b63c91f8c0aa7bb2ec1a1d4974ba29a97f41d301061c4d65bc34691180da",
+              "source_byte_range": {
+                "start": 33,
+                "end": 100
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:denormal_control.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/dyn_tls_init.c",
+              "original_file_sha256": "81edf388d2391b7dc8164ad1d6fb02b5223e638df87bec3ba538e88043dea277",
+              "source_byte_range": {
+                "start": 27,
+                "end": 94
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:dyn_tls_init.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/env_mode.cpp",
+              "original_file_sha256": "9904dae086a4a34cd2d23b44a6a0c8e7edc1e0cd75b24314d94ff2ed22ee9035",
+              "source_byte_range": {
+                "start": 25,
+                "end": 92
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:env_mode.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/exe_main.cpp",
+              "original_file_sha256": "f4f590f440ba7bf9472debd09278df41dbb87be3e4ee224be6fc2b2edb515f7b",
+              "source_byte_range": {
+                "start": 25,
+                "end": 92
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:exe_main.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/file_mode.cpp",
+              "original_file_sha256": "5e5d6b9bd3cd4649c9a8fe0085b5cb7ae984b24b3ff8657f8707d9ade6c9a26a",
+              "source_byte_range": {
+                "start": 26,
+                "end": 93
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:file_mode.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/fltused.cpp",
+              "original_file_sha256": "0c4ee76c81855189aaccb6e3c247a37e7fbe3453e825d6bbce251b8a58830953",
+              "source_byte_range": {
+                "start": 24,
+                "end": 91
+              },
+              "observed_targets": [
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:fltused.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/initializers.cpp",
+              "original_file_sha256": "14807cf50bd44e3b0c10ac453057678e40cb2a97c998612d9748d32ce9819e6b",
+              "source_byte_range": {
+                "start": 29,
+                "end": 96
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:initializers.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/invalid_parameter_handler.cpp",
+              "original_file_sha256": "1a84c9c7b4d50140a9fd24a9c7d083ce16329e958ec510ab9ff0506de6c52079",
+              "source_byte_range": {
+                "start": 42,
+                "end": 109
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:invalid_parameter_handler.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/matherr.cpp",
+              "original_file_sha256": "aa6309480cb2fa854124825c5301618bd6aafbe1e2e17ff3ec6fbbd6b5bc2020",
+              "source_byte_range": {
+                "start": 24,
+                "end": 91
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:matherr.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/matherr_detection.c",
+              "original_file_sha256": "0b5a4c07fb410fefe60f9f410ec6964f2b39580fc79247a90ed01fc48730a161",
+              "source_byte_range": {
+                "start": 32,
+                "end": 99
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:matherr_detection.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/new_mode.cpp",
+              "original_file_sha256": "907d5753c94cbb0ea8c8b3e0b77b52b2a48282da0844c87a8258c344e7e41cf8",
+              "source_byte_range": {
+                "start": 25,
+                "end": 92
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:new_mode.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/thread_locale.cpp",
+              "original_file_sha256": "321db5d7bbc6eda8276f22bd26d7fb4edcdd357f274105148c8bb3100cf3ce41",
+              "source_byte_range": {
+                "start": 30,
+                "end": 97
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:thread_locale.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/tncleanup.cpp",
+              "original_file_sha256": "fe0569caa3cd1e6e7faa776cf12fd548d7441954da0e632a46f68b5207c4ec1d",
+              "source_byte_range": {
+                "start": 26,
+                "end": 93
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:tncleanup.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/ucrt_detection.c",
+              "original_file_sha256": "9137fc2cad2f335b50a9cb4e7365f2914ed3300decdd3fd925e6d2eac2805df5",
+              "source_byte_range": {
+                "start": 29,
+                "end": 96
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:ucrt_detection.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/ucrt_stubs.cpp",
+              "original_file_sha256": "51290c6b70ef63f0bb9054f3e415a773351eec53b834d79553a51a439c73d8e7",
+              "source_byte_range": {
+                "start": 27,
+                "end": 94
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:ucrt_stubs.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/utility.cpp",
+              "original_file_sha256": "d026b2cea944160fb05098366f717aca4418d1f54cc489fac0a6cf1f01561ef1",
+              "source_byte_range": {
+                "start": 24,
+                "end": 91
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:utility.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            },
+            {
+              "original_path": "crt/src/vcruntime/utility_desktop.cpp",
+              "original_file_sha256": "17460eec34e64f078a300e587a21a955a3dbfb8e28404ec240b2fcd3f19e88e1",
+              "source_byte_range": {
+                "start": 32,
+                "end": 99
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:utility_desktop.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            }
+          ]
+        },
+        {
+          "original_path": "crt/src/vcruntime/std_type_info_static.cpp",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/copyright/8fe0211341920adefc41f511c131fda1271d6dbdb599d3eccded565e30ee0adb.notice",
+          "sha256": "8fe0211341920adefc41f511c131fda1271d6dbdb599d3eccded565e30ee0adb",
+          "original_file_sha256": "ab5269df8f8567cb6a76b9f4062468af2d8e9e175fefa612f7b8d0a98d611a24",
+          "source_byte_range": {
+            "start": 37,
+            "end": 105
+          },
+          "extraction": "Exact contiguous copyright-line bytes from the recorded source range; end offset is exclusive. Identical bytes are deduplicated with all observed source occurrences retained.",
+          "source_occurrences": [
+            {
+              "original_path": "crt/src/vcruntime/std_type_info_static.cpp",
+              "original_file_sha256": "ab5269df8f8567cb6a76b9f4062468af2d8e9e175fefa612f7b8d0a98d611a24",
+              "source_byte_range": {
+                "start": 37,
+                "end": 105
+              },
+              "observed_targets": [
+                "aarch64-pc-windows-msvc",
+                "x86_64-pc-windows-msvc"
+              ],
+              "candidate_archive_members": [
+                "msvcrt:std_type_info_static.obj"
+              ],
+              "association_basis": "Object basename and generic source location; this is an attribution source candidate, not a claim of complete compiled-source provenance."
+            }
+          ]
+        },
+        {
+          "original_path": "Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/terms/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "sha256": "08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783",
+          "source_url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "extraction": "Complete original official recipient-terms DOCX bytes, without modification."
+        },
+        {
+          "original_path": "Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/terms/Visual-Cpp-V14-Runtime-terms.txt",
+          "sha256": "3dfd057b91025067c08bd73c3cb0e6f712f76b6198b54413e14365d529f17ea6",
+          "source_url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "original_file_sha256": "08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783",
+          "source_archive_part": "word/document.xml",
+          "source_part_sha256": "8068eba1b68c026c95d32631cdd1b2e6d389f64a515096b3c7ecf51a4ff4216b",
+          "source_paragraph_range": {
+            "start": 0,
+            "end": 51,
+            "index_base": 0
+          },
+          "extraction": "Complete paragraph text from word/document.xml in document order, encoded as UTF-8 with LF between paragraphs. The accompanying original DOCX preserves original numbering and formatting."
+        },
+        {
+          "original_path": "Visual_Studio_2026-License-Enterprise_Professional_ENU.docx",
+          "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/terms/Visual-Studio-2026-section-II-7.txt",
+          "sha256": "15af00d77e1b0431ed0c8d73f9c6f040314ee5358a257bdca25d30d869c0f73e",
+          "source_url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual_Studio_2026-License-Enterprise_Professional_ENU.docx",
+          "original_file_sha256": "dd2ab92a7c2bb90dd509e16572707a34b13bc0bc09b9199d115f25594ac39053",
+          "source_archive_part": "word/document.xml",
+          "source_part_sha256": "8a97e946f0bf588bad8e993737d0d0d5efc7f66d6dd1cb4809e22fb0ece68c7a",
+          "source_paragraph_range": {
+            "start": 50,
+            "end": 64,
+            "index_base": 0
+          },
+          "source_section": "II.7 Distributable Code",
+          "extraction": "Only the complete II.7 Distributable Code section paragraph text from word/document.xml, encoded as UTF-8 with LF between paragraphs. No other Visual Studio terms section is included."
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "musl-1.2.5",
+      "name": "musl libc supplied by Rust",
+      "version": "1.2.5",
+      "license_expression": null,
+      "targets": [
+        "aarch64-unknown-linux-musl",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "source-archive",
+        "url": "https://musl.libc.org/releases/musl-1.2.5.tar.gz",
+        "revision": "1.2.5",
+        "archive_sha256": "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4",
+        "archive_prefix": "musl-1.2.5",
+        "archive_sha1": "36210d3423172a40ddcf83c762207c5f760b60a6",
+        "builder_repository": "https://github.com/richfelker/musl-cross-make",
+        "builder_revision": "3635262e4524c991552789af6f36211a335a77b3",
+        "builder_hash_path": "hashes/musl-1.2.5.tar.gz.sha1",
+        "rust_repository": "https://github.com/rust-lang/rust",
+        "rust_revision": "59807616e1fa2540724bfbac14d7976d7e4a3860",
+        "rust_build_script": "src/ci/docker/scripts/musl-toolchain.sh",
+        "rust_build_script_sha256": "faae0de27e4ca1661a030ce3623e4959f34f5d1b6f795ea9b5b84c10c2086b2e",
+        "rust_patches": [
+          {
+            "path": "src/ci/docker/scripts/musl-cve-2026-6042.diff",
+            "sha256": "444fa70e52ca158fb7d4bad560637790bbf8f72e80b82fff840dd66fa83091e3"
+          },
+          {
+            "path": "src/ci/docker/scripts/musl-cve-2026-40200.diff",
+            "sha256": "1ee29f64f9ca8e8ad7c349779d661ff6b52126a27575d3586981357a52c406fb"
+          }
+        ]
+      },
+      "coverage": {
+        "text": "Rust self-contained musl libc and CRT source group, not the unused hermetic LLVM musl 1.2.6 provider. COPYRIGHT gives the whole-library MIT terms, file-specific terms and limited public-header/CRT attribution exception. Exact legal source comments conservatively cover generic, aarch64 and x86_64 implementation notices; inclusion of a notice does not claim its entire source file is embedded. The Rust patches retain these notice bytes.",
+        "inputs": [
+          "Rust self-contained libc.a",
+          "Rust self-contained musl CRT objects"
+        ],
+        "declared_default_license": "MIT, with file-specific terms preserved in COPYRIGHT and the exact source comment notices."
+      },
+      "documents": [
+        {
+          "original_path": "COPYRIGHT",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/COPYRIGHT",
+          "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+        },
+        {
+          "original_path": "src/complex/__cexp.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/__cexp.c.notice",
+          "sha256": "929837e06c3b9c37e61b955742111a53906b7d3382fab6fd7f9a6d8c708b8e92",
+          "original_file_sha256": "ffcf569466b0ac3defff943c989b6b181c7c41dc4f9538c32944459a5272203b",
+          "source_byte_range": {
+            "start": 52,
+            "end": 1424
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/__cexpf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/__cexpf.c.notice",
+          "sha256": "929837e06c3b9c37e61b955742111a53906b7d3382fab6fd7f9a6d8c708b8e92",
+          "original_file_sha256": "3cedd5c25cc80d78713bd44c53c7f3170dad26fde14ea5eb3b0028bfede24517",
+          "source_byte_range": {
+            "start": 53,
+            "end": 1425
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/catan.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/catan.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "056cc1842d173fe90297adb4c088745cb3bcb37c95b56d72c246ae505e470eb5",
+          "source_byte_range": {
+            "start": 54,
+            "end": 850
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/catanf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/catanf.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "2dbd38c8d786140372a04bfde641a9e290a842fe29133d3d0cd9f629170b9fc7",
+          "source_byte_range": {
+            "start": 55,
+            "end": 851
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/catanl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/catanl.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "3857a0a047869d9219421a12a4ada0f384e9fbe7c21b3c9516622852f475cf1a",
+          "source_byte_range": {
+            "start": 55,
+            "end": 851
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/ccosh.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/ccosh.c.notice",
+          "sha256": "3a1692b72fb1f66d3f082862dea0bbf69cba16bba5c9d1ec144d683aba49cf53",
+          "original_file_sha256": "9997abb272468781bc9b6b61a1550e95d1f956df109e0a646d578a3dc2c3aef9",
+          "source_byte_range": {
+            "start": 54,
+            "end": 1410
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/ccoshf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/ccoshf.c.notice",
+          "sha256": "3a1692b72fb1f66d3f082862dea0bbf69cba16bba5c9d1ec144d683aba49cf53",
+          "original_file_sha256": "6ebf4355682268356685ba79621a47f2f955ca910bf13ca6ed32bb52e893574f",
+          "source_byte_range": {
+            "start": 55,
+            "end": 1411
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/cexp.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/cexp.c.notice",
+          "sha256": "929837e06c3b9c37e61b955742111a53906b7d3382fab6fd7f9a6d8c708b8e92",
+          "original_file_sha256": "30943458b19d417812e326d8a61a2413ebce139c826c997ad6598dcddb6e673d",
+          "source_byte_range": {
+            "start": 53,
+            "end": 1425
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/cexpf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/cexpf.c.notice",
+          "sha256": "929837e06c3b9c37e61b955742111a53906b7d3382fab6fd7f9a6d8c708b8e92",
+          "original_file_sha256": "7de06c6bebd823987c5eefe19821b8a473332ec724d6cc0a6a27955a33ba3734",
+          "source_byte_range": {
+            "start": 54,
+            "end": 1426
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/csinh.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/csinh.c.notice",
+          "sha256": "3a1692b72fb1f66d3f082862dea0bbf69cba16bba5c9d1ec144d683aba49cf53",
+          "original_file_sha256": "ed236ed0232c73d39a372a6799ba63b2eaeccc5f03aca0045fcb1504bb489489",
+          "source_byte_range": {
+            "start": 54,
+            "end": 1410
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/csinhf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/csinhf.c.notice",
+          "sha256": "3a1692b72fb1f66d3f082862dea0bbf69cba16bba5c9d1ec144d683aba49cf53",
+          "original_file_sha256": "4ed3be03188b48d701d8edaa88b0e282cb2ec88b8af1c2f0e2a3f76fba60a773",
+          "source_byte_range": {
+            "start": 55,
+            "end": 1411
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/csqrt.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/csqrt.c.notice",
+          "sha256": "6679e9aa1a98bbb9f73d944ecc84eaf508b2df5d30f620a3af64aa40e5df55fc",
+          "original_file_sha256": "4f6cfa6aec61754c1ee2ea683ec00e7837eaa1993edafbc516c6c4978e3567b4",
+          "source_byte_range": {
+            "start": 54,
+            "end": 1426
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/csqrtf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/csqrtf.c.notice",
+          "sha256": "6679e9aa1a98bbb9f73d944ecc84eaf508b2df5d30f620a3af64aa40e5df55fc",
+          "original_file_sha256": "8dd69a3ec2052cf54f38e61156b057c2ff74d00da9db64da63f646e30a36e8e3",
+          "source_byte_range": {
+            "start": 55,
+            "end": 1427
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/ctanh.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/ctanh.c.notice",
+          "sha256": "f11ac8260c79e3792b711323df93ff6dd6ef7866b95708c3a83626b65e579df2",
+          "original_file_sha256": "7daa31e0831e9805934bd0e6a33816daf16c0bf1076babeb9799fe6e185ac045",
+          "source_byte_range": {
+            "start": 54,
+            "end": 1389
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/complex/ctanhf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/complex/ctanhf.c.notice",
+          "sha256": "f11ac8260c79e3792b711323df93ff6dd6ef7866b95708c3a83626b65e579df2",
+          "original_file_sha256": "1ebb7bddc872c96bf3e7c8d1a529c14f28db4cf75cc8237fdb1ad62764b405bf",
+          "source_byte_range": {
+            "start": 55,
+            "end": 1390
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_blowfish.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_blowfish.c.notice",
+          "sha256": "a17e0d141e431d3f15bd03901da69575531e23e4556847a1de209e79c6f3a1fb",
+          "original_file_sha256": "0f9054739e295e3e981e7aa29c8f287a190aef065b84a82a4c6817120d5da05d",
+          "source_byte_range": {
+            "start": 155,
+            "end": 2184
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_des.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_des.c.notice",
+          "sha256": "30c3222fecfdbda6900218b4da3fe68f4753cba41a3a71dac7e05345447c40fb",
+          "original_file_sha256": "546b4ee35446fb2a551d7414779395789f81d53aefbabd8914375686af5d228e",
+          "source_byte_range": {
+            "start": 847,
+            "end": 2775
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_md5.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_md5.c.part-01.notice",
+          "sha256": "12f74e03b9ba352153ad48d4c0099a758506b2b90b75b34346a784ccbd4cf3ff",
+          "original_file_sha256": "85d1d364c100fc982e99adb0d176e1d4475d175fc5c12bba696cda9c62d62c6b",
+          "source_byte_range": {
+            "start": 304,
+            "end": 375
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_md5.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_md5.c.part-02.notice",
+          "sha256": "0210a0ce49f8e7a9871b9133a050d978ed056e4aab2ffc7644fdf28076c72b5d",
+          "original_file_sha256": "85d1d364c100fc982e99adb0d176e1d4475d175fc5c12bba696cda9c62d62c6b",
+          "source_byte_range": {
+            "start": 4188,
+            "end": 5546
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_sha256.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_sha256.c.part-01.notice",
+          "sha256": "e89eaf7fd9fa79f2ff3ab53267841537180a4b233952f6d17aca8ad2d830107a",
+          "original_file_sha256": "26f3ae83a89a52640f3979df81eb50a431e75c83d5c18f1487325a39ee84fb73",
+          "source_byte_range": {
+            "start": 0,
+            "end": 370
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_sha256.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_sha256.c.part-02.notice",
+          "sha256": "7894cd037ed7157c9f588baab5fda771da62bedb415c0a9207e473eabf11ca2c",
+          "original_file_sha256": "26f3ae83a89a52640f3979df81eb50a431e75c83d5c18f1487325a39ee84fb73",
+          "source_byte_range": {
+            "start": 470,
+            "end": 530
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_sha512.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_sha512.c.part-01.notice",
+          "sha256": "36947bd567f088a0514fae5ecfce6d12a0d9ad51c4d3a6c89748250d03fc1f3b",
+          "original_file_sha256": "7148156d195d9bef7eb57a1b2108439679a02372d0fac418004722513bd7b95c",
+          "source_byte_range": {
+            "start": 0,
+            "end": 370
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/crypt/crypt_sha512.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/crypt/crypt_sha512.c.part-02.notice",
+          "sha256": "5b592324f887645816b7560a92752dd32b16b0d82f4da35dc15aacf52253bf77",
+          "original_file_sha256": "7148156d195d9bef7eb57a1b2108439679a02372d0fac418004722513bd7b95c",
+          "source_byte_range": {
+            "start": 470,
+            "end": 530
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__cos.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__cos.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "3f0f774aab60a18d7ef935ffdf121bcda17cbadabff14096c614da22e31a42c1",
+          "source_byte_range": {
+            "start": 52,
+            "end": 432
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__cosdf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__cosdf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "0ba872cc7e26b93bb9784d19fee84b263e1fa3543a76ec3c0893aea47453a2a7",
+          "source_byte_range": {
+            "start": 181,
+            "end": 560
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__cosl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__cosl.c.notice",
+          "sha256": "eba82a2e9f34f53e0faf5a5b6f4d9f588760d888e6aae20a2f8d7406eb256167",
+          "original_file_sha256": "fd644ce4ab8797b1220e2197b284212094a3b299bdf2c4faf66ead81b0fc620d",
+          "source_byte_range": {
+            "start": 109,
+            "end": 559
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__polevll.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__polevll.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "4fef0127318ba19fd5796b6b69a938030d22adb16aaab2ade3e634c8c5c93479",
+          "source_byte_range": {
+            "start": 54,
+            "end": 850
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__rem_pio2.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__rem_pio2.c.notice",
+          "sha256": "c90662135910b0f0edd97131d0e116a027ec79e46b2785b7b596fa617cca78e3",
+          "original_file_sha256": "938329e0939cd83ee2185a52154b41242f618d4a6df1b08395f344da33d4f1e6",
+          "source_byte_range": {
+            "start": 57,
+            "end": 472
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__rem_pio2_large.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__rem_pio2_large.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "b97f19fb5951c83a0c10506fab35646caefde13bd03100ad2af55ef00af0b9fb",
+          "source_byte_range": {
+            "start": 57,
+            "end": 437
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__rem_pio2f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__rem_pio2f.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "b73a0219ba4a34e39ed904b5008126ff1b12dfa1a4a380941363c8db5088d756",
+          "source_byte_range": {
+            "start": 186,
+            "end": 565
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__rem_pio2l.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__rem_pio2l.c.notice",
+          "sha256": "5660964828a36e1680c465c6c3ac8669926917d347dc66f803897708af319f29",
+          "original_file_sha256": "70f1c69285c0d211d696d5c048e269d46000e5d75fc6a80623ef45e861447a94",
+          "source_byte_range": {
+            "start": 58,
+            "end": 543
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__sin.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__sin.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "f3a37ef9bcfb8a2f9c809d8c7f1aa2c17c8c3319ad7fb2fe7c0a6284ea8859d2",
+          "source_byte_range": {
+            "start": 52,
+            "end": 432
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__sindf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__sindf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "de7026bcd159b7d06a8cbcc162df722014f3b1a3cc4183116b6b7829eef1d118",
+          "source_byte_range": {
+            "start": 168,
+            "end": 547
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__sinl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__sinl.c.notice",
+          "sha256": "eba82a2e9f34f53e0faf5a5b6f4d9f588760d888e6aae20a2f8d7406eb256167",
+          "original_file_sha256": "b6dfffc327cac147a0a2b17a12e9f4ec8ff6df463733db55c316a55ef4bcdb96",
+          "source_byte_range": {
+            "start": 109,
+            "end": 559
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__tan.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__tan.c.notice",
+          "sha256": "5a534ed1f9266ed799e9f2e3f830f15411762021829da121b23df5edc498c6b6",
+          "original_file_sha256": "e18b65b69fced8dbb2d3ed1a3dc6daea0e9f857f2762f274380bd89a6f89d2c4",
+          "source_byte_range": {
+            "start": 52,
+            "end": 366
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__tandf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__tandf.c.notice",
+          "sha256": "5a534ed1f9266ed799e9f2e3f830f15411762021829da121b23df5edc498c6b6",
+          "original_file_sha256": "60455f3cc0ac743f3eaf0017a3a4f0adbab37c0ee30d29397852d22904c40444",
+          "source_byte_range": {
+            "start": 168,
+            "end": 482
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/__tanl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/__tanl.c.notice",
+          "sha256": "a8a75da52cf114b28d33e48992435876d121c7d410ebf740ce651821afcc79aa",
+          "original_file_sha256": "3788db7251d2e14b17e761bc2eccd0d8faa3c72c16eef7a56ca2ca75eca177df",
+          "source_byte_range": {
+            "start": 109,
+            "end": 493
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/acos.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/acos.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "cc6f9017e7e2e0ef01516fa12c68aa63865e6415c90dc039dfce9abffae09a4c",
+          "source_byte_range": {
+            "start": 53,
+            "end": 433
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/acosf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/acosf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "b20b3dcb58ce7cc55963945f8cb83efbf064b29d2da3011f2cec5d08459f2aa7",
+          "source_byte_range": {
+            "start": 137,
+            "end": 516
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/acosl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/acosl.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "ed40b99c604aa593ee2ee71c02f928cb68c1afdf8a18243b0e7b6cc9a65586c1",
+          "source_byte_range": {
+            "start": 54,
+            "end": 434
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/asin.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/asin.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "9302dd0b2f302f7b7decce82e737ed250bae1bcc65c19eaf3d7ec19010892e63",
+          "source_byte_range": {
+            "start": 53,
+            "end": 433
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/asinf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/asinf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "6bc9b2392b81efa4c6a80c8602a2c0898d3b5c77444f6d3266ac71c18df222c5",
+          "source_byte_range": {
+            "start": 137,
+            "end": 516
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/asinl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/asinl.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "4a0e729842b1bf3181bad43b2f048dd3652b73456e0a3f44f6e65c2c51765e9f",
+          "source_byte_range": {
+            "start": 54,
+            "end": 434
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/atan.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/atan.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "1cffb67a65456ae0bc5f07a94df04a4f18ebc1ac0bffe3219250c4e0555ee01d",
+          "source_byte_range": {
+            "start": 53,
+            "end": 432
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/atan2.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/atan2.c.notice",
+          "sha256": "11f476f899dacfef801a097465ad0755ad4546afe03b02c9a17aa38e228344e1",
+          "original_file_sha256": "a5f94b09b10b4e72bb15d94ae403c9dfd27d7ad881ecd729000004429acfca63",
+          "source_byte_range": {
+            "start": 54,
+            "end": 437
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/atan2f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/atan2f.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "31a61a0a4c7b00db625b708525f24673a83df868a3e363042c9cc9dcf0aaeec8",
+          "source_byte_range": {
+            "start": 138,
+            "end": 517
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/atan2l.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/atan2l.c.notice",
+          "sha256": "11f476f899dacfef801a097465ad0755ad4546afe03b02c9a17aa38e228344e1",
+          "original_file_sha256": "c13d4d9e1329ffcbbf3ef1dd755602c771612f2dd98f38464fc9fb0f7bdf3c68",
+          "source_byte_range": {
+            "start": 55,
+            "end": 438
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/atanf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/atanf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "e0533d7b72aabce311a758a1f94fd15e5d4067be73b716cb1f425df5bc9039d6",
+          "source_byte_range": {
+            "start": 137,
+            "end": 516
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/atanl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/atanl.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "5c6f655740e6f594db8a045e529582f20613d14ac2bca8bf3f881145bf459325",
+          "source_byte_range": {
+            "start": 54,
+            "end": 433
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/cbrt.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/cbrt.c.notice",
+          "sha256": "11a1dc1ce0b6b2879da93a266c5aebe81c4324e749c77a2ce3048b5b24ab58c0",
+          "original_file_sha256": "af442893d4048c0eb485b93b5628792fb796d45ffc0f88c682041366c7da611d",
+          "source_byte_range": {
+            "start": 53,
+            "end": 467
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/cbrtf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/cbrtf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "87b7065f44ac0cef6d21385c2b453dde7e15a51e9008ae0d726cd9eaa2dc43da",
+          "source_byte_range": {
+            "start": 182,
+            "end": 561
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/cbrtl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/cbrtl.c.notice",
+          "sha256": "57c0d6534118d909d6b3e78366981596013f999307b9d0d7711a8998a0410d61",
+          "original_file_sha256": "ee82c17b1a24681dfd7de0161088b45ecbd2d0346ddeda9d4594b48e4da0d3e5",
+          "source_byte_range": {
+            "start": 54,
+            "end": 663
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/cos.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/cos.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "3a74e054057d636fa494bdd76a53a40db5cee618264f6ab31cb0538ba63c6bda",
+          "source_byte_range": {
+            "start": 52,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/cosf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/cosf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "33cf828e8e733da2b72c723b9ff20057b9a4f10df72a3923dadcb626c23d222c",
+          "source_byte_range": {
+            "start": 168,
+            "end": 547
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/erf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/erf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "795f05c9388ac277ab27cb5dc63fb4f82620a0ee11eaf8403201df5bc65c0f5b",
+          "source_byte_range": {
+            "start": 52,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/erff.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/erff.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "876ad823d25e58330628ccdc5d24a3f10cc255135046a4e2903daf33cb75c18f",
+          "source_byte_range": {
+            "start": 136,
+            "end": 515
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/erfl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/erfl.c.part-01.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "dcce5b86a37215aee265ae27c1a00526542ab13d1dd609a560de3e3e9049a3e6",
+          "source_byte_range": {
+            "start": 58,
+            "end": 437
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/erfl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/erfl.c.part-02.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "dcce5b86a37215aee265ae27c1a00526542ab13d1dd609a560de3e3e9049a3e6",
+          "source_byte_range": {
+            "start": 438,
+            "end": 1234
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp.c.notice",
+          "sha256": "7e52a70e5de1143e4fdb710116f76b27eced3e41be7ab70310138928a3b34e5e",
+          "original_file_sha256": "7db56f21ca9b8915d36dd5099b707aafeb6a736eae798e19b76b074764e75f34",
+          "source_byte_range": {
+            "start": 0,
+            "end": 111
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp2.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp2.c.notice",
+          "sha256": "e8f314eb6ab51b691f02a126ad69d2c7996a5eeb091f95f5033b1a806288e5d1",
+          "original_file_sha256": "b771de769e1b69b931d1f95baa39b429a73c9904e8b5607e1736771c6ace92b1",
+          "source_byte_range": {
+            "start": 0,
+            "end": 111
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp2f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp2f.c.notice",
+          "sha256": "9cd52ae0042ec9364291994dc497f2497414eeddaac23e792f1ab477576dfacf",
+          "original_file_sha256": "1753e636d3b395160a03e9dd4a4ed4fba2abcd9ee12e4cf2d919f5a6bd7e2732",
+          "source_byte_range": {
+            "start": 0,
+            "end": 116
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp2f_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp2f_data.c.notice",
+          "sha256": "eb8e488b7148e706986f5be08c5efbfcc96edb4ed7415391c12be3e512b24c74",
+          "original_file_sha256": "3da38c471cc5eb8dc1c2e283c6c00a36b1d353ba5c8ca1e82d95180948e26bd5",
+          "source_byte_range": {
+            "start": 0,
+            "end": 127
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp2f_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp2f_data.h.notice",
+          "sha256": "72a9b46f0fe5f4ab99af914882d3ad50f72612ca79b3192db87f37a06b841853",
+          "original_file_sha256": "fb52b690bef63df2e8996f2d2b3fd77f9ea08795863e73afdc882df04460e850",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp2l.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp2l.c.notice",
+          "sha256": "a0f470d9d239f56f7d6504b1bfcd80a0dbe8f90a895558d4040d4395100ad607",
+          "original_file_sha256": "0eeba2725b540b0d5dd84b732d4c496d8e8d9492cf863dbb5c83fe102771352c",
+          "source_byte_range": {
+            "start": 93,
+            "end": 1470
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp_data.c.notice",
+          "sha256": "f6b5b71ae6dc49255b8982a8de10bb97d66035b0b6ad91843da71fcde64cf45f",
+          "original_file_sha256": "c55dff64e369fe816cd8ce367064989bb119f85783599680d1a329031c660689",
+          "source_byte_range": {
+            "start": 0,
+            "end": 119
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/exp_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/exp_data.h.notice",
+          "sha256": "6ac2dcacfaa533da778dce54dac87709a1285f08d070d9d95790b50199f71486",
+          "original_file_sha256": "df77fca837edd02b260dd09a2914202775909ae67a059218ae38cfab104e6d16",
+          "source_byte_range": {
+            "start": 0,
+            "end": 74
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/expf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/expf.c.notice",
+          "sha256": "722fce9131e08cd408ec1029bb4fc7ad15c899b6e62ebacb911b298ad069728d",
+          "original_file_sha256": "225123b9b3a47a083c06f2580c6b73d5cadae5cec545f9e928f7041ff837b4b4",
+          "source_byte_range": {
+            "start": 0,
+            "end": 116
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/expl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/expl.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "7218f10e56cd73c76f01a6924373dd1918730a0e793cf3c64670a34346173e68",
+          "source_byte_range": {
+            "start": 58,
+            "end": 854
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/expm1.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/expm1.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "c4764166cea03420f2dfc1840a6a7615934192d851b96d5d2dcc321cc1e39460",
+          "source_byte_range": {
+            "start": 54,
+            "end": 433
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/expm1f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/expm1f.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "a7d4e8f8b41f04d4b977deb59e6bf96067371387062a5987fcc3b4464f54f5e9",
+          "source_byte_range": {
+            "start": 138,
+            "end": 517
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/expm1l.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/expm1l.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "a8362abd18ef31f00a7dd74c8b618ef658a4e9c3919c456d03d65a12fe445c2f",
+          "source_byte_range": {
+            "start": 60,
+            "end": 856
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/fmaf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/fmaf.c.notice",
+          "sha256": "c9479241e4e7e711c5cf43e95b86a79af7209b5ea23b8c55f8b95f1788eb5a82",
+          "original_file_sha256": "e5baf54228b74b036da629902d811f9f57de26133a03ce290879b5ec6de04433",
+          "source_byte_range": {
+            "start": 53,
+            "end": 1430
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/fmal.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/fmal.c.notice",
+          "sha256": "c9479241e4e7e711c5cf43e95b86a79af7209b5ea23b8c55f8b95f1788eb5a82",
+          "original_file_sha256": "1c7587e59b9f249bd5e8dfabb154b602978fbb490348f92af5300ee8eadce518",
+          "source_byte_range": {
+            "start": 53,
+            "end": 1430
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/j0.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/j0.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "88fc190ff03d253791b9fab281caf82e5943e5d4251052c91cc29b14b39055bd",
+          "source_byte_range": {
+            "start": 51,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/j0f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/j0f.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "d0721c1c30f12badb67820e33299a2db0d9cec0209f7993fddee2a40d8d296a4",
+          "source_byte_range": {
+            "start": 135,
+            "end": 514
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/j1.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/j1.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "73ec22fae7f2e3fccd2cc6ea777b296d0022a7c1d137035f1ef45cbf0c75ed4e",
+          "source_byte_range": {
+            "start": 51,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/j1f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/j1f.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "1b16747ce913d4e65dec522710265bd004f923a7f33b5e88d7e4057b9c7b8d79",
+          "source_byte_range": {
+            "start": 135,
+            "end": 514
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/jn.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/jn.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "cd602fc99cea2f33d8b39462f9f0523c8bc3da646fa349de87e206eb3bb2aded",
+          "source_byte_range": {
+            "start": 51,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/jnf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/jnf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "cab6c734e9a718a3e7c41b22e0e69893453befa805f2ebdafca3264d81dbcf71",
+          "source_byte_range": {
+            "start": 135,
+            "end": 514
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/lgamma_r.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/lgamma_r.c.notice",
+          "sha256": "11f476f899dacfef801a097465ad0755ad4546afe03b02c9a17aa38e228344e1",
+          "original_file_sha256": "df81910c12c2ba5e82295cea6bfc6f3863e367cc6043d1bf91be1fb9597b2811",
+          "source_byte_range": {
+            "start": 57,
+            "end": 440
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/lgammaf_r.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/lgammaf_r.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "5aa1db729889e0705ef94b2cb4d7ab5fa6a615d28fd74b7bdf7579a22f6e7ed4",
+          "source_byte_range": {
+            "start": 141,
+            "end": 520
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/lgammal.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/lgammal.c.part-01.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "852284cc7fb67db860bcf39a3a33c74481ef28ffa7818a16de82d7e2d534c312",
+          "source_byte_range": {
+            "start": 61,
+            "end": 440
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/lgammal.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/lgammal.c.part-02.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "852284cc7fb67db860bcf39a3a33c74481ef28ffa7818a16de82d7e2d534c312",
+          "source_byte_range": {
+            "start": 441,
+            "end": 1237
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log.c.notice",
+          "sha256": "7d44f8a20ce2b9ab074ce883201b78815c98e669108b1dbdf3a699098444c326",
+          "original_file_sha256": "a0694d8587a0d145d0f8ae87cbffba014d7988bc2ebcbfad94cea73b394c9ecc",
+          "source_byte_range": {
+            "start": 0,
+            "end": 114
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log10.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log10.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "ef9b4b1f0918cf1fcb797f9fa4d4ffe177bfa27f668d74a41d613bfbcd83850a",
+          "source_byte_range": {
+            "start": 54,
+            "end": 434
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log10f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log10f.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "b8de5c0f14be2c622eca1cb33e80e5b131576c7c229aeffb8ea9f1d61555f6b9",
+          "source_byte_range": {
+            "start": 55,
+            "end": 434
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log10l.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log10l.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "d23e3d61fe4111628efdef794ae7cd614e3443a81f70742e29070f99fdd078c4",
+          "source_byte_range": {
+            "start": 60,
+            "end": 856
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log1p.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log1p.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "c76bbf714cd456a9f0de6e2c94853c27e7865581a2edfdef6d1f861739bbcb46",
+          "source_byte_range": {
+            "start": 54,
+            "end": 433
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log1pf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log1pf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "6c01aff9fcee1dcaca4d4581f17357e0f069643321c00288c672adc3521d0cc8",
+          "source_byte_range": {
+            "start": 55,
+            "end": 434
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log1pl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log1pl.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "3846b55cbd55e3d3f90d7484216663030ec98c4c353e644ce3c4e3122080e4c4",
+          "source_byte_range": {
+            "start": 60,
+            "end": 856
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2.c.notice",
+          "sha256": "c359dfaf15768892478461e9cb40da11d380123e47c50f29b3ede8207c04486d",
+          "original_file_sha256": "281e4fc0f737419e245019d8bc8a8ca53032c2d88c31d08561e9e59dcb4b4640",
+          "source_byte_range": {
+            "start": 0,
+            "end": 115
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2_data.c.notice",
+          "sha256": "74ae9464d17802e1e8394431844a842eb25efad729748a359a518d26685beedf",
+          "original_file_sha256": "5a62bb213f19dc1364cddb612e3d13831e382f5ae6f7fafd7064362f53478dfb",
+          "source_byte_range": {
+            "start": 0,
+            "end": 95
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2_data.h.notice",
+          "sha256": "6ac2dcacfaa533da778dce54dac87709a1285f08d070d9d95790b50199f71486",
+          "original_file_sha256": "b56e1a56f73a8700caa9787cd399fecf7f96038af56c2a590aeb6f0f8662ea8e",
+          "source_byte_range": {
+            "start": 0,
+            "end": 74
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2f.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2f.c.notice",
+          "sha256": "dfbd4e6eba80a4f25005d42aef337397554ca46598f64439e166633baa58cb3f",
+          "original_file_sha256": "f2393ef18e78e6dc540e7349dbfea000018246d64fca3eefe73f11a286403352",
+          "source_byte_range": {
+            "start": 0,
+            "end": 117
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2f_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2f_data.c.notice",
+          "sha256": "719c803a410da68f48b70270cd181806b44d0c87ccec10bcba36973c8382a2a9",
+          "original_file_sha256": "9261d7fdef29db26bd75310f029823593639ecf7c1cc089a6014623d49d21abe",
+          "source_byte_range": {
+            "start": 0,
+            "end": 112
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2f_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2f_data.h.notice",
+          "sha256": "72a9b46f0fe5f4ab99af914882d3ad50f72612ca79b3192db87f37a06b841853",
+          "original_file_sha256": "cb65ee48f557b19c8a6366a05f16ffba38aa46b00c4c136faf2dea8f53675a9b",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log2l.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log2l.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "c3294ef6fcf96c061c4511fb3f6cd2886b2f513938deadcfb16fc19fb2a9ff03",
+          "source_byte_range": {
+            "start": 59,
+            "end": 855
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log_data.c.notice",
+          "sha256": "d22e34751c18a13e5cb7e974c1b94c2cc89caad9d2b4f2ef1c85994d32292805",
+          "original_file_sha256": "e96bcd99d88fc57e0f3686299014f4b949a6212603ce237f39e16cedc155617a",
+          "source_byte_range": {
+            "start": 0,
+            "end": 94
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/log_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/log_data.h.notice",
+          "sha256": "6ac2dcacfaa533da778dce54dac87709a1285f08d070d9d95790b50199f71486",
+          "original_file_sha256": "a8dced6f0821f30cad040ba326b03e419fbe0a750ed8f3b0d7145992bee4bccc",
+          "source_byte_range": {
+            "start": 0,
+            "end": 74
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/logf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/logf.c.notice",
+          "sha256": "ffd4560b424a532b17b1f8af4405f11b4ceeaf9880ca33ad43f896b620bfb52c",
+          "original_file_sha256": "eecf8e5dd0afd5f64f938ccae07c85b0a8e82919f5d4269936a3b8493fb64e47",
+          "source_byte_range": {
+            "start": 0,
+            "end": 116
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/logf_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/logf_data.c.notice",
+          "sha256": "7b69dd50886f7e59e969f2d7c91f6d694a42989bde841e57bed58f71a6d34fde",
+          "original_file_sha256": "60b08342fcef877b393a76fc36d92c576d6340ce153459aad03aad3d4716f9b5",
+          "source_byte_range": {
+            "start": 0,
+            "end": 111
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/logf_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/logf_data.h.notice",
+          "sha256": "72a9b46f0fe5f4ab99af914882d3ad50f72612ca79b3192db87f37a06b841853",
+          "original_file_sha256": "80176d1f045f162e917ca5c2879994ab0ed9e27b479086d752e5793c91135adf",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/logl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/logl.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "e1612b2bb9a010c1914beb93fa242981f69f323392bd9816415cafaaec0d94b0",
+          "source_byte_range": {
+            "start": 58,
+            "end": 854
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/pow.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/pow.c.notice",
+          "sha256": "5fa165f5ae7e7b676b5ea1e2ab501f258932355ebad0ffaa76865149b47cc00a",
+          "original_file_sha256": "b06f0a08d74fcff8cced7afa2c0e47e301e3e8a19c0de5becdec28cd7b014027",
+          "source_byte_range": {
+            "start": 0,
+            "end": 111
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/pow_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/pow_data.c.notice",
+          "sha256": "8867dc852d8c09b25648ac08bb5e7d7effdbff03e10614f13f8e681774ec1414",
+          "original_file_sha256": "2052ec913f9b4a2170a98a6fcbcd7694f5dec220036b00c36106a2b4b65a4c55",
+          "source_byte_range": {
+            "start": 0,
+            "end": 110
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/pow_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/pow_data.h.notice",
+          "sha256": "6ac2dcacfaa533da778dce54dac87709a1285f08d070d9d95790b50199f71486",
+          "original_file_sha256": "5014345a7958adcf6ff835b5e96afa99dd5a98c40dfe968442288e002b8e01a3",
+          "source_byte_range": {
+            "start": 0,
+            "end": 74
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/powf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/powf.c.notice",
+          "sha256": "72a9b46f0fe5f4ab99af914882d3ad50f72612ca79b3192db87f37a06b841853",
+          "original_file_sha256": "74069b3a380cf954361e0243b38de2094ae680e2ecfb3e50af61ab576f13babf",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/powf_data.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/powf_data.c.notice",
+          "sha256": "0bf37177bf53722a813bbd05dce155746ceb21a1aeee3c7b13a3927554fe53d6",
+          "original_file_sha256": "136f491b0f904842b926784134d0adba7a9103d2ce8a226276dd6e9260457398",
+          "source_byte_range": {
+            "start": 0,
+            "end": 111
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/powf_data.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/powf_data.h.notice",
+          "sha256": "72a9b46f0fe5f4ab99af914882d3ad50f72612ca79b3192db87f37a06b841853",
+          "original_file_sha256": "5d632276e5f21cdcd47f35c53cf792640ad347aabce1e1bd5774fad5371fc8d8",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/powl.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/powl.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "b1c9f5993fe37ce04e4291cdeaa8d690587f25076525a417c9657f082b7ae987",
+          "source_byte_range": {
+            "start": 58,
+            "end": 854
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/scalb.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/scalb.c.notice",
+          "sha256": "74344ebf347f27ca446e00f1c1921f705546f4b20e0fb31c183cd2c8464b1bc5",
+          "original_file_sha256": "7f7eda8fd9d537105136d56661d70788f912b9584bb116dea185db340c78ada5",
+          "source_byte_range": {
+            "start": 54,
+            "end": 434
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/scalbf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/scalbf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "b4a0485f7a11d994960c31947f0132c45afd47f599abbae4a9f2041f7f346a3f",
+          "source_byte_range": {
+            "start": 138,
+            "end": 517
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/sin.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/sin.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "24e53a9d85f196f66919cc19247be5480bb607ef38844b1a24bc47c4fe4974ef",
+          "source_byte_range": {
+            "start": 52,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/sincos.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/sincos.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "2b88cfba380b8d5aa8f8f6b9f055aee91fe112de9f967a4484807afcb5405d9d",
+          "source_byte_range": {
+            "start": 52,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/sincosf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/sincosf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "0196bf2ccfa370be120b917f2379bb533950ea50818d329aeee076081690c95d",
+          "source_byte_range": {
+            "start": 168,
+            "end": 547
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/sinf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/sinf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "2583af55446f07da3225186c368a7aae5a0a0a0edab268967f4122b92e222b87",
+          "source_byte_range": {
+            "start": 168,
+            "end": 547
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/tan.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/tan.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "422d411bac962a1077ae394d14e54313012a6faa3476c20b2a66d3fb3f7a923f",
+          "source_byte_range": {
+            "start": 52,
+            "end": 431
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/tanf.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/tanf.c.notice",
+          "sha256": "0c3d0381d2cd647be68590170490be5f624c962d9f95eb698489e578c1de8f05",
+          "original_file_sha256": "38b39aaf03d33341e606b67b3743ee5fa436b7e8338af155994d4b794b366003",
+          "source_byte_range": {
+            "start": 168,
+            "end": 547
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/math/tgammal.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/math/tgammal.c.notice",
+          "sha256": "d9d69faa82c4f80279a3832834c9a1482c52b8b3b5895f2cc869c0e4db33f36e",
+          "original_file_sha256": "b9f00584454232f6d4c6cf76b8198221a4cc047c92fa749e5f41476c9b54579f",
+          "source_byte_range": {
+            "start": 61,
+            "end": 857
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/misc/fmtmsg.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/misc/fmtmsg.c.notice",
+          "sha256": "c132547c9606c2bdb486ebc7fad17ac9f1b3974b194a78272429a02f9eeb18ec",
+          "original_file_sha256": "27354c57b1827561585a73dbe9f2d7f97cd73563d4043cf2907912c8faaebb6e",
+          "source_byte_range": {
+            "start": 0,
+            "end": 62
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/regex/regcomp.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/regex/regcomp.c.notice",
+          "sha256": "8313e732fdeef03ee534e30bdb0b2df8fea4c9e6618aa5abda363f873c5c961a",
+          "original_file_sha256": "56b0a765e084a5cd3ed7113a893b50d259265ba76b6bea98889c45d7aec302a0",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1444
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/regex/regexec.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/regex/regexec.c.notice",
+          "sha256": "6b0193762d619afafa7f796e10097fbf7c255a8e96dbfa25f75ab072620a87c5",
+          "original_file_sha256": "072e8a1092c98830b48e784fb74ce486f7c39e27207f79f1dd161e2c5d86ba77",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1446
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/regex/tre-mem.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/regex/tre-mem.c.notice",
+          "sha256": "da041cb2f902d426453521b2aa036ff79e9ed03236519518d2aa0290bddf88ac",
+          "original_file_sha256": "4721979ce365a395fd7644335c847a8a97913e87f14348641f7f199b57b93e28",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1415
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/regex/tre.h",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/regex/tre.h.notice",
+          "sha256": "920d6efc69e820c76c990f76db6c6da46c6a8f8ebd306b2004918896a26e4521",
+          "original_file_sha256": "e734e68decc33b5ee983db12cabcbdd2589c2d16088677228087b0e5dc365cf3",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1424
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/setjmp/x86_64/longjmp.s",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/setjmp/x86_64/longjmp.s.notice",
+          "sha256": "cad216cb970cbc03411b7d25513a189a2721f067e1259347baeb94f87ba822b7",
+          "original_file_sha256": "c505c42f1a48b1150f9b8ef5f8f13b224c65ee1a7c0765354dbdf66d9eb177e6",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/setjmp/x86_64/setjmp.s",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/setjmp/x86_64/setjmp.s.notice",
+          "sha256": "cad216cb970cbc03411b7d25513a189a2721f067e1259347baeb94f87ba822b7",
+          "original_file_sha256": "7b74b13ad4bdacf019ff72dc55486119b6d8caa5ba1417f88d73d2b583223425",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/stdlib/qsort.c",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/stdlib/qsort.c.notice",
+          "sha256": "87da201b9c63a4bbc969e88cc99c75b630749ffb45d9abc5b90c58f16e40e016",
+          "original_file_sha256": "3a838cc7f83f4746df6063f567be1ebb2f7d204243342122acd43f44d2434ec6",
+          "source_byte_range": {
+            "start": 0,
+            "end": 1117
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/string/aarch64/memcpy.S",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/string/aarch64/memcpy.S.notice",
+          "sha256": "6eca170c32acaced38b3e559fda9908b2f16717fc7b4cde36ced5fb407f4f114",
+          "original_file_sha256": "1ead3716276e8a58e2e015e89fd565d9f33c10b2bc482c303b68b90c9d0f7cef",
+          "source_byte_range": {
+            "start": 0,
+            "end": 111
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/string/aarch64/memset.S",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/string/aarch64/memset.S.notice",
+          "sha256": "b538ed96d0c4574442e0e3d9be99ca108335ab88db8ef8ca96a08bc9e8d74fa8",
+          "original_file_sha256": "4eacce5e57f178a284fd5a48925f4398d593df6cb2b6f727bb495a78fd3cbabf",
+          "source_byte_range": {
+            "start": 0,
+            "end": 127
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/thread/x86_64/__set_thread_area.s",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/thread/x86_64/__set_thread_area.s.notice",
+          "sha256": "cad216cb970cbc03411b7d25513a189a2721f067e1259347baeb94f87ba822b7",
+          "original_file_sha256": "9a6299228be5f8f467652263e8f98c1f9ab2e0937243589b8c5642f0ebe3236d",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        },
+        {
+          "original_path": "src/thread/x86_64/__unmapself.s",
+          "input_path": "release/notice-inputs/runtime/musl-1.2.5/src/thread/x86_64/__unmapself.s.notice",
+          "sha256": "cad216cb970cbc03411b7d25513a189a2721f067e1259347baeb94f87ba822b7",
+          "original_file_sha256": "dab063e96f4c9874892b39545e3ea02cd6f6e71532d84705422bd0a8ad62eb00",
+          "source_byte_range": {
+            "start": 0,
+            "end": 79
+          },
+          "extraction": "Exact contiguous source comment bytes; end offset is exclusive."
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "rust-compiler-builtins-0.1.160",
+      "name": "Rust compiler-builtins",
+      "version": "0.1.160",
+      "license_expression": "MIT AND Apache-2.0 WITH LLVM-exception AND (MIT OR Apache-2.0)",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-msvc",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/rust-lang/rust",
+        "revision": "59807616e1fa2540724bfbac14d7976d7e4a3860",
+        "path": "library/compiler-builtins",
+        "license_url": "https://raw.githubusercontent.com/rust-lang/rust/59807616e1fa2540724bfbac14d7976d7e4a3860/library/compiler-builtins/LICENSE.txt",
+        "manifest_path": "library/compiler-builtins/compiler-builtins/Cargo.toml",
+        "manifest_sha256": "4d434596c0576fd1454e2de88f826d91518688fa2c3c46fff75c1f31471c4b01"
+      },
+      "coverage": {
+        "text": "Compiler builtins shipped with the selected Rust standard-library distribution. The complete upstream license file preserves the compiler-builtins, libm and original-work distinctions.",
+        "inputs": [
+          "compiler_builtins rlib in each Rust target sysroot"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "library/compiler-builtins/LICENSE.txt",
+          "input_path": "release/notice-inputs/runtime/rust-compiler-builtins-0.1.160/library/compiler-builtins/LICENSE.txt",
+          "sha256": "ab6eec6caf0fa5775e411c7a8bc6a45c4ef2956b0980b157ab74fc5cd62a928b"
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "rust-llvm-runtime-22.1.2",
+      "name": "Rust LLVM runtime sources",
+      "version": "22.1.2",
+      "license_expression": "Apache-2.0 WITH LLVM-exception",
+      "targets": [
+        "aarch64-unknown-linux-musl",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "git-submodule",
+        "url": "https://github.com/rust-lang/llvm-project",
+        "revision": "1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e",
+        "parent_repository": "https://github.com/rust-lang/rust",
+        "parent_revision": "59807616e1fa2540724bfbac14d7976d7e4a3860",
+        "parent_path": "src/llvm-project"
+      },
+      "coverage": {
+        "text": "Rust self-contained musl CRT begin/end objects come from the LLVM revision pinned by Rust 1.95.0. Native musl linker maps select the hermetic LLVM 22.1.8 unwind implementation. The Rust libunwind license is retained conservatively for the supplied Rust distribution archive, without asserting that its unwind implementation is incorporated. Both source license files retain the LLVM exception and historical terms.",
+        "inputs": [
+          "Rust target self-contained crtbegin/crtend objects",
+          "Rust target self-contained libunwind.a"
+        ]
+      },
+      "documents": [
+        {
+          "original_path": "compiler-rt/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/rust-llvm-runtime-22.1.2/compiler-rt/LICENSE.TXT",
+          "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+        },
+        {
+          "original_path": "libunwind/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/rust-llvm-runtime-22.1.2/libunwind/LICENSE.TXT",
+          "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    },
+    {
+      "id": "rust-standard-library-1.95.0",
+      "name": "Rust standard library",
+      "version": "1.95.0",
+      "license_expression": null,
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-msvc",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl"
+      ],
+      "source": {
+        "kind": "rust-distribution",
+        "url": "https://static.rust-lang.org/dist/2026-04-16/rustc-1.95.0-aarch64-apple-darwin.tar.xz",
+        "revision": "59807616e1fa2540724bfbac14d7976d7e4a3860",
+        "archive_sha256": "149e85a285b6eba58eb6c8bdf7deb1b93763890598e62cb635a712e3a8454f04",
+        "archive_prefix": "rustc-1.95.0-aarch64-apple-darwin/rustc",
+        "distribution_manifest_url": "https://static.rust-lang.org/dist/channel-rust-1.95.0.toml",
+        "distribution_manifest_sha256": "821ff14e4c4a1cbe1e8915f35aff0a3fbbdf8d293ad48ab8f31e3b0440c581f9",
+        "standard_library_archives": [
+          {
+            "target": "aarch64-apple-darwin",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-aarch64-apple-darwin.tar.xz",
+            "sha256": "9b30089b0f767cb91b2190ffec55a9beeb2a21a1405d8da0f664d7e09d08e6d8"
+          },
+          {
+            "target": "aarch64-pc-windows-msvc",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-aarch64-pc-windows-msvc.tar.xz",
+            "sha256": "be21b5a8a71c49b4dcbc19956233b0de7bfda3ee3c8a199148299f867e95cb42"
+          },
+          {
+            "target": "aarch64-unknown-linux-gnu",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-aarch64-unknown-linux-gnu.tar.xz",
+            "sha256": "3a21b271b1ff973b94d69b25e7a39992f9fbcae1ab6d9475844a23e6ad3908ac"
+          },
+          {
+            "target": "aarch64-unknown-linux-musl",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-aarch64-unknown-linux-musl.tar.xz",
+            "sha256": "f6710416ed9a7d5cf2a15efa761eb79a1deeb43f9961bbe05cc97bec4ef9064a"
+          },
+          {
+            "target": "x86_64-apple-darwin",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-x86_64-apple-darwin.tar.xz",
+            "sha256": "2be13c14122b8d4d09b7f7c434fca9ae7215ec72049944189c88c4d9128ce504"
+          },
+          {
+            "target": "x86_64-pc-windows-msvc",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-x86_64-pc-windows-msvc.tar.xz",
+            "sha256": "7c659bdc88646e7e1befa370881bd311be87b26f006933a28b40dcab2f7cc832"
+          },
+          {
+            "target": "x86_64-unknown-linux-gnu",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-x86_64-unknown-linux-gnu.tar.xz",
+            "sha256": "047ea7098803d3500fa1072e9cee5392697e21525559e4458128a2bf874aa382"
+          },
+          {
+            "target": "x86_64-unknown-linux-musl",
+            "url": "https://static.rust-lang.org/dist/2026-04-16/rust-std-1.95.0-x86_64-unknown-linux-musl.tar.xz",
+            "sha256": "aee540abf132920f791ef781489851a078d69dff493fb628d49c1d573f92bb3a"
+          }
+        ]
+      },
+      "coverage": {
+        "text": "Rust standard-library source attribution and bundled dependency notices from the matching Rust compiler distribution. The aggregate HTML preserves individual license expressions and copyrights. Supporting in-tree license texts accompany the HTML; this aggregate does not assign one license expression to every embedded third-party component.",
+        "inputs": [
+          "Rust 1.95.0 target standard-library rlibs",
+          "share/doc/rust/COPYRIGHT-library.html",
+          "Apache-2.0, MIT, Unicode-3.0 and BSD-2-Clause texts referenced by the in-tree attribution"
+        ],
+        "declared_default_license": "Apache-2.0 OR MIT, except as recorded in COPYRIGHT-library.html and individual source files.",
+        "target_dispositions": {
+          "aarch64-apple-darwin": {
+            "external_imports": [
+              "libiconv.2.dylib",
+              "libSystem.B.dylib",
+              "Foundation.framework",
+              "libc++.1.dylib"
+            ],
+            "scope": "Imports observed in the retained native Mach-O. These system libraries are not archive members. Static compiler runtime inputs have separate LLVM notice coverage."
+          },
+          "x86_64-apple-darwin": {
+            "scope": "The maintained native Darwin configuration uses system imports and the separately covered LLVM compiler runtime. Exact imported-library confirmation remains part of native release evidence."
+          },
+          "aarch64-pc-windows-msvc": {
+            "external_imports": [
+              "VCRUNTIME140.dll",
+              "UCRT API DLLs",
+              "KERNEL32.dll",
+              "ntdll.dll",
+              "bcryptprimitives.dll",
+              "Windows synchronization API DLL"
+            ],
+            "scope": "Imports observed in the retained native PE. The release selects the native MSVC linker. Imported DLLs are not archive members; this observation does not assert absence of static CRT startup/support objects."
+          },
+          "x86_64-pc-windows-msvc": {
+            "external_imports": [
+              "VCRUNTIME140.dll",
+              "UCRT API DLLs",
+              "KERNEL32.dll",
+              "ntdll.dll",
+              "bcryptprimitives.dll",
+              "Windows synchronization API DLL"
+            ],
+            "scope": "Imports observed in the retained native PE. The release selects the native MSVC linker. Imported DLLs are not archive members; this observation does not assert absence of static CRT startup/support objects."
+          }
+        }
+      },
+      "documents": [
+        {
+          "original_path": "share/doc/rust/COPYRIGHT-library.html",
+          "input_path": "release/notice-inputs/runtime/rust-standard-library-1.95.0/share/doc/rust/COPYRIGHT-library.html",
+          "sha256": "90567e2718bf7fd65a71a3a43c5596488e80e5f51ed02bfea6fec54458b5f3d1"
+        },
+        {
+          "original_path": "share/doc/rust/licenses/Apache-2.0.txt",
+          "input_path": "release/notice-inputs/runtime/rust-standard-library-1.95.0/share/doc/rust/licenses/Apache-2.0.txt",
+          "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+        },
+        {
+          "original_path": "share/doc/rust/licenses/BSD-2-Clause.txt",
+          "input_path": "release/notice-inputs/runtime/rust-standard-library-1.95.0/share/doc/rust/licenses/BSD-2-Clause.txt",
+          "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+        },
+        {
+          "original_path": "share/doc/rust/licenses/MIT.txt",
+          "input_path": "release/notice-inputs/runtime/rust-standard-library-1.95.0/share/doc/rust/licenses/MIT.txt",
+          "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+        },
+        {
+          "original_path": "share/doc/rust/licenses/Unicode-3.0.txt",
+          "input_path": "release/notice-inputs/runtime/rust-standard-library-1.95.0/share/doc/rust/licenses/Unicode-3.0.txt",
+          "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+        }
+      ],
+      "disposition": "embedded-runtime",
+      "status": "complete"
+    }
+  ],
+  "target_coverage": [
+    {
+      "target": "aarch64-apple-darwin",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "e7967563da6a7e19901799ec0c5f366d4cab130fb1de90ba7252c1ecc521a1a9",
+        "observed": "Retained Mach-O imports identify external system libraries. The cached optimized Rustc action explicitly supplies hermetic libclang_rt.builtins.static.a."
+      }
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "856451a6abfebd4095c1f9f5fdda1fae072d7b73702ecccd50207b12e27a0609",
+        "observed": "Native maps, observed library-search paths and retained member inventories identify 33 msvcrt startup/support objects and vcruntime softmemtag guard-pointer data. Actual MSVC and SDK input-file hashes are retained. The diagnostic executable matches the reference binary digest. Imported Microsoft runtime/system DLLs remain external to the native archive.",
+        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43254996361",
+        "reference_link_map_sha256": "de9c99a149c7651d37c1f90c73a6ad9322357e4e69998ea1ea38a61ead0eaa37",
+        "reference_input_inventory_sha256": "1842da1368096aebf88565dcb9994e229ff0ce0690ca3523d11531188414a9ef",
+        "reference_native_members_sha256": "187bdab1ee17a8df4bc7f99264158daed57cf43470880f8be41f516d8df894c1",
+        "reference_notice_inventory_sha256": "9aa412a4694f8b16ab633239e36df81c4fc01ca9dbb523fe35a97b59cc6bf9f3",
+        "reference_source_comment_metadata_sha256": "37f494fa2cfa5a8f2ab465b52b2e081e1fe5741f9edea9f2368e4bbc5994b25e",
+        "collection_result": "The corrected native diagnostic completed without collection or command errors. Every mapped native member was reconciled against its exact selected provider library inventory. Runtime copyright excerpts preserve original bytes and source ranges. This is finite runtime-input evidence, not repaired-candidate release qualification.",
+        "source_terms": "The Microsoft runtime component retains copyright notices, complete V14 recipient terms, the Visual Studio 2026 II.7 application-distribution section and a component-only scope notice. The standard linked-application distribution treatment follows Microsoft static-link deployment guidance read with those terms; no permission to redistribute raw Microsoft libraries or proprietary source is asserted.",
+        "source_comment_limit": "Recovered generic CRT files are attribution candidates associated by object basename and provider location. Source occurrence targets are explicit; no source comment is invented for unmatched members or a different architecture."
+      }
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "790ce3ed48fe3602a542d01da24a8b8cca415da8a2effb2eb76abf3187e38fb1",
+        "observed": "Retained ELF program headers, dynamic dependencies and symbols identify Rust, static unwind, glibc startup and nonshared wrappers. The pinned hermetic module source defines the covered compiler-rt and libc_nonshared inputs; source notices also cover the supplied static C++ runtime libraries.",
+        "source_terms": "Individual GNU source linking exceptions are retained only where present. The aarch64 startup source and csu/init.c do not contain the x86_64 startup exception."
+      }
+    },
+    {
+      "target": "aarch64-unknown-linux-musl",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "fa695a05209a60800169ffaf9c709a9baaa4bf34ead98de44bbfe4be8699571c",
+        "observed": "Native linker commands, maps and extraction records identify Rust target self-contained libc.a and crt1.o, crti.o, crtbegin.o, crtend.o and crtn.o, plus five extracted hermetic LLVM 22.1.8 unwind members. Rust bootstrap/source identifies musl 1.2.5 and Rust LLVM 22.1.2 CRT begin/end sources. The diagnostic binary matches the reference binary digest. ELF headers contain no PT_INTERP or DT_NEEDED.",
+        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43246826252",
+        "reference_link_map_sha256": "08e8545f44233ad84003e660140a3a1c5b257cdbee94206fda29c323827ceb3c",
+        "reference_extraction_record_sha256": "91225c4f9854226a8291e4a4f013ba17b1516f095451abac42690776f9bc9442",
+        "supplied_shared_inputs": "The trace also names hermetic glibc libpthread.so.0 and libdl.so.2 shared ABI stubs. Provider definitions, complete static-contribution maps and dynamic tables show no incorporated contribution or runtime dependency from those shared inputs.",
+        "reference_input_inventory_sha256": "f5a06e742f3d16165ecdd2d3a3eb7c5528d6c2ac8f943ef0e3bad775a25dca60",
+        "reference_notice_inventory_sha256": "0cf586f8e75e39e874726ebeb37079e30b0548f4ddf82917d21a68754027b56a",
+        "collection_result": "The corrected native diagnostic completed without collection or command errors. It retained hashes for 75 resolved link-input files and member lists for every selected archive. All extracted members were reconciled against those lists. The five required Rust distribution notice files and four hermetic LLVM runtime license files match the curated bytes. Disposable Rustc-generated objects are explicitly classified separately. This is runtime-input evidence, not repaired-candidate release qualification.",
+        "runtime_input_sha256": {
+          "Rust self-contained/crt1.o": "2c8595cff75b182ad59c0278d5f81bed2cf1e51b5bf9324db52142c89dd6479f",
+          "Rust self-contained/crtbegin.o": "522c4ac7628b80df407f1873be18b6b9b398db5be7f9f5586835cdfd189f6a9e",
+          "Rust self-contained/crtend.o": "9fd9518f8a0ba537a77c5d5c638ec30efa388a9458c21ad84f5607c535547adb",
+          "Rust self-contained/crti.o": "b49a67e2e36eed4836023fc26ff9da617e2020a2317aadfeb7971e4cbe612bf7",
+          "Rust self-contained/crtn.o": "b2f52a98df83f38814f34f7477aeb629d5e1fb1c1379ef2739cad91ab9ab8734",
+          "Rust self-contained/libc.a": "b03473b6f1efb72f700f561b4407a88885b37e0edb5cdb2a64de0df5499e813f",
+          "hermetic LLVM/liblibunwind.static.a": "70b95c1172f662f4e5f8aa9b19de65a9d67bfd6908322678797d0ad6ff0cbeb0"
+        }
+      }
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "3e65523dd8120ac94ad8898bdfe6a413f3420cfc41535d2525c09aaae011e1f1",
+        "observed": "Retained x86_64 Mach-O load commands import /usr/lib/libSystem.B.dylib, /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation and /usr/lib/libc++.1.dylib. The selected Darwin toolchain supplies the covered hermetic compiler-rt runtime input; Rust distribution and compiler-builtins notices cover the Rust runtime. Import observations do not imply absence of static runtime code."
+      }
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "5cc9fc8639fd9b101300d808952f0fabc47c37f01fa49e907e1de43ebf3e40d2",
+        "observed": "Native maps, observed library-search paths and retained member inventories identify 34 msvcrt startup/support objects and vcruntime softmemtag guard-pointer data. Actual MSVC and SDK input-file hashes are retained. The diagnostic executable matches the reference binary digest. Imported Microsoft runtime/system DLLs remain external to the native archive.",
+        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43254996361",
+        "reference_link_map_sha256": "69ca698df8d521fd6a9b320935c0ab56ff48bfb0bdae2cb2621b58610c51a87e",
+        "reference_input_inventory_sha256": "4b43d51e22ec0f2ecea8d9815b772508fc2d054f5a87280df61efb7f03c7729d",
+        "reference_native_members_sha256": "be5dc0d4b376555d2e9381d49001ccf7a5af9fdbe7779740f84f6487bad44b73",
+        "reference_notice_inventory_sha256": "fda5e25439f8fa092ccdcea43d239a986754cf7e7f5fd1e07e165e63d7616414",
+        "reference_source_comment_metadata_sha256": "892776e132d73758fffdcc2cfb498db435c8e3359074d596cbba3bdbbedd48e6",
+        "collection_result": "The corrected native diagnostic completed without collection or command errors. Every mapped native member was reconciled against its exact selected provider library inventory. Runtime copyright excerpts preserve original bytes and source ranges. This is finite runtime-input evidence, not repaired-candidate release qualification.",
+        "source_terms": "The Microsoft runtime component retains copyright notices, complete V14 recipient terms, the Visual Studio 2026 II.7 application-distribution section and a component-only scope notice. The standard linked-application distribution treatment follows Microsoft static-link deployment guidance read with those terms; no permission to redistribute raw Microsoft libraries or proprietary source is asserted.",
+        "source_comment_limit": "Recovered generic CRT files are attribution candidates associated by object basename and provider location. Source occurrence targets are explicit; no source comment is invented for unmatched members or a different architecture."
+      }
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "8d139c2712c233b33c1172f22d6c1954c0c79a4dd53e5fd4a5cb064751d0ac7a",
+        "observed": "Retained ELF program headers, dynamic dependencies and symbols identify Rust, static unwind, glibc startup and nonshared wrappers. The pinned hermetic module source defines the covered compiler-rt and libc_nonshared inputs; source notices also cover the supplied static C++ runtime libraries.",
+        "source_terms": "Individual GNU source linking exceptions are retained only where present. The aarch64 startup source and csu/init.c do not contain the x86_64 startup exception."
+      }
+    },
+    {
+      "target": "x86_64-unknown-linux-musl",
+      "status": "complete",
+      "evidence": {
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
+        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "reference_binary_sha256": "753f569874b60dd6d37b9a4b2a2863cac05470a33fca350cb0c622b189306fda",
+        "observed": "Native linker commands, maps and extraction records identify Rust target self-contained libc.a and rcrt1.o, crti.o, crtbeginS.o, crtendS.o and crtn.o, plus five extracted hermetic LLVM 22.1.8 unwind members. Rust bootstrap/source identifies musl 1.2.5 and Rust LLVM 22.1.2 CRT begin/end sources. The diagnostic binary matches the reference binary digest. ELF headers contain no PT_INTERP or DT_NEEDED.",
+        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43246826252",
+        "reference_link_map_sha256": "52f59a52c2a8a561b6ae597e94d1b93a7565baebcd3554bbf8caa90dfbbe16e3",
+        "reference_extraction_record_sha256": "912252e74111f2723571be9a0b96994a209aa02bc6762be72495016c08b0b5cd",
+        "supplied_shared_inputs": "The trace also names hermetic glibc libpthread.so.0 and libdl.so.2 shared ABI stubs. Provider definitions, complete static-contribution maps and dynamic tables show no incorporated contribution or runtime dependency from those shared inputs.",
+        "reference_input_inventory_sha256": "11ddeff33c368969834419d3b7daf2ad983eb665647f693665d24a391b44d443",
+        "reference_notice_inventory_sha256": "05f19ad878fd87a0c5218efec23a499a27c9ed928f9b311aaf97dea2c1cbe666",
+        "collection_result": "The corrected native diagnostic completed without collection or command errors. It retained hashes for 74 resolved link-input files and member lists for every selected archive. All extracted members were reconciled against those lists. The five required Rust distribution notice files and four hermetic LLVM runtime license files match the curated bytes. Disposable Rustc-generated objects are explicitly classified separately. This is runtime-input evidence, not repaired-candidate release qualification.",
+        "runtime_input_sha256": {
+          "Rust self-contained/crtbeginS.o": "297960e338581a38bbfcbee45169a847bcdc5527ccaf68abe95b72b3b0856bed",
+          "Rust self-contained/crtendS.o": "0d11009c048ae289cdf184d726b767debc2972321e143838d28d7b6802b69c7c",
+          "Rust self-contained/crti.o": "5343749d306ea3578a4ae5c796be362100273f3314cec283be621bbe4a8ec720",
+          "Rust self-contained/crtn.o": "794abd4b28db5de5f993b1445460d90fa3191cc9556a8b8881d5d34a5e8dfa87",
+          "Rust self-contained/libc.a": "e699c64b0c6b427d89ad5bf767bf78beb30c19930c5dedff635951636e8f9f70",
+          "Rust self-contained/rcrt1.o": "7998a49f23b463b1bf59aecd8fde59df5d0f0bf819d1272d92c6f00ae81fc429",
+          "hermetic LLVM/liblibunwind.static.a": "560cc77b0e2220944d715f087fbe081e9d5188beda16c58e3757eab960dbdef3"
+        }
+      }
+    }
+  ]
+}

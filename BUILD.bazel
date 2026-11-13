@@ -17,6 +17,7 @@ filegroup(
         "*.md",
         "*.toml",
         "docs/**",
+        "release/**",
     ]) + [
         "Cargo.lock",
         "LICENSE",

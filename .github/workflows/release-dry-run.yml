@@ -159,6 +159,9 @@ jobs:
       - name: Hydrate locked dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
+      - name: Check native notice source completeness
+        working-directory: rustleaks
+        run: cargo xtask release-artifact notices --check
       - name: Run the authoritative repository gate
         working-directory: rustleaks
         run: just ci
@@ -380,8 +383,19 @@ jobs:
             glibc=none
           fi
           cargo xtask release-artifact compare "${work}/rustleaks-one" "${work}/rustleaks-two" "${work}/reproducibility.json"
-          cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" "${glibc}"
-          cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" "${glibc}"
+          source_args=()
+          if [[ "${RELEASE_LIBC}" = gnu ]]; then
+            first_cache="$(bazelisk --output_user_root="${first_root}" info --config="${RELEASE_CONFIG}" repository_cache)"
+            second_cache="$(bazelisk --output_user_root="${second_root}" info --config="${RELEASE_CONFIG}" repository_cache)"
+            cargo xtask release-artifact fetch-source "${first_cache}"
+            cargo xtask release-artifact fetch-source "${second_cache}"
+            cargo xtask release-artifact prepare-source "${first_cache}" "${CANDIDATE}" "${work}/source"
+            source_archive="${work}/source/rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
+            cargo xtask release-artifact relink-source "${source_archive}" "${CANDIDATE}" "${RELEASE_TARGET}" "${work}/source-relink-work" "${work}/source-relink.json"
+            source_args=("${work}/source-relink.json")
+          fi
+          cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" "${glibc}" "${source_args[@]}"
+          cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" "${glibc}" "${source_args[@]}"
           cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
           packaged="${work}/extracted/rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}/rustleaks"
           packaged_smoke="${work}/packaged-smoke.json"
@@ -570,18 +584,35 @@ jobs:
           RELEASE_CONFIG: ${{ matrix.config }}
           RELEASE_TARGET: ${{ matrix.target }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
           if ($actual -ne $env:EXPECTED_ARCHITECTURE) { throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual" }
           $firstRoot = Join-Path $env:RUNNER_TEMP bazel-one
           $secondRoot = Join-Path $env:RUNNER_TEMP bazel-two
+          if ((Test-Path $firstRoot) -or (Test-Path $secondRoot)) { throw "Windows runtime qualification requires new isolated Bazel output roots" }
           $work = Join-Path $env:RUNNER_TEMP release-work
           New-Item -ItemType Directory -Force -Path $work | Out-Null
-          bazelisk --output_user_root=$firstRoot --windows_enable_symlinks build --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //crates/rustleaks-cli:rustleaks
+          $firstEvidence = Join-Path $work runtime-evidence/one
+          $secondEvidence = Join-Path $work runtime-evidence/two
+          New-Item -ItemType Directory -Force -Path $firstEvidence,$secondEvidence | Out-Null
+          $firstTrace = Join-Path $firstEvidence build.log
+          $secondTrace = Join-Path $secondEvidence build.log
+          $runtimeFlags = @('--@rules_rust//rust/settings:experimental_per_crate_rustc_flag=crates/rustleaks-cli/src/main.rs@-Wlinker-messages', '--@rules_rust//rust/settings:experimental_per_crate_rustc_flag=crates/rustleaks-cli/src/main.rs@-Clink-arg=/VERBOSE:LIB', '--@rules_rust//rust/settings:experimental_per_crate_rustc_flag=crates/rustleaks-cli/src/main.rs@-Clink-arg=/MAP:rustleaks-runtime.map')
+          $firstExecRoot = bazelisk --output_user_root=$firstRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all @runtimeFlags execution_root
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=$secondRoot --windows_enable_symlinks build --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //crates/rustleaks-cli:rustleaks
+          $secondExecRoot = bazelisk --output_user_root=$secondRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all @runtimeFlags execution_root
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $firstBinDir = bazelisk --output_user_root=$firstRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all bazel-bin
-          $secondBinDir = bazelisk --output_user_root=$secondRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all bazel-bin
+          $firstMap = Join-Path $firstExecRoot rustleaks-runtime.map
+          $secondMap = Join-Path $secondExecRoot rustleaks-runtime.map
+          if ((Test-Path $firstMap) -or (Test-Path $secondMap)) { throw "Refusing stale native linker maps before the isolated builds" }
+          bazelisk --output_user_root=$firstRoot --windows_enable_symlinks build --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all @runtimeFlags //crates/rustleaks-cli:rustleaks 2>&1 | Tee-Object -FilePath $firstTrace
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bazelisk --output_user_root=$secondRoot --windows_enable_symlinks build --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all @runtimeFlags //crates/rustleaks-cli:rustleaks 2>&1 | Tee-Object -FilePath $secondTrace
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $firstBinDir = bazelisk --output_user_root=$firstRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all @runtimeFlags bazel-bin
+          $secondBinDir = bazelisk --output_user_root=$secondRoot --windows_enable_symlinks info --config=$env:RELEASE_CONFIG --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all @runtimeFlags bazel-bin
+          Copy-Item $firstMap (Join-Path $firstEvidence link.map)
+          Copy-Item $secondMap (Join-Path $secondEvidence link.map)
           $first = Join-Path $work rustleaks-one.exe
           $second = Join-Path $work rustleaks-two.exe
           Copy-Item (Join-Path $firstBinDir crates/rustleaks-cli/rustleaks.exe) $first
@@ -595,9 +626,9 @@ jobs:
           if (-not (Select-String -Quiet -Pattern REDACTED -Path $smoke)) { throw "redacted smoke finding missing" }
           cargo xtask release-artifact compare $first $second (Join-Path $work reproducibility.json)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask release-artifact prepare $first $firstRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle) none
+          cargo xtask release-artifact prepare-windows $first $firstRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle) $firstMap $firstTrace
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo xtask release-artifact prepare $second $secondRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle-repeat) none
+          cargo xtask release-artifact prepare-windows $second $secondRoot $env:RELEASE_TARGET $env:CANDIDATE (Join-Path $work reproducibility.json) (Join-Path $work bundle-repeat) $secondMap $secondTrace
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo xtask release-artifact compare-bundles (Join-Path $work bundle) (Join-Path $work bundle-repeat)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -639,6 +670,14 @@ jobs:
           name: rustleaks-${{ inputs.version }}-${{ matrix.target }}
           path: ${{ runner.temp }}/release-work/bundle
           if-no-files-found: error
+          retention-days: 7
+      - name: Retain Windows runtime provider evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-provider-evidence-${{ matrix.target }}-${{ inputs.candidate }}
+          path: ${{ runner.temp }}/release-work/runtime-evidence
+          if-no-files-found: warn
           retention-days: 7
 
   required:

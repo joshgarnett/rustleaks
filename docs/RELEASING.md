@@ -80,6 +80,82 @@ the packaged executable. Each job emits:
   against the exact `main` commit and release workflow;
 - a reproducibility proof and machine-readable release manifest.
 
+Every native archive contains a `licenses/` tree with a target-specific
+`index.json`. Its package coverage is the selected release build graph,
+including the CLI root and build and proc-macro inputs. It is not a claim that
+every listed package is linked at runtime. Separately reviewed runtime groups
+record their source identities and target membership. Root `LICENSE` and
+`NOTICE` retain their project meanings.
+
+The maintained notice sources are `release/notice-inputs/`; the generated
+catalog and exact notice copies are `release/licenses/`. Regenerate with
+`cargo xtask release-artifact notices` and check with
+`cargo xtask release-artifact notices --check`. Generation reads all eight
+target-filtered Cargo graphs and checksum-verified locked `.crate` archives
+from the local Cargo cache. It preserves nested notices and license alternatives,
+and rejects missing texts, stale source supplements, unsafe paths and incomplete
+runtime mappings. Generation uses current workspace bytes with Git's canonical
+line-ending identity, including uncommitted edits; preparation uses the exact
+candidate's Git blobs. Exact upstream
+source supplements have their own version, archive checksum, VCS pin and file
+digest; ordinary preparation and verification do not retrieve external notices.
+
+CI and release acceptance require the owning `notices --check` command after
+locked archive hydration. Preparation reconciles package coverage with the
+actual selected Cargo/Bazel graph and independently recollects every selected
+package's complete documents from its locked archive or committed workspace
+and supplement inputs. Verification reads the exact candidate's committed catalog, curated
+runtime inputs and notice bytes, reconciles SBOM package coverage, and requires
+the archive's complete file set, bytes, ordering and modes to match. The
+manifest records the notice index digest and component/document counts. Notice
+files are embedded in the existing archive and covered by its checksums and
+attestation. Notice collection records attribution evidence; any additional
+source or redistribution requirements remain part of release qualification.
+
+The native verifier checks raw tar metadata and exact expected paths and sizes
+before reading payloads, then hashes payloads in bounded chunks. It accepts only
+the emitted gzip format and bounded GNU long paths, with limits of 128 MiB per
+binary, 256 MiB per decompressed native archive, 4,096 regular files and 4,096
+bytes per path. Binary size must also match the reproducibility proof.
+
+Windows preparation also verifies mutable native runtime providers. Each lane
+uses fresh isolated Bazel roots and rejects stale linker maps, then captures
+CLI-only native linker maps and library search traces. The collector identifies
+the actual configured CLI Rustc action and linker, checks its output against the
+selected binary, and matches the map's reproducible image hash, image base and
+entry point to that binary. Map-contributed native libraries must have one observed
+provider path and match the reviewed MSVC/SDK identities and exact file hashes.
+Missing, changed, additional or ambiguous providers stop packaging.
+
+Portable provider identities and mapped members are bound into the signed
+notice index and release manifest. The two raw Windows diagnostic artifacts
+are retained separately as `runtime-provider-evidence-<target>-<candidate>`,
+alongside the nine releasable bundles. They contain maps, build traces and
+selected action evidence; they are not copied into the 63 public release assets.
+Public verification checks the portable evidence against the exact committed
+runtime catalog without requiring an installed Microsoft toolchain.
+
+GNU native bundles also contain the common
+`rustleaks-<version>-corresponding-source.tar.gz` and `source-relink.json`.
+The source archive delivers the exact application source and pinned glibc
+sources, patches, generated headers and build recipes. Each GNU native lane
+builds from the delivered source, requires its baseline binary to match the
+selected release binary, modifies the supplied startup implementation, rebuilds
+and runs a native smoke test. Packaging rejects a missing or mismatched proof.
+The native archive's signed notice index binds the companion archive and proof;
+the manifest, checksum file and provenance repeat those bindings.
+The [reconstruction instructions](../release/corresponding-source/README.md)
+describe the supplied materials and library-source substitution route.
+
+Source acquisition is an explicit pinned `release-artifact fetch-source` step
+before offline preparation. Source preparation and public verification do not
+download replacement inputs. The two GNU lanes must produce identical source
+archives. Publication retains one common source archive and both target-specific
+relink proofs, for 63 public assets. Native public verification downloads those
+materials for GNU targets and checks their bindings before extracting or running
+the executable. Regeneration after changed source or runtime evidence requires a
+new candidate qualification and exact-main dry run.
+
 The retained source package is generated twice into isolated Cargo target
 directories, compared byte for byte, and receives the same signed provenance
 verification.

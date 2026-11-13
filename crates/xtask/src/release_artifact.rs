@@ -3,22 +3,29 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Write as _;
 use std::fs;
-use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::io::{BufReader, Read, Seek};
+use std::path::Path;
 use std::process::Command;
 
 use flate2::Compression;
-use flate2::read::GzDecoder;
+use flate2::bufread::GzDecoder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::tooling::{command_output, sha256_file};
+
+mod corresponding_source;
+mod notices;
+mod runtime_inputs;
 
 const RELEASE_VERSION: &str = "0.1.0-alpha.9";
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
 const BAZEL_VERSION: &str = "9.2.0";
 const RULES_RUST_VERSION: &str = "0.72.0";
 const BAZEL_RUST_VERSION: &str = "1.95.0";
+const MAX_NATIVE_BINARY_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_NATIVE_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_RELEASE_METADATA_BYTES: u64 = 8 * 1024 * 1024;
 
 const TARGETS: &[(&str, &str)] = &[
     ("x86_64-unknown-linux-gnu", "release-linux-x86_64-gnu"),
@@ -43,6 +50,16 @@ struct ReleaseEvidence<'a> {
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
+        [command] if command == "notices" => notices::generate(root, false),
+        [command, flag] if command == "notices" && flag == "--check" => notices::generate(root, true),
+        [command, cache, commit, output] if command == "prepare-source" => {
+            corresponding_source::prepare(root, Path::new(cache), commit, Path::new(output))?;
+            Ok(())
+        }
+        [command, cache] if command == "fetch-source" => corresponding_source::fetch_inputs(Path::new(cache)),
+        [command, archive, commit, target, work, proof] if command == "relink-source" => {
+            corresponding_source::relink(root, Path::new(archive), commit, target, Path::new(work), Path::new(proof))
+        }
         [command, left, right, proof] if command == "compare" => {
             compare(Path::new(left), Path::new(right), Path::new(proof))
         }
@@ -61,10 +78,14 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
                 Path::new(proof),
                 Path::new(output),
                 glibc,
+                None,
+                None,
             )
         }
+        [command, binary, bazel_output_root, target, commit, proof, output, glibc, source_proof] if command == "prepare" => prepare(root, Path::new(binary), Path::new(bazel_output_root), target, commit, Path::new(proof), Path::new(output), glibc, Some(Path::new(source_proof)), None),
+        [command, binary, bazel_output_root, target, commit, proof, output, map, trace] if command == "prepare-windows" => prepare(root, Path::new(binary), Path::new(bazel_output_root), target, commit, Path::new(proof), Path::new(output), "none", None, Some((Path::new(map), Path::new(trace)))),
         [command, output] if command == "verify" => verify(root, Path::new(output)),
-        _ => Err("usage: cargo xtask release-artifact <compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE|verify OUTPUT>".into()),
+        _ => Err("usage: cargo xtask release-artifact <notices [--check]|fetch-source REPOSITORY_CACHE|prepare-source REPOSITORY_CACHE COMMIT OUTPUT|relink-source ARCHIVE COMMIT TARGET WORK PROOF|compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE [SOURCE_PROOF]|prepare-windows BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT MAP TRACE|verify OUTPUT>".into()),
     }
 }
 
@@ -196,10 +217,17 @@ fn prepare(
     proof: &Path,
     output: &Path,
     glibc: &str,
+    source_proof: Option<&Path>,
+    windows_evidence: Option<(&Path, &Path)>,
 ) -> Result<(), String> {
     let bazel_config = target_config(target)?;
     validate_commit(commit)?;
     validate_glibc(target, glibc)?;
+    validate_binary_size(
+        fs::metadata(binary)
+            .map_err(|error| format!("cannot inspect release binary: {error}"))?
+            .len(),
+    )?;
     let binary_bytes = fs::read(binary)
         .map_err(|error| format!("cannot read release binary {}: {error}", binary.display()))?;
     let binary_sha256 = sha256_bytes(&binary_bytes);
@@ -209,8 +237,43 @@ fn prepare(
     let graph = CargoGraph::from_metadata(&metadata)?;
     graph.reconcile_bazel(&graph_text)?;
     validate_workspace_versions(root)?;
+    let mut notices = notices::load(root, target, Some(commit))?;
+    notices::reconcile_graph(&notices, &graph)?;
+    notices::reconcile_package_documents(root, commit, &notices, &graph)?;
+    let runtime_evidence = match (target.ends_with("windows-msvc"), windows_evidence) {
+        (true, Some((map, trace))) => Some(runtime_inputs::collect(root, bazel_output_root, target, commit, &binary_sha256, &notices, map, trace)?),
+        (false, None) => None,
+        _ => return Err("Windows preparation requires the actual configured action and native linker map/trace evidence".into()),
+    };
+    bind_runtime_evidence(&mut notices, runtime_evidence.as_ref())?;
 
     prepare_output_directory(output)?;
+    let source = if target.ends_with("linux-gnu") {
+        let cache = bazel_repository_cache(root, bazel_output_root, bazel_config)?;
+        Some(corresponding_source::prepare(root, &cache, commit, output)?)
+    } else {
+        None
+    };
+    let source_relink = match (&source, source_proof) {
+        (Some(source), Some(proof)) => {
+            corresponding_source::validate_relink_proof(
+                proof,
+                source,
+                target,
+                commit,
+                &binary_sha256,
+            )?;
+            fs::copy(proof, output.join("source-relink.json"))
+                .map_err(|error| format!("cannot retain source relink proof: {error}"))?;
+            Some(json!({"file":"source-relink.json","sha256":sha256_file(proof)?}))
+        }
+        (None, None) => None,
+        _ => return Err(
+            "GNU releases require a corresponding-source relink proof; other targets must omit it"
+                .into(),
+        ),
+    };
+    bind_corresponding_source(&mut notices, source.as_ref(), source_relink.as_ref())?;
 
     let stem = format!("rustleaks-{RELEASE_VERSION}-{target}");
     let archive_name = format!("{stem}.tar.gz");
@@ -220,14 +283,19 @@ fn prepare(
         "rustleaks"
     };
     let archive = output.join(&archive_name);
-    write_archive(
-        &archive,
-        &stem,
-        binary_name,
-        &binary_bytes,
-        root,
-        target.contains("windows"),
-    )?;
+    let mut archive_files = archive_documents(root, commit, &notices)?;
+    archive_files.insert(
+        binary_name.into(),
+        (
+            binary_bytes.clone(),
+            if target.contains("windows") {
+                0o644
+            } else {
+                0o755
+            },
+        ),
+    );
+    write_archive(&archive, &stem, &archive_files)?;
     let archive_sha256 = sha256_file(&archive)?;
     let sbom_name = format!("{stem}.cdx.json");
     let sbom_path = output.join(&sbom_name);
@@ -248,7 +316,19 @@ fn prepare(
 
     let provenance_name = format!("{stem}.provenance.json");
     let provenance_path = output.join(&provenance_name);
-    let provenance = provenance(&evidence, &sbom_name, &sbom_sha256);
+    let mut provenance = provenance(&evidence, &sbom_name, &sbom_sha256);
+    if let Some(source) = &source {
+        provenance["predicate"]["runDetails"]["byproducts"]
+            .as_array_mut()
+            .ok_or("provenance byproducts are missing")?
+            .push(json!({"name": source["file"], "digest":{"sha256":source["sha256"]}}));
+    }
+    if let Some(proof) = &source_relink {
+        provenance["predicate"]["runDetails"]["byproducts"]
+            .as_array_mut()
+            .ok_or("provenance byproducts are missing")?
+            .push(json!({"name": proof["file"], "digest":{"sha256":proof["sha256"]}}));
+    }
     write_json(&provenance_path, &provenance)?;
     let provenance_sha256 = sha256_file(&provenance_path)?;
 
@@ -258,11 +338,29 @@ fn prepare(
             proof.display()
         )
     })?;
-    fs::write(
-        output.join("SHA256SUMS"),
-        format!("{archive_sha256}  {archive_name}\n{sbom_sha256}  {sbom_name}\n{provenance_sha256}  {provenance_name}\n"),
-    )
-    .map_err(|error| format!("cannot write release checksums: {error}"))?;
+    let mut sums = format!(
+        "{archive_sha256}  {archive_name}\n{sbom_sha256}  {sbom_name}\n{provenance_sha256}  {provenance_name}\n"
+    );
+    if let Some(source) = &source {
+        writeln!(
+            sums,
+            "{}  {}",
+            required_pointer(source, "/sha256")?,
+            required_pointer(source, "/file")?
+        )
+        .expect("writing to a String cannot fail");
+    }
+    if let Some(proof) = &source_relink {
+        writeln!(
+            sums,
+            "{}  {}",
+            required_pointer(proof, "/sha256")?,
+            required_pointer(proof, "/file")?
+        )
+        .expect("writing to a String cannot fail");
+    }
+    fs::write(output.join("SHA256SUMS"), sums)
+        .map_err(|error| format!("cannot write release checksums: {error}"))?;
 
     let manifest = json!({
         "schemaVersion": 1,
@@ -285,9 +383,14 @@ fn prepare(
             "file": archive_name,
             "sha256": archive_sha256,
             "binarySha256": binary_sha256,
+            "binarySize": binary_bytes.len(),
             "reproducible": true,
             "glibcMinimum": if glibc == "none" { Value::Null } else { Value::String(glibc.to_owned()) },
         },
+        "notices": notice_manifest(&notices)?,
+        "correspondingSource": source,
+        "sourceRelink": source_relink,
+        "runtimeInputEvidence": runtime_evidence,
         "sbom": {
             "file": sbom_name,
             "format": "CycloneDX",
@@ -332,21 +435,104 @@ fn prepare_output_directory(output: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)] // Verify the complete bound bundle before extraction or native execution.
 fn verify(root: &Path, output: &Path) -> Result<(), String> {
     let manifest = read_json(&output.join("manifest.json"))?;
     let commit = required_pointer(&manifest, "/release/sourceCommit")?;
     validate_commit(commit)?;
+    let target = required_pointer(&manifest, "/build/target")?;
+    target_config(target)?;
+    let binary_size = manifest["artifact"]["binarySize"]
+        .as_u64()
+        .ok_or("release manifest omits exact binary size")?;
+    validate_binary_size(binary_size)?;
+    if manifest["release"]["version"] != RELEASE_VERSION {
+        return Err("release manifest version differs from this verifier".into());
+    }
+    let mut notices = notices::load(root, target, Some(commit))?;
+    if target.ends_with("windows-msvc") {
+        runtime_inputs::validate(
+            &notices,
+            &manifest["runtimeInputEvidence"],
+            target,
+            commit,
+            required_pointer(&manifest, "/artifact/binarySha256")?,
+        )?;
+        bind_runtime_evidence(&mut notices, Some(&manifest["runtimeInputEvidence"]))?;
+    } else if !manifest["runtimeInputEvidence"].is_null() {
+        return Err(
+            "non-Windows archive contains unexpected mutable runtime input evidence".into(),
+        );
+    }
+    let source = if target.ends_with("linux-gnu") {
+        let source = corresponding_source::verify(
+            root,
+            &output.join(corresponding_source::source_name()),
+            commit,
+        )?;
+        if manifest["correspondingSource"] != source {
+            return Err(
+                "release corresponding-source binding differs from verified materials".into(),
+            );
+        }
+        Some(source)
+    } else {
+        if !manifest["correspondingSource"].is_null() {
+            return Err("non-GNU artifact has an unexpected corresponding-source binding".into());
+        }
+        None
+    };
+    let source_relink = if let Some(source) = &source {
+        let proof = output.join("source-relink.json");
+        corresponding_source::validate_relink_proof(
+            &proof,
+            source,
+            target,
+            commit,
+            required_pointer(&manifest, "/artifact/binarySha256")?,
+        )?;
+        let binding = json!({"file":"source-relink.json","sha256":sha256_file(&proof)?});
+        if manifest["sourceRelink"] != binding {
+            return Err("source relink proof binding differs from the verified proof".into());
+        }
+        Some(binding)
+    } else {
+        if !manifest["sourceRelink"].is_null() {
+            return Err("non-GNU artifact has an unexpected source relink proof".into());
+        }
+        None
+    };
+    bind_corresponding_source(&mut notices, source.as_ref(), source_relink.as_ref())?;
+    if manifest["notices"] != notice_manifest(&notices)? {
+        return Err("release manifest notice index binding differs from committed inputs".into());
+    }
     let committed_lock_digests = lock_digests(root, commit)?;
     if manifest.pointer("/build/lockfiles") != Some(&committed_lock_digests) {
         return Err("release manifest lockfile digests do not match the committed sources".into());
     }
     let artifact_name = required_pointer(&manifest, "/artifact/file")?;
+    if artifact_name != format!("rustleaks-{RELEASE_VERSION}-{target}.tar.gz") {
+        return Err("release archive identity differs from the target and version".into());
+    }
     let artifact_sha256 = required_pointer(&manifest, "/artifact/sha256")?;
     let sbom_name = required_pointer(&manifest, "/sbom/file")?;
     let sbom_sha256 = required_pointer(&manifest, "/sbom/sha256")?;
     let provenance_name = required_pointer(&manifest, "/provenance/file")?;
     let provenance_sha256 = required_pointer(&manifest, "/provenance/sha256")?;
-    validate_output_directory(output, artifact_name, sbom_name, provenance_name)?;
+    validate_output_directory(
+        output,
+        artifact_name,
+        sbom_name,
+        provenance_name,
+        source.as_ref(),
+    )?;
+    if fs::metadata(output.join(artifact_name))
+        .map_err(|error| error.to_string())?
+        .len()
+        > MAX_NATIVE_ARCHIVE_BYTES + 4 * 1024 * 1024
+    {
+        return Err("release archive exceeds its compressed file limit".into());
+    }
     for (name, expected) in [
         (artifact_name, artifact_sha256),
         (sbom_name, sbom_sha256),
@@ -358,6 +544,13 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
                 "release file {name} has SHA-256 {actual}, expected {expected}"
             ));
         }
+    }
+    if fs::metadata(output.join("SHA256SUMS"))
+        .map_err(|error| error.to_string())?
+        .len()
+        > 4096
+    {
+        return Err("release checksum list exceeds its size limit".into());
     }
     let sums = fs::read_to_string(output.join("SHA256SUMS"))
         .map_err(|error| format!("cannot read SHA256SUMS: {error}"))?;
@@ -371,8 +564,28 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
             return Err(format!("SHA256SUMS omits exact entry {expected}"));
         }
     }
-    if sums.lines().count() != 3 {
-        return Err("SHA256SUMS must contain exactly three entries".into());
+    if let Some(source) = &source {
+        let expected = format!(
+            "{}  {}",
+            required_pointer(source, "/sha256")?,
+            required_pointer(source, "/file")?
+        );
+        if !sums.lines().any(|line| line == expected) {
+            return Err("SHA256SUMS omits exact corresponding-source entry".into());
+        }
+    }
+    if let Some(proof) = &source_relink {
+        let expected = format!(
+            "{}  {}",
+            required_pointer(proof, "/sha256")?,
+            required_pointer(proof, "/file")?
+        );
+        if !sums.lines().any(|line| line == expected) {
+            return Err("SHA256SUMS omits exact source relink proof entry".into());
+        }
+    }
+    if sums.lines().count() != 3 + 2 * usize::from(source.is_some()) {
+        return Err("SHA256SUMS has an unexpected number of release entries".into());
     }
     let sbom = read_json(&output.join(sbom_name))?;
     if sbom["bomFormat"] != "CycloneDX" || sbom["specVersion"] != "1.6" {
@@ -390,6 +603,22 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
     if sbom_artifact != Some(artifact_sha256) {
         return Err("release SBOM is not bound to the artifact checksum".into());
     }
+    for (name, expected) in [
+        ("rustleaks:target", target),
+        ("rustleaks:source:commit", commit),
+    ] {
+        if !sbom["metadata"]["properties"]
+            .as_array()
+            .is_some_and(|properties| {
+                properties
+                    .iter()
+                    .any(|property| property["name"] == name && property["value"] == expected)
+            })
+        {
+            return Err(format!("release SBOM omits exact identity property {name}"));
+        }
+    }
+    notices::reconcile_sbom(&notices, &sbom)?;
     let provenance = read_json(&output.join(provenance_name))?;
     if provenance["predicateType"] != "https://slsa.dev/provenance/v1"
         || provenance
@@ -399,9 +628,27 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
     {
         return Err("release provenance is not bound to the artifact checksum".into());
     }
-    validate_archive(&output.join(artifact_name), artifact_name)?;
+    if let Some(source) = &source {
+        let expected = json!({"name":source["file"],"digest":{"sha256":source["sha256"]}});
+        if !provenance["predicate"]["runDetails"]["byproducts"]
+            .as_array()
+            .is_some_and(|entries| entries.contains(&expected))
+        {
+            return Err("release provenance omits the corresponding-source digest".into());
+        }
+    }
+    if let Some(proof) = &source_relink {
+        let expected = json!({"name":proof["file"],"digest":{"sha256":proof["sha256"]}});
+        if !provenance["predicate"]["runDetails"]["byproducts"]
+            .as_array()
+            .is_some_and(|entries| entries.contains(&expected))
+        {
+            return Err("release provenance omits the source relink proof digest".into());
+        }
+    }
     let proof = read_json(&output.join("reproducibility.json"))?;
     if proof["identical"] != true
+        || proof["size"].as_u64() != Some(binary_size)
         || proof["sha256"].as_str()
             != manifest
                 .pointer("/artifact/binarySha256")
@@ -409,6 +656,14 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
     {
         return Err("release reproducibility proof is invalid".into());
     }
+    let documents = archive_documents(root, commit, &notices)?;
+    validate_archive(
+        &output.join(artifact_name),
+        artifact_name,
+        &documents,
+        required_pointer(&manifest, "/artifact/binarySha256")?,
+        binary_size,
+    )?;
     println!("verified release bundle checksums, SBOM, provenance, and archive contents");
     Ok(())
 }
@@ -418,12 +673,34 @@ fn validate_output_directory(
     artifact_name: &str,
     sbom_name: &str,
     provenance_name: &str,
+    source: Option<&Value>,
 ) -> Result<(), String> {
     let stem = artifact_name
         .strip_suffix(".tar.gz")
         .ok_or("release archive name must end in .tar.gz")?;
     let attestation_name = format!("{stem}.attestation.jsonl");
-    let files = read_bundle_files(output)?;
+    let mut actual = BTreeSet::new();
+    for entry in
+        fs::read_dir(output).map_err(|error| format!("cannot inspect release bundle: {error}"))?
+    {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_file()
+            || entry.metadata().map_err(|error| error.to_string())?.len() == 0
+        {
+            return Err("release bundle contains a non-file or empty entry".into());
+        }
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "release bundle path is not UTF-8")?;
+        actual.insert(name);
+        if actual.len() > 9 {
+            return Err("release bundle exceeds its file inventory limit".into());
+        }
+    }
     let mut expected = [
         artifact_name,
         sbom_name,
@@ -435,17 +712,17 @@ fn validate_output_directory(
     .into_iter()
     .map(str::to_owned)
     .collect::<BTreeSet<_>>();
-    if files.contains_key(&attestation_name) {
+    if let Some(source) = source {
+        expected.insert(required_pointer(source, "/file")?.to_owned());
+        expected.insert("source-relink.json".into());
+    }
+    if actual.contains(&attestation_name) {
         expected.insert(attestation_name);
     }
-    let actual = files.keys().cloned().collect::<BTreeSet<_>>();
     if actual != expected {
         return Err(format!(
             "release bundle paths differ: expected {expected:?}, got {actual:?}"
         ));
-    }
-    if files.values().any(Vec::is_empty) {
-        return Err("release bundle contains an empty file".into());
     }
     Ok(())
 }
@@ -485,6 +762,24 @@ fn bazel_graph(root: &Path, output_root: &Path, config: &str) -> Result<String, 
         ]);
     }
     command_output(&mut command)
+}
+
+fn bazel_repository_cache(
+    root: &Path,
+    output_root: &Path,
+    config: &str,
+) -> Result<std::path::PathBuf, String> {
+    let output = command_output(
+        Command::new("bazelisk")
+            .current_dir(root)
+            .arg(format!("--output_user_root={}", output_root.display()))
+            .args(["info", &format!("--config={config}"), "repository_cache"]),
+    )?;
+    let path = std::path::PathBuf::from(output.trim());
+    if !path.is_absolute() {
+        return Err("Bazel repository cache path is not absolute".into());
+    }
+    Ok(path)
 }
 
 struct CargoGraph<'a> {
@@ -764,40 +1059,72 @@ fn provenance(evidence: &ReleaseEvidence<'_>, sbom_name: &str, sbom_sha256: &str
     })
 }
 
+fn bind_runtime_evidence(
+    notices: &mut notices::Bundle,
+    evidence: Option<&Value>,
+) -> Result<(), String> {
+    if let Some(evidence) = evidence {
+        notices.index["runtime_input_evidence"] = evidence.clone();
+        notices.files.insert(
+            "licenses/index.json".into(),
+            notices::json_bytes(&notices.index)?,
+        );
+    }
+    Ok(())
+}
+
+fn notice_manifest(notices: &notices::Bundle) -> Result<Value, String> {
+    Ok(json!({
+        "index": "licenses/index.json",
+        "sha256": sha256_bytes(notices.files.get("licenses/index.json").ok_or("notice index is missing")?),
+        "components": notices.index["components"].as_array().ok_or("notice components are missing")?.len(),
+        "documents": notices.files.len() - 1,
+    }))
+}
+
+fn bind_corresponding_source(
+    notices: &mut notices::Bundle,
+    source: Option<&Value>,
+    proof: Option<&Value>,
+) -> Result<(), String> {
+    match (source, proof) {
+        (Some(source), Some(proof)) => {
+            notices.index["corresponding_source"] = json!({"archive":source,"relink_proof":proof});
+            notices.files.insert(
+                "licenses/index.json".into(),
+                notices::json_bytes(&notices.index)?,
+            );
+        }
+        (None, None) => {}
+        _ => return Err("corresponding source and relink proof must be bound together".into()),
+    }
+    Ok(())
+}
+
+fn archive_documents(
+    root: &Path,
+    commit: &str,
+    notices: &notices::Bundle,
+) -> Result<BTreeMap<String, (Vec<u8>, u32)>, String> {
+    let mut files = notices
+        .files
+        .iter()
+        .map(|(path, bytes)| (path.clone(), (bytes.clone(), 0o644)))
+        .collect::<BTreeMap<_, _>>();
+    for path in ["LICENSE", "NOTICE", "README.md"] {
+        files.insert(
+            path.to_owned(),
+            (committed_file_bytes(root, commit, path)?, 0o644),
+        );
+    }
+    Ok(files)
+}
+
 fn write_archive(
     destination: &Path,
     stem: &str,
-    binary_name: &str,
-    binary: &[u8],
-    root: &Path,
-    windows: bool,
+    files: &BTreeMap<String, (Vec<u8>, u32)>,
 ) -> Result<(), String> {
-    let mut entries = vec![
-        (
-            "LICENSE",
-            fs::read(root.join("LICENSE"))
-                .map_err(|error| format!("cannot read LICENSE: {error}"))?,
-            0o644,
-        ),
-        (
-            "NOTICE",
-            fs::read(root.join("NOTICE"))
-                .map_err(|error| format!("cannot read NOTICE: {error}"))?,
-            0o644,
-        ),
-        (
-            "README.md",
-            fs::read(root.join("README.md"))
-                .map_err(|error| format!("cannot read README.md: {error}"))?,
-            0o644,
-        ),
-        (
-            binary_name,
-            binary.to_vec(),
-            if windows { 0o644 } else { 0o755 },
-        ),
-    ];
-    entries.sort_by_key(|(name, _, _)| *name);
     let file = fs::File::create(destination).map_err(|error| {
         format!(
             "cannot create release archive {}: {error}",
@@ -810,10 +1137,11 @@ fn write_archive(
         .write(file, Compression::best());
     let mut archive = tar::Builder::new(encoder);
     archive.mode(tar::HeaderMode::Deterministic);
-    for (name, bytes, mode) in entries {
+    for (name, (bytes, mode)) in files {
+        notices::portable_path(name)?;
         let mut header = tar::Header::new_gnu();
         header.set_size(bytes.len() as u64);
-        header.set_mode(mode);
+        header.set_mode(*mode);
         header.set_uid(0);
         header.set_gid(0);
         header.set_mtime(0);
@@ -831,53 +1159,250 @@ fn write_archive(
     Ok(())
 }
 
-fn validate_archive(path: &Path, archive_name: &str) -> Result<(), String> {
+struct ExpectedArchiveMember {
+    size: u64,
+    mode: u32,
+    sha256: String,
+}
+
+#[allow(clippy::too_many_lines)] // Check each raw header against the trusted inventory before reading its bounded payload.
+fn validate_archive(
+    path: &Path,
+    archive_name: &str,
+    documents: &BTreeMap<String, (Vec<u8>, u32)>,
+    binary_sha256: &str,
+    binary_size: u64,
+) -> Result<(), String> {
+    validate_binary_size(binary_size)?;
     let stem = archive_name
         .strip_suffix(".tar.gz")
         .ok_or("release archive name must end in .tar.gz")?;
-    let file = fs::File::open(path)
-        .map_err(|error| format!("cannot open release archive {}: {error}", path.display()))?;
-    let mut archive = tar::Archive::new(GzDecoder::new(file));
-    let mut paths = BTreeSet::new();
-    for entry in archive
-        .entries()
-        .map_err(|error| format!("cannot read release archive: {error}"))?
-    {
-        let mut entry = entry.map_err(|error| format!("cannot read release entry: {error}"))?;
-        if !entry.header().entry_type().is_file() {
-            return Err("release archive contains a non-file entry".into());
-        }
-        let path = entry
-            .path()
-            .map_err(|error| format!("cannot read release entry path: {error}"))?
-            .into_owned();
-        if !paths.insert(path.clone()) {
-            return Err(format!("release archive repeats {}", path.display()));
-        }
-        let mut sink = Vec::new();
-        entry
-            .read_to_end(&mut sink)
-            .map_err(|error| format!("cannot read release entry {}: {error}", path.display()))?;
-        if sink.is_empty() {
-            return Err(format!("release archive entry {} is empty", path.display()));
+    let binary_name = if stem.contains("windows") {
+        "rustleaks.exe"
+    } else {
+        "rustleaks"
+    };
+    let binary_mode = if stem.contains("windows") {
+        0o644
+    } else {
+        0o755
+    };
+    let mut expected = documents
+        .iter()
+        .map(|(name, (bytes, mode))| {
+            (
+                format!("{stem}/{name}"),
+                ExpectedArchiveMember {
+                    size: bytes.len() as u64,
+                    mode: *mode,
+                    sha256: sha256_bytes(bytes),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    expected.insert(
+        format!("{stem}/{binary_name}"),
+        ExpectedArchiveMember {
+            size: binary_size,
+            mode: binary_mode,
+            sha256: binary_sha256.into(),
+        },
+    );
+    if expected.len() > 4096 {
+        return Err("native archive inventory exceeds its member limit".into());
+    }
+    let max_path = expected
+        .keys()
+        .map(String::len)
+        .max()
+        .ok_or("native archive inventory is empty")?;
+    if max_path > 4096 {
+        return Err("native archive path exceeds its byte limit".into());
+    }
+    let mut stream_size = 1024_u64;
+    for (path, member) in &expected {
+        notices::portable_path(path)?;
+        stream_size = add_tar_member_size(stream_size, member.size)?;
+        if path.len() > 100 {
+            stream_size = add_tar_member_size(stream_size, path.len() as u64 + 1)?;
         }
     }
-    let mut expected = ["LICENSE", "NOTICE", "README.md"]
-        .into_iter()
-        .map(|name| PathBuf::from(format!("{stem}/{name}")))
-        .collect::<BTreeSet<_>>();
-    expected.insert(PathBuf::from(format!(
-        "{stem}/{}",
-        if stem.contains("windows") {
-            "rustleaks.exe"
-        } else {
-            "rustleaks"
+    let file = canonical_gzip_file(path, stream_size)?;
+    let mut archive = tar::Archive::new(GzDecoder::new(BufReader::new(file)).take(stream_size + 1));
+    let mut paths = BTreeSet::new();
+    let mut previous = String::new();
+    let mut long_name: Option<String> = None;
+    for (raw_count, entry) in archive
+        .entries()
+        .map_err(|error| format!("cannot read release archive: {error}"))?
+        .raw(true)
+        .enumerate()
+    {
+        if raw_count >= expected.len() * 2 {
+            return Err("release archive exceeds its raw member limit".into());
         }
-    )));
-    if paths != expected {
-        return Err(format!(
-            "release archive paths differ: expected {expected:?}, got {paths:?}"
-        ));
+        let mut entry = entry.map_err(|error| format!("cannot read release entry: {error}"))?;
+        let header = entry.header();
+        if header.as_gnu().is_none()
+            || header.uid().map_err(|error| error.to_string())? != 0
+            || header.gid().map_err(|error| error.to_string())? != 0
+            || header.mtime().map_err(|error| error.to_string())? != 0
+        {
+            return Err("release entry has unsupported or nondeterministic header metadata".into());
+        }
+        if header.entry_type().is_gnu_longname() {
+            if long_name.is_some()
+                || header.path_bytes().as_ref() != b"././@LongLink"
+                || header.mode().map_err(|error| error.to_string())? != 0o644
+                || entry.size() <= 101
+                || entry.size() > max_path as u64 + 1
+            {
+                return Err(
+                    "release archive contains invalid or oversized GNU path metadata".into(),
+                );
+            }
+            let size = entry.size();
+            let mut bytes =
+                Vec::with_capacity(usize::try_from(size).map_err(|error| error.to_string())?);
+            entry
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            if bytes.len() as u64 != size || bytes.pop() != Some(0) || bytes.contains(&0) {
+                return Err(
+                    "release GNU path metadata is not one bounded NUL-terminated path".into(),
+                );
+            }
+            let path = String::from_utf8(bytes).map_err(|_| "release GNU path is not UTF-8")?;
+            if !expected.contains_key(&path) {
+                return Err(format!("unexpected release GNU path {path}"));
+            }
+            long_name = Some(path);
+            continue;
+        }
+        if !header.entry_type().is_file() {
+            return Err(
+                "release archive contains unsupported non-file or extended metadata".into(),
+            );
+        }
+        let raw_path = header.path_bytes();
+        let path = if let Some(path) = long_name.take() {
+            let mut truncated = 100;
+            while !path.is_char_boundary(truncated) {
+                truncated -= 1;
+            }
+            if raw_path.as_ref() != &path.as_bytes()[..truncated] {
+                return Err("release GNU path header does not match its bounded extension".into());
+            }
+            path
+        } else {
+            std::str::from_utf8(raw_path.as_ref())
+                .map_err(|_| "release entry path is not UTF-8")?
+                .to_owned()
+        };
+        let member = expected
+            .get(&path)
+            .ok_or_else(|| format!("unexpected release archive entry {path}"))?;
+        if path <= previous || !paths.insert(path.clone()) {
+            return Err(format!(
+                "release archive entries are duplicated or unordered at {path}"
+            ));
+        }
+        if entry.size() != member.size || member.size == 0 {
+            return Err(format!(
+                "release entry {path} size differs from the exact expected size"
+            ));
+        }
+        if header.mode().map_err(|error| error.to_string())? != member.mode {
+            return Err(format!(
+                "release entry {path} mode differs from its expected mode"
+            ));
+        }
+        previous = path.clone();
+        let mut digest = Sha256::new();
+        let mut count = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = entry
+                .read(&mut buffer)
+                .map_err(|error| format!("cannot read release entry {path}: {error}"))?;
+            if read == 0 {
+                break;
+            }
+            count += read as u64;
+            if count > member.size {
+                return Err("release entry exceeded its exact byte limit".into());
+            }
+            digest.update(&buffer[..read]);
+        }
+        let digest = digest.finalize();
+        let mut encoded = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        if count != member.size || encoded != member.sha256 {
+            return Err(format!(
+                "release entry {path} differs from its committed bytes or selected binary"
+            ));
+        }
+    }
+    if long_name.is_some() || paths.len() != expected.len() {
+        return Err(
+            "release archive omits expected entries or ends with orphaned GNU path metadata".into(),
+        );
+    }
+    let mut reader = archive.into_inner();
+    let mut trailer = [0_u8; 512];
+    reader
+        .read_exact(&mut trailer)
+        .map_err(|error| format!("release archive omits its complete tar trailer: {error}"))?;
+    let mut extra = [0_u8; 1];
+    if trailer != [0; 512] || reader.read(&mut extra).map_err(|error| error.to_string())? != 0 {
+        return Err("release archive has noncanonical or excessive tar trailing data".into());
+    }
+    let mut compressed = reader.into_inner().into_inner();
+    if compressed
+        .read(&mut extra)
+        .map_err(|error| error.to_string())?
+        != 0
+    {
+        return Err("release archive has trailing compressed data or multiple gzip streams".into());
+    }
+    Ok(())
+}
+
+fn add_tar_member_size(total: u64, payload: u64) -> Result<u64, String> {
+    let padded = payload
+        .checked_add(511)
+        .map(|size| size / 512 * 512)
+        .ok_or("release archive member size overflow")?;
+    total
+        .checked_add(512)
+        .and_then(|size| size.checked_add(padded))
+        .filter(|size| *size <= MAX_NATIVE_ARCHIVE_BYTES)
+        .ok_or_else(|| "native archive exceeds its decompressed size limit".into())
+}
+
+fn canonical_gzip_file(path: &Path, stream_size: u64) -> Result<fs::File, String> {
+    let mut file = fs::File::open(path)
+        .map_err(|error| format!("cannot open release archive {}: {error}", path.display()))?;
+    if file.metadata().map_err(|error| error.to_string())?.len()
+        > stream_size + stream_size / 100 + 65536
+    {
+        return Err("release archive exceeds its compressed size limit".into());
+    }
+    let mut header = [0_u8; 10];
+    file.read_exact(&mut header)
+        .map_err(|error| error.to_string())?;
+    if header != [31, 139, 8, 0, 0, 0, 0, 0, 2, 255] {
+        return Err("release archive has noncanonical or extensible gzip metadata".into());
+    }
+    file.rewind().map_err(|error| error.to_string())?;
+    Ok(file)
+}
+
+fn validate_binary_size(size: u64) -> Result<(), String> {
+    if size == 0 || size > MAX_NATIVE_BINARY_BYTES {
+        return Err("release binary size exceeds the supported artifact range".into());
     }
     Ok(())
 }
@@ -891,6 +1416,11 @@ fn lock_digests(root: &Path, commit: &str) -> Result<Value, String> {
 }
 
 fn committed_file_sha256(root: &Path, commit: &str, path: &str) -> Result<String, String> {
+    Ok(sha256_bytes(&committed_file_bytes(root, commit, path)?))
+}
+
+fn committed_file_bytes(root: &Path, commit: &str, path: &str) -> Result<Vec<u8>, String> {
+    notices::portable_path(path)?;
     let object = format!("{commit}:{path}");
     let output = Command::new("git")
         .current_dir(root)
@@ -903,7 +1433,7 @@ fn committed_file_sha256(root: &Path, commit: &str, path: &str) -> Result<String
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    Ok(sha256_bytes(&output.stdout))
+    Ok(output.stdout)
 }
 
 fn cargo_lock_checksums(root: &Path) -> Result<BTreeMap<(String, String), String>, String> {
@@ -1163,8 +1693,23 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
-    let bytes = fs::read(path)
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("cannot inspect JSON file {}: {error}", path.display()))?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_RELEASE_METADATA_BYTES {
+        return Err(format!(
+            "release JSON file {} is not a regular file or exceeds its metadata size limit",
+            path.display()
+        ));
+    }
+    let file = fs::File::open(path)
+        .map_err(|error| format!("cannot open JSON file {}: {error}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_RELEASE_METADATA_BYTES + 1)
+        .read_to_end(&mut bytes)
         .map_err(|error| format!("cannot read JSON file {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_RELEASE_METADATA_BYTES {
+        return Err("release JSON exceeded its metadata size limit while reading".into());
+    }
     serde_json::from_slice(&bytes)
         .map_err(|error| format!("cannot decode JSON file {}: {error}", path.display()))
 }
@@ -1186,14 +1731,16 @@ fn required_pointer<'a>(value: &'a Value, pointer: &str) -> Result<&'a str, Stri
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
+    use std::io::{Read as _, Write as _};
     use std::process::Command;
 
     use serde_json::json;
 
     use super::{
-        active_optional_dependencies, bazel_mentions, compare_bundle_maps, dependency_is_selected,
-        lock_digests, percent_encode, sha256_bytes, sha256_file, target_config, validate_commit,
-        validate_glibc,
+        active_optional_dependencies, bazel_mentions, bind_corresponding_source,
+        compare_bundle_maps, dependency_is_selected, lock_digests, notice_manifest, percent_encode,
+        sha256_bytes, sha256_file, target_config, validate_archive, validate_commit,
+        validate_glibc, validate_output_directory, write_archive,
     };
 
     #[test]
@@ -1203,6 +1750,292 @@ mod tests {
             "release-linux-aarch64-musl"
         );
         assert!(target_config("wasm32-unknown-unknown").is_err());
+    }
+
+    #[test]
+    fn native_archive_checks_exact_notices_binary_modes_and_inventory() {
+        let root = crate::ScopedTempDir::new("notice-archive-validation").unwrap();
+        let stem = "rustleaks-1.0-x86_64-unknown-linux-gnu";
+        let path = root.path.join(format!("{stem}.tar.gz"));
+        let document_names = [
+            "LICENSE",
+            "NOTICE",
+            "README.md",
+            "licenses/index.json",
+            "licenses/packages/example/LICENSE-MIT",
+            "licenses/packages/example/LICENSE-APACHE",
+            "licenses/packages/example/src/unicode_tables/LICENSE-UNICODE",
+            "licenses/packages/example/nested/NOTICE",
+            "licenses/packages/custom/COPYING",
+        ];
+        let documents = document_names
+            .into_iter()
+            .map(|name| {
+                (
+                    name.to_owned(),
+                    (
+                        format!("independent synthetic bytes for {name}\r\n").into_bytes(),
+                        0o644,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut files = documents.clone();
+        files.insert("rustleaks".into(), (b"synthetic binary".to_vec(), 0o755));
+        let digest = sha256_bytes(b"synthetic binary");
+        let archive_name = format!("{stem}.tar.gz");
+        write_archive(&path, stem, &files).unwrap();
+        validate_archive(
+            &path,
+            &archive_name,
+            &documents,
+            &digest,
+            b"synthetic binary".len() as u64,
+        )
+        .unwrap();
+        let first = fs::read(&path).unwrap();
+        write_archive(&path, stem, &files).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), first);
+        for name in document_names {
+            let mut missing = files.clone();
+            missing.remove(name);
+            write_archive(&path, stem, &missing).unwrap();
+            assert!(
+                validate_archive(
+                    &path,
+                    &archive_name,
+                    &documents,
+                    &digest,
+                    b"synthetic binary".len() as u64
+                )
+                .is_err(),
+                "accepted missing {name}"
+            );
+            let mut changed = files.clone();
+            changed.get_mut(name).unwrap().0.push(b'x');
+            write_archive(&path, stem, &changed).unwrap();
+            assert!(
+                validate_archive(
+                    &path,
+                    &archive_name,
+                    &documents,
+                    &digest,
+                    b"synthetic binary".len() as u64
+                )
+                .is_err(),
+                "accepted changed {name}"
+            );
+        }
+        files.get_mut("rustleaks").unwrap().1 = 0o644;
+        write_archive(&path, stem, &files).unwrap();
+        assert!(
+            validate_archive(
+                &path,
+                &archive_name,
+                &documents,
+                &digest,
+                b"synthetic binary".len() as u64
+            )
+            .is_err()
+        );
+        files.get_mut("rustleaks").unwrap().1 = 0o755;
+        files.insert("licenses/unindexed".into(), (b"unindexed".to_vec(), 0o644));
+        write_archive(&path, stem, &files).unwrap();
+        assert!(
+            validate_archive(
+                &path,
+                &archive_name,
+                &documents,
+                &digest,
+                b"synthetic binary".len() as u64
+            )
+            .is_err()
+        );
+    }
+
+    fn write_raw_native_tar(path: &std::path::Path, bytes: &[u8]) {
+        let file = fs::File::create(path).unwrap();
+        let mut gzip = flate2::GzBuilder::new()
+            .mtime(0)
+            .operating_system(255)
+            .write(file, flate2::Compression::best());
+        gzip.write_all(bytes).unwrap();
+        gzip.finish().unwrap();
+    }
+
+    fn raw_native_header(name: &[u8], kind: u8, size: u64) -> Vec<u8> {
+        let mut header = tar::Header::new_gnu();
+        assert!(name.len() <= 100);
+        header.as_mut_bytes()[..name.len()].copy_from_slice(name);
+        header.set_mode(0o644);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        header.set_entry_type(tar::EntryType::new(kind));
+        header.set_size(size);
+        header.set_cksum();
+        header.as_bytes().to_vec()
+    }
+
+    #[test]
+    fn native_archive_rejects_unknown_huge_or_extended_members_before_payload_reads() {
+        let root = crate::ScopedTempDir::new("native-archive-early-limits").unwrap();
+        let path = root.path.join("native.tar.gz");
+        let digest = sha256_bytes(b"native binary");
+        for (name, kind, size, message) in [
+            (
+                b"native/unexpected".as_slice(),
+                b'0',
+                1_u64 << 40,
+                "unexpected release archive entry",
+            ),
+            (
+                b"native/rustleaks".as_slice(),
+                b'0',
+                1_u64 << 40,
+                "size differs",
+            ),
+            (b"native/rustleaks".as_slice(), b'0', 0, "size differs"),
+            (
+                b"././@LongLink".as_slice(),
+                b'L',
+                1_u64 << 40,
+                "oversized GNU path metadata",
+            ),
+            (
+                b"pax".as_slice(),
+                b'x',
+                1_u64 << 40,
+                "unsupported non-file or extended metadata",
+            ),
+            (
+                b"native/../escape".as_slice(),
+                b'0',
+                1_u64 << 40,
+                "unexpected release archive entry",
+            ),
+        ] {
+            let mut raw = raw_native_header(name, kind, size);
+            raw.extend_from_slice(&[0; 1024]);
+            write_raw_native_tar(&path, &raw);
+            let error = validate_archive(&path, "native.tar.gz", &BTreeMap::new(), &digest, 13)
+                .unwrap_err();
+            assert!(
+                error.contains(message),
+                "expected early {message}, got {error}"
+            );
+        }
+        assert!(super::validate_binary_size(0).is_err());
+        assert!(super::validate_binary_size(128 * 1024 * 1024 + 1).is_err());
+    }
+
+    #[test]
+    fn native_archive_accepts_bounded_unicode_long_paths_and_rejects_trailer_changes() {
+        let root = crate::ScopedTempDir::new("native-archive-long-path").unwrap();
+        let path = root.path.join("native.tar.gz");
+        let name = format!("licenses/{}/LICENSE", "unicode-é-".repeat(14));
+        let documents =
+            BTreeMap::from([(name, (b"synthetic Unicode attribution".to_vec(), 0o644))]);
+        let mut files = documents.clone();
+        files.insert("rustleaks".into(), (b"native binary".to_vec(), 0o755));
+        let digest = sha256_bytes(b"native binary");
+        write_archive(&path, "native", &files).unwrap();
+        validate_archive(&path, "native.tar.gz", &documents, &digest, 13).unwrap();
+        let gzip = fs::read(&path).unwrap();
+        let mut raw = Vec::new();
+        flate2::read::GzDecoder::new(gzip.as_slice())
+            .read_to_end(&mut raw)
+            .unwrap();
+        write_raw_native_tar(&path, &raw[..raw.len() - 512]);
+        assert!(
+            validate_archive(&path, "native.tar.gz", &documents, &digest, 13)
+                .unwrap_err()
+                .contains("complete tar trailer")
+        );
+        raw.push(b'x');
+        write_raw_native_tar(&path, &raw);
+        assert!(
+            validate_archive(&path, "native.tar.gz", &documents, &digest, 13)
+                .unwrap_err()
+                .contains("trailing data")
+        );
+        let mut trailing_gzip = gzip.clone();
+        trailing_gzip.push(b'x');
+        fs::write(&path, trailing_gzip).unwrap();
+        assert!(
+            validate_archive(&path, "native.tar.gz", &documents, &digest, 13)
+                .unwrap_err()
+                .contains("trailing compressed data")
+        );
+        let mut extra_metadata = gzip;
+        extra_metadata[3] = 8;
+        fs::write(&path, extra_metadata).unwrap();
+        assert!(
+            validate_archive(&path, "native.tar.gz", &documents, &digest, 13)
+                .unwrap_err()
+                .contains("gzip metadata")
+        );
+    }
+
+    #[test]
+    fn native_signed_index_binds_both_source_archive_and_relink_proof() {
+        let mut bundle = super::notices::Bundle {
+            index: json!({"schema_version":1,"components":[]}),
+            files: BTreeMap::from([(
+                "licenses/index.json".into(),
+                b"independent initial index\n".to_vec(),
+            )]),
+        };
+        let initial = notice_manifest(&bundle).unwrap();
+        let source = json!({"file":"source.tar.gz","sha256":"a".repeat(64)});
+        let proof = json!({"file":"source-relink.json","sha256":"b".repeat(64)});
+        assert!(bind_corresponding_source(&mut bundle, Some(&source), None).is_err());
+        bind_corresponding_source(&mut bundle, Some(&source), Some(&proof)).unwrap();
+        assert_eq!(
+            bundle.index["corresponding_source"],
+            json!({"archive":source,"relink_proof":proof})
+        );
+        let bound = notice_manifest(&bundle).unwrap();
+        assert_ne!(initial["sha256"], bound["sha256"]);
+        let altered = json!({"file":"source-relink.json","sha256":"c".repeat(64)});
+        bind_corresponding_source(&mut bundle, Some(&source), Some(&altered)).unwrap();
+        assert_ne!(bound["sha256"], notice_manifest(&bundle).unwrap()["sha256"]);
+    }
+
+    #[test]
+    fn gnu_bundle_inventory_requires_source_materials_and_proof_together() {
+        let root = crate::ScopedTempDir::new("source-bundle-inventory").unwrap();
+        for name in [
+            "native.tar.gz",
+            "native.cdx.json",
+            "native.provenance.json",
+            "manifest.json",
+            "reproducibility.json",
+            "SHA256SUMS",
+        ] {
+            fs::write(root.path.join(name), b"synthetic contents").unwrap();
+        }
+        let check = |source| {
+            validate_output_directory(
+                &root.path,
+                "native.tar.gz",
+                "native.cdx.json",
+                "native.provenance.json",
+                source,
+            )
+        };
+        check(None).unwrap();
+        let source = json!({"file":"source.tar.gz"});
+        assert!(check(Some(&source)).is_err());
+        fs::write(root.path.join("source.tar.gz"), b"synthetic source archive").unwrap();
+        assert!(check(Some(&source)).is_err());
+        fs::write(
+            root.path.join("source-relink.json"),
+            b"synthetic relink proof",
+        )
+        .unwrap();
+        check(Some(&source)).unwrap();
+        assert!(check(None).is_err());
     }
 
     #[test]

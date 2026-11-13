@@ -1,0 +1,14 @@
+DISTRIBUTABLE CODE. The software contains code that you may distribute in applications you develop as described in this Section. For purposes of this Section, the term “distribution” also means deployment of your applications for third parties to access over the Internet.
+Right to Use and Distribute. The code and text files listed in (i) and (ii) below are “Distributable Code”. 
+Distributable List. You may copy and distribute the object code form of code listed on the Distributable List located at https://aka.ms/vs/18/redistribution. 
+Sample Code, Templates, and Styles. You may copy, modify, and distribute the source and object code form of code marked as “sample”, “template”, “simple styles”, and “sketch styles”. 
+Third Party Distribution. You may permit distributors of your applications to copy and distribute the Distributable Code as part of those applications. 
+Distribution Requirements. For any Distributable Code you distribute, you must: 
+add significant primary functionality to it in your applications;
+require distributors and external end users to agree to terms that protect the Distributable Code at least as much as these license terms; and 
+indemnify, defend, and hold harmless Microsoft from any claims, including attorneys’ fees, related to the distribution or use of your applications, except to the extent that any claim is based solely on the Distributable Code. 
+Distribution Restrictions. You may not: 
+distribute Unreleased Components; 
+distribute software developed with Insiders Channel Software or that depends on Unreleased Components; 
+use Microsoft’s trademarks in your applications’ names or in a way that suggests your applications come from or are endorsed by Microsoft; or 
+modify or distribute the source code of any Distributable Code so that any part of it becomes subject to an Excluded License. An Excluded License is one that requires, as a condition of use, modification or distribution of code, that (i) it be disclosed or distributed in source code form; or (ii) others have the right to modify it. 

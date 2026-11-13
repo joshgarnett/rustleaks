@@ -12,6 +12,8 @@
   before waiting for worker progress.
 - Add regression coverage for output failures, regex validation, byte locations,
   source paths, queue notifications, cancellation and worker cleanup.
+- Include indexed license and attribution texts in native archives and provide
+  GNU corresponding-source materials with native relink evidence.
 
 ## [0.1.0-alpha.8] - 2026-11-10
 

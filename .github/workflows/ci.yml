@@ -33,6 +33,11 @@ jobs:
           persist-credentials: false
       - name: Set up maintained tools
         uses: ./rustleaks/.github/actions/setup
+      - name: Check native notice source completeness
+        working-directory: rustleaks
+        run: |
+          cargo fetch --locked
+          cargo xtask release-artifact notices --check
       - name: Run the authoritative acceptance gate
         working-directory: rustleaks
         run: just ci

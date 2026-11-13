@@ -1534,6 +1534,8 @@ fn collect_documentation(
         .any(|fixture| relative == Path::new(fixture));
         if relative.starts_with("target")
             || relative.starts_with(".git")
+            || relative.starts_with("release/notice-inputs")
+            || relative.starts_with("release/licenses")
             || verbatim_upstream_fixture
         {
             continue;

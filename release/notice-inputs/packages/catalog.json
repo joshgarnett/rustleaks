@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "name": "alloc-stdlib",
+      "version": "0.3.0",
+      "archive_sha256": "0b5c1865780388bfa186411ab5f247819487fc4864c6e9c3106611fa347586e1",
+      "repository": "https://github.com/dropbox/rust-alloc-no-stdlib",
+      "revision": "0a81fd6928ea3b33c8cd484aa4575d50ffb98012",
+      "vcs_path": "alloc-stdlib",
+      "documents": [
+        {
+          "original_path": "LICENSE",
+          "input_path": "release/notice-inputs/packages/alloc-stdlib-0.3.0/LICENSE",
+          "url": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/0a81fd6928ea3b33c8cd484aa4575d50ffb98012/LICENSE",
+          "sha256": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+        }
+      ]
+    },
+    {
+      "name": "zstd-zero",
+      "version": "0.2.1",
+      "archive_sha256": "8c9e7d61d9b0d8286f3a001c7dd673e2c2d1f51c157dd8f1e1e566b9cb50ab9e",
+      "repository": "https://github.com/pawelchcki/oci-zero",
+      "revision": "3f6645e346edb742ef68cbe143838cf01652ff32",
+      "vcs_path": "zstd-zero",
+      "documents": [
+        {
+          "original_path": "LICENSE-APACHE",
+          "input_path": "release/notice-inputs/packages/zstd-zero-0.2.1/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/pawelchcki/oci-zero/3f6645e346edb742ef68cbe143838cf01652ff32/LICENSE-APACHE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        },
+        {
+          "original_path": "LICENSE-MIT",
+          "input_path": "release/notice-inputs/packages/zstd-zero-0.2.1/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/pawelchcki/oci-zero/3f6645e346edb742ef68cbe143838cf01652ff32/LICENSE-MIT",
+          "sha256": "bd518d3c5beae04045f02a6ed307c45cadfa4d0fc2939ccaf45a1eb905354afe"
+        }
+      ]
+    }
+  ]
+}

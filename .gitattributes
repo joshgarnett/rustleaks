@@ -5,3 +5,6 @@ compat/fixtures/oracle/** -text -whitespace
 crates/rustleaks-compcol/src/brotli/dictionary.bin -text -whitespace
 compat/config-corpus/default-gitleaks.toml -text -whitespace
 crates/rustleaks-core/default/gitleaks.toml -text -whitespace
+# Native release notice sources and generated copies retain exact upstream bytes.
+release/notice-inputs/** -text -whitespace
+release/licenses/** -text -whitespace
