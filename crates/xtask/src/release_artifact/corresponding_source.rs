@@ -662,6 +662,7 @@ pub(super) fn relink(
         glibc.join("BUILD.bazel"),
     )
     .map_err(|error| error.to_string())?;
+    fs::write(glibc.join("REPO.bazel"), b"").map_err(|error| error.to_string())?;
     let startup_path = format!("sysdeps/{architecture}/start.S");
     let startup = glibc.join(&startup_path);
     let original = fs::read(&startup).map_err(|error| error.to_string())?;
@@ -1206,12 +1207,12 @@ mod tests {
     fn elf_with_entry(code: &[u8]) -> Vec<u8> {
         let mut elf = vec![0_u8; 512];
         elf[..6].copy_from_slice(b"\x7fELF\x02\x01");
-        elf[24..32].copy_from_slice(&0x400100_u64.to_le_bytes());
+        elf[24..32].copy_from_slice(&0x0040_0100_u64.to_le_bytes());
         elf[32..40].copy_from_slice(&64_u64.to_le_bytes());
         elf[54..56].copy_from_slice(&56_u16.to_le_bytes());
         elf[56..58].copy_from_slice(&1_u16.to_le_bytes());
         elf[64..68].copy_from_slice(&1_u32.to_le_bytes());
-        elf[80..88].copy_from_slice(&0x400000_u64.to_le_bytes());
+        elf[80..88].copy_from_slice(&0x0040_0000_u64.to_le_bytes());
         elf[96..104].copy_from_slice(&512_u64.to_le_bytes());
         elf[256..256 + code.len()].copy_from_slice(code);
         elf
