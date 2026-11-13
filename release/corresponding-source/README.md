@@ -68,6 +68,7 @@ tar -xzf /tmp/rustleaks-corresponding-source/inputs/hermetic-llvm-v0.8.11.tar.gz
 git -C /tmp/rustleaks-relink/hermetic-llvm-0.8.11 apply --no-index -p1 /tmp/rustleaks-corresponding-source/inputs/module_dot_bazel_version.patch
 git -C /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a apply --no-index -p1 /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0001-Add-empty-config.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0002-Add-abi-tag.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0003-Adding-libc-modules.h.patch
 cp /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/glibc.BUILD.bazel /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/BUILD.bazel
+touch /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/REPO.bazel
 ```
 
 For x86_64, edit

@@ -1317,10 +1317,10 @@ fn validate_archive(
                 "release entry {path} mode differs from its expected mode"
             ));
         }
-        previous = path.clone();
+        previous.clone_from(&path);
         let mut digest = Sha256::new();
         let mut count = 0_u64;
-        let mut buffer = [0_u8; 64 * 1024];
+        let mut buffer = vec![0_u8; 64 * 1024];
         loop {
             let read = entry
                 .read(&mut buffer)

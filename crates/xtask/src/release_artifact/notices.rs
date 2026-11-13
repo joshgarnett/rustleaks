@@ -1046,11 +1046,6 @@ fn read_json(root: &Path, path: &str) -> Result<Value, String> {
 }
 
 fn read_tree(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
-    let metadata = fs::symlink_metadata(root)
-        .map_err(|error| format!("cannot inspect generated notice directory: {error}"))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err("generated notice root must be a real directory, not a symlink or file".into());
-    }
     fn visit(
         root: &Path,
         relative: &Path,
@@ -1073,6 +1068,11 @@ fn read_tree(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
             }
         }
         Ok(())
+    }
+    let metadata = fs::symlink_metadata(root)
+        .map_err(|error| format!("cannot inspect generated notice directory: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("generated notice root must be a real directory, not a symlink or file".into());
     }
     let mut files = BTreeMap::new();
     visit(root, Path::new(""), &mut files)?;
@@ -1394,7 +1394,7 @@ mod tests {
             let mut bad = runtime.clone();
             match mutation {
                 "unknown-target" => {
-                    bad["components"][0]["targets"][0] = json!("wasm32-unknown-unknown")
+                    bad["components"][0]["targets"][0] = json!("wasm32-unknown-unknown");
                 }
                 "missing-target" => {
                     bad["components"][0]["targets"]
@@ -1404,7 +1404,7 @@ mod tests {
                 }
                 "incomplete" => bad["components"][0]["status"] = json!("unresolved"),
                 "changed-bytes" => {
-                    bad["components"][0]["documents"][0]["sha256"] = json!("0".repeat(64))
+                    bad["components"][0]["documents"][0]["sha256"] = json!("0".repeat(64));
                 }
                 _ => bad["components"][0]["documents"] = json!([]),
             }

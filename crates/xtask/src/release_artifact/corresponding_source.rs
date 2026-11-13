@@ -662,6 +662,7 @@ pub(super) fn relink(
         glibc.join("BUILD.bazel"),
     )
     .map_err(|error| error.to_string())?;
+    fs::write(glibc.join("REPO.bazel"), b"").map_err(|error| error.to_string())?;
     let startup_path = format!("sysdeps/{architecture}/start.S");
     let startup = glibc.join(&startup_path);
     let original = fs::read(&startup).map_err(|error| error.to_string())?;
@@ -764,12 +765,18 @@ fn modified_startup(original: &[u8], architecture: &str) -> Result<Vec<u8>, Stri
     } else {
         "ENTRY (_start)\n"
     };
-    if source.matches(label).count() != 1 {
+    let mut entries = source
+        .match_indices(label)
+        .filter(|(offset, _)| *offset == 0 || source.as_bytes()[offset - 1] == b'\n');
+    let Some((offset, _)) = entries.next() else {
+        return Err("glibc startup entry label is absent or ambiguous".into());
+    };
+    if entries.next().is_some() {
         return Err("glibc startup entry label is absent or ambiguous".into());
     }
-    Ok(source
-        .replacen(label, &format!("{label}{}", "\tnop\n".repeat(16)), 1)
-        .into_bytes())
+    let mut modified = source.to_owned();
+    modified.insert_str(offset + label.len(), &"\tnop\n".repeat(16));
+    Ok(modified.into_bytes())
 }
 
 fn entry_marker(architecture: &str) -> Vec<u8> {
@@ -1206,12 +1213,12 @@ mod tests {
     fn elf_with_entry(code: &[u8]) -> Vec<u8> {
         let mut elf = vec![0_u8; 512];
         elf[..6].copy_from_slice(b"\x7fELF\x02\x01");
-        elf[24..32].copy_from_slice(&0x400100_u64.to_le_bytes());
+        elf[24..32].copy_from_slice(&0x0040_0100_u64.to_le_bytes());
         elf[32..40].copy_from_slice(&64_u64.to_le_bytes());
         elf[54..56].copy_from_slice(&56_u16.to_le_bytes());
         elf[56..58].copy_from_slice(&1_u16.to_le_bytes());
         elf[64..68].copy_from_slice(&1_u32.to_le_bytes());
-        elf[80..88].copy_from_slice(&0x400000_u64.to_le_bytes());
+        elf[80..88].copy_from_slice(&0x0040_0000_u64.to_le_bytes());
         elf[96..104].copy_from_slice(&512_u64.to_le_bytes());
         elf[256..256 + code.len()].copy_from_slice(code);
         elf
@@ -1232,13 +1239,33 @@ mod tests {
 
     #[test]
     fn startup_edit_preserves_code_and_requires_unique_label() {
-        let source = b"/* Original copyright. */\n_start:\n\tmov x29, #0\n";
+        let source = b"/* Original copyright. */\n_start:\n\tmov x29, #0\n\t.data\n__data_start:\n\t.long 0\n";
         let modified = modified_startup(source, "aarch64").unwrap();
         let text = String::from_utf8(modified).unwrap();
-        assert!(text.starts_with("/* Original copyright. */\n_start:\n\tnop\n"));
-        assert!(text.ends_with("\tmov x29, #0\n"));
+        assert_eq!(
+            text,
+            format!(
+                "/* Original copyright. */\n_start:\n{}\tmov x29, #0\n\t.data\n__data_start:\n\t.long 0\n",
+                "\tnop\n".repeat(16)
+            )
+        );
         assert_eq!(text.matches("\tnop\n").count(), 16);
         assert!(modified_startup(b"_start:\n_start:\n", "aarch64").is_err());
+        assert!(modified_startup(b"__data_start:\n", "aarch64").is_err());
         assert!(modified_startup(b"missing label", "x86_64").is_err());
+    }
+
+    #[test]
+    fn startup_edit_ignores_a_label_suffix_before_the_entry() {
+        let source = b"__data_start:\n\t.long 0\n_start:\n\tmov x29, #0\n";
+        let modified = modified_startup(source, "aarch64").unwrap();
+        assert_eq!(
+            modified,
+            format!(
+                "__data_start:\n\t.long 0\n_start:\n{}\tmov x29, #0\n",
+                "\tnop\n".repeat(16)
+            )
+            .into_bytes()
+        );
     }
 }

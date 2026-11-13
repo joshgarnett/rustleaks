@@ -140,10 +140,11 @@ pub(super) fn collect(
             resolved.insert(normalized_path(&canonical.to_string_lossy()), canonical);
         }
         let (identity, path) = unique_provider(resolved, library)?;
-        if identity.ends_with(".rlib") {
+        let extension = Path::new(&identity).extension();
+        if extension.is_some_and(|extension| extension.eq_ignore_ascii_case("rlib")) {
             continue;
         }
-        if !identity.ends_with(".lib") {
+        if !extension.is_some_and(|extension| extension.eq_ignore_ascii_case("lib")) {
             return Err(format!("unreviewed native provider type for {library}"));
         }
         let expected = expected.get(library).ok_or_else(|| {
