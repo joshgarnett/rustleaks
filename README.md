@@ -165,6 +165,7 @@ Independent Rustleaks code is licensed under the MIT License. Copied Gitleaks
 configuration, fixtures, and test-derived material retain their applicable MIT
 terms. Adapted Go material retains its BSD terms. Codec fixtures and forks keep
 their own recorded licenses. Native archives include `licenses/index.json`
-and the corresponding exact license and attribution texts. See
-[LICENSE](LICENSE), [NOTICE](NOTICE), and the license files beside third-party
-material.
+and the corresponding exact license and attribution texts. Optional native
+rule packs retain their separate MIT or Apache-2.0 source terms. See
+[LICENSE](LICENSE), [NOTICE](NOTICE), the [native-pack notice](crates/rustleaks-core/default/NOTICE),
+and the license files beside third-party material.

@@ -9,9 +9,13 @@ Budgets are inclusive and aggregate across one fragment scan:
 
 - decoded bytes count every successful decoded pass before it is scanned;
 - work units count documented rule, decoder, keyword, match, required-rule,
-  and proximity checkpoints; and
+  and proximity checkpoints;
 - finding records count materialized primary, auxiliary, and projected
-  required findings.
+  required findings;
+- finding payload bytes count the initial owned byte fields of those records;
+- collected spans count admitted rule and decoder whole-match spans; and
+- normalization bytes count owned regex-normalized bytes and replacement
+  offset maps.
 
 A structured operation split across multiple fragments is outside that
 aggregate. `SourceRunner::with_budget` opts into `SourceBudget` accounting
@@ -20,12 +24,12 @@ limits. Reusing one per-fragment budget does not create an operation-wide
 limit. The caller continues to own elapsed-time cancellation.
 
 Cancellation is cooperative. It is polled between bounded owned work units,
-including between decoder candidates and encoding transforms. Regex searches,
-eager enumeration of all matches for one rule, and individual transforms remain
-indivisible. Match checkpoints follow the completed match list; changing the
-backend does not move these checkpoints or make iteration lazy. Work-unit and
-finding-record budgets do not bound the temporary eager match-span list.
-Pair them with input and target byte limits. A partial
+including between decoder candidates and encoding transforms. Individual regex
+searches and transforms remain indivisible. A finite collected-span budget
+admits each span before adding it to the eager match list and polls cancellation
+between admissions. Without that budget, eager enumeration retains its existing
+checkpoints. Work-unit and finding-record budgets alone do not bound the
+temporary match list. Pair the scan budgets with source byte limits. A partial
 outcome contains findings only from completed top-level rules and carries
 structured termination plus measured usage. Callers must not treat partial
 findings as a complete fragment result. The bounded source runner discards a
@@ -36,10 +40,10 @@ partially scanned fragment rather than merging its prefix into a session batch.
 | Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
 | Keyword automaton | Full Aho-Corasick DFA when the configured keywords total at most 16 KiB and the lengths of all their prefixes sum to at most 64 Ki bytes; the builder's automatic choice otherwise |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
-| Controlled fragment | Optional aggregate decoded-byte, work-unit, and finding-record budgets |
+| Controlled fragment | Optional aggregate decoded-byte, work-unit, finding-record, finding-payload, collected-span, and normalization budgets |
 | Scan options | Caller-selected decode depth and optional per-target byte limit |
 | Ignore input | Individual scanner token limited to 64 KiB; aggregate collection is caller-owned |
-| Files | Bounded chunks, optional per-file maximum, symlink hop limit 64 |
+| Files | Bounded chunks by default; opt-in complete targets with an explicit byte cap and clean EOF; symlink hop limit 64 |
 | Archives | Default depth 8, entries 10,000, member 64 MiB, total 256 MiB, spool 64 MiB |
 | Git | Patch/blob 256 MiB, stderr 1 MiB, metadata 16 MiB, path 1 MiB, files 1,000,000, hunks 2,000,000 |
 | Source runner | Bounded workers/queue and 1,000,000 unique commits; optional per-fragment and operation budgets below; workers and child processes are joined/reaped |
@@ -122,7 +126,11 @@ released at fragment completion; these length limits are not heap limits. Anchor
 enumeration charges an upper bound on the bytes each attempt can scan and
 falls back to the unanchored search when the charges exceed the haystack
 length. Both paths return identical matches, and neither changes the keyword
-work-unit charge or the match checkpoints.
+work-unit charge or the match checkpoints. A finite collected-span budget uses
+the exact unanchored collector so speculative anchor attempts cannot consume
+the span allowance or cause an unlimited fallback. Without that limit, span
+usage includes abandoned anchor attempts before fallback and can therefore
+differ between optimized and unanchored scans with identical findings.
 
 Invalid UTF-8 normalization stores one offset checkpoint per replaced source
 byte instead of one index per normalized byte. Valid UTF-8 runs are copied in
@@ -138,6 +146,51 @@ the exact slice and predicate identity. Secret-dependent criteria are still
 evaluated for every candidate. These caches expire within their fragment or
 rule pass, before decoded bytes are replaced; all work, cancellation and
 explanation checkpoints remain in their existing order.
+
+## Payload admission and complete targets
+
+Finding-record and payload admission is atomic and precedes copying owned
+finding fields, including line context, metadata, tags and required projections.
+The payload counter measures cumulative initial materialization, even when a
+later filter discards a record. It does not measure vector capacities, struct
+storage, allocator overhead, report output, or later field replacements.
+
+For admitted payload P and record count R, retained logical fields after
+redaction are at most `9P + 24R`. Session fingerprints increase that bound to
+`10P + (D + 27)R`, where D is the number of decimal digits in `usize::MAX`.
+A conservative transient logical-field bound across those phases is
+`12P + (4D + 33)R`. These formulas exclude source buffers, configuration,
+regex and decoder scratch, and SCM links. Callers adding decorations must bound
+those separately. Copying a whole physical line into each finding can still
+consume the payload allowance quickly on dense single-line input.
+
+Normalization admission precedes allocation. Valid UTF-8 remains borrowed.
+An input of T bytes with I invalid bytes charges
+`T + (2 + sizeof(usize)) * I` when normalization is required. Repeated searches
+that own separate normalizations charge again. On a 64-bit target, all-invalid
+input charges 11T. Backend caches and lowercase, newline-index, decoder and
+other scan-local buffers remain outside this counter. Decoder span admission
+bounds candidate counts, but subsequent representations of a candidate can
+coexist; it is not an allocation-byte counter. Decoded-byte admission still
+occurs after the individual transformation.
+
+`FileOptions::complete(cap)` assembles one eligible target through clean EOF
+before emitting it. Underlying reads request at most the remaining allowance
+plus one byte, so overflow is detected without the legacy buffered read-ahead.
+Read failures, cancellation, no-progress reads, and overflow publish
+no prefix of that target. MIME eligibility is checked after the cap and clean
+EOF, using at most the first 100,000 bytes. An oversized binary target can
+therefore fail the cap before MIME exclusion. Archive leaves use the same
+policy and require strict 7z member lengths. Git text retains its addition-hunk
+scope. See [complete scanning](COMPLETE_SCANNING.md) for configuration and
+coverage status.
+
+`SourceIssueDisposition` distinguishes an intentional exclusion from a coverage
+failure. `SourceRunner::fail_on_coverage_error(true)` makes the latter incomplete;
+the legacy runner policy remains unchanged. A completed bounded run means all
+eligible targets in the selected source and rule policy completed. It is not a
+claim that every possible secret format or every byte outside that policy was
+examined. These limits do not establish a hard RSS or wall-clock ceiling.
 
 ## Private maintenance processes
 
@@ -158,7 +211,8 @@ malicious same-user activity. See [security controls](SECURITY_CONTROLS.md).
 `SourceRunner::new` and `SourceRunner::default` preserve the existing unlimited
 scan policy. Install an explicit policy to limit original fragment bytes,
 total admitted original bytes, admitted fragment count, retained source issues,
-and per-fragment and operation decoded bytes, engine work, and finding records:
+and per-fragment and operation decoded bytes, engine work, finding records,
+finding payload bytes, collected spans, and normalization bytes:
 
 ```rust
 use rustleaks_core::ScanBudget;
@@ -174,13 +228,19 @@ let runner = SourceRunner::new(4, 8)?.with_budget(
             ScanBudget::unlimited()
                 .max_decoded_bytes(1024 * 1024)
                 .max_work_units(100_000)
-                .max_finding_records(1_000),
+                .max_finding_records(1_000)
+                .max_finding_payload_bytes(8 * 1024 * 1024)
+                .max_collected_spans(10_000)
+                .max_normalization_bytes(16 * 1024 * 1024),
         )
         .aggregate(
             ScanBudget::unlimited()
                 .max_decoded_bytes(32 * 1024 * 1024)
                 .max_work_units(10_000_000)
-                .max_finding_records(10_000),
+                .max_finding_records(10_000)
+                .max_finding_payload_bytes(64 * 1024 * 1024)
+                .max_collected_spans(100_000)
+                .max_normalization_bytes(128 * 1024 * 1024),
         ),
 )?;
 ```
@@ -205,8 +265,9 @@ for an explicit budget and distinguishes admitted and completely scanned
 fragments. Engine usage includes partial scans even though all their findings
 are discarded. Finding records are charged before session suppression, including
 auxiliary and projected records, so an aggregate finding-record limit also
-bounds retained finding counts across workers. It does not limit the bytes in
-individual finding fields.
+bounds retained finding counts across workers. The separate finding-payload
+limit bounds initial owned field bytes, including records later suppressed.
+Neither counter describes final heap usage.
 
 The first exhausted budget stops production, cancels in-flight scans
 cooperatively, discards queued fragments, and joins every worker. The outcome
@@ -264,3 +325,12 @@ establish authenticity or add CRC verification beyond the codec's checks.
 7z coder graphs reject duplicate bindings, invalid packed inputs and cycles
 before constructing member or encoded-header decoders; validation work and
 storage are linear in the header-bounded stream and coder counts.
+
+Native byte-entropy predicates use a fixed 256-entry `usize` histogram and one
+linear pass over the extracted secret, followed by at most 256 binary64 terms.
+They allocate no per-candidate storage. As with legacy entropy, cancellation is
+observed at existing candidate boundaries; a single histogram calculation is
+indivisible. Existing source limits, span limits, work and finding budgets
+remain necessary. Rejected candidates consume no finding record or payload
+budget. The native pack source, count and rule ceilings also apply to packs
+with structured entropy; they are not aggregate compilation-memory quotas.

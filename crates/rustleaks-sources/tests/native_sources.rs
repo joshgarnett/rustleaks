@@ -287,12 +287,15 @@ fn directory_walk_preserves_nested_order_path_spelling_and_limit_events() {
             "z",
         ] {
             if name == "a0" {
-                expected.push(SourceEvent::Issue(SourceIssue::new(
-                    SourceStage::Limit,
-                    SourceIssueKind::Limit,
-                    Some(tree.path().join(name)),
-                    "skipping file: exceeds maximum file size",
-                )));
+                expected.push(SourceEvent::Issue(
+                    SourceIssue::new(
+                        SourceStage::Limit,
+                        SourceIssueKind::Limit,
+                        Some(tree.path().join(name)),
+                        "skipping file: exceeds maximum file size",
+                    )
+                    .excluded(),
+                ));
             } else {
                 let path = name
                     .split('/')

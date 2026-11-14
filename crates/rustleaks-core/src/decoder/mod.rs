@@ -11,7 +11,7 @@ use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, general_purpose};
 
-use crate::regex::GoRegex;
+use crate::regex::{GoRegex, NormalizedHaystack};
 
 const ENCODINGS_PATTERN: &str = concat!(
     "(?P<percent>%[0-9A-Fa-f]{2}(?:.*%[0-9A-Fa-f]{2})?)|",
@@ -177,6 +177,14 @@ impl EncodedSegment {
     }
 }
 
+/// Resource checkpoints shared with the controlled engine. Existing work
+/// checkpoints keep their order; span admission adds no work units.
+pub(crate) enum DecodeCheckpoint {
+    Work(usize),
+    CollectedSpans(usize),
+    NormalizationBytes(Option<usize>),
+}
+
 #[derive(Debug)]
 pub(crate) struct Decoder {
     decoded: BTreeMap<Vec<u8>, Arc<[u8]>>,
@@ -227,8 +235,21 @@ impl Decoder {
         predecessors: &[EncodedSegment],
         mut checkpoint: impl FnMut(usize) -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
+        self.decode_with_resources(data, predecessors, false, |event| match event {
+            DecodeCheckpoint::Work(units) => checkpoint(units),
+            DecodeCheckpoint::CollectedSpans(_) | DecodeCheckpoint::NormalizationBytes(_) => Ok(()),
+        })
+    }
+
+    pub(crate) fn decode_with_resources<E>(
+        &mut self,
+        data: &[u8],
+        predecessors: &[EncodedSegment],
+        bounded_spans: bool,
+        mut checkpoint: impl FnMut(DecodeCheckpoint) -> Result<(), E>,
+    ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         let (output, mut segments) =
-            self.find_encoded_segments(data, predecessors, &mut checkpoint)?;
+            self.find_encoded_segments(data, predecessors, bounded_spans, &mut checkpoint)?;
         if segments.is_empty() {
             return Ok((output, segments));
         }
@@ -236,7 +257,7 @@ impl Decoder {
         // The output was assembled alongside the candidates; these are the
         // per-segment assembly checkpoints.
         for _ in &segments {
-            checkpoint(1)?;
+            checkpoint(DecodeCheckpoint::Work(1))?;
         }
         debug_assert!(segments_are_ordered_and_disjoint(&segments));
         record_line_bounds(&mut segments, &output);
@@ -254,7 +275,8 @@ impl Decoder {
         &mut self,
         data: &[u8],
         predecessors: &[EncodedSegment],
-        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
+        bounded_spans: bool,
+        checkpoint: &mut impl FnMut(DecodeCheckpoint) -> Result<(), E>,
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         if data.is_empty() {
             return Ok((Vec::new(), Vec::new()));
@@ -269,8 +291,8 @@ impl Decoder {
         let mut scratch = Vec::new();
         // Bytes of `data` already represented in `output`.
         let mut copied_to = 0;
-        for candidate in self.find_encoding_matches(data, checkpoint)? {
-            checkpoint(1)?;
+        for candidate in self.find_encoding_matches(data, bounded_spans, checkpoint)? {
+            checkpoint(DecodeCheckpoint::Work(1))?;
             let Some(encoded_range) = candidate.range.as_usize() else {
                 continue;
             };
@@ -308,7 +330,7 @@ impl Decoder {
             let mut encodings = candidate.encoding.bit();
             if !predecessors.is_empty() {
                 // Each visited predecessor is one public work unit.
-                checkpoint(predecessors.len())?;
+                checkpoint(DecodeCheckpoint::Work(predecessors.len()))?;
                 for predecessor in &predecessors[overlapping_indices(predecessors, candidate.range)]
                 {
                     encodings |= predecessor.encodings;
@@ -345,15 +367,29 @@ impl Decoder {
     }
 
     /// Returns every encoding-regex match in order, one entry per match.
-    fn encoding_candidates<E>(
+    fn encoding_candidates_controlled<E>(
         &self,
         data: &[u8],
-        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
+        bounded_spans: bool,
+        checkpoint: &mut impl FnMut(DecodeCheckpoint) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        let spans = self.encodings.find_all(data);
+        checkpoint(DecodeCheckpoint::NormalizationBytes(
+            NormalizedHaystack::required_owned_bytes(data),
+        ))?;
+        let normalized = NormalizedHaystack::new(data);
+        let spans = if bounded_spans {
+            self.encodings
+                .find_all_normalized_controlled(&normalized, || {
+                    checkpoint(DecodeCheckpoint::CollectedSpans(1))
+                })?
+        } else {
+            let spans = self.encodings.find_all_normalized(&normalized);
+            checkpoint(DecodeCheckpoint::CollectedSpans(spans.len()))?;
+            spans
+        };
         let mut all = Vec::with_capacity(spans.len());
         for span in spans {
-            checkpoint(1)?;
+            checkpoint(DecodeCheckpoint::Work(1))?;
             all.push(EncodingMatch {
                 encoding: classify_encoding_span(&data[span.start..span.end]),
                 range: StartEnd {
@@ -368,16 +404,17 @@ impl Decoder {
     fn find_encoding_matches<E>(
         &self,
         data: &[u8],
-        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
+        bounded_spans: bool,
+        checkpoint: &mut impl FnMut(DecodeCheckpoint) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        let all = self.encoding_candidates(data, checkpoint)?;
+        let all = self.encoding_candidates_controlled(data, bounded_spans, checkpoint)?;
         if all.len() <= 1 {
             return Ok(all);
         }
 
         let mut filtered = Vec::with_capacity(all.len());
         for (index, candidate) in all.iter().copied().enumerate() {
-            checkpoint(1)?;
+            checkpoint(DecodeCheckpoint::Work(1))?;
             let shadowed_by_previous = index.checked_sub(1).is_some_and(|previous| {
                 let neighbor = all[previous];
                 candidate.range.overlaps(neighbor.range)
@@ -392,6 +429,17 @@ impl Decoder {
             }
         }
         Ok(filtered)
+    }
+    #[cfg(test)]
+    fn encoding_candidates<E>(
+        &self,
+        data: &[u8],
+        checkpoint: &mut impl FnMut(usize) -> Result<(), E>,
+    ) -> Result<Vec<EncodingMatch>, E> {
+        self.encoding_candidates_controlled(data, false, &mut |event| match event {
+            DecodeCheckpoint::Work(units) => checkpoint(units),
+            DecodeCheckpoint::CollectedSpans(_) | DecodeCheckpoint::NormalizationBytes(_) => Ok(()),
+        })
     }
 }
 
@@ -568,6 +616,26 @@ pub(crate) fn current_line<'a>(segments: &[EncodedSegment], current_raw: &'a [u8
         }
     }
     &current_raw[earliest.line.start..latest.line.end]
+}
+
+/// Length of the exact tag payload, without formatting or allocating tags.
+pub(crate) fn tags_payload_bytes(segments: &[EncodedSegment]) -> usize {
+    let Some(first) = segments.first() else {
+        return 0;
+    };
+    let encodings = segments
+        .iter()
+        .fold(0, |combined, segment| combined | segment.encodings);
+    let encoding_bytes = Encoding::ALL
+        .into_iter()
+        .filter(|encoding| encodings & encoding.bit() != 0)
+        .map(|encoding| "decoded:".len() + encoding.name().len())
+        .sum::<usize>();
+    encoding_bytes
+        + "decode-depth:".len()
+        + first.depth.checked_ilog10().map_or(1, |digits| {
+            usize::try_from(digits).expect("usize decimal digit count fits usize") + 1
+        })
 }
 
 pub(crate) fn tags(segments: &[EncodedSegment]) -> Vec<String> {

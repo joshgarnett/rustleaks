@@ -682,6 +682,7 @@ fn compile_rule(mut rule: RuleSpec) -> Result<CompiledRule, ConfigError> {
         regex_matcher,
         secret_group: rule.secret_group,
         entropy: rule.entropy,
+        native_entropy: None,
         keywords: rule
             .keywords
             .into_iter()

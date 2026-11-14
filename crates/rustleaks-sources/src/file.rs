@@ -16,6 +16,12 @@ pub const DEFAULT_CHUNK_SIZE: usize = 100_000;
 /// Maximum number of bytes appended while seeking a safe split boundary.
 pub const MAX_BOUNDARY_READ_AHEAD: usize = 25_000;
 
+/// Fixed prefix inspected for MIME eligibility in complete-target mode.
+///
+/// The prefix is assembled independently of reader partitions. A shorter target
+/// is inspected through EOF. Bytes beyond this window do not affect eligibility.
+pub const COMPLETE_MIME_WINDOW: usize = 100_000;
+
 const BUFFERED_READER_CAPACITY: usize = 4_096;
 
 /// Status returned with bytes from a [`SourceReader`].
@@ -206,11 +212,12 @@ impl BufferedSourceReader {
     }
 }
 
-/// Validated file chunking options.
+/// Validated legacy-fragment or bounded complete-target options.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FileOptions {
     chunk_size: NonZeroUsize,
     max_boundary_read_ahead: usize,
+    complete_target_bytes: Option<NonZeroUsize>,
 }
 
 impl FileOptions {
@@ -225,7 +232,39 @@ impl FileOptions {
         Ok(Self {
             chunk_size,
             max_boundary_read_ahead: MAX_BOUNDARY_READ_AHEAD,
+            complete_target_bytes: None,
         })
+    }
+
+    /// Selects bounded complete-target assembly with an inclusive byte ceiling.
+    ///
+    /// The source emits one fragment only after clean EOF. An over-limit target,
+    /// read error, zero-progress read, or cancellation emits no target fragment.
+    /// MIME eligibility uses the first [`COMPLETE_MIME_WINDOW`] bytes, assembled
+    /// independently of short reads, or the whole shorter target. The byte
+    /// ceiling applies before MIME classification. Cancellation cannot interrupt
+    /// a blocking reader call. This source ceiling does not bound engine memory;
+    /// callers should also install finite [`crate::SourceBudget`] limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SourceConfigError`] when `maximum` is zero.
+    pub fn complete(maximum: usize) -> Result<Self, SourceConfigError> {
+        let maximum = NonZeroUsize::new(maximum)
+            .ok_or_else(|| SourceConfigError::positive("complete_target_bytes"))?;
+        Ok(Self {
+            complete_target_bytes: Some(maximum),
+            ..Self::default()
+        })
+    }
+
+    /// Returns the complete-target byte ceiling, or `None` for legacy fragments.
+    #[must_use]
+    pub const fn complete_target_bytes(self) -> Option<usize> {
+        match self.complete_target_bytes {
+            Some(maximum) => Some(maximum.get()),
+            None => None,
+        }
     }
 
     /// Returns the exact nominal chunk size.
@@ -254,6 +293,7 @@ impl Default for FileOptions {
             chunk_size: NonZeroUsize::new(DEFAULT_CHUNK_SIZE)
                 .expect("the pinned default chunk size is positive"),
             max_boundary_read_ahead: MAX_BOUNDARY_READ_AHEAD,
+            complete_target_bytes: None,
         }
     }
 }
@@ -265,6 +305,7 @@ pub struct FileSource {
     logical_path: LogicalPath,
     symlink_path: Option<PathBuf>,
     options: FileOptions,
+    complete_consumed: bool,
 }
 
 impl FileSource {
@@ -301,6 +342,7 @@ impl FileSource {
             logical_path,
             symlink_path: None,
             options,
+            complete_consumed: false,
         }
     }
 
@@ -386,6 +428,9 @@ impl FileSource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        if let Some(maximum) = self.options.complete_target_bytes() {
+            return self.visit_complete(maximum, cancellation, emit);
+        }
         let mut total_lines = 0_usize;
         if nominal.len() != self.options.chunk_size() {
             *nominal = allocate_nominal(self.options.chunk_size(), &self.physical_path)?;
@@ -489,6 +534,86 @@ impl FileSource {
             if control == SourceControl::Stop || matches!(outcome.status, ReadStatus::Eof) {
                 return Ok(control);
             }
+        }
+    }
+
+    fn visit_complete(
+        &mut self,
+        maximum: usize,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        if self.complete_consumed {
+            return Err(
+                self.complete_error(SourceStage::Read, "complete source was already consumed")
+            );
+        }
+        self.complete_consumed = true;
+        let mut bytes = Vec::new();
+        let mut buffer = [0_u8; 8_192];
+        loop {
+            if cancellation.is_cancelled() {
+                return Err(SourceError::Cancelled);
+            }
+            // Bypass the legacy buffered reader so it cannot pull extra bytes
+            // while probing exact-cap EOF. At most cap + 1 bytes are consumed.
+            let requested = maximum
+                .saturating_sub(bytes.len())
+                .saturating_add(1)
+                .min(buffer.len());
+            let outcome = self.reader.inner.read_source(&mut buffer[..requested]);
+            if cancellation.is_cancelled() {
+                return Err(SourceError::Cancelled);
+            }
+            if outcome.count > requested {
+                return Err(self.complete_error(
+                    SourceStage::Limit,
+                    "reader returned more bytes than the supplied buffer",
+                ));
+            }
+            if let ReadStatus::Error { message, .. } = outcome.status {
+                return Err(self.complete_error(SourceStage::Read, message));
+            }
+            if outcome.count > maximum - bytes.len() {
+                return Err(self.complete_error(
+                    SourceStage::Limit,
+                    "complete target exceeds maximum source bytes",
+                ));
+            }
+            let needed = bytes.len() + outcome.count;
+            if needed > bytes.capacity() {
+                let capacity = bytes.capacity().saturating_mul(2).max(needed).min(maximum);
+                bytes
+                    .try_reserve_exact(capacity - bytes.len())
+                    .map_err(|error| {
+                        self.complete_error(
+                            SourceStage::Limit,
+                            format!("could not allocate complete target: {error}"),
+                        )
+                    })?;
+            }
+            bytes.extend_from_slice(&buffer[..outcome.count]);
+            if matches!(outcome.status, ReadStatus::Eof) {
+                let prefix = &bytes[..bytes.len().min(COMPLETE_MIME_WINDOW)];
+                if mime::is_application(prefix) {
+                    return Ok(SourceControl::Continue);
+                }
+                return Self::emit(SourceEvent::fragment(self.fragment(bytes, 1)), emit);
+            }
+            if outcome.count == 0 {
+                return Err(self.complete_error(
+                    SourceStage::Read,
+                    "complete-target reader made no progress before EOF",
+                ));
+            }
+        }
+    }
+
+    fn complete_error(&self, stage: SourceStage, message: impl Into<String>) -> SourceError {
+        SourceError::Terminal {
+            stage,
+            path: Some(self.physical_path.clone()),
+            message: message.into(),
         }
     }
 }

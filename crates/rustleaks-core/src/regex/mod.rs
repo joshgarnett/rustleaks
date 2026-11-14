@@ -477,6 +477,10 @@ impl GoRegex {
 
     pub(crate) fn is_match(&self, haystack: &[u8]) -> bool {
         let normalized = NormalizedHaystack::new(haystack);
+        self.is_match_normalized(&normalized)
+    }
+
+    pub(crate) fn is_match_normalized(&self, normalized: &NormalizedHaystack<'_>) -> bool {
         self.backend.is_match(normalized.bytes())
     }
 
@@ -486,6 +490,21 @@ impl GoRegex {
     }
 
     pub(crate) fn find_all_normalized(&self, normalized: &NormalizedHaystack<'_>) -> Vec<ByteSpan> {
+        match self
+            .find_all_normalized_controlled(normalized, || Ok::<(), std::convert::Infallible>(()))
+        {
+            Ok(spans) => spans,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Admits each whole-match span before appending it. One backend search
+    /// remains indivisible; failure never falls back to an unlimited search.
+    pub(crate) fn find_all_normalized_controlled<E>(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        mut admit_span: impl FnMut() -> Result<(), E>,
+    ) -> Result<Vec<ByteSpan>, E> {
         let bytes = normalized.bytes();
         let end = bytes.len();
         let mut position = 0;
@@ -499,8 +518,8 @@ impl GoRegex {
             let mut accept = true;
             if whole.end() == position {
                 // Go suppresses an empty match at the preceding match end,
-                // then advances one decoded rune. Keep enumeration eager so
-                // the engine's cancellation and work checkpoints do not move.
+                // then advances one decoded rune. The legacy wrapper supplies
+                // no admission callback, preserving its work checkpoints.
                 if previous_match_end == Some(whole.start()) {
                     accept = false;
                 }
@@ -515,6 +534,7 @@ impl GoRegex {
             }
             previous_match_end = Some(whole.end());
             if accept {
+                admit_span()?;
                 results.push(normalized.original_span_in_order(
                     ByteSpan {
                         start: whole.start(),
@@ -524,7 +544,7 @@ impl GoRegex {
                 ));
             }
         }
-        results
+        Ok(results)
     }
 
     /// Finds only the first match, treating this slice as its own haystack.
@@ -553,6 +573,14 @@ impl GoRegex {
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         let normalized = NormalizedHaystack::new(haystack);
+        self.captures_into_normalized(&normalized, scratch)
+    }
+
+    pub(crate) fn captures_into_normalized<'s>(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
         self.backend
             .search_captures(&Input::new(normalized.bytes()), &mut scratch.captures);
         scratch.captures.get_group(0)?;
@@ -674,6 +702,31 @@ impl<'a> NormalizedHaystack<'a> {
             bytes: Cow::Owned(bytes),
             replacement_starts,
         }
+    }
+
+    /// Exact logical payload, excluding capacities and the borrowed input.
+    pub(crate) fn owned_bytes(&self) -> usize {
+        match &self.bytes {
+            Cow::Borrowed(_) => 0,
+            Cow::Owned(bytes) => {
+                bytes.len() + self.replacement_starts.len() * std::mem::size_of::<usize>()
+            }
+        }
+    }
+
+    /// Computes logical allocation before normalization, with checked growth.
+    pub(crate) fn required_owned_bytes(original: &[u8]) -> Option<usize> {
+        if std::str::from_utf8(original).is_ok() {
+            return Some(0);
+        }
+        let invalid = original
+            .utf8_chunks()
+            .map(|chunk| chunk.invalid().len())
+            .sum::<usize>();
+        original
+            .len()
+            .checked_add(invalid.checked_mul(2)?)?
+            .checked_add(invalid.checked_mul(std::mem::size_of::<usize>())?)
     }
 
     fn bytes(&self) -> &[u8] {

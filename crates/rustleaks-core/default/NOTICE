@@ -1,0 +1,76 @@
+Additional native rule-pack attribution
+
+The optional `rustleaks-providers-v1` rules and the database URI rule in
+`rustleaks-connections-v1` are adapted from Betterleaks
+commit `8f376ff9c31ed5309ac448fe601c5dd21b376155`:
+https://github.com/betterleaks/betterleaks
+
+Rustleaks changes rule identifiers, descriptions, ASCII case and whitespace
+notation, and configuration fields. Incremental companion rules select only
+reviewed new formats or delimiters. It uses its own source and finding policy;
+provider validation is not included. The source revision, original patterns,
+transformations and hashes are recorded in
+`crates/rustleaks-core/default/rustleaks-providers-v1.provenance.json` (under
+`default/` in the core package) and the adjacent
+`rustleaks-connections-v1.provenance.json`. The URI adaptation restricts
+schemes and bytes to its documented ASCII database dialect, retains all
+relevant rejection predicates, and omits confidence computations and live
+validation. These adapted rules retain the following
+Betterleaks notice:
+
+MIT License
+
+Copyright (c) 2026 Zachary Rice
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The optional `rustleaks-connections-v1` rules adapt the five first-party
+Kingfisher definitions at commit
+`01e7b817376fbf2272be8f162bd32309bf97ee1f`.
+
+Copyright 2025-2026 MongoDB, Inc.
+https://www.mongodb.com
+
+Source repository: https://github.com/mongodb/kingfisher
+
+These rule assets retain the Apache License, Version 2.0; its exact text is
+included in the adjacent `LICENSE.kingfisher`. Rustleaks changes identifiers,
+descriptions, regex notation and ASCII scope, maps all source substring
+exclusions to secret stopwords, and unrolls the bounded JDBC option repetition.
+Original patterns, transformations and source hashes are recorded in the
+adjacent `rustleaks-connections-v1.provenance.json`. This pack includes no
+Kingfisher scanner implementation. The separately attributed URI rule above
+is derived from Betterleaks; its provenance records the reviewed Kingfisher
+overlay and its inapplicability to database schemes.
+
+The optional `rustleaks-providers-v1` pack also adapts four finite Veles
+(OSV-SCALIBR) token expressions from commit
+`e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845`:
+https://github.com/google/osv-scalibr
+
+Copyright 2026 Google LLC
+Copyright 2025 Google LLC (additional xAI source header)
+
+These expressions retain the Apache License, Version 2.0, whose exact source
+text is included in the adjacent `LICENSE.veles`. The pinned archive records
+no upstream NOTICE. Rustleaks changes identifiers and descriptions, wraps the
+complete token in capture 1, and uses its existing source and finding policy.
+No network validators or scanner implementation are included. The adjacent
+`rustleaks-providers-v1.provenance.json` records individual source paths,
+pattern lines, hashes, finite lengths and the xAI source-selection decision.

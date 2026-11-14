@@ -3,8 +3,7 @@
 The native policy requires explicit opt-in. Existing `Engine` callers
 retain their configuration and detection behavior. This contract introduces no
 compatibility exception, copied-default change, or provider network operation.
-Local integration, public API, package/consumer and compatibility checks have
-passed. Qualified delivery is recorded in the [roadmap](ROADMAP.md) and
+Version-specific qualification is recorded in the [roadmap](ROADMAP.md) and
 [completion record](validation/process-cpu-and-completion.md).
 
 ## Profiles and selection
@@ -17,7 +16,9 @@ subject to [COMPATIBILITY.md](COMPATIBILITY.md).
 The builder starts with the embedded default. `with_pack(id, toml)` appends an
 in-memory TOML pack through the existing loader, and `build()` creates an
 immutable `NativeEngine`. `native::EXTRA_RULES_V1` exposes the separately
-maintained pilot asset. Nothing downloads or selects it automatically.
+maintained pilot asset; `native::PROVIDER_RULES_V1` exposes the provider pack.
+`native::CONNECTION_RULES_V1` exposes the focused connection-password pack.
+Nothing downloads or selects these packs automatically.
 
 The wrapper returns a `NativeScanOutcome` containing the unchanged `ScanOutcome`,
 exact policy identity, and bounded explanation metadata. `scan()` preserves
@@ -55,8 +56,9 @@ fragment metadata, and review decisions are outside configuration identity and
 must be accounted for by consumers that cache results.
 
 `builtin_review_reference()` returns a source-omitting persistent reference
-only for the pinned base alone or the exact packaged pilot bytes under their
-fixed pack ID. It includes checked content hashes, versions and extensions.
+for the pinned base alone or compositions of the exact packaged packs under
+their fixed IDs. It includes checked content hashes, versions and
+extensions, preserving composition order.
 Custom compositions return no builtin reference and require a caller-owned
 fingerprint bound to exact identity. Review records never need raw TOML.
 
@@ -123,6 +125,36 @@ The independent quality evaluator supplies the baseline. New rules require
 positive, negative, boundary, invalid-byte, allowlist and exact-span evidence,
 including full-ruleset overlap. The initial pilot remains limited to Azure
 Service Bus/Event Hub, Azure App Configuration and MongoDB credential URIs.
+The optional `rustleaks-providers-v1` pack adds reviewed Groq, Cerebras,
+Replicate and NVIDIA detector shapes, plus five companions for selected
+Anthropic, DigitalOcean, OpenAI and Fly.io format or delimiter gaps.
+Six further rules cover Cloudsmith, MiniMax, PostHog personal, Figma personal,
+Together and Google Gemini candidate formats. Nine contextual provider rules,
+two Slack session rules and four finite Veles rules are also included. Six Docker
+Hub, Neon, Render, Deno user and Apify rules use explicit
+`byte-shannon-f64-v1` strict-less-than entropy rejection. Twenty-four shared-prefix
+companions add escaped-quote and vertical-tab endings with explicit less-or-equal
+byte entropy and independently scoped source exclusions. The pack contains
+104 rules and requires native loading; ordinary configuration loading
+rejects its structured entropy values. Forty contextual and four residual
+companions preserve source context, capture and path requirements while adding
+reviewed VT and escaped-quote occurrences. Public Lob and Mailgun roles remain
+excluded. The xAI rule selects the Apache
+80-byte body expression, not
+the broader overlapping MIT rule. Slack cookies have an unbounded body and
+remain subject to caller-selected input and finding-payload limits.
+Its [pack contract and provenance](../crates/rustleaks-core/default/rustleaks-providers-v1.md)
+record the source scopes, ASCII translation, entropy rules and policy
+differences. Provider attribution can replace a generic finding for the same
+occurrence through existing overlap filtering; this is not an extra recovered
+secret. The separate `rustleaks-connections-v1` pack provides five ASCII JDBC
+and semicolon password rules and one ASCII database-URI password rule. Its
+[contract](../crates/rustleaks-core/default/rustleaks-connections-v1.md)
+records source predicates, extraction, byte limits and enumeration gaps;
+general URI, libpq and Unicode-equivalent detection are outside that pack.
+Native composition retains the default global exclusions, including the
+documented URI placeholder differences from isolated pack loading.
+None of these packs is selected automatically.
 Existing behavior uses Rust regression replay of frozen historical evidence
 and independently specified Rust contracts.
 
@@ -135,3 +167,77 @@ qualification and hosted delivery are identified separately in the
 [local validation record](ROADMAP.md#current-local-validation).
 Consumers must reject stale review or cache decisions on identity mismatch;
 matching an identity alone does not establish matching input or scan options.
+
+## Explicit native CLI composition
+
+`--native-pack <pack-id>` appends a builtin pack to the pinned embedded default.
+Repeat the flag to compose `rustleaks-extra-v1`, `rustleaks-providers-v1` and
+`rustleaks-connections-v1` in the supplied order. Unknown or repeated IDs fail.
+No pack is active unless explicitly selected. Legacy help bytes remain frozen;
+this document describes the additive option.
+
+The CLI first applies its normal configuration precedence and discovery.
+Native selection requires that the resulting source is the embedded default.
+A selected `--config`, nonempty native or legacy configuration environment
+variable, or source-local configuration produces a conflict error. The CLI
+never drops that configuration's allowlists or disabled rules to use a pack.
+Empty variables, source discovery errors and all invocations without native
+flags retain their previous behavior. Custom-base native composition and
+arbitrary pack paths are outside this option.
+
+`--enable-rule` selects rules from the full native composition without removing
+native predicates. Baselines, ignore files, allow markers, redaction, global
+path exclusions, reports and source modes use the normal scan pipeline.
+`--complete-profile` remains a separate opt-in selection and can be combined
+with native packs. Native pack selection alone does not change source framing,
+completion reporting or exit semantics.
+
+Debug diagnostics retain only `builtin_review_reference()`, which contains
+versions, ordered builtin IDs and checked content hashes. This reference binds
+the full composition, not an `--enable-rule` projection. Reproducible scan
+records must also bind the binary, selected rule IDs, scan options and finite
+profile. Exact policy bytes and inline configuration do not enter this channel.
+
+## Native byte entropy
+
+A pack loaded through `NativePolicy` can declare:
+
+```toml
+entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt", threshold = 3.5 }
+```
+
+The table requires exactly `algorithm`, `reject` and `threshold` with these
+literal key spellings. Unknown fields, case-colliding aliases, malformed values,
+unknown algorithms or comparators, and non-finite or out-of-range thresholds
+are rejected. Thresholds are numeric values in `0..=8`. `lt` rejects entropy
+below the threshold; `le` also rejects equality. Zero is an active native
+threshold. A native predicate requires a content pattern.
+
+`byte-shannon-f64-v1` counts all 256 byte values, including UTF-8 encoding bytes
+and invalid UTF-8. It visits nonzero counts in ascending byte order, converts
+each count and the total byte length to binary64, divides each count by the
+length, and accumulates `entropy - frequency * frequency.log2()` from positive
+zero. Empty input has entropy zero. This is a specified floating-point
+algorithm, not exact real-number arithmetic. Target-specific `log2` behavior
+still requires native validation before claiming cross-platform bit equality.
+
+The predicate runs inside candidate acceptance before finding admission,
+materialization and generic suppression. Reports retain the existing explicit
+binary64-to-binary32 conversion and contain the entropy used by the predicate.
+The fixed histogram occupies `256 * size_of::<usize>()` bytes and adds no
+allocation, dependency, I/O or runtime. Cancellation remains cooperative at the
+existing candidate boundaries; one entropy calculation is indivisible.
+
+Scalar entropy retains the legacy character-count, reciprocal multiplication,
+`<=` rejection and zero-disable behavior. The copied default is unchanged.
+A structured entropy table passed to ordinary `ConfigLoader`, `--config`, an
+inline configuration variable or an extension fails to decode. Concatenating
+native-only TOML into an ordinary configuration is not a supported conversion.
+
+`NativePolicy::compile()` returns the compiled config and exact identity without
+building an engine. Typed predicates remain on compiled rules through clones,
+selection and engine rebuilding. `CompiledRule::native_entropy()` returns the
+algorithm, comparator and threshold; the older scalar `entropy()` accessor is
+zero for these rules and is insufficient to describe their policy. Compiling
+or using `NativeEngine::engine()` retains detection policy, while native
+annotation envelopes remain the responsibility of `NativeEngine`.

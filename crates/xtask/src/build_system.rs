@@ -662,6 +662,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "parity",
         "perf-calibrate",
         "perf-check",
+        "perf-fixtures",
         "perf-profile",
         "perf-report",
         "perf-representative",
@@ -697,6 +698,10 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             "bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate",
         ),
         ("perf-run", "bazelisk run //crates/xtask:xtask -- perf run"),
+        (
+            "perf-fixtures",
+            "bazelisk run //crates/xtask:xtask -- perf fixtures \"$@\"",
+        ),
         (
             "perf-representative",
             "bazelisk run //crates/xtask:xtask -- perf representative",

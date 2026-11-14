@@ -208,6 +208,10 @@ fn workspace_paths(name: &str) -> Result<&'static [&'static str], String> {
         "rustleaks-core" => &[
             "crates/rustleaks-core/LICENSE",
             "crates/rustleaks-core/NOTICE",
+            "crates/rustleaks-core/default/NOTICE",
+            "crates/rustleaks-core/default/LICENSE.betterleaks",
+            "crates/rustleaks-core/default/LICENSE.kingfisher",
+            "crates/rustleaks-core/default/LICENSE.veles",
         ],
         "rustleaks-bzip2" => &[
             "crates/rustleaks-bzip2/LICENSE-MIT",
@@ -1326,7 +1330,11 @@ mod tests {
             workspace_paths("rustleaks-core").unwrap(),
             [
                 "crates/rustleaks-core/LICENSE",
-                "crates/rustleaks-core/NOTICE"
+                "crates/rustleaks-core/NOTICE",
+                "crates/rustleaks-core/default/NOTICE",
+                "crates/rustleaks-core/default/LICENSE.betterleaks",
+                "crates/rustleaks-core/default/LICENSE.kingfisher",
+                "crates/rustleaks-core/default/LICENSE.veles"
             ]
         );
         assert_eq!(

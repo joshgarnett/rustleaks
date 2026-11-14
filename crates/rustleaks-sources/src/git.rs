@@ -193,6 +193,8 @@ pub struct GitSource {
     environment: Vec<(OsString, OsString)>,
     #[cfg(feature = "archives")]
     archives: Option<ArchiveOptions>,
+    #[cfg(feature = "archives")]
+    archive_file_options: crate::FileOptions,
 }
 
 impl GitSource {
@@ -207,7 +209,17 @@ impl GitSource {
             environment: Vec::new(),
             #[cfg(feature = "archives")]
             archives: None,
+            #[cfg(feature = "archives")]
+            archive_file_options: crate::FileOptions::default(),
         }
+    }
+
+    /// Selects file assembly for archive blobs without changing text hunk scope.
+    #[cfg(feature = "archives")]
+    #[must_use]
+    pub const fn archive_file_options(mut self, options: crate::FileOptions) -> Self {
+        self.archive_file_options = options;
+        self
     }
 
     /// Selects the Git executable used by this source.
@@ -478,7 +490,7 @@ impl GitSource {
         let mut archive = ArchiveSource::with_options(
             io::Cursor::new(output.stdout),
             logical,
-            crate::FileOptions::default(),
+            self.archive_file_options,
             options,
         );
         let mut overlay_error = None;

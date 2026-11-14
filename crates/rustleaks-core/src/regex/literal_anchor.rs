@@ -542,15 +542,30 @@ impl GoRegex {
         candidate: usize,
         occurrences: &[usize],
     ) -> Option<Vec<ByteSpan>> {
-        let shape = self.literal_anchor.as_deref()?;
-        let bytes = normalized.bytes();
-        let budget = AttemptBudget::new(
-            shape,
-            shape.candidates.get(candidate)?,
-            bytes,
-            occurrences.len(),
-        )?;
-        self.enumerate_anchored(bytes, shape, occurrences, Some(budget))
+        self.find_all_literal_anchored_counted(normalized, candidate, occurrences)
+            .0
+    }
+
+    /// Includes spans materialized by an optimization attempt that abandons.
+    pub(crate) fn find_all_literal_anchored_counted(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        candidate: usize,
+        occurrences: &[usize],
+    ) -> (Option<Vec<ByteSpan>>, usize) {
+        let mut collected = 0;
+        let result = (|| {
+            let shape = self.literal_anchor.as_deref()?;
+            let bytes = normalized.bytes();
+            let budget = AttemptBudget::new(
+                shape,
+                shape.candidates.get(candidate)?,
+                bytes,
+                occurrences.len(),
+            )?;
+            self.enumerate_anchored(bytes, shape, occurrences, Some(budget), || collected += 1)
+        })();
+        (result, collected)
     }
 
     /// Runs the enumeration with no budget, for differential tests.
@@ -562,7 +577,7 @@ impl GoRegex {
         occurrences: &[usize],
     ) -> Option<Vec<ByteSpan>> {
         let shape = self.literal_anchor.as_deref()?;
-        self.enumerate_anchored(normalized.bytes(), shape, occurrences, None)
+        self.enumerate_anchored(normalized.bytes(), shape, occurrences, None, || {})
     }
 
     /// Enumerates each candidate with naive occurrence discovery and no budget.
@@ -582,7 +597,7 @@ impl GoRegex {
             .iter()
             .map(|candidate| {
                 let occurrences = naive_occurrences(&lowered, candidate.literals());
-                self.enumerate_anchored(haystack, shape, &occurrences, None)
+                self.enumerate_anchored(haystack, shape, &occurrences, None, || {})
                     .expect("enumeration without a budget cannot abandon")
             })
             .collect()
@@ -594,6 +609,7 @@ impl GoRegex {
         shape: &LiteralAnchorShape,
         occurrences: &[usize],
         mut budget: Option<AttemptBudget<'_>>,
+        mut collect_span: impl FnMut(),
     ) -> Option<Vec<ByteSpan>> {
         debug_assert!(bytes.is_ascii());
         debug_assert!(occurrences.windows(2).all(|pair| pair[0] < pair[1]));
@@ -623,6 +639,7 @@ impl GoRegex {
             if let Some(found) = self.backend.search(&input) {
                 debug_assert_eq!(found.start(), start);
                 debug_assert!(found.end() > found.start());
+                collect_span();
                 results.push(ByteSpan {
                     start: found.start(),
                     end: found.end(),

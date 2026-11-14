@@ -31,12 +31,13 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
 use crate::config::{
-    ConfigError, ConfigExtension, ConfigLoader, DEFAULT_CONFIG, DEFAULT_CONFIG_SHA256,
+    CompiledConfig, ConfigError, ConfigExtension, ConfigLoader, DEFAULT_CONFIG,
+    DEFAULT_CONFIG_SHA256, RawConfig,
 };
 use crate::explanation::{ExplanationLog, ExplanationOptions};
 use crate::model::{Fragment, ScanOptions};
@@ -50,6 +51,21 @@ pub const EXTRA_RULES_V1: &str = include_str!("../default/rustleaks-extra-v1.tom
 
 /// SHA-256 of the packaged pilot TOML, checked by the maintained generator.
 pub const EXTRA_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-extra-v1.sha256");
+
+/// Explicitly selected provider rules adapted from pinned MIT Betterleaks and
+/// Apache-2.0 Veles sources. This pack never changes the default configuration.
+pub const PROVIDER_RULES_V1: &str = include_str!("../default/rustleaks-providers-v1.toml");
+
+/// SHA-256 of the packaged provider TOML, checked by the maintained generator.
+pub const PROVIDER_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-providers-v1.sha256");
+
+/// Explicitly selected ASCII connection-password rules adapted from pinned
+/// Apache-2.0 Kingfisher and MIT Betterleaks sources. Never in the default config.
+pub const CONNECTION_RULES_V1: &str = include_str!("../default/rustleaks-connections-v1.toml");
+
+/// SHA-256 of the packaged connection TOML, checked by the maintained generator.
+pub const CONNECTION_RULES_V1_SHA256: &str =
+    include_str!("../default/rustleaks-connections-v1.sha256");
 
 /// An explicitly enabled annotation extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,9 +104,11 @@ impl NativePolicyIdentity {
     /// Returns an immutable, source-omitting reference for a supported builtin
     /// composition, including checked content hashes and enabled extensions.
     ///
-    /// Present only for the pinned base alone, or the exact packaged pilot
-    /// bytes under `rustleaks-extra-v1`. Custom pack compositions return `None`
-    /// and require a caller-owned fingerprint bound to exact identity.
+    /// Present for the pinned base alone and exact packaged packs selected as
+    /// `rustleaks-extra-v1`, `rustleaks-providers-v1` or
+    /// `rustleaks-connections-v1`, including every composition order.
+    /// Custom packs return `None` and require a
+    /// caller-owned fingerprint bound to exact identity.
     #[must_use]
     pub fn builtin_review_reference(&self) -> Option<&str> {
         self.builtin_review_reference.as_deref()
@@ -139,7 +157,13 @@ impl NativePolicy {
         Self::default()
     }
 
-    /// Appends a named, versioned rules pack through existing TOML semantics.
+    /// Appends a named, versioned rules pack through native TOML semantics.
+    ///
+    /// Scalar `entropy` retains legacy behavior. A native byte predicate uses
+    /// `entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt", threshold = 3.5 }`.
+    /// The comparator is `lt` or `le`, and the finite threshold is in `0..=8`.
+    /// A structured entropy value requires this loader; the compatibility
+    /// [`ConfigLoader`] rejects it instead of silently dropping the predicate.
     ///
     /// IDs are 1 to 96 ASCII letters, digits, dots, underscores or hyphens.
     /// The caller must version the ID when publishing changed pack semantics.
@@ -192,6 +216,28 @@ impl NativePolicy {
     /// Returns errors for collisions, resource ceilings, unsupported pack
     /// directives or existing loader/engine compilation failures.
     pub fn build(self) -> Result<NativeEngine, NativePolicyError> {
+        let github_classic = self.github_classic;
+        let (config, identity) = self.compile()?;
+        Ok(NativeEngine {
+            engine: Engine::builder(config).build()?,
+            identity,
+            github_classic,
+        })
+    }
+
+    /// Compiles detection policy and exact identity without building an engine.
+    ///
+    /// Native predicates remain attached to the compiled rules, including after
+    /// cloning or selection. Engines built from this config enforce detection
+    /// policy but omit the native envelope and annotation extensions. Identity
+    /// describes the full composition; callers must also bind selected rule IDs
+    /// and scan options when using a projection.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors for collisions, resource ceilings, unsupported pack
+    /// directives or configuration compilation failures.
+    pub fn compile(self) -> Result<(CompiledConfig, NativePolicyIdentity), NativePolicyError> {
         let loader = ConfigLoader::new();
         let mut raw = loader.parse_toml(DEFAULT_CONFIG, None)?;
         let mut ids = raw
@@ -200,15 +246,9 @@ impl NativePolicy {
             .map(|rule| rule.id.clone())
             .collect::<BTreeSet<_>>();
         let mut native_count = 0usize;
-        let builtin_pack = match self.packs.as_slice() {
-            [] => Some("none"),
-            [(id, contents)] if id == "rustleaks-extra-v1" && contents == EXTRA_RULES_V1 => {
-                Some(EXTRA_RULES_V1_SHA256)
-            }
-            _ => None,
-        };
-        let builtin_review_reference = builtin_pack.map(|extra| Arc::<str>::from(format!(
-            "{NATIVE_POLICY_VERSION}|core:{}|upstream:{UPSTREAM_REVISION}|default-sha256:{DEFAULT_CONFIG_SHA256}|extra-sha256:{extra}|github-classic-pat-v1:{}",
+        let mut native_entropy = BTreeMap::new();
+        let builtin_review_reference = builtin_pack_reference(&self.packs).map(|packs| Arc::<str>::from(format!(
+            "{NATIVE_POLICY_VERSION}|core:{}|upstream:{UPSTREAM_REVISION}|default-sha256:{DEFAULT_CONFIG_SHA256}|{packs}|github-classic-pat-v1:{}",
             env!("CARGO_PKG_VERSION"), self.github_classic,
         )));
         let mut identity = Vec::new();
@@ -230,29 +270,82 @@ impl NativePolicy {
         );
         for (id, contents) in self.packs {
             let pack = validate_pack(&contents)?;
-            native_count += pack.rules.len();
+            native_count += pack.raw.rules.len();
             if native_count > Self::MAX_NATIVE_RULES {
                 return Err(NativePolicyError::LimitExceeded);
             }
-            for rule in &pack.rules {
+            for rule in &pack.raw.rules {
                 if !ids.insert(rule.id.clone()) {
                     return Err(NativePolicyError::RuleCollision);
                 }
             }
             frame(&mut identity, id.as_bytes());
             frame(&mut identity, contents.as_bytes());
-            raw.rules.extend(pack.rules);
+            native_entropy.extend(pack.native_entropy);
+            raw.rules.extend(pack.raw.rules);
         }
-        let engine = Engine::builder(loader.compile(raw)?).build()?;
-        Ok(NativeEngine {
-            engine,
-            identity: NativePolicyIdentity {
+        let mut config = loader.compile(raw)?;
+        for (id, predicate) in native_entropy {
+            let rule = config
+                .rules
+                .get_mut(&id)
+                .ok_or(NativePolicyError::InvalidNativeEntropy)?;
+            if rule.id != id || rule.entropy != 0.0 || rule.native_entropy.is_some() {
+                return Err(NativePolicyError::InvalidNativeEntropy);
+            }
+            rule.native_entropy = Some(predicate);
+        }
+        Ok((
+            config,
+            NativePolicyIdentity {
                 exact: identity.into(),
                 builtin_review_reference,
             },
-            github_classic: self.github_classic,
-        })
+        ))
     }
+}
+
+fn builtin_pack_reference(packs: &[(String, String)]) -> Option<String> {
+    let mut extra = "none";
+    let mut providers = false;
+    let mut connections = false;
+    let mut order = Vec::new();
+    for (id, contents) in packs {
+        match (id.as_str(), contents.as_str()) {
+            ("rustleaks-extra-v1", bytes) if bytes == EXTRA_RULES_V1 => {
+                extra = EXTRA_RULES_V1_SHA256;
+                order.push("extra");
+            }
+            ("rustleaks-providers-v1", bytes) if bytes == PROVIDER_RULES_V1 => {
+                providers = true;
+                order.push("providers");
+            }
+            ("rustleaks-connections-v1", bytes) if bytes == CONNECTION_RULES_V1 => {
+                connections = true;
+                order.push("connections");
+            }
+            _ => return None,
+        }
+    }
+    // Preserve every composition without connections byte for byte.
+    Some(if connections {
+        format!(
+            "extra-sha256:{extra}|providers-sha256:{}|connections-sha256:{CONNECTION_RULES_V1_SHA256}|pack-order:{}",
+            if providers {
+                PROVIDER_RULES_V1_SHA256
+            } else {
+                "none"
+            },
+            order.join(",")
+        )
+    } else if providers {
+        format!(
+            "extra-sha256:{extra}|providers-sha256:{PROVIDER_RULES_V1_SHA256}|pack-order:{}",
+            order.join(",")
+        )
+    } else {
+        format!("extra-sha256:{extra}")
+    })
 }
 
 fn frame(output: &mut Vec<u8>, bytes: &[u8]) {
@@ -269,13 +362,33 @@ fn valid_identifier(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
 }
 
-fn validate_pack(contents: &str) -> Result<crate::config::RawConfig, NativePolicyError> {
-    let value = toml::from_str::<toml::Value>(contents).map_err(|source| ConfigError::Parse {
-        at: String::new(),
-        source,
-    })?;
+struct ValidatedPack {
+    raw: RawConfig,
+    native_entropy: BTreeMap<String, NativeEntropy>,
+}
+
+fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
+    let mut value =
+        toml::from_str::<toml::Value>(contents).map_err(|source| ConfigError::Parse {
+            at: String::new(),
+            source,
+        })?;
     validate_pack_table(&value, PackTable::Config)?;
-    let raw = ConfigLoader::new().parse_toml(contents, None)?;
+    // Only this private compilation transform disables scalar entropy. Exact
+    // caller-supplied bytes, never transformed TOML, remain in policy identity.
+    let predicates = extract_native_entropy(&mut value)?;
+    let transformed;
+    let ordinary = if predicates.iter().any(Option::is_some) {
+        transformed =
+            toml::to_string(&value).map_err(|_| NativePolicyError::InvalidPackStructure)?;
+        transformed.as_str()
+    } else {
+        contents
+    };
+    let raw = ConfigLoader::new().parse_toml(ordinary, None)?;
+    if raw.rules.len() != predicates.len() {
+        return Err(NativePolicyError::InvalidPackStructure);
+    }
     if raw.extend != ConfigExtension::default()
         || raw.allowlist.is_some()
         || !raw.allowlists.is_empty()
@@ -294,7 +407,21 @@ fn validate_pack(contents: &str) -> Result<crate::config::RawConfig, NativePolic
             return Err(NativePolicyError::InvalidRuleId);
         }
     }
-    Ok(raw)
+    let mut native_entropy = BTreeMap::new();
+    for (rule, predicate) in raw.rules.iter().zip(predicates) {
+        if let Some(predicate) = predicate {
+            if rule.regex.is_empty() {
+                return Err(NativePolicyError::InvalidNativeEntropy);
+            }
+            if native_entropy.insert(rule.id.clone(), predicate).is_some() {
+                return Err(NativePolicyError::RuleCollision);
+            }
+        }
+    }
+    Ok(ValidatedPack {
+        raw,
+        native_entropy,
+    })
 }
 
 // This is deliberately separate from the permissive compatibility loader.
@@ -362,6 +489,142 @@ fn validate_pack_tables(value: &toml::Value, scope: PackTable) -> Result<(), Nat
         // Keep the compatibility loader's named single-table shorthand.
         validate_pack_table(value, scope)
     }
+}
+
+// This private type is the versioned byte-shannon-f64-v1 algorithm. Its fixed
+// histogram and ascending accumulation order are part of that contract.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NativeEntropy {
+    reject: EntropyRejection,
+    threshold: f64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EntropyRejection {
+    Less,
+    LessOrEqual,
+}
+
+impl NativeEntropy {
+    pub(crate) fn metadata(self) -> (&'static str, &'static str, f64) {
+        (
+            "byte-shannon-f64-v1",
+            match self.reject {
+                EntropyRejection::Less => "lt",
+                EntropyRejection::LessOrEqual => "le",
+            },
+            self.threshold,
+        )
+    }
+
+    pub(crate) fn rejects(self, entropy: f64) -> bool {
+        match self.reject {
+            EntropyRejection::Less => entropy < self.threshold,
+            EntropyRejection::LessOrEqual => entropy <= self.threshold,
+        }
+    }
+
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::unused_self,
+        reason = "the private policy type fixes the binary64 algorithm contract"
+    )]
+    pub(crate) fn calculate(self, bytes: &[u8]) -> f64 {
+        if bytes.is_empty() {
+            return 0.0;
+        }
+        let mut counts = [0_usize; 256];
+        for &byte in bytes {
+            counts[usize::from(byte)] += 1;
+        }
+        let length = bytes.len() as f64;
+        counts
+            .into_iter()
+            .filter(|count| *count != 0)
+            .fold(0.0, |entropy, count| {
+                let frequency = count as f64 / length;
+                entropy - frequency * frequency.log2()
+            })
+    }
+}
+
+fn parse_native_entropy(value: &toml::Value) -> Result<NativeEntropy, NativePolicyError> {
+    let table = value
+        .as_table()
+        .ok_or(NativePolicyError::InvalidNativeEntropy)?;
+    let mut names = BTreeSet::new();
+    for key in table.keys() {
+        if !names.insert(key.to_ascii_lowercase()) {
+            return Err(NativePolicyError::AmbiguousPackField);
+        }
+    }
+    if table
+        .keys()
+        .any(|key| !matches!(key.as_str(), "algorithm" | "reject" | "threshold"))
+    {
+        return Err(NativePolicyError::InvalidNativeEntropy);
+    }
+    if table.len() != 3
+        || table.get("algorithm").and_then(toml::Value::as_str) != Some("byte-shannon-f64-v1")
+    {
+        return Err(NativePolicyError::InvalidNativeEntropy);
+    }
+    let reject = match table.get("reject").and_then(toml::Value::as_str) {
+        Some("lt") => EntropyRejection::Less,
+        Some("le") => EntropyRejection::LessOrEqual,
+        _ => return Err(NativePolicyError::InvalidNativeEntropy),
+    };
+    let threshold = match table.get("threshold") {
+        Some(toml::Value::Float(value)) => *value,
+        // Byte entropy cannot exceed eight; range-check before converting.
+        Some(toml::Value::Integer(value)) if (0..=8).contains(value) => {
+            f64::from(u8::try_from(*value).map_err(|_| NativePolicyError::InvalidNativeEntropy)?)
+        }
+        _ => return Err(NativePolicyError::InvalidNativeEntropy),
+    };
+    if !threshold.is_finite() || !(0.0..=8.0).contains(&threshold) {
+        return Err(NativePolicyError::InvalidNativeEntropy);
+    }
+    Ok(NativeEntropy { reject, threshold })
+}
+
+fn extract_native_entropy(
+    value: &mut toml::Value,
+) -> Result<Vec<Option<NativeEntropy>>, NativePolicyError> {
+    let table = value
+        .as_table_mut()
+        .ok_or(NativePolicyError::InvalidPackStructure)?;
+    let Some((_, rules)) = table
+        .iter_mut()
+        .find(|(key, _)| key.eq_ignore_ascii_case("rules"))
+    else {
+        return Ok(Vec::new());
+    };
+    match rules {
+        toml::Value::Array(rules) => rules.iter_mut().map(extract_rule_entropy).collect(),
+        toml::Value::Table(rule) if rule.is_empty() => Ok(Vec::new()),
+        rule => Ok(vec![extract_rule_entropy(rule)?]),
+    }
+}
+
+fn extract_rule_entropy(
+    value: &mut toml::Value,
+) -> Result<Option<NativeEntropy>, NativePolicyError> {
+    let table = value
+        .as_table_mut()
+        .ok_or(NativePolicyError::InvalidPackStructure)?;
+    let Some((_, entropy)) = table
+        .iter_mut()
+        .find(|(key, _)| key.eq_ignore_ascii_case("entropy"))
+    else {
+        return Ok(None);
+    };
+    if !entropy.is_table() {
+        return Ok(None);
+    }
+    let predicate = parse_native_entropy(entropy)?;
+    *entropy = toml::Value::Float(0.0);
+    Ok(Some(predicate))
 }
 
 /// Immutable composed engine plus exact native policy identity.
@@ -503,6 +766,10 @@ pub enum NativePolicyError {
     /// A native struct destination is not a named TOML table.
     #[error("invalid native pack table structure")]
     InvalidPackStructure,
+    /// A native entropy predicate has invalid fields, values or a missing
+    /// content pattern. Configuration text is omitted from this diagnostic.
+    #[error("invalid native entropy predicate")]
+    InvalidNativeEntropy,
     /// A source-byte, pack-count or rule-count limit was exceeded.
     #[error("native composition safety limit exceeded")]
     LimitExceeded,
@@ -513,4 +780,81 @@ pub enum NativePolicyError {
     /// Existing engine prefilter failure.
     #[error(transparent)]
     Engine(#[from] ScanError),
+}
+
+#[cfg(test)]
+mod identity_regressions {
+    use super::{
+        EXTRA_RULES_V1, EXTRA_RULES_V1_SHA256, PROVIDER_RULES_V1, PROVIDER_RULES_V1_SHA256,
+        builtin_pack_reference,
+    };
+
+    #[test]
+    fn connection_support_preserves_existing_builtin_reference_bytes() {
+        let extra = ("rustleaks-extra-v1".to_owned(), EXTRA_RULES_V1.to_owned());
+        let providers = (
+            "rustleaks-providers-v1".to_owned(),
+            PROVIDER_RULES_V1.to_owned(),
+        );
+        for (packs, expected) in [
+            (vec![], "extra-sha256:none".to_owned()),
+            (
+                vec![extra.clone()],
+                format!("extra-sha256:{EXTRA_RULES_V1_SHA256}"),
+            ),
+            (
+                vec![providers.clone()],
+                format!(
+                    "extra-sha256:none|providers-sha256:{PROVIDER_RULES_V1_SHA256}|pack-order:providers"
+                ),
+            ),
+            (
+                vec![extra.clone(), providers.clone()],
+                format!(
+                    "extra-sha256:{EXTRA_RULES_V1_SHA256}|providers-sha256:{PROVIDER_RULES_V1_SHA256}|pack-order:extra,providers"
+                ),
+            ),
+            (
+                vec![providers, extra],
+                format!(
+                    "extra-sha256:{EXTRA_RULES_V1_SHA256}|providers-sha256:{PROVIDER_RULES_V1_SHA256}|pack-order:providers,extra"
+                ),
+            ),
+        ] {
+            assert_eq!(builtin_pack_reference(&packs), Some(expected));
+        }
+    }
+}
+
+#[cfg(test)]
+mod byte_entropy_arithmetic {
+    use super::{EntropyRejection, NativeEntropy};
+
+    #[test]
+    fn named_algorithm_has_independently_specified_histogram_values() {
+        let policy = NativeEntropy {
+            reject: EntropyRejection::Less,
+            threshold: 3.5,
+        };
+        for (bytes, expected) in [
+            (vec![], 0.0_f64),
+            (vec![255; 37], 0.0),
+            (b"ABCDEFGHIIJJKKLL".to_vec(), 3.5),
+            ((0_u8..=255).collect(), 8.0),
+            ("éé".as_bytes().to_vec(), 1.0),
+            (vec![255, 254, 255, 254], 1.0),
+        ] {
+            assert_eq!(policy.calculate(&bytes).to_bits(), expected.to_bits());
+        }
+        for (counts, expected) in [
+            (vec![49; 8], 3.0_f64),
+            ([vec![49; 8], vec![98; 4]].concat(), 3.5),
+        ] {
+            let bytes: Vec<u8> = (b'A'..)
+                .zip(counts)
+                .flat_map(|(byte, count)| std::iter::repeat_n(byte, count))
+                .collect();
+            assert_eq!(policy.calculate(&bytes).to_bits(), expected.to_bits());
+        }
+    }
 }

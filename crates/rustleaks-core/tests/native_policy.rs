@@ -112,6 +112,26 @@ fn exact_identity_detects_text_order_and_extension_changes_without_debug_disclos
 }
 
 #[test]
+fn empty_rule_tables_preserve_the_default_configuration() {
+    let baseline = ConfigLoader::new().load_default().unwrap();
+    for pack in ["rules = {}", "[rules]\n"] {
+        let (config, _) = NativePolicy::builder()
+            .with_pack("empty-v1", pack)
+            .unwrap()
+            .compile()
+            .unwrap();
+        assert_eq!(config.ordered_rule_ids(), baseline.ordered_rule_ids());
+        assert_eq!(config.rules().len(), baseline.rules().len());
+        assert!(
+            config
+                .rules()
+                .values()
+                .all(|rule| rule.native_entropy().is_none())
+        );
+    }
+}
+
+#[test]
 fn replacements_and_implicit_base_mutations_are_rejected() {
     assert!(matches!(
         NativePolicy::builder().with_pack("bad id", PACK),
@@ -688,5 +708,339 @@ fn omitted_final_annotations_mark_exact_cap_truncation() {
         assert_eq!(bounded.scan().findings(), full.scan().findings());
         assert_eq!(bounded.scan().usage(), full.scan().usage());
         assert_eq!(bounded.scan().termination(), full.scan().termination());
+    }
+}
+
+mod byte_entropy {
+    use super::*;
+    use rustleaks_core::config::{CompiledConfig, ConfigError, VirtualResolver};
+    use rustleaks_core::model::{ByteRange, FindingRange};
+
+    fn pack(entropy: &str) -> String {
+        format!(
+            "[[rules]]\nid='rustleaks.byte-entropy-test'\nregex='''ent=([^\\n]+)'''\nsecretGroup=1\nkeywords=['ent=']\nentropy={entropy}\n"
+        )
+    }
+
+    fn table(reject: &str, threshold: f64) -> String {
+        format!("{{ algorithm='byte-shannon-f64-v1', reject='{reject}', threshold={threshold:?} }}")
+    }
+
+    fn compiled(entropy: &str) -> CompiledConfig {
+        NativePolicy::builder()
+            .with_pack("entropy-v1", &pack(entropy))
+            .unwrap()
+            .compile()
+            .unwrap()
+            .0
+            .select_rules(["rustleaks.byte-entropy-test"])
+            .unwrap()
+    }
+
+    fn engine(entropy: &str) -> Engine {
+        Engine::builder(compiled(entropy)).build().unwrap()
+    }
+
+    fn input(secret: &[u8]) -> Vec<u8> {
+        [b"ent=".as_slice(), secret].concat()
+    }
+
+    #[test]
+    fn strict_comparators_zero_and_adjacent_thresholds_are_independent() {
+        // Eight symbols with p=1/16 and four with p=1/8 give exactly 3.5.
+        let secret = b"ABCDEFGHIIJJKKLL";
+        for (reject, threshold, expected) in [
+            ("lt", 3.5, 1),
+            ("le", 3.5, 0),
+            ("lt", 3.5_f64.next_down(), 1),
+            ("le", 3.5_f64.next_down(), 1),
+            ("lt", 3.5_f64.next_up(), 0),
+            ("le", 3.5_f64.next_up(), 0),
+        ] {
+            let engine = engine(&table(reject, threshold));
+            let scan = engine.scan_fragment(&Fragment::new(input(secret)), &ScanOptions::default());
+            assert!(scan.is_complete());
+            assert_eq!(scan.findings().len(), expected, "{reject} {threshold:?}");
+            if let Some(finding) = scan.findings().first() {
+                assert_eq!(finding.entropy().to_bits(), 0x4060_0000);
+                assert_eq!(finding.secret().as_bytes(), secret);
+                assert_eq!(
+                    finding.secret_range(),
+                    FindingRange::Exact(ByteRange::new(4, 20).unwrap())
+                );
+                assert_eq!(
+                    finding.match_range(),
+                    FindingRange::Exact(ByteRange::new(0, 20).unwrap())
+                );
+            }
+        }
+        for (predicate, count) in [
+            (table("lt", 0.0), 1),
+            (table("le", 0.0), 0),
+            ("0.0".to_owned(), 1),
+        ] {
+            let scan = engine(&predicate)
+                .scan_fragment(&Fragment::new(b"ent=0000"), &ScanOptions::default());
+            assert!(scan.is_complete());
+            assert_eq!(scan.findings().len(), count);
+        }
+    }
+
+    #[test]
+    fn division_witness_is_accepted_at_exact_three_and_three_point_five() {
+        for (counts, threshold) in [
+            (vec![49; 8], 3.0),
+            ([vec![49; 8], vec![98; 4]].concat(), 3.5),
+        ] {
+            let secret: Vec<u8> = (b'A'..)
+                .zip(counts)
+                .flat_map(|(byte, count)| std::iter::repeat_n(byte, count))
+                .collect();
+            let scan = engine(&table("lt", threshold))
+                .scan_fragment(&Fragment::new(input(&secret)), &ScanOptions::default());
+            assert!(scan.is_complete());
+            assert_eq!(scan.findings().len(), 1);
+            #[allow(clippy::cast_possible_truncation)]
+            let expected = threshold as f32;
+            assert_eq!(scan.findings()[0].entropy().to_bits(), expected.to_bits());
+            // This also checks the comparator cannot be bypassed through Engine.
+            let scan = engine(&table("le", threshold))
+                .scan_fragment(&Fragment::new(input(&secret)), &ScanOptions::default());
+            assert!(scan.is_complete());
+            assert!(scan.findings().is_empty());
+        }
+    }
+
+    #[test]
+    fn bytes_include_utf8_and_invalid_sequences_without_character_conversion() {
+        for secret in ["éé".as_bytes(), b"\xff\xfe\xff\xfe".as_slice()] {
+            // Both byte histograms have two equally frequent symbols, H=1.
+            let scan = engine(&table("lt", 1.0))
+                .scan_fragment(&Fragment::new(input(secret)), &ScanOptions::default());
+            assert!(scan.is_complete());
+            assert_eq!(scan.findings().len(), 1);
+            assert_eq!(scan.findings()[0].secret().as_bytes(), secret);
+            assert_eq!(scan.findings()[0].entropy().to_bits(), 0x3f80_0000);
+            let scan = engine(&table("le", 1.0))
+                .scan_fragment(&Fragment::new(input(secret)), &ScanOptions::default());
+            assert!(scan.is_complete());
+            assert!(scan.findings().is_empty());
+        }
+    }
+
+    #[test]
+    fn native_compilation_projection_and_rebuilding_retain_typed_metadata() {
+        let policy = NativePolicy::builder()
+            .with_pack("entropy-v1", &pack(&table("lt", 3.5)))
+            .unwrap();
+        let (full, identity) = policy.clone().compile().unwrap();
+        let native = policy.build().unwrap();
+        assert_eq!(&identity, native.identity());
+        assert_eq!(full, *native.engine().config());
+        for config in [
+            full.clone(),
+            full.select_rules(["rustleaks.byte-entropy-test"]).unwrap(),
+        ] {
+            let cloned = config.clone();
+            let rule = cloned.rule("rustleaks.byte-entropy-test").unwrap();
+            assert_eq!(rule.entropy().to_bits(), 0.0_f64.to_bits());
+            assert_eq!(
+                rule.native_entropy(),
+                Some(("byte-shannon-f64-v1", "lt", 3.5))
+            );
+            let rebuilt = Engine::builder(cloned).build().unwrap();
+            let result =
+                rebuilt.scan_fragment(&Fragment::new(b"ent=0000"), &ScanOptions::default());
+            assert!(result.is_complete());
+            assert!(
+                !result
+                    .findings()
+                    .iter()
+                    .any(|finding| finding.rule_id().as_bytes() == b"rustleaks.byte-entropy-test")
+            );
+        }
+        for changed in [table("le", 3.5), table("lt", 3.0)] {
+            let (_, other) = NativePolicy::builder()
+                .with_pack("entropy-v1", &pack(&changed))
+                .unwrap()
+                .compile()
+                .unwrap();
+            assert_ne!(identity, other);
+        }
+    }
+
+    #[test]
+    fn entropy_rejection_precedes_finding_admission_and_preserves_cancellation() {
+        let engine = engine(&table("lt", 3.5));
+        let options = ScanOptions::default();
+        let control =
+            ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(0));
+        let rejected =
+            engine.scan_fragment_controlled(&Fragment::new(b"ent=0000"), &options, &control);
+        assert!(rejected.is_complete());
+        assert_eq!(rejected.usage().finding_records(), 0);
+        let accepted = engine.scan_fragment_controlled(
+            &Fragment::new(b"ent=ABCDEFGHIIJJKKLL"),
+            &options,
+            &control,
+        );
+        assert!(!accepted.is_complete());
+        assert!(accepted.findings().is_empty());
+        let cancelled = engine.scan_fragment_controlled(
+            &Fragment::new(b"ent=ABCDEFGHIIJJKKLL"),
+            &options,
+            &ScanControl::cancellable(&|| true),
+        );
+        assert!(!cancelled.is_complete());
+        assert_eq!(cancelled.usage().finding_records(), 0);
+        let work = ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(0));
+        let stopped = engine.scan_fragment_controlled(
+            &Fragment::new(b"ent=ABCDEFGHIIJJKKLL"),
+            &options,
+            &work,
+        );
+        assert!(!stopped.is_complete());
+        assert_eq!(stopped.usage().work_units(), 0);
+    }
+
+    #[test]
+    fn rejected_native_candidate_does_not_suppress_a_generic_finding() {
+        let source = format!(
+            "{}\n[[rules]]\nid='rustleaks.generic-entropy-control'\nregex='''ent=([^\\n]+)'''\nsecretGroup=1\n",
+            pack(&table("lt", 3.5))
+        );
+        let config = NativePolicy::builder()
+            .with_pack("entropy-v1", &source)
+            .unwrap()
+            .compile()
+            .unwrap()
+            .0
+            .select_rules([
+                "rustleaks.byte-entropy-test",
+                "rustleaks.generic-entropy-control",
+            ])
+            .unwrap();
+        let engine = Engine::builder(config).build().unwrap();
+        let scan = engine.scan_fragment(&Fragment::new(b"ent=0011"), &ScanOptions::default());
+        assert!(scan.is_complete());
+        assert_eq!(scan.findings().len(), 1);
+        assert_eq!(
+            scan.findings()[0].rule_id().as_bytes(),
+            b"rustleaks.generic-entropy-control"
+        );
+    }
+
+    #[test]
+    fn malformed_tables_are_rejected_without_source_disclosure() {
+        for entropy in [
+            "{}",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt' }",
+            "{ algorithm='byte-shannon-f64-v1', threshold=3.5 }",
+            "{ reject='lt', threshold=3.5 }",
+            "{ algorithm='SECRET_MARKER', reject='lt', threshold=3.5 }",
+            "{ algorithm='byte-shannon-f64-v1', reject='SECRET_MARKER', threshold=3.5 }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold='SECRET_MARKER' }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=true }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=nan }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=inf }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=-0.1 }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=8.1 }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=9 }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=[] }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold={} }",
+            "{ algorithm='byte-shannon-f64-v1', reject='lt', threshold=3.5, SECRET_MARKER=1 }",
+            "{ Algorithm='byte-shannon-f64-v1', reject='lt', threshold=3.5 }",
+            "{ algorithm='byte-shannon-f64-v1', Algorithm='SECRET_MARKER', reject='lt', threshold=3.5 }",
+        ] {
+            let source = format!("{}\n# SECRET_MARKER\n", pack(entropy));
+            let error = NativePolicy::builder()
+                .with_pack("entropy-v1", &source)
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                NativePolicyError::InvalidNativeEntropy | NativePolicyError::AmbiguousPackField
+            ));
+            assert!(!error.to_string().contains("SECRET_MARKER"));
+            assert!(!format!("{error:?}").contains("SECRET_MARKER"));
+        }
+        let path_only = "[[rules]]\nid='rustleaks.entropy'\npath='x'\nentropy={algorithm='byte-shannon-f64-v1',reject='lt',threshold=0}\n";
+        assert!(matches!(
+            NativePolicy::builder().with_pack("entropy-v1", path_only),
+            Err(NativePolicyError::InvalidNativeEntropy)
+        ));
+        for threshold in ["0", "8", "0.0", "8.0"] {
+            let source = pack(&format!(
+                "{{algorithm='byte-shannon-f64-v1',reject='lt',threshold={threshold}}}"
+            ));
+            assert!(
+                NativePolicy::builder()
+                    .with_pack("entropy-v1", &source)
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn compatibility_loader_fails_closed_directly_inline_and_through_extension() {
+        let source = pack(&table("lt", 3.5));
+        assert!(matches!(
+            ConfigLoader::new().parse_toml(&source, None),
+            Err(ConfigError::Decode { .. })
+        ));
+        assert!(ConfigLoader::new().load_toml(&source).is_err());
+        assert!(
+            ConfigLoader::new()
+                .load_toml(&format!("[extend]\nuseDefault=true\n{source}"))
+                .is_err()
+        );
+        let resolver = VirtualResolver::new().with_file("native.toml", source);
+        assert!(
+            ConfigLoader::new()
+                .with_resolver(resolver)
+                .load_toml("[extend]\npath='native.toml'\n")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn legacy_scalar_rules_and_reports_retain_exact_values() {
+        for scalar in ["0.0", "1.0", "3.5"] {
+            let legacy = Engine::builder(ConfigLoader::new().load_toml(&pack(scalar)).unwrap())
+                .build()
+                .unwrap();
+            let native = engine(scalar);
+            assert!(
+                native
+                    .config()
+                    .rule("rustleaks.byte-entropy-test")
+                    .unwrap()
+                    .native_entropy()
+                    .is_none()
+            );
+            for secret in [
+                b"ABCDEFGHIIJJKKLL".as_slice(),
+                b"0000",
+                "éé".as_bytes(),
+                b"\xff\xfe\xff\xfe",
+            ] {
+                let bytes = input(secret);
+                let left =
+                    legacy.scan_fragment(&Fragment::new(bytes.as_slice()), &ScanOptions::default());
+                let right =
+                    native.scan_fragment(&Fragment::new(bytes.as_slice()), &ScanOptions::default());
+                assert!(left.is_complete() && right.is_complete());
+                assert_eq!(left.findings(), right.findings());
+            }
+        }
+        let loader = ConfigLoader::new();
+        let legacy = loader
+            .compile(
+                loader
+                    .parse_toml(rustleaks_core::config::DEFAULT_CONFIG, None)
+                    .unwrap(),
+            )
+            .unwrap();
+        let native = NativePolicy::builder().compile().unwrap().0;
+        assert_eq!(legacy, native);
     }
 }

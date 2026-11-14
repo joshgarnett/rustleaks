@@ -1,0 +1,291 @@
+# SPDX-License-Identifier: Apache-2.0
+# Adapted from MongoDB Kingfisher; Copyright 2025-2026 MongoDB, Inc.
+# Modified by Rustleaks: namespaced IDs, ASCII scope, TOML fields, and
+# equivalent secret stopwords. See rustleaks-connections-v1.provenance.json
+# and rustleaks-connections-v1.md. No default configuration changes.
+title = "Rustleaks connection rules v1"
+
+[[rules]]
+id = "rustleaks.connection-string.password.double-quoted"
+description = "ASCII database connection password (double quoted)"
+regex = '''(?:^|[;\x09-\x0d\x20'"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\t\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\t\x20]*=[\t\x20]*[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f][\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{0,127}[\t\x20]*;(?:[\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x7a\x7c\x7e-\x7f]{0,200}?;)??[\t\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\t\x20]*=[\t\x20]*"([\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x7f]{4,128})"[\t\x20]*(?:;|[\r\n']|$)'''
+secretGroup = 1
+keywords = []
+
+[[rules.allowlists]]
+description = "Source ignore-if-contains secret substrings"
+regexTarget = "secret"
+stopwords = [
+    "${",
+    "$(",
+    "#{",
+    "{{",
+    "$env:",
+    "redacted",
+    "masked",
+    "filtered",
+    "****",
+    "xxxx",
+    "placeholder",
+    "your_password",
+    "yourpassword",
+    "your-password",
+    "your password",
+    "insert_password",
+    "replace_password",
+    "changeme",
+    "change_me",
+    "change-me",
+    "change.me",
+    "change me",
+    "replaceme",
+    "replace_me",
+    "replace-me",
+    "replace.me",
+    "replace me",
+]
+
+[[rules]]
+id = "rustleaks.connection-string.password.single-quoted"
+description = "ASCII database connection password (single quoted)"
+regex = '''(?:^|[;\x09-\x0d\x20'"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\t\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\t\x20]*=[\t\x20]*[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f][\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{0,127}[\t\x20]*;(?:[\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x7a\x7c\x7e-\x7f]{0,200}?;)??[\t\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\t\x20]*=[\t\x20]*'([\x00-\x09\x0b-\x0c\x0e-\x26\x28-\x7f]{4,128})'[\t\x20]*(?:;|[\r\n"]|$)'''
+secretGroup = 1
+keywords = []
+
+[[rules.allowlists]]
+description = "Source ignore-if-contains secret substrings"
+regexTarget = "secret"
+stopwords = [
+    "${",
+    "$(",
+    "#{",
+    "{{",
+    "$env:",
+    "redacted",
+    "masked",
+    "filtered",
+    "****",
+    "xxxx",
+    "placeholder",
+    "your_password",
+    "yourpassword",
+    "your-password",
+    "your password",
+    "insert_password",
+    "replace_password",
+    "changeme",
+    "change_me",
+    "change-me",
+    "change.me",
+    "change me",
+    "replaceme",
+    "replace_me",
+    "replace-me",
+    "replace.me",
+    "replace me",
+]
+
+[[rules]]
+id = "rustleaks.connection-string.password.odbc-braced"
+description = "ASCII database connection password (odbc braced)"
+regex = '''(?:(?:^|[;\x09-\x0d\x20'"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\t\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\t\x20]*=[\t\x20]*[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f][\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{0,127}[\t\x20]*;|\b[jJ][dD][bB][cC]:[sS][qQ][lL][sS][eE][rR][vV][eE][rR]://[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f][\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{0,127}[\t\x20]*;)(?:[\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x7a\x7c\x7e-\x7f]{0,200}?;)??[\t\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\t\x20]*=[\t\x20]*\{((?:[\x00-\x09\x0b-\x0c\x0e-\x7c\x7e-\x7f]|}}){4,128})\}[\t\x20]*(?:;|[\r\n'"]|$)'''
+secretGroup = 1
+keywords = []
+
+[[rules.allowlists]]
+description = "Source ignore-if-contains secret substrings"
+regexTarget = "secret"
+stopwords = [
+    "${",
+    "$(",
+    "#{",
+    "{{",
+    "$env:",
+    "redacted",
+    "masked",
+    "filtered",
+    "****",
+    "xxxx",
+    "placeholder",
+    "your_password",
+    "yourpassword",
+    "your-password",
+    "your password",
+    "insert_password",
+    "replace_password",
+    "changeme",
+    "change_me",
+    "change-me",
+    "change.me",
+    "change me",
+    "replaceme",
+    "replace_me",
+    "replace-me",
+    "replace.me",
+    "replace me",
+]
+
+[[rules]]
+id = "rustleaks.connection-string.password.unquoted"
+description = "ASCII database connection password (unquoted)"
+regex = '''(?:(?:^|[;\x09-\x0d\x20'"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\t\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\t\x20]*=[\t\x20]*[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f][\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{0,127}[\t\x20]*;|\b[jJ][dD][bB][cC]:[sS][qQ][lL][sS][eE][rR][vV][eE][rR]://[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f][\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{0,127}[\t\x20]*;)(?:[\x00-\x09\x0b-\x0c\x0e-\x21\x23-\x26\x28-\x7a\x7c\x7e-\x7f]{0,200}?;)??[\t\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\t\x20]*=[\t\x20]*([\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x3a\x3c-\x7a\x7c\x7e-\x7f]{4,128})[\t\x20]*(?:;|[\r\n'"]|$)'''
+secretGroup = 1
+keywords = []
+
+[[rules.allowlists]]
+description = "Source ignore-if-contains secret substrings"
+regexTarget = "secret"
+stopwords = [
+    "${",
+    "$(",
+    "#{",
+    "{{",
+    "$env:",
+    "redacted",
+    "masked",
+    "filtered",
+    "****",
+    "xxxx",
+    "placeholder",
+    "your_password",
+    "yourpassword",
+    "your-password",
+    "your password",
+    "insert_password",
+    "replace_password",
+    "changeme",
+    "change_me",
+    "change-me",
+    "change.me",
+    "change me",
+    "replaceme",
+    "replace_me",
+    "replace-me",
+    "replace.me",
+    "replace me",
+    "db_password",
+    "database_password",
+    "process.env",
+    "os.environ",
+    "config.",
+    "config[",
+    "settings.",
+    "settings[",
+    "secret.",
+    "secrets.",
+    "secrets[",
+    "credential.",
+    "credentials.",
+    "credentials[",
+    "getpassword(",
+    "getenv(",
+]
+
+[[rules]]
+id = "rustleaks.connection-string.password.jdbc-query"
+description = "ASCII database connection password (jdbc query)"
+regex = '''\b[jJ][dD][bB][cC]:(?:[pP][oO][sS][tT][gG][rR][eE][sS][qQ][lL]|[mM][aA][rR][iI][aA][dD][bB]|[mM][yY][sS][qQ][lL](?::(?:[lL][oO][aA][dD][bB][aA][lL][aA][nN][cC][eE]|[rR][eE][pP][lL][iI][cC][aA][tT][iI][oO][nN]))?)://[A-Za-z0-9\[][A-Za-z0-9.:\[\]%,_-]{0,255}(?:/[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x40-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?\?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?(?:[A-Za-z_][A-Za-z0-9_.-]{0,63}(?:=[\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{0,200})?&(?:[aA][mM][pP];)?)?password=([\x00-\x08\x0e-\x1f\x21\x24-\x25\x28-\x3a\x3d\x3f-\x5f\x61-\x7a\x7c\x7e-\x7f]{4,128})(?:[&\x09-\x0d\x20;\#'"\x60<>]|$)'''
+secretGroup = 1
+keywords = []
+
+[[rules.allowlists]]
+description = "Source ignore-if-contains secret substrings"
+regexTarget = "secret"
+stopwords = [
+    "${",
+    "$(",
+    "#{",
+    "{{",
+    "$env:",
+    "redacted",
+    "masked",
+    "filtered",
+    "****",
+    "xxxx",
+    "placeholder",
+    "your_password",
+    "yourpassword",
+    "your-password",
+    "your password",
+    "insert_password",
+    "replace_password",
+    "changeme",
+    "change_me",
+    "change-me",
+    "change.me",
+    "change me",
+    "replaceme",
+    "replace_me",
+    "replace-me",
+    "replace.me",
+    "replace me",
+    "db_password",
+    "database_password",
+    "process.env",
+    "os.environ",
+    "config.",
+    "config[",
+    "settings.",
+    "settings[",
+    "secret.",
+    "secrets.",
+    "secrets[",
+    "credential.",
+    "credentials.",
+    "credentials[",
+    "getpassword(",
+    "getenv(",
+]
+
+[[rules]]
+id = "rustleaks.connection-string.password.database-uri"
+description = "ASCII database URI userinfo password"
+regex = '''\b(?:[pP][oO][sS][tT][gG][rR][eE][sS](?:[qQ][lL])?|[mM][yY][sS][qQ][lL]|[mM][aA][rR][iI][aA][dD][bB])://[\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x2e\x30-\x39\x3b-\x3f\x41-\x5f\x61-\x7f]{0,128}:([\x00-\x08\x0e-\x1f\x21\x23-\x26\x28-\x2e\x30-\x3f\x41-\x5f\x61-\x7f]{1,256})@(?:\[[0-9A-Fa-f:.%]+\]|[A-Za-z0-9][A-Za-z0-9._-]{0,252})(?::[0-9]{1,5})?(?:,(?:\[[0-9A-Fa-f:.%]+\]|[A-Za-z0-9][A-Za-z0-9._-]{0,252})(?::[0-9]{1,5})?)*(?:[/?][A-Za-z0-9._~!$&(*+,;=:@%/?-]*)?(?:[\x09-\x0d\x20\'"\x60#<>{}\[\],;)]|\\[nNrR]|$)'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://", "mysql://", "mariadb://"]
+
+[[rules.allowlists]]
+description = "Source global and URI secret rejection predicates"
+regexTarget = "secret"
+regexes = [
+    '''(?:(?i)^true|false|null$)''',
+    '''(?:^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\*+|\.+)$)''',
+    '''(?:^\$(?:[0-9]+|{[0-9]+})$)''',
+    '''(?:^\$(?:[A-Z_]+|[a-z_]+)$)''',
+    '''(?:^\${(?:[A-Z_]+|[a-z_]+)}$)''',
+    '''(?:^\{\{[ \t]*[A-Za-z0-9_ ().|]+[ \t]*}}$)''',
+    '''(?:^\$\{\{[ \t]*(?:(?:env|github|secrets|vars)(?:\.[A-Za-z][A-Za-z0-9_]+)+[A-Za-z0-9_ "'&./=|]*)[ \t]*}}$)''',
+    '''(?:^%(?:[A-Z_]+|[a-z_]+)%$)''',
+    '''(?:^%[+\-# 0]?[bcdeEfFgGoOpqstTUvxX]$)''',
+    '''(?:^\{[0-9]{0,2}}$)''',
+    '''(?:^@(?:[A-Z_]+|[a-z_]+)@$)''',
+    '''(?:^/Users/(?i)[a-z0-9]+/[A-Za-z0-9_ .-/]+$)''',
+    '''(?:^/(?:bin|etc|home|opt|tmp|usr|var)/[A-Za-z0-9_ ./-]+$)''',
+    '''(?:(?i)^(?:[a-z0-9]+[_.-])?(?:your[_.-]?(?:password|passwd|pwd)|(?:password|passwd|pwd)[_.-]goes[_.-]?here|replace[_.-]?me|insert[_.-].*[_.-]here|placeholder)$)''',
+    '''(?:^\*+$)''',
+    '''(?:^\.+$)''',
+    '''(?:(?i)^x{4,}$)''',
+    '''(?:^•+$)''',
+    '''(?:(?i)^\[?(?:redacted|masked|filtered)\]?$)''',
+    '''(?:^\$\{.*}$)''',
+    '''(?:^\$\([^\r\n]+\)$)''',
+    '''(?:^#\{[^}\r\n]+}$)''',
+    '''(?:^\{\{[ \t]*.+[ \t]*}}$)''',
+    '''(?:^%\{[^}]+}$)''',
+    '''(?:^\$[A-Za-z_][A-Za-z0-9_]*$)''',
+    '''(?:(?i)^\$env:[A-Za-z_][A-Za-z0-9_]*$)''',
+    '''(?:^%[A-Za-z_][A-Za-z0-9_]*%$)''',
+    '''(?:^<[^>]+>$)''',
+    '''(?:^\[[A-Za-z_][A-Za-z0-9_.-]*]$)''',
+    '''(?:^\{[^}]+}$)''',
+    '''(?:(?:\$\{|#\{|\{\{|%\{))''',
+]
+stopwords = ["abcdefghijklmnopqrstuvwxyz", "014df517-39d1-4453-b7b3-9930c563627c"]
+
+[[rules.allowlists]]
+description = "Source synthetic URI and ignored-host rejection predicates"
+regexTarget = "match"
+regexes = [
+    '''(?:(?i)^[a-z][a-z0-9+.-]*://(?:foo|user(?:name)?|example(?:[_.-]?user)?):(?:bar|pass(?:word)?|passwd|pwd|example(?:[_.-]?(?:password|passwd|pwd))?)@(?:(?:example|test)\.(?:com|org|net)|example\.invalid)(?::[0-9]{1,5})?(?:[/\x09\x0a\x0c\x0d\x20'"\x60#]|$))''',
+    '''(?:(?i)^[a-z][a-z0-9+.-]*://[^@\x09\x0a\x0c\x0d\x20]+@(?:[a-z0-9_-]+\.)*example(?:\.(?:com|org|net))?\.?(?::[0-9]{1,5})?(?:,(?:[a-z0-9_-]+\.)*example(?:\.(?:com|org|net))?\.?(?::[0-9]{1,5})?)*(?:[/?\x09\x0a\x0c\x0d\x20'"\x60#<>{}\[\];)]|,?$))''',
+]

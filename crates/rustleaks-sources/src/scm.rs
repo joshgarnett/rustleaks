@@ -252,6 +252,84 @@ impl RemoteMetadata {
         &self.url
     }
 
+    /// Computes the exact link byte length without escaping or allocating.
+    ///
+    /// `None` has the same not-applicable meaning as [`Self::link_for`].
+    /// A caller can admit per-link and aggregate bytes before construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScmErrorKind::Allocation`] on checked length overflow.
+    pub fn link_length(&self, finding: &Finding) -> Result<Option<usize>, ScmError> {
+        if matches!(
+            self.platform,
+            ScmPlatform::Unknown | ScmPlatform::NoPlatform
+        ) || self.url.is_empty()
+            || finding.commit().is_empty()
+        {
+            return Ok(None);
+        }
+        let file = finding.file().as_bytes();
+        let (outer_file, archived) = match find_subslice(file, INNER_PATH_SEPARATOR.as_bytes()) {
+            Some(index) => (&file[..index], true),
+            None => (file, false),
+        };
+        let extra = outer_file
+            .iter()
+            .filter(|byte| matches!(byte, b' ' | b'%'))
+            .count()
+            .checked_mul(2)
+            .ok_or_else(|| allocation_error("source-control link"))?;
+        let mut length = self.url.len();
+        let mut add = |bytes: usize| -> Result<(), ScmError> {
+            length = length
+                .checked_add(bytes)
+                .ok_or_else(|| allocation_error("source-control link"))?;
+            Ok(())
+        };
+        add(finding.commit().len())?;
+        add(outer_file.len())?;
+        add(extra)?;
+        add(match self.platform {
+            ScmPlatform::GitHub | ScmPlatform::GitLab => b"/blob/".len() + 1,
+            ScmPlatform::AzureDevOps => b"/commit/".len() + b"?path=/".len(),
+            ScmPlatform::Gitea => b"/src/commit/".len() + 1,
+            ScmPlatform::Bitbucket => b"/src/".len() + 1,
+            ScmPlatform::Unknown | ScmPlatform::NoPlatform => return Ok(None),
+        })?;
+        if !archived {
+            let location = finding.location();
+            let (start_prefix, end_prefix): (&[u8], &[u8]) = match self.platform {
+                ScmPlatform::GitHub | ScmPlatform::Gitea => (b"#L", b"-L"),
+                ScmPlatform::GitLab => (b"#L", b"-"),
+                ScmPlatform::AzureDevOps => (b"&line=", b"&lineEnd="),
+                ScmPlatform::Bitbucket => (b"#lines-", b":"),
+                ScmPlatform::Unknown | ScmPlatform::NoPlatform => return Ok(None),
+            };
+            if location.start_line() != 0 {
+                add(start_prefix.len() + decimal_length(location.start_line()))?;
+            }
+            if location.end_line() != location.start_line() {
+                add(end_prefix.len() + decimal_length(location.end_line()))?;
+            }
+            if self.platform == ScmPlatform::AzureDevOps {
+                add(
+                    b"&lineStartColumn=1&lineEndColumn=10000000&type=2&lineStyle=plain&_a=files"
+                        .len(),
+                )?;
+            }
+            if has_markdown_extension(outer_file) {
+                if self.platform == ScmPlatform::GitHub {
+                    add(b"?plain=1".len())?;
+                }
+                if self.platform == ScmPlatform::Gitea {
+                    add(b"?display=source".len())?;
+                }
+            }
+        }
+        Ok(Some(length))
+    }
+
     /// Constructs this platform's source link for a finding.
     ///
     /// No link is returned for an unknown or disabled platform, an empty
@@ -263,14 +341,9 @@ impl RemoteMetadata {
     /// Returns [`ScmErrorKind::Allocation`] when link storage cannot be
     /// reserved.
     pub fn link_for(&self, finding: &Finding) -> Result<Option<ByteText>, ScmError> {
-        if matches!(
-            self.platform,
-            ScmPlatform::Unknown | ScmPlatform::NoPlatform
-        ) || self.url.is_empty()
-            || finding.commit().is_empty()
-        {
+        let Some(link_capacity) = self.link_length(finding)? else {
             return Ok(None);
-        }
+        };
 
         let file = finding.file().as_bytes();
         let (outer_file, is_archive_member) =
@@ -281,13 +354,6 @@ impl RemoteMetadata {
         let escaped_file = escape_link_path(outer_file)?;
         let location = finding.location();
         let mut link = Vec::new();
-        let link_capacity = self
-            .url
-            .len()
-            .checked_add(finding.commit().len())
-            .and_then(|length| length.checked_add(escaped_file.len()))
-            .and_then(|length| length.checked_add(256))
-            .ok_or_else(|| allocation_error("source-control link"))?;
         try_reserve(&mut link, link_capacity, "source-control link")?;
         link.extend_from_slice(self.url.as_bytes());
 
@@ -955,4 +1021,111 @@ fn allocation_error(context: &str) -> ScmError {
         ScmErrorKind::Allocation,
         format!("{context} length overflow"),
     )
+}
+
+fn decimal_length(mut number: usize) -> usize {
+    let mut length = 1;
+    while number >= 10 {
+        number /= 10;
+        length += 1;
+    }
+    length
+}
+
+#[cfg(test)]
+mod link_length_tests {
+    use super::*;
+
+    #[test]
+    fn preflight_matches_independently_spelled_links_for_every_platform() {
+        let finding = Finding::builder()
+            .rule_id("synthetic")
+            .commit("abc")
+            .file("a %b.md")
+            .location(Location::new(9, 12, 0, 0).unwrap())
+            .build()
+            .unwrap();
+        for (platform, expected) in [
+            (
+                ScmPlatform::GitHub,
+                "https://example.invalid/r/blob/abc/a%20%25b.md?plain=1#L9-L12",
+            ),
+            (
+                ScmPlatform::GitLab,
+                "https://example.invalid/r/blob/abc/a%20%25b.md#L9-12",
+            ),
+            (
+                ScmPlatform::Gitea,
+                "https://example.invalid/r/src/commit/abc/a%20%25b.md?display=source#L9-L12",
+            ),
+            (
+                ScmPlatform::Bitbucket,
+                "https://example.invalid/r/src/abc/a%20%25b.md#lines-9:12",
+            ),
+            (
+                ScmPlatform::AzureDevOps,
+                "https://example.invalid/r/commit/abc?path=/a%20%25b.md&line=9&lineEnd=12&lineStartColumn=1&lineEndColumn=10000000&type=2&lineStyle=plain&_a=files",
+            ),
+        ] {
+            let remote = RemoteMetadata::new(platform, "https://example.invalid/r");
+            assert_eq!(remote.link_length(&finding).unwrap(), Some(expected.len()));
+            assert_eq!(
+                remote.link_for(&finding).unwrap().unwrap().as_bytes(),
+                expected.as_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn preflight_omits_archive_anchors_and_preserves_not_applicable_states() {
+        let finding = Finding::builder()
+            .rule_id("synthetic")
+            .commit("abc")
+            .file(format!("outer %.md{INNER_PATH_SEPARATOR}member"))
+            .location(Location::new(usize::MAX, usize::MAX, 0, 0).unwrap())
+            .build()
+            .unwrap();
+        let remote = RemoteMetadata::new(ScmPlatform::GitHub, "https://example.invalid/r");
+        let expected = b"https://example.invalid/r/blob/abc/outer%20%25.md";
+        assert_eq!(remote.link_length(&finding).unwrap(), Some(expected.len()));
+        assert_eq!(
+            remote.link_for(&finding).unwrap().unwrap().as_bytes(),
+            expected
+        );
+        for remote in [
+            RemoteMetadata::new(ScmPlatform::Unknown, "url"),
+            RemoteMetadata::new(ScmPlatform::NoPlatform, "url"),
+            RemoteMetadata::new(ScmPlatform::GitHub, ""),
+        ] {
+            assert_eq!(remote.link_length(&finding).unwrap(), None);
+        }
+        let no_commit = Finding::builder()
+            .rule_id("synthetic")
+            .file("a")
+            .location(Location::new(0, 0, 0, 0).unwrap())
+            .build()
+            .unwrap();
+        assert_eq!(remote.link_length(&no_commit).unwrap(), None);
+        for (start, end) in [(0, 0), (1, 1), (0, usize::MAX), (usize::MAX, usize::MAX)] {
+            let finding = Finding::builder()
+                .rule_id("synthetic")
+                .commit("abc")
+                .file("a")
+                .location(Location::new(start, end, 0, 0).unwrap())
+                .build()
+                .unwrap();
+            let expected_length = b"https://example.invalid/r/blob/abc/a".len()
+                + if start == 0 {
+                    0
+                } else {
+                    2 + start.to_string().len()
+                }
+                + if end == start {
+                    0
+                } else {
+                    2 + end.to_string().len()
+                };
+            assert_eq!(remote.link_length(&finding).unwrap(), Some(expected_length));
+        }
+    }
 }

@@ -495,3 +495,489 @@ fn predecessor_visits_poll_cancellation_once_per_work_unit() {
         );
     }
 }
+
+fn bounded_outcome(
+    engine: &Engine,
+    fragment: &Fragment,
+    options: &ScanOptions,
+    budget: ScanBudget,
+) -> rustleaks_core::ScanOutcome {
+    engine.scan_fragment_controlled(
+        fragment,
+        options,
+        &ScanControl::unlimited().with_budget(budget),
+    )
+}
+
+#[test]
+fn finding_payload_is_admitted_before_long_line_copies_with_inclusive_limits() {
+    let engine = engine("[[rules]]\nid = 'r'\nregex = 'X'\n");
+    let mut bytes = vec![b'.'; 32_768];
+    bytes.extend_from_slice(b"X X X");
+    let fragment = Fragment::new(bytes);
+    // Each record owns the 32,773-byte physical line, one-byte rule ID,
+    // one-byte match and one-byte secret. No descriptions or metadata exist.
+    let per_record = 32_776;
+    for maximum in [3 * per_record, 3 * per_record + 1] {
+        let outcome = bounded_outcome(
+            &engine,
+            &fragment,
+            &ScanOptions::default(),
+            ScanBudget::unlimited().max_finding_payload_bytes(maximum),
+        );
+        assert!(outcome.is_complete());
+        assert_eq!(outcome.findings().len(), 3);
+        assert_eq!(outcome.usage().finding_payload_bytes(), 3 * per_record);
+        assert_eq!(outcome.usage().finding_records(), 3);
+    }
+    let partial = bounded_outcome(
+        &engine,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(3 * per_record - 1),
+    );
+    assert!(partial.findings().is_empty());
+    assert_eq!(partial.usage().finding_records(), 2);
+    assert_eq!(partial.usage().finding_payload_bytes(), 2 * per_record);
+    assert_eq!(
+        partial.termination(),
+        Some(&ScanTermination::BudgetExceeded {
+            kind: ScanBudgetKind::FindingPayloadBytes,
+            limit: 3 * per_record - 1,
+            consumed: 2 * per_record,
+            requested: per_record,
+        })
+    );
+}
+
+#[test]
+fn finding_payload_includes_paths_tags_and_commit_fields() {
+    use rustleaks_core::model::CommitMetadata;
+    let engine =
+        engine("[[rules]]\nid = 'r'\ndescription = 'desc'\nregex = 'X'\ntags = ['one', 'two']\n");
+    let fragment = Fragment::builder("X")
+        .file_path("file")
+        .symlink_file("link")
+        .commit("sha")
+        .commit_metadata(
+            CommitMetadata::builder()
+                .sha("not-copied")
+                .author_name("author")
+                .author_email("email")
+                .date("date")
+                .message("message")
+                .build(),
+        )
+        .build();
+    // ID + description + three X fields + paths + commit + tags + metadata.
+    let payload = 1 + 4 + 3 + 4 + 4 + 3 + 6 + 6 + 5 + 4 + 7;
+    let exact = bounded_outcome(
+        &engine,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(payload),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.findings().len(), 1);
+    assert_eq!(exact.usage().finding_payload_bytes(), payload);
+    let partial = bounded_outcome(
+        &engine,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(payload - 1),
+    );
+    assert_eq!(partial.usage().finding_payload_bytes(), 0);
+    assert_eq!(partial.usage().finding_records(), 0);
+    assert!(!partial.is_complete());
+}
+
+#[test]
+fn path_only_findings_and_required_projections_admit_payload() {
+    let path_engine = engine("[[rules]]\nid = 'r'\npath = 'file'\n");
+    let fragment = Fragment::builder("").file_path("file").build();
+    // Rule ID, file path, and match text "file detected: file".
+    let payload = 1 + 4 + 15 + 4;
+    for maximum in [payload - 1, payload, payload + 1] {
+        let outcome = bounded_outcome(
+            &path_engine,
+            &fragment,
+            &ScanOptions::default(),
+            ScanBudget::unlimited().max_finding_payload_bytes(maximum),
+        );
+        assert_eq!(outcome.is_complete(), maximum >= payload);
+        assert_eq!(
+            outcome.usage().finding_records(),
+            usize::from(maximum >= payload)
+        );
+        assert_eq!(
+            outcome.usage().finding_payload_bytes(),
+            if maximum >= payload { payload } else { 0 }
+        );
+    }
+
+    let composite = engine(
+        "[[rules]]\nid = 'p'\nregex = 'P'\n[[rules.required]]\nid = 'a'\n[[rules]]\nid = 'a'\nregex = 'A'\nskipReport = true\n",
+    );
+    let fragment = Fragment::new("P A");
+    // Primary and auxiliary each own 1 + 3 + 1 + 1 bytes; projection owns
+    // another identical six bytes. Discarded auxiliary records still count.
+    let exact = bounded_outcome(
+        &composite,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(18),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.findings().len(), 1);
+    assert_eq!(exact.findings()[0].required_findings().len(), 1);
+    assert_eq!(exact.usage().finding_payload_bytes(), 18);
+    assert_eq!(exact.usage().finding_records(), 3);
+    let partial = bounded_outcome(
+        &composite,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(17),
+    );
+    assert!(partial.findings().is_empty());
+    assert_eq!(partial.usage().finding_records(), 2);
+    assert_eq!(
+        partial.termination(),
+        Some(&ScanTermination::BudgetExceeded {
+            kind: ScanBudgetKind::FindingPayloadBytes,
+            limit: 17,
+            consumed: 12,
+            requested: 6,
+        })
+    );
+}
+
+#[test]
+fn collected_spans_bound_dense_and_empty_matches_before_candidate_work() {
+    for (pattern, bytes, count) in [("X", "XXX", 3), ("(?:)", "abc", 4)] {
+        let engine = engine(&format!("[[rules]]\nid = 'r'\nregex = '{pattern}'\n"));
+        let fragment = Fragment::new(bytes);
+        for maximum in [count - 1, count, count + 1] {
+            let outcome = bounded_outcome(
+                &engine,
+                &fragment,
+                &ScanOptions::default(),
+                ScanBudget::unlimited().max_collected_spans(maximum),
+            );
+            assert_eq!(outcome.is_complete(), maximum >= count);
+            assert_eq!(outcome.usage().collected_spans(), maximum.min(count));
+            if maximum < count {
+                assert_eq!(outcome.usage().work_units(), 2);
+                assert_eq!(outcome.usage().finding_records(), 0);
+                assert_eq!(
+                    outcome.termination(),
+                    Some(&ScanTermination::BudgetExceeded {
+                        kind: ScanBudgetKind::CollectedSpans,
+                        limit: maximum,
+                        consumed: maximum,
+                        requested: 1,
+                    })
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn bounded_enumeration_preserves_keyword_anchor_results_and_cancels_between_spans() {
+    let anchored = engine("[[rules]]\nid = 'r'\nregex = 'token=[A-Z]{4}'\nkeywords = ['token']\n");
+    let fragment = Fragment::new("token=ABCD token=EFGH token=IJKL");
+    let legacy = anchored.scan_fragment(&fragment, &ScanOptions::default());
+    let exact = bounded_outcome(
+        &anchored,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_collected_spans(3),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.findings(), legacy.findings());
+    assert_eq!(exact.usage().work_units(), legacy.usage().work_units());
+    assert_eq!(exact.usage().collected_spans(), 3);
+    let partial = bounded_outcome(
+        &anchored,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_collected_spans(2),
+    );
+    assert!(!partial.is_complete());
+    assert_eq!(partial.usage().collected_spans(), 2);
+
+    let dense = engine("[[rules]]\nid = 'r'\nregex = 'X'\n");
+    let polls = AtomicUsize::new(0);
+    // Initial, pass, rule, first-span polls succeed; second-span poll cancels.
+    let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 4;
+    let control = ScanControl::cancellable(&cancel)
+        .with_budget(ScanBudget::unlimited().max_collected_spans(3));
+    let cancelled =
+        dense.scan_fragment_controlled(&Fragment::new("XXX"), &ScanOptions::default(), &control);
+    assert_eq!(cancelled.termination(), Some(&ScanTermination::Cancelled));
+    assert_eq!(cancelled.usage().collected_spans(), 1);
+    assert_eq!(cancelled.usage().work_units(), 2);
+    assert_eq!(cancelled.usage().finding_records(), 0);
+}
+
+#[test]
+fn decoder_candidate_enumeration_shares_the_cumulative_span_limit() {
+    let engine = engine("[[rules]]\nid = 'r'\nregex = 'NEVER'\n");
+    let fragment = Fragment::new("YWJjZGVmZ2hpamts\nYWJjZGVmZ2hpamts\n");
+    let options = ScanOptions::builder().max_decode_depth(1).build();
+    for maximum in [1, 2, 3] {
+        let outcome = bounded_outcome(
+            &engine,
+            &fragment,
+            &options,
+            ScanBudget::unlimited().max_collected_spans(maximum),
+        );
+        assert_eq!(outcome.is_complete(), maximum >= 2);
+        assert_eq!(outcome.usage().collected_spans(), maximum.min(2));
+        assert!(outcome.findings().is_empty());
+        assert_eq!(
+            outcome.usage().decoded_bytes(),
+            if maximum >= 2 { 26 } else { 0 }
+        );
+        if maximum == 1 {
+            assert_eq!(outcome.usage().work_units(), 3);
+            assert_eq!(
+                outcome.termination(),
+                Some(&ScanTermination::BudgetExceeded {
+                    kind: ScanBudgetKind::CollectedSpans,
+                    limit: 1,
+                    consumed: 1,
+                    requested: 1,
+                })
+            );
+        }
+    }
+}
+
+#[test]
+fn decoded_finding_payload_charges_original_line_and_generated_tags() {
+    let engine = engine("[[rules]]\nid = 'r'\nregex = 'abcdefghijkl'\n");
+    let fragment = Fragment::new("YWJjZGVmZ2hpamts");
+    let options = ScanOptions::builder().max_decode_depth(1).build();
+    // Rule ID + encoded source line + decoded match/secret + two tags.
+    let payload = 1 + 16 + 12 + 12 + 14 + 14;
+    for maximum in [payload - 1, payload, payload + 1] {
+        let outcome = bounded_outcome(
+            &engine,
+            &fragment,
+            &options,
+            ScanBudget::unlimited().max_finding_payload_bytes(maximum),
+        );
+        assert_eq!(outcome.is_complete(), maximum >= payload);
+        assert_eq!(
+            outcome.usage().finding_payload_bytes(),
+            if maximum >= payload { payload } else { 0 }
+        );
+        assert_eq!(
+            outcome.usage().finding_records(),
+            usize::from(maximum >= payload)
+        );
+        if maximum >= payload {
+            assert_eq!(outcome.findings()[0].secret().as_bytes(), b"abcdefghijkl");
+        }
+    }
+}
+
+#[test]
+fn normalization_limits_admit_invalid_byte_amplification_before_allocation() {
+    let engine = engine("[[rules]]\nid = 'r'\nregex = 'Z'\n");
+    let fragment = Fragment::new(vec![0xff; 4_096]);
+    // Each invalid source byte creates three normalized bytes and one offset.
+    let payload = (3 + std::mem::size_of::<usize>()) * 4_096;
+    for maximum in [payload - 1, payload, payload + 1] {
+        let outcome = bounded_outcome(
+            &engine,
+            &fragment,
+            &ScanOptions::default(),
+            ScanBudget::unlimited().max_normalization_bytes(maximum),
+        );
+        assert_eq!(outcome.is_complete(), maximum >= payload);
+        assert!(outcome.findings().is_empty());
+        assert_eq!(
+            outcome.usage().normalization_bytes(),
+            if maximum >= payload { payload } else { 0 }
+        );
+        if maximum < payload {
+            assert_eq!(
+                outcome.termination(),
+                Some(&ScanTermination::BudgetExceeded {
+                    kind: ScanBudgetKind::NormalizationBytes,
+                    limit: maximum,
+                    consumed: 0,
+                    requested: payload,
+                })
+            );
+        }
+    }
+    let borrowed = bounded_outcome(
+        &engine,
+        &Fragment::new("valid UTF-8 é"),
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_normalization_bytes(0),
+    );
+    assert!(borrowed.is_complete());
+    assert_eq!(borrowed.usage().normalization_bytes(), 0);
+}
+
+#[test]
+fn normalization_usage_includes_capture_allowlist_path_and_decoder_searches() {
+    let unit = 3 + std::mem::size_of::<usize>();
+    let capture = engine("[[rules]]\nid = 'r'\nregex = '(.)'\n");
+    let fragment = Fragment::new(b"\xff");
+    let exact = bounded_outcome(
+        &capture,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_normalization_bytes(2 * unit),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.findings()[0].secret().as_bytes(), b"\xff");
+    assert_eq!(exact.usage().normalization_bytes(), 2 * unit);
+    let partial = bounded_outcome(
+        &capture,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_normalization_bytes(unit),
+    );
+    assert_eq!(partial.usage().finding_records(), 0);
+    assert_eq!(
+        partial.termination(),
+        Some(&ScanTermination::BudgetExceeded {
+            kind: ScanBudgetKind::NormalizationBytes,
+            limit: unit,
+            consumed: unit,
+            requested: unit,
+        })
+    );
+
+    let line = engine(
+        "[[rules]]\nid = 'r'\nregex = 'X'\n[[rules.allowlists]]\nregexTarget = 'line'\nregexes = ['NEVER']\n",
+    );
+    let fragment = Fragment::new(b"\xffX");
+    let exact = bounded_outcome(
+        &line,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_normalization_bytes(2 * (unit + 1)),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.usage().normalization_bytes(), 2 * (unit + 1));
+
+    let path = engine("[[rules]]\nid = 'r'\npath = 'X'\n");
+    let fragment = Fragment::builder("").file_path(b"\xffX").build();
+    let exact = bounded_outcome(
+        &path,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_normalization_bytes(unit + 1),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.usage().normalization_bytes(), unit + 1);
+
+    let decoder = engine("[[rules]]\nid = 'r'\nregex = 'NEVER'\n");
+    let exact = bounded_outcome(
+        &decoder,
+        &Fragment::new(b"\xff"),
+        &ScanOptions::builder().max_decode_depth(1).build(),
+        ScanBudget::unlimited().max_normalization_bytes(2 * unit),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.usage().normalization_bytes(), 2 * unit);
+}
+
+fn owned_finding_fields(finding: &rustleaks_core::model::Finding) -> usize {
+    [
+        finding.rule_id(),
+        finding.description(),
+        finding.line(),
+        finding.match_text(),
+        finding.secret(),
+        finding.file(),
+        finding.symlink_file(),
+        finding.commit(),
+        finding.link(),
+        finding.author(),
+        finding.email(),
+        finding.date(),
+        finding.message(),
+        finding.fingerprint(),
+    ]
+    .into_iter()
+    .map(rustleaks_core::model::ByteText::len)
+    .chain(
+        finding
+            .tags()
+            .iter()
+            .map(rustleaks_core::model::ByteText::len),
+    )
+    .chain(finding.required_findings().iter().flat_map(|required| {
+        [
+            required.rule_id().len(),
+            required.line().len(),
+            required.match_text().len(),
+            required.secret().len(),
+        ]
+    }))
+    .sum()
+}
+
+#[test]
+fn redaction_and_session_retained_fields_obey_the_conservative_payload_bound() {
+    use rustleaks_core::session::SessionPolicy;
+    let decimal_digits = usize::MAX.to_string().len();
+    for pattern in ["(?:)", "X", "(X?)"] {
+        let engine = engine(&format!("[[rules]]\nid = 'r'\nregex = '{pattern}'\n"));
+        for raw in [b"XXX".as_slice(), b"\xffX", "éX".as_bytes(), b""] {
+            let fragment = Fragment::builder(raw)
+                .file_path("path")
+                .commit("commit")
+                .build();
+            for percent in [1, 50, 99, 100, 150] {
+                let outcome = bounded_outcome(
+                    &engine,
+                    &fragment,
+                    &ScanOptions::builder().redaction_percent(percent).build(),
+                    ScanBudget::unlimited()
+                        .max_finding_payload_bytes(1_024)
+                        .max_finding_records(16),
+                );
+                assert!(outcome.is_complete());
+                let payload = outcome.usage().finding_payload_bytes();
+                let records = outcome.usage().finding_records();
+                let redacted: usize = outcome.findings().iter().map(owned_finding_fields).sum();
+                assert!(redacted <= 9 * payload + 24 * records);
+                let mut batch = SessionPolicy::default().new_batch();
+                for finding in outcome.into_findings() {
+                    batch.add_finding(finding);
+                }
+                let classified: usize = batch.findings().iter().map(owned_finding_fields).sum();
+                assert!(classified <= 10 * payload + (decimal_digits + 27) * records);
+            }
+        }
+    }
+    // Empty-secret full redaction inserts eight bytes at every rune boundary.
+    // Four empty matches each retain: rule ID 1, line 35, match 8, secret 8.
+    let empty = engine("[[rules]]\nid = 'r'\nregex = '(?:)'\n");
+    let outcome = bounded_outcome(
+        &empty,
+        &Fragment::new("XXX"),
+        &ScanOptions::builder().redaction_percent(100).build(),
+        ScanBudget::unlimited().max_finding_payload_bytes(16),
+    );
+    assert!(outcome.is_complete());
+    assert_eq!(outcome.usage().finding_payload_bytes(), 16);
+    assert_eq!(outcome.usage().finding_records(), 4);
+    assert_eq!(
+        outcome
+            .findings()
+            .iter()
+            .map(owned_finding_fields)
+            .sum::<usize>(),
+        208
+    );
+}

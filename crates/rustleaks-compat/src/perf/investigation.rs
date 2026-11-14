@@ -10,12 +10,14 @@ use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde_json::{Value, json};
 
-use super::{Fixture, fingerprint, outcome_signature, single_core_workload};
+use super::{
+    Fixture, default_rule_workloads, fingerprint, outcome_signature, single_core_workload,
+};
 
 const SCOPE: &str = "investigation-v1-steady-scan-only";
 const WINDOW_SCOPE: &str = "investigation-v2-summed-scan-windows";
 
-struct Worker {
+struct RepresentativeWorker {
     fixture: Fixture,
     detector: Engine,
     fragment: Fragment,
@@ -24,9 +26,12 @@ struct Worker {
     identity: Value,
 }
 
-impl Worker {
+impl RepresentativeWorker {
     fn new(workload: &str) -> Result<Self, Box<dyn Error>> {
-        if !workload.starts_with("core-") || !single_core_workload(workload) {
+        if !workload.starts_with("core-")
+            || !single_core_workload(workload)
+            || super::gate_controls::WORKLOADS.contains(&workload)
+        {
             return Err("investigation requires a representative core workload".into());
         }
         let mut fixture = Fixture::new(workload)?;
@@ -96,8 +101,44 @@ impl Worker {
         }
         Ok(elapsed)
     }
+}
+
+enum Worker {
+    Representative(Box<RepresentativeWorker>),
+    Ordinary(Box<default_rule_workloads::PreparedProfile>),
+}
+
+impl Worker {
+    fn new(workload: &str) -> Result<Self, Box<dyn Error>> {
+        if workload == default_rule_workloads::PROFILE_WORKLOAD {
+            Ok(Self::Ordinary(Box::new(
+                default_rule_workloads::PreparedProfile::new(workload)?,
+            )))
+        } else {
+            Ok(Self::Representative(Box::new(RepresentativeWorker::new(
+                workload,
+            )?)))
+        }
+    }
+
+    fn identity(&self) -> &Value {
+        match self {
+            Self::Representative(worker) => &worker.identity,
+            Self::Ordinary(worker) => worker.identity(),
+        }
+    }
+
+    fn scan(&self) -> Result<u64, Box<dyn Error>> {
+        match self {
+            Self::Representative(worker) => worker.scan(),
+            Self::Ordinary(worker) => worker.scan(),
+        }
+    }
 
     fn sample(&self, iterations: u64, extra_passes: u64) -> Result<Value, Box<dyn Error>> {
+        if matches!(self, Self::Ordinary(_)) {
+            return Err("ordinary investigation workload supports profile only".into());
+        }
         if !(1..=100).contains(&iterations) || extra_passes > 1 {
             return Err("sample bounds are iterations 1..=100 and extra passes 0..=1".into());
         }
@@ -108,7 +149,7 @@ impl Worker {
                 .ok_or("elapsed overflow")?;
         }
         Ok(
-            json!({"kind":"sample", "scope":SCOPE, "identity":self.identity,
+            json!({"kind":"sample", "scope":SCOPE, "identity":self.identity(),
             "iterations":iterations, "extra_passes":extra_passes,
             "actual_scan_count":iterations*(extra_passes+1), "elapsed_ns":elapsed_ns,
             "ns_per_logical_iteration":elapsed_ns/iterations,
@@ -153,7 +194,7 @@ impl Worker {
                 "schema_version":2,"kind":"window-component","scope":WINDOW_SCOPE,
                 "block_index":block_index,"window_blocks":blocks,
                 "iterations_per_block":iterations,"extra_passes":extra_passes,
-                "identity":self.identity,"sample":sample,
+                "identity":self.identity(),"sample":sample,
             }))?;
         }
         output(&json!({
@@ -161,7 +202,7 @@ impl Worker {
             "window_blocks":blocks,"iterations_per_block":iterations,
             "extra_passes":extra_passes,"total_iterations":total_iterations,
             "actual_scan_count":actual_scan_count,"elapsed_ns":elapsed_ns,
-            "identity":self.identity,
+            "identity":self.identity(),
         }))
     }
 
@@ -178,10 +219,12 @@ impl Worker {
                 .ok_or("elapsed overflow")?;
             scans += 1;
         }
-        Ok(json!({"kind":"profile-complete", "identity":self.identity,
+        Ok(
+            json!({"kind":"profile-complete", "identity":self.identity(),
             "scope":"steady-scan-loop-includes-validation-and-outcome-destruction",
             "requested_seconds":seconds, "actual_scan_count":scans,
-            "scan_elapsed_ns":scan_ns, "loop_elapsed_ns":u64::try_from(start.elapsed().as_nanos())?}))
+            "scan_elapsed_ns":scan_ns, "loop_elapsed_ns":u64::try_from(start.elapsed().as_nanos())?}),
+        )
     }
 }
 
@@ -201,7 +244,7 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     let provenance = super::super::provenance()?;
     let worker = Worker::new(workload)?;
     emit(&json!({"schema_version":1,"kind":"ready","scope":SCOPE,
-        "identity":worker.identity,"provenance":provenance,
+        "identity":worker.identity(),"provenance":provenance,
         "setup":"configuration,engine,fixture and one validated warm scan complete"}))?;
     let mut input = std::io::stdin().lock();
     for _ in 0..100 {
@@ -239,8 +282,8 @@ mod tests {
         // These identities and counts are the existing representative fixture's
         // contract, not a separate dense input created for investigation.
         assert_eq!(
-            worker.identity,
-            json!({
+            worker.identity(),
+            &json!({
                 "workload": "core-dense-16-kib", "input_bytes": 16384,
                 "input_fnv1a64": "3e812ba2e5c2f925", "config_fnv1a64": "f8b26dc4f7787416",
                 "outcome_fnv1a64": "b80de9ceab6a9984", "rules": 1, "keywords": 0,
@@ -266,6 +309,36 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_worker_profiles_bounded_complete_work_without_enabling_calibration() {
+        let worker = Worker::new(default_rule_workloads::PROFILE_WORKLOAD).unwrap();
+        assert_eq!(worker.identity()["input_bytes"], 256 * 1024);
+        assert_eq!(worker.identity()["findings"], 131);
+        assert!(worker.sample(1, 0).is_err());
+        let mut emitted = false;
+        assert!(
+            worker
+                .window(1, 1, 0, |_| {
+                    emitted = true;
+                    Ok(())
+                })
+                .is_err()
+        );
+        assert!(!emitted);
+        assert!(worker.profile(0).is_err());
+        assert!(worker.profile(61).is_err());
+        let complete = worker.profile(1).unwrap();
+        assert_eq!(complete["kind"], "profile-complete");
+        assert_eq!(&complete["identity"], worker.identity());
+        assert_eq!(complete["requested_seconds"], 1);
+        assert!(complete["actual_scan_count"].as_u64().unwrap() > 0);
+        let loop_ns = complete["loop_elapsed_ns"].as_u64().unwrap();
+        assert!(loop_ns >= 1_000_000_000);
+        assert!(complete["scan_elapsed_ns"].as_u64().unwrap() <= loop_ns);
+        assert!(Worker::new("core-realistic-env-256-kib").is_err());
+        assert!(Worker::new("core-realistic-multi-language-unknown").is_err());
+    }
+
+    #[test]
     fn window_emits_ordered_legacy_samples_and_only_then_completion() {
         let worker = Worker::new("core-mixed-1-kib").unwrap();
         for (blocks, extra, expected_scans) in [(1, 0, 1), (10, 1, 20)] {
@@ -281,7 +354,7 @@ mod tests {
             assert_eq!(complete["kind"], "window-complete");
             assert_eq!(complete["total_iterations"], blocks);
             assert_eq!(complete["actual_scan_count"], expected_scans);
-            assert_eq!(complete["identity"], worker.identity);
+            assert_eq!(&complete["identity"], worker.identity());
             let mut sum = 0_u64;
             for (index, component) in records.iter().enumerate() {
                 assert_eq!(component["kind"], "window-component");
@@ -289,7 +362,7 @@ mod tests {
                 assert_eq!(component["scope"], WINDOW_SCOPE);
                 assert_eq!(component["sample"]["kind"], "sample");
                 assert_eq!(component["sample"]["scope"], SCOPE);
-                assert_eq!(component["sample"]["identity"], worker.identity);
+                assert_eq!(&component["sample"]["identity"], worker.identity());
                 assert_eq!(component["sample"]["actual_scan_count"], extra + 1);
                 sum = sum
                     .checked_add(component["sample"]["elapsed_ns"].as_u64().unwrap())

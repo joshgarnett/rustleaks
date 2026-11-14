@@ -27,8 +27,8 @@ pub use archive::{ArchiveLimits, ArchiveOptions, ArchiveSource};
 pub use cancellation::{Cancellation, CancellationToken};
 pub use directory::{DirectoryOptions, DirectorySource};
 pub use file::{
-    DEFAULT_CHUNK_SIZE, FileOptions, FileSource, MAX_BOUNDARY_READ_AHEAD, ReadOutcome, ReadStatus,
-    SourceReader,
+    COMPLETE_MIME_WINDOW, DEFAULT_CHUNK_SIZE, FileOptions, FileSource, MAX_BOUNDARY_READ_AHEAD,
+    ReadOutcome, ReadStatus, SourceReader,
 };
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
@@ -42,7 +42,7 @@ pub use runner::{
 pub use scm::{RemoteMetadata, ScmError, ScmErrorKind, ScmPlatform, scm_link};
 pub use source::{
     CallbackError, Source, SourceConfigError, SourceControl, SourceError, SourceEvent, SourceIssue,
-    SourceIssueKind, SourceStage,
+    SourceIssueDisposition, SourceIssueKind, SourceStage,
 };
 
 /// Confirms the source adapter is linked to the expected engine profile.

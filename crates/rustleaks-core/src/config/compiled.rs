@@ -4,6 +4,7 @@ use std::fmt;
 use aho_corasick::AhoCorasick;
 
 use crate::go_unicode::lowercase_bytes as go_lowercase_bytes;
+use crate::native::NativeEntropy;
 use crate::regex::GoRegex;
 
 use super::{Condition, ConfigExtension, ConfigOrigin, RegexTarget, RequiredRuleSpec};
@@ -85,6 +86,8 @@ impl CompiledAllowlist {
                 .is_some_and(|matcher| matcher.is_match(path))
     }
 
+    // Retained as an unbudgeted reference for the controlled allowlist tests.
+    #[cfg(test)]
     pub(crate) fn regex_allowed(&self, target: &[u8]) -> bool {
         !target.is_empty()
             && self
@@ -170,6 +173,7 @@ pub struct CompiledRule {
     pub(crate) regex_matcher: Option<GoRegex>,
     pub(crate) secret_group: i64,
     pub(crate) entropy: f64,
+    pub(crate) native_entropy: Option<NativeEntropy>,
     pub(crate) keywords: Vec<String>,
     pub(crate) tags: Vec<String>,
     pub(crate) allowlists: Vec<CompiledAllowlist>,
@@ -208,10 +212,24 @@ impl CompiledRule {
         self.secret_group
     }
 
-    /// Returns the configured minimum entropy.
+    /// Returns the configured legacy minimum entropy.
+    ///
+    /// This is zero for a native byte-entropy predicate. Inspect
+    /// [`Self::native_entropy`] for that predicate's complete metadata.
     #[must_use]
     pub fn entropy(&self) -> f64 {
         self.entropy
+    }
+
+    /// Returns a native predicate's algorithm, rejection comparator and threshold.
+    ///
+    /// `byte-shannon-f64-v1` counts bytes in ascending order and divides each
+    /// count by the byte length in binary64. `lt` rejects entropy below the
+    /// threshold; `le` also rejects equality. Zero remains an active threshold.
+    /// Native metadata survives cloning, rule selection and engine construction.
+    #[must_use]
+    pub fn native_entropy(&self) -> Option<(&'static str, &'static str, f64)> {
+        self.native_entropy.map(NativeEntropy::metadata)
     }
 
     /// Returns normalized pre-filter keywords in effective rule order.

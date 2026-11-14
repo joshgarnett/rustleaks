@@ -123,6 +123,7 @@ pub fn rustleaks_core::config::CompiledRule::description(&self) -> &str
 pub fn rustleaks_core::config::CompiledRule::entropy(&self) -> f64
 pub fn rustleaks_core::config::CompiledRule::id(&self) -> &str
 pub fn rustleaks_core::config::CompiledRule::keywords(&self) -> &[alloc::string::String]
+pub fn rustleaks_core::config::CompiledRule::native_entropy(&self) -> core::option::Option<(&'static str, &'static str, f64)>
 pub fn rustleaks_core::config::CompiledRule::path(&self) -> core::option::Option<&str>
 pub fn rustleaks_core::config::CompiledRule::regex(&self) -> core::option::Option<&str>
 pub fn rustleaks_core::config::CompiledRule::required_rules(&self) -> &[rustleaks_core::config::RequiredRuleSpec]
@@ -230,15 +231,18 @@ pub rustleaks_core::explanation::ExplanationReason::AllowMarkerMatched
 pub rustleaks_core::explanation::ExplanationReason::AllowlistMatched
 pub rustleaks_core::explanation::ExplanationReason::AllowlistNotMatched
 pub rustleaks_core::explanation::ExplanationReason::CandidateAccepted
+pub rustleaks_core::explanation::ExplanationReason::CollectedSpanBudgetExceeded
 pub rustleaks_core::explanation::ExplanationReason::DecodedByteBudgetExceeded
 pub rustleaks_core::explanation::ExplanationReason::DecodedMappingUnavailable
 pub rustleaks_core::explanation::ExplanationReason::EntropyAccepted
 pub rustleaks_core::explanation::ExplanationReason::EntropyNotRequired
 pub rustleaks_core::explanation::ExplanationReason::EntropyRejected
 pub rustleaks_core::explanation::ExplanationReason::FindingBudgetExceeded
+pub rustleaks_core::explanation::ExplanationReason::FindingPayloadBudgetExceeded
 pub rustleaks_core::explanation::ExplanationReason::KeywordMatched
 pub rustleaks_core::explanation::ExplanationReason::KeywordMissed
 pub rustleaks_core::explanation::ExplanationReason::KeywordNotRequired
+pub rustleaks_core::explanation::ExplanationReason::NormalizationBudgetExceeded
 pub rustleaks_core::explanation::ExplanationReason::OfflineValidation
 pub rustleaks_core::explanation::ExplanationReason::OfflineValidation::check: rustleaks_core::validation::OfflineCheck
 pub rustleaks_core::explanation::ExplanationReason::OfflineValidation::reason: rustleaks_core::explanation::ValidationReason
@@ -521,6 +525,7 @@ pub rustleaks_core::native::NativePolicyError::AmbiguousPackField
 pub rustleaks_core::native::NativePolicyError::Config(rustleaks_core::config::ConfigError)
 pub rustleaks_core::native::NativePolicyError::DuplicatePackId
 pub rustleaks_core::native::NativePolicyError::Engine(rustleaks_core::ScanError)
+pub rustleaks_core::native::NativePolicyError::InvalidNativeEntropy
 pub rustleaks_core::native::NativePolicyError::InvalidPackId
 pub rustleaks_core::native::NativePolicyError::InvalidPackStructure
 pub rustleaks_core::native::NativePolicyError::InvalidRuleId
@@ -540,6 +545,7 @@ pub const rustleaks_core::native::NativePolicy::MAX_PACKS: usize
 pub const rustleaks_core::native::NativePolicy::MAX_PACK_BYTES: usize
 pub fn rustleaks_core::native::NativePolicy::build(self) -> core::result::Result<rustleaks_core::native::NativeEngine, rustleaks_core::native::NativePolicyError>
 pub fn rustleaks_core::native::NativePolicy::builder() -> Self
+pub fn rustleaks_core::native::NativePolicy::compile(self) -> core::result::Result<(rustleaks_core::config::CompiledConfig, rustleaks_core::native::NativePolicyIdentity), rustleaks_core::native::NativePolicyError>
 pub const fn rustleaks_core::native::NativePolicy::with_extension(self, rustleaks_core::native::NativeExtension) -> Self
 pub fn rustleaks_core::native::NativePolicy::with_pack(self, &str, &str) -> core::result::Result<Self, rustleaks_core::native::NativePolicyError>
 impl core::fmt::Debug for rustleaks_core::native::NativePolicy
@@ -559,9 +565,13 @@ pub fn rustleaks_core::native::NativeScanOutcome::into_scan(self) -> rustleaks_c
 pub const fn rustleaks_core::native::NativeScanOutcome::offline_annotations_enabled(&self) -> bool
 pub const fn rustleaks_core::native::NativeScanOutcome::options(&self) -> rustleaks_core::model::ScanOptions
 pub const fn rustleaks_core::native::NativeScanOutcome::scan(&self) -> &rustleaks_core::ScanOutcome
+pub const rustleaks_core::native::CONNECTION_RULES_V1: &str
+pub const rustleaks_core::native::CONNECTION_RULES_V1_SHA256: &str
 pub const rustleaks_core::native::EXTRA_RULES_V1: &str
 pub const rustleaks_core::native::EXTRA_RULES_V1_SHA256: &str
 pub const rustleaks_core::native::NATIVE_POLICY_VERSION: &str
+pub const rustleaks_core::native::PROVIDER_RULES_V1: &str
+pub const rustleaks_core::native::PROVIDER_RULES_V1_SHA256: &str
 pub mod rustleaks_core::session
 pub enum rustleaks_core::session::AddOutcome
 pub rustleaks_core::session::AddOutcome::Accepted
@@ -762,8 +772,11 @@ pub const fn rustleaks_core::validation::OfflineAssessment::reason(self) -> rust
 pub const fn rustleaks_core::validation::OfflineAssessment::state(self) -> rustleaks_core::explanation::ValidationState
 pub fn rustleaks_core::validation::github_classic_pat(&[u8]) -> [rustleaks_core::validation::OfflineAssessment; 2]
 #[non_exhaustive] pub enum rustleaks_core::ScanBudgetKind
+pub rustleaks_core::ScanBudgetKind::CollectedSpans
 pub rustleaks_core::ScanBudgetKind::DecodedBytes
+pub rustleaks_core::ScanBudgetKind::FindingPayloadBytes
 pub rustleaks_core::ScanBudgetKind::FindingRecords
+pub rustleaks_core::ScanBudgetKind::NormalizationBytes
 pub rustleaks_core::ScanBudgetKind::WorkUnits
 #[non_exhaustive] pub enum rustleaks_core::ScanError
 pub rustleaks_core::ScanError::Prefilter
@@ -792,11 +805,17 @@ impl rustleaks_core::EngineBuilder
 pub fn rustleaks_core::EngineBuilder::build(self) -> core::result::Result<rustleaks_core::Engine, rustleaks_core::ScanError>
 pub struct rustleaks_core::ScanBudget
 impl rustleaks_core::ScanBudget
+pub const fn rustleaks_core::ScanBudget::collected_spans(self) -> core::option::Option<usize>
 pub const fn rustleaks_core::ScanBudget::decoded_bytes(self) -> core::option::Option<usize>
+pub const fn rustleaks_core::ScanBudget::finding_payload_bytes(self) -> core::option::Option<usize>
 pub const fn rustleaks_core::ScanBudget::finding_records(self) -> core::option::Option<usize>
+pub const fn rustleaks_core::ScanBudget::max_collected_spans(self, usize) -> Self
 pub const fn rustleaks_core::ScanBudget::max_decoded_bytes(self, usize) -> Self
+pub const fn rustleaks_core::ScanBudget::max_finding_payload_bytes(self, usize) -> Self
 pub const fn rustleaks_core::ScanBudget::max_finding_records(self, usize) -> Self
+pub const fn rustleaks_core::ScanBudget::max_normalization_bytes(self, usize) -> Self
 pub const fn rustleaks_core::ScanBudget::max_work_units(self, usize) -> Self
+pub const fn rustleaks_core::ScanBudget::normalization_bytes(self) -> core::option::Option<usize>
 pub const fn rustleaks_core::ScanBudget::unlimited() -> Self
 pub const fn rustleaks_core::ScanBudget::work_units(self) -> core::option::Option<usize>
 pub struct rustleaks_core::ScanControl<'a>
@@ -819,8 +838,11 @@ impl core::fmt::Debug for rustleaks_core::ScanOutcome
 pub fn rustleaks_core::ScanOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::ScanUsage
 impl rustleaks_core::ScanUsage
+pub const fn rustleaks_core::ScanUsage::collected_spans(self) -> usize
 pub const fn rustleaks_core::ScanUsage::decoded_bytes(self) -> usize
+pub const fn rustleaks_core::ScanUsage::finding_payload_bytes(self) -> usize
 pub const fn rustleaks_core::ScanUsage::finding_records(self) -> usize
+pub const fn rustleaks_core::ScanUsage::normalization_bytes(self) -> usize
 pub const fn rustleaks_core::ScanUsage::work_units(self) -> usize
 pub const rustleaks_core::UPSTREAM_REVISION: &str
 pub trait rustleaks_core::ScanCancellation: core::marker::Send + core::marker::Sync

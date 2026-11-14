@@ -29,6 +29,10 @@ rustleaks_library(
     for test in [
         "native_policy",
         "native_rules",
+        "provider_rules",
+        "shared_rule_deltas",
+        "contextual_rule_deltas",
+        "connection_rules",
         "triage",
 
         "allowlist",
@@ -72,6 +76,10 @@ test_suite(
     tests = [
         ":native_policy_test",
         ":native_rules_test",
+        ":provider_rules_test",
+        ":shared_rule_deltas_test",
+        ":contextual_rule_deltas_test",
+        ":connection_rules_test",
         ":triage_test",
 
         ":security_stress_test",

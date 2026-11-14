@@ -57,6 +57,11 @@ perf-run:
 perf-check:
     bazelisk run //crates/xtask:xtask -- perf check
 
+# Generate or verify independently specified development benchmark fixtures.
+[positional-arguments]
+perf-fixtures *arguments:
+    bazelisk run //crates/xtask:xtask -- perf fixtures "$@"
+
 # Collect representative phase measurements on demand.
 perf-representative:
     bazelisk run //crates/xtask:xtask -- perf representative

@@ -3,7 +3,7 @@ name = "rustleaks-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "MIT AND BSD-3-Clause"
+license = "MIT AND BSD-3-Clause AND Apache-2.0"
 description = "Byte-first synchronous engine for the independent Rustleaks port"
 readme = "README.md"
 repository.workspace = true
@@ -16,6 +16,18 @@ include = [
     "default/rustleaks-extra-v1.toml",
     "default/rustleaks-extra-v1.md",
     "default/rustleaks-extra-v1.sha256",
+    "default/rustleaks-providers-v1.toml",
+    "default/rustleaks-providers-v1.md",
+    "default/rustleaks-providers-v1.sha256",
+    "default/rustleaks-providers-v1.provenance.json",
+    "default/LICENSE.betterleaks",
+    "default/rustleaks-connections-v1.toml",
+    "default/rustleaks-connections-v1.md",
+    "default/rustleaks-connections-v1.sha256",
+    "default/rustleaks-connections-v1.provenance.json",
+    "default/LICENSE.kingfisher",
+    "default/LICENSE.veles",
+    "default/NOTICE",
     "src/**/*.rs",
     "tests/**/*.rs",
     "LICENSE",

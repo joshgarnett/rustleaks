@@ -97,6 +97,11 @@ fn run(args: &[String]) -> Result<(), String> {
             performance::run(arguments)
         }
         [command, subcommand] if command == "perf" && subcommand == "check" => performance::check(),
+        [command, subcommand, arguments @ ..]
+            if command == "perf" && subcommand == "fixtures" =>
+        {
+            performance::fixtures(arguments)
+        }
         [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "report" => {
             performance::report(arguments)
         }
@@ -111,7 +116,7 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
-        _ => Err("usage: cargo xtask {manifest-check|frozen-evidence-check|regression-check|qualify|public-api-check|build-system-check|package-check|release-dry-run|release-artifact [ARGS]|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz [ARGS]|generate [ARGS]|perf <run|check|representative|profile|calibrate|report> [ARGS]}".into()),
+        _ => Err("usage: cargo xtask {manifest-check|frozen-evidence-check|regression-check|qualify|public-api-check|build-system-check|package-check|release-dry-run|release-artifact [ARGS]|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz [ARGS]|generate [ARGS]|perf <run|check|fixtures|representative|profile|calibrate|report> [ARGS]}".into()),
     }
 }
 
@@ -266,6 +271,18 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
         "default/rustleaks-extra-v1.toml",
         "default/rustleaks-extra-v1.md",
         "default/rustleaks-extra-v1.sha256",
+        "default/rustleaks-providers-v1.toml",
+        "default/rustleaks-providers-v1.md",
+        "default/rustleaks-providers-v1.sha256",
+        "default/rustleaks-providers-v1.provenance.json",
+        "default/LICENSE.betterleaks",
+        "default/NOTICE",
+        "default/rustleaks-connections-v1.toml",
+        "default/rustleaks-connections-v1.md",
+        "default/rustleaks-connections-v1.sha256",
+        "default/rustleaks-connections-v1.provenance.json",
+        "default/LICENSE.kingfisher",
+        "default/LICENSE.veles",
     ] {
         if !package_files.lines().any(|path| path == required) {
             return Err(format!(
@@ -313,7 +330,7 @@ fn validate_core_repository_metadata(metadata: &str) -> Result<(), String> {
             "description",
             "Byte-first synchronous engine for the independent Rustleaks port",
         ),
-        ("license", "MIT AND BSD-3-Clause"),
+        ("license", "MIT AND BSD-3-Clause AND Apache-2.0"),
         ("repository", "https://github.com/joshgarnett/rustleaks"),
         ("homepage", "https://github.com/joshgarnett/rustleaks"),
         ("documentation", "https://docs.rs/rustleaks-core"),
@@ -580,7 +597,7 @@ fn consumer_source() -> &'static str {
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use rustleaks_core::explanation::ExplanationOptions;
-use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
+use rustleaks_core::native::{CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::triage::{ReviewPolicy, ReviewSource};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -637,6 +654,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ExplanationOptions::disabled(),
     );
     assert!(!policy.review(&partial, &source, &[], 1_700_000_000)?.is_complete());
+    let providers = NativePolicy::builder()
+        .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?.build()?;
+    let provider_secret = format!("r8_{}", "Q7m2Z9v4L1c8R5s0N6b3X".chars().cycle().take(37).collect::<String>());
+    let provider_scan = providers.engine().scan_fragment(
+        &Fragment::new(provider_secret.as_bytes()), &ScanOptions::default(),
+    );
+    assert!(provider_scan.is_complete());
+    assert_eq!(provider_scan.findings().len(), 1);
+    assert_eq!(provider_scan.findings()[0].rule_id().as_bytes(), b"rustleaks.replicate-api-token");
+    assert_eq!(provider_scan.findings()[0].secret().as_bytes(), provider_secret.as_bytes());
+    assert!(providers.identity().builtin_review_reference().is_some());
+    let connections = NativePolicy::builder()
+        .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?;
+    let connection_secret = "Q7m2Z9v4L1c8R5s0N6b3X";
+    let connection_input = format!("Server=localhost;PWD={connection_secret};");
+    let connection_scan = connections.engine().scan_fragment(
+        &Fragment::new(connection_input.as_bytes()), &ScanOptions::default(),
+    );
+    assert!(connection_scan.is_complete());
+    assert_eq!(connection_scan.findings().len(), 1);
+    assert_eq!(connection_scan.findings()[0].rule_id().as_bytes(), b"rustleaks.connection-string.password.unquoted");
+    assert_eq!(connection_scan.findings()[0].secret().as_bytes(), connection_secret.as_bytes());
+    assert!(connections.identity().builtin_review_reference().is_some());
     Ok(())
 }
 "#
@@ -2525,7 +2565,7 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
                 "name": "rustleaks-core",
                 "version": "0.1.0-alpha.9",
                 "description": "Byte-first synchronous engine for the independent Rustleaks port",
-                "license": "MIT AND BSD-3-Clause",
+                "license": "MIT AND BSD-3-Clause AND Apache-2.0",
                 "repository": "https://github.com/joshgarnett/rustleaks",
                 "homepage": "https://github.com/joshgarnett/rustleaks",
                 "documentation": "https://docs.rs/rustleaks-core",

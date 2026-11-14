@@ -22,7 +22,10 @@ use rustleaks_core::model::{Finding, FindingRange, Fragment, Location, ScanOptio
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
 use serde_json::json;
 
-use super::{FNV_OFFSET, Phase, SIMPLE_CONFIG, elapsed, fingerprint, fnv_extend, phase};
+use super::{
+    FNV_OFFSET, Phase, SIMPLE_CONFIG, USAGE_KEYS, elapsed, fingerprint, fnv_extend, phase,
+    usage_counters,
+};
 
 const KIB: usize = 1_024;
 const MIB: usize = 1_024 * KIB;
@@ -763,6 +766,7 @@ fn run_fixture(fixture: &Fixture, iterations: usize) -> Result<Vec<Phase>, Box<d
             "finding_records": fixture.expected_findings,
         });
         result.findings = fixture.expected_findings as u64;
+        let mut previous_usage = None;
         for _ in 0..count {
             let start = Instant::now();
             let outcome = black_box(detector.scan_fragment_controlled(
@@ -772,6 +776,14 @@ fn run_fixture(fixture: &Fixture, iterations: usize) -> Result<Vec<Phase>, Box<d
             ));
             result.elapsed_ns += elapsed(start)?;
             fixture.validate(&outcome)?;
+            let usage = usage_counters(outcome.usage());
+            if previous_usage.is_some_and(|previous| previous != usage) {
+                return Err("decoder resource usage changed between iterations".into());
+            }
+            previous_usage = Some(usage);
+            for (key, value) in USAGE_KEYS.into_iter().zip(usage) {
+                result.counts[key] = json!(value);
+            }
             let signature = outcome_signature(&outcome);
             if result.outcome_fnv1a64 != fingerprint(&[]) && result.outcome_fnv1a64 != signature {
                 return Err("decoder outcome changed between iterations".into());

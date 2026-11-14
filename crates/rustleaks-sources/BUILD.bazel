@@ -133,6 +133,14 @@ rustleaks_integration_test(
 )
 
 rustleaks_integration_test(
+    name = "complete_sources_test",
+    src = "tests/complete_sources.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support"],
+)
+
+rustleaks_integration_test(
     name = "archive_semantics_test",
     src = "tests/archive_semantics.rs",
     crate_features = _ARCHIVE_FEATURES,
@@ -189,6 +197,7 @@ test_suite(
         ":archive_fuzz_test",
         ":archive_sources_test",
         ":archive_semantics_test",
+        ":complete_sources_test",
         ":git_corpus_test",
         ":git_scm_test",
         ":git_sources_test",

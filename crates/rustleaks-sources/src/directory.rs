@@ -23,6 +23,7 @@ pub struct DirectoryOptions {
     max_file_size: Option<u64>,
     file_options: FileOptions,
     path_config: Option<Arc<CompiledConfig>>,
+    excluded_paths: Vec<ByteText>,
     logical_root: Option<PathBuf>,
     emit_limit_issues: bool,
     max_symlink_hops: NonZeroUsize,
@@ -41,6 +42,16 @@ impl DirectoryOptions {
             file_options: FileOptions::new(chunk_size)?,
             ..Self::default()
         })
+    }
+
+    /// Sets the file assembly policy used by every eligible file and member.
+    ///
+    /// Complete mode prunes known excluded paths before metadata or symlink
+    /// resolution and makes failures obtaining eligible input terminal.
+    #[must_use]
+    pub const fn file_options(mut self, options: FileOptions) -> Self {
+        self.file_options = options;
+        self
     }
 
     /// Enables or disables followed file symlinks.
@@ -73,6 +84,17 @@ impl DirectoryOptions {
     #[must_use]
     pub fn path_config(mut self, config: Arc<CompiledConfig>) -> Self {
         self.path_config = Some(config);
+        self
+    }
+
+    /// Adds exact normalized logical paths excluded before complete-mode reads.
+    ///
+    /// File paths are compared after symlink resolution, using the emitted
+    /// `FilePath` domain rather than the alias spelling. Archive descendants
+    /// retain their full decorated paths. Legacy fragments ignore this option.
+    #[must_use]
+    pub fn exclude_paths(mut self, paths: Vec<ByteText>) -> Self {
+        self.excluded_paths.extend(paths);
         self
     }
 
@@ -126,6 +148,7 @@ impl Default for DirectoryOptions {
             max_file_size: None,
             file_options: FileOptions::default(),
             path_config: None,
+            excluded_paths: Vec::new(),
             logical_root: None,
             emit_limit_issues: false,
             max_symlink_hops: NonZeroUsize::new(DEFAULT_MAX_SYMLINK_HOPS)
@@ -183,6 +206,13 @@ impl DirectorySource {
             return Err(SourceError::Cancelled);
         }
 
+        // Complete coverage applies only to the selected path domain. The
+        // discovered spelling is known before metadata or symlink resolution.
+        // Preserve the historical gate order for legacy fragment callers.
+        if self.options.file_options.complete_target_bytes().is_some() && self.path_allowed(path) {
+            return Ok(SourceControl::Continue);
+        }
+
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(error) => {
@@ -212,7 +242,8 @@ impl DirectorySource {
                     SourceIssueKind::Limit,
                     Some(path.to_path_buf()),
                     "skipping file: exceeds maximum file size",
-                ),
+                )
+                .excluded(),
                 emit,
             );
         }
@@ -242,7 +273,8 @@ impl DirectorySource {
                             SourceIssueKind::DirectorySymlink,
                             Some(path.to_path_buf()),
                             "followed symlink target is a directory",
-                        );
+                        )
+                        .excluded();
                         return emit_issue(issue, emit);
                     }
                     (target, Some(path.to_path_buf()))
@@ -256,6 +288,12 @@ impl DirectorySource {
         if self.path_allowed(path) {
             return Ok(SourceControl::Continue);
         }
+        if self
+            .complete_target_excluded(&target)
+            .map_err(SourceError::Callback)?
+        {
+            return Ok(SourceControl::Continue);
+        }
         let file = match fs::File::open(&target) {
             Ok(file) => file,
             Err(error) => return emit_issue(io_issue(SourceStage::Open, &target, &error), emit),
@@ -263,6 +301,12 @@ impl DirectorySource {
         #[cfg(feature = "archives")]
         if let Some(options) = &self.options.archive_options {
             let mut options = options.clone();
+            if self.options.file_options.complete_target_bytes().is_some() {
+                options = options.exclude_paths(
+                    self.archive_exclusions(&target)
+                        .map_err(SourceError::Callback)?,
+                );
+            }
             if let Some(config) = &self.options.path_config {
                 options = options.path_config(Arc::clone(config));
             }
@@ -360,6 +404,63 @@ impl DirectorySource {
         )
     }
 
+    fn complete_target_excluded(&self, target: &Path) -> Result<bool, CallbackError> {
+        if self.options.file_options.complete_target_bytes().is_none()
+            || self.options.excluded_paths.is_empty()
+        {
+            return Ok(false);
+        }
+        #[cfg(feature = "archives")]
+        if self.options.archive_options.is_some() && !crate::archive::path_is_leaf(target) {
+            return Ok(false);
+        }
+        let emitted = self.emitted_path(target)?;
+        Ok(self.options.excluded_paths.contains(&emitted))
+    }
+
+    fn path_translation(&self) -> Option<(LogicalPath, LogicalPath)> {
+        let logical_root = self.options.logical_root.as_ref()?;
+        let physical = LogicalPath::from_native(&self.root);
+        let logical = LogicalPath::from_native(logical_root);
+        // Match the event-emission path exactly, including preserved "./".
+        if physical == logical && logical.normalized().as_bytes() != b"." {
+            None
+        } else {
+            Some((physical, logical))
+        }
+    }
+
+    fn emitted_path(&self, target: &Path) -> Result<ByteText, CallbackError> {
+        let path = LogicalPath::from_native(target);
+        match self.path_translation() {
+            None => Ok(path.normalized().clone()),
+            Some((physical, logical)) => translate_path(
+                path.normalized(),
+                physical.normalized(),
+                logical.normalized(),
+            ),
+        }
+    }
+
+    #[cfg(feature = "archives")]
+    fn archive_exclusions(&self, target: &Path) -> Result<Vec<ByteText>, CallbackError> {
+        let logical = self.emitted_path(target)?;
+        let physical = LogicalPath::from_native(target);
+        let prefix = logical.as_bytes();
+        let mut paths = Vec::new();
+        for excluded in &self.options.excluded_paths {
+            if excluded.as_bytes().starts_with(prefix)
+                && excluded.as_bytes().get(prefix.len()) == Some(&b'!')
+            {
+                paths.try_reserve(1).map_err(|error| {
+                    CallbackError::new(format!("could not retain archive exclusion: {error}"))
+                })?;
+                paths.push(translate_path(excluded, &logical, physical.normalized())?);
+            }
+        }
+        Ok(paths)
+    }
+
     fn logical_path(&self, path: &Path) -> LogicalPath {
         let Some(root) = &self.options.logical_root else {
             return LogicalPath::from_native(path);
@@ -383,17 +484,24 @@ impl Source for DirectorySource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        crate::source::visit_with_coverage(
+            self.options.file_options.complete_target_bytes().is_some(),
+            emit,
+            |emit| self.visit_inner(cancellation, emit),
+        )
+    }
+}
+
+impl DirectorySource {
+    fn visit_inner(
+        &self,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         let mut nominal = Vec::new();
-        let Some(logical_root) = &self.options.logical_root else {
+        let Some((physical, logical)) = self.path_translation() else {
             return self.walk(&self.root, &mut nominal, cancellation, emit);
         };
-        let physical = LogicalPath::from_native(&self.root);
-        let logical = LogicalPath::from_native(logical_root);
-        // Native path equality can ignore spelling differences that remain
-        // visible in emitted metadata. LogicalPath compares both byte forms.
-        if physical == logical && logical.normalized().as_bytes() != b"." {
-            return self.walk(&self.root, &mut nominal, cancellation, emit);
-        }
         self.walk(&self.root, &mut nominal, cancellation, &mut |event| {
             emit(translate_event(event, &physical, &logical)?)
         })

@@ -325,3 +325,41 @@ fn validation_rejects_skipped_budget_terminated_and_altered_outcomes() {
     shifted.expected.work = Some(work + 1);
     assert!(validate(&ctx.rules, &shifted, &complete).is_err());
 }
+
+#[test]
+fn ordinary_profile_reuses_the_exact_representative_operation_and_validator() {
+    let worker = PreparedProfile::new(PROFILE_WORKLOAD).unwrap();
+    let phases = run(PROFILE_WORKLOAD, 1).unwrap();
+    for phase in &phases[2..] {
+        assert_eq!(worker.identity()["input_fnv1a64"], phase.input_fnv1a64);
+        assert_eq!(worker.identity()["config_fnv1a64"], phase.config_fnv1a64);
+        assert_eq!(worker.identity()["outcome_fnv1a64"], phase.outcome_fnv1a64);
+        assert_eq!(worker.identity()["work_units"], phase.counts["work_units"]);
+        assert_eq!(worker.identity()["family"], phase.counts["family"]);
+    }
+    let scan = &worker.plan.scans[0];
+    assert_eq!(scan.expected.findings.len(), 131);
+    assert_eq!(scan.fragment.content().len(), 256 * KIB);
+    assert!(scan.fragment.file_path().is_empty());
+    assert!(scan.fragment.commit().is_empty());
+    assert_eq!(
+        worker.identity()["budget"]["work_units"],
+        json!(scan.expected.work)
+    );
+    assert_eq!(worker.identity()["budget"]["finding_records"], 131);
+    assert_eq!(worker.identity()["budget"]["decoded_bytes"], 0);
+    worker.scan().unwrap();
+
+    let skipped = worker
+        .detector
+        .scan_fragment(&Fragment::new(b""), &worker.options);
+    assert!(worker.validate_outcome(&skipped).is_err());
+    let partial = worker.detector.scan_fragment_controlled(
+        &scan.fragment,
+        &worker.options,
+        &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(0)),
+    );
+    assert!(!partial.is_complete());
+    assert!(worker.validate_outcome(&partial).is_err());
+    assert!(PreparedProfile::new("core-realistic-env-256-kib").is_err());
+}
