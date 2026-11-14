@@ -571,45 +571,47 @@ fn binary_archive_paths_reach_blob_expansion_without_loss() {
 }
 
 #[cfg(all(feature = "archives", unix))]
+fn commit_complete_archive_fixture(repository: &Path, paths: &[&str]) {
+    let output = support::command()
+        .arg("-C")
+        .arg(repository)
+        .args(["add", "--"])
+        .args(paths)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let output = support::command()
+        .arg("-C")
+        .arg(repository)
+        .args([
+            "-c",
+            "user.name=Synthetic Test",
+            "-c",
+            "user.email=synthetic@example.invalid",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "synthetic complete archive test",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+}
+
+#[cfg(all(feature = "archives", unix))]
 #[test]
 fn complete_archive_options_reach_git_blobs_without_changing_text_hunks() {
-    fn commit(repository: &Path, paths: &[&str]) {
-        let output = support::command()
-            .arg("-C")
-            .arg(repository)
-            .args(["add", "--"])
-            .args(paths)
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        let output = support::command()
-            .arg("-C")
-            .arg(repository)
-            .args([
-                "-c",
-                "user.name=Synthetic Test",
-                "-c",
-                "user.email=synthetic@example.invalid",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "--quiet",
-                "-m",
-                "synthetic complete archive test",
-            ])
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-    }
     let repository = TempRepo::copy_fixture("small");
     fs::write(
         repository.path().join("text-scope.txt"),
         b"first\nKEEP-CONTEXT\nlast\n",
     )
     .unwrap();
-    commit(repository.path(), &["text-scope.txt"]);
+    commit_complete_archive_fixture(repository.path(), &["text-scope.txt"]);
     fs::write(
         repository.path().join("text-scope.txt"),
         b"first changed\nKEEP-CONTEXT\nlast changed\n",
@@ -631,7 +633,7 @@ fn complete_archive_options_reach_git_blobs_without_changing_text_hunks() {
     archive.extend_from_slice(&content);
     archive.resize(archive.len().div_ceil(512) * 512 + 1024, 0);
     fs::write(repository.path().join("boundary.tar"), archive).unwrap();
-    commit(repository.path(), &["text-scope.txt", "boundary.tar"]);
+    commit_complete_archive_fixture(repository.path(), &["text-scope.txt", "boundary.tar"]);
     for complete in [false, true] {
         let options = if complete {
             rustleaks_sources::FileOptions::complete(content.len()).unwrap()

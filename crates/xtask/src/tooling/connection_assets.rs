@@ -139,7 +139,7 @@ const REVIEWED: [ReviewedRule; 5] = [
     },
 ];
 
-const SOURCE_IDENTITY: &str = r###"{
+const SOURCE_IDENTITY: &str = r#"{
   "repository": "https://github.com/mongodb/kingfisher",
   "revision": "01e7b817376fbf2272be8f162bd32309bf97ee1f",
   "path": "crates/kingfisher-rules/data/kingfisher-rules.yml",
@@ -152,7 +152,7 @@ const SOURCE_IDENTITY: &str = r###"{
   "notice_sha256": "72cb7ea966dc7bf6f3a0cc0895c07874c831bd900b92a493ae0f8ab7ae72806f",
   "documentation_sha256": "7ffd8806aeb174278fd14087898f09c09f0f86f789f6cf98b8623bf7f7174110",
   "tests_sha256": "4e44b4acd59a82f1807cfffbd6931b063d463c285c87b15fcadee27424358d38"
-}"###;
+}"#;
 
 const TRANSFORMATIONS: [&str; 6] = [
     "Namespace rule IDs and descriptions; preserve source order and capture 1.",

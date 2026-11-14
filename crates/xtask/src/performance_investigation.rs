@@ -1089,7 +1089,7 @@ mod tests {
         // Arbitrary typed protocol data, not an engine outcome baseline.
         let identity = json!({
             "workload": ORDINARY_PROFILE_WORKLOAD, "complete": true, "errors": 0,
-            "input_bytes": 262144, "rules": 222, "keywords": 1, "findings": 1,
+            "input_bytes": 262_144, "rules": 222, "keywords": 1, "findings": 1,
             "decoded_bytes": 0, "work_units": 1, "finding_records": 1,
             "collected_spans": 1, "normalization_bytes": 0, "finding_payload_bytes": 1,
             "input_fnv1a64": "0000000000000001", "config_fnv1a64": "0000000000000002",

@@ -193,7 +193,7 @@ fn verifier_rejects_split_identity_geometry_and_timing_metadata_forgery() {
         ("records", json!(256)),
         ("identity_pattern", json!("repeated")),
         ("class", json!("positive")),
-        ("single_line_timing_cap_input_bytes", json!(2097152)),
+        ("single_line_timing_cap_input_bytes", json!(2_097_152)),
         ("literal_line_payload_upper_bound_bytes", json!(0)),
     ] {
         let mut wrong = manifest.clone();
@@ -412,7 +412,7 @@ fn verifier_rejects_seed_substitution_with_self_consistent_values_spans_and_hash
 #[test]
 fn independent_seed_stream_matches_declared_domains_and_pair_gate_rejects_nonseparator_drift() {
     for (family, ordinal, length) in [
-        ("boundary", 409620, 36),
+        ("boundary", 409_620, 36),
         ("density", 15, 36),
         ("single-carrier", 16, 36),
         ("connection-password", 27, 24),
@@ -589,8 +589,8 @@ fn many_decoded_values_share_one_outer_span_without_collapsing_occurrences() {
 #[test]
 fn report_growth_caps_are_construction_only_and_keep_large_cases_visible() {
     assert!(dense(32768, Density::Positive, false, false).timing_eligible);
-    assert!(!dense(131072, Density::Positive, false, false).timing_eligible);
-    assert!(dense(131072, Density::Positive, false, true).timing_eligible);
+    assert!(!dense(131_072, Density::Positive, false, false).timing_eligible);
+    assert!(dense(131_072, Density::Positive, false, true).timing_eligible);
     assert!(decoded(256, 2, false, true).timing_eligible);
     assert!(!decoded(4096, 2, false, true).timing_eligible);
 }

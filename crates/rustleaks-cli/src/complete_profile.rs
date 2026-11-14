@@ -98,7 +98,7 @@ impl CompleteProfile {
     fn read(mut reader: impl Read) -> Result<Self, String> {
         // No buffered reader: every underlying request ends at the cap plus
         // one, including a reader that produces an error after earlier data.
-        let mut bytes = [0_u8; MAX_PROFILE_BYTES + 1];
+        let mut bytes = vec![0_u8; MAX_PROFILE_BYTES + 1].into_boxed_slice();
         let mut length = 0;
         loop {
             if length == bytes.len() {

@@ -294,6 +294,17 @@ impl DirectorySource {
         {
             return Ok(SourceControl::Continue);
         }
+        self.visit_file(target, alias, nominal, cancellation, emit)
+    }
+
+    fn visit_file(
+        &self,
+        target: PathBuf,
+        alias: Option<PathBuf>,
+        nominal: &mut Vec<u8>,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         let file = match fs::File::open(&target) {
             Ok(file) => file,
             Err(error) => return emit_issue(io_issue(SourceStage::Open, &target, &error), emit),

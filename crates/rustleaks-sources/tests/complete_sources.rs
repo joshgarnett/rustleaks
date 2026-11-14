@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use base64::Engine as _;
 use rustleaks_core::config::ConfigLoader;
-use rustleaks_core::model::{FindingRange, Fragment, ScanOptions};
+use rustleaks_core::model::{ByteText, FindingRange, Fragment, ScanOptions};
 use rustleaks_core::session::SessionPolicy;
 use rustleaks_core::{Engine, ScanBudget};
 use rustleaks_sources::{
@@ -315,167 +315,187 @@ fn plain_and_padded_base64_tokens_survive_legacy_cut_positions() {
     }
 }
 
+struct ScheduledReader {
+    bytes: Vec<u8>,
+    cursor: usize,
+    sizes: &'static [usize],
+    read_index: usize,
+    error_at: Option<usize>,
+    reads: Arc<std::sync::Mutex<Vec<(usize, bool)>>>,
+}
+
+impl Read for ScheduledReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.error_at == Some(self.cursor) {
+            self.reads.lock().unwrap().push((0, true));
+            return Err(io::Error::other("prescribed synthetic read failure"));
+        }
+        let limit = self.error_at.unwrap_or(self.bytes.len());
+        let count = self.sizes[self.read_index % self.sizes.len()]
+            .min(limit - self.cursor)
+            .min(buffer.len());
+        buffer[..count].copy_from_slice(&self.bytes[self.cursor..self.cursor + count]);
+        self.cursor += count;
+        self.read_index += 1;
+        self.reads.lock().unwrap().push((count, false));
+        Ok(count)
+    }
+}
+
+const READER_SCHEDULE_CASES: [(&str, bool, &[usize], Option<usize>); 16] = [
+    ("maintained-reader-schedule::00", false, &[1], None),
+    ("maintained-reader-schedule::01", false, &[2], None),
+    ("maintained-reader-schedule::02", false, &[7], None),
+    ("maintained-reader-schedule::03", false, &[4096], None),
+    (
+        "maintained-reader-schedule::04",
+        false,
+        &[1, 3, 2, 7, 31, 64, 5],
+        None,
+    ),
+    ("maintained-reader-schedule::05", false, &[4096], Some(0)),
+    ("maintained-reader-schedule::06", false, &[4096], Some(4096)),
+    ("maintained-reader-schedule::07", false, &[4096], Some(4180)),
+    ("maintained-reader-schedule::08", true, &[1], None),
+    ("maintained-reader-schedule::09", true, &[2], None),
+    ("maintained-reader-schedule::10", true, &[7], None),
+    ("maintained-reader-schedule::11", true, &[4096], None),
+    (
+        "maintained-reader-schedule::12",
+        true,
+        &[1, 3, 2, 7, 31, 64, 5],
+        None,
+    ),
+    ("maintained-reader-schedule::13", true, &[4096], Some(0)),
+    ("maintained-reader-schedule::14", true, &[4096], Some(4096)),
+    ("maintained-reader-schedule::15", true, &[4096], Some(4161)),
+];
+
 #[test]
 fn maintained_reader_schedules_execute_all_sixteen_prescribed_cases() {
-    struct Scheduled {
-        bytes: Vec<u8>,
-        cursor: usize,
-        sizes: &'static [usize],
-        read_index: usize,
-        error_at: Option<usize>,
-        reads: Arc<std::sync::Mutex<Vec<(usize, bool)>>>,
+    let engine = detector("[[rules]]\nid='pat'\nregex='ghp_[0-9a-zA-Z]{36}'\nkeywords=['ghp_']\n");
+    for (id, encoded, sizes, error_at) in READER_SCHEDULE_CASES {
+        check_reader_schedule_case(&engine, id, encoded, sizes, error_at);
     }
+}
 
-    impl Read for Scheduled {
-        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-            if self.error_at == Some(self.cursor) {
-                self.reads.lock().unwrap().push((0, true));
-                return Err(io::Error::other("prescribed synthetic read failure"));
-            }
-            let limit = self.error_at.unwrap_or(self.bytes.len());
-            let count = self.sizes[self.read_index % self.sizes.len()]
-                .min(limit - self.cursor)
-                .min(buffer.len());
-            buffer[..count].copy_from_slice(&self.bytes[self.cursor..self.cursor + count]);
-            self.cursor += count;
-            self.read_index += 1;
-            self.reads.lock().unwrap().push((count, false));
-            Ok(count)
-        }
-    }
-
+fn check_reader_schedule_case(
+    engine: &Engine,
+    id: &str,
+    encoded: bool,
+    sizes: &'static [usize],
+    error_at: Option<usize>,
+) {
     // These literals are independently derived from the development SHA-256
     // rejection-sampling recipe: family boundary, ordinals 409620 and 409655.
     // The byte anchors, splits and schedules are prescribed before scanning.
     const RAW_SECRET: &[u8] = b"ghp_ihm2HhUdK7NGp1kAexrgmVByn69BSQY0Vp6E";
     const ENCODED_SECRET: &[u8] = b"ghp_UNQKM5ZedJTvMuCpznzt0fiaXCkx3GZZ4Wyh";
-    const CASES: [(&str, bool, &[usize], Option<usize>); 16] = [
-        ("maintained-reader-schedule::00", false, &[1], None),
-        ("maintained-reader-schedule::01", false, &[2], None),
-        ("maintained-reader-schedule::02", false, &[7], None),
-        ("maintained-reader-schedule::03", false, &[4096], None),
-        (
-            "maintained-reader-schedule::04",
-            false,
-            &[1, 3, 2, 7, 31, 64, 5],
-            None,
-        ),
-        ("maintained-reader-schedule::05", false, &[4096], Some(0)),
-        ("maintained-reader-schedule::06", false, &[4096], Some(4096)),
-        ("maintained-reader-schedule::07", false, &[4096], Some(4180)),
-        ("maintained-reader-schedule::08", true, &[1], None),
-        ("maintained-reader-schedule::09", true, &[2], None),
-        ("maintained-reader-schedule::10", true, &[7], None),
-        ("maintained-reader-schedule::11", true, &[4096], None),
-        (
-            "maintained-reader-schedule::12",
-            true,
-            &[1, 3, 2, 7, 31, 64, 5],
-            None,
-        ),
-        ("maintained-reader-schedule::13", true, &[4096], Some(0)),
-        ("maintained-reader-schedule::14", true, &[4096], Some(4096)),
-        ("maintained-reader-schedule::15", true, &[4096], Some(4161)),
-    ];
-    let engine = detector("[[rules]]\nid='pat'\nregex='ghp_[0-9a-zA-Z]{36}'\nkeywords=['ghp_']\n");
-    for (id, encoded, sizes, error_at) in CASES {
-        let secret = if encoded { ENCODED_SECRET } else { RAW_SECRET };
-        let carrier = if encoded {
-            base64::engine::general_purpose::STANDARD
-                .encode(secret)
-                .into_bytes()
-        } else {
-            secret.to_vec()
-        };
-        let start = if encoded { 4041 } else { 4076 };
-        let end = start + carrier.len();
-        let mut bytes = vec![b' '; end + 64];
-        bytes[start..end].copy_from_slice(&carrier);
-        assert_eq!(bytes.len(), if encoded { 4161 } else { 4180 }, "{id}");
-        let mut expected_reads = Vec::new();
-        let limit = error_at.unwrap_or(bytes.len());
-        let mut cursor = 0;
-        for size in sizes.iter().cycle() {
-            if cursor == limit {
-                break;
-            }
-            let count = (*size).min(limit - cursor);
-            expected_reads.push((count, false));
-            cursor += count;
-        }
-        expected_reads.push((0, error_at.is_some()));
-        let reads = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let cap = bytes.len();
-        let reader = Scheduled {
-            bytes,
-            cursor: 0,
-            sizes,
-            read_index: 0,
-            error_at,
-            reads: Arc::clone(&reads),
-        };
-        let mut source = FileSource::with_options(reader, id, FileOptions::complete(cap).unwrap());
-        let options = ScanOptions::builder()
-            .max_decode_depth(usize::from(encoded))
-            .build();
-        let outcome = run(&mut source, &engine, options);
-        assert_eq!(*reads.lock().unwrap(), expected_reads, "{id}");
-        if error_at.is_some() {
-            assert!(
-                matches!(
-                    outcome.termination(),
-                    SourceTermination::SourceError(SourceError::Terminal {
-                        stage: SourceStage::Read,
-                        ..
-                    })
-                ),
-                "{id}"
-            );
-            assert!(outcome.findings().is_empty(), "{id}");
-            continue;
-        }
-        assert_eq!(outcome.termination(), &SourceTermination::Completed, "{id}");
-        assert_eq!(outcome.findings().len(), 1, "{id}");
-        let finding = &outcome.findings()[0];
-        assert_eq!(finding.rule_id().as_bytes(), b"pat", "{id}");
-        assert_eq!(finding.secret().as_bytes(), secret, "{id}");
-        assert_eq!(finding.match_text().as_bytes(), secret, "{id}");
-        if encoded {
-            assert_eq!(finding.secret_range(), FindingRange::Unavailable, "{id}");
-            assert_eq!(finding.match_range(), FindingRange::Unavailable, "{id}");
-            assert_eq!(
-                finding
-                    .tags()
-                    .iter()
-                    .map(|tag| tag.as_bytes())
-                    .collect::<Vec<_>>(),
-                vec![b"decoded:base64".as_slice(), b"decode-depth:1"],
-                "{id}"
-            );
-        } else {
-            assert_eq!(
-                finding.secret_range().exact().unwrap().as_range(),
-                start..end,
-                "{id}"
-            );
-            assert_eq!(
-                finding.match_range().exact().unwrap().as_range(),
-                start..end,
-                "{id}"
-            );
-            assert_eq!(finding.location().start_line(), 1, "{id}");
-            assert_eq!(finding.location().end_line(), 1, "{id}");
-            assert_eq!(finding.location().start_column(), start + 1, "{id}");
-            assert_eq!(finding.location().end_column(), end, "{id}");
-            assert!(finding.tags().is_empty(), "{id}");
-        }
+    let secret = if encoded { ENCODED_SECRET } else { RAW_SECRET };
+    let carrier = if encoded {
+        base64::engine::general_purpose::STANDARD
+            .encode(secret)
+            .into_bytes()
+    } else {
+        secret.to_vec()
+    };
+    let start = if encoded { 4041 } else { 4076 };
+    let end = start + carrier.len();
+    let mut bytes = vec![b' '; end + 64];
+    bytes[start..end].copy_from_slice(&carrier);
+    assert_eq!(bytes.len(), if encoded { 4161 } else { 4180 }, "{id}");
+    let expected_reads = expected_reader_schedule(sizes, error_at, bytes.len());
+    let reads = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let cap = bytes.len();
+    let reader = ScheduledReader {
+        bytes,
+        cursor: 0,
+        sizes,
+        read_index: 0,
+        error_at,
+        reads: Arc::clone(&reads),
+    };
+    let mut source = FileSource::with_options(reader, id, FileOptions::complete(cap).unwrap());
+    let options = ScanOptions::builder()
+        .max_decode_depth(usize::from(encoded))
+        .build();
+    let outcome = run(&mut source, engine, options);
+    assert_eq!(*reads.lock().unwrap(), expected_reads, "{id}");
+    if error_at.is_some() {
+        assert!(
+            matches!(
+                outcome.termination(),
+                SourceTermination::SourceError(SourceError::Terminal {
+                    stage: SourceStage::Read,
+                    ..
+                })
+            ),
+            "{id}"
+        );
+        assert!(outcome.findings().is_empty(), "{id}");
+        return;
     }
+    assert_eq!(outcome.termination(), &SourceTermination::Completed, "{id}");
+    assert_eq!(outcome.findings().len(), 1, "{id}");
+    let finding = &outcome.findings()[0];
+    assert_eq!(finding.rule_id().as_bytes(), b"pat", "{id}");
+    assert_eq!(finding.secret().as_bytes(), secret, "{id}");
+    assert_eq!(finding.match_text().as_bytes(), secret, "{id}");
+    if encoded {
+        assert_eq!(finding.secret_range(), FindingRange::Unavailable, "{id}");
+        assert_eq!(finding.match_range(), FindingRange::Unavailable, "{id}");
+        assert_eq!(
+            finding
+                .tags()
+                .iter()
+                .map(ByteText::as_bytes)
+                .collect::<Vec<_>>(),
+            vec![b"decoded:base64".as_slice(), b"decode-depth:1"],
+            "{id}"
+        );
+    } else {
+        assert_eq!(
+            finding.secret_range().exact().unwrap().as_range(),
+            start..end,
+            "{id}"
+        );
+        assert_eq!(
+            finding.match_range().exact().unwrap().as_range(),
+            start..end,
+            "{id}"
+        );
+        assert_eq!(finding.location().start_line(), 1, "{id}");
+        assert_eq!(finding.location().end_line(), 1, "{id}");
+        assert_eq!(finding.location().start_column(), start + 1, "{id}");
+        assert_eq!(finding.location().end_column(), end, "{id}");
+        assert!(finding.tags().is_empty(), "{id}");
+    }
+}
+
+fn expected_reader_schedule(
+    sizes: &[usize],
+    error_at: Option<usize>,
+    bytes_len: usize,
+) -> Vec<(usize, bool)> {
+    let mut expected_reads = Vec::new();
+    let limit = error_at.unwrap_or(bytes_len);
+    let mut cursor = 0;
+    for size in sizes.iter().cycle() {
+        if cursor == limit {
+            break;
+        }
+        let count = (*size).min(limit - cursor);
+        expected_reads.push((count, false));
+        cursor += count;
+    }
+    expected_reads.push((0, error_at.is_some()));
+    expected_reads
 }
 
 #[test]
 fn whole_target_context_preserves_multiline_allowlists_required_rules_and_duplicates() {
     let engine = detector(
-        r#"
+        r"
 [[rules]]
 id='multiline'
 regex='(?s)BEGIN.*END'
@@ -491,7 +511,7 @@ id='support'
 id='support'
 regex='SUPPORT'
 skipReport=true
-"#,
+",
     );
     let mut data = b"BEGIN\n".to_vec();
     data.extend(vec![b'.'; 130_000]);
@@ -915,7 +935,7 @@ fn runner_complete_failure_policy_distinguishes_custom_source_exclusions() {
 #[test]
 fn whole_target_anchors_and_line_allowlists_use_the_complete_context() {
     let engine = detector(
-        r#"
+        r"
 [[rules]]
 id='anchored'
 regex='(?s)\ABEGIN.*END\z'
@@ -925,7 +945,7 @@ regex='token=([A-Z0-9]{4})'
 [[rules.allowlists]]
 regexTarget='line'
 regexes=['IGNORE-LINE']
-"#,
+",
     );
     let mut data = b"BEGIN token=A001".to_vec();
     data.extend(vec![b'.'; 150_000]);

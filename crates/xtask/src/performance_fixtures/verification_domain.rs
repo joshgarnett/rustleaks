@@ -40,7 +40,6 @@ impl Spec {
                 class: "positive", ..
             }
             | Self::Partition { .. } => Some(1),
-            Self::Boundary { .. } => Some(0),
             Self::Density {
                 bytes,
                 class: "positive",
@@ -51,13 +50,12 @@ impl Spec {
                 class: "alternating",
                 ..
             } => Some(bytes / 128),
-            Self::Density { .. } => Some(0),
             Self::Decoded {
                 count,
                 positive: true,
                 ..
             } => Some(count),
-            Self::Decoded { .. } => Some(0),
+            Self::Boundary { .. } | Self::Density { .. } | Self::Decoded { .. } => Some(0),
             Self::Connection { .. } => None,
         }
     }
@@ -96,50 +94,52 @@ pub(super) fn counts(family: &str) -> Result<(usize, usize, usize), String> {
     }
 }
 
-pub(super) fn required_cases(family: &str) -> Result<BTreeMap<String, Spec>, String> {
-    let mut cases = BTreeMap::new();
-    match family {
-        "boundaries" => {
-            for anchor in [4096, 65536, 100000, 125000, 153672, 182344] {
-                for (kind, length) in [("raw", 40), ("base64", 56)] {
-                    for split in 0..=length {
-                        for class in ["positive", "prefix-negative", "internal-negative"] {
-                            cases.insert(
-                                format!("boundary-{kind}-{anchor}-{split}-{class}-no-lf"),
-                                Spec::Boundary {
-                                    anchor,
-                                    split,
-                                    encoded: kind == "base64",
-                                    class,
-                                    layout: "no-lf",
-                                },
-                            );
-                        }
-                    }
-                    let neighbor_splits: &[usize] = if kind == "raw" {
-                        &[0, 20, 40]
-                    } else {
-                        &[0, 28, 54, 55, 56]
-                    };
-                    for &split in neighbor_splits {
-                        for layout in ["lf", "crlf", "invalid-bytes"] {
-                            cases.insert(
-                                format!("boundary-{kind}-{anchor}-{split}-positive-{layout}"),
-                                Spec::Boundary {
-                                    anchor,
-                                    split,
-                                    encoded: kind == "base64",
-                                    class: "positive",
-                                    layout,
-                                },
-                            );
-                        }
-                    }
+fn boundary_cases(cases: &mut BTreeMap<String, Spec>) {
+    for anchor in [4096, 65_536, 100_000, 125_000, 153_672, 182_344] {
+        for (kind, length) in [("raw", 40), ("base64", 56)] {
+            for split in 0..=length {
+                for class in ["positive", "prefix-negative", "internal-negative"] {
+                    cases.insert(
+                        format!("boundary-{kind}-{anchor}-{split}-{class}-no-lf"),
+                        Spec::Boundary {
+                            anchor,
+                            split,
+                            encoded: kind == "base64",
+                            class,
+                            layout: "no-lf",
+                        },
+                    );
+                }
+            }
+            let neighbor_splits: &[usize] = if kind == "raw" {
+                &[0, 20, 40]
+            } else {
+                &[0, 28, 54, 55, 56]
+            };
+            for &split in neighbor_splits {
+                for layout in ["lf", "crlf", "invalid-bytes"] {
+                    cases.insert(
+                        format!("boundary-{kind}-{anchor}-{split}-positive-{layout}"),
+                        Spec::Boundary {
+                            anchor,
+                            split,
+                            encoded: kind == "base64",
+                            class: "positive",
+                            layout,
+                        },
+                    );
                 }
             }
         }
+    }
+}
+
+pub(super) fn required_cases(family: &str) -> Result<BTreeMap<String, Spec>, String> {
+    let mut cases = BTreeMap::new();
+    match family {
+        "boundaries" => boundary_cases(&mut cases),
         "density" => {
-            for bytes in [32768, 131072, 524288, 2097152] {
+            for bytes in [32_768, 131_072, 524_288, 2_097_152] {
                 for class in ["positive", "alternating", "negative"] {
                     for identity in ["repeated", "unique"] {
                         for separator in ["lf", "space"] {

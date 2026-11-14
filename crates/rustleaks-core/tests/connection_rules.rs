@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
+use std::fmt::Write as _;
 use std::sync::OnceLock;
 
 use rustleaks_core::config::{ConfigLoader, RawConfig};
@@ -633,11 +634,10 @@ fn composition_is_opt_in_and_overlapping_generic_attribution_remains_explicit() 
 #[test]
 fn existing_decoding_keeps_raw_spelling_and_marks_ranges_unavailable() {
     let raw = "Host=d;Pwd=%52q7!;";
-    let encoded = raw
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("%{byte:02X}"))
-        .collect::<String>();
+    let encoded = raw.bytes().fold(String::new(), |mut output, byte| {
+        write!(output, "%{byte:02X}").unwrap();
+        output
+    });
     assert!(scan(isolated(), encoded.as_bytes()).is_empty());
     let result = isolated().scan_fragment(
         &Fragment::new(encoded.as_bytes()),
@@ -798,7 +798,7 @@ fn database_uri_userinfo_host_bounds_and_content_boundaries_are_explicit() {
     for (host, accepted) in [
         ("d".repeat(253), true),
         ("d".repeat(254), false),
-        ("".into(), false),
+        (String::new(), false),
     ] {
         let input = format!("mysql://app:R7!q@{host}/");
         assert_eq!(
@@ -1093,11 +1093,10 @@ fn database_uri_allowlists_and_decoding_retain_native_contracts() {
         .is_empty()
     );
     let raw = "postgres://app:%52q7!@db.invalid/";
-    let encoded = raw
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("%{byte:02X}"))
-        .collect::<String>();
+    let encoded = raw.bytes().fold(String::new(), |mut output, byte| {
+        write!(output, "%{byte:02X}").unwrap();
+        output
+    });
     assert!(scan(isolated(), encoded.as_bytes()).is_empty());
     let result = isolated().scan_fragment(
         &Fragment::new(encoded.as_bytes()),

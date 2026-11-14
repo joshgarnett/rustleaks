@@ -675,7 +675,7 @@ fn source_le_entropy_rejects_exact_threshold_and_preserves_selected_metadata() {
         assert!(scan(&engine, b"AAAAAAAAAAAAAAAA").is_empty());
         assert!(scan(&engine, equal.as_bytes()).is_empty(), "{id}");
         assert_eq!(scan(&engine, above.as_bytes()).len(), 1, "{id}");
-        if threshold == 3.0 {
+        if threshold.to_bits() == 3.0_f64.to_bits() {
             let witness: String = ('A'..='H')
                 .flat_map(|c| std::iter::repeat_n(c, 49))
                 .collect();
@@ -692,10 +692,8 @@ fn independently_scoped_source_predicates_preserve_case_and_go_whitespace() {
         let regexes = rule["allowlists"][0]["regexes"].as_array().unwrap();
         let local = if id == "rustleaks.gcp-api-key-delimiter" {
             16
-        } else if id == "rustleaks.vault-service-token-delimiter" {
-            1
         } else {
-            0
+            usize::from(id == "rustleaks.vault-service-token-delimiter")
         };
         assert_eq!(regexes.len(), 13 + local);
         assert!(
@@ -748,6 +746,37 @@ fn independently_scoped_source_predicates_preserve_case_and_go_whitespace() {
     }
 }
 
+fn assert_rule_allowlists_reject(case: Case, input: &str) {
+    for condition in [
+        "regexTarget='secret'\nregexes=['.']",
+        "regexTarget='match'\nregexes=['.']",
+        "regexTarget='line'\nregexes=['.']",
+        "stopwords=['q7m2']",
+        "paths=['^synthetic[.]conf$']",
+        "commits=['synthetic-commit']",
+    ] {
+        let mut rule = rule_value(case.id);
+        // The stopword is taken from the independent positive alphabet so
+        // hex-only and letters-only cases receive a meaningful control.
+        let condition = condition.replace("q7m2", &case.alphabet[..4].to_ascii_lowercase());
+        let allowlist: toml::Value = toml::from_str(&condition).unwrap();
+        rule.as_table_mut()
+            .unwrap()
+            .insert("allowlists".into(), toml::Value::Array(vec![allowlist]));
+        let engine = one_rule(rule);
+        let fragment = Fragment::builder(input.as_bytes())
+            .file_path("synthetic.conf")
+            .commit("synthetic-commit")
+            .build();
+        assert!(
+            engine
+                .scan_fragment(&fragment, &ScanOptions::default())
+                .findings()
+                .is_empty()
+        );
+    }
+}
+
 #[test]
 fn exclusions_keyword_selection_and_finite_budgets_apply_before_admission() {
     for case in CASES {
@@ -790,34 +819,7 @@ fn exclusions_keyword_selection_and_finite_budgets_apply_before_admission() {
             .len(),
             1
         );
-        for condition in [
-            "regexTarget='secret'\nregexes=['.']",
-            "regexTarget='match'\nregexes=['.']",
-            "regexTarget='line'\nregexes=['.']",
-            "stopwords=['q7m2']",
-            "paths=['^synthetic[.]conf$']",
-            "commits=['synthetic-commit']",
-        ] {
-            let mut rule = rule_value(case.id);
-            // The stopword is taken from the independent positive alphabet so
-            // hex-only and letters-only cases receive a meaningful control.
-            let condition = condition.replace("q7m2", &case.alphabet[..4].to_ascii_lowercase());
-            let allowlist: toml::Value = toml::from_str(&condition).unwrap();
-            rule.as_table_mut()
-                .unwrap()
-                .insert("allowlists".into(), toml::Value::Array(vec![allowlist]));
-            let engine = one_rule(rule);
-            let fragment = Fragment::builder(input.as_bytes())
-                .file_path("synthetic.conf")
-                .commit("synthetic-commit")
-                .build();
-            assert!(
-                engine
-                    .scan_fragment(&fragment, &ScanOptions::default())
-                    .findings()
-                    .is_empty()
-            );
-        }
+        assert_rule_allowlists_reject(case, &input);
         let mut global = rule_value(case.id);
         global["regex"] = toml::Value::String("(false[A-Za-z0-9]{64})".into());
         global["keywords"] = toml::Value::Array(vec![]);

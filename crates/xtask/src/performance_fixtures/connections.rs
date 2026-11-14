@@ -39,6 +39,53 @@ fn parts(form: &str) -> (&'static [u8], &'static [u8]) {
     }
 }
 
+fn apply_control_input(input: &mut Vec<u8>, form: &str, class: &str, password: &[u8]) {
+    match class {
+        "omitted" => {
+            *input = match form {
+                "uri-userinfo" => b"postgresql://bench@db.invalid/application".to_vec(),
+                "jdbc-query" => b"jdbc:postgresql://db.invalid/application?user=bench".to_vec(),
+                "odbc-properties" => b"Driver={Synthetic};Server=db.invalid;UID=bench;".to_vec(),
+                "libpq-keyword" => b"host=db.invalid user=bench dbname=application".to_vec(),
+                _ => unreachable!("declared connection form"),
+            };
+        }
+        "public-url" => *input = b"https://public.invalid/documentation?language=en".to_vec(),
+        "prose" => {
+            *input = b"The database password is supplied by the application at startup.".to_vec();
+        }
+        "malformed-delimiter" => {
+            *input = match form {
+                "uri-userinfo" => [
+                    b"postgresql://bench;".as_slice(),
+                    password,
+                    b"@db.invalid/application",
+                ]
+                .concat(),
+                "jdbc-query" => [
+                    b"jdbc:postgresql://db.invalid/application?user=bench&password:".as_slice(),
+                    password,
+                ]
+                .concat(),
+                "odbc-properties" => [
+                    b"Server=db.invalid;UID=bench;PWD:".as_slice(),
+                    password,
+                    b";",
+                ]
+                .concat(),
+                "libpq-keyword" => [
+                    b"host=db.invalid user=bench password:'".as_slice(),
+                    password,
+                    b"'",
+                ]
+                .concat(),
+                _ => unreachable!("declared connection form"),
+            };
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
     let password = seeded_value("connection-password", ordinal, 24);
     let (prefix, suffix) = parts(form);
@@ -58,50 +105,7 @@ pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
     input.extend_from_slice(&value);
     let end = input.len();
     input.extend_from_slice(suffix);
-    match class {
-        "omitted" => {
-            input = match form {
-                "uri-userinfo" => b"postgresql://bench@db.invalid/application".to_vec(),
-                "jdbc-query" => b"jdbc:postgresql://db.invalid/application?user=bench".to_vec(),
-                "odbc-properties" => b"Driver={Synthetic};Server=db.invalid;UID=bench;".to_vec(),
-                "libpq-keyword" => b"host=db.invalid user=bench dbname=application".to_vec(),
-                _ => unreachable!("declared connection form"),
-            }
-        }
-        "public-url" => input = b"https://public.invalid/documentation?language=en".to_vec(),
-        "prose" => {
-            input = b"The database password is supplied by the application at startup.".to_vec()
-        }
-        "malformed-delimiter" => {
-            input = match form {
-                "uri-userinfo" => [
-                    b"postgresql://bench;".as_slice(),
-                    &password,
-                    b"@db.invalid/application",
-                ]
-                .concat(),
-                "jdbc-query" => [
-                    b"jdbc:postgresql://db.invalid/application?user=bench&password:".as_slice(),
-                    &password,
-                ]
-                .concat(),
-                "odbc-properties" => [
-                    b"Server=db.invalid;UID=bench;PWD:".as_slice(),
-                    &password,
-                    b";",
-                ]
-                .concat(),
-                "libpq-keyword" => [
-                    b"host=db.invalid user=bench password:'".as_slice(),
-                    &password,
-                    b"'",
-                ]
-                .concat(),
-                _ => unreachable!("declared connection form"),
-            }
-        }
-        _ => {}
-    }
+    apply_control_input(&mut input, form, class, &password);
     let carrier_end = input.len();
     input.push(b'\n');
     let mut fixture = Fixture::plain(

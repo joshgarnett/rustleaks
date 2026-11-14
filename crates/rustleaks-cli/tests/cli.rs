@@ -1474,14 +1474,14 @@ mod complete_profile {
 
     #[test]
     fn invalid_profiles_and_conflicting_options_fail_before_input() {
-        let fixture = Fixture::new();
-        fixture.write("config.toml", matching_config());
         struct MustNotRead;
         impl Read for MustNotRead {
             fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
                 panic!("invalid profile read stdin")
             }
         }
+        let fixture = Fixture::new();
+        fixture.write("config.toml", matching_config());
         for field in ["workers", "queue_capacity"] {
             profile(&fixture, &[(field, usize::MAX)]);
             let (code, stdout, stderr) = injected(&fixture, MustNotRead, &[]);
@@ -1565,9 +1565,6 @@ mod complete_profile {
 
     #[test]
     fn read_error_discards_the_whole_target_and_report_write_failure_is_incomplete() {
-        let fixture = Fixture::new();
-        fixture.write("config.toml", matching_config());
-        profile(&fixture, &[]);
         struct Failed {
             first: bool,
         }
@@ -1582,6 +1579,9 @@ mod complete_profile {
                 }
             }
         }
+        let fixture = Fixture::new();
+        fixture.write("config.toml", matching_config());
+        profile(&fixture, &[]);
         let (code, stdout, stderr) =
             injected(&fixture, Failed { first: true }, &["--exit-code", "0"]);
         assert_eq!(code, 2);

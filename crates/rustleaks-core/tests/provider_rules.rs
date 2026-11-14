@@ -108,9 +108,9 @@ fn body_bounds_alphabets_and_prefixes_reject_near_misses() {
         }
         let secret = token(prefix, minimum);
         for input in [
-            format!("_{};", secret),
-            format!("{}!,", secret),
-            format!("{}?;", secret),
+            format!("_{secret};"),
+            format!("{secret}!,"),
+            format!("{secret}?;"),
             format!("{};", secret.replacen(prefix, "wrong_", 1)),
             format!(
                 "{prefix}{}!{};",
@@ -197,7 +197,7 @@ fn inherited_entropy_thresholds_reject_equal_and_lower_values() {
     for (id, threshold, equal, above) in [
         (
             "rustleaks.groq-api-key",
-            3.5,
+            3.5_f64,
             "ABCDEFGHIIJJKKLL",
             "ABCDEFGHIJKLMNOP",
         ),
@@ -228,7 +228,7 @@ fn inherited_entropy_thresholds_reject_equal_and_lower_values() {
         ),
     ] {
         let mut rule = raw.rules.iter().find(|rule| rule.id == id).unwrap().clone();
-        assert_eq!(rule.entropy, threshold);
+        assert_eq!(rule.entropy.to_bits(), threshold.to_bits());
         assert_eq!(rule.secret_group, 1);
         // Probe the configured threshold independently of the provider format.
         // Eight equally likely symbols have entropy 3. The 16-byte 3.5 case
@@ -311,7 +311,8 @@ fn rule_local_and_targeted_global_allowlists_only_suppress_the_selected_rule() {
                 .iter_mut()
                 .find(|rule| rule.id == "rustleaks.groq-api-key")
                 .unwrap()
-                .allowlists = allowlist.rules[0].allowlists.clone();
+                .allowlists
+                .clone_from(&allowlist.rules[0].allowlists);
         }
         let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
             .build()
@@ -840,7 +841,8 @@ fn companion_allowlists_and_finite_limits_apply_to_each_increment() {
                         .iter_mut()
                         .find(|rule| rule.id == id)
                         .unwrap()
-                        .allowlists = allowlist.rules[0].allowlists.clone();
+                        .allowlists
+                        .clone_from(&allowlist.rules[0].allowlists);
                 }
                 let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
                     .build()
@@ -885,7 +887,7 @@ fn companion_source_filters_and_multiline_capture_are_preserved() {
     let raw: RawConfig = scalar_provider_config();
     for (id, _, prefix, length, tail) in ESCAPED_CASES {
         let rule = raw.rules.iter().find(|rule| rule.id == id).unwrap();
-        assert_eq!(rule.entropy, 0.0);
+        assert_eq!(rule.entropy.to_bits(), 0.0_f64.to_bits());
         assert_eq!(rule.secret_group, 1);
         let low_entropy = format!("{prefix}{}{tail}\\\"", "a".repeat(length));
         assert_eq!(scan(isolated(), low_entropy.as_bytes()).len(), 1);
@@ -1114,7 +1116,7 @@ fn standalone_provider_entropy_and_keyword_contracts_are_explicit() {
     for (id, threshold, equal, above) in [
         (
             "rustleaks.minimax-api-key",
-            3.5,
+            3.5_f64,
             "ABCDEFGHIIJJKKLL",
             "ABCDEFGHIJKLMNOP",
         ),
@@ -1139,7 +1141,7 @@ fn standalone_provider_entropy_and_keyword_contracts_are_explicit() {
         ),
     ] {
         let mut rule = raw.rules.iter().find(|rule| rule.id == id).unwrap().clone();
-        assert_eq!(rule.entropy, threshold);
+        assert_eq!(rule.entropy.to_bits(), threshold.to_bits());
         assert_eq!(rule.secret_group, 1);
         rule.regex = "([A-Z]{8,32})".into();
         rule.keywords.clear();
@@ -1169,7 +1171,7 @@ fn standalone_provider_entropy_and_keyword_contracts_are_explicit() {
             "{id}"
         );
         if prefix == "csa_" {
-            assert_eq!(rule.entropy, 0.0);
+            assert_eq!(rule.entropy.to_bits(), 0.0_f64.to_bits());
         }
     }
     let mut minimax = raw
@@ -1233,7 +1235,8 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
                     .iter_mut()
                     .find(|rule| rule.id == id)
                     .unwrap()
-                    .allowlists = allowlist.rules[0].allowlists.clone();
+                    .allowlists
+                    .clone_from(&allowlist.rules[0].allowlists);
             }
             let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
                 .build()
@@ -1298,7 +1301,7 @@ fn hex_body(length: usize) -> String {
     "a7f2b9e4c1d80563".chars().cycle().take(length).collect()
 }
 
-fn followup_cases() -> Vec<FollowupCase> {
+fn contextual_followup_cases() -> Vec<FollowupCase> {
     let contexts = [
         (
             "checkout-secret-key",
@@ -1349,7 +1352,7 @@ fn followup_cases() -> Vec<FollowupCase> {
             format!("sk-{}", body(48)),
         ),
     ];
-    let mut cases: Vec<_> = contexts
+    contexts
         .into_iter()
         .map(|(id, context, secret)| FollowupCase {
             id: match id {
@@ -1372,7 +1375,11 @@ fn followup_cases() -> Vec<FollowupCase> {
             folded: id != "polymarket-private-key",
             contextual: true,
         })
-        .collect();
+        .collect()
+}
+
+fn followup_cases() -> Vec<FollowupCase> {
+    let mut cases = contextual_followup_cases();
     for (id, secret, suffix) in [
         (
             "rustleaks.slack-session-cookie",
@@ -1490,139 +1497,147 @@ fn followup_exact_match_secret_locations_and_invalid_bytes_are_independent() {
     }
 }
 
-#[test]
-fn contextual_provider_labels_bounds_delimiters_and_case_are_preserved() {
-    for case in followup_cases().into_iter().filter(|case| case.contextual) {
+fn assert_contextual_labels_delimiters_and_case(case: &FollowupCase) {
+    assert!(
+        scan(isolated(), case.secret.as_bytes()).is_empty(),
+        "{}",
+        case.id
+    );
+    for label in ["unrelated", "api_key", "public_address", "kimi"] {
         assert!(
-            scan(isolated(), case.secret.as_bytes()).is_empty(),
+            scan(isolated(), format!("{label}={};", case.secret).as_bytes()).is_empty(),
             "{}",
             case.id
         );
-        for label in ["unrelated", "api_key", "public_address", "kimi"] {
-            assert!(
-                scan(isolated(), format!("{label}={};", case.secret).as_bytes()).is_empty(),
-                "{}",
-                case.id
-            );
-        }
-        for suffix in [
-            "", ";", "\t", "\u{b}", "\u{c}", "'", "\"", "`", "\\'", "\\\"", "\\`", "\\n", "\\r",
-        ] {
-            let input = format!("{}={}{suffix}", case.context, case.secret);
-            let findings = scan(isolated(), input.as_bytes());
-            assert_eq!(findings.len(), 1, "{}, {suffix:?}", case.id);
-            assert_eq!(findings[0].secret().as_bytes(), case.secret.as_bytes());
-            assert_eq!(findings[0].match_range(), range(0, input.len()));
-        }
-        for suffix in ["?", "\\x", "\\\\\"", "\u{a0}"] {
-            assert!(
-                scan(
-                    isolated(),
-                    format!("{}={}{suffix}", case.context, case.secret).as_bytes()
-                )
-                .is_empty()
-            );
-        }
-        for suffix in ["\\N", "\\R"] {
-            let findings = scan(
-                isolated(),
-                format!("{}={}{suffix}", case.context, case.secret).as_bytes(),
-            );
-            assert_eq!(findings.len(), usize::from(case.folded));
-        }
-        let upper = format!("{}={};", case.context, case.secret).to_ascii_uppercase();
-        assert_eq!(
-            scan(isolated(), upper.as_bytes()).len(),
-            usize::from(case.folded)
-        );
-        for separator in ["=", ">", ":=", "::=", ":::=", "||", ":", "=>", "?=", ","] {
-            let input = format!("{}{separator}{};", case.context, case.secret);
-            assert_eq!(
-                scan(isolated(), input.as_bytes()).len(),
-                1,
-                "{}, {separator}",
-                case.id
-            );
-        }
-        for count in [0, 3] {
-            let input = format!("{}{}={};", case.context, "'".repeat(count), case.secret);
-            assert_eq!(scan(isolated(), input.as_bytes()).len(), 1);
-        }
+    }
+    for suffix in [
+        "", ";", "\t", "\u{b}", "\u{c}", "'", "\"", "`", "\\'", "\\\"", "\\`", "\\n", "\\r",
+    ] {
+        let input = format!("{}={}{suffix}", case.context, case.secret);
+        let findings = scan(isolated(), input.as_bytes());
+        assert_eq!(findings.len(), 1, "{}, {suffix:?}", case.id);
+        assert_eq!(findings[0].secret().as_bytes(), case.secret.as_bytes());
+        assert_eq!(findings[0].match_range(), range(0, input.len()));
+    }
+    for suffix in ["?", "\\x", "\\\\\"", "\u{a0}"] {
         assert!(
             scan(
                 isolated(),
-                format!("{}''''={};", case.context, case.secret).as_bytes()
+                format!("{}={}{suffix}", case.context, case.secret).as_bytes()
             )
             .is_empty()
         );
-        for count in [0, 5] {
-            let input = format!("{}={}{};", case.context, "'".repeat(count), case.secret);
-            assert_eq!(scan(isolated(), input.as_bytes()).len(), 1);
-        }
-        assert!(
-            scan(
-                isolated(),
-                format!("{}=''''''{};", case.context, case.secret).as_bytes()
-            )
-            .is_empty()
+    }
+    for suffix in ["\\N", "\\R"] {
+        let findings = scan(
+            isolated(),
+            format!("{}={}{suffix}", case.context, case.secret).as_bytes(),
         );
-        let multiline = format!("{}\n='{}';", case.context, case.secret);
-        let findings = scan(isolated(), multiline.as_bytes());
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].match_range(), range(0, multiline.len() - 1));
+        assert_eq!(findings.len(), usize::from(case.folded));
+    }
+    let upper = format!("{}={};", case.context, case.secret).to_ascii_uppercase();
+    assert_eq!(
+        scan(isolated(), upper.as_bytes()).len(),
+        usize::from(case.folded)
+    );
+}
+
+fn assert_contextual_separators_and_bounds(case: &FollowupCase) {
+    for separator in ["=", ">", ":=", "::=", ":::=", "||", ":", "=>", "?=", ","] {
+        let input = format!("{}{separator}{};", case.context, case.secret);
         assert_eq!(
-            findings[0].secret_range(),
-            range(
-                case.context.len() + 3,
-                case.context.len() + 3 + case.secret.len()
-            )
+            scan(isolated(), input.as_bytes()).len(),
+            1,
+            "{}, {separator}",
+            case.id
         );
-        for (ascii, fold) in [('s', "\u{17f}"), ('k', "\u{212a}")] {
-            if case.context.contains(ascii) {
-                let altered = case.context.replacen(ascii, fold, 1);
-                // Include the literal keyword elsewhere so this is a regex
-                // case-fold control independently of keyword preselection.
-                let input = format!("{} note\n{altered}={};", case.context, case.secret);
-                assert!(scan(isolated(), input.as_bytes()).is_empty());
-            }
+    }
+    for count in [0, 3] {
+        let input = format!("{}{}={};", case.context, "'".repeat(count), case.secret);
+        assert_eq!(scan(isolated(), input.as_bytes()).len(), 1);
+    }
+    assert!(
+        scan(
+            isolated(),
+            format!("{}''''={};", case.context, case.secret).as_bytes()
+        )
+        .is_empty()
+    );
+    for count in [0, 5] {
+        let input = format!("{}={}{};", case.context, "'".repeat(count), case.secret);
+        assert_eq!(scan(isolated(), input.as_bytes()).len(), 1);
+    }
+    assert!(
+        scan(
+            isolated(),
+            format!("{}=''''''{};", case.context, case.secret).as_bytes()
+        )
+        .is_empty()
+    );
+    let multiline = format!("{}\n='{}';", case.context, case.secret);
+    let findings = scan(isolated(), multiline.as_bytes());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].match_range(), range(0, multiline.len() - 1));
+    assert_eq!(
+        findings[0].secret_range(),
+        range(
+            case.context.len() + 3,
+            case.context.len() + 3 + case.secret.len()
+        )
+    );
+    for (ascii, fold) in [('s', "\u{17f}"), ('k', "\u{212a}")] {
+        if case.context.contains(ascii) {
+            let altered = case.context.replacen(ascii, fold, 1);
+            // Include the literal keyword elsewhere so this is a regex
+            // case-fold control independently of keyword preselection.
+            let input = format!("{} note\n{altered}={};", case.context, case.secret);
+            assert!(scan(isolated(), input.as_bytes()).is_empty());
         }
-        for extension in ["", ".", "_", "-", " ", "\t"] {
-            let candidate = format!("{}{}={};", case.context, extension.repeat(20), case.secret);
-            assert_eq!(scan(isolated(), candidate.as_bytes()).len(), 1);
-        }
+    }
+    for extension in ["", ".", "_", "-", " ", "\t"] {
+        let candidate = format!("{}{}={};", case.context, extension.repeat(20), case.secret);
+        assert_eq!(scan(isolated(), candidate.as_bytes()).len(), 1);
+    }
+    assert!(
+        scan(
+            isolated(),
+            format!("{}{}={};", case.context, "z".repeat(21), case.secret).as_bytes()
+        )
+        .is_empty()
+    );
+    for candidate in [
+        format!(
+            "{}={};",
+            case.context,
+            &case.secret[..case.secret.len() - 1]
+        ),
+        format!("{}={}A;", case.context, case.secret),
+        format!("{}@={};", case.context, case.secret),
+        format!("{}\u{17f}={};", case.context, case.secret),
+    ] {
         assert!(
-            scan(
-                isolated(),
-                format!("{}{}={};", case.context, "z".repeat(21), case.secret).as_bytes()
-            )
-            .is_empty()
+            scan(isolated(), candidate.as_bytes()).is_empty(),
+            "{}",
+            case.id
         );
-        for candidate in [
-            format!(
-                "{}={};",
-                case.context,
-                &case.secret[..case.secret.len() - 1]
-            ),
-            format!("{}={}A;", case.context, case.secret),
-            format!("{}@={};", case.context, case.secret),
-            format!("{}\u{17f}={};", case.context, case.secret),
-        ] {
-            assert!(
-                scan(isolated(), candidate.as_bytes()).is_empty(),
-                "{}",
-                case.id
-            );
-        }
-        // The source has no leading boundary on context. Keep substring
-        // matching explicit rather than accidentally imposing a label parser.
-        assert_eq!(
-            scan(
-                isolated(),
-                format!("prefix{}={};", case.context, case.secret).as_bytes()
-            )
-            .len(),
-            1
-        );
+    }
+    // The source has no leading boundary on context. Keep substring
+    // matching explicit rather than accidentally imposing a label parser.
+    assert_eq!(
+        scan(
+            isolated(),
+            format!("prefix{}={};", case.context, case.secret).as_bytes()
+        )
+        .len(),
+        1
+    );
+}
+
+#[test]
+fn contextual_provider_labels_bounds_delimiters_and_case_are_preserved() {
+    for case in followup_cases().into_iter().filter(|case| case.contextual) {
+        assert_contextual_labels_delimiters_and_case(&case);
+        assert_contextual_separators_and_bounds(&case);
     }
     let crates = format!("cio{}", body(32));
     for label in ["crates", "cratesio", "crates.io", "crates_io", "crates-io"] {
@@ -1901,6 +1916,118 @@ fn followup_raw_occurrences_and_generic_attribution_are_separate() {
     }
 }
 
+fn assert_followup_entropy_and_keywords(original: &RawConfig, case: &FollowupCase) {
+    let rule = original.rules.iter().find(|r| r.id == case.id).unwrap();
+    let entropy = matches!(
+        case.id,
+        "rustleaks.cursor-api-key"
+            | "rustleaks.elevenlabs-api-key"
+            | "rustleaks.ollama-api-key"
+            | "rustleaks.polymarket-private-key"
+            | "rustleaks.stability-ai-api-key"
+            | "rustleaks.slack-session-cookie"
+            | "rustleaks.slack-session-token"
+    );
+    let expected_entropy = if entropy { 3.5_f64 } else { 0.0_f64 };
+    assert_eq!(rule.entropy.to_bits(), expected_entropy.to_bits());
+    assert_eq!(rule.secret_group, 1);
+    let expected_keywords: Vec<&str> = match case.id {
+        "rustleaks.checkout-secret-key" => vec!["checkout"],
+        "rustleaks.crates-io-api-key" => vec!["crates"],
+        "rustleaks.cursor-api-key" => vec!["cursor"],
+        "rustleaks.databento-api-key" => vec!["databento"],
+        "rustleaks.elevenlabs-api-key" => vec!["elevenlabs"],
+        "rustleaks.figma-personal-access-header-token" => {
+            vec!["x-figma-token", "xfigmatoken", "x_figma_token"]
+        }
+        "rustleaks.ollama-api-key" => vec!["ollama"],
+        "rustleaks.polymarket-private-key" => vec!["poly"],
+        "rustleaks.stability-ai-api-key" => vec!["stability"],
+        "rustleaks.slack-session-cookie" => vec!["xoxd-"],
+        "rustleaks.slack-session-token" => vec!["xoxc-"],
+        _ => vec![],
+    };
+    assert_eq!(rule.keywords, expected_keywords);
+    if entropy {
+        let mut probe = rule.clone();
+        probe.regex = "([A-Z]{8,32})".into();
+        probe.keywords.clear();
+        let engine = Engine::builder(
+            ConfigLoader::new()
+                .compile(RawConfig {
+                    rules: vec![probe],
+                    ..RawConfig::default()
+                })
+                .unwrap(),
+        )
+        .build()
+        .unwrap();
+        assert!(scan(&engine, b"ABCDEFGHIIJJKKLL").is_empty());
+        assert_eq!(scan(&engine, b"ABCDEFGHIJKLMNOP").len(), 1);
+    }
+}
+
+fn assert_followup_allowlists(original: &RawConfig, case: &FollowupCase, text: &str) {
+    for path in ["synthetic.pdf", "node_modules/synthetic.js"] {
+        let fragment = Fragment::builder(text.as_bytes()).file_path(path).build();
+        assert!(
+            composed()
+                .engine()
+                .scan_fragment(&fragment, &ScanOptions::default())
+                .findings()
+                .is_empty()
+        );
+    }
+    assert!(
+        scan(
+            composed().engine(),
+            format!("{text} # rustleaks:allow").as_bytes()
+        )
+        .is_empty()
+    );
+    for global in [false, true] {
+        for predicate in [
+            "regexTarget='secret'\nregexes=['.']",
+            "regexTarget='match'\nregexes=['.']",
+            "regexTarget='line'\nregexes=['.']",
+            "stopwords=['Q7m2','a7f2']",
+            "paths=['^synthetic[.]conf$']",
+            "commits=['synthetic-commit']",
+        ] {
+            let mut raw = original.clone();
+            raw.rules
+                .retain(|r| r.id == case.id || r.id == "rustleaks.groq-api-key");
+            let allowlist:RawConfig=toml::from_str(&format!("[[rules]]\nid='source'\n[[rules.allowlists]]\n{predicate}\n[[allowlists]]\ntargetRules=['{}']\n{predicate}\n",case.id)).unwrap();
+            if global {
+                raw.allowlists = allowlist.allowlists;
+            } else {
+                raw.rules
+                    .iter_mut()
+                    .find(|r| r.id == case.id)
+                    .unwrap()
+                    .allowlists
+                    .clone_from(&allowlist.rules[0].allowlists);
+            }
+            let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
+                .build()
+                .unwrap();
+            let fragment = Fragment::builder(text.as_bytes())
+                .file_path("synthetic.conf")
+                .commit("synthetic-commit")
+                .build();
+            assert!(
+                engine
+                    .scan_fragment(&fragment, &ScanOptions::default())
+                    .findings()
+                    .is_empty(),
+                "{}, {global}, {predicate}",
+                case.id
+            );
+            assert_eq!(scan(&engine, token("gsk_", 52).as_bytes()).len(), 1);
+        }
+    }
+}
+
 #[test]
 fn followup_entropy_keywords_allowlists_and_resource_caps_remain_effective() {
     let original: RawConfig = scalar_provider_config();
@@ -1939,111 +2066,9 @@ fn followup_entropy_keywords_allowlists_and_resource_caps_remain_effective() {
         assert!(scan(isolated(), low.as_bytes()).is_empty());
     }
     for case in followup_cases() {
-        let rule = original.rules.iter().find(|r| r.id == case.id).unwrap();
-        let entropy = matches!(
-            case.id,
-            "rustleaks.cursor-api-key"
-                | "rustleaks.elevenlabs-api-key"
-                | "rustleaks.ollama-api-key"
-                | "rustleaks.polymarket-private-key"
-                | "rustleaks.stability-ai-api-key"
-                | "rustleaks.slack-session-cookie"
-                | "rustleaks.slack-session-token"
-        );
-        assert_eq!(rule.entropy, if entropy { 3.5 } else { 0.0 });
-        assert_eq!(rule.secret_group, 1);
-        let expected_keywords: Vec<&str> = match case.id {
-            "rustleaks.checkout-secret-key" => vec!["checkout"],
-            "rustleaks.crates-io-api-key" => vec!["crates"],
-            "rustleaks.cursor-api-key" => vec!["cursor"],
-            "rustleaks.databento-api-key" => vec!["databento"],
-            "rustleaks.elevenlabs-api-key" => vec!["elevenlabs"],
-            "rustleaks.figma-personal-access-header-token" => {
-                vec!["x-figma-token", "xfigmatoken", "x_figma_token"]
-            }
-            "rustleaks.ollama-api-key" => vec!["ollama"],
-            "rustleaks.polymarket-private-key" => vec!["poly"],
-            "rustleaks.stability-ai-api-key" => vec!["stability"],
-            "rustleaks.slack-session-cookie" => vec!["xoxd-"],
-            "rustleaks.slack-session-token" => vec!["xoxc-"],
-            _ => vec![],
-        };
-        assert_eq!(rule.keywords, expected_keywords);
-        if entropy {
-            let mut probe = rule.clone();
-            probe.regex = "([A-Z]{8,32})".into();
-            probe.keywords.clear();
-            let engine = Engine::builder(
-                ConfigLoader::new()
-                    .compile(RawConfig {
-                        rules: vec![probe],
-                        ..RawConfig::default()
-                    })
-                    .unwrap(),
-            )
-            .build()
-            .unwrap();
-            assert!(scan(&engine, b"ABCDEFGHIIJJKKLL").is_empty());
-            assert_eq!(scan(&engine, b"ABCDEFGHIJKLMNOP").len(), 1);
-        }
+        assert_followup_entropy_and_keywords(&original, &case);
         let text = format!("{}{}", followup_text(&case), case.suffix);
-        for path in ["synthetic.pdf", "node_modules/synthetic.js"] {
-            let fragment = Fragment::builder(text.as_bytes()).file_path(path).build();
-            assert!(
-                composed()
-                    .engine()
-                    .scan_fragment(&fragment, &ScanOptions::default())
-                    .findings()
-                    .is_empty()
-            );
-        }
-        assert!(
-            scan(
-                composed().engine(),
-                format!("{text} # rustleaks:allow").as_bytes()
-            )
-            .is_empty()
-        );
-        for global in [false, true] {
-            for predicate in [
-                "regexTarget='secret'\nregexes=['.']",
-                "regexTarget='match'\nregexes=['.']",
-                "regexTarget='line'\nregexes=['.']",
-                "stopwords=['Q7m2','a7f2']",
-                "paths=['^synthetic[.]conf$']",
-                "commits=['synthetic-commit']",
-            ] {
-                let mut raw = original.clone();
-                raw.rules
-                    .retain(|r| r.id == case.id || r.id == "rustleaks.groq-api-key");
-                let allowlist:RawConfig=toml::from_str(&format!("[[rules]]\nid='source'\n[[rules.allowlists]]\n{predicate}\n[[allowlists]]\ntargetRules=['{}']\n{predicate}\n",case.id)).unwrap();
-                if global {
-                    raw.allowlists = allowlist.allowlists;
-                } else {
-                    raw.rules
-                        .iter_mut()
-                        .find(|r| r.id == case.id)
-                        .unwrap()
-                        .allowlists = allowlist.rules[0].allowlists.clone();
-                }
-                let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
-                    .build()
-                    .unwrap();
-                let fragment = Fragment::builder(text.as_bytes())
-                    .file_path("synthetic.conf")
-                    .commit("synthetic-commit")
-                    .build();
-                assert!(
-                    engine
-                        .scan_fragment(&fragment, &ScanOptions::default())
-                        .findings()
-                        .is_empty(),
-                    "{}, {global}, {predicate}",
-                    case.id
-                );
-                assert_eq!(scan(&engine, token("gsk_", 52).as_bytes()).len(), 1);
-            }
-        }
+        assert_followup_allowlists(&original, &case, &text);
         let dense = format!("{text}\n").repeat(6);
         let fragment = Fragment::new(dense.as_bytes());
         let full = isolated().scan_fragment(&fragment, &ScanOptions::default());
@@ -2509,6 +2534,34 @@ fn byte_provider_occurrence_increments_and_generic_attribution_are_distinct() {
         && f.secret().as_bytes() == organization.as_bytes()));
 }
 
+fn assert_byte_provider_rule_allowlists(id: &str, input: &str) {
+    for predicate in [
+        "regexTarget='secret'\nregexes=['.']",
+        "regexTarget='match'\nregexes=['.']",
+        "regexTarget='line'\nregexes=['.']",
+        "stopwords=['Q7m2']",
+        "paths=['^synthetic[.]conf$']",
+        "commits=['synthetic-commit']",
+    ] {
+        let mut rule = byte_rule(id);
+        let allowlist: toml::Value = toml::from_str(predicate).unwrap();
+        rule.as_table_mut()
+            .unwrap()
+            .insert("allowlists".into(), toml::Value::Array(vec![allowlist]));
+        let engine = native_single_rule(rule);
+        let fragment = Fragment::builder(input.as_bytes())
+            .file_path("synthetic.conf")
+            .commit("synthetic-commit")
+            .build();
+        assert!(
+            engine
+                .scan_fragment(&fragment, &ScanOptions::default())
+                .findings()
+                .is_empty()
+        );
+    }
+}
+
 #[test]
 fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predicates() {
     use base64::Engine as _;
@@ -2547,31 +2600,7 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
         );
         let excluded = format!("{prefix}false{};", body(minimum - 5));
         assert!(scan(native_selected(), excluded.as_bytes()).is_empty());
-        for predicate in [
-            "regexTarget='secret'\nregexes=['.']",
-            "regexTarget='match'\nregexes=['.']",
-            "regexTarget='line'\nregexes=['.']",
-            "stopwords=['Q7m2']",
-            "paths=['^synthetic[.]conf$']",
-            "commits=['synthetic-commit']",
-        ] {
-            let mut rule = byte_rule(id);
-            let allowlist: toml::Value = toml::from_str(predicate).unwrap();
-            rule.as_table_mut()
-                .unwrap()
-                .insert("allowlists".into(), toml::Value::Array(vec![allowlist]));
-            let engine = native_single_rule(rule);
-            let fragment = Fragment::builder(input.as_bytes())
-                .file_path("synthetic.conf")
-                .commit("synthetic-commit")
-                .build();
-            assert!(
-                engine
-                    .scan_fragment(&fragment, &ScanOptions::default())
-                    .findings()
-                    .is_empty()
-            );
-        }
+        assert_byte_provider_rule_allowlists(id, &input);
         let encoded = base64::engine::general_purpose::STANDARD.encode(input.as_bytes());
         let decoded = native_selected().scan_fragment(
             &Fragment::new(encoded.as_bytes()),

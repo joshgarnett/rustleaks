@@ -93,7 +93,7 @@ pub(super) fn verify_bytes(input: &[u8], manifest: &Value) -> Result<(), String>
     verify_case(input, manifest, spec)
 }
 
-fn verify_case(input: &[u8], manifest: &Value, spec: Spec) -> Result<(), String> {
+fn verify_case_contract(input: &[u8], manifest: &Value, spec: Spec) -> Result<(), String> {
     require_fields(
         manifest,
         &[
@@ -163,6 +163,123 @@ fn verify_case(input: &[u8], manifest: &Value, spec: Spec) -> Result<(), String>
     {
         return Err("fixture coordinate contract differs".into());
     }
+    Ok(())
+}
+
+fn verify_literal_plants(
+    input: &[u8],
+    plaintext: &[u8],
+    manifest: &Value,
+    outer: Option<&Range<usize>>,
+    connection: bool,
+) -> Result<Vec<(usize, Vec<u8>)>, String> {
+    let plants = manifest["plants"]
+        .as_array()
+        .ok_or("missing literal plants")?;
+    let mut literals = Vec::new();
+    let mut input_offsets = Vec::new();
+    let mut plaintext_offsets = Vec::new();
+    for plant in plants {
+        require_fields(
+            plant,
+            &[
+                "ordinal",
+                "value",
+                "value_sha256",
+                "plaintext_secret_bytes",
+                "plaintext_carrier_bytes",
+                "physical_source_secret_bytes",
+                "physical_source_carrier_bytes",
+                "plaintext_position",
+                "source_carrier_position",
+            ],
+        )?;
+        let span = range(&plant["plaintext_secret_bytes"], plaintext.len())?;
+        let carrier = range(&plant["plaintext_carrier_bytes"], plaintext.len())?;
+        let physical = outer.unwrap_or(&carrier);
+        plaintext_offsets.extend([span.start, span.end]);
+        input_offsets.extend([physical.start, physical.end]);
+    }
+    let input_positions = walk_positions(input, input_offsets)?;
+    let plaintext_positions = walk_positions(plaintext, plaintext_offsets)?;
+    for (ordinal, plant) in plants.iter().enumerate() {
+        let value = plant["value"]
+            .as_str()
+            .ok_or("missing literal value")?
+            .as_bytes();
+        let span = range(&plant["plaintext_secret_bytes"], plaintext.len())?;
+        let carrier = range(&plant["plaintext_carrier_bytes"], plaintext.len())?;
+        let physical = outer.unwrap_or(&carrier);
+        if ordinal != number(&plant["ordinal"])?
+            || plaintext.get(span.clone()) != Some(value)
+            || plant["value_sha256"] != sha256_bytes(value)
+            || carrier.start > span.start
+            || carrier.end < span.end
+            || !connection && carrier != span
+            || plant["physical_source_carrier_bytes"] != interval(physical)
+            || plant["plaintext_position"] != position(&plaintext_positions, &span)
+            || plant["source_carrier_position"] != position(&input_positions, physical)
+        {
+            return Err("literal plant bytes or physical coordinates differ".into());
+        }
+        if outer.is_some() {
+            if !plant["physical_source_secret_bytes"].is_null() {
+                return Err("decoded secret falsely claims a raw source interval".into());
+            }
+        } else if plant["physical_source_secret_bytes"] != interval(&span) {
+            return Err("raw secret source interval differs".into());
+        }
+        literals.push((span.start, value.to_vec()));
+    }
+    if number(&manifest["literal_planted_values"])? != literals.len() {
+        return Err("literal plant count differs".into());
+    }
+    Ok(literals)
+}
+
+fn verify_occurrence_policy(
+    plaintext: &[u8],
+    manifest: &Value,
+    literals: &[(usize, Vec<u8>)],
+) -> Result<(), String> {
+    match manifest["result_requirement"].as_str() {
+        Some("complete-with-exact-planted-occurrences") => {
+            let actual = plaintext
+                .windows(40)
+                .enumerate()
+                .filter(|(_, value)| {
+                    value.starts_with(b"ghp_") && value[4..].iter().all(u8::is_ascii_alphanumeric)
+                })
+                .map(|(start, value)| (start, value.to_vec()))
+                .collect::<Vec<_>>();
+            let unique = literals
+                .iter()
+                .map(|(_, value)| value)
+                .collect::<BTreeSet<_>>()
+                .len();
+            if actual != literals
+                || number(&manifest["expected_occurrences"])? != literals.len()
+                || number(&manifest["expected_unique_values"])? != unique
+            {
+                return Err(
+                    "literal grammar census differs from declared occurrence identities".into(),
+                );
+            }
+        }
+        Some("policy-review-required-before-scoring") => {
+            if !manifest["expected_occurrences"].is_null()
+                || !manifest["expected_unique_values"].is_null()
+            {
+                return Err("unreviewed policy has assigned pass expectations".into());
+            }
+        }
+        _ => return Err("unknown fixture result requirement".into()),
+    }
+    Ok(())
+}
+
+fn verify_case(input: &[u8], manifest: &Value, spec: Spec) -> Result<(), String> {
+    verify_case_contract(input, manifest, spec)?;
     let depth = number(&manifest["decode_depth"])?;
     if depth > 2 {
         return Err("fixture decode depth exceeds the declared generator domain".into());
@@ -200,100 +317,14 @@ fn verify_case(input: &[u8], manifest: &Value, spec: Spec) -> Result<(), String>
     if manifest["plaintext_sha256"] != sha256_bytes(&plaintext) {
         return Err("plaintext identity differs".into());
     }
-    let plants = manifest["plants"]
-        .as_array()
-        .ok_or("missing literal plants")?;
-    let mut literals = Vec::new();
-    let mut input_offsets = Vec::new();
-    let mut plaintext_offsets = Vec::new();
-    for plant in plants {
-        require_fields(
-            plant,
-            &[
-                "ordinal",
-                "value",
-                "value_sha256",
-                "plaintext_secret_bytes",
-                "plaintext_carrier_bytes",
-                "physical_source_secret_bytes",
-                "physical_source_carrier_bytes",
-                "plaintext_position",
-                "source_carrier_position",
-            ],
-        )?;
-        let span = range(&plant["plaintext_secret_bytes"], plaintext.len())?;
-        let carrier = range(&plant["plaintext_carrier_bytes"], plaintext.len())?;
-        let physical = outer.as_ref().unwrap_or(&carrier);
-        plaintext_offsets.extend([span.start, span.end]);
-        input_offsets.extend([physical.start, physical.end]);
-    }
-    let input_positions = walk_positions(input, input_offsets)?;
-    let plaintext_positions = walk_positions(&plaintext, plaintext_offsets)?;
-    for (ordinal, plant) in plants.iter().enumerate() {
-        let value = plant["value"]
-            .as_str()
-            .ok_or("missing literal value")?
-            .as_bytes();
-        let span = range(&plant["plaintext_secret_bytes"], plaintext.len())?;
-        let carrier = range(&plant["plaintext_carrier_bytes"], plaintext.len())?;
-        let physical = outer.as_ref().unwrap_or(&carrier);
-        if ordinal != number(&plant["ordinal"])?
-            || plaintext.get(span.clone()) != Some(value)
-            || plant["value_sha256"] != sha256_bytes(value)
-            || carrier.start > span.start
-            || carrier.end < span.end
-            || !connection && carrier != span
-            || plant["physical_source_carrier_bytes"] != interval(physical)
-            || plant["plaintext_position"] != position(&plaintext_positions, &span)
-            || plant["source_carrier_position"] != position(&input_positions, physical)
-        {
-            return Err("literal plant bytes or physical coordinates differ".into());
-        }
-        if outer.is_some() {
-            if !plant["physical_source_secret_bytes"].is_null() {
-                return Err("decoded secret falsely claims a raw source interval".into());
-            }
-        } else if plant["physical_source_secret_bytes"] != interval(&span) {
-            return Err("raw secret source interval differs".into());
-        }
-        literals.push((span.start, value.to_vec()));
-    }
-    if number(&manifest["literal_planted_values"])? != literals.len() {
-        return Err("literal plant count differs".into());
-    }
-    match manifest["result_requirement"].as_str() {
-        Some("complete-with-exact-planted-occurrences") => {
-            let actual = plaintext
-                .windows(40)
-                .enumerate()
-                .filter(|(_, value)| {
-                    value.starts_with(b"ghp_") && value[4..].iter().all(u8::is_ascii_alphanumeric)
-                })
-                .map(|(start, value)| (start, value.to_vec()))
-                .collect::<Vec<_>>();
-            let unique = literals
-                .iter()
-                .map(|(_, value)| value)
-                .collect::<BTreeSet<_>>()
-                .len();
-            if actual != literals
-                || number(&manifest["expected_occurrences"])? != literals.len()
-                || number(&manifest["expected_unique_values"])? != unique
-            {
-                return Err(
-                    "literal grammar census differs from declared occurrence identities".into(),
-                );
-            }
-        }
-        Some("policy-review-required-before-scoring") => {
-            if !manifest["expected_occurrences"].is_null()
-                || !manifest["expected_unique_values"].is_null()
-            {
-                return Err("unreviewed policy has assigned pass expectations".into());
-            }
-        }
-        _ => return Err("unknown fixture result requirement".into()),
-    }
+    let literals = verify_literal_plants(
+        input,
+        &plaintext,
+        manifest,
+        outer.as_ref(),
+        matches!(spec, Spec::Connection { .. }),
+    )?;
+    verify_occurrence_policy(&plaintext, manifest, &literals)?;
     verification_details::verify(spec, input, &plaintext, manifest)
 }
 

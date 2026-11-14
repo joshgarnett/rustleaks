@@ -1,6 +1,6 @@
 //! Fixed source and native contracts for shared-prefix delimiter increments.
 
-const REVIEWED: &str = r###"{
+const REVIEWED: &str = r#"{
   "selection": {
     "source_url": "https://raw.githubusercontent.com/betterleaks/betterleaks/8f376ff9c31ed5309ac448fe601c5dd21b376155/config/betterleaks.toml",
     "source_sha256": "7c305ade42d5dbad4650b97cca0299f9c16d152ec555ae47bd6f321f049f82e5",
@@ -1862,7 +1862,7 @@ const REVIEWED: &str = r###"{
       }
     }
   ]
-}"###;
+}"#;
 
 pub(super) fn validate(
     provenance: &serde_json::Value,

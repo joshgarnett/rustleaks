@@ -1716,6 +1716,7 @@ fn quality_check() -> Result<(), String> {
             "--workspace",
             "--all-targets",
             "--all-features",
+            "--keep-going",
             "--locked",
             "--offline",
             "--",

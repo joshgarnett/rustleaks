@@ -82,8 +82,8 @@ fn case(source: &'static str, label: &'static str, secret: String) -> Case {
         },
     }
 }
-fn cases() -> Vec<Case> {
-    let mut cases = vec![
+fn fixed_cases() -> Vec<Case> {
+    vec![
         case("beamer-api-token", "beamer", format!("b_{}", body(44))),
         case(
             "defined-networking-api-token",
@@ -120,7 +120,36 @@ fn cases() -> Vec<Case> {
             "yandex",
             format!("YC{}", body(38)),
         ),
-    ];
+    ]
+}
+
+fn append_yandex_cases(cases: &mut Vec<Case>) {
+    for first in [1, 12] {
+        for left_padding in ["", "=", "=="] {
+            for right_padding in ["", "=", "=="] {
+                cases.push(case(
+                    "yandex-access-token",
+                    "yandex",
+                    format!(
+                        "t1.{}{left_padding}.{}{right_padding}",
+                        body(first),
+                        body(86)
+                    ),
+                ));
+            }
+        }
+    }
+    for length in 35..=38 {
+        cases.push(case(
+            "yandex-api-key",
+            "yandex",
+            format!("AQVN{}", body(length)),
+        ));
+    }
+}
+
+fn cases() -> Vec<Case> {
+    let mut cases = fixed_cases();
     for label in ["password", "administrator_login_password"] {
         for length in [8, 9, 10, 20] {
             cases.push(case(
@@ -199,28 +228,7 @@ fn cases() -> Vec<Case> {
             ),
         ));
     }
-    for first in [1, 12] {
-        for left_padding in ["", "=", "=="] {
-            for right_padding in ["", "=", "=="] {
-                cases.push(case(
-                    "yandex-access-token",
-                    "yandex",
-                    format!(
-                        "t1.{}{left_padding}.{}{right_padding}",
-                        body(first),
-                        body(86)
-                    ),
-                ));
-            }
-        }
-    }
-    for length in 35..=38 {
-        cases.push(case(
-            "yandex-api-key",
-            "yandex",
-            format!("AQVN{}", body(length)),
-        ));
-    }
+    append_yandex_cases(&mut cases);
     cases
 }
 
@@ -471,6 +479,27 @@ fn ordinary_occurrences_and_quoted_password_overlap_are_distinguished() {
     }
 }
 
+fn assert_body_mutations_rejected(c: &Case) {
+    let at = c.secret.len() / 2;
+    for replacement in ["!", "\u{17f}", "\u{212a}"] {
+        let text = format!(
+            "{}={}{}{}\\\"",
+            c.label,
+            &c.secret[..at],
+            replacement,
+            &c.secret[at + 1..]
+        );
+        assert!(
+            scan(selected(), text.as_bytes(), c.path).is_empty(),
+            "{} body mutation",
+            c.source
+        );
+    }
+    let mut invalid = format!("{}={}\\\"", c.label, c.secret).into_bytes();
+    invalid[c.label.len() + 1 + at] = 0xff;
+    assert!(scan(selected(), &invalid, c.path).is_empty());
+}
+
 #[test]
 fn context_bounds_separators_case_resets_and_body_mutations_are_independent() {
     for c in cases() {
@@ -509,24 +538,7 @@ fn context_bounds_separators_case_resets_and_body_mutations_are_independent() {
             "{} uppercase",
             c.source
         );
-        let at = c.secret.len() / 2;
-        for replacement in ["!", "\u{17f}", "\u{212a}"] {
-            let text = format!(
-                "{}={}{}{}\\\"",
-                c.label,
-                &c.secret[..at],
-                replacement,
-                &c.secret[at + 1..]
-            );
-            assert!(
-                scan(selected(), text.as_bytes(), c.path).is_empty(),
-                "{} body mutation",
-                c.source
-            );
-        }
-        let mut invalid = format!("{}={}\\\"", c.label, c.secret).into_bytes();
-        invalid[c.label.len() + 1 + at] = 0xff;
-        assert!(scan(selected(), &invalid, c.path).is_empty());
+        assert_body_mutations_rejected(&c);
     }
     for label in ["oKtA", "OKTa", "OkTA"] {
         assert!(
@@ -847,8 +859,7 @@ fn residual_vt_and_old_openai_languages_do_not_duplicate_existing_companions() {
     assert!(scan(selected(), terminal_hyphen.as_bytes(), "source.txt").is_empty());
 }
 
-#[test]
-fn source_predicates_paths_keywords_and_byte_entropy_stay_attached() {
+fn assert_source_predicate_and_entropy_metadata() {
     let (config, _) = NativePolicy::builder()
         .with_pack("provider", PROVIDER_RULES_V1)
         .unwrap()
@@ -905,6 +916,11 @@ fn source_predicates_paths_keywords_and_byte_entropy_stay_attached() {
             assert!(config.rule(id).unwrap().native_entropy().is_none());
         }
     }
+}
+
+#[test]
+fn source_predicates_paths_keywords_and_byte_entropy_stay_attached() {
+    assert_source_predicate_and_entropy_metadata();
     let mut seen = std::collections::BTreeSet::new();
     for c in cases().into_iter().filter(|c| seen.insert(c.source)) {
         let id = format!("rustleaks.{}-context-vt", c.source);

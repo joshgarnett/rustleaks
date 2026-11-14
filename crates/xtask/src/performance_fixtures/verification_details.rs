@@ -589,6 +589,32 @@ fn connection(input: &[u8], manifest: &Value, form: &str, class: &str) -> Result
             "unexpected retained non-password literal",
         )?;
     }
+    connection_carrier(
+        input,
+        manifest,
+        form,
+        class,
+        &seeded_password,
+        &source_value,
+    )
+}
+
+fn connection_carrier(
+    input: &[u8],
+    manifest: &Value,
+    form: &str,
+    class: &str,
+    seeded_password: &[u8],
+    source_value: &[u8],
+) -> Result<(), String> {
+    let details = &manifest["details"];
+    let proposed_positive = matches!(class, "literal" | "percent-encoded");
+    let uri_percent = class == "percent-encoded" && matches!(form, "uri-userinfo" | "jdbc-query");
+    let semantic_value = if uri_percent {
+        seeded_password
+    } else {
+        source_value
+    };
     let carrier = &input[..input.len() - 1];
     let (prefix, suffix) = connection_parts(form);
     match class {
@@ -667,39 +693,49 @@ fn connection(input: &[u8], manifest: &Value, form: &str, class: &str) -> Result
             "prose control differs",
         )?,
         "malformed-delimiter" => {
-            let (prefix, suffix): (&[u8], &[u8]) = match form {
-                "uri-userinfo" => (b"postgresql://bench;", b"@db.invalid/application"),
-                "jdbc-query" => (
-                    b"jdbc:postgresql://db.invalid/application?user=bench&password:",
-                    b"",
-                ),
-                "odbc-properties" => (b"Server=db.invalid;UID=bench;PWD:", b";"),
-                _ => (b"host=db.invalid user=bench password:'", b"'"),
-            };
-            require(
-                carrier.len() == prefix.len() + 24 + suffix.len()
-                    && carrier.starts_with(prefix)
-                    && carrier.ends_with(suffix),
-                "malformed-delimiter carrier differs",
-            )?;
-            let password = &carrier[prefix.len()..prefix.len() + 24];
-            require(
-                password.iter().all(u8::is_ascii_alphanumeric)
-                    && password == seeded_password
-                    && details["generated_password_sha256"] == sha256_bytes(password),
-                "malformed-delimiter literal differs",
-            )?;
-            require(
-                details["retained_literal"]
-                    == json!({
-                        "source_bytes": {"start": prefix.len(), "end": prefix.len() + 24},
-                        "value_sha256": sha256_bytes(password),
-                        "role": "generated-literal-outside-declared-password-slot",
-                    }),
-                "malformed literal must remain separate from a structural password slot",
-            )?;
+            malformed_connection(carrier, details, form, seeded_password)?;
         }
         _ => return Err("unknown connection control".into()),
     }
+    Ok(())
+}
+
+fn malformed_connection(
+    carrier: &[u8],
+    details: &Value,
+    form: &str,
+    seeded_password: &[u8],
+) -> Result<(), String> {
+    let (prefix, suffix): (&[u8], &[u8]) = match form {
+        "uri-userinfo" => (b"postgresql://bench;", b"@db.invalid/application"),
+        "jdbc-query" => (
+            b"jdbc:postgresql://db.invalid/application?user=bench&password:",
+            b"",
+        ),
+        "odbc-properties" => (b"Server=db.invalid;UID=bench;PWD:", b";"),
+        _ => (b"host=db.invalid user=bench password:'", b"'"),
+    };
+    require(
+        carrier.len() == prefix.len() + 24 + suffix.len()
+            && carrier.starts_with(prefix)
+            && carrier.ends_with(suffix),
+        "malformed-delimiter carrier differs",
+    )?;
+    let password = &carrier[prefix.len()..prefix.len() + 24];
+    require(
+        password.iter().all(u8::is_ascii_alphanumeric)
+            && password == seeded_password
+            && details["generated_password_sha256"] == sha256_bytes(password),
+        "malformed-delimiter literal differs",
+    )?;
+    require(
+        details["retained_literal"]
+            == json!({
+                "source_bytes": {"start": prefix.len(), "end": prefix.len() + 24},
+                "value_sha256": sha256_bytes(password),
+                "role": "generated-literal-outside-declared-password-slot",
+            }),
+        "malformed literal must remain separate from a structural password slot",
+    )?;
     Ok(())
 }

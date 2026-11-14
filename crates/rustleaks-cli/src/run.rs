@@ -370,8 +370,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
                 if let Some(profile) = profile {
                     match metadata.link_length(&finding) {
                         Ok(Some(length)) if status.admit_link(profile, length) => {}
-                        Ok(Some(_)) => return finding,
-                        Ok(None) => return finding,
+                        Ok(_) => return finding,
                         Err(_) => {
                             status.reason = CompletionReason::MetadataFailure;
                             return finding;

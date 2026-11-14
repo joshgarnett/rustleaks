@@ -431,6 +431,15 @@ impl FileSource {
         if let Some(maximum) = self.options.complete_target_bytes() {
             return self.visit_complete(maximum, cancellation, emit);
         }
+        self.visit_legacy(nominal, cancellation, emit)
+    }
+
+    fn visit_legacy(
+        &mut self,
+        nominal: &mut Vec<u8>,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         let mut total_lines = 0_usize;
         if nominal.len() != self.options.chunk_size() {
             *nominal = allocate_nominal(self.options.chunk_size(), &self.physical_path)?;

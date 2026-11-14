@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-const REVIEWED: &str = r###"{
+const REVIEWED: &str = r#"{
   "additional_sources": [
     {
       "repository": "https://github.com/google/osv-scalibr",
@@ -520,7 +520,7 @@ const REVIEWED: &str = r###"{
       }
     }
   ]
-}"###;
+}"#;
 
 pub(super) fn validate(
     root: &Path,
