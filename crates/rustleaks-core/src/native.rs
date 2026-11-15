@@ -249,6 +249,7 @@ impl NativePolicy {
     ///
     /// Returns errors for collisions, resource ceilings, unsupported pack
     /// directives or configuration compilation failures.
+    #[allow(clippy::too_many_lines)] // Pack composition, collision checks and identity binding share one ordered flow.
     pub fn compile(self) -> Result<(CompiledConfig, NativePolicyIdentity), NativePolicyError> {
         let loader = ConfigLoader::new();
         let mut raw = loader.parse_toml(DEFAULT_CONFIG, None)?;
@@ -546,7 +547,6 @@ fn validate_pack_table(value: &toml::Value, scope: PackTable) -> Result<(), Nati
             return Err(NativePolicyError::AmbiguousPackField);
         }
         match (scope, key.as_str()) {
-            (PackTable::Rule, "predicate") => {}
             (PackTable::Rule, "regex") if value.is_table() => {
                 parse_native_regex(value)?;
             }
@@ -554,7 +554,7 @@ fn validate_pack_table(value: &toml::Value, scope: PackTable) -> Result<(), Nati
             | (
                 PackTable::Rule,
                 "id" | "description" | "path" | "regex" | "secretgroup" | "entropy" | "keywords"
-                | "tags" | "skipreport",
+                | "tags" | "skipreport" | "predicate",
             )
             | (PackTable::Required, "id" | "withinlines" | "withincolumns")
             | (
@@ -1212,15 +1212,15 @@ mod native_metadata_tests {
 
     #[test]
     fn original_keywords_cover_cross_pack_and_base_helpers_after_selection() {
-        let parent = r#"
+        let parent = "
 [[rules]]
 id='rustleaks.parent'
 regex={dialect='bytes-v1',pattern='(A)'}
-keywords=['Key']
+keywords=['\u{212a}ey']
 [rules.required]
 contract='buffer-v1'
 edges=[{id='github-pat',relation='full-match-window',window='0'}, {id='rustleaks.helper',relation='same-candidate'}]
-"#;
+";
         let helper =
             "[[rules]]\nid='rustleaks.helper'\nregex='(A)'\nkeywords=['', 'accesskey', 'İ']\n";
         let (config, _) = NativePolicy::builder()

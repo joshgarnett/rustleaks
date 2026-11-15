@@ -1079,6 +1079,7 @@ fn primary(graph: &Graph) -> &Case {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // One graph loop keeps every selection control beside its case.
 fn every_graph_fails_closed_under_selection_and_accounts_for_support_multiplicity() {
     assert!(ConfigLoader::new().load_toml(PROVIDER_RULES_V1).is_err());
     for graph in &fixture().graphs {
@@ -1230,9 +1231,7 @@ fn every_graph_enforces_independent_resource_limits() {
         .filter(|c| c.name.contains("/source-length-"))
     {
         let engine = &graph_engines()[&case.source_id];
-        if !case.expected.is_empty() {
-            check_resource_limits(engine, case);
-        } else {
+        if case.expected.is_empty() {
             let input = bytes(&case.input_base64);
             let result = engine.scan_fragment_controlled(
                 &Fragment::new(input.as_slice()),
@@ -1241,6 +1240,8 @@ fn every_graph_enforces_independent_resource_limits() {
             );
             assert!(!result.is_complete(), "{}", case.name);
             assert!(result.findings().is_empty());
+        } else {
+            check_resource_limits(engine, case);
         }
     }
 }
@@ -1450,6 +1451,7 @@ fn source_path_predicates_are_isolated_from_embedded_global_policy() {
     assert_eq!(checked, 56);
 }
 
+#[allow(clippy::cast_precision_loss)] // Test inputs are far below 2^52 bytes.
 fn byte_entropy(bytes: &[u8]) -> f64 {
     let mut histogram = [0usize; 256];
     for b in bytes {

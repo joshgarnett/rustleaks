@@ -15,6 +15,7 @@ use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Cases {
     baseline_rule_ids: Vec<String>,
     selected_rule_ids: Vec<String>,
@@ -919,7 +920,7 @@ fn added_rules() -> Vec<toml::Value> {
         .collect()
 }
 
-fn local_allowlist(predicate: toml::Value) -> Engine {
+fn local_allowlist(predicate: &toml::Value) -> Engine {
     let mut rules = added_rules();
     for rule in &mut rules {
         rule.as_table_mut()
@@ -950,20 +951,20 @@ fn local_allowlist(predicate: toml::Value) -> Engine {
 }
 
 fn exact_pattern(value: &str) -> String {
-    format!(
-        "^{}$",
-        value
-            .bytes()
-            .map(|byte| format!("\\x{byte:02x}"))
-            .collect::<String>()
-    )
+    use std::fmt::Write as _;
+    let mut pattern = String::from("^");
+    for byte in value.bytes() {
+        write!(pattern, "\\x{byte:02x}").unwrap();
+    }
+    pattern.push('$');
+    pattern
 }
 
 #[test]
 fn local_allowlists_preserve_targets_stopwords_commit_neighbors_and_markers() {
     for target in ["secret", "match", "line"] {
         let engine = local_allowlist(
-            toml::from_str(&format!("regexTarget='{target}'\nregexes=['.']")).unwrap(),
+            &toml::from_str(&format!("regexTarget='{target}'\nregexes=['.']")).unwrap(),
         );
         for case in &cases().primary {
             assert!(
@@ -986,11 +987,11 @@ fn local_allowlists_preserve_targets_stopwords_commit_neighbors_and_markers() {
                 expected.secret[middle..middle + 4].to_ascii_uppercase(),
             )]),
         );
-        let engine = local_allowlist(toml::Value::Table(predicate));
+        let engine = local_allowlist(&toml::Value::Table(predicate));
         let input = STANDARD.decode(&case.input_base64).unwrap();
         assert!(for_rule(&scan(&engine, &input, &case.path), &case.rule).is_empty());
         let engine =
-            local_allowlist(toml::from_str("commits=['synthetic-special-commit']").unwrap());
+            local_allowlist(&toml::from_str("commits=['synthetic-special-commit']").unwrap());
         for (commit, count) in [
             ("synthetic-special-commit", 0),
             ("synthetic-special-neighbor", 1),

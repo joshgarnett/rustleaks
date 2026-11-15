@@ -1536,10 +1536,14 @@ impl Engine {
                 // trailing LF at the exclusive whole-match endpoint. No index
                 // or coordinate registry is retained outside admitted records.
                 context.work_many(whole.end)?;
+                // No byte-counting dependency is admitted; the scan is already
+                // charged above as bounded work.
+                #[allow(clippy::naive_bytecount)]
                 let start_line = 1 + input.bytes[..whole.start]
                     .iter()
                     .filter(|&&byte| byte == b'\n')
                     .count();
+                #[allow(clippy::naive_bytecount)]
                 let end_line = start_line
                     + input.bytes[whole.start..whole.end]
                         .iter()

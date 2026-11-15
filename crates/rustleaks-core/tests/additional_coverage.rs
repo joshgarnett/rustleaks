@@ -16,6 +16,7 @@ use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Cases {
     baseline_rule_ids: Vec<String>,
     primary: Vec<Case>,
@@ -300,7 +301,12 @@ fn selected_ascii_secrets_never_expand_into_unicode_or_invalid_bytes() {
         let original = STANDARD.decode(&case.input_base64).unwrap();
         let [start, end] = case.secret_range.unwrap();
         let offset = start + (end - start) / 2;
-        for replacement in ["é".as_bytes(), "ſ".as_bytes(), "K".as_bytes(), &[0xff]] {
+        for replacement in [
+            "é".as_bytes(),
+            "ſ".as_bytes(),
+            "\u{212a}".as_bytes(),
+            &[0xff],
+        ] {
             let mut input = original[..offset].to_vec();
             input.extend_from_slice(replacement);
             input.extend_from_slice(&original[offset + 1..]);
@@ -329,7 +335,7 @@ fn added_rules() -> Vec<toml::Value> {
         .collect()
 }
 
-fn engine_with_allowlist(specification: toml::Value) -> Engine {
+fn engine_with_allowlist(specification: &toml::Value) -> Engine {
     let mut rules = added_rules();
     for rule in &mut rules {
         let fields = rule.as_table_mut().unwrap();
@@ -365,7 +371,7 @@ fn native_rule_allowlists_and_inherited_global_policy_remain_effective() {
         "commits=['synthetic-additional-coverage']",
         "paths=['.']",
     ] {
-        let engine = engine_with_allowlist(toml::from_str(specification).unwrap());
+        let engine = engine_with_allowlist(&toml::from_str(specification).unwrap());
         for case in &cases().primary {
             let input = STANDARD.decode(&case.input_base64).unwrap();
             let fragment = Fragment::builder(input.as_slice())
@@ -401,7 +407,7 @@ fn every_added_rule_preserves_case_insensitive_secret_stopwords() {
         .collect();
     let mut allowlist = toml::Table::new();
     allowlist.insert("stopwords".into(), toml::Value::Array(words));
-    let engine = engine_with_allowlist(toml::Value::Table(allowlist));
+    let engine = engine_with_allowlist(&toml::Value::Table(allowlist));
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         assert!(

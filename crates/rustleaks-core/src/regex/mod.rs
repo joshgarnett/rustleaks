@@ -3388,8 +3388,11 @@ mod native_byte_tests {
             b"z\naB\nX",
             &[Some(span(2, 6)), Some(span(5, 6))],
         );
-        assert!(spans(r"(?i:key)", "Key".as_bytes()).is_empty());
-        assert_eq!(spans(r"(?ui:key)", "Key".as_bytes()), vec![span(0, 5)]);
+        assert!(spans(r"(?i:key)", "\u{212a}ey".as_bytes()).is_empty());
+        assert_eq!(
+            spans(r"(?ui:key)", "\u{212a}ey".as_bytes()),
+            vec![span(0, 5)]
+        );
         assert_eq!(spans(r"(?u:.)", "é".as_bytes()), vec![span(0, 2)]);
         assert!(spans(r"(?u:.)", b"\xff").is_empty());
         assert_eq!(spans("(?x) a # ignored\n (X)", b"aX"), vec![span(0, 2)]);

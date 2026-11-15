@@ -1774,12 +1774,24 @@ mod native_bytes {
     #[test]
     fn keyword_classification_uses_original_text_on_short_and_long_raw_buffers() {
         for (keywords, input, matched) in [
-            (vec!["accesskey"], "accessKey marker=ABCD".as_bytes(), false),
+            (
+                vec!["accesskey"],
+                "access\u{212a}ey marker=ABCD".as_bytes(),
+                false,
+            ),
             (vec!["accesskey"], b"AcCeSsKeY marker=ABCD".as_slice(), true),
-            (vec!["Key"], b"KEY marker=ABCD".as_slice(), true),
-            (vec!["Key"], "KEY marker=ABCD".as_bytes(), true),
+            (vec!["\u{212a}ey"], b"KEY marker=ABCD".as_slice(), true),
+            (
+                vec!["\u{212a}ey"],
+                "\u{212a}EY marker=ABCD".as_bytes(),
+                true,
+            ),
             (vec![""], b"marker=ABCD".as_slice(), true),
-            (vec!["missing", "Key"], b"KEY marker=ABCD".as_slice(), true),
+            (
+                vec!["missing", "\u{212a}ey"],
+                b"KEY marker=ABCD".as_slice(),
+                true,
+            ),
             (vec!["İ"], "i\u{307} marker=ABCD".as_bytes(), true),
             (vec!["İ"], b"i marker=ABCD".as_slice(), false),
             (vec!["ΟΣ"], "ΟΣ marker=ABCD".as_bytes(), true),
@@ -1962,7 +1974,7 @@ mod native_bytes {
             [b"accesskey marker=ABCD".as_slice(), b"key HELP".as_slice()],
             [b"marker=ABCD key HELP".as_slice(), b"accesskey".as_slice()],
             [
-                "accessKey marker=ABCD key HELP".as_bytes(),
+                "access\u{212a}ey marker=ABCD key HELP".as_bytes(),
                 b"accesskey".as_slice(),
             ],
         ] {
@@ -1982,7 +1994,7 @@ mod native_bytes {
             pack("marker=(ABCD)", &[])
         );
         let engine = selected(&source);
-        assert!(scan(&engine, "accessKey marker=ABCD".as_bytes(), 0).is_empty());
+        assert!(scan(&engine, "access\u{212a}ey marker=ABCD".as_bytes(), 0).is_empty());
         assert_eq!(scan(&engine, b"ACCESSKEY marker=ABCD", 0).len(), 1);
         let empty = selected(&source.replace("['accesskey']", "['']"));
         assert_eq!(scan(&empty, b"marker=ABCD", 0).len(), 1);
@@ -1990,7 +2002,7 @@ mod native_bytes {
 
     #[test]
     fn byte_budget_boundaries_and_cancellation_preserve_completed_rule_atomicity() {
-        let engine = selected(&pack(r"marker=(\xFF[A-Z]{4})", &["Key", "missing"]));
+        let engine = selected(&pack(r"marker=(\xFF[A-Z]{4})", &["\u{212a}ey", "missing"]));
         let fragment = Fragment::new(b"KEY marker=\xffABCD marker=\xffWXYZ");
         // No decoder or later rule can add checkpoints after this rule completes.
         let options = ScanOptions::builder().max_decode_depth(0).build();
@@ -2094,7 +2106,7 @@ mod native_bytes {
     }
     #[test]
     fn utf8_azure_comment_keeps_the_source_byte_bridge_and_exact_helper_spans() {
-        let source = r#"
+        let source = r"
 [[rules]]
 id='rustleaks.bytes'
 regex={dialect='bytes-v1',pattern='''(?i)\b(?:AccountKey|(?:azure[_\s.-]*)?(?:storage[_\s.-]*)?(?:account[_\s.-]*)?(?:access[_\s.-]*)?key)\b(?s:.{0,24}?)([A-Za-z0-9+/]{86}==)'''}
@@ -2108,7 +2120,7 @@ id='rustleaks.helper'
 regex={dialect='bytes-v1',pattern='''(?i)(?:\bAccountName\s*=\s*([a-z0-9]{3,24})\b|https://([a-z0-9]{3,24})\.blob\.core\.windows\.net\b|\b(?:azure[_\s.-]*storage[_\s.-]*(?:account[_\s.-]*)?name|storage[_\s.-]*account[_\s.-]*name)\b(?s:.{0,24}?)([a-z0-9]{3,24})\b)'''}
 keywords=['accountname','blob.core.windows.net','storage']
 skipReport=true
-"#;
+";
         // Synthetic 64-byte value defined independently as (37*i+251) mod 256.
         let key = STANDARD.encode(
             (0u8..64)

@@ -29,6 +29,7 @@ struct Fixture {
     predicates: Vec<Predicate>,
 }
 #[derive(Deserialize)]
+#[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Case {
     name: String,
     rule: String,
@@ -423,6 +424,7 @@ fn actual_rules_keep_every_source_path_filter() {
     }
 }
 
+#[allow(clippy::cast_precision_loss)] // Test inputs are far below 2^52 bytes.
 fn byte_entropy(bytes: &[u8]) -> f64 {
     let mut histogram = [0usize; 256];
     for b in bytes {

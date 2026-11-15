@@ -1,7 +1,8 @@
 //! Counts ordinary cl100k tokens only for the complete pinned Vercel ASCII
 //! capture domain. Generated data retains source merge ranks. See data/README.md.
-//! Algorithm behavior follows OpenAI tiktoken and tiktoken-rs, both MIT;
-//! See data/LICENSE.tiktoken and data/LICENSE.tiktoken-rs for attribution.
+//! Algorithm behavior follows the MIT-licensed tiktoken and tiktoken-rs
+//! projects. See data/LICENSE.tiktoken and data/LICENSE.tiktoken-rs for
+//! attribution.
 
 #![forbid(unsafe_code)]
 

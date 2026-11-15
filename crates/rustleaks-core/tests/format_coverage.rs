@@ -15,6 +15,7 @@ use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Cases {
     baseline_rule_ids: Vec<String>,
     primary: Vec<Case>,
@@ -828,7 +829,7 @@ fn added_rules() -> Vec<toml::Value> {
         .collect()
 }
 
-fn engine_with_local_allowlist(specification: toml::Value) -> Engine {
+fn engine_with_local_allowlist(specification: &toml::Value) -> Engine {
     let mut rules = added_rules();
     for rule in &mut rules {
         rule.as_table_mut()
@@ -860,12 +861,13 @@ fn engine_with_local_allowlist(specification: toml::Value) -> Engine {
 
 fn exact_pattern(text: &str) -> String {
     // Independently encode every ASCII byte as a regex literal.
-    format!(
-        "^{}$",
-        text.bytes()
-            .map(|byte| format!("\\x{byte:02x}"))
-            .collect::<String>()
-    )
+    use std::fmt::Write as _;
+    let mut pattern = String::from("^");
+    for byte in text.bytes() {
+        write!(pattern, "\\x{byte:02x}").unwrap();
+    }
+    pattern.push('$');
+    pattern
 }
 
 #[test]
@@ -877,7 +879,7 @@ fn native_local_allowlist_targets_stopwords_commits_and_marker_controls_hold() {
             "regexes".into(),
             toml::Value::Array(vec![toml::Value::String(".".into())]),
         );
-        let engine = engine_with_local_allowlist(toml::Value::Table(table));
+        let engine = engine_with_local_allowlist(&toml::Value::Table(table));
         for case in &cases().primary {
             assert!(
                 scan(
@@ -904,7 +906,7 @@ fn native_local_allowlist_targets_stopwords_commits_and_marker_controls_hold() {
                 .collect(),
         ),
     );
-    let engine = engine_with_local_allowlist(toml::Value::Table(table));
+    let engine = engine_with_local_allowlist(&toml::Value::Table(table));
     for case in &cases().primary {
         assert!(
             scan(
@@ -915,8 +917,9 @@ fn native_local_allowlist_targets_stopwords_commits_and_marker_controls_hold() {
             .is_empty()
         );
     }
-    let engine =
-        engine_with_local_allowlist(toml::from_str("commits=['synthetic-format-commit']").unwrap());
+    let engine = engine_with_local_allowlist(
+        &toml::from_str("commits=['synthetic-format-commit']").unwrap(),
+    );
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         for (commit, count) in [
@@ -973,7 +976,7 @@ fn native_exact_match_allowlists_do_not_confuse_secret_with_context() {
                 "regexes".into(),
                 toml::Value::Array(vec![toml::Value::String(exact_pattern(value))]),
             );
-            let engine = engine_with_local_allowlist(toml::Value::Table(table));
+            let engine = engine_with_local_allowlist(&toml::Value::Table(table));
             assert_eq!(
                 for_rule(&scan(&engine, &input, &case.path), &case.rule).len(),
                 count,
@@ -1066,7 +1069,12 @@ fn ascii_secret_fields_reject_unicode_casefold_digits_and_invalid_bytes() {
     for case in &cases().primary {
         let original = STANDARD.decode(&case.input_base64).unwrap();
         let [start, end] = case.secret_range.unwrap();
-        for replacement in ["ſ".as_bytes(), "K".as_bytes(), "١".as_bytes(), &[0xff]] {
+        for replacement in [
+            "ſ".as_bytes(),
+            "\u{212a}".as_bytes(),
+            "١".as_bytes(),
+            &[0xff],
+        ] {
             // The exact authored capture determines the field, never a global
             // search for a possibly repeated substring elsewhere in the input.
             let index = start + (end - start) / 2;
