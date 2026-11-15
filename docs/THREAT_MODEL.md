@@ -128,3 +128,42 @@ dependency policy, Bazel module, workflow, or release change. A minimized fuzz
 failure must become an ordinary regression before its artifact is removed.
 Platform-specific claims require matching native execution; cross-compilation
 alone is not runtime evidence.
+
+Explicit native `buffer-v1` relations keep candidate identity and untrimmed
+whole/capture coordinates separate from public source projection. Each accepted
+decoded segment is searched as its own buffer, preventing one decoded tuple or
+carrier from satisfying another's required predicate. Full-buffer capture
+recovery preserves anchor and word-boundary context and rejects inconsistent
+endpoints. Native required tables are validated strictly and fail ordinary
+configuration compilation. Candidate metadata accompanies admitted findings;
+work, spans, normalization, record and payload limits remain enforced, and
+unfinished native rules publish no partial buffer prefix. The existing
+compatibility detector, decoder discovery, allowlist line projection and source
+mapping remain separate contracts. Synthetic native, regex and controlled-scan
+regressions cover these boundaries; execution results belong to the validation
+record rather than this threat-model description.
+
+Native `bytes-v1` content expressions compile directly into one private byte
+matcher; they never pass through the Go translator or a placeholder matcher.
+The existing source, nesting, forward-NFA, PikeVM working-set, reverse fallback
+and runtime cache limits still apply, with byte-mode UTF-8 settings and all
+captures enabled. Span admission precedes collection, and capture recovery
+keeps the original raw buffer and verifies the admitted whole-match endpoints.
+Native original-keyword metadata prevents Unicode folding from widening ASCII
+keywords. Unicode keyword folding is transient, scoped to the owning input and
+charged before execution; it remains outside regex-normalization byte accounting.
+These changes add no dependency, feature, native-code or owned-unsafe boundary.
+
+Bounded native secret predicates run before finding admission. The Mapbox
+segment predicate uses fixed 308-byte encoded and 231-byte decoded buffers,
+requires valid UTF-8, applies existing GoRegex limits, and rejects malformed
+candidates locally. It does not recursively invoke fragment decoding. The
+Vercel predicate accepts one fixed 60-byte ASCII domain, uses fixed BPE scratch
+and immutable generated cl100k data, and performs no runtime initialization or
+I/O. Both propagate aggregate work/cancellation stops as typed partial scans.
+The tokenizer maintenance gate verifies the original full source hash and
+size, adjacent licenses and every derived byte; runtime input cannot supply a
+vocabulary. Full-vocabulary reference, domain, malformed-input and controlled
+scan regressions cover these boundaries. See
+[native detection policy](DETECTION_POLICY.md) and
+[tokenizer provenance](../crates/rustleaks-core/data/README.md).

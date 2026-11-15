@@ -23,7 +23,10 @@ use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes
 use crate::model::{
     ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
-use crate::regex::{ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, NormalizedHaystack};
+use crate::native::{NativeKeyword, NativeRelation, NativeRequired};
+use crate::regex::{
+    ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, NativeByteRegex, NormalizedHaystack,
+};
 
 /// Largest total keyword length that receives a full DFA prefilter.
 ///
@@ -80,7 +83,9 @@ where
 /// explicit engine checkpoints: scan-pass starts, decode attempts, emitted
 /// keyword matches, decoder matches/candidates/segments and predecessor
 /// comparisons, rule evaluations, content-match candidates, required-rule
-/// specifications, and required-to-primary proximity comparisons. An admitted
+/// specifications, required-to-primary proximity comparisons, bounded native
+/// predicate transforms and decoded-pattern checks, and tokenizer pieces and
+/// merge iterations. Predicate transforms do not consume `decoded_bytes`. An admitted
 /// `finding_record` is a primary finding, an auxiliary finding candidate, or a
 /// projected required finding. These units are defensive resource controls,
 /// not stable performance measurements. Finding payload, collected spans and
@@ -525,6 +530,30 @@ struct RulePass<'a> {
     keyword_occurrences: &'a KeywordOccurrences,
 }
 
+/// Metadata exists only for an explicitly buffer-local native evaluation.
+struct NativeCandidate {
+    finding: Finding,
+    input: NativeInputId,
+    whole: ByteSpan,
+    // Selected capture in input coordinates; source/report ranges stay separate.
+    _secret: Option<ByteSpan>,
+    start_line: usize,
+    end_line: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct NativeInputId {
+    pass: usize,
+    segment: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
+struct NativeInput<'a> {
+    id: NativeInputId,
+    bytes: &'a [u8],
+    pass_offset: usize,
+}
+
 struct ScanContext<'a> {
     control: ScanControl<'a>,
     usage: ScanUsage,
@@ -881,6 +910,39 @@ impl Engine {
                         None,
                         ExplanationReason::RuleSelected,
                     );
+                    if rule.native_required.is_some() || rule.native_byte_matcher.is_some() {
+                        let detected = self.detect_native_rule(
+                            fragment,
+                            options,
+                            rule,
+                            rule.native_required.as_ref(),
+                            false,
+                            RulePass {
+                                current_raw: &current_raw,
+                                normalized: &regex_haystack,
+                                original: &original,
+                                encoded_segments: &encoded_segments,
+                                inherited_from_finding: fragment.inherited_from_finding(),
+                                rule_ordinal,
+                                decoded_pass: decode_depth,
+                                literal_anchor: None,
+                                keyword_occurrences: &keyword_occurrences,
+                            },
+                            context,
+                        );
+                        match detected {
+                            Ok(detected) => findings.extend(detected),
+                            Err(termination) => {
+                                return finish_partial(
+                                    findings,
+                                    options,
+                                    context.usage,
+                                    termination,
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     if !keyword_gate_open(rule, keyword_indexes, &matched_keywords) {
                         context.explanations.record(
                             Some(rule_ordinal),
@@ -974,6 +1036,17 @@ impl Engine {
         rule_pass: RulePass<'a>,
         context: &mut ScanContext<'_>,
     ) -> Result<Vec<Finding>, ScanTermination> {
+        if rule.native_byte_matcher.is_some() {
+            return self.detect_native_rule(
+                fragment,
+                options,
+                rule,
+                None,
+                rule_pass.inherited_from_finding,
+                rule_pass,
+                context,
+            );
+        }
         context.work()?;
         if rule.skip_report && !rule_pass.inherited_from_finding {
             context.explanations.record(
@@ -1091,6 +1164,7 @@ impl Engine {
                 span,
                 &mut line_allowlists,
                 &mut capture_scratch,
+                None,
                 context,
             )? {
                 findings.push(finding);
@@ -1109,6 +1183,379 @@ impl Engine {
         }
 
         self.project_required_findings(fragment, options, rule, rule_pass, findings, context)
+    }
+
+    // Complete all accepted buffers before publishing this rule, preserving
+    // completed-rule partial-result atomicity when a later buffer exhausts work.
+    #[allow(clippy::too_many_arguments)]
+    fn detect_native_rule<'a>(
+        &'a self,
+        fragment: &'a Fragment,
+        options: &ScanOptions,
+        rule: &'a CompiledRule,
+        required: Option<&NativeRequired>,
+        helper: bool,
+        pass: RulePass<'a>,
+        context: &mut ScanContext<'_>,
+    ) -> Result<Vec<Finding>, ScanTermination> {
+        let mut completed = Vec::new();
+        if pass.encoded_segments.is_empty() {
+            let input = NativeInput {
+                id: NativeInputId {
+                    pass: pass.decoded_pass,
+                    segment: None,
+                },
+                bytes: pass.current_raw,
+                pass_offset: 0,
+            };
+            self.detect_native_input(
+                fragment,
+                options,
+                rule,
+                required,
+                helper,
+                pass,
+                input,
+                &mut completed,
+                context,
+            )?;
+        } else {
+            for (segment_ordinal, segment) in pass.encoded_segments.iter().enumerate() {
+                context.work()?;
+                let Ok(pass_offset) = usize::try_from(segment.decoded().start) else {
+                    continue;
+                };
+                let input = NativeInput {
+                    id: NativeInputId {
+                        pass: pass.decoded_pass,
+                        segment: Some(segment_ordinal),
+                    },
+                    bytes: segment.decoded_value(),
+                    pass_offset,
+                };
+                self.detect_native_input(
+                    fragment,
+                    options,
+                    rule,
+                    required,
+                    helper,
+                    pass,
+                    input,
+                    &mut completed,
+                    context,
+                )?;
+            }
+        }
+        if required.is_none() && !helper && !rule.required.is_empty() {
+            return self
+                .project_required_findings(fragment, options, rule, pass, completed, context);
+        }
+        Ok(completed)
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn detect_native_input<'a>(
+        &'a self,
+        fragment: &'a Fragment,
+        options: &ScanOptions,
+        rule: &'a CompiledRule,
+        required: Option<&NativeRequired>,
+        helper: bool,
+        pass: RulePass<'a>,
+        input: NativeInput<'a>,
+        completed: &mut Vec<Finding>,
+        context: &mut ScanContext<'_>,
+    ) -> Result<(), ScanTermination> {
+        let normalized = OnceCell::new();
+        let unicode_lower = OnceCell::new();
+        let primary = self.native_candidates(
+            fragment,
+            options,
+            rule,
+            pass,
+            input,
+            &normalized,
+            &unicode_lower,
+            helper,
+            context,
+        )?;
+        if primary.is_empty() {
+            return Ok(());
+        }
+        let Some(required) = required else {
+            completed.extend(primary.into_iter().map(|candidate| candidate.finding));
+            return Ok(());
+        };
+        let mut helpers = Vec::new();
+        for edge in &required.edges {
+            context.work()?;
+            let candidates = if let Some(helper) = self.config.rules.get(&edge.id) {
+                let rule_ordinal = self
+                    .config
+                    .rules
+                    .keys()
+                    .position(|id| id == &edge.id)
+                    .unwrap_or(pass.rule_ordinal);
+                context.explanations.record(
+                    Some(rule_ordinal),
+                    pass.decoded_pass,
+                    None,
+                    ExplanationReason::RuleSelected,
+                );
+                self.native_candidates(
+                    fragment,
+                    options,
+                    helper,
+                    RulePass {
+                        rule_ordinal,
+                        ..pass
+                    },
+                    input,
+                    &normalized,
+                    &unicode_lower,
+                    true,
+                    context,
+                )?
+            } else {
+                Vec::new()
+            };
+            helpers.push(candidates);
+        }
+        for mut candidate in primary {
+            let mut projected = Vec::new();
+            let mut has_all = true;
+            for (edge, helpers) in required.edges.iter().zip(&helpers) {
+                context.work()?;
+                let before = projected.len();
+                for helper in helpers {
+                    context.work()?;
+                    if native_relation_matches(&candidate, helper, edge.relation) {
+                        let finding = &helper.finding;
+                        context.admit_finding([
+                            finding.rule_id().as_bytes().len(),
+                            finding.line().as_bytes().len(),
+                            finding.match_text().as_bytes().len(),
+                            finding.secret().as_bytes().len(),
+                        ])?;
+                        projected.push(RequiredFinding::from_finding(finding));
+                    }
+                }
+                has_all &= projected.len() > before;
+            }
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                None,
+                if has_all {
+                    ExplanationReason::RequiredRulesMatched
+                } else {
+                    ExplanationReason::RequiredRulesMissing
+                },
+            );
+            if has_all {
+                candidate.finding.add_required_findings(projected);
+                completed.push(candidate.finding);
+            }
+        }
+        Ok(())
+    }
+
+    // Helpers inherit only the buffer/coordinate contract, never a caller's
+    // public inherited flag. Their own required edges are not recursively run,
+    // as in legacy helper evaluation; primary relations are always enforced.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn native_candidates<'a>(
+        &'a self,
+        fragment: &'a Fragment,
+        options: &ScanOptions,
+        rule: &'a CompiledRule,
+        pass: RulePass<'a>,
+        input: NativeInput<'a>,
+        normalized: &OnceCell<NormalizedHaystack<'a>>,
+        unicode_lower: &OnceCell<String>,
+        helper: bool,
+        context: &mut ScanContext<'_>,
+    ) -> Result<Vec<NativeCandidate>, ScanTermination> {
+        context.work()?;
+        if rule.skip_report && !helper {
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                None,
+                ExplanationReason::RuleReportSkipped,
+            );
+            return Ok(Vec::new());
+        }
+        let matched = native_keyword_gate(rule, input.bytes, unicode_lower, context)?;
+        context.explanations.record(
+            Some(pass.rule_ordinal),
+            pass.decoded_pass,
+            None,
+            if rule.keywords.is_empty() {
+                ExplanationReason::KeywordNotRequired
+            } else if matched {
+                ExplanationReason::KeywordMatched
+            } else {
+                ExplanationReason::KeywordMissed
+            },
+        );
+        if !matched {
+            return Ok(Vec::new());
+        }
+        if commit_or_path_allowed(fragment, &rule.allowlists, context)? {
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                None,
+                ExplanationReason::AllowlistMatched,
+            );
+            return Ok(Vec::new());
+        }
+        context.explanations.record(
+            Some(pass.rule_ordinal),
+            pass.decoded_pass,
+            None,
+            ExplanationReason::AllowlistNotMatched,
+        );
+        if let Some(path) = &rule.path_matcher {
+            let matched = context.is_match(path, fragment.file_path().as_bytes())?
+                || (!fragment.windows_file_path().is_empty()
+                    && context.is_match(path, fragment.windows_file_path().as_bytes())?);
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                None,
+                if matched {
+                    ExplanationReason::PathMatched
+                } else {
+                    ExplanationReason::PathMissed
+                },
+            );
+            if !matched {
+                return Ok(Vec::new());
+            }
+        }
+        if options
+            .max_target_bytes()
+            .is_some_and(|maximum| input.bytes.len() > maximum)
+        {
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                None,
+                ExplanationReason::TargetByteLimit,
+            );
+            return Ok(Vec::new());
+        }
+        let regex = if let Some(regex) = &rule.native_byte_matcher {
+            NativeContentMatcher::Bytes(regex)
+        } else if let Some(regex) = &rule.regex_matcher {
+            if normalized.get().is_none() {
+                let _ = normalized.set(context.normalize(input.bytes)?);
+            }
+            NativeContentMatcher::Go(
+                regex,
+                normalized.get().expect("the native input was normalized"),
+            )
+        } else {
+            return Ok(Vec::new());
+        };
+        let spans = regex.find_all(input.bytes, context)?;
+        if spans.is_empty() {
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                None,
+                ExplanationReason::PatternMissed,
+            );
+        }
+        let mut candidates = Vec::new();
+        let mut line_allowlists = LineAllowlistMemo::default();
+        let mut capture_scratch = None;
+        for (candidate_ordinal, whole) in spans.into_iter().enumerate() {
+            context.work()?;
+            context.explanations.record(
+                Some(pass.rule_ordinal),
+                pass.decoded_pass,
+                Some(candidate_ordinal),
+                ExplanationReason::PatternMatched,
+            );
+            let Some(start) = input.pass_offset.checked_add(whole.start) else {
+                continue;
+            };
+            let Some(end) = input.pass_offset.checked_add(whole.end) else {
+                continue;
+            };
+            context.work()?;
+            let Some(extracted) = extract_native_secret(
+                regex,
+                input.bytes,
+                whole,
+                rule.secret_group,
+                &mut capture_scratch,
+            ) else {
+                context.explanations.record(
+                    Some(pass.rule_ordinal),
+                    pass.decoded_pass,
+                    Some(candidate_ordinal),
+                    ExplanationReason::SecretGroupUnavailable,
+                );
+                continue;
+            };
+            let secret = extracted.span;
+            let Some(absolute_secret) = secret.and_then(|span| {
+                Some(ByteSpan {
+                    start: input.pass_offset.checked_add(span.start)?,
+                    end: input.pass_offset.checked_add(span.end)?,
+                })
+            }) else {
+                continue;
+            };
+            if let Some(finding) = self.content_finding(
+                fragment,
+                options,
+                rule,
+                DetectionPass {
+                    current_raw: pass.current_raw,
+                    encoded_segments: pass.encoded_segments,
+                    original: pass.original,
+                    rule_ordinal: pass.rule_ordinal,
+                    decoded_pass: pass.decoded_pass,
+                    candidate_ordinal,
+                },
+                ByteSpan { start, end },
+                &mut line_allowlists,
+                &mut capture_scratch,
+                Some(ExtractedSecret {
+                    bytes: extracted.bytes,
+                    span: Some(absolute_secret),
+                }),
+                context,
+            )? {
+                // Count LF bytes at their actual input positions, including a
+                // trailing LF at the exclusive whole-match endpoint. No index
+                // or coordinate registry is retained outside admitted records.
+                context.work_many(whole.end)?;
+                let start_line = 1 + input.bytes[..whole.start]
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count();
+                let end_line = start_line
+                    + input.bytes[whole.start..whole.end]
+                        .iter()
+                        .filter(|&&byte| byte == b'\n')
+                        .count();
+                candidates.push(NativeCandidate {
+                    finding,
+                    input: input.id,
+                    whole,
+                    _secret: secret,
+                    start_line,
+                    end_line,
+                });
+            }
+        }
+        Ok(candidates)
     }
 
     /// Enumerates one rule's whole matches for the current pass.
@@ -1249,6 +1696,7 @@ impl Engine {
         whole: ByteSpan,
         line_allowlists: &mut LineAllowlistMemo<'a>,
         capture_scratch: &mut Option<CaptureScratch>,
+        native_secret: Option<ExtractedSecret<'a>>,
         context: &mut ScanContext<'_>,
     ) -> Result<Option<Finding>, ScanTermination> {
         macro_rules! candidate {
@@ -1321,16 +1769,26 @@ impl Engine {
             return Ok(None);
         }
 
-        let Some(extracted_secret) = extract_secret_controlled(
-            candidate!(rule.regex_matcher.as_ref()),
-            trimmed,
-            rule.secret_group,
-            capture_scratch,
-            context,
-        )?
-        else {
-            explain!(ExplanationReason::SecretGroupUnavailable);
-            return Ok(None);
+        let secret_origin = if native_secret.is_some() {
+            0
+        } else {
+            direct_match_start
+        };
+        let extracted_secret = if let Some(secret) = native_secret {
+            secret
+        } else {
+            let Some(secret) = extract_secret_controlled(
+                candidate!(rule.regex_matcher.as_ref()),
+                trimmed,
+                rule.secret_group,
+                capture_scratch,
+                context,
+            )?
+            else {
+                explain!(ExplanationReason::SecretGroupUnavailable);
+                return Ok(None);
+            };
+            secret
         };
         let secret = extracted_secret.bytes;
         // Native predicates remain on the compiled rule through projections.
@@ -1351,6 +1809,32 @@ impl Engine {
         } else {
             ExplanationReason::EntropyAccepted
         });
+        if let Some(predicate) = &rule.native_predicate {
+            use crate::native::predicate::{MAX_DECODED_BYTES, NativePredicate, vercel};
+            let accepted = match predicate {
+                NativePredicate::Base64UrlSegment(predicate) => {
+                    context.work()?;
+                    let mut output = [0_u8; MAX_DECODED_BYTES];
+                    if let Some(decoded) = predicate.decode(secret, &mut output) {
+                        context.work()?;
+                        context.is_match(&predicate.matcher, decoded)?
+                    } else {
+                        false
+                    }
+                }
+                NativePredicate::VercelCl100kRatio => {
+                    vercel::accepts(secret, &mut || context.work())?
+                }
+            };
+            explain!(if accepted {
+                ExplanationReason::NativePredicateAccepted
+            } else {
+                ExplanationReason::NativePredicateRejected
+            });
+            if !accepted {
+                return Ok(None);
+            }
+        }
         let allowlist_line = decoded_line.filter(|line| !line.is_empty()).unwrap_or(line);
         if finding_allowed_controlled(
             fragment,
@@ -1376,8 +1860,8 @@ impl Engine {
         explain!(ExplanationReason::CandidateAccepted);
         if context.explanations.github_classic && context.explanations.begin_annotation() {
             let isolated = extracted_secret.span.is_some_and(|span| {
-                let start = direct_match_start.checked_add(span.start);
-                let end = direct_match_start.checked_add(span.end);
+                let start = secret_origin.checked_add(span.start);
+                let end = secret_origin.checked_add(span.end);
                 start.zip(end).is_some_and(|(start, end)| {
                     let continues = |byte: &u8| byte.is_ascii_alphanumeric() || *byte == b'_';
                     !start
@@ -1413,8 +1897,8 @@ impl Engine {
             ));
             let secret_range = match extracted_secret.span {
                 Some(span) => {
-                    let start = candidate!(direct_match_start.checked_add(span.start));
-                    let end = candidate!(direct_match_start.checked_add(span.end));
+                    let start = candidate!(secret_origin.checked_add(span.start));
+                    let end = candidate!(secret_origin.checked_add(span.end));
                     FindingRange::Exact(candidate!(ByteRange::new(start, end).ok()))
                 }
                 None => FindingRange::Unavailable,
@@ -1635,6 +2119,75 @@ fn line_regex_allowed<'a>(
         &mut ScanContext::new(ScanControl::unlimited()),
     )
     .unwrap()
+}
+
+#[cfg(test)]
+mod native_relation_tests {
+    use super::*;
+
+    fn candidate(pass: usize, segment: Option<usize>, end: usize) -> NativeCandidate {
+        NativeCandidate {
+            finding: Finding::builder()
+                .rule_id("synthetic")
+                .location(Location::new(1, 1, 1, 1).unwrap())
+                .build()
+                .unwrap(),
+            input: NativeInputId { pass, segment },
+            whole: ByteSpan { start: 2, end },
+            _secret: Some(ByteSpan { start: 3, end: 4 }),
+            start_line: 2,
+            end_line: 4,
+        }
+    }
+
+    #[test]
+    fn identity_uses_both_whole_endpoints_and_scan_local_input() {
+        let primary = candidate(1, Some(0), 8);
+        assert!(native_relation_matches(
+            &primary,
+            &candidate(1, Some(0), 8),
+            NativeRelation::SameCandidate
+        ));
+        for helper in [
+            candidate(1, Some(0), 9),
+            candidate(1, Some(1), 8),
+            candidate(2, Some(0), 8),
+            candidate(0, None, 8),
+        ] {
+            assert!(!native_relation_matches(
+                &primary,
+                &helper,
+                NativeRelation::SameCandidate
+            ));
+        }
+        for helper in [
+            candidate(1, Some(1), 8),
+            candidate(2, Some(0), 8),
+            candidate(0, None, 8),
+        ] {
+            assert!(!native_relation_matches(
+                &primary,
+                &helper,
+                NativeRelation::FullMatchWindow(None)
+            ));
+        }
+    }
+}
+
+fn native_relation_matches(
+    primary: &NativeCandidate,
+    helper: &NativeCandidate,
+    relation: NativeRelation,
+) -> bool {
+    primary.input == helper.input
+        && match relation {
+            NativeRelation::SameCandidate => primary.whole == helper.whole,
+            NativeRelation::FullMatchWindow(None) => true,
+            NativeRelation::FullMatchWindow(Some(expansion)) => {
+                helper.start_line >= primary.start_line.saturating_sub(expansion)
+                    && helper.start_line <= primary.end_line.saturating_add(expansion)
+            }
+        }
 }
 
 fn within_proximity(
@@ -2204,6 +2757,137 @@ fn extract_secret<'a>(
         &mut ScanContext::new(ScanControl::unlimited()),
     )
     .unwrap()
+}
+
+#[derive(Clone, Copy)]
+enum NativeContentMatcher<'r, 'h> {
+    Go(&'r GoRegex, &'r NormalizedHaystack<'h>),
+    Bytes(&'r NativeByteRegex),
+}
+
+impl NativeContentMatcher<'_, '_> {
+    fn capture_scratch(self) -> CaptureScratch {
+        match self {
+            Self::Go(regex, _) => regex.capture_scratch(),
+            Self::Bytes(regex) => regex.capture_scratch(),
+        }
+    }
+
+    fn find_all(
+        self,
+        bytes: &[u8],
+        context: &mut ScanContext<'_>,
+    ) -> Result<Vec<ByteSpan>, ScanTermination> {
+        match self {
+            Self::Bytes(regex) => regex.find_all_controlled(bytes, || context.collected_spans(1)),
+            Self::Go(regex, normalized) => {
+                if context.control.budget.collected_spans.is_some() {
+                    regex.find_all_normalized_controlled(normalized, || context.collected_spans(1))
+                } else {
+                    let spans = regex.find_all_normalized(normalized);
+                    context.collected_spans(spans.len())?;
+                    Ok(spans)
+                }
+            }
+        }
+    }
+
+    fn captures_at<'s>(
+        self,
+        bytes: &[u8],
+        whole: ByteSpan,
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
+        match self {
+            Self::Go(regex, normalized) => regex.captures_at_normalized(normalized, whole, scratch),
+            Self::Bytes(regex) => regex.captures_at(bytes, whole, scratch),
+        }
+    }
+}
+
+fn native_keyword_gate(
+    rule: &CompiledRule,
+    bytes: &[u8],
+    unicode_lower: &OnceCell<String>,
+    context: &mut ScanContext<'_>,
+) -> Result<bool, ScanTermination> {
+    if let Some(keywords) = &rule.native_keywords {
+        if keywords.is_empty() {
+            return Ok(true);
+        }
+        for keyword in keywords {
+            context.work()?;
+            let matched = match keyword {
+                NativeKeyword::Empty => true,
+                NativeKeyword::Ascii(keyword) => {
+                    context.work_many(bytes.len())?;
+                    bytes
+                        .windows(keyword.len())
+                        .any(|window| window.eq_ignore_ascii_case(keyword.as_bytes()))
+                }
+                NativeKeyword::UnicodeLower(keyword) => {
+                    if unicode_lower.get().is_none() {
+                        // Both lossy conversion and whole-string lowercase are
+                        // input-sized transient work, charged before execution.
+                        context.work_many(bytes.len())?;
+                        context.work_many(bytes.len())?;
+                        let _ = unicode_lower.set(String::from_utf8_lossy(bytes).to_lowercase());
+                    }
+                    let lowered = unicode_lower
+                        .get()
+                        .expect("native Unicode keyword input was folded");
+                    context.work_many(lowered.len())?;
+                    lowered.contains(keyword.as_str())
+                }
+            };
+            if matched {
+                return Ok(true);
+            }
+        }
+        return Ok(false);
+    }
+    // Only old native rules without an explicit buffer or byte contract can
+    // reach this fallback. Preserve their compatibility gate and accounting.
+    if rule.keywords.is_empty() {
+        return Ok(true);
+    }
+    context.work_many(bytes.len())?;
+    let lowered = go_lowercase_bytes(bytes);
+    let mut matched = false;
+    for keyword in &rule.keywords {
+        context.work()?;
+        matched |= !keyword.is_empty() && contains_bytes(&lowered, keyword.as_bytes());
+    }
+    Ok(matched)
+}
+
+fn extract_native_secret<'a>(
+    regex: NativeContentMatcher<'_, '_>,
+    bytes: &'a [u8],
+    whole: ByteSpan,
+    secret_group: i64,
+    scratch: &mut Option<CaptureScratch>,
+) -> Option<ExtractedSecret<'a>> {
+    let scratch = scratch.get_or_insert_with(|| regex.capture_scratch());
+    let spans = regex.captures_at(bytes, whole, scratch)?;
+    let span = if secret_group > 0 {
+        spans
+            .get(usize::try_from(secret_group).ok()?)
+            .copied()
+            .flatten()?
+    } else {
+        spans
+            .iter()
+            .skip(1)
+            .flatten()
+            .find(|span| span.start != span.end)
+            .copied()
+            .unwrap_or(whole)
+    };
+    Some(ExtractedSecret {
+        bytes: bytes.get(span.start..span.end)?,
+        span: Some(span),
+    })
 }
 
 fn extract_secret_controlled<'a>(
@@ -4330,5 +5014,45 @@ paths = ['''C:\\secret\.txt$''']
         base64::engine::general_purpose::STANDARD
             .decode(encoded)
             .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod native_keyword_budget_tests {
+    use super::*;
+    use crate::config::ConfigLoader;
+
+    #[test]
+    fn every_keyword_search_and_unicode_fold_is_admitted_before_execution() {
+        let config = ConfigLoader::new()
+            .load_toml("[[rules]]\nid='probe'\nregex='X'\n")
+            .unwrap();
+        let mut rule = config.rule("probe").unwrap().clone();
+        let bytes = b"abc\xe2\x82";
+        let lower = OnceCell::new();
+        rule.native_keywords = Some(vec![
+            NativeKeyword::Ascii("none".to_owned()),
+            NativeKeyword::Ascii("absent".to_owned()),
+        ]);
+        let mut context = ScanContext::new(ScanControl::unlimited());
+        assert!(!native_keyword_gate(&rule, bytes, &lower, &mut context).unwrap());
+        assert_eq!(context.usage.work_units(), 2 * (bytes.len() + 1));
+        assert!(lower.get().is_none());
+        rule.native_keywords = Some(vec![NativeKeyword::UnicodeLower("ø".to_owned())]);
+        let mut context = ScanContext::new(
+            ScanControl::unlimited()
+                .with_budget(ScanBudget::unlimited().max_work_units(2 * bytes.len())),
+        );
+        assert!(native_keyword_gate(&rule, bytes, &lower, &mut context).is_err());
+        assert!(lower.get().is_none());
+        let mut context = ScanContext::new(ScanControl::unlimited());
+        assert!(!native_keyword_gate(&rule, bytes, &lower, &mut context).unwrap());
+        // One lossy replacement for the incomplete two-byte suffix gives six
+        // folded UTF-8 bytes. A later rule shares only this owning input's fold.
+        assert_eq!(lower.get().unwrap(), "abc�");
+        assert_eq!(context.usage.work_units(), 1 + 2 * bytes.len() + 6);
+        assert!(!native_keyword_gate(&rule, bytes, &lower, &mut context).unwrap());
+        assert_eq!(context.usage.work_units(), 2 + 2 * bytes.len() + 12);
+        assert_eq!(context.usage.normalization_bytes(), 0);
     }
 }

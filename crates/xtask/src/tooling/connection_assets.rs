@@ -185,7 +185,7 @@ fn validate_contents(
         .map_err(|error| format!("invalid connection provenance: {error}"))?;
     let source: serde_json::Value = serde_json::from_str(SOURCE_IDENTITY)
         .map_err(|error| format!("invalid retained connection source identity: {error}"))?;
-    if provenance.as_object().map(serde_json::Map::len) != Some(7)
+    if provenance.as_object().map(serde_json::Map::len) != Some(8)
         || provenance["schema_version"] != 1
         || provenance["pack_id"] != "rustleaks-connections-v1"
         || provenance["source"] != source
@@ -212,7 +212,7 @@ fn validate_contents(
     let origins = provenance["rules"]
         .as_array()
         .ok_or("connection provenance has no rules")?;
-    if rules.len() != REVIEWED.len() + 1 || origins.len() != REVIEWED.len() + 1 {
+    if rules.len() != REVIEWED.len() + 7 || origins.len() != REVIEWED.len() + 7 {
         return Err("connection rule inventory differs".into());
     }
     for ((rule, origin), reviewed) in rules.iter().zip(origins).zip(&REVIEWED) {

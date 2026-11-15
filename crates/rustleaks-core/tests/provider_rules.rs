@@ -2135,7 +2135,8 @@ fn native_byte_predicate() -> toml::Value {
 fn scalar_provider_config() -> RawConfig {
     let mut pack: toml::Value = toml::from_str(PROVIDER_RULES_V1).unwrap();
     let rules = pack["rules"].as_array_mut().unwrap();
-    assert_eq!(rules.len(), 104);
+    assert_eq!(rules.len(), 300);
+    rules.truncate(104);
     assert_eq!(
         rules[60..]
             .iter()
@@ -2354,7 +2355,15 @@ fn byte_provider_predicate_comparator_participates_in_exact_policy_identity() {
         r#"entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt", threshold = 3.5 }"#;
     let replacement =
         r#"entropy = { algorithm = "byte-shannon-f64-v1", reject = "le", threshold = 3.5 }"#;
-    assert_eq!(PROVIDER_RULES_V1.matches(original).count(), 6);
+    assert_eq!(
+        PROVIDER_RULES_V1
+            .split("# Maintained additional coverage;")
+            .next()
+            .unwrap()
+            .matches(original)
+            .count(),
+        6
+    );
     let changed = PROVIDER_RULES_V1.replacen(original, replacement, 1);
     let (_, identity) = NativePolicy::builder()
         .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)

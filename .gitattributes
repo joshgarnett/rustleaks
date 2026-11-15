@@ -9,6 +9,13 @@ crates/rustleaks-core/default/gitleaks.toml -text -whitespace
 crates/rustleaks-core/default/rustleaks-*.toml -text -whitespace
 crates/rustleaks-core/default/rustleaks-*.sha256 -text
 crates/rustleaks-core/default/LICENSE.* -text -whitespace
+crates/xtask/src/tooling/native_coverage/providers.toml -text -whitespace
+crates/xtask/src/tooling/native_coverage/connections.toml -text -whitespace
+# Tokenizer source, derived table and copied licenses bind exact bytes.
+crates/rustleaks-core/data/cl100k_base.tiktoken -text -whitespace
+crates/rustleaks-core/data/cl100k-vercel60-v1.bin -text -whitespace
+crates/rustleaks-core/data/LICENSE.tiktoken -text -whitespace
+crates/rustleaks-core/data/LICENSE.tiktoken-rs -text -whitespace
 # Native release notice sources and generated copies retain exact upstream bytes.
 release/notice-inputs/** -text -whitespace
 release/licenses/** -text -whitespace

@@ -131,3 +131,11 @@ Historical Go advisory observations do not imply that those advisories were
 fixed or waived. Reintroducing an executable oracle or dependency graph would
 require a separately reviewed scope and the applicable dependency and security
 checks.
+
+The bounded native Vercel predicate imports immutable cl100k data under the
+adjacent OpenAI/tiktoken-rs MIT notices. This adds no Cargo dependency or
+runtime vocabulary loader. The maintained generator checks the original asset
+hash and size, both licenses, the complete source vocabulary and every derived
+table byte. Production uses only the reduced table and owned safe Rust; source
+reference tests use the full original vocabulary. See the
+[tokenizer provenance](../crates/rustleaks-core/data/README.md).

@@ -1,7 +1,8 @@
 # Rustleaks connection rules v1
 
-This optional pack adds six namespaced password rules to the unchanged
-pinned defaults. Select it with the existing native composition API:
+This optional pack adds twelve namespaced rules to the unchanged
+pinned defaults: eight password rules, three complete Git credential URLs
+and one hidden tuple-predicate helper. Select it with the existing native composition API:
 
 ```rust
 use rustleaks_core::native::{CONNECTION_RULES_V1, NativePolicy};
@@ -17,11 +18,15 @@ order. Exact pack bytes and order participate in policy identity. Existing
 engine constructors do not enable it. All detection is local. The pack adds
 no parser, dependency, expression interpreter, validator, or client connection.
 
+The complete pack includes native entropy and association tables. Load it
+through `NativePolicy` or CLI `--native-pack rustleaks-connections-v1`.
+The ordinary configuration loader rejects these native table values.
+
 ## Scope
 
-Every consumed match byte is ASCII, including permitted ASCII controls.
+For the six original password rules, every consumed match byte is ASCII, including permitted ASCII controls.
 The surrounding fragment can contain arbitrary bytes; no text normalization
-occurs. Unicode or invalid-byte connection values are outside this pack's
+occurs. Unicode or invalid-byte connection values are outside these rules'
 scope. Cross-tool comparisons must use entirely ASCII raw inputs and account
 for the tools' separate source, finding, and match-enumeration policies.
 
@@ -34,8 +39,8 @@ for the tools' separate source, finding, and match-enumeration policies.
 | `jdbc-query` | PostgreSQL, MariaDB, or MySQL JDBC URL | Lowercase `password=` query property, 4 through 128 bytes |
 | `database-uri` | PostgreSQL, MariaDB, or MySQL URI | Userinfo password, 1 through 256 bytes |
 
-Full IDs start with `rustleaks.connection-string.password.`. Every rule
-selects capture 1. Quotes and enclosing braces are excluded from the secret.
+The six password-rule IDs start with `rustleaks.connection-string.password.`. The six password rules
+select capture 1. Quotes and enclosing braces are excluded from the secret.
 A doubled ODBC closing brace counts as one unit and retains both source
 bytes, so the braced secret can contain up to 256 source bytes. Percent
 escapes, including malformed or placeholder-shaped percent sequences,
@@ -146,6 +151,39 @@ greedy path consumption: a semicolon followed by another URI can belong
 entirely to the first URI path, retaining only its first password. Whitespace,
 quotes or a closing parenthesis separate these URI occurrences.
 
+## Git credential URL subsets
+
+Three additional rules extract complete HTTPS credential URLs for Bitbucket,
+CodeCatalyst and CodeCommit. The IDs are `rustleaks.bitbucket-git-credentials`,
+`rustleaks.codecatalyst-git-credentials` and
+`rustleaks.codecommit-git-credentials`. Their path conditions preserve the
+case-sensitive `.git/config`, `.git-credentials` and `_history` suffixes from
+the original Veles helper, including filenames with a non-boundary prefix.
+
+Each requires nonempty unescaped ASCII username and password fields, bounded
+to 64 and 128 bytes, and a bounded repository path. The selected grammar
+guarantees the reviewed source parser predicates without adding a URL parser.
+Percent-encoded, Unicode, malformed-percent and longer credentials are outside
+this selection. No source keyword gate is invented. The full URL remains the
+secret, including username, password, host and repository path.
+
+The consumed terminal is end of input or one ASCII whitespace byte. Bitbucket
+admits vertical tab at this boundary; CodeCatalyst and CodeCommit exclude it
+to preserve their source URL-parser predicate. A consumed LF is trimmed by
+the engine's existing match-location behavior. Two newline-separated commands
+retain two exact secret occurrences.
+
+Direct core scans of `repo/.git/config` remain eligible: the unchanged global
+path expression matches a path ending in `.git`, not descendants. A directory
+source can separately prune the `.git` ancestor. Do not conflate source
+traversal policy with direct-core fragment detection.
+
+These adaptations use the pinned Apache-2.0 Veles sources already attributed
+in `LICENSE.veles` and `NOTICE`. Exact source URLs, hashes, path predicates,
+parser restrictions and selected bounds are recorded in the adjacent
+provenance. They provide local credential candidates and do not establish
+that a remote service accepts a URL or credential.
+
 ## Source and maintenance
 
 The semicolon and JDBC rules adapt five first-party Apache-2.0 rules in
@@ -207,3 +245,41 @@ accuracy or complete connection-string coverage.
 
 - [Pinned Betterleaks URI source](https://github.com/betterleaks/betterleaks/blob/8f376ff9c31ed5309ac448fe601c5dd21b376155/config/betterleaks.toml#L5521)
 - [Pinned generated URI override](https://github.com/mongodb/kingfisher/blob/01e7b817376fbf2272be8f162bd32309bf97ee1f/crates/kingfisher-rules/data/imported-rules-capabilities.yml#L31)
+
+## MongoDB and service URI subsets
+
+Two reporting rules and one hidden tuple helper extend the connection pack.
+`rustleaks.mongodb-password-comma` selects the password from a lowercase,
+single-host MongoDB URI ending with comma and horizontal whitespace. It
+requires 3 through 50 username bytes and 3 through 88 password bytes from the
+ASCII URI-unreserved alphabet. Paths, options, percent escapes and multiple
+hosts are outside this companion's scope. The hidden
+`rustleaks.mongodb-password-comma-tuple` preserves the original whole-URI
+entropy floor and example/interpolation predicates.
+
+Native `buffer-v1` `same-candidate` association requires equal detection-input
+identity and both complete-match endpoints. Each raw or decoded input is
+separate. Shared reported locations or equal local endpoints in different
+inputs cannot supply another tuple's predicate. The helper attaches to its
+own parent and does not produce an independent credential finding. Explicit
+rule selection must include both parent and helper IDs.
+
+`rustleaks.service-uri-password` covers `redis`, `rediss`, `amqp`, `amqps`,
+`ldap`, `ldaps`, `smtp`, `smtps`, `ftp`, `ftps` and `ssh` schemes. It permits an
+empty username or up to 128 username bytes, and 1 through 256 password bytes
+from the ASCII URI-unreserved alphabet. It preserves the source DNS host,
+port, path and suffix grammar. HTTP(S), database/MongoDB schemes, percent
+escapes, reserved userinfo, IPv6 and multiple hosts are outside its scope.
+
+The service URI rule selects the original medium-confidence domain. Source
+rejection predicates remain local, and the four original confidence-reduction
+categories become explicit local exclusions: example values, synthetic tuples,
+test/documentation paths and low-confidence hosts. Those categories were not
+all source rejections, and this selection adds no global confidence mode.
+An ordinary weak password can remain eligible in deployment context.
+This differs intentionally from the existing database URI rule's broader
+confidence domain. The native inherited global policy remains unchanged.
+
+All three additions derive from the pinned MIT Betterleaks configuration.
+Their exact source fields, attribution and selections are in the adjacent
+provenance. They make no client-validity or remote-credential claim.

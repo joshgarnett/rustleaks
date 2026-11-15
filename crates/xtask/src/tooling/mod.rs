@@ -15,6 +15,7 @@ mod generate;
 mod git_corpus;
 mod inventory;
 mod native_assets;
+mod native_coverage_assets;
 mod provider_byte_entropy_assets;
 mod provider_followup_assets;
 mod report;
@@ -22,6 +23,7 @@ mod session;
 mod shared_delimiter_assets;
 mod source;
 mod support;
+mod tokenizer_assets;
 mod traceability;
 mod vet_inventory;
 

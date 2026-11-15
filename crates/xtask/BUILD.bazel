@@ -8,7 +8,11 @@ rustleaks_build_contract_files()
 rust_binary(
     name = "xtask",
     aliases = aliases(),
-    compile_data = glob(["src/**/*.txt"]),
+    compile_data = glob([
+        "src/**/*.txt",
+        "src/tooling/native_coverage/*.json",
+        "src/tooling/native_coverage/*.toml",
+    ]),
     crate_name = "xtask",
     deps = all_crate_deps(normal = True),
     edition = "2024",

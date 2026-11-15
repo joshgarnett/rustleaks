@@ -37,7 +37,7 @@ partially scanned fragment rather than merging its prefix into a session batch.
 
 | Surface | Bound or ownership |
 | --- | --- |
-| Regex compile | 1 MiB source, nesting 4,096, nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
+| Regex compile | 1 MiB source, nesting 4,096, Go nested repeat product 1,000, 256 MiB per compiled NFA, estimated PikeVM search working set 256 MiB, optional one-pass DFA 1 MiB; limits are per expression/component |
 | Keyword automaton | Full Aho-Corasick DFA when the configured keywords total at most 16 KiB and the lengths of all their prefixes sum to at most 64 Ki bytes; the builder's automatic choice otherwise |
 | Configuration selection | Extension depth 2, 4,096 selected rules or rule-linked entries, 8 MiB selected rule source |
 | Controlled fragment | Optional aggregate decoded-byte, work-unit, finding-record, finding-payload, collected-span, and normalization budgets |
@@ -64,8 +64,10 @@ heap quota. A temporary forward NFA preserves the existing PikeVM working-set
 check before any search cache is allocated. It is dropped before meta
 compilation from the same parsed expression. If the reverse NFA exceeds the
 same limit, compilation retries without DFA acceleration to preserve forward
-pattern acceptance. The source, nesting, repetition and deep-compile thread
-limits remain unchanged.
+pattern acceptance. The source, nesting and deep-compile thread limits apply to both dialects.
+The Go dialect additionally caps nested repetition products at 1,000. Native
+`bytes-v1` patterns have no separate repetition ceiling; the same NFA and
+working-set caps constrain their expansion.
 
 Each lazy-DFA cache has a 2 MiB transition capacity and grows on demand.
 Forward, reverse and fallback caches are retained by the compiled regex pool
@@ -97,16 +99,43 @@ to the measured configuration, input, concurrency and host.
 
 Each scan creates the original-fragment newline index only when a finding
 needs a location, and reuses it across decoded passes and required rules.
-Each pass normalizes its current bytes for regex matching at most once,
-lazily after its gates. Path, allowlist and trimmed-secret searches retain
+The legacy compatibility path normalizes each pass's current bytes for regex
+matching at most once, lazily after its gates. Native buffer-local evaluation
+normalizes an input buffer only when a Go content matcher needs it, then shares
+that buffer with the primary's Go helpers. Native byte content matchers borrow
+raw input without normalization. Path, allowlist and trimmed-secret searches retain
 their own haystacks and normalization. These buffers remain scan-local; they
 are not retained in the Engine's search caches.
 
 The first pass borrows the original fragment; decoded passes own their output
-buffers. Keyword folding runs only when the keyword prefilter exists, and its
-temporary bytes are dropped before rule matching. ASCII folding uses the same
+buffers. Compatibility keyword folding runs when the keyword prefilter exists,
+and its temporary bytes are dropped before rule matching. The prefilter still
+includes compatibility-normalized keywords from selected native rules. A
+selection containing only byte rules can therefore allocate a full lowercase
+view before native dispatch, even when those rules use only ASCII keywords.
+Native gates make their own decisions on the owning raw buffer; the redundant
+prefilter does not supply their keyword matches. ASCII folding uses the same
 ASCII mapping as Go; other characters and malformed bytes retain the pinned
-Go Unicode behavior.
+Go Unicode behavior. This compatibility prefilter allocation remains outside
+regex-normalization byte accounting.
+
+Bounded native secret predicates use fixed scratch independent of fragment
+size. The segment decoder rejects selected secrets above 926 bytes, accepts
+at most 308 encoded bytes and 231 decoded bytes, and uses 539 bytes of byte
+buffers plus scalar and existing matcher state. It charges a work unit before
+decode and another before matching a valid UTF-8 result. These private payload
+checks do not consume fragment decoded-byte budget or change decoder depth.
+
+The Vercel predicate validates exactly 60 input bytes and borrows a 470,103-byte
+immutable generated table. Its BPE scratch is 61 byte offsets and 60 u32 ranks,
+301 bytes total, plus scalars. There is no tokenizer heap allocation, global
+initialization or recursion. At most 60 pieces and 60 merge-search iterations
+yield at most 121 work checkpoints including domain validation. One merge
+iteration scans at most 59 ranks and makes at most two binary-search lookups
+over 34,471 keys of at most 48 bytes. Initial piece preparation makes at most
+56 adjacent-pair lookups before its next checkpoint. These are logical bounds,
+not process-memory or elapsed-time guarantees. Existing pattern compilation
+and search-cache limits still apply to the Mapbox payload matcher.
 
 Literal-anchor analysis runs once for every compiled expression, including
 allowlist and path expressions, and its result is retained with the regex. It
@@ -334,3 +363,35 @@ indivisible. Existing source limits, span limits, work and finding budgets
 remain necessary. Rejected candidates consume no finding record or payload
 budget. The native pack source, count and rule ceilings also apply to packs
 with structured entropy; they are not aggregate compilation-memory quotas.
+
+Native `buffer-v1` required relations borrow each accepted decoder segment's
+bytes and retain coordinates inline with admitted native candidate findings.
+There is no scan-wide candidate registry or additional per-finding allocation
+for legacy rules. Each input's Go-normalized regex buffer is shared by its primary
+and helper evaluations and released after projection; existing normalization
+admission applies before allocation. Byte matchers never construct or charge
+this buffer. Path and allowlist regexes can still require normalization.
+
+Native keyword metadata is retained only for explicit `buffer-v1` roots and
+helpers and `bytes-v1` rules, and contributes to selected-rule source accounting.
+Each tested keyword has a work checkpoint. ASCII keyword searches borrow raw
+bytes and charge the input length before each search. Unicode keyword searches
+share one lossy UTF-8 whole-string lowercase value within the current owning
+buffer. Its construction charges two input-length passes before execution; each
+subsequent substring search charges the folded buffer length. An empty keyword
+opens the gate. Temporary keyword folding remains excluded from normalization-byte
+accounting, as for the legacy keyword prefilter. These work units are conservative
+search charges, not a CPU-time or heap quota. Input enumeration, capture recovery
+and relation projection have cooperative work checkpoints. Native line coordinates use a
+bounded scan of the input prefix, charged one work unit per visited byte; no
+newline index is allocated for these coordinates. This can repeat prefix work
+across candidates and is not a performance guarantee.
+
+Whole-match spans are admitted before bounded enumeration. A native candidate
+and each nested required projection consume the existing finding-record and
+payload budgets. Relation tables are bounded by the native TOML ceilings and
+require unique existing helper IDs. The per-target byte gate applies to the
+individual native input buffer. All buffers for one rule must complete before
+that rule publishes any findings in a decode pass; cancellation or exhaustion
+preserves only previously completed rules and passes. Metadata remains private,
+scan-local and synchronous, with no retained input cache or new dependency.

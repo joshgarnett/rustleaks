@@ -11,6 +11,13 @@ use rustleaks_core::native::{NativeExtension, NativePolicy, NativePolicyError};
 use rustleaks_core::validation::{OfflineCheck, github_classic_pat};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
+/// One budget dimension: its kind, observed complete usage, and builder setter.
+type BudgetDimension = (
+    rustleaks_core::ScanBudgetKind,
+    usize,
+    fn(ScanBudget, usize) -> ScanBudget,
+);
+
 const PACK: &str = r#"
 [[rules]]
 id = "rustleaks.sample"
@@ -1042,5 +1049,1168 @@ mod byte_entropy {
             .unwrap();
         let native = NativePolicy::builder().compile().unwrap().0;
         assert_eq!(legacy, native);
+    }
+}
+
+mod buffer_relations {
+    use super::*;
+    use rustleaks_core::config::ConfigError;
+    use rustleaks_core::model::{ByteRange, Finding, FindingRange};
+    use rustleaks_core::{ScanBudgetKind, ScanTermination};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const TUPLES: &str = r#"
+[[rules]]
+id = "rustleaks.parent"
+regex = '''pair=(GOOD|BAD):([A-Z]{4})'''
+secretGroup = 2
+[rules.required]
+contract = "buffer-v1"
+edges = [{ id = "rustleaks.helper", relation = "same-candidate" }]
+[[rules]]
+id = "rustleaks.helper"
+regex = '''pair=(GOOD|BAD):([A-Z]{4})'''
+secretGroup = 1
+skipReport = true
+[[rules.allowlists]]
+regexes = ['''^BAD$''']
+"#;
+
+    fn selected(pack: &str) -> Engine {
+        let (config, _) = NativePolicy::builder()
+            .with_pack("buffer-test", pack)
+            .unwrap()
+            .compile()
+            .unwrap();
+        let ids = config
+            .ordered_rule_ids()
+            .iter()
+            .filter(|id| id.starts_with("rustleaks."))
+            .collect::<Vec<_>>();
+        Engine::builder(
+            config
+                .select_rules(ids.iter().map(|id| id.as_str()))
+                .unwrap(),
+        )
+        .build()
+        .unwrap()
+    }
+
+    fn encoded(bytes: &[u8], depth: usize) -> Vec<u8> {
+        let mut result = bytes.to_vec();
+        for _ in 0..depth {
+            result = STANDARD.encode(result).into_bytes();
+        }
+        result
+    }
+
+    fn scan(engine: &Engine, bytes: &[u8], depth: usize) -> Vec<Finding> {
+        let outcome = engine.scan_fragment(
+            &Fragment::new(bytes),
+            &ScanOptions::builder().max_decode_depth(depth).build(),
+        );
+        assert!(outcome.is_complete());
+        outcome.findings().to_vec()
+    }
+
+    fn window_pack(parent: &str, helper: &str, window: &str) -> String {
+        format!(
+            r#"
+[[rules]]
+id = "rustleaks.parent"
+regex = '''{parent}'''
+[rules.required]
+contract = "buffer-v1"
+edges = [{{ id = "rustleaks.helper", relation = "full-match-window", window = "{window}" }}]
+[[rules]]
+id = "rustleaks.helper"
+regex = '''{helper}'''
+skipReport = true
+"#
+        )
+    }
+
+    #[test]
+    fn native_tables_fail_ordinary_compilation_and_validate_every_relation_field() {
+        assert!(matches!(
+            ConfigLoader::new().load_toml(TUPLES),
+            Err(ConfigError::EmptyRequiredRuleId { .. })
+        ));
+        for invalid in [
+            TUPLES.replace("buffer-v1", "buffer-v2"),
+            TUPLES.replace("same-candidate", "nearest"),
+            TUPLES.replace("relation = \"same-candidate\"", "relation = \"same-candidate\", window = \"0\""),
+            TUPLES.replace("contract = \"buffer-v1\"", "contract = \"buffer-v1\"\nContract = \"buffer-v1\""),
+            TUPLES.replace("contract = \"buffer-v1\"", "contract = \"buffer-v1\"\nunknown = true"),
+            TUPLES.replace("relation = \"same-candidate\"", "relation = \"same-candidate\", Relation = \"same-candidate\""),
+            TUPLES.replace("edges = [{ id = \"rustleaks.helper\", relation = \"same-candidate\" }]", "edges = []"),
+            TUPLES.replace("edges = [{ id = \"rustleaks.helper\", relation = \"same-candidate\" }]", "edges = [{ id = \"rustleaks.helper\", relation = \"same-candidate\" }, { id = \"rustleaks.helper\", relation = \"same-candidate\" }]"),
+            TUPLES.replace("edges = [", "id = \"rustleaks.helper\"\nedges = ["),
+            TUPLES.replace("relation = \"same-candidate\"", "relation = \"full-match-window\""),
+        ] {
+            assert!(NativePolicy::builder().with_pack("malformed", &invalid).is_err());
+        }
+        for invalid in [
+            "",
+            "00",
+            "0L",
+            "01L",
+            "-1L",
+            "1",
+            "5l",
+            "5C",
+            "5.0L",
+            " 5L",
+            "184467440737095516160L",
+        ] {
+            assert!(
+                NativePolicy::builder()
+                    .with_pack("malformed", &window_pack("P", "H", invalid))
+                    .is_err()
+            );
+        }
+        for valid in ["0", "1L", "5L", "8L", "10L", "20L", "30L"] {
+            assert!(
+                NativePolicy::builder()
+                    .with_pack("valid", &window_pack("P", "H", valid))
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn tuple_predicates_bind_exact_spans_in_raw_decoded_and_nested_buffers() {
+        let engine = selected(TUPLES);
+        for bytes in [
+            b"pair=BAD:WXYZ pair=GOOD:ABCD".as_slice(),
+            b"pair=GOOD:ABCD pair=BAD:WXYZ",
+        ] {
+            for depth in 0..=2 {
+                let findings = scan(&engine, &encoded(bytes, depth), depth);
+                assert_eq!(findings.len(), 1);
+                assert_eq!(findings[0].secret().as_bytes(), b"ABCD");
+                assert_eq!(findings[0].required_findings().len(), 1);
+                assert_eq!(
+                    findings[0].required_findings()[0].secret().as_bytes(),
+                    b"GOOD"
+                );
+                assert_eq!(
+                    findings[0].required_findings()[0].match_text().as_bytes(),
+                    b"pair=GOOD:ABCD"
+                );
+                if depth > 0 {
+                    assert_eq!(findings[0].match_range(), FindingRange::Unavailable);
+                    assert_eq!(findings[0].secret_range(), FindingRange::Unavailable);
+                }
+            }
+        }
+        let different_end = TUPLES.replacen(
+            "regex = '''pair=(GOOD|BAD):([A-Z]{4})'''\nsecretGroup = 1",
+            "regex = '''pair=(GOOD|BAD):([A-Z]{3})'''\nsecretGroup = 1",
+            1,
+        );
+        assert!(scan(&selected(&different_end), b"pair=GOOD:ABCD", 0).is_empty());
+        let raw = scan(&engine, b"pair=GOOD:ABCD", 0);
+        assert_eq!(
+            raw[0].match_range(),
+            FindingRange::Exact(ByteRange::new(0, 14).unwrap())
+        );
+        assert_eq!(
+            raw[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(10, 14).unwrap())
+        );
+        let inherited = engine.scan_fragment(
+            &Fragment::builder(b"pair=BAD:WXYZ")
+                .inherited_from_finding(true)
+                .build(),
+            &ScanOptions::default(),
+        );
+        assert!(inherited.findings().is_empty());
+        assert_eq!(
+            raw[0].clone().redacted(100).required_findings()[0]
+                .secret()
+                .as_bytes(),
+            b"GOOD"
+        );
+        let removed = raw[0].clone().without_detected_secrets();
+        assert!(!serde_json::to_string(&removed).unwrap().contains("ABCD"));
+        assert!(!serde_json::to_string(&removed).unwrap().contains("GOOD"));
+    }
+
+    #[test]
+    fn same_candidate_entropy_and_mixed_relations_cannot_borrow_acceptance() {
+        let entropy = TUPLES.replace("[[rules.allowlists]]\nregexes = ['''^BAD$''']\n", "")
+            .replace("secretGroup = 1\nskipReport = true", "secretGroup = 2\nskipReport = true\nentropy = { algorithm = \"byte-shannon-f64-v1\", reject = \"lt\", threshold = 1.0 }");
+        let engine = selected(&entropy);
+        let without_entropy = selected(&entropy.replace(
+            "\nentropy = { algorithm = \"byte-shannon-f64-v1\", reject = \"lt\", threshold = 1.0 }",
+            "",
+        ));
+        // AABA has a 3:1 histogram, below the helper's one-bit floor. It is
+        // not a uniform-letter value suppressed by the inherited allowlist.
+        for bytes in [
+            b"pair=GOOD:AABA pair=GOOD:ABCD".as_slice(),
+            b"pair=GOOD:ABCD pair=GOOD:AABA",
+        ] {
+            for depth in 0..=2 {
+                let input = encoded(bytes, depth);
+                let control_findings = scan(&without_entropy, &input, depth);
+                assert_eq!(control_findings.len(), 2);
+                let expected: [&[u8]; 2] = if bytes.starts_with(b"pair=GOOD:AABA") {
+                    [b"AABA", b"ABCD"]
+                } else {
+                    [b"ABCD", b"AABA"]
+                };
+                for (finding, expected) in control_findings.iter().zip(expected) {
+                    assert_eq!(finding.secret().as_bytes(), expected);
+                    assert_eq!(finding.required_findings().len(), 1);
+                    assert_eq!(finding.required_findings()[0].secret().as_bytes(), expected);
+                }
+                let findings = scan(&engine, &input, depth);
+                assert_eq!(findings.len(), 1);
+                assert_eq!(findings[0].secret().as_bytes(), b"ABCD");
+                assert_eq!(findings[0].required_findings().len(), 1);
+                assert_eq!(
+                    findings[0].required_findings()[0].secret().as_bytes(),
+                    b"ABCD"
+                );
+            }
+        }
+        let mixed = TUPLES.replace("relation = \"same-candidate\" }]", "relation = \"same-candidate\" }, { id = \"rustleaks.context\", relation = \"full-match-window\", window = \"1L\" }]");
+        let mixed = format!(
+            "{mixed}\n[[rules]]\nid = \"rustleaks.context\"\nregex = 'CONTEXT'\nskipReport = true\n"
+        );
+        let engine = selected(&mixed);
+        assert!(scan(&engine, b"pair=GOOD:ABCD", 0).is_empty());
+        assert!(scan(&engine, b"pair=BAD:WXYZ CONTEXT", 0).is_empty());
+        let findings = scan(&engine, b"pair=GOOD:ABCD CONTEXT", 0);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].required_findings().len(), 2);
+        assert!(scan(&engine, b"pair=GOOD:ABCD\nCONTEXT", 0).is_empty());
+    }
+
+    #[test]
+    fn line_windows_use_full_match_exclusive_end_and_helper_start() {
+        for lines in [1, 5, 8, 10, 20, 30] {
+            let engine = selected(&window_pack("PRIMARY", "HELPER", &format!("{lines}L")));
+            for distance in [lines - 1, lines] {
+                for reverse in [false, true] {
+                    let gap = "\n".repeat(distance);
+                    let bytes = if reverse {
+                        format!("HELPER{gap}PRIMARY")
+                    } else {
+                        format!("PRIMARY{gap}HELPER")
+                    };
+                    assert_eq!(
+                        scan(&engine, bytes.as_bytes(), 0).len(),
+                        usize::from(distance < lines)
+                    );
+                }
+            }
+            let engine = selected(&window_pack(
+                r"BEGIN\r?\ncapture=([A-Z]{4})\r?\nEND\r?\n",
+                "HELPER",
+                &format!("{lines}L"),
+            ));
+            for newline in ["\n", "\r\n"] {
+                for extra in [lines - 1, lines] {
+                    // The primary begins on line 1 and ends exclusively on 4.
+                    // The helper begins at line 4+extra, regardless of capture.
+                    let bytes = format!(
+                        "é BEGIN{newline}capture=ABCD{newline}END{newline}{}HELPER",
+                        newline.repeat(extra)
+                    );
+                    let findings = scan(&engine, bytes.as_bytes(), 0);
+                    assert_eq!(findings.len(), usize::from(extra < lines));
+                    if extra < lines {
+                        assert_eq!(findings[0].secret().as_bytes(), b"ABCD");
+                    }
+                }
+            }
+        }
+        let helper_end = selected(&window_pack("PRIMARY", r"HELPER\nTAIL", "2L"));
+        assert!(scan(&helper_end, b"HELPER\nTAIL\nPRIMARY", 0).is_empty());
+        assert_eq!(
+            scan(
+                &selected(&window_pack("PRIMARY", "HELPER", "0")),
+                format!("PRIMARY{}HELPER", "\n".repeat(100)).as_bytes(),
+                0
+            )
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn carriers_and_nested_siblings_cannot_supply_each_others_helpers() {
+        let engine = selected(&window_pack("PRIMARY", "HELPER", "0"));
+        let one = b"PRIMARY xx HELPER";
+        for depth in 0..=2 {
+            assert_eq!(scan(&engine, &encoded(one, depth), depth).len(), 1);
+        }
+        let separate = format!(
+            "{} {}",
+            STANDARD.encode(b"PRIMARY filler"),
+            STANDARD.encode(b"HELPER filler")
+        );
+        assert!(scan(&engine, separate.as_bytes(), 1).is_empty());
+        assert!(scan(&engine, &encoded(separate.as_bytes(), 1), 2).is_empty());
+        let cross = format!("HELPER {}", STANDARD.encode(b"PRIMARY filler"));
+        assert!(scan(&engine, cross.as_bytes(), 1).is_empty());
+        let outer_sibling = format!("HELPER {}", STANDARD.encode(b"PRIMARY filler"));
+        assert!(scan(&engine, &encoded(outer_sibling.as_bytes(), 1), 2).is_empty());
+    }
+
+    #[test]
+    fn anchors_greedy_enumeration_and_keywords_are_buffer_local() {
+        let anchored = selected(&window_pack(r"\APAIR=([A-Z]{4});HELP\z", "HELP", "0"));
+        let bytes = format!("prefix {} suffix", STANDARD.encode(b"PAIR=ABCD;HELP"));
+        assert_eq!(scan(&anchored, bytes.as_bytes(), 1).len(), 1);
+        let greedy = selected(&window_pack(r"START(?s:.*)END", "HELP", "0"));
+        let bytes = format!(
+            "{} {}",
+            STANDARD.encode(b"START without stop"),
+            STANDARD.encode(b"START HELP END")
+        );
+        let findings = scan(&greedy, bytes.as_bytes(), 1);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].match_text().as_bytes(), b"START HELP END");
+        let keywords = window_pack("PRIMARY", "HELPER", "0").replace(
+            "skipReport = true",
+            "skipReport = true\nkeywords = [\"gate\"]",
+        );
+        let engine = selected(&keywords);
+        let bytes = format!(
+            "{} {}",
+            STANDARD.encode(b"PRIMARY HELPER"),
+            STANDARD.encode(b"gate unrelated")
+        );
+        assert!(scan(&engine, bytes.as_bytes(), 1).is_empty());
+        assert_eq!(
+            scan(&engine, &encoded(b"PRIMARY HELPER gate", 1), 1).len(),
+            1
+        );
+        let uppercase = keywords.replace("gate", "ÉTAG");
+        assert_eq!(
+            scan(&selected(&uppercase), "PRIMARY HELPER étag".as_bytes(), 0).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn capture_context_and_untrimmed_spans_survive_projection_and_rebuild() {
+        // At A7B's start, preceding x makes \\B true. Searching a sliced A7B
+        // would select group 1. A7 avoids the inherited uniform-letter allowlist.
+        let pack = window_pack(r"\b(A7)B|\B(A7)B", "HELP", "0").replace(
+            "regex = '''\\b(A7)B|\\B(A7)B'''",
+            "regex = '''\\b(A7)B|\\B(A7)B'''\nsecretGroup = 2",
+        );
+        let engine = selected(&pack);
+        let findings = scan(&engine, b"xA7B HELP", 0);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].secret().as_bytes(), b"A7");
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(1, 3).unwrap())
+        );
+        let rebuilt = Engine::builder(
+            engine
+                .config()
+                .clone()
+                .select_rules(["rustleaks.helper", "rustleaks.parent"])
+                .unwrap(),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(scan(&rebuilt, b"xA7B HELP", 0), findings);
+        for prefix in [b"\xff\x80".as_slice(), "é".as_bytes()] {
+            let pack = window_pack(r"\nBEGIN\n(value=ABCD)\n", "HELP", "1L");
+            let mut bytes = prefix.to_vec();
+            bytes.extend_from_slice(b"\nBEGIN\nvalue=ABCD\nHELP");
+            let findings = scan(&selected(&pack), &bytes, 0);
+            assert_eq!(findings.len(), 1);
+            assert_eq!(findings[0].secret().as_bytes(), b"value=ABCD");
+            assert_eq!(findings[0].match_text().as_bytes(), b"BEGIN\nvalue=ABCD");
+            assert_eq!(
+                findings[0].match_range(),
+                FindingRange::Exact(ByteRange::new(prefix.len() + 1, prefix.len() + 17).unwrap())
+            );
+            assert_eq!(
+                findings[0].secret_range(),
+                FindingRange::Exact(ByteRange::new(prefix.len() + 7, prefix.len() + 17).unwrap())
+            );
+        }
+        let arbitrary = selected(&window_pack("P(.)", "HELP", "0"));
+        let findings = scan(&arbitrary, b"P\xff HELP", 0);
+        assert_eq!(findings[0].secret().as_bytes(), b"\xff");
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(1, 2).unwrap())
+        );
+        let capture_lf = selected(&window_pack(r"BEGIN(\nABCD\n)END", "HELP", "0"));
+        let findings = scan(&capture_lf, b"BEGIN\nABCD\nEND HELP", 0);
+        assert_eq!(findings[0].secret().as_bytes(), b"\nABCD\n");
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(5, 11).unwrap())
+        );
+        let empty = window_pack("P()", "HELP", "0")
+            .replace("regex = '''P()'''", "regex = '''P()'''\nsecretGroup = 1");
+        let findings = scan(&selected(&empty), b"P HELP", 0);
+        assert_eq!(findings[0].secret().as_bytes(), b"");
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(1, 1).unwrap())
+        );
+        // Explicit nonparticipating capture fails rather than taking whole P.
+        let absent = empty.replace("P()", "P(X)?");
+        assert!(scan(&selected(&absent), b"P HELP", 0).is_empty());
+    }
+
+    #[test]
+    fn parent_and_helper_path_and_allowlist_predicates_are_enforced() {
+        for target in ["rustleaks.parent", "rustleaks.helper"] {
+            let with_path = TUPLES.replace(
+                &format!("[[rules]]\nid = \"{target}\"\n"),
+                &format!("[[rules]]\nid = \"{target}\"\npath = '''allowed\\.txt$'''\n"),
+            );
+            let engine = selected(&with_path);
+            assert!(scan(&engine, b"pair=GOOD:ABCD", 0).is_empty());
+            let fragment = Fragment::builder(b"pair=GOOD:ABCD")
+                .file_path("allowed.txt")
+                .build();
+            assert_eq!(
+                engine
+                    .scan_fragment(&fragment, &ScanOptions::default())
+                    .findings()
+                    .len(),
+                1
+            );
+        }
+        let engine = selected(TUPLES);
+        assert!(scan(&engine, b"pair=GOOD:ABCD # gitleaks:allow", 0).is_empty());
+        let path_allowed =
+            TUPLES.replace("regexes = ['''^BAD$''']", "paths = ['''blocked\\.txt$''']");
+        let engine = selected(&path_allowed);
+        let fragment = Fragment::builder(b"pair=GOOD:ABCD")
+            .file_path("blocked.txt")
+            .build();
+        assert!(
+            engine
+                .scan_fragment(&fragment, &ScanOptions::default())
+                .findings()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn legacy_required_arrays_and_native_composition_keep_equal_results_and_usage() {
+        let legacy = TUPLES.replace("[rules.required]\ncontract = \"buffer-v1\"\nedges = [{ id = \"rustleaks.helper\", relation = \"same-candidate\" }]", "[[rules.required]]\nid = \"rustleaks.helper\"\nwithinLines = 0\nwithinColumns = 0");
+        let direct = Engine::builder(ConfigLoader::new().load_toml(&legacy).unwrap())
+            .build()
+            .unwrap();
+        let native = selected(&legacy);
+        for depth in 0..=2 {
+            let fragment = Fragment::new(encoded(b"pair=BAD:WXYZ pair=GOOD:ABCD", depth));
+            let options = ScanOptions::builder().max_decode_depth(depth).build();
+            for budget in [
+                ScanBudget::unlimited(),
+                ScanBudget::unlimited().max_work_units(7),
+                ScanBudget::unlimited().max_finding_records(2),
+            ] {
+                let control = ScanControl::unlimited().with_budget(budget);
+                assert_eq!(
+                    direct.scan_fragment_controlled(&fragment, &options, &control),
+                    native.scan_fragment_controlled(&fragment, &options, &control)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn target_byte_gate_applies_to_each_native_input_buffer() {
+        let engine = selected(TUPLES);
+        let tuple = b"pair=GOOD:ABCD";
+        let bytes = format!("pair=GOOD:WXYZ prefix {} suffix", STANDARD.encode(tuple));
+        assert!(bytes.len() > tuple.len());
+        let fragment = Fragment::new(bytes.as_bytes());
+        let raw_options = ScanOptions::builder()
+            .max_target_bytes(Some(tuple.len()))
+            .build();
+        assert!(
+            engine
+                .scan_fragment(&fragment, &raw_options)
+                .findings()
+                .is_empty()
+        );
+        let decoded_options = ScanOptions::builder()
+            .max_decode_depth(1)
+            .max_target_bytes(Some(tuple.len()))
+            .build();
+        let decoded = engine.scan_fragment(&fragment, &decoded_options);
+        assert!(decoded.is_complete());
+        assert_eq!(decoded.findings().len(), 1);
+        assert_eq!(decoded.findings()[0].secret().as_bytes(), b"ABCD");
+        assert_eq!(decoded.findings()[0].required_findings().len(), 1);
+        assert_eq!(
+            decoded.findings()[0].required_findings()[0]
+                .secret()
+                .as_bytes(),
+            b"GOOD"
+        );
+        assert_eq!(
+            decoded.findings()[0].secret_range(),
+            FindingRange::Unavailable
+        );
+        let too_small = ScanOptions::builder()
+            .max_decode_depth(1)
+            .max_target_bytes(Some(tuple.len() - 1))
+            .build();
+        assert!(
+            engine
+                .scan_fragment(&fragment, &too_small)
+                .findings()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_native_rule_does_not_publish_its_first_buffer_when_its_second_is_interrupted() {
+        let engine = selected(TUPLES);
+        let bytes = format!(
+            "{} {}",
+            STANDARD.encode(b"pair=GOOD:ABCD"),
+            STANDARD.encode(b"pair=GOOD:WXYZ")
+        );
+        let fragment = Fragment::new(bytes.as_bytes());
+        let options = ScanOptions::builder().max_decode_depth(1).build();
+        let complete = engine.scan_fragment(&fragment, &options);
+        assert!(complete.is_complete());
+        assert_eq!(complete.findings().len(), 2);
+        assert_eq!(complete.findings()[0].secret().as_bytes(), b"ABCD");
+        assert_eq!(complete.findings()[1].secret().as_bytes(), b"WXYZ");
+        // Each independent buffer admits one primary, one helper and one
+        // projection. Limit four stops during the second buffer's helper.
+        assert_eq!(complete.usage().finding_records(), 6);
+        let limited = engine.scan_fragment_controlled(
+            &fragment,
+            &options,
+            &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(4)),
+        );
+        assert!(matches!(
+            limited.termination(),
+            Some(ScanTermination::BudgetExceeded {
+                kind: ScanBudgetKind::FindingRecords,
+                ..
+            })
+        ));
+        assert_eq!(limited.usage().finding_records(), 4);
+        assert!(limited.findings().is_empty());
+        let mut cancelled_in_second_buffer = false;
+        for threshold in 0..=complete.usage().work_units() + 30 {
+            let polls = AtomicUsize::new(0);
+            let signal = || polls.fetch_add(1, Ordering::Relaxed) >= threshold;
+            let outcome = engine.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &ScanControl::cancellable(&signal),
+            );
+            if !outcome.is_complete() {
+                assert_eq!(outcome.termination(), Some(&ScanTermination::Cancelled));
+                if outcome.usage().finding_records() < 6 {
+                    assert!(outcome.findings().is_empty());
+                }
+                cancelled_in_second_buffer |= matches!(outcome.usage().finding_records(), 4 | 5);
+            }
+        }
+        assert!(cancelled_in_second_buffer);
+    }
+
+    #[test]
+    fn native_budget_boundaries_and_cancellation_never_publish_unfinished_rules() {
+        let engine = selected(TUPLES);
+        let mut bytes = b"\xff ".to_vec();
+        bytes.extend(encoded(b"pair=GOOD:ABCD pair=GOOD:WXYZ", 2));
+        let fragment = Fragment::new(bytes);
+        let options = ScanOptions::builder().max_decode_depth(2).build();
+        let complete = engine.scan_fragment(&fragment, &options);
+        assert_eq!(complete.findings().len(), 2);
+        let usage = complete.usage();
+        let dimensions: [BudgetDimension; 6] = [
+            (
+                ScanBudgetKind::DecodedBytes,
+                usage.decoded_bytes(),
+                ScanBudget::max_decoded_bytes,
+            ),
+            (
+                ScanBudgetKind::WorkUnits,
+                usage.work_units(),
+                ScanBudget::max_work_units,
+            ),
+            (
+                ScanBudgetKind::FindingRecords,
+                usage.finding_records(),
+                ScanBudget::max_finding_records,
+            ),
+            (
+                ScanBudgetKind::FindingPayloadBytes,
+                usage.finding_payload_bytes(),
+                ScanBudget::max_finding_payload_bytes,
+            ),
+            (
+                ScanBudgetKind::CollectedSpans,
+                usage.collected_spans(),
+                ScanBudget::max_collected_spans,
+            ),
+            (
+                ScanBudgetKind::NormalizationBytes,
+                usage.normalization_bytes(),
+                ScanBudget::max_normalization_bytes,
+            ),
+        ];
+        for (kind, used, set) in dimensions {
+            for limit in [0, used.saturating_sub(1), used] {
+                let control =
+                    ScanControl::unlimited().with_budget(set(ScanBudget::unlimited(), limit));
+                let outcome = engine.scan_fragment_controlled(&fragment, &options, &control);
+                if limit == used {
+                    assert!(outcome.is_complete());
+                    assert_eq!(outcome.findings(), complete.findings());
+                } else {
+                    assert!(
+                        matches!(outcome.termination(), Some(ScanTermination::BudgetExceeded { kind: found, .. }) if *found == kind)
+                    );
+                    assert_eq!(
+                        outcome.findings(),
+                        &complete.findings()[..outcome.findings().len()]
+                    );
+                    if !outcome.findings().is_empty() {
+                        assert_eq!(outcome.usage().finding_records(), usage.finding_records());
+                    }
+                }
+            }
+        }
+        let earlier = format!("{TUPLES}\n[[rules]]\nid = \"rustleaks.a-prior\"\nregex = 'PRIOR'\n");
+        let earlier = selected(&earlier);
+        let partial = earlier.scan_fragment_controlled(
+            &Fragment::new(b"PRIOR pair=GOOD:ABCD pair=GOOD:WXYZ"),
+            &ScanOptions::default(),
+            &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(2)),
+        );
+        assert!(!partial.is_complete());
+        assert_eq!(partial.findings().len(), 1);
+        assert_eq!(
+            partial.findings()[0].rule_id().as_bytes(),
+            b"rustleaks.a-prior"
+        );
+        // Sweep cooperative checkpoints through decoder scope enumeration,
+        // capture enumeration and required projection, using only synthetic bytes.
+        for threshold in 0..=usage.work_units() + 30 {
+            let polls = AtomicUsize::new(0);
+            let signal = || polls.fetch_add(1, Ordering::Relaxed) >= threshold;
+            let outcome = engine.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &ScanControl::cancellable(&signal),
+            );
+            if !outcome.is_complete() {
+                assert_eq!(outcome.termination(), Some(&ScanTermination::Cancelled));
+            }
+            assert_eq!(
+                outcome.findings(),
+                &complete.findings()[..outcome.findings().len()]
+            );
+            if !outcome.findings().is_empty() {
+                assert_eq!(outcome.usage().finding_records(), usage.finding_records());
+            }
+        }
+    }
+}
+
+mod native_bytes {
+    use super::*;
+    use rustleaks_core::config::{ConfigError, VirtualResolver};
+    use rustleaks_core::model::{ByteRange, Finding, FindingRange};
+    use rustleaks_core::{ScanBudgetKind, ScanTermination};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn pack(pattern: &str, keywords: &[&str]) -> String {
+        let keywords = toml::Value::Array(
+            keywords
+                .iter()
+                .map(|keyword| toml::Value::String((*keyword).to_owned()))
+                .collect(),
+        );
+        format!(
+            "[[rules]]\nid='rustleaks.bytes'\nregex = {{ dialect='bytes-v1', pattern='''{pattern}''' }}\nkeywords={keywords}\n"
+        )
+    }
+
+    fn selected(source: &str) -> Engine {
+        let (config, _) = NativePolicy::builder()
+            .with_pack("bytes-test", source)
+            .unwrap()
+            .compile()
+            .unwrap();
+        let ids = config
+            .ordered_rule_ids()
+            .iter()
+            .filter(|id| id.starts_with("rustleaks."))
+            .map(String::as_str);
+        Engine::builder(config.clone().select_rules(ids).unwrap())
+            .build()
+            .unwrap()
+    }
+
+    fn scan(engine: &Engine, bytes: &[u8], depth: usize) -> Vec<Finding> {
+        let outcome = engine.scan_fragment(
+            &Fragment::new(bytes),
+            &ScanOptions::builder().max_decode_depth(depth).build(),
+        );
+        assert!(outcome.is_complete());
+        outcome.findings().to_vec()
+    }
+
+    #[test]
+    fn keyword_classification_uses_original_text_on_short_and_long_raw_buffers() {
+        for (keywords, input, matched) in [
+            (vec!["accesskey"], "accessKey marker=ABCD".as_bytes(), false),
+            (vec!["accesskey"], b"AcCeSsKeY marker=ABCD".as_slice(), true),
+            (vec!["Key"], b"KEY marker=ABCD".as_slice(), true),
+            (vec!["Key"], "KEY marker=ABCD".as_bytes(), true),
+            (vec![""], b"marker=ABCD".as_slice(), true),
+            (vec!["missing", "Key"], b"KEY marker=ABCD".as_slice(), true),
+            (vec!["İ"], "i\u{307} marker=ABCD".as_bytes(), true),
+            (vec!["İ"], b"i marker=ABCD".as_slice(), false),
+            (vec!["ΟΣ"], "ΟΣ marker=ABCD".as_bytes(), true),
+            (vec!["ΟΣ"], "οσ marker=ABCD".as_bytes(), false),
+            (vec!["�"], b"\xe2\x82 marker=ABCD".as_slice(), true),
+            (vec!["��"], b"\xe2\x82 marker=ABCD".as_slice(), false),
+        ] {
+            let engine = selected(&pack(r"marker=([A-Z]{4})", &keywords));
+            for padding in [0, 300] {
+                let bytes = [vec![b' '; padding], input.to_vec()].concat();
+                let findings = scan(&engine, &bytes, 0);
+                assert_eq!(
+                    findings.len(),
+                    usize::from(matched),
+                    "{keywords:?}, padding={padding}"
+                );
+                if matched {
+                    assert_eq!(findings[0].secret().as_bytes(), b"ABCD");
+                    assert_eq!(
+                        findings[0].secret_range(),
+                        FindingRange::Exact(ByteRange::new(bytes.len() - 4, bytes.len()).unwrap())
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn typed_regex_validation_and_ordinary_loaders_fail_closed() {
+        let source = pack(r"([AB]{16,2048})", &[]);
+        assert!(matches!(
+            ConfigLoader::new().load_toml(&source),
+            Err(ConfigError::Decode { .. })
+        ));
+        let resolver = VirtualResolver::new().with_file("bytes.toml", &source);
+        assert!(
+            ConfigLoader::new()
+                .with_resolver(resolver)
+                .load_toml("[extend]\npath='bytes.toml'\n")
+                .is_err()
+        );
+        let engine = selected(&source);
+        assert_eq!(
+            engine.config().rule("rustleaks.bytes").unwrap().regex(),
+            Some(r"([AB]{16,2048})")
+        );
+        // The inherited default allowlist suppresses uniform-letter secrets.
+        // Alternating bytes independently exercise the full native repeat bound.
+        let input = b"AB".repeat(1024);
+        let findings = scan(&engine, &input, 0);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].secret().as_bytes(), input);
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(0, 2048).unwrap())
+        );
+        for regex in [
+            "{dialect='bytes-v2',pattern='A'}",
+            "{pattern='A'}",
+            "{dialect='bytes-v1'}",
+            "{dialect='bytes-v1',pattern=3}",
+            "{dialect='bytes-v1',pattern='A',extra=true}",
+            "{dialect='bytes-v1',Dialect='bytes-v1',pattern='A'}",
+            "{dialect='bytes-v1',pattern='A',Pattern='A'}",
+            "['bytes-v1','A']",
+        ] {
+            let source = format!("[[rules]]\nid='rustleaks.bytes'\nregex={regex}\n");
+            assert!(
+                NativePolicy::builder()
+                    .with_pack("invalid", &source)
+                    .and_then(NativePolicy::compile)
+                    .is_err(),
+                "{regex}"
+            );
+        }
+        for source in [
+            pack("(", &[]),
+            format!("{}secretGroup=2\n", pack("(A)", &[])),
+        ] {
+            assert!(
+                NativePolicy::builder()
+                    .with_pack("invalid", &source)
+                    .unwrap()
+                    .compile()
+                    .is_err()
+            );
+        }
+        let byte = NativePolicy::builder()
+            .with_pack("identity", &pack("A", &[]))
+            .unwrap()
+            .compile()
+            .unwrap();
+        let string = NativePolicy::builder()
+            .with_pack("identity", "[[rules]]\nid='rustleaks.bytes'\nregex='A'\n")
+            .unwrap()
+            .compile()
+            .unwrap();
+        assert_ne!(byte.1, string.1);
+        assert_ne!(
+            byte.0.rule("rustleaks.bytes"),
+            string.0.rule("rustleaks.bytes")
+        );
+    }
+
+    #[test]
+    fn raw_invalid_bytes_are_not_normalized_and_captures_keep_buffer_context() {
+        // Multibyte and malformed bytes in whole matches require no content
+        // normalization. Invalid captured bytes still reach the unchanged Go
+        // global secret allowlist, which owns its separately charged buffer.
+        // Varied ASCII captures avoid its uniform-letter suppression.
+        let invalid_secret_normalization = 2 + 2 * (2 + size_of::<usize>());
+        for (pattern, input, whole, secret, normalization) in [
+            (r"a(?s:.{0,2})(X0)", "aéaX0".as_bytes(), (3, 6), (4, 6), 0),
+            (r"[^X](X0)", "éX0".as_bytes(), (1, 4), (2, 4), 0),
+            (r"\b(A0)B|\B(A0)B", b"xA0B".as_slice(), (1, 4), (1, 3), 0),
+            (
+                r"(?s:\xFF.)(AB)",
+                b"\0\xff\x80AB".as_slice(),
+                (1, 5),
+                (3, 5),
+                0,
+            ),
+            (
+                r"(?s:(\xFF.))",
+                b"\0\xff\x80".as_slice(),
+                (1, 3),
+                (1, 3),
+                invalid_secret_normalization,
+            ),
+            (r"^(AB)|(AB)$", "éAB".as_bytes(), (2, 4), (2, 4), 0),
+        ] {
+            let engine = selected(&pack(pattern, &[]));
+            let fragment = Fragment::new(input);
+            let outcome = engine.scan_fragment_controlled(
+                &fragment,
+                &ScanOptions::default(),
+                &ScanControl::unlimited()
+                    .with_budget(ScanBudget::unlimited().max_normalization_bytes(normalization)),
+            );
+            assert!(outcome.is_complete(), "pattern {pattern}");
+            assert_eq!(outcome.findings().len(), 1, "pattern {pattern}");
+            let finding = &outcome.findings()[0];
+            assert_eq!(finding.match_text().as_bytes(), &input[whole.0..whole.1]);
+            assert_eq!(
+                finding.match_range(),
+                FindingRange::Exact(ByteRange::new(whole.0, whole.1).unwrap())
+            );
+            assert_eq!(
+                finding.secret_range(),
+                FindingRange::Exact(ByteRange::new(secret.0, secret.1).unwrap())
+            );
+            assert_eq!(finding.secret().as_bytes(), &input[secret.0..secret.1]);
+            assert_eq!(
+                outcome.usage().normalization_bytes(),
+                normalization,
+                "pattern {pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn byte_rules_keep_keyword_and_helper_ownership_across_decoded_siblings() {
+        let source = format!(
+            "{}[rules.required]\ncontract='buffer-v1'\nedges=[{{id='rustleaks.helper',relation='full-match-window',window='0'}}]\n[[rules]]\nid='rustleaks.helper'\nregex={{dialect='bytes-v1',pattern='HELP'}}\nkeywords=['key']\nskipReport=true\n",
+            pack("marker=(ABCD)", &["accesskey"])
+        );
+        let engine = selected(&source);
+        let good = b"accesskey marker=ABCD key HELP";
+        assert_eq!(scan(&engine, good, 0).len(), 1);
+        for depth in [1, 2] {
+            let mut input = good.to_vec();
+            for _ in 0..depth {
+                input = STANDARD.encode(input).into_bytes();
+            }
+            let findings = scan(&engine, &input, depth);
+            assert_eq!(findings.len(), 1);
+            assert_eq!(findings[0].required_findings().len(), 1);
+        }
+        for pieces in [
+            [b"accesskey marker=ABCD".as_slice(), b"key HELP".as_slice()],
+            [b"marker=ABCD key HELP".as_slice(), b"accesskey".as_slice()],
+            [
+                "accessKey marker=ABCD key HELP".as_bytes(),
+                b"accesskey".as_slice(),
+            ],
+        ] {
+            let bytes = format!(
+                "{} {}",
+                STANDARD.encode(pieces[0]),
+                STANDARD.encode(pieces[1])
+            );
+            assert!(scan(&engine, bytes.as_bytes(), 1).is_empty());
+        }
+    }
+
+    #[test]
+    fn native_helper_keywords_use_original_classification_for_legacy_string_helpers() {
+        let source = format!(
+            "{}[rules.required]\ncontract='buffer-v1'\nedges=[{{id='rustleaks.helper',relation='same-candidate'}}]\n[[rules]]\nid='rustleaks.helper'\nregex='marker=(ABCD)'\nkeywords=['accesskey']\nskipReport=true\n",
+            pack("marker=(ABCD)", &[])
+        );
+        let engine = selected(&source);
+        assert!(scan(&engine, "accessKey marker=ABCD".as_bytes(), 0).is_empty());
+        assert_eq!(scan(&engine, b"ACCESSKEY marker=ABCD", 0).len(), 1);
+        let empty = selected(&source.replace("['accesskey']", "['']"));
+        assert_eq!(scan(&empty, b"marker=ABCD", 0).len(), 1);
+    }
+
+    #[test]
+    fn byte_budget_boundaries_and_cancellation_preserve_completed_rule_atomicity() {
+        let engine = selected(&pack(r"marker=(\xFF[A-Z]{4})", &["Key", "missing"]));
+        let fragment = Fragment::new(b"KEY marker=\xffABCD marker=\xffWXYZ");
+        // No decoder or later rule can add checkpoints after this rule completes.
+        let options = ScanOptions::builder().max_decode_depth(0).build();
+        let complete = engine.scan_fragment(&fragment, &options);
+        assert!(complete.is_complete());
+        assert_eq!(complete.findings().len(), 2);
+        for (finding, (secret, start, end)) in complete.findings().iter().zip([
+            (b"\xffABCD".as_slice(), 11, 16),
+            (b"\xffWXYZ".as_slice(), 24, 29),
+        ]) {
+            assert_eq!(finding.secret().as_bytes(), secret);
+            assert_eq!(
+                finding.secret_range(),
+                FindingRange::Exact(ByteRange::new(start, end).unwrap())
+            );
+        }
+        // Each of the two five-byte secrets has one malformed byte. Only
+        // the inherited Go secret allowlist normalizes: T + (2 + usize) * I.
+        let allowlist_normalization = 2 * (5 + 2 + size_of::<usize>());
+        assert_eq!(
+            complete.usage().normalization_bytes(),
+            allowlist_normalization
+        );
+        let usage = complete.usage();
+        let dimensions: [BudgetDimension; 5] = [
+            (
+                ScanBudgetKind::WorkUnits,
+                usage.work_units(),
+                ScanBudget::max_work_units,
+            ),
+            (
+                ScanBudgetKind::CollectedSpans,
+                usage.collected_spans(),
+                ScanBudget::max_collected_spans,
+            ),
+            (
+                ScanBudgetKind::FindingRecords,
+                usage.finding_records(),
+                ScanBudget::max_finding_records,
+            ),
+            (
+                ScanBudgetKind::FindingPayloadBytes,
+                usage.finding_payload_bytes(),
+                ScanBudget::max_finding_payload_bytes,
+            ),
+            (
+                ScanBudgetKind::NormalizationBytes,
+                allowlist_normalization,
+                ScanBudget::max_normalization_bytes,
+            ),
+        ];
+        for (kind, used, set) in dimensions {
+            for limit in [0, used - 1, used] {
+                let result = engine.scan_fragment_controlled(
+                    &fragment,
+                    &options,
+                    &ScanControl::unlimited().with_budget(set(ScanBudget::unlimited(), limit)),
+                );
+                if limit == used {
+                    assert_eq!(result, complete);
+                } else {
+                    assert!(
+                        matches!(result.termination(), Some(ScanTermination::BudgetExceeded {kind: found, ..}) if *found == kind)
+                    );
+                    assert!(result.findings().is_empty());
+                }
+            }
+        }
+        // With unlimited resource counters, cancellation polls once initially,
+        // once per work unit, and once before each of the two finding admissions.
+        // The last work units are the second candidate's line-coordinate scan.
+        // The rule then publishes both candidates with no intervening poll.
+        let rule_completion_polls = 1 + usage.work_units() + 2;
+        let mut cancelled_after_both_admissions = false;
+        for threshold in 0..=rule_completion_polls + 2 {
+            let polls = AtomicUsize::new(0);
+            let signal = || polls.fetch_add(1, Ordering::Relaxed) >= threshold;
+            let result = engine.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &ScanControl::cancellable(&signal),
+            );
+            if threshold < rule_completion_polls {
+                assert_eq!(result.termination(), Some(&ScanTermination::Cancelled));
+                assert!(result.findings().is_empty());
+                assert!(result.usage().work_units() < usage.work_units());
+                cancelled_after_both_admissions |= result.usage().finding_records() == 2;
+            } else if threshold < rule_completion_polls + 2 {
+                // Final filtering polls once before each non-generic finding.
+                // All rule work is complete, so cancellation exposes exactly
+                // the already finalized prefix: zero findings, then one.
+                assert_eq!(result.termination(), Some(&ScanTermination::Cancelled));
+                assert_eq!(result.usage(), usage);
+                let finalized = threshold - rule_completion_polls;
+                assert_eq!(result.findings(), &complete.findings()[..finalized]);
+            } else {
+                assert_eq!(result, complete);
+            }
+        }
+        assert!(cancelled_after_both_admissions);
+    }
+    #[test]
+    fn utf8_azure_comment_keeps_the_source_byte_bridge_and_exact_helper_spans() {
+        let source = r#"
+[[rules]]
+id='rustleaks.bytes'
+regex={dialect='bytes-v1',pattern='''(?i)\b(?:AccountKey|(?:azure[_\s.-]*)?(?:storage[_\s.-]*)?(?:account[_\s.-]*)?(?:access[_\s.-]*)?key)\b(?s:.{0,24}?)([A-Za-z0-9+/]{86}==)'''}
+keywords=['accountkey','storage','accesskey','access_key','access-key']
+entropy={algorithm='byte-shannon-f64-v1',reject='lt',threshold=4.0}
+[rules.required]
+contract='buffer-v1'
+edges=[{id='rustleaks.helper',relation='full-match-window',window='8L'}]
+[[rules]]
+id='rustleaks.helper'
+regex={dialect='bytes-v1',pattern='''(?i)(?:\bAccountName\s*=\s*([a-z0-9]{3,24})\b|https://([a-z0-9]{3,24})\.blob\.core\.windows\.net\b|\b(?:azure[_\s.-]*storage[_\s.-]*(?:account[_\s.-]*)?name|storage[_\s.-]*account[_\s.-]*name)\b(?s:.{0,24}?)([a-z0-9]{3,24})\b)'''}
+keywords=['accountname','blob.core.windows.net','storage']
+skipReport=true
+"#;
+        // Synthetic 64-byte value defined independently as (37*i+251) mod 256.
+        let key = STANDARD.encode(
+            (0u8..64)
+                .map(|i| i.wrapping_mul(37).wrapping_add(251))
+                .collect::<Vec<_>>(),
+        );
+        let input = format!(
+            "const endpoint = \"https://scopeaudit.blob.core.windows.net\";\nconst AccountKey /*é*/ = \"{key}\";"
+        );
+        let findings = scan(&selected(source), input.as_bytes(), 0);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].match_range(),
+            FindingRange::Exact(ByteRange::new(67, 176).unwrap())
+        );
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(88, 176).unwrap())
+        );
+        assert_eq!(findings[0].secret().as_bytes(), key.as_bytes());
+        let helper = &findings[0].required_findings()[0];
+        assert_eq!(
+            helper.match_range(),
+            FindingRange::Exact(ByteRange::new(18, 58).unwrap())
+        );
+        assert_eq!(
+            helper.secret_range(),
+            FindingRange::Exact(ByteRange::new(26, 36).unwrap())
+        );
+        assert_eq!(helper.secret().as_bytes(), b"scopeaudit");
+    }
+
+    #[test]
+    fn trailing_lf_relation_coordinates_are_distinct_from_trimmed_report_spans() {
+        let source = format!(
+            "{}[rules.required]\ncontract='buffer-v1'\nedges=[{{id='rustleaks.helper',relation='full-match-window',window='1L'}}]\n[[rules]]\nid='rustleaks.helper'\nregex={{dialect='bytes-v1',pattern='HZ'}}\nskipReport=true\n",
+            pack(r"P(XY)\n", &[])
+        );
+        let findings = scan(&selected(&source), b"PXY\nHZ", 0);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].match_text().as_bytes(), b"PXY");
+        assert_eq!(
+            findings[0].match_range(),
+            FindingRange::Exact(ByteRange::new(0, 3).unwrap())
+        );
+        assert_eq!(
+            findings[0].secret_range(),
+            FindingRange::Exact(ByteRange::new(1, 3).unwrap())
+        );
+        assert_eq!(
+            findings[0].required_findings()[0].match_range(),
+            FindingRange::Exact(ByteRange::new(4, 6).unwrap())
+        );
+        assert!(scan(&selected(&source), b"PXY\n\nHZ", 0).is_empty());
+    }
+
+    #[test]
+    fn byte_rules_retain_path_allowlist_entropy_and_allow_marker_filters() {
+        let source = format!(
+            "{}path='allowed'\nentropy={{algorithm='byte-shannon-f64-v1',reject='lt',threshold=1.0}}\n[[rules.allowlists]]\nregexes=['^AAAA$']\n",
+            pack(r"marker=([A-Z]{4})", &[])
+        );
+        let engine = selected(&source);
+        for (path, bytes, count) in [
+            ("allowed.txt", b"marker=ABCD".as_slice(), 1),
+            ("other.txt", b"marker=ABCD".as_slice(), 0),
+            ("allowed.png", b"marker=ABCD".as_slice(), 0),
+            ("allowed.txt", b"marker=AAAA".as_slice(), 0),
+            (
+                "allowed.txt",
+                b"marker=ABCD # rustleaks:allow".as_slice(),
+                0,
+            ),
+        ] {
+            let result = engine.scan_fragment(
+                &Fragment::builder(bytes).file_path(path).build(),
+                &ScanOptions::default(),
+            );
+            assert!(result.is_complete());
+            assert_eq!(result.findings().len(), count);
+        }
+        let source = format!(
+            "{}[[rules.allowlists]]\nregexes=['.+']\n",
+            pack(r"marker=(\xFF)", &[])
+        );
+        let engine = selected(&source);
+        let fragment = Fragment::new(b"marker=\xff");
+        let complete = engine.scan_fragment(&fragment, &ScanOptions::default());
+        assert!(complete.findings().is_empty());
+        assert!(complete.usage().normalization_bytes() > 0);
+        let limited = engine.scan_fragment_controlled(
+            &fragment,
+            &ScanOptions::default(),
+            &ScanControl::unlimited()
+                .with_budget(ScanBudget::unlimited().max_normalization_bytes(0)),
+        );
+        assert!(matches!(
+            limited.termination(),
+            Some(ScanTermination::BudgetExceeded {
+                kind: ScanBudgetKind::NormalizationBytes,
+                ..
+            })
+        ));
     }
 }

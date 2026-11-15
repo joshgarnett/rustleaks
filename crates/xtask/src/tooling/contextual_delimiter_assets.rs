@@ -2989,7 +2989,7 @@ pub(super) fn validate(
     let expected = reviewed["rules"]
         .as_array()
         .ok_or("contextual rules missing")?;
-    if expected.len() != 44 || native_rules.len() != 104 || origins.len() != 104 {
+    if expected.len() != 44 || native_rules.len() != 300 || origins.len() != 300 {
         return Err("contextual inventory differs".into());
     }
     for ((native, origin), expected) in native_rules[60..104]

@@ -124,6 +124,7 @@ pub fn rustleaks_core::config::CompiledRule::entropy(&self) -> f64
 pub fn rustleaks_core::config::CompiledRule::id(&self) -> &str
 pub fn rustleaks_core::config::CompiledRule::keywords(&self) -> &[alloc::string::String]
 pub fn rustleaks_core::config::CompiledRule::native_entropy(&self) -> core::option::Option<(&'static str, &'static str, f64)>
+pub fn rustleaks_core::config::CompiledRule::native_predicate_algorithm(&self) -> core::option::Option<&'static str>
 pub fn rustleaks_core::config::CompiledRule::path(&self) -> core::option::Option<&str>
 pub fn rustleaks_core::config::CompiledRule::regex(&self) -> core::option::Option<&str>
 pub fn rustleaks_core::config::CompiledRule::required_rules(&self) -> &[rustleaks_core::config::RequiredRuleSpec]
@@ -242,6 +243,8 @@ pub rustleaks_core::explanation::ExplanationReason::FindingPayloadBudgetExceeded
 pub rustleaks_core::explanation::ExplanationReason::KeywordMatched
 pub rustleaks_core::explanation::ExplanationReason::KeywordMissed
 pub rustleaks_core::explanation::ExplanationReason::KeywordNotRequired
+pub rustleaks_core::explanation::ExplanationReason::NativePredicateAccepted
+pub rustleaks_core::explanation::ExplanationReason::NativePredicateRejected
 pub rustleaks_core::explanation::ExplanationReason::NormalizationBudgetExceeded
 pub rustleaks_core::explanation::ExplanationReason::OfflineValidation
 pub rustleaks_core::explanation::ExplanationReason::OfflineValidation::check: rustleaks_core::validation::OfflineCheck
@@ -526,6 +529,9 @@ pub rustleaks_core::native::NativePolicyError::Config(rustleaks_core::config::Co
 pub rustleaks_core::native::NativePolicyError::DuplicatePackId
 pub rustleaks_core::native::NativePolicyError::Engine(rustleaks_core::ScanError)
 pub rustleaks_core::native::NativePolicyError::InvalidNativeEntropy
+pub rustleaks_core::native::NativePolicyError::InvalidNativePredicate
+pub rustleaks_core::native::NativePolicyError::InvalidNativeRegex
+pub rustleaks_core::native::NativePolicyError::InvalidNativeRequired
 pub rustleaks_core::native::NativePolicyError::InvalidPackId
 pub rustleaks_core::native::NativePolicyError::InvalidPackStructure
 pub rustleaks_core::native::NativePolicyError::InvalidRuleId

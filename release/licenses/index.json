@@ -1159,7 +1159,25 @@
             "path": "crates/rustleaks-core/NOTICE"
           },
           "original_path": "crates/rustleaks-core/NOTICE",
-          "sha256": "b21f8ab0dbda74c26f488d217b744da0029ae774a81d6094fcdfa9178bc0e2b1"
+          "sha256": "cf2fb0cfe83617bf008bd5313191a6d35e1ba14231017234b71a84b4e8f69592"
+        },
+        {
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/data/LICENSE.tiktoken",
+          "origin": {
+            "kind": "workspace",
+            "path": "crates/rustleaks-core/data/LICENSE.tiktoken"
+          },
+          "original_path": "crates/rustleaks-core/data/LICENSE.tiktoken",
+          "sha256": "418cb499b436128d653d79941333a5437b7be2ea9213dcc2f04d15d5d2c51d86"
+        },
+        {
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/data/LICENSE.tiktoken-rs",
+          "origin": {
+            "kind": "workspace",
+            "path": "crates/rustleaks-core/data/LICENSE.tiktoken-rs"
+          },
+          "original_path": "crates/rustleaks-core/data/LICENSE.tiktoken-rs",
+          "sha256": "f7c6ddf9d84fd7b8ad5917e4074d4c05e4c1dfb752a28a0058f06bd0f5e2edcc"
         },
         {
           "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/default/LICENSE.betterleaks",
@@ -1195,7 +1213,7 @@
             "path": "crates/rustleaks-core/default/NOTICE"
           },
           "original_path": "crates/rustleaks-core/default/NOTICE",
-          "sha256": "91e7813435af1d7f4a9c25728729af774191160bb9a0656d24d7a362c9f4c6de"
+          "sha256": "d81140aa6d1666ef9c03bf38cc983d16ade32bd634caed46524f6997c6c7b1f2"
         }
       ],
       "id": "pkg:cargo/rustleaks-core@0.1.0-alpha.9",
@@ -5999,13 +6017,15 @@
     "crates/rustleaks-bzip2/LICENSE-APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
     "crates/rustleaks-bzip2/LICENSE-MIT": "a45da9aad6e4c77faac5b8be230daf2e2cab653b66e95b0f21e353116fed2da9",
     "crates/rustleaks-cli/Cargo.toml": "240325692a817ec612f8ab313c5eb2b56a9f529ba685abd207ad5932c181bffa",
-    "crates/rustleaks-core/Cargo.toml": "56d530a1a48a13a0d5ecf23cee8ee7062b0b5e2a74f090b0342c6c02b3e6fe1b",
+    "crates/rustleaks-core/Cargo.toml": "dd3efd91b2e9d7899af48834d32d63c03885780d5e471fccafd4135ddccd52aa",
     "crates/rustleaks-core/LICENSE": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21",
-    "crates/rustleaks-core/NOTICE": "b21f8ab0dbda74c26f488d217b744da0029ae774a81d6094fcdfa9178bc0e2b1",
+    "crates/rustleaks-core/NOTICE": "cf2fb0cfe83617bf008bd5313191a6d35e1ba14231017234b71a84b4e8f69592",
+    "crates/rustleaks-core/data/LICENSE.tiktoken": "418cb499b436128d653d79941333a5437b7be2ea9213dcc2f04d15d5d2c51d86",
+    "crates/rustleaks-core/data/LICENSE.tiktoken-rs": "f7c6ddf9d84fd7b8ad5917e4074d4c05e4c1dfb752a28a0058f06bd0f5e2edcc",
     "crates/rustleaks-core/default/LICENSE.betterleaks": "caea114592a8f8e5e05a116d63a99e0ccd79a3ff74f4ddf270bcf4c929eb021e",
     "crates/rustleaks-core/default/LICENSE.kingfisher": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
     "crates/rustleaks-core/default/LICENSE.veles": "8d51837cfc3877f9847cc13afd6274bf5df00399f65dbf3eed2ca2ea070582ce",
-    "crates/rustleaks-core/default/NOTICE": "91e7813435af1d7f4a9c25728729af774191160bb9a0656d24d7a362c9f4c6de",
+    "crates/rustleaks-core/default/NOTICE": "d81140aa6d1666ef9c03bf38cc983d16ade32bd634caed46524f6997c6c7b1f2",
     "crates/rustleaks-rar-codec/COPYING": "e0db3404ecb210e185232f58c0f528bd403fe0e439ce869ffda80351cc561122",
     "crates/rustleaks-rar-codec/Cargo.toml": "7a4c574f753a72f21d5e8fe7a71a94e75a1e309634aae6266ca54bab7feb8090",
     "crates/rustleaks-report/Cargo.toml": "beaa5c04bdc59c7d7de75397a0c01beb755bc0e4ab91efaa15f9221f2bb32c86",

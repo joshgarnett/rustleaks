@@ -541,7 +541,7 @@ pub(super) fn validate(
     let expected = reviewed["rules"]
         .as_array()
         .ok_or("reviewed providers missing")?;
-    if native_rules.len() != 104 || expected.len() != 15 || origins.len() != native_rules.len() {
+    if native_rules.len() != 300 || expected.len() != 15 || origins.len() != native_rules.len() {
         return Err("additional provider inventory differs".into());
     }
     for ((native, origin), expected) in native_rules[15..30]

@@ -11,7 +11,7 @@ filegroup(
 
 rustleaks_library(
     name = "rustleaks_core",
-    compile_data = glob(["default/**"]) + ["//compat:parity_corpora"],
+    compile_data = glob(["default/**", "data/**"]) + ["//compat:parity_corpora"],
     crate_name = "rustleaks_core",
     data = ["//compat:all"],
     edition = "2024",
@@ -28,6 +28,7 @@ rustleaks_library(
     )
     for test in [
         "native_policy",
+        "native_predicates",
         "native_rules",
         "provider_rules",
         "shared_rule_deltas",
@@ -57,6 +58,41 @@ rustleaks_integration_test(
     srcs = [":campaign_profile_support"],
 )
 
+rustleaks_integration_test(
+    name = "additional_coverage_test",
+    src = "tests/additional_coverage.rs",
+    compile_data = ["tests/support/additional_coverage.json"],
+    deps = [":rustleaks_core"],
+)
+
+rustleaks_integration_test(
+    name = "format_coverage_test",
+    src = "tests/format_coverage.rs",
+    compile_data = ["tests/support/format_coverage.json"],
+    deps = [":rustleaks_core"],
+)
+
+rustleaks_integration_test(
+    name = "special_coverage_test",
+    src = "tests/special_coverage.rs",
+    compile_data = ["tests/support/special_coverage.json"],
+    deps = [":rustleaks_core"],
+)
+
+rustleaks_integration_test(
+    name = "association_coverage_test",
+    src = "tests/association_coverage.rs",
+    compile_data = ["tests/support/association_coverage.json"],
+    deps = [":rustleaks_core"],
+)
+
+rustleaks_integration_test(
+    name = "remaining_verified_rules_test",
+    src = "tests/remaining_verified_rules.rs",
+    compile_data = ["tests/support/remaining_verified_rules.json"],
+    deps = [":rustleaks_core"],
+)
+
 test_suite(
     name = "parity_tests",
     tests = [
@@ -75,8 +111,14 @@ test_suite(
     name = "all_tests",
     tests = [
         ":native_policy_test",
+        ":native_predicates_test",
         ":native_rules_test",
         ":provider_rules_test",
+        ":additional_coverage_test",
+        ":format_coverage_test",
+        ":special_coverage_test",
+        ":association_coverage_test",
+        ":remaining_verified_rules_test",
         ":shared_rule_deltas_test",
         ":contextual_rule_deltas_test",
         ":connection_rules_test",

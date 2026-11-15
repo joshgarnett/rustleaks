@@ -208,6 +208,8 @@ fn workspace_paths(name: &str) -> Result<&'static [&'static str], String> {
         "rustleaks-core" => &[
             "crates/rustleaks-core/LICENSE",
             "crates/rustleaks-core/NOTICE",
+            "crates/rustleaks-core/data/LICENSE.tiktoken",
+            "crates/rustleaks-core/data/LICENSE.tiktoken-rs",
             "crates/rustleaks-core/default/NOTICE",
             "crates/rustleaks-core/default/LICENSE.betterleaks",
             "crates/rustleaks-core/default/LICENSE.kingfisher",
@@ -1331,6 +1333,8 @@ mod tests {
             [
                 "crates/rustleaks-core/LICENSE",
                 "crates/rustleaks-core/NOTICE",
+                "crates/rustleaks-core/data/LICENSE.tiktoken",
+                "crates/rustleaks-core/data/LICENSE.tiktoken-rs",
                 "crates/rustleaks-core/default/NOTICE",
                 "crates/rustleaks-core/default/LICENSE.betterleaks",
                 "crates/rustleaks-core/default/LICENSE.kingfisher",
@@ -1358,6 +1362,60 @@ mod tests {
             Some("COPYING".into())
         );
         assert!(license_file(&json!({"license_file":"../COPYING"})).is_err());
+    }
+
+    #[test]
+    fn workspace_tokenizer_licenses_preserve_bytes_and_reject_missing_inputs() {
+        let inputs: &[(&str, &[u8])] = &[
+            (
+                "crates/rustleaks-core/data/LICENSE.tiktoken",
+                b"synthetic tokenizer data license\r\n",
+            ),
+            (
+                "crates/rustleaks-core/data/LICENSE.tiktoken-rs",
+                b"synthetic tokenizer algorithm license\n",
+            ),
+        ];
+        let read = |path: &str| {
+            Ok(inputs.iter().find(|(input, _)| *input == path).map_or_else(
+                || format!("synthetic workspace input {path}\n").into_bytes(),
+                |(_, bytes)| bytes.to_vec(),
+            ))
+        };
+        let package = json!({"name":"rustleaks-core"});
+        let mut bindings = BTreeMap::new();
+        let (_, documents) = workspace_documents(&package, &read, &mut bindings).unwrap();
+        let namespace = "packages/rustleaks-core-0.0.0";
+        let mut files = BTreeMap::new();
+        let index = add_documents(namespace, documents, &mut files).unwrap();
+        for &(path, bytes) in inputs {
+            assert_eq!(bindings[path], sha256_bytes(bytes));
+            assert_eq!(files[&format!("{namespace}/{path}")], bytes);
+            let document = index
+                .iter()
+                .find(|document| document["original_path"] == path)
+                .unwrap();
+            assert_eq!(
+                *document,
+                json!({
+                    "original_path": path,
+                    "archive_path": format!("licenses/{namespace}/{path}"),
+                    "sha256": sha256_bytes(bytes),
+                    "origin": {"kind": "workspace", "path": path},
+                })
+            );
+            let missing_input = |input: &str| {
+                if input == path {
+                    Err(format!("missing synthetic input {path}"))
+                } else {
+                    read(input)
+                }
+            };
+            assert!(
+                workspace_documents(&package, &missing_input, &mut BTreeMap::new()).is_err(),
+                "accepted missing tokenizer license {path}"
+            );
+        }
     }
 
     fn runtime_fixture() -> (Value, BTreeMap<String, Vec<u8>>) {

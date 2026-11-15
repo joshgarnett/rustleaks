@@ -1,9 +1,9 @@
 # Rustleaks provider rules v1
 
-This optional pack adds 104 namespaced rules to the unchanged pinned defaults:
-sixteen standalone MIT formats, seventy-three MIT companions, nine contextual MIT formats,
-two MIT Slack session formats and four finite Apache Veles formats. Select it through
-the native API:
+This optional pack adds 300 namespaced rules to the unchanged pinned defaults.
+It includes standalone and contextual provider formats, bounded companions,
+Slack session formats, eighteen Apache Veles formats and a native ADC
+refresh-token selection. Select it through the native API:
 
 ```rust
 use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
@@ -14,12 +14,12 @@ let engine = NativePolicy::builder()
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-The provider pack includes native structured entropy tables. Load the
+The provider pack includes native structured entropy, association and predicate tables. Load the
 complete pack through `NativePolicy`, or select it in the CLI with
 `--native-pack rustleaks-providers-v1`. Passing it through ordinary
 `ConfigLoader`, `--config`, inline configuration or TOML concatenation rejects
-the structured value before scanning. Thirty-five rules require native byte entropy;
-the other sixty-nine use scalar entropy or have no entropy predicate.
+the structured value before scanning. 211 rules require native byte entropy;
+the other 89 use scalar entropy or have no entropy predicate.
 Native CLI composition uses the embedded default and rejects conflicting custom
 configuration selection. It does not activate complete-target scanning.
 
@@ -265,16 +265,158 @@ does not implement their union, and this rule excludes `xai-token-` management
 keys. CircleCI personal tokens, Deno user tokens and Postman account API tokens
 are distinct roles; these four rules do not broaden into those formats.
 
+## Additional source predicates and provider formats
+
+The pack also contains 101 MIT provider selections and one native ADC
+refresh-token selection. The adjacent provenance identifies every rule,
+original pattern, capture, keyword, full rejection predicate and adaptation.
+These additions retain all 23 source path exclusions in independently scoped
+rule allowlists, including root and nested `bun.lock` and `bun.lockb`.
+They retain 13 source secret-regex exclusions, two case-insensitive substring
+exclusions, local exclusions and the declared byte-entropy comparator.
+The native loader preserves these predicates when selecting individual rules.
+
+Source roles are selected explicitly. DevCycle server keys are included;
+DevCycle client/mobile and ConfigCat SDK keys are excluded. Midtrans includes
+only `Mid-server-`. The two Endor components retain separate rule identities
+and thresholds; two attributions for one occurrence are not two credentials.
+Ionic, Miro and Resend retain their source keywords even when the token cannot
+supply that keyword itself. Original provider assignment context remains
+required for contextual rules, including Voyage, DeepSeek, Kimi and Z.ai.
+
+The Clerk and Scalr companions select only their documented delimiter
+increments. WorkOS candidates with ordinary alphanumeric unpadded bodies can
+already have Stripe attribution. A new provider finding therefore does not
+automatically represent a new complete secret occurrence. Independent tests
+compare exact secret bytes and byte ranges against the previous composition.
+
+Capella's four proximity gaps use explicit ASCII bytes and preserve the source
+32/12/12/32 byte bounds. Fal's wildcard context admits one ASCII byte other
+than LF. Asaas and Buildkite service consumed delimiters use explicit ASCII
+classes. Scaleway's free context admits up to 20 ASCII non-LF bytes. Non-ASCII
+and malformed bytes in those positions remain outside these bounded selections.
+The DataStax, Fullstory, Workato and Temporal bodies, and Notify's service name
+and whitespace, retain their unbounded source repetitions. Callers must select input, work and finding-payload limits;
+synthetic large-payload tests are not performance guarantees.
+
+Supabase, Thunderstore and Val Town retain their two-digit predicates. Unkey
+requires a digit, uppercase and lowercase somewhere in the complete captured
+secret; its fixed lowercase prefix satisfies that part of the predicate.
+Temporal's mandatory marker already supplies its required digit count. These
+conditions are anchored secret-target rejection complements, with no added
+configuration field or expression interpreter.
+
+The ADC detector captures only a `1//` refresh-token value from the canonical
+`application_default_credentials.json` basename and requires the Google
+client-ID keyword. Its 20-byte body minimum, 512-byte complete-token maximum
+and bounded whitespace are conservative selections. It does not capture the
+whole JSON document or implement JSON parsing. Whole service-account document
+capture and the lossy generated Bitwarden pair expression are excluded.
+
+The inherited default global filter remains additional policy. In particular,
+its existing alternation flag scope can suppress mixed-case letter-only Asaas
+values that the independently scoped source filters would retain. Rule-local
+copies cannot reverse that global exclusion. These additions do not claim
+source-policy equivalence or introduce a switch to disable inherited filtering.
+
+## Credential format and boundary supplements
+
+Twenty-seven rules add selected credential formats and delimiters. Seventeen
+are derived from the pinned MIT Betterleaks configuration and ten from the
+pinned Apache-2.0 Veles detectors. Each origin records its immutable source
+URL, digest, original expression, generated overlay and native selection.
+
+The source predicates remain local to their rules. Betterleaks selections
+retain source keywords, all source secret and path exclusions, generated
+supersession filters and the exact byte-entropy comparison. GoCardless rejects
+entropy strictly below 3.5. Stripe excludes `sk_test_` and WorkOS prefixes.
+The Betterleaks Heroku supplement accepts only trailing-hyphen AA bodies;
+the Veles Heroku supplement retains the original final word boundary.
+Veles selections do not acquire Betterleaks source filters. Inherited native
+global filtering remains additional policy for every rule.
+
+The Authress selection retains lowercase credential prefixes, `acc` and
+account identifiers. Datadog API and application keys retain distinct 32-byte
+and 40-byte hexadecimal bodies. Etsy captures the complete keystring and
+shared-secret pair. Grafana accepts the selected standard-Base64 body alphabet.
+HCP preserves a secret-only assignment without a client ID. Packagist ORT and
+OUT tokens do not require a repository URL. The optional validation components
+are neither required rules nor independent secret findings.
+
+Most supplements consume selected punctuation, escaped quotes or vertical tab
+after a complete bounded token. HCP, Packagist and Slack refresh instead retain
+their source fixed-width prefix extraction above the nominal length. HCP's
+original Go whitespace excludes vertical tab; Betterleaks byte whitespace
+includes it. All selected token alphabets are explicit ASCII.
+
+The complete versioned GitLab PAT and the 147-byte Slack refresh body can
+coexist with shorter findings from retained rules. For Monday before an
+escaped quote, the retained JWT finding includes one extra backslash; the
+Monday finding extracts the exact credential. These are extraction changes
+and additional alerts for already detected credentials. Ordinary Monday JWT
+and Grafana forms can also gain provider attribution without a new occurrence.
+Independent tests compare against an explicit 440-rule prior composition and
+retain existing specific findings. The format and special-case suites retain their historical 476-rule composition.
+The complete composition now contains 537 rules, including 32 hidden helpers.
+The association suite retains its historical 534-rule composition.
+
+GitLab incoming-mail token length and HCP assignment whitespace retain their
+unbounded source repetitions. Callers can set target-size, work and finding
+payload limits. Synthetic resource tests do not establish performance or
+issuer acceptance. Broader xAI body/prefix variants and presumed multi-digit
+Slack segments are outside these selections.
+
+## Connection-key and structured-context supplements
+
+Five reporting rules and one hidden predicate rule add selected credential
+contexts. Azure App Configuration and Service Bus extract exact 44-byte keys
+before an unquoted comma and horizontal whitespace. Existing ordinary-ending
+key rules remain unchanged. The Service Bus parent requires its own complete
+tuple through native `buffer-v1` `same-candidate` association. Its hidden helper
+preserves source whole-tuple entropy and exclusions; the parent additionally
+requires key entropy greater than 3.5. Both detection-input identity and full
+match endpoints must agree, including inside decoded inputs. Selecting the
+parent explicitly requires selecting its helper ID as well.
+
+The unsigned JWT companion requires `Authorization: Bearer`, one of three
+literal `alg:none` header encodings, a base64url-shaped payload, an empty
+signature and a backslash-escaped quote or backtick. It excludes the escaped
+delimiter from the secret. This is a lexical authentication candidate rule,
+not a JSON/JOSE parser or signature validator. Bare unsigned data and signed
+JWTs are outside the companion's scope. The retained `jwt` rule can report a
+signed escaped token including its trailing backslash.
+
+The Kubernetes companion extracts one data item with 201 through 1000 ASCII
+bytes between kind and data/item, in either order. It preserves the source
+YAML path, keyword, template and empty-value predicates. It rejects matches
+crossing `---` or `...` document-marker lines, conservatively including indented
+marker-like lines, and rejects overlaps containing a short-context default
+match. Ordinary mapping keys beginning `---suffix` or `...suffix` remain
+eligible. This is bounded lexical coverage, not YAML parsing.
+
+The Cloudflare companion requires one of seven credential labels and a
+40-byte token before a comma. Public `CF_ACCOUNT_ID` is excluded. Its selected
+forward ASCII context does not reproduce the original Veles pair algorithm.
+It retains the source terminal word boundary and adds no Betterleaks-only
+path or secret predicates. The inherited native global policy still applies.
+
+The Betterleaks selections retain local source filters and paths. Service Bus
+filters apply to the complete tuple through its hidden helper. Source URLs,
+digests, original detection fields and the selected domains are recorded in
+the adjacent provenance. Validators and remote service calls are not included.
+Raw findings preserve exact secret and match byte ranges. Existing location
+semantics and unavailable decoded ranges remain unchanged.
+
 ## Source and modifications
 
-One hundred patterns are adapted directly from the MIT-licensed Betterleaks source at
+223 patterns are adapted directly from the MIT-licensed Betterleaks source at
 `8f376ff9c31ed5309ac448fe601c5dd21b376155`. The original source archived by
 Kingfisher was read as data; generated Kingfisher patterns are not the copied
 source. The adjacent provenance JSON records the immutable source URL and
 SHA-256, original patterns, filters, keywords, and each added rule's selection
 and transformations. `LICENSE.betterleaks` and `NOTICE` retain attribution.
 
-Four patterns are adapted directly from Apache-2.0 Veles/OSV-SCALIBR source
+Seventeen patterns are adapted directly from Apache-2.0 Veles/OSV-SCALIBR source
 at `e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845`, archived as data by the same
 pinned Kingfisher revision. Exact detector files, source pattern lines and
 SHA-256 values are recorded per rule; the source license and retained Google
@@ -286,17 +428,18 @@ Rustleaks namespaces IDs, uses factual descriptions, expands applicable
 ASCII-insensitive flags to explicit classes, and spells byte whitespace
 explicitly. Companion rules select reviewed format and delimiter increments.
 The earlier scalar source entropy rejection predicates use `<=`; those native
-rules retain their stated thresholds and existing f64 calculation. Six explicit
-byte-entropy rules preserve source `<`, and 29 preserve source `<=`, with the
-specified byte calculation. Numeric equivalence beyond these stated algorithm contracts
-is not asserted.
+rules retain their stated thresholds and existing f64 calculation.
+The byte predicates reject below the threshold for 150 rules and at or below
+it for 61 rules, including source scanner floors and the existing native floor.
+All use their stated byte calculation. Numeric equivalence beyond the stated
+algorithm contracts is not asserted.
 Thresholds can omit valid low-entropy credentials and do not establish issuer
 validity. No expression interpreter, tokenizer, wordlist, dependency or
 validator is added.
 
 Composition inherits Rustleaks' unchanged global allowlists. For the MIT
 imports, its 13 secret-regex exclusions and two stopwords correspond to the
-source's global secret exclusions for the reviewed ASCII domain. The four
+source's global secret exclusions for the reviewed ASCII domain. The fifteen
 Apache formats inherit those exclusions as additional native policy. Source-path exclusions
 differ: Rustleaks retains its office/PDF/binary and `.git` exclusions, while
 the pinned Betterleaks source additionally excludes Bun lockfiles. This pack
@@ -326,7 +469,8 @@ disjoint output across provider rules.
 - [Replicate API tokens](https://replicate.com/docs/topics/security/api-tokens)
 - [NVIDIA registry authentication](https://docs.nvidia.com/nvcf/dev/third-party-registries)
 
-`tests/provider_rules.rs` specifies synthetic positives, near misses, entropy
+`tests/provider_rules.rs`, `tests/additional_coverage.rs` and
+`tests/format_coverage.rs` and `tests/special_coverage.rs` specify synthetic positives, near misses, entropy
 boundaries, exact locations, ASCII/Unicode distinctions, invalid bytes,
 allowlists, old/new format unions, generic overlap, identity and finite scan
 controls. Fixtures are independently authored and never submitted to a
@@ -336,7 +480,10 @@ accuracy or an exhaustive provider specification.
 Refresh requires reviewing source changes, recording exact provenance and
 license bytes, and evaluating changed predicates and overlaps. A changed
 published pack needs a new versioned identifier. No runtime downloads occur.
-Generate content identities with
+The maintained `crates/xtask/src/tooling/native_coverage/` source contracts
+generate the additional TOML blocks and provenance. Prior rule bytes and
+provenance are hash-bound before append generation. Regenerate assets and
+content identities with
 `bazelisk run //crates/xtask:xtask -- generate native-pack-identity`; the normal
 build contract checks both pack digests and provider provenance consistency.
 
@@ -411,3 +558,154 @@ Terraform rules at 2, the two Okta rules at 4 and the OpenAI residual at 3.
 The other 39 additions have no source entropy predicate. Native global/path
 policy still applies. Overlapping distinct assignments retain native enumeration;
 this is not a claim of cross-engine enumeration or source-policy equivalence.
+
+
+## Buffer-local associated credentials
+
+Twenty-six reporting rules use thirty hidden helper rules. Each mandatory
+source edge is retained through native `required = { contract = "buffer-v1",
+edges = [...] }`. Select the complete pack through `NativePolicy`; the legacy
+configuration loader rejects these tables. A selected parent without every
+required helper fails closed. Existing standalone default rules, including the
+AWS access-token rule, keep their visibility.
+
+The associated families are Aikido, Artifactory API and reference tokens,
+Auth0, AWS session credentials, Azure storage, BrowserStack, Canva, eBay,
+Exoscale, Langfuse, Miro, MongoDB Atlas service accounts, Mux, OVH, PayPal,
+PlanetScale, Polymarket, Ramp, Razorpay, Salesforce, Supabase, Tableau,
+Upstash, Wiz and Zoho. Source files, source predicates and every edge are
+recorded in the adjacent provenance JSON.
+
+The selected source contract is pinned Kingfisher `scan_blob_with_context`
+without `DetectionOptions`. A helper must belong to the same raw buffer or
+individual decoded buffer as the parent. A window `NL` accepts helper full-match
+start lines from the parent's full-match start minus `N-1` through its exclusive
+full-match end plus `N-1`, inclusive. The lower bound is one. Window `0` removes
+the line limit while retaining buffer identity. Consumed trailing LF affects
+that exclusive endpoint even though public match text trims LF. Captures come
+from the full logical buffer. Raw, decoded, sibling and nested buffers cannot
+supply one another's helpers. Native depth-two isolation does not claim that
+the source no-options API recursively decodes.
+
+Each helper evaluates its own keywords, paths, allowlists and byte entropy in
+its buffer. Each applicable source global and local secret predicate is retained, and all
+23 source path exclusions remain on every node. AWS session tokens and
+Polymarket passphrases explicitly reject byte entropy at or below zero,
+preserving the source scanner floor that is independent of filter ASTs. Native inherited policy is an additional
+layer. Every association node uses
+`regex = { dialect = "bytes-v1", pattern = "..." }` with its exact generated
+source pattern. This explicit native form matches raw bytes with source ASCII
+case folding and original inline flags, repetition bounds, captures and
+leftmost-first greedy or lazy selection. String regexes retain their existing
+Go-compatible meaning. The AWS session capture directly retains the original
+16 through 2048 repetition without Go adaptation.
+
+The nine bounded bridges in seven nodes retain arbitrary source bytes: Azure
+key/name, the two Canva ID bridges, the two PlanetScale ID bridges, and three
+Polymarket rules. Limits count bytes. Complete UTF-8 scalars and invalid bytes
+are accepted within each original byte cap, while one byte over is rejected.
+Source dotall and ordinary-dot LF/CR distinctions remain intact. JFrog,
+Salesforce and Tableau delimiter guards retain their actual one-byte ownership,
+including ranges starting or ending inside a UTF-8 scalar. Adjacent helpers may
+consume separate bytes of that scalar. Matching does not normalize malformed
+input, expand ranges, or substitute rune counts for source byte limits.
+
+Every qualifying helper occurrence appears once per parent in core
+`required_findings`, ordered by required edge and occurrence. Helpers have
+`skipReport = true` and never become standalone reports. Parent finding
+serialization and ordinary JSON reports omit these records. Explicit support
+serialization and the core accessor expose support bytes. Primary-only
+redaction preserves supports; `without_detected_secrets` removes their detected
+secrets too. Helpers and projected copies consume work, span, finding and payload
+budgets. Exhaustion is incomplete and cannot publish a partially satisfied
+parent. Support records are not additional source-coverage successes.
+
+## Private Packagist credential roles
+
+`rustleaks.packagist-api-secret` reports `packagist_acs_` followed by 64 through
+96 lowercase hexadecimal characters. `rustleaks.packagist-api-key` reports
+`packagist_ack_` followed by 28 through 32 lowercase hexadecimal characters.
+Both prefixes are case-sensitive. Nonconsuming ASCII word boundaries reject
+identifier substrings and overlong token-prefix slices. This is an explicit
+precision restriction relative to the source's unguarded expressions.
+
+Each token is an independent finding whose match and secret own only the token.
+No counterpart, assignment, path, gap, uniqueness, padding, entropy or checksum
+condition is added. Two token roles yield two findings; two retained pairs yield
+four. Ordinary configuration values, punctuation, multiline context and long
+gaps remain eligible. Existing native allowlists and budgets still apply.
+
+The issuer identifies ACS as an HMAC secret and documents ACK-only GET
+authentication. This supports independent credential detection without claiming
+ACS-only bearer authentication. ACS follows the pinned visible Kingfisher
+selection, whose optional validation dependency does not gate detection. Making
+ACK visible is a deliberate selection broader than Kingfisher's hidden helper
+and Veles's conditional partial detection. Veles tuple weighting and source
+output parity are not implemented or claimed. These are offline format
+candidates, with no live-validity or measured false-positive claim. See the
+[issuer's authentication documentation](https://packagist.com/docs/api/api-authentication).
+
+
+## Mapbox secret tokens
+
+`rustleaks.mapbox-secret-token` accepts the complete pinned `sk.` grammar:
+23 through 308 base64url payload bytes beginning `eyJ1Ijoi`, a dot, and a
+22-byte signature whose final byte is `A`, `Q`, `g` or `w`. The prefix is
+case-sensitive. Source ASCII word and right-delimiter guards remain intact.
+The full selected secret has 49 through 334 bytes and must have byte entropy
+at least 4.0.
+
+The native `base64url-segment-go-regex-v1` predicate decodes only the payload
+into at most 231 bytes and applies the exact source Go-compatible expression.
+It requires the original ordered `u` and `a` fields, nonempty user and
+alphanumeric authorization text, and the source ASCII whitespace positions.
+Unicode user text is allowed; arbitrary JSON layouts, escaped user text and
+additional fields are outside this expression. Nonzero unused Base64 trailing
+bits remain allowed. Malformed encoding or UTF-8 rejects that candidate and
+continues; this intentionally differs from source filter-error propagation.
+Cancellation and resource exhaustion remain typed incomplete outcomes.
+
+## Vercel AI Gateway keys
+
+`rustleaks.vercel-ai-gateway-key` selects `vck_` followed by exactly 56 ASCII
+letters, digits, underscores or hyphens. Prefix case is ASCII-insensitive.
+The exact source delimiter alternatives include ordinary or escaped quotes
+and backticks, ASCII whitespace, semicolon, literal backslash `n`/`r` in
+either case, and end of input. The whole secret capture is always 60 bytes.
+
+The rule separately requires byte entropy at least 3.5 and the native
+`vercel-cl100k-ratio-v1` predicate. Pinned cl100k ordinary encoding must produce
+at least 25 tokens; 24 tokens gives ratio exactly 2.5 and is rejected. The
+predicate covers the complete source capture alphabet and case domain. It
+does not use a dictionary, approximate ratio or restricted witness grammar.
+The pinned tokenizer data, algorithm version and source chain are recorded
+in provenance. Its immutable packaged asset and licenses are maintained by
+the native predicate tooling.
+
+Mapbox and Vercel use explicit `bytes-v1` outer regexes and preserve every
+source global secret filter, stopword and path prefilter as distinct local
+allowlists. Existing native global suppression remains an additional layer.
+Paths are never tested as secret regexes. Consumed LF is trimmed from public
+match bytes, while CR is retained; neither changes selected secret bytes.
+
+## Bitwarden CLI client secrets
+
+`rustleaks.bitwarden-cli-client-secret` binds the quoted alphanumeric value of
+`user_<UUID>_token_apiKeyClientSecret` directly. Values have 10 through 50
+bytes and positive byte entropy. The named property may appear at any field
+position or nesting depth and may repeat. Source Go ASCII whitespace before
+the colon is unbounded; whitespace after it has a 20-byte cap. No outer
+object or fragment length limit is added.
+
+The path follows the original lowercase literal suffix `bitwarden cli/data.json`.
+The frozen Go lowercase preimages include dotted capital I and exclude long s.
+Backslashes, repeated separators and hyphenated directory names do not match.
+No path-component boundary is required before the suffix.
+
+This is direct lexical property binding. It deliberately excludes arbitrary
+bridges, reversed tuples and binding a nearby unrelated string when the named
+property is null. It does not reproduce Veles weighted tuple selection or the
+broader generated Kingfisher path expression. It does not validate complete
+JSON. The generic rule's entropy threshold is unchanged. Inherited policy
+still suppresses its existing alphabet stopword; `placeholder123` remains a
+locally accepted value, without an added general placeholder classifier.

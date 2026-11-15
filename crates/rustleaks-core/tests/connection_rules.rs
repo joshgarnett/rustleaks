@@ -21,12 +21,44 @@ const FORMS: [(&str, &str, &str); 4] = [
     ("odbc-braced", "{", "}"),
 ];
 
+const HISTORICAL_CONNECTION_IDS: [&str; 9] = [
+    "rustleaks.connection-string.password.double-quoted",
+    "rustleaks.connection-string.password.single-quoted",
+    "rustleaks.connection-string.password.odbc-braced",
+    "rustleaks.connection-string.password.unquoted",
+    "rustleaks.connection-string.password.jdbc-query",
+    "rustleaks.connection-string.password.database-uri",
+    "rustleaks.bitbucket-git-credentials",
+    "rustleaks.codecatalyst-git-credentials",
+    "rustleaks.codecommit-git-credentials",
+];
+
+fn historical_connection_toml() -> &'static str {
+    static SOURCE: OnceLock<String> = OnceLock::new();
+    SOURCE.get_or_init(|| {
+        let mut value: toml::Value = toml::from_str(CONNECTION_RULES_V1).unwrap();
+        value["rules"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|rule| HISTORICAL_CONNECTION_IDS.contains(&rule["id"].as_str().unwrap()));
+        assert_eq!(
+            value["rules"].as_array().unwrap().len(),
+            HISTORICAL_CONNECTION_IDS.len()
+        );
+        toml::to_string(&value).unwrap()
+    })
+}
+
 fn isolated() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        Engine::builder(ConfigLoader::new().load_toml(CONNECTION_RULES_V1).unwrap())
-            .build()
-            .unwrap()
+        Engine::builder(
+            ConfigLoader::new()
+                .load_toml(historical_connection_toml())
+                .unwrap(),
+        )
+        .build()
+        .unwrap()
     })
 }
 
@@ -497,7 +529,7 @@ fn custom_global_rule_and_targeted_allowlists_keep_existing_behavior() {
             "paths = ['^allowed[.]conf$']",
             "commits = ['synthetic-commit']",
         ] {
-            let mut raw: RawConfig = toml::from_str(CONNECTION_RULES_V1).unwrap();
+            let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
             let source = if global {
                 format!("[[allowlists]]\nregexTarget = 'secret'\n{condition}\n")
             } else {
@@ -528,7 +560,7 @@ fn custom_global_rule_and_targeted_allowlists_keep_existing_behavior() {
             assert!(result.findings().is_empty());
         }
     }
-    let mut raw: RawConfig = toml::from_str(CONNECTION_RULES_V1).unwrap();
+    let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
     let extra: RawConfig = toml::from_str(&format!(
         "[[allowlists]]\ntargetRules = ['{id}']\nstopwords = ['R7!q']\n"
     ))
@@ -1043,7 +1075,7 @@ fn database_uri_multiple_occurrences_and_provider_overlap_keep_distinct_findings
 #[test]
 fn database_uri_allowlists_and_decoding_retain_native_contracts() {
     for target in ["secret", "match", "line"] {
-        let mut raw: RawConfig = toml::from_str(CONNECTION_RULES_V1).unwrap();
+        let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
         let extra: RawConfig = toml::from_str(&format!("[[allowlists]]\ntargetRules = ['{PREFIX}database-uri']\nregexTarget = '{target}'\nregexes = ['R7!q']\n")).unwrap();
         raw.allowlists = extra.allowlists;
         let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
@@ -1058,7 +1090,7 @@ fn database_uri_allowlists_and_decoding_retain_native_contracts() {
             "paths = ['^allowed[.]conf$']",
             "commits = ['synthetic-commit']",
         ] {
-            let mut raw: RawConfig = toml::from_str(CONNECTION_RULES_V1).unwrap();
+            let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
             let extra: RawConfig = toml::from_str(&format!(
                 "[[allowlists]]\nregexTarget = 'secret'\n{condition}\n"
             ))

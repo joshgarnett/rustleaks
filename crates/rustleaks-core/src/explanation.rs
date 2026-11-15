@@ -107,6 +107,10 @@ pub enum ExplanationReason {
     DecodedMappingUnavailable,
     /// A candidate satisfied its configured entropy predicate.
     EntropyAccepted,
+    /// A candidate satisfied its configured bounded structural predicate.
+    NativePredicateAccepted,
+    /// A candidate failed its configured bounded structural predicate.
+    NativePredicateRejected,
     /// A candidate failed its configured entropy predicate.
     EntropyRejected,
     /// No entropy threshold is configured.

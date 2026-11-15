@@ -4,8 +4,9 @@ use std::fmt;
 use aho_corasick::AhoCorasick;
 
 use crate::go_unicode::lowercase_bytes as go_lowercase_bytes;
-use crate::native::NativeEntropy;
-use crate::regex::GoRegex;
+use crate::native::predicate::NativePredicate;
+use crate::native::{NativeEntropy, NativeKeyword, NativeRequired};
+use crate::regex::{GoRegex, NativeByteRegex};
 
 use super::{Condition, ConfigExtension, ConfigOrigin, RegexTarget, RequiredRuleSpec};
 
@@ -162,7 +163,7 @@ impl PartialEq for CompiledAllowlist {
 impl Eq for CompiledAllowlist {}
 
 /// An immutable, configuration-validated rule with inspectable pattern text.
-/// Full Go-regexp syntax certification remains the separate `GoRegex` gate.
+/// Executable regex dialects and native metadata remain private.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledRule {
     pub(crate) id: String,
@@ -174,6 +175,10 @@ pub struct CompiledRule {
     pub(crate) secret_group: i64,
     pub(crate) entropy: f64,
     pub(crate) native_entropy: Option<NativeEntropy>,
+    pub(crate) native_predicate: Option<NativePredicate>,
+    pub(crate) native_required: Option<NativeRequired>,
+    pub(crate) native_byte_matcher: Option<NativeByteRegex>,
+    pub(crate) native_keywords: Option<Vec<NativeKeyword>>,
     pub(crate) keywords: Vec<String>,
     pub(crate) tags: Vec<String>,
     pub(crate) allowlists: Vec<CompiledAllowlist>,
@@ -230,6 +235,15 @@ impl CompiledRule {
     #[must_use]
     pub fn native_entropy(&self) -> Option<(&'static str, &'static str, f64)> {
         self.native_entropy.map(NativeEntropy::metadata)
+    }
+
+    /// Returns the versioned bounded predicate algorithm, when configured.
+    /// The complete descriptor remains part of the native policy's exact identity.
+    #[must_use]
+    pub fn native_predicate_algorithm(&self) -> Option<&'static str> {
+        self.native_predicate
+            .as_ref()
+            .map(NativePredicate::algorithm)
     }
 
     /// Returns normalized pre-filter keywords in effective rule order.
@@ -613,6 +627,17 @@ fn add_rule_size(current: usize, rule: &CompiledRule) -> Result<usize, RuleSelec
         .chain(rule.required.iter().map(|required| &required.id))
     {
         size = checked_selection_size(size, value.len())?;
+    }
+    if rule.native_byte_matcher.is_some() {
+        size = checked_selection_size(size, "bytes-v1".len())?;
+    }
+    if let Some(predicate) = &rule.native_predicate {
+        size = checked_selection_size(size, predicate.retained_bytes())?;
+    }
+    if let Some(keywords) = &rule.native_keywords {
+        for keyword in keywords {
+            size = checked_selection_size(size, keyword.retained_bytes())?;
+        }
     }
     for allowlist in &rule.allowlists {
         size = add_allowlist_size(size, allowlist)?;
