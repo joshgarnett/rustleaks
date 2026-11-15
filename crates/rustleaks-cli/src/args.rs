@@ -30,6 +30,8 @@ pub(crate) struct Invocation {
 )]
 pub(crate) struct Options {
     pub config: Option<PathBuf>,
+    pub native_packs: Vec<String>,
+    pub complete_profile: Option<PathBuf>,
     pub exit_code: i32,
     pub report_path: Option<PathBuf>,
     pub report_format: Option<String>,
@@ -58,6 +60,8 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             config: None,
+            native_packs: Vec::new(),
+            complete_profile: None,
             exit_code: 1,
             report_path: None,
             report_format: None,
@@ -234,6 +238,25 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
     })))
 }
 
+fn append_native_pack(id: &str, options: &mut Options) -> Result<(), ParseError> {
+    if options.native_packs.len() == rustleaks_core::native::NativePolicy::MAX_PACKS {
+        return Err(ParseError::other(
+            "--native-pack exceeds the 32-item safety limit",
+        ));
+    }
+    if id.is_empty() {
+        return Err(ParseError::other(
+            "--native-pack requires a nonempty builtin identifier",
+        ));
+    }
+    options
+        .native_packs
+        .try_reserve(1)
+        .map_err(|error| ParseError::other(format!("could not retain --native-pack: {error}")))?;
+    options.native_packs.push(copy_text(id)?);
+    Ok(())
+}
+
 fn parse_long(
     argument: &str,
     arguments: &[OsString],
@@ -247,6 +270,16 @@ fn parse_long(
         .map_or((body, None), |(name, value)| (name, Some(value)));
     match name {
         "config" => options.config = nonempty_path(path_value(name, attached, arguments, index)?),
+        "native-pack" => append_native_pack(value(name, attached, arguments, index)?, options)?,
+        "complete-profile" => {
+            let path = path_value(name, attached, arguments, index)?;
+            if path.as_os_str().is_empty() {
+                return Err(ParseError::other(
+                    "--complete-profile requires a nonempty path",
+                ));
+            }
+            options.complete_profile = Some(path);
+        }
         "exit-code" => {
             options.exit_code = parse_i32(name, value(name, attached, arguments, index)?)?;
         }
@@ -624,5 +657,42 @@ mod tests {
         };
         assert_eq!(invocation.source, PathBuf::from(source));
         assert_eq!(invocation.options.config, Some(PathBuf::from(config)));
+    }
+}
+
+#[cfg(test)]
+mod native_pack_tests {
+    use super::*;
+
+    #[test]
+    fn native_packs_are_explicit_ordered_repeatable_and_bounded() {
+        let Action::Scan(invocation) = parse(
+            [
+                "stdin",
+                "--native-pack",
+                "rustleaks-extra-v1",
+                "--native-pack=rustleaks-providers-v1",
+            ]
+            .map(OsString::from),
+        )
+        .unwrap() else {
+            panic!("expected scan");
+        };
+        assert_eq!(
+            invocation.options.native_packs,
+            ["rustleaks-extra-v1", "rustleaks-providers-v1"]
+        );
+        assert!(invocation.options.complete_profile.is_none());
+        let Action::Scan(legacy) = parse([OsString::from("stdin")]).unwrap() else {
+            panic!("expected scan");
+        };
+        assert!(legacy.options.native_packs.is_empty());
+        for args in [
+            vec!["stdin", "--native-pack"],
+            vec!["stdin", "--native-pack="],
+            [vec!["stdin"], vec!["--native-pack=rustleaks-extra-v1"; 33]].concat(),
+        ] {
+            assert!(parse(args.into_iter().map(OsString::from)).is_err());
+        }
     }
 }

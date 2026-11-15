@@ -709,7 +709,7 @@ fn representative_template_rule_agrees_across_its_grammar_slots() {
 }
 
 #[test]
-fn scan_outcomes_and_explanations_are_identical_with_and_without_anchoring() {
+fn scan_semantics_and_explanations_are_identical_with_and_without_anchoring() {
     let engine = default_engine();
     let disabled = without_anchors(&engine);
     let options = ScanOptions::default();
@@ -797,7 +797,25 @@ fn scan_outcomes_and_explanations_are_identical_with_and_without_anchoring() {
             ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
             false,
         );
-        assert_eq!(left, right);
+        assert_eq!(left.findings(), right.findings());
+        assert_eq!(left.termination(), right.termination());
+        let left_usage = left.usage();
+        let right_usage = right.usage();
+        assert_eq!(left_usage.decoded_bytes(), right_usage.decoded_bytes());
+        assert_eq!(left_usage.work_units(), right_usage.work_units());
+        assert_eq!(left_usage.finding_records(), right_usage.finding_records());
+        assert_eq!(
+            left_usage.finding_payload_bytes(),
+            right_usage.finding_payload_bytes()
+        );
+        assert_eq!(
+            left_usage.normalization_bytes(),
+            right_usage.normalization_bytes()
+        );
+        // Unbounded span usage counts actual collection, including abandoned
+        // anchor attempts before exact fallback. Successful attempts collect
+        // the same whole matches; fallback may only add speculative spans.
+        assert!(left_usage.collected_spans() >= right_usage.collected_spans());
         assert_eq!(left_log, right_log);
         findings += left.findings().len();
     }

@@ -73,7 +73,7 @@ impl SourceBudget {
         }
     }
 
-    /// Sets each fragment's decoded-byte, work-unit and finding-record limits.
+    /// Sets each fragment's engine resource limits.
     #[must_use]
     pub const fn per_fragment(mut self, budget: ScanBudget) -> Self {
         self.fragment = budget;
@@ -128,7 +128,7 @@ impl SourceBudget {
     }
 
     pub(super) fn validate(self) -> Result<Self, SourceBudgetError> {
-        for index in 0..3 {
+        for index in 0..6 {
             if limits(self.operation)[index].is_some() && limits(self.fragment)[index].is_none() {
                 return Err(SourceBudgetError {
                     kind: engine_kind(index),
@@ -190,6 +190,12 @@ pub enum SourceBudgetKind {
     WorkUnits,
     /// Primary, auxiliary and projected finding records before session filtering.
     FindingRecords,
+    /// Cumulative owned finding byte fields, including discarded candidates.
+    FindingPayloadBytes,
+    /// Cumulative rule and decoder match spans admitted before collection.
+    CollectedSpans,
+    /// Cumulative normalized bytes and replacement-offset mapping payload.
+    NormalizationBytes,
 }
 
 /// Why the runner returned incomplete results after joining every worker.
@@ -247,7 +253,7 @@ pub struct SourceUsage {
     original_bytes: usize,
     fragments: usize,
     completed_fragments: usize,
-    engine: [usize; 3],
+    engine: [usize; 6],
     inexact: bool,
 }
 
@@ -296,6 +302,24 @@ impl SourceUsage {
         self.engine[2]
     }
 
+    /// Returns accounted owned finding payload bytes, not total heap use.
+    #[must_use]
+    pub const fn finding_payload_bytes(self) -> usize {
+        self.engine[3]
+    }
+
+    /// Returns accounted rule and decoder match spans.
+    #[must_use]
+    pub const fn collected_spans(self) -> usize {
+        self.engine[4]
+    }
+
+    /// Returns accounted normalization and replacement-offset payload bytes.
+    #[must_use]
+    pub const fn normalization_bytes(self) -> usize {
+        self.engine[5]
+    }
+
     /// Returns whether every engine scan reported its exact consumed usage.
     ///
     /// When false, configured operation dimensions retain the full reservation
@@ -306,19 +330,25 @@ impl SourceUsage {
     }
 }
 
-fn limits(budget: ScanBudget) -> [Option<usize>; 3] {
+fn limits(budget: ScanBudget) -> [Option<usize>; 6] {
     [
         budget.decoded_bytes(),
         budget.work_units(),
         budget.finding_records(),
+        budget.finding_payload_bytes(),
+        budget.collected_spans(),
+        budget.normalization_bytes(),
     ]
 }
 
-fn usage(usage: ScanUsage) -> [usize; 3] {
+fn usage(usage: ScanUsage) -> [usize; 6] {
     [
         usage.decoded_bytes(),
         usage.work_units(),
         usage.finding_records(),
+        usage.finding_payload_bytes(),
+        usage.collected_spans(),
+        usage.normalization_bytes(),
     ]
 }
 
@@ -326,7 +356,10 @@ fn engine_kind(index: usize) -> ScanBudgetKind {
     match index {
         0 => ScanBudgetKind::DecodedBytes,
         1 => ScanBudgetKind::WorkUnits,
-        _ => ScanBudgetKind::FindingRecords,
+        2 => ScanBudgetKind::FindingRecords,
+        3 => ScanBudgetKind::FindingPayloadBytes,
+        4 => ScanBudgetKind::CollectedSpans,
+        _ => ScanBudgetKind::NormalizationBytes,
     }
 }
 
@@ -334,7 +367,10 @@ fn source_kind(index: usize) -> SourceBudgetKind {
     match index {
         0 => SourceBudgetKind::DecodedBytes,
         1 => SourceBudgetKind::WorkUnits,
-        _ => SourceBudgetKind::FindingRecords,
+        2 => SourceBudgetKind::FindingRecords,
+        3 => SourceBudgetKind::FindingPayloadBytes,
+        4 => SourceBudgetKind::CollectedSpans,
+        _ => SourceBudgetKind::NormalizationBytes,
     }
 }
 
@@ -343,6 +379,9 @@ fn index(kind: ScanBudgetKind) -> Option<usize> {
         ScanBudgetKind::DecodedBytes => Some(0),
         ScanBudgetKind::WorkUnits => Some(1),
         ScanBudgetKind::FindingRecords => Some(2),
+        ScanBudgetKind::FindingPayloadBytes => Some(3),
+        ScanBudgetKind::CollectedSpans => Some(4),
+        ScanBudgetKind::NormalizationBytes => Some(5),
         _ => None,
     }
 }
@@ -350,7 +389,7 @@ fn index(kind: ScanBudgetKind) -> Option<usize> {
 #[derive(Default)]
 struct Accounting {
     usage: SourceUsage,
-    reserved: [usize; 3],
+    reserved: [usize; 6],
     active: usize,
     exceeded: Option<SourceBudgetExceeded>,
 }
@@ -456,12 +495,12 @@ impl Operation<'_> {
                 return None;
             }
             let mut state = self.lock();
-            let available = std::array::from_fn::<_, 3, _>(|index| {
+            let available = std::array::from_fn::<_, 6, _>(|index| {
                 aggregate[index]
                     .map(|limit| limit - state.usage.engine[index] - state.reserved[index])
             });
             let must_wait = state.active != 0
-                && (0..3).any(|index| {
+                && (0..6).any(|index| {
                     available[index]
                         .is_some_and(|remaining| remaining < fragment[index].unwrap_or(0))
                 });
@@ -483,6 +522,15 @@ impl Operation<'_> {
             if aggregate[2].is_some() {
                 budget = budget.max_finding_records(reserved[2]);
             }
+            if aggregate[3].is_some() {
+                budget = budget.max_finding_payload_bytes(reserved[3]);
+            }
+            if aggregate[4].is_some() {
+                budget = budget.max_collected_spans(reserved[4]);
+            }
+            if aggregate[5].is_some() {
+                budget = budget.max_normalization_bytes(reserved[5]);
+            }
             for (index, amount) in reserved.iter().enumerate() {
                 state.reserved[index] += amount;
             }
@@ -499,7 +547,7 @@ impl Operation<'_> {
 
 struct Reservation<'a> {
     operation: &'a Operation<'a>,
-    reserved: [usize; 3],
+    reserved: [usize; 6],
     budget: ScanBudget,
     settled: bool,
 }

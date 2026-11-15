@@ -10,8 +10,8 @@ use rustleaks_core::session::{ScanSession, SessionBatch, SessionPolicy};
 use rustleaks_core::{Engine, ScanControl, ScanOutcome};
 
 use crate::{
-    CallbackError, CancellationToken, Source, SourceConfigError, SourceControl, SourceError,
-    SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
+    CallbackError, Cancellation, CancellationToken, Source, SourceConfigError, SourceControl,
+    SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
 mod budget;
@@ -193,6 +193,7 @@ pub struct SourceRunner {
     workers: NonZeroUsize,
     queue_capacity: NonZeroUsize,
     budget: Option<SourceBudget>,
+    fail_on_coverage_error: bool,
 }
 
 impl SourceRunner {
@@ -210,6 +211,7 @@ impl SourceRunner {
             workers,
             queue_capacity,
             budget: None,
+            fail_on_coverage_error: false,
         })
     }
 
@@ -242,10 +244,41 @@ impl SourceRunner {
         self.budget
     }
 
+    /// Stops on failed eligible coverage, retaining earlier complete targets.
+    ///
+    /// Intentional exclusions remain recoverable. The default is `false`,
+    /// preserving legacy issue handling. Complete-target command profiles should
+    /// enable this for every source, including Git and caller-defined adapters.
+    #[must_use]
+    pub const fn fail_on_coverage_error(mut self, enabled: bool) -> Self {
+        self.fail_on_coverage_error = enabled;
+        self
+    }
+
     /// Produces source events, scans fragments, applies one immutable session
     /// policy, joins every worker, and returns owned results.
     #[must_use]
     pub fn run(
+        &self,
+        source: &mut dyn Source,
+        engine: &Engine,
+        scan_options: ScanOptions,
+        policy: &SessionPolicy,
+        cancellation: &CancellationToken,
+    ) -> SourceOutcome {
+        if self.fail_on_coverage_error {
+            return self.run_inner(
+                &mut CompleteCoverageSource(source),
+                engine,
+                scan_options,
+                policy,
+                cancellation,
+            );
+        }
+        self.run_inner(source, engine, scan_options, policy, cancellation)
+    }
+
+    fn run_inner(
         &self,
         source: &mut dyn Source,
         engine: &Engine,
@@ -685,12 +718,25 @@ fn finish_run(
     }
 }
 
+struct CompleteCoverageSource<'a>(&'a mut dyn Source);
+
+impl Source for CompleteCoverageSource<'_> {
+    fn visit(
+        &mut self,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        crate::source::visit_with_coverage(true, emit, |emit| self.0.visit(cancellation, emit))
+    }
+}
+
 impl Default for SourceRunner {
     fn default() -> Self {
         Self {
             workers: NonZeroUsize::new(1).expect("one worker is positive"),
             queue_capacity: NonZeroUsize::new(1).expect("one queue slot is positive"),
             budget: None,
+            fail_on_coverage_error: false,
         }
     }
 }

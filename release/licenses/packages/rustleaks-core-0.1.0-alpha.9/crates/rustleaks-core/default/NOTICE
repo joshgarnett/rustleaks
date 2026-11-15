@@ -1,0 +1,139 @@
+Additional native rule-pack attribution
+
+The optional `rustleaks-providers-v1` rules and the database URI rule in
+`rustleaks-connections-v1` are adapted from Betterleaks
+commit `8f376ff9c31ed5309ac448fe601c5dd21b376155`:
+https://github.com/betterleaks/betterleaks
+
+Rustleaks changes rule identifiers, descriptions, ASCII case and whitespace
+notation, and configuration fields. Incremental companion rules select only
+reviewed new formats or delimiters. It uses its own source and finding policy;
+provider validation is not included. The source revision, original patterns,
+transformations and hashes are recorded in
+`crates/rustleaks-core/default/rustleaks-providers-v1.provenance.json` (under
+`default/` in the core package) and the adjacent
+`rustleaks-connections-v1.provenance.json`. The URI adaptation restricts
+schemes and bytes to its documented ASCII database dialect, retains all
+relevant rejection predicates, and omits confidence computations and live
+validation. These adapted rules retain the following
+Betterleaks notice:
+
+MIT License
+
+Copyright (c) 2026 Zachary Rice
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The optional `rustleaks-connections-v1` rules adapt the five first-party
+Kingfisher definitions at commit
+`01e7b817376fbf2272be8f162bd32309bf97ee1f`.
+
+Copyright 2025-2026 MongoDB, Inc.
+https://www.mongodb.com
+
+Source repository: https://github.com/mongodb/kingfisher
+
+These rule assets retain the Apache License, Version 2.0; its exact text is
+included in the adjacent `LICENSE.kingfisher`. Rustleaks changes identifiers,
+descriptions, regex notation and ASCII scope, maps all source substring
+exclusions to secret stopwords, and unrolls the bounded JDBC option repetition.
+Original patterns, transformations and source hashes are recorded in the
+adjacent `rustleaks-connections-v1.provenance.json`. This pack includes no
+Kingfisher scanner implementation. The separately attributed URI rule above
+is derived from Betterleaks; its provenance records the reviewed Kingfisher
+overlay and its inapplicability to database schemes.
+
+The optional `rustleaks-providers-v1` pack also adapts fifteen Veles
+(OSV-SCALIBR) credential expressions from commit
+`e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845`:
+https://github.com/google/osv-scalibr
+
+Copyright 2026 Google LLC
+Copyright 2025 Google LLC (additional xAI source header)
+
+These expressions retain the Apache License, Version 2.0, whose exact source
+text is included in the adjacent `LICENSE.veles`. The pinned archive records
+no upstream NOTICE. Rustleaks changes identifiers and descriptions, wraps the
+complete token in capture 1, and uses its existing source and finding policy.
+No network validators or scanner implementation are included. The adjacent
+`rustleaks-providers-v1.provenance.json` records individual source paths,
+pattern lines, hashes, finite lengths and the xAI source-selection decision.
+
+The optional `rustleaks-connections-v1` pack also adapts conservative Git
+credential URL subsets from the same pinned Apache-2.0 Veles source. The
+Bitbucket, CodeCatalyst and CodeCommit detector and Git-basic-auth helper
+sources retain Copyright 2026 Google LLC. Rustleaks uses bounded unescaped
+ASCII subsets that preserve the reviewed source URL-parser predicates,
+case-sensitive path suffixes and complete URL capture. The exact source URLs,
+hashes and modifications are recorded in the connection provenance JSON;
+the source license remains in `LICENSE.veles`. No validator code is imported.
+The native ADC refresh-token selection captures only the credential value,
+with its independent bounds and issuer context recorded in provider provenance.
+
+The provider pack's additional Betterleaks and Veles format selections retain
+all applicable source filters and the recorded generated supersession filters.
+Rustleaks narrows alphabets and boundaries to the documented ASCII selections.
+The HCP and Packagist selections retain secret-only detection without importing
+validation-only components. HCP, Packagist and Slack refresh retain original
+fixed-width prefix extraction. Complete versioned GitLab PAT and Monday JWT
+extraction may overlap retained findings. Original source expressions, exact
+file hashes, license identities and modifications are recorded in the same
+provider provenance JSON. The adjacent source license texts remain unchanged.
+
+The provider and connection packs also adapt selected Azure, MongoDB, service
+URI, JWT and Kubernetes detection contracts from the pinned MIT Betterleaks
+configuration. The Cloudflare provider expression derives from the pinned
+Apache-2.0 Veles detector. Adjacent provenance records immutable source URLs,
+digests, original detection fields, tuple-predicate adaptations and explicit
+scope restrictions. Existing LICENSE.betterleaks and LICENSE.veles cover these
+sources; no validator or revoker implementation is included.
+
+The provider pack additionally adapts twenty-six associated credential rules
+and thirty hidden support rules from pinned Betterleaks generated definitions.
+The AWS session-token definition is a Kingfisher overlay at commit
+`01e7b817376fbf2272be8f162bd32309bf97ee1f`, under the adjacent
+`LICENSE.kingfisher` Apache-2.0 text. Other association expressions retain the
+adjacent `LICENSE.betterleaks` MIT attribution. Rustleaks preserves required
+edges, local predicates and source byte-entropy decisions through its native
+buffer-local contract. Explicit bytes-v1 patterns retain the generated source
+expressions, raw byte bridges, inline flags and delimiter ranges. Provider
+provenance records each generated pattern hash and source-selection decision.
+
+Two additional Packagist roles adapt the pinned Apache-2.0 Veles detector
+expressions at commit `e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845`.
+Copyright 2026 Google LLC. The exact license remains in `LICENSE.veles`.
+Rustleaks adds token boundaries and selects independent reporting ACS and ACK
+roles using the recorded source and issuer evidence. It imports no tuple
+selection, online validation or revocation implementation. Exact source URLs,
+line numbers, hashes and semantic selections remain in provider provenance.
+
+The Mapbox secret-token and Vercel AI Gateway definitions additionally adapt
+Betterleaks commit `8f376ff9c31ed5309ac448fe601c5dd21b376155` under the adjacent
+`LICENSE.betterleaks` MIT terms, as generated by Kingfisher commit
+`01e7b817376fbf2272be8f162bd32309bf97ee1f`. Their exact source byte patterns,
+distinct global filter/prefilter fields and local predicates are recorded in
+provider provenance. The Vercel predicate's pinned cl100k data and algorithm
+attribution are maintained with its native predicate asset and MIT notices.
+
+The Bitwarden CLI client-secret rule adapts Google OSV-SCALIBR Veles commit
+`e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845`, copyright 2026 Google LLC, under
+the adjacent `LICENSE.veles` Apache-2.0 terms. The original property grammar,
+literal path suffix, source hashes and direct-property selection are recorded
+in provider provenance. No online validator, analysis or revocation code is
+imported by these rules.

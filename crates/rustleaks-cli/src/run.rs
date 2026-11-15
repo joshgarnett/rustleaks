@@ -15,6 +15,7 @@ use rustleaks_sources::{
 };
 
 use crate::args::{self, Action, CommandKind, Invocation, ParseErrorKind};
+use crate::complete_profile::{CompleteProfile, CompletionReason, CompletionStatus};
 use crate::config::{self, ConfigEnvironment};
 use crate::output::{self, ReportPlan};
 use crate::source;
@@ -98,16 +99,57 @@ pub fn run_from<R: Read + Send + 'static>(
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "the command lifecycle remains auditable as one ordered compatibility flow"
-)]
 fn run_scan<R: Read + Send + 'static>(
     invocation: &Invocation,
     environment: &RunEnvironment,
     stdin: R,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
+) -> i32 {
+    let mut status = CompletionStatus::default();
+    let profile = match invocation.options.complete_profile.as_ref() {
+        None => None,
+        Some(path) => match CompleteProfile::load(&config::resolve(&environment.cwd, path))
+            .and_then(|profile| {
+                CompleteProfile::validate_invocation(invocation)?;
+                Ok(profile)
+            }) {
+            Ok(profile) => Some(profile),
+            Err(error) => {
+                status.reason = CompletionReason::ProfileError;
+                let _ = output::error(stderr, error);
+                let _ = status.write(invocation, stderr);
+                return 2;
+            }
+        },
+    };
+    let code = run_scan_inner(
+        invocation,
+        environment,
+        stdin,
+        stdout,
+        stderr,
+        profile.as_ref(),
+        &mut status,
+    );
+    if profile.is_some() && (status.write(invocation, stderr).is_err() || !status.is_complete()) {
+        return 2;
+    }
+    code
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the command lifecycle remains auditable as one ordered compatibility flow"
+)]
+fn run_scan_inner<R: Read + Send + 'static>(
+    invocation: &Invocation,
+    environment: &RunEnvironment,
+    stdin: R,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
 ) -> i32 {
     let mut started = Instant::now();
     let cancellation = CancellationToken::new();
@@ -176,6 +218,9 @@ fn run_scan<R: Read + Send + 'static>(
         || invocation.options.log_level.eq_ignore_ascii_case("trace")
     {
         let _ = output::info(stderr, format_args!("using config {}", config.origin));
+        if let Some(reference) = &config.native_policy_reference {
+            let _ = output::info(stderr, format_args!("native policy {reference}"));
+        }
     }
 
     let report = match ReportPlan::new(&invocation.options, config.full.as_ref(), &environment.cwd)
@@ -183,6 +228,7 @@ fn run_scan<R: Read + Send + 'static>(
         Ok(report) => report,
         Err(error) => {
             finish_timer(timer.take());
+            status.reason = CompletionReason::ReportFailure;
             let _ = output::fatal(stderr, error);
             return 1;
         }
@@ -209,6 +255,7 @@ fn run_scan<R: Read + Send + 'static>(
         &config.full,
         config.excluded_paths,
         &environment.cwd,
+        profile,
     ) {
         Ok(source) => source,
         Err(error) => {
@@ -228,12 +275,26 @@ fn run_scan<R: Read + Send + 'static>(
         Ok(remote) => remote,
         Err(error) => {
             finish_timer(timer.take());
+            status.reason = if cancellation.is_cancelled() {
+                CompletionReason::Cancelled
+            } else {
+                CompletionReason::MetadataFailure
+            };
             let _ = output::error(stderr, error);
             return 1;
         }
     };
     warn_quoted_log_options(invocation, stderr, log_level);
-    let outcome = SourceRunner::default().run(
+    let runner = match profile.map_or_else(|| Ok(SourceRunner::default()), CompleteProfile::runner)
+    {
+        Ok(runner) => runner,
+        Err(error) => {
+            finish_timer(timer.take());
+            let _ = output::error(stderr, error);
+            return 1;
+        }
+    };
+    let outcome = runner.run(
         &mut source,
         &engine,
         scan_options,
@@ -241,6 +302,7 @@ fn run_scan<R: Read + Send + 'static>(
         &cancellation,
     );
     finish_timer(timer.take());
+    status.observe(&outcome);
 
     for issue in outcome.issues() {
         let path = issue
@@ -270,14 +332,19 @@ fn run_scan<R: Read + Send + 'static>(
             );
         }
     }
-    let partial = !matches!(
-        outcome.termination(),
-        SourceTermination::Completed | SourceTermination::Stopped
-    );
+    let partial = if profile.is_some() {
+        !status.is_complete()
+    } else {
+        !matches!(
+            outcome.termination(),
+            SourceTermination::Completed | SourceTermination::Stopped
+        )
+    };
     if partial {
         let _ = output::error(stderr, outcome_termination(outcome.termination()));
     }
     let Some(bytes) = outcome.scanned_bytes().checked_add(source.excluded_bytes()) else {
+        status.reason = CompletionReason::ResourceExhaustion;
         let _ = output::error(stderr, "source byte accounting overflowed");
         return 1;
     };
@@ -287,6 +354,7 @@ fn run_scan<R: Read + Send + 'static>(
             source.excluded_commits(),
             source.excluded_commit_count(),
         ) else {
+            status.reason = CompletionReason::ResourceExhaustion;
             let _ = output::error(stderr, "source commit accounting overflowed");
             return 1;
         };
@@ -298,22 +366,39 @@ fn run_scan<R: Read + Send + 'static>(
     if let Some(metadata) = remote {
         findings = findings
             .into_iter()
-            .map(|finding| match metadata.link_for(&finding) {
-                Ok(Some(link)) => finding.with_link(link),
-                Ok(None) => finding,
-                Err(error) => {
-                    if log_level.shows_warn() {
-                        let _ = output::warn(
-                            stderr,
-                            format_args!("could not construct source link: {error}"),
-                        );
+            .map(|finding| {
+                if let Some(profile) = profile {
+                    match metadata.link_length(&finding) {
+                        Ok(Some(length)) if status.admit_link(profile, length) => {}
+                        Ok(_) => return finding,
+                        Err(_) => {
+                            status.reason = CompletionReason::MetadataFailure;
+                            return finding;
+                        }
                     }
-                    finding
+                }
+                match metadata.link_for(&finding) {
+                    Ok(Some(link)) => finding.with_link(link),
+                    Ok(None) => finding,
+                    Err(error) => {
+                        if profile.is_some() {
+                            status.reason = CompletionReason::MetadataFailure;
+                        }
+                        if log_level.shows_warn() {
+                            let _ = output::warn(
+                                stderr,
+                                format_args!("could not construct source link: {error}"),
+                            );
+                        }
+                        finding
+                    }
                 }
             })
             .collect();
     }
+    let partial = partial || profile.is_some() && !status.is_complete();
     if invocation.options.verbose && output::verbose(stdout, &findings).is_err() {
+        status.reason = CompletionReason::ReportFailure;
         return 1;
     }
     if output::summary(
@@ -327,11 +412,13 @@ fn run_scan<R: Read + Send + 'static>(
     )
     .is_err()
     {
+        status.reason = CompletionReason::ReportFailure;
         return 1;
     }
     if let Some(report) = report
         && let Err(error) = report.write(stdout, &findings)
     {
+        status.reason = CompletionReason::ReportFailure;
         let _ = output::error(
             stderr,
             format_args!("could not write {} report: {error}", report.format),
@@ -459,6 +546,9 @@ fn discover_remote(
             Ok(Some(metadata))
         }
         Err(error) => {
+            if invocation.options.complete_profile.is_some() {
+                return Err(format!("source link discovery failed: {:?}", error.kind()));
+            }
             if log_level.shows_error() {
                 let _ = output::error(
                     stderr,
@@ -477,6 +567,14 @@ fn outcome_termination(termination: &SourceTermination) -> String {
         SourceTermination::Cancelled => "source cancelled".to_owned(),
         SourceTermination::SourceError(error) => error.to_string(),
         SourceTermination::WorkerPanic => "source detection worker panicked".to_owned(),
+        SourceTermination::BudgetExceeded(exceeded) => format!(
+            "source budget exceeded: {:?}/{:?} limit={} consumed={} requested={}",
+            exceeded.scope(),
+            exceeded.kind(),
+            exceeded.limit(),
+            exceeded.consumed(),
+            exceeded.requested()
+        ),
         _ => "source ended with an unknown terminal state".to_owned(),
     }
 }

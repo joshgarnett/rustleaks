@@ -569,3 +569,126 @@ fn binary_archive_paths_reach_blob_expansion_without_loss() {
         assert_eq!(metadata.message().as_bytes(), b"add synthetic archives");
     }
 }
+
+#[cfg(all(feature = "archives", unix))]
+fn commit_complete_archive_fixture(repository: &Path, paths: &[&str]) {
+    let output = support::command()
+        .arg("-C")
+        .arg(repository)
+        .args(["add", "--"])
+        .args(paths)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let output = support::command()
+        .arg("-C")
+        .arg(repository)
+        .args([
+            "-c",
+            "user.name=Synthetic Test",
+            "-c",
+            "user.email=synthetic@example.invalid",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "synthetic complete archive test",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+}
+
+#[cfg(all(feature = "archives", unix))]
+#[test]
+fn complete_archive_options_reach_git_blobs_without_changing_text_hunks() {
+    let repository = TempRepo::copy_fixture("small");
+    fs::write(
+        repository.path().join("text-scope.txt"),
+        b"first\nKEEP-CONTEXT\nlast\n",
+    )
+    .unwrap();
+    commit_complete_archive_fixture(repository.path(), &["text-scope.txt"]);
+    fs::write(
+        repository.path().join("text-scope.txt"),
+        b"first changed\nKEEP-CONTEXT\nlast changed\n",
+    )
+    .unwrap();
+    let mut content = vec![b'.'; 124_995];
+    content.extend_from_slice(b"token=A001\n");
+    let mut header = [0_u8; 512];
+    header[..10].copy_from_slice(b"inside.txt");
+    header[100..108].copy_from_slice(b"0000644\0");
+    header[124..136].copy_from_slice(format!("{:011o}\0", content.len()).as_bytes());
+    header[148..156].fill(b' ');
+    header[156] = b'0';
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    let checksum: usize = header.iter().map(|byte| usize::from(*byte)).sum();
+    header[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+    let mut archive = header.to_vec();
+    archive.extend_from_slice(&content);
+    archive.resize(archive.len().div_ceil(512) * 512 + 1024, 0);
+    fs::write(repository.path().join("boundary.tar"), archive).unwrap();
+    commit_complete_archive_fixture(repository.path(), &["text-scope.txt", "boundary.tar"]);
+    for complete in [false, true] {
+        let options = if complete {
+            rustleaks_sources::FileOptions::complete(content.len()).unwrap()
+        } else {
+            rustleaks_sources::FileOptions::default()
+        };
+        let mut source = support::git_source(repository.path())
+            .mode(GitMode::LogArguments(vec!["-1".into()]))
+            .archives(ArchiveOptions::default())
+            .archive_file_options(options);
+        let (fragments, issues) = collect(&mut source);
+        assert!(issues.is_empty());
+        let text = fragments
+            .iter()
+            .filter(|fragment| fragment.file_path().as_bytes() == b"text-scope.txt")
+            .map(|fragment| (fragment.start_line(), fragment.content().as_bytes()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            text,
+            [
+                (1, b"first changed\n".as_slice()),
+                (3, b"last changed\n".as_slice())
+            ]
+        );
+        let members = fragments
+            .iter()
+            .filter(|fragment| fragment.file_path().as_bytes() == b"boundary.tar!inside.txt")
+            .collect::<Vec<_>>();
+        if complete {
+            assert_eq!(members.len(), 1);
+            assert_eq!(members[0].content().as_bytes(), content);
+            assert_eq!(members[0].start_line(), 1);
+        } else {
+            assert!(members.len() > 1);
+        }
+        assert!(
+            members
+                .iter()
+                .all(|fragment| fragment.commit_metadata().is_some())
+        );
+    }
+    let mut too_small = support::git_source(repository.path())
+        .mode(GitMode::LogArguments(vec!["-1".into()]))
+        .archives(ArchiveOptions::default())
+        .archive_file_options(rustleaks_sources::FileOptions::complete(content.len() - 1).unwrap());
+    let error = too_small
+        .visit(&CancellationToken::new(), &mut |_| {
+            Ok(SourceControl::Continue)
+        })
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        SourceError::Terminal {
+            stage: SourceStage::Limit,
+            ..
+        }
+    ));
+}

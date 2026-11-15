@@ -8,11 +8,11 @@ use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use semver::Version;
 use thiserror::Error;
 
-use crate::regex::GoRegex;
+use crate::regex::{GoRegex, NativeByteRegex};
 
-use super::DEFAULT_CONFIG;
 use super::compiled::{CompiledAllowlist, CompiledConfig, CompiledRule};
 use super::raw::{AllowlistSpec, Condition, RawConfig, RawGlobalAllowlist, RegexTarget, RuleSpec};
+use super::{ConfigExtension, DEFAULT_CONFIG};
 
 const MAX_EXTEND_DEPTH: usize = 2;
 
@@ -537,13 +537,27 @@ impl ConfigLoader {
         self.load_toml_at(&resolved.contents, Some(resolved.origin))
     }
 
+    // Native composition has already combined and validated all packs. This
+    // seam compiles each selected dialect directly, with one content matcher.
+    pub(crate) fn compile_native(
+        &self,
+        raw: RawConfig,
+        byte_rules: &BTreeSet<String>,
+    ) -> Result<CompiledConfig, ConfigError> {
+        debug_assert_eq!(raw.extend, ConfigExtension::default());
+        let mut config = self.compile_local(raw, None, Some(byte_rules))?;
+        validate_effective_rules(&config.rules)?;
+        attach_targeted_allowlists(&mut config)?;
+        Ok(config)
+    }
+
     fn compile_level(
         &self,
         raw: RawConfig,
         origin: Option<ConfigOrigin>,
         depth: usize,
     ) -> Result<CompiledConfig, ConfigError> {
-        let mut config = self.compile_local(raw, origin)?;
+        let mut config = self.compile_local(raw, origin, None)?;
         if depth < MAX_EXTEND_DEPTH {
             if !config.extension.path.is_empty() && config.extension.use_default {
                 return Err(ConfigError::ConflictingExtension);
@@ -582,6 +596,7 @@ impl ConfigLoader {
         &self,
         mut raw: RawConfig,
         origin: Option<ConfigOrigin>,
+        byte_rules: Option<&BTreeSet<String>>,
     ) -> Result<CompiledConfig, ConfigError> {
         if raw.allowlist.is_some() && !raw.allowlists.is_empty() {
             return Err(ConfigError::GlobalAllowlistConflict);
@@ -605,7 +620,8 @@ impl ConfigLoader {
         let mut keywords = BTreeSet::new();
         let mut ordered_rule_ids = Vec::with_capacity(raw.rules.len());
         for rule in raw.rules {
-            let compiled = compile_rule(rule)?;
+            let bytes = byte_rules.is_some_and(|rules| rules.contains(&rule.id));
+            let compiled = compile_rule(rule, bytes)?;
             keywords.extend(compiled.keywords.iter().cloned());
             ordered_rule_ids.push(compiled.id.clone());
             rules.insert(compiled.id.clone(), compiled);
@@ -635,7 +651,7 @@ impl ConfigLoader {
     }
 }
 
-fn compile_rule(mut rule: RuleSpec) -> Result<CompiledRule, ConfigError> {
+fn compile_rule(mut rule: RuleSpec, bytes: bool) -> Result<CompiledRule, ConfigError> {
     if rule.allowlist.is_some() && !rule.allowlists.is_empty() {
         return Err(ConfigError::RuleAllowlistConflict {
             rule_id: rule.id.clone(),
@@ -660,8 +676,17 @@ fn compile_rule(mut rule: RuleSpec) -> Result<CompiledRule, ConfigError> {
     }
 
     let (path, path_matcher) = nonempty_pattern(rule.path, &rule.id, "path")?;
-    let (regex, regex_matcher) = if rule.regex.is_empty() {
-        (None, None)
+    let (regex, regex_matcher, native_byte_matcher) = if bytes {
+        let compiled =
+            NativeByteRegex::compile(&rule.regex).map_err(|error| ConfigError::InvalidPattern {
+                scope: rule.id.clone(),
+                field: "regex",
+                pattern: rule.regex.clone(),
+                message: error.to_string(),
+            })?;
+        (Some(rule.regex), None, Some(compiled))
+    } else if rule.regex.is_empty() {
+        (None, None, None)
     } else {
         let compiled =
             GoRegex::compile(&rule.regex).map_err(|error| ConfigError::InvalidPattern {
@@ -670,7 +695,7 @@ fn compile_rule(mut rule: RuleSpec) -> Result<CompiledRule, ConfigError> {
                 pattern: rule.regex.clone(),
                 message: error.to_string(),
             })?;
-        (Some(rule.regex), Some(compiled))
+        (Some(rule.regex), Some(compiled), None)
     };
 
     Ok(CompiledRule {
@@ -682,6 +707,11 @@ fn compile_rule(mut rule: RuleSpec) -> Result<CompiledRule, ConfigError> {
         regex_matcher,
         secret_group: rule.secret_group,
         entropy: rule.entropy,
+        native_entropy: None,
+        native_predicate: None,
+        native_required: None,
+        native_byte_matcher,
+        native_keywords: None,
         keywords: rule
             .keywords
             .into_iter()
@@ -863,10 +893,13 @@ fn validate_effective_rules(rules: &BTreeMap<String, CompiledRule>) -> Result<()
                 rule_id: rule.id.clone(),
             });
         }
-        if let Some(regex) = &rule.regex_matcher {
-            // Compilation and extension merging keep source and matcher paired.
-            // Reuse the selected expression rather than compiling it a second time.
-            let captures = regex.capture_count();
+        if let Some(captures) = rule
+            .native_byte_matcher
+            .as_ref()
+            .map(NativeByteRegex::capture_count)
+            .or_else(|| rule.regex_matcher.as_ref().map(GoRegex::capture_count))
+        {
+            // Reuse the selected executable dialect for group validation.
             if rule.secret_group > i64::try_from(captures).unwrap_or(i64::MAX) {
                 return Err(ConfigError::InvalidSecretGroup {
                     rule_id: rule.id.clone(),

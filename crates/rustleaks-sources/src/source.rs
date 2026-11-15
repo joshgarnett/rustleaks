@@ -116,6 +116,15 @@ pub enum SourceIssueKind {
     GitCommand,
 }
 
+/// Whether a source issue describes missing eligible coverage or an exclusion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceIssueDisposition {
+    /// An eligible input could not be obtained or scanned completely.
+    CoverageFailure,
+    /// The input is deliberately outside the selected source domain.
+    Excluded,
+}
+
 /// Structured, recoverable source diagnostic.
 ///
 /// Issues are data, not logging side effects. A [`SourceEvent::Fragment`] can
@@ -127,6 +136,7 @@ pub struct SourceIssue {
     kind: SourceIssueKind,
     path: Option<PathBuf>,
     message: String,
+    disposition: SourceIssueDisposition,
 }
 
 impl SourceIssue {
@@ -143,7 +153,21 @@ impl SourceIssue {
             kind,
             path,
             message: message.into(),
+            disposition: SourceIssueDisposition::CoverageFailure,
         }
+    }
+
+    /// Marks an intentional eligibility exclusion rather than failed coverage.
+    #[must_use]
+    pub const fn excluded(mut self) -> Self {
+        self.disposition = SourceIssueDisposition::Excluded;
+        self
+    }
+
+    /// Returns whether the issue describes failed coverage or an exclusion.
+    #[must_use]
+    pub const fn disposition(&self) -> SourceIssueDisposition {
+        self.disposition
     }
 
     /// Returns the operation stage.
@@ -302,4 +326,40 @@ pub trait Source: Send {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError>;
+}
+
+/// Converts failed eligible coverage to a terminal error for the opt-in policy.
+/// The failed event never reaches the consumer, including any coupled bytes.
+pub(crate) fn visit_with_coverage(
+    complete: bool,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    visit: impl FnOnce(
+        &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError>,
+) -> Result<SourceControl, SourceError> {
+    if !complete {
+        return visit(emit);
+    }
+    let mut failure = None;
+    let result = visit(&mut |event| {
+        let issue = match &event {
+            SourceEvent::Issue(issue)
+            | SourceEvent::Fragment {
+                issue: Some(issue), ..
+            } => Some(issue),
+            SourceEvent::Fragment { issue: None, .. } => None,
+        };
+        if let Some(issue) = issue
+            && issue.disposition == SourceIssueDisposition::CoverageFailure
+        {
+            failure = Some(SourceError::Terminal {
+                stage: issue.stage,
+                path: issue.path.clone(),
+                message: issue.message.clone(),
+            });
+            return Err(CallbackError::new("eligible source coverage failed"));
+        }
+        emit(event)
+    });
+    failure.map_or(result, Err)
 }

@@ -24,6 +24,10 @@ pub(crate) use investigation::{calibrate, profile};
 mod reporting;
 pub(crate) use reporting::run as report;
 
+#[path = "performance_fixtures.rs"]
+mod development_fixtures;
+pub(crate) use development_fixtures::run as fixtures;
+
 const TARGET: &str = "//crates/rustleaks-compat:rustleaks_perf";
 const BUILD_FLAGS: &[&str] = &["--compilation_mode=opt", "--stamp=no"];
 const MEASUREMENT_SCOPE: &str = "legacy-v1-includes-verification";

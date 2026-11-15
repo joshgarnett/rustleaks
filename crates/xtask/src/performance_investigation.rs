@@ -24,6 +24,7 @@ const PROFILE_FLAGS: &[&str] = &[
     "--@rules_rust//rust/settings:extra_rustc_flag=-Cforce-frame-pointers=yes",
 ];
 const DEFAULT_WORKLOAD: &str = "core-default-many-keywords-16-kib";
+const ORDINARY_PROFILE_WORKLOAD: &str = "core-realistic-multi-language-256-kib";
 const WORKLOADS: &[&str] = &[
     "core-default-many-keywords-16-kib",
     "core-default-one-keyword-16-kib",
@@ -76,7 +77,10 @@ impl Request {
             }
             match pair[0].as_str() {
                 "--output" => output = Some(PathBuf::from(&pair[1])),
-                "--workload" if WORKLOADS.contains(&pair[1].as_str()) => {
+                "--workload"
+                    if WORKLOADS.contains(&pair[1].as_str())
+                        || mode == "profile" && pair[1] == ORDINARY_PROFILE_WORKLOAD =>
+                {
                     request.workload.clone_from(&pair[1]);
                 }
                 "--seconds" if mode == "profile" => request.seconds = bounded(&pair[1], 3, 30)?,
@@ -343,6 +347,17 @@ pub(super) fn validate_identity(identity: &Value, workload: &str) -> Result<(), 
             value.len() == 16 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
         }) {
             return Err(format!("investigation omits valid {field}"));
+        }
+    }
+    if workload == ORDINARY_PROFILE_WORKLOAD {
+        for field in [
+            "collected_spans",
+            "normalization_bytes",
+            "finding_payload_bytes",
+        ] {
+            if identity[field].as_u64().is_none() {
+                return Err(format!("ordinary profile omits {field}"));
+            }
         }
     }
     Ok(())
@@ -1047,6 +1062,57 @@ mod tests {
                     assert!(result.is_err());
                 }
             }
+        }
+    }
+
+    #[test]
+    fn ordinary_workload_is_selectable_only_for_profiles() {
+        for workload in [
+            ORDINARY_PROFILE_WORKLOAD,
+            "core-realistic-env-256-kib",
+            "core-realistic-multi-language-unknown",
+        ] {
+            let args =
+                ["--output", "/private/tmp/profile", "--workload", workload].map(str::to_owned);
+            let profile = Request::parse(&args, "profile");
+            if workload == ORDINARY_PROFILE_WORKLOAD {
+                assert_eq!(profile.unwrap().workload, workload);
+            } else {
+                assert!(profile.is_err());
+            }
+            assert!(Request::parse(&args, "calibrate").is_err());
+        }
+    }
+
+    #[test]
+    fn ordinary_profile_requires_every_resource_usage_counter() {
+        // Arbitrary typed protocol data, not an engine outcome baseline.
+        let identity = json!({
+            "workload": ORDINARY_PROFILE_WORKLOAD, "complete": true, "errors": 0,
+            "input_bytes": 262_144, "rules": 222, "keywords": 1, "findings": 1,
+            "decoded_bytes": 0, "work_units": 1, "finding_records": 1,
+            "collected_spans": 1, "normalization_bytes": 0, "finding_payload_bytes": 1,
+            "input_fnv1a64": "0000000000000001", "config_fnv1a64": "0000000000000002",
+            "outcome_fnv1a64": "0000000000000003",
+        });
+        assert!(validate_identity(&identity, ORDINARY_PROFILE_WORKLOAD).is_ok());
+        for field in [
+            "collected_spans",
+            "normalization_bytes",
+            "finding_payload_bytes",
+        ] {
+            let mut missing = identity.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(
+                validate_identity(&missing, ORDINARY_PROFILE_WORKLOAD).is_err(),
+                "{field}"
+            );
+            let mut invalid = identity.clone();
+            invalid[field] = json!("1");
+            assert!(
+                validate_identity(&invalid, ORDINARY_PROFILE_WORKLOAD).is_err(),
+                "{field}"
+            );
         }
     }
 

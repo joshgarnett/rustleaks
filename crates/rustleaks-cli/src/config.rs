@@ -9,6 +9,9 @@ use rustleaks_core::config::{
     ResolverError,
 };
 use rustleaks_core::model::ByteText;
+use rustleaks_core::native::{
+    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, NativePolicyError, PROVIDER_RULES_V1,
+};
 use rustleaks_core::session::{Baseline, IgnoreSet, SessionPolicy};
 use rustleaks_sources::LogicalPath;
 
@@ -22,6 +25,7 @@ pub(crate) struct ConfigAssembly {
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
     pub origin: String,
+    pub native_policy_reference: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -64,7 +68,9 @@ pub(crate) fn assemble(
         .with_resolver(CwdResolver {
             cwd: cwd.to_path_buf(),
         });
-    let (full, origin) = load_config(invocation, environment, cwd, &loader)?;
+    let source = select_config_source(invocation, environment, cwd)?;
+    let (full, origin, native_policy_reference) =
+        compile_selected_config(source, &invocation.options.native_packs, cwd, &loader)?;
     let selected = if invocation.options.enable_rules.is_empty() {
         full.clone()
     } else {
@@ -130,6 +136,7 @@ pub(crate) fn assemble(
         warnings,
         errors,
         origin,
+        native_policy_reference,
     })
 }
 
@@ -199,49 +206,45 @@ fn missing_required_rule_errors(config: &CompiledConfig) -> Result<Vec<String>, 
     Ok(errors)
 }
 
-fn load_config(
+enum ConfigSource<'a> {
+    Path(PathBuf, &'static str),
+    Inline(&'a OsString, &'static str),
+    EmbeddedDefault,
+}
+
+impl ConfigSource<'_> {
+    fn category(&self) -> &'static str {
+        match self {
+            Self::Path(_, source) | Self::Inline(_, source) => source,
+            Self::EmbeddedDefault => "embedded default",
+        }
+    }
+}
+
+fn select_config_source<'a>(
     invocation: &Invocation,
-    environment: ConfigEnvironment<'_>,
+    environment: ConfigEnvironment<'a>,
     cwd: &Path,
-    loader: &ConfigLoader,
-) -> Result<(CompiledConfig, String), String> {
+) -> Result<ConfigSource<'a>, String> {
     if let Some(path) = invocation
         .options
         .config
         .as_deref()
         .filter(|path| !path.as_os_str().is_empty())
     {
-        return load_path(loader, cwd, path, "--config");
+        return Ok(ConfigSource::Path(path.to_path_buf(), "--config"));
     }
     if let Some(path) = environment.path.filter(|value| !value.is_empty()) {
-        return load_path(loader, cwd, Path::new(path), "RUSTLEAKS_CONFIG");
+        return Ok(ConfigSource::Path(PathBuf::from(path), "RUSTLEAKS_CONFIG"));
     }
     if let Some(contents) = environment.inline.filter(|value| !value.is_empty()) {
-        let contents = contents
-            .to_str()
-            .ok_or_else(|| "RUSTLEAKS_CONFIG_TOML is not valid UTF-8".to_owned())?;
-        let config = loader.load_toml_at(contents, None).map_err(|error| {
-            format!(
-                "could not load config from RUSTLEAKS_CONFIG_TOML ({})",
-                config_error_category(&error)
-            )
-        })?;
-        return Ok((config, "RUSTLEAKS_CONFIG_TOML".to_owned()));
+        return Ok(ConfigSource::Inline(contents, "RUSTLEAKS_CONFIG_TOML"));
     }
     if let Some(path) = environment.legacy_path.filter(|value| !value.is_empty()) {
-        return load_path(loader, cwd, Path::new(path), "GITLEAKS_CONFIG");
+        return Ok(ConfigSource::Path(PathBuf::from(path), "GITLEAKS_CONFIG"));
     }
     if let Some(contents) = environment.legacy_inline.filter(|value| !value.is_empty()) {
-        let contents = contents
-            .to_str()
-            .ok_or_else(|| "GITLEAKS_CONFIG_TOML is not valid UTF-8".to_owned())?;
-        let config = loader.load_toml_at(contents, None).map_err(|error| {
-            format!(
-                "could not load config from GITLEAKS_CONFIG_TOML ({})",
-                config_error_category(&error)
-            )
-        })?;
-        return Ok((config, "GITLEAKS_CONFIG_TOML".to_owned()));
+        return Ok(ConfigSource::Inline(contents, "GITLEAKS_CONFIG_TOML"));
     }
 
     let discovery = if invocation.command == CommandKind::Stdin {
@@ -261,7 +264,7 @@ fn load_config(
             let local = physical_source.join(name);
             match fs::metadata(&local) {
                 Ok(metadata) if metadata.is_file() => {
-                    return load_path(loader, cwd, &local, "source-local config");
+                    return Ok(ConfigSource::Path(local, "source-local config"));
                 }
                 Ok(_) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -274,10 +277,84 @@ fn load_config(
             }
         }
     }
-    loader
-        .load_default()
-        .map(|config| (config, "<embedded-default>".to_owned()))
-        .map_err(|error| format!("could not load embedded config: {error}"))
+    Ok(ConfigSource::EmbeddedDefault)
+}
+
+fn load_config(
+    source: ConfigSource<'_>,
+    cwd: &Path,
+    loader: &ConfigLoader,
+) -> Result<(CompiledConfig, String), String> {
+    match source {
+        ConfigSource::Path(path, source) => load_path(loader, cwd, &path, source),
+        ConfigSource::Inline(contents, source) => {
+            let contents = contents
+                .to_str()
+                .ok_or_else(|| format!("{source} is not valid UTF-8"))?;
+            let config = loader.load_toml_at(contents, None).map_err(|error| {
+                format!(
+                    "could not load config from {source} ({})",
+                    config_error_category(&error)
+                )
+            })?;
+            Ok((config, source.to_owned()))
+        }
+        ConfigSource::EmbeddedDefault => loader
+            .load_default()
+            .map(|config| (config, "<embedded-default>".to_owned()))
+            .map_err(|error| format!("could not load embedded config: {error}")),
+    }
+}
+
+fn compile_selected_config(
+    source: ConfigSource<'_>,
+    native_packs: &[String],
+    cwd: &Path,
+    loader: &ConfigLoader,
+) -> Result<(CompiledConfig, String, Option<String>), String> {
+    if native_packs.is_empty() {
+        let (full, origin) = load_config(source, cwd, loader)?;
+        return Ok((full, origin, None));
+    }
+    if !matches!(source, ConfigSource::EmbeddedDefault) {
+        return Err(format!(
+            "--native-pack requires embedded-default configuration; a configuration was selected from {}; custom-base composition is not supported",
+            source.category(),
+        ));
+    }
+    let (full, reference) = compile_native_packs(native_packs)?;
+    Ok((full, "<embedded-default>".to_owned(), Some(reference)))
+}
+
+fn compile_native_packs(ids: &[String]) -> Result<(CompiledConfig, String), String> {
+    let mut policy = NativePolicy::builder();
+    for id in ids {
+        let contents = match id.as_str() {
+            "rustleaks-extra-v1" => EXTRA_RULES_V1,
+            "rustleaks-providers-v1" => PROVIDER_RULES_V1,
+            "rustleaks-connections-v1" => CONNECTION_RULES_V1,
+            _ => return Err("unknown builtin native pack identifier".to_owned()),
+        };
+        policy = policy
+            .with_pack(id, contents)
+            .map_err(native_policy_error)?;
+    }
+    let (config, identity) = policy.compile().map_err(native_policy_error)?;
+    let reference = identity
+        .builtin_review_reference()
+        .ok_or_else(|| "builtin native policy has no review reference".to_owned())?
+        .to_owned();
+    Ok((config, reference))
+}
+
+fn native_policy_error(error: NativePolicyError) -> String {
+    // Exact identity and configuration bytes never enter CLI diagnostics.
+    let category = match error {
+        NativePolicyError::Config(error) => config_error_category(&error).to_owned(),
+        NativePolicyError::Engine(_) => "engine compilation error".to_owned(),
+        error => error.to_string(),
+    };
+    format!("could not compile builtin native policy ({category})")
 }
 
 fn config_error_category(error: &ConfigError) -> &'static str {
@@ -753,6 +830,85 @@ mod tests {
             )
             .unwrap(),
             PathBuf::from(r"..\baseline.json")
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_entropy_tests {
+    use super::*;
+
+    #[test]
+    fn cli_compiles_and_projects_the_requested_byte_predicates() {
+        let (full, reference) =
+            compile_native_packs(&["rustleaks-providers-v1".to_owned()]).unwrap();
+        assert!(reference.contains("providers-sha256:"));
+        for id in [
+            "rustleaks.dockerhub-personal-access-token",
+            "rustleaks.dockerhub-organization-access-token",
+            "rustleaks.neon-api-key",
+            "rustleaks.render-api-key",
+            "rustleaks.deno-account-token",
+            "rustleaks.apify-api-token",
+        ] {
+            let selected = full.select_rules([id]).unwrap();
+            assert_eq!(
+                selected.rule(id).unwrap().native_entropy(),
+                Some(("byte-shannon-f64-v1", "lt", 3.5))
+            );
+            assert_eq!(full.rule(id), selected.rule(id));
+        }
+    }
+
+    #[test]
+    fn config_source_selection_preserves_native_and_legacy_precedence() {
+        let mut invocation = Invocation {
+            command: CommandKind::Stdin,
+            source: PathBuf::from("."),
+            options: crate::args::Options::default(),
+        };
+        let path = OsString::from("absent.toml");
+        let inline = OsString::from("PRIVATE_SOURCE_SENTINEL");
+        let mut environment = ConfigEnvironment {
+            path: Some(&path),
+            inline: Some(&inline),
+            legacy_path: Some(&path),
+            legacy_inline: Some(&inline),
+        };
+        invocation.options.config = Some(PathBuf::from("explicit.toml"));
+        assert_eq!(
+            select_config_source(&invocation, environment, Path::new("absent"))
+                .unwrap()
+                .category(),
+            "--config"
+        );
+        invocation.options.config = None;
+        assert_eq!(
+            select_config_source(&invocation, environment, Path::new("absent"))
+                .unwrap()
+                .category(),
+            "RUSTLEAKS_CONFIG"
+        );
+        environment.path = None;
+        assert_eq!(
+            select_config_source(&invocation, environment, Path::new("absent"))
+                .unwrap()
+                .category(),
+            "RUSTLEAKS_CONFIG_TOML"
+        );
+        environment.inline = None;
+        assert_eq!(
+            select_config_source(&invocation, environment, Path::new("absent"))
+                .unwrap()
+                .category(),
+            "GITLEAKS_CONFIG"
+        );
+        environment.legacy_path = None;
+        assert_eq!(
+            select_config_source(&invocation, environment, Path::new("absent"))
+                .unwrap()
+                .category(),
+            "GITLEAKS_CONFIG_TOML"
         );
     }
 }

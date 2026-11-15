@@ -105,6 +105,7 @@ fn positive(value: usize, field: &'static str) -> Result<NonZeroUsize, SourceCon
 pub struct ArchiveOptions {
     limits: ArchiveLimits,
     path_config: Option<Arc<CompiledConfig>>,
+    excluded_paths: Vec<rustleaks_core::model::ByteText>,
     emit_limit_issues: bool,
     strict_7z_member_lengths: bool,
 }
@@ -116,6 +117,7 @@ impl ArchiveOptions {
         Self {
             limits,
             path_config: None,
+            excluded_paths: Vec::new(),
             emit_limit_issues: false,
             strict_7z_member_lengths: false,
         }
@@ -126,6 +128,28 @@ impl ArchiveOptions {
     pub fn path_config(mut self, config: Arc<CompiledConfig>) -> Self {
         self.path_config = Some(config);
         self
+    }
+
+    /// Adds exact decorated target paths excluded before complete-mode reads.
+    ///
+    /// This compares normalized logical paths. Legacy fragments ignore it.
+    /// Only emitted leaf paths, including compressed streams, are matched.
+    /// Naming a container does not exclude its descendants. Container and
+    /// shared-decoder checks needed to reach eligible members remain active.
+    #[must_use]
+    pub fn exclude_paths(mut self, paths: Vec<rustleaks_core::model::ByteText>) -> Self {
+        self.excluded_paths.extend(paths);
+        self
+    }
+
+    fn target_excluded(&self, logical: &LogicalPath, name: &[u8]) -> bool {
+        // Containers never emit a fragment under their own path. An exact
+        // leaf exclusion must not suppress descendants of such a container.
+        is_leaf_name(name)
+            && self
+                .excluded_paths
+                .iter()
+                .any(|path| path == logical.normalized())
     }
 
     /// Emits recoverable issues when configured depth limits skip archives.
@@ -143,8 +167,9 @@ impl ArchiveOptions {
     /// Disabled by default to preserve the pinned archive backend's acceptance
     /// of early EOF. When enabled, a size mismatch produces a recoverable decode
     /// issue and discards every member of that 7z archive before publication.
-    /// Existing member and aggregate ceilings still apply. This does not prove
-    /// archive authenticity or add CRC validation beyond the decoder's checks.
+    /// Existing member and aggregate ceilings still apply. Complete-target file
+    /// options always require this check. This does not prove archive
+    /// authenticity or add CRC validation beyond the decoder's checks.
     #[must_use]
     pub const fn strict_7z_member_lengths(mut self, enabled: bool) -> Self {
         self.strict_7z_member_lengths = enabled;
@@ -197,6 +222,11 @@ impl ArchiveSource {
     where
         R: Read + Send + 'static,
     {
+        let options = if file_options.complete_target_bytes().is_some() {
+            options.strict_7z_member_lengths(true)
+        } else {
+            options
+        };
         let physical_path = path.into();
         let logical_path = LogicalPath::from_native(&physical_path);
         Self {
@@ -235,6 +265,19 @@ impl ArchiveSource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        crate::source::visit_with_coverage(
+            self.file_options.complete_target_bytes().is_some(),
+            emit,
+            |emit| self.visit_inner(nominal, cancellation, emit),
+        )
+    }
+
+    fn visit_inner(
+        &mut self,
+        nominal: &mut Vec<u8>,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
@@ -244,6 +287,11 @@ impl ArchiveSource {
             message: "archive source was already consumed".to_owned(),
         })?;
         let name = native_file_name_bytes(&self.physical_path);
+        if self.file_options.complete_target_bytes().is_some()
+            && self.options.target_excluded(&self.logical_path, &name)
+        {
+            return Ok(SourceControl::Continue);
+        }
         if identify(&name).is_none() {
             return plain_source(
                 reader,
@@ -316,6 +364,11 @@ impl ArchiveState<'_> {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
+        if self.file_options.complete_target_bytes().is_some()
+            && self.options.target_excluded(logical, name)
+        {
+            return Ok(SourceControl::Continue);
+        }
         let Some(format) = identify(name) else {
             return plain_source(
                 Box::new(Cursor::new(data)),
@@ -336,7 +389,8 @@ impl ArchiveState<'_> {
                 limit_issue(
                     self.physical_path,
                     "skipping archive: exceeds maximum archive depth",
-                ),
+                )
+                .excluded(),
                 emit,
             );
         }
@@ -386,10 +440,15 @@ impl ArchiveState<'_> {
         if depth == 0 && self.first_level_allowed(&normalized_name, native_name) {
             return Ok(SourceControl::Continue);
         }
+        let logical = outer.joined_archive(&normalized_name, native_name);
+        if self.file_options.complete_target_bytes().is_some()
+            && self.options.target_excluded(&logical, native_name)
+        {
+            return Ok(SourceControl::Continue);
+        }
         if let Err(issue) = self.account(data.len()) {
             return emit_issue(issue, emit);
         }
-        let logical = outer.joined_archive(&normalized_name, native_name);
         self.process(data, native_name, &logical, depth + 1, cancellation, emit)
     }
 
@@ -408,10 +467,15 @@ impl ArchiveState<'_> {
         if depth == 0 && self.first_level_allowed(&normalized_name, native_name) {
             return Ok(SourceControl::Continue);
         }
+        let logical = outer.joined_archive(&normalized_name, native_name);
+        if self.file_options.complete_target_bytes().is_some()
+            && self.options.target_excluded(&logical, native_name)
+        {
+            return Ok(SourceControl::Continue);
+        }
         if let Err(issue) = self.account(data.len()) {
             return emit_issue(issue, emit);
         }
-        let logical = outer.joined_archive(&normalized_name, native_name);
         if identify(native_name).is_some() {
             return self.process(data, native_name, &logical, depth + 1, cancellation, emit);
         }
@@ -458,6 +522,24 @@ impl ArchiveState<'_> {
             ));
         }
         Ok(())
+    }
+
+    fn complete_member_excluded(
+        &self,
+        native_name: &[u8],
+        logical: &LogicalPath,
+        depth: usize,
+    ) -> bool {
+        if self.file_options.complete_target_bytes().is_none() {
+            return false;
+        }
+        let normalized = normalize_member(native_name);
+        depth == 0 && self.first_level_allowed(&normalized, native_name)
+            || !self.options.excluded_paths.is_empty()
+                && self.options.target_excluded(
+                    &logical.joined_archive(&normalized, native_name),
+                    native_name,
+                )
     }
 
     fn first_level_allowed(&self, normalized: &[u8], _native: &[u8]) -> bool {
@@ -596,24 +678,29 @@ impl ArchiveState<'_> {
                 pending_long_name = Some(name);
             } else if !matches!(typeflag, b'5' | b'x' | b'g') {
                 let name = clean_member_name(&name);
-                let remaining = self
-                    .options
-                    .limits
-                    .total_bytes
-                    .get()
-                    .saturating_sub(self.expanded);
-                let member_limit = remaining.min(self.options.limits.member_bytes.get());
-                let Ok(member_data) = copy_bounded(&data[body_start..body_end], member_limit)
-                else {
-                    return emit_issue(
-                        limit_issue(self.physical_path, "TAR member exceeds limit"),
-                        emit,
-                    );
-                };
-                let control =
-                    self.member(member_data, &name, logical, depth, cancellation, emit)?;
-                if control == SourceControl::Stop {
-                    return Ok(control);
+                // Header, body and padding boundaries still belong to the
+                // container contract. Avoid copying an explicitly excluded
+                // payload once its validated name and body range are known.
+                if !self.complete_member_excluded(&name, logical, depth) {
+                    let remaining = self
+                        .options
+                        .limits
+                        .total_bytes
+                        .get()
+                        .saturating_sub(self.expanded);
+                    let member_limit = remaining.min(self.options.limits.member_bytes.get());
+                    let Ok(member_data) = copy_bounded(&data[body_start..body_end], member_limit)
+                    else {
+                        return emit_issue(
+                            limit_issue(self.physical_path, "TAR member exceeds limit"),
+                            emit,
+                        );
+                    };
+                    let control =
+                        self.member(member_data, &name, logical, depth, cancellation, emit)?;
+                    if control == SourceControl::Stop {
+                        return Ok(control);
+                    }
                 }
             }
             let padded = size
@@ -730,6 +817,15 @@ impl ArchiveState<'_> {
             if entry.is_dir() {
                 continue;
             }
+            let name = clean_member_name(entry.file_path().as_bytes());
+            if self.complete_member_excluded(&name, logical, depth) {
+                // Retain local-header and compressed-range validation even when
+                // the payload itself is outside the selected path domain.
+                if let Err(error) = archive.get_entry(entry.wayfinder()) {
+                    return emit_issue(member_issue(self.physical_path, error.to_string()), emit);
+                }
+                continue;
+            }
             if entry.uncompressed_size_hint() > self.options.limits.member_bytes.get() as u64 {
                 return emit_issue(
                     limit_issue(self.physical_path, "ZIP member size exceeds limit"),
@@ -769,7 +865,6 @@ impl ArchiveState<'_> {
                 }
                 continue;
             }
-            let name = clean_member_name(entry.file_path().as_bytes());
             let control = self.member(decoded, &name, logical, depth, cancellation, emit)?;
             if control == SourceControl::Stop {
                 return Ok(control);
@@ -1127,6 +1222,14 @@ enum Format {
     Rar,
     CompressedTar(Codec),
     Stream(Codec),
+}
+
+pub(crate) fn path_is_leaf(path: &Path) -> bool {
+    is_leaf_name(&native_file_name_bytes(path))
+}
+
+fn is_leaf_name(name: &[u8]) -> bool {
+    matches!(identify(name), None | Some(Format::Stream(_)))
 }
 
 fn identify(name: &[u8]) -> Option<Format> {

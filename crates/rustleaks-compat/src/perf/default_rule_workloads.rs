@@ -17,10 +17,10 @@ use std::time::Instant;
 
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG_BYTES};
 use rustleaks_core::model::{ByteRange, FindingRange, Fragment, ScanOptions};
-use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
+use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome, ScanUsage};
 use serde_json::{Value, json};
 
-use super::{Phase, elapsed, fingerprint, outcome_signature, phase};
+use super::{Phase, USAGE_KEYS, elapsed, fingerprint, outcome_signature, phase, usage_counters};
 
 #[path = "default_rule_contention.rs"]
 mod contention;
@@ -37,6 +37,8 @@ const DEFAULT_RULES_FINGERPRINT: u64 = 0xbba0_f636_d5a0_2d49;
 const GENERIC_ENTROPY: f64 = 3.5;
 const GENERIC_RULE: &str = "generic-api-key";
 const GITHUB_PAT_RULE: &str = "github-pat";
+
+pub(super) const PROFILE_WORKLOAD: &str = "core-realistic-multi-language-256-kib";
 
 pub(super) const WORKLOADS: &[&str] = &[
     "core-admission-1-rules-4-mib",
@@ -580,6 +582,100 @@ fn budget(expected: &Expected) -> ScanControl<'static> {
     )
 }
 
+/// One existing ordinary fixture, prepared before the investigation ready marker.
+/// The plan and its independent expectations stay private to this module.
+pub(super) struct PreparedProfile {
+    plan: Plan,
+    detector: Engine,
+    options: ScanOptions,
+    control: ScanControl<'static>,
+    identity: Value,
+    usage: ScanUsage,
+}
+
+impl PreparedProfile {
+    pub(super) fn new(id: &str) -> Fallible<Self> {
+        ensure(
+            id == PROFILE_WORKLOAD,
+            "unsupported default-rule profile workload",
+        )?;
+        let config = ConfigLoader::new().load_default()?;
+        ensure_default_rules(&config)?;
+        let plan = build(id, &config)?;
+        ensure(
+            plan.scans.len() == 1 && plan.scans_per_operation == 1,
+            "ordinary profile requires the original single-fragment operation",
+        )?;
+        let scan = &plan.scans[0];
+        let keywords = census(&config, scan.fragment.content().as_bytes())
+            .matched
+            .len();
+        let detector = Engine::builder(config).build()?;
+        let options = ScanOptions::builder().max_decode_depth(0).build();
+        let control = budget(&scan.expected);
+        let warm = detector.scan_fragment_controlled(&scan.fragment, &options, &control);
+        validate(&plan.rules, scan, &warm)?;
+        let usage = warm.usage();
+        let identity = json!({
+            "workload": id, "input_bytes": scan.fragment.content().len(),
+            "input_fnv1a64": input_fingerprint(&plan.scans),
+            "config_fnv1a64": fingerprint(DEFAULT_CONFIG_BYTES),
+            // Preserve the representative operation's hash of its joined scan hashes.
+            "outcome_fnv1a64": fingerprint(outcome_signature(&warm).as_bytes()),
+            "rules": DEFAULT_RULE_COUNT, "keywords": keywords,
+            "findings": scan.expected.findings.len(), "decoded_bytes": usage.decoded_bytes(),
+            "work_units": usage.work_units(), "finding_records": usage.finding_records(),
+            "finding_payload_bytes": usage.finding_payload_bytes(),
+            "collected_spans": usage.collected_spans(),
+            "normalization_bytes": usage.normalization_bytes(),
+            "decode_depth": 0, "fragments": 1, "scans_per_operation": 1,
+            "workers": 1, "retained_outcomes": 1, "family": plan.counts,
+            "budget": {"work_units": scan.expected.work,
+                "finding_records": scan.expected.findings.len(), "decoded_bytes": 0,
+                "finding_payload_bytes": null, "collected_spans": null,
+                "normalization_bytes": null},
+            "complete": true, "errors": 0,
+        });
+        Ok(Self {
+            plan,
+            detector,
+            options,
+            control,
+            identity,
+            usage,
+        })
+    }
+
+    pub(super) fn identity(&self) -> &Value {
+        &self.identity
+    }
+
+    pub(super) fn scan(&self) -> Fallible<u64> {
+        let scan = &self.plan.scans[0];
+        let start = Instant::now();
+        let outcome = black_box(self.detector.scan_fragment_controlled(
+            black_box(&scan.fragment),
+            black_box(&self.options),
+            &self.control,
+        ));
+        let elapsed_ns = elapsed(start)?;
+        self.validate_outcome(&outcome)?;
+        Ok(elapsed_ns)
+    }
+
+    fn validate_outcome(&self, outcome: &ScanOutcome) -> Fallible<()> {
+        validate(&self.plan.rules, &self.plan.scans[0], outcome)?;
+        // Warm observations only detect changes between scans. The independent
+        // plant validator above remains authoritative for expected behavior.
+        ensure(
+            outcome.usage() == self.usage
+                && self.identity["outcome_fnv1a64"]
+                    == fingerprint(outcome_signature(outcome).as_bytes()),
+            "ordinary profile outcome or usage changed",
+        )
+    }
+}
+
 fn input_fingerprint(scans: &[Scan]) -> String {
     let mut hash = super::super::FNV_OFFSET;
     for scan in scans {
@@ -694,8 +790,11 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
             "operation": "sum-of-fragment-scans-one-engine",
             "family": plan.counts,
         });
+        let mut previous_usage = None;
         for _ in 0..count {
             let mut signatures = vec![None; plan.scans.len()];
+            let mut usages = vec![None; plan.scans.len()];
+            let mut total_usage = [0_usize; 6];
             for scan_index in 0..plan.scans_per_operation {
                 let index = scan_index % plan.scans.len();
                 let scan = &plan.scans[index];
@@ -707,6 +806,16 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
                 ));
                 result.elapsed_ns += elapsed(start)?;
                 validate(&plan.rules, scan, &outcome)?;
+                let usage = usage_counters(outcome.usage());
+                if usages[index].is_some_and(|previous| previous != usage) {
+                    return Err("repeated scan of one fragment changed resource usage".into());
+                }
+                usages[index] = Some(usage);
+                for (total, one) in total_usage.iter_mut().zip(usage) {
+                    *total = total
+                        .checked_add(one)
+                        .ok_or("resource usage sum overflow")?;
+                }
                 let signature = outcome_signature(&outcome);
                 match &signatures[index] {
                     Some(previous) if previous != &signature => {
@@ -722,6 +831,13 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
                 return Err("default-rule operation changed between iterations".into());
             }
             result.outcome_fnv1a64 = signature;
+            if previous_usage.is_some_and(|previous| previous != total_usage) {
+                return Err("default-rule operation changed resource usage".into());
+            }
+            previous_usage = Some(total_usage);
+            for (key, value) in USAGE_KEYS.into_iter().zip(total_usage) {
+                result.counts[key] = json!(value);
+            }
         }
         phases.push(result);
     }

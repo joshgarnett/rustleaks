@@ -24,6 +24,8 @@ mod decode_workloads;
 mod default_rule_workloads;
 #[path = "edge_workloads.rs"]
 mod edge_workloads;
+#[path = "gate_controls.rs"]
+mod gate_controls;
 #[path = "normalization_workloads.rs"]
 mod normalization_workloads;
 #[path = "report_workloads.rs"]
@@ -95,6 +97,7 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             .iter()
             .chain(fragment_workloads::WORKLOADS)
             .chain(edge_workloads::WORKLOADS)
+            .chain(gate_controls::WORKLOADS)
             .chain(normalization_workloads::WORKLOADS)
             .chain(worker_workloads::WORKLOADS)
             .chain(decode_workloads::WORKLOADS)
@@ -172,6 +175,7 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
 fn single_core_workload(id: &str) -> bool {
     WORKLOADS.contains(&id)
         || edge_workloads::WORKLOADS.contains(&id)
+        || gate_controls::WORKLOADS.contains(&id)
         || normalization_workloads::WORKLOADS.contains(&id)
 }
 
@@ -192,6 +196,9 @@ impl Fixture {
     fn new(id: &str) -> Result<Self, Box<dyn Error>> {
         if edge_workloads::WORKLOADS.contains(&id) {
             return edge_workloads::fixture(id);
+        }
+        if gate_controls::WORKLOADS.contains(&id) {
+            return gate_controls::fixture(id);
         }
         if normalization_workloads::WORKLOADS.contains(&id) {
             return normalization_workloads::fixture(id);
@@ -533,6 +540,7 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
         });
         result.counts["budget"] =
             json!({"work_units":2_000_000,"finding_records":20_000,"decoded_bytes":16*1024*1024});
+        let mut previous_usage = None;
         for _ in 0..count {
             let start = Instant::now();
             let outcome = black_box(detector.scan_fragment_controlled(
@@ -542,21 +550,47 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
             ));
             total += elapsed(start)?;
             fixture.validate(&outcome)?;
+            gate_controls::validate(id, &fixture, &outcome)?;
+            let usage = usage_counters(outcome.usage());
+            if previous_usage.is_some_and(|previous| previous != usage) {
+                return Err("representative resource usage changed between iterations".into());
+            }
+            previous_usage = Some(usage);
             let signature = outcome_signature(&outcome);
             if result.outcome_fnv1a64 != fingerprint(&[]) && result.outcome_fnv1a64 != signature {
                 return Err("representative outcome changed between iterations".into());
             }
             result.outcome_fnv1a64 = signature;
             result.findings = outcome.findings().len() as u64;
-            result.counts["decoded_bytes"] = json!(outcome.usage().decoded_bytes());
-            result.counts["work_units"] = json!(outcome.usage().work_units());
-            result.counts["finding_records"] = json!(outcome.usage().finding_records());
+            for (key, value) in USAGE_KEYS.into_iter().zip(usage) {
+                result.counts[key] = json!(value);
+            }
             // Outcome verification and destruction are outside each timer.
         }
         result.elapsed_ns = total;
         phases.push(result);
     }
     Ok(phases)
+}
+
+const USAGE_KEYS: [&str; 6] = [
+    "work_units",
+    "decoded_bytes",
+    "finding_records",
+    "collected_spans",
+    "normalization_bytes",
+    "finding_payload_bytes",
+];
+
+fn usage_counters(usage: rustleaks_core::ScanUsage) -> [usize; 6] {
+    [
+        usage.work_units(),
+        usage.decoded_bytes(),
+        usage.finding_records(),
+        usage.collected_spans(),
+        usage.normalization_bytes(),
+        usage.finding_payload_bytes(),
+    ]
 }
 
 fn outcome_signature(outcome: &ScanOutcome) -> String {

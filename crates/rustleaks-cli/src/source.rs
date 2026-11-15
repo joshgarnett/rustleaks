@@ -12,6 +12,7 @@ use rustleaks_sources::{
 };
 
 use crate::args::{CommandKind, Invocation};
+use crate::complete_profile::CompleteProfile;
 use crate::config::resolve;
 
 pub(crate) struct BuiltSource {
@@ -128,6 +129,7 @@ pub(crate) fn build<R: Read + Send + 'static>(
     full_config: &Arc<CompiledConfig>,
     excluded: Vec<ByteText>,
     cwd: &Path,
+    profile: Option<&CompleteProfile>,
 ) -> Result<BuiltSource, String> {
     let injected_cwd_differs = match std::env::current_dir() {
         Ok(current) => current != cwd,
@@ -141,13 +143,21 @@ pub(crate) fn build<R: Read + Send + 'static>(
     let logical_root =
         (invocation.command == CommandKind::Directory).then(|| invocation.source.clone());
     let early_config = Some(Arc::clone(full_config));
-    let archive = archive_options(invocation, early_config.clone())?;
+    let file_options = profile.map_or_else(
+        || Ok(rustleaks_sources::FileOptions::default()),
+        CompleteProfile::file_options,
+    )?;
+    let archive = archive_options(invocation, early_config.clone(), profile)?;
     let source: Box<dyn Source> = match invocation.command {
         CommandKind::Directory => {
             let mut options = DirectoryOptions::default()
+                .file_options(file_options)
                 .follow_symlinks(invocation.options.follow_symlinks)
                 .max_file_size(source_maximum(invocation)?)
                 .emit_limit_issues(true);
+            if profile.is_some() {
+                options = options.exclude_paths(excluded.clone());
+            }
             if let Some(config) = early_config {
                 options = options.path_config(config);
             }
@@ -170,7 +180,15 @@ pub(crate) fn build<R: Read + Send + 'static>(
                 }
             };
             let mut git = GitSource::new(physical_source).mode(mode);
-            if let Some(archive) = archive {
+            if let Some(profile) = profile {
+                git = git
+                    .limits(profile.git_limits()?)
+                    .archive_file_options(file_options);
+            }
+            if let Some(mut archive) = archive {
+                if profile.is_some() {
+                    archive = archive.exclude_paths(excluded.clone());
+                }
                 git = git.archives(archive);
             }
             Box::new(git)
@@ -179,10 +197,14 @@ pub(crate) fn build<R: Read + Send + 'static>(
             Some(options) => Box::new(ArchiveSource::with_options(
                 stdin,
                 std::path::PathBuf::new(),
-                rustleaks_sources::FileOptions::default(),
+                file_options,
                 options,
             )),
-            None => Box::new(FileSource::new(stdin, std::path::PathBuf::new())),
+            None => Box::new(FileSource::with_options(
+                stdin,
+                std::path::PathBuf::new(),
+                file_options,
+            )),
         },
     };
     Ok(BuiltSource {
@@ -208,6 +230,7 @@ fn source_maximum(invocation: &Invocation) -> Result<Option<u64>, String> {
 fn archive_options(
     invocation: &Invocation,
     config: Option<Arc<CompiledConfig>>,
+    profile: Option<&CompleteProfile>,
 ) -> Result<Option<ArchiveOptions>, String> {
     if invocation.options.max_archive_depth <= 0 {
         return Ok(None);
@@ -215,14 +238,18 @@ fn archive_options(
     let depth = usize::try_from(invocation.options.max_archive_depth)
         .map_err(|_| "--max-archive-depth is out of range".to_owned())?;
     let defaults = ArchiveLimits::default();
-    let limits = ArchiveLimits::new(
-        depth,
-        defaults.maximum_entries(),
-        defaults.maximum_member_bytes(),
-        defaults.maximum_total_bytes(),
-        defaults.maximum_spool_bytes(),
-    )
-    .map_err(|error| error.to_string())?;
+    let limits = if let Some(profile) = profile {
+        profile.archive_limits(depth)?
+    } else {
+        ArchiveLimits::new(
+            depth,
+            defaults.maximum_entries(),
+            defaults.maximum_member_bytes(),
+            defaults.maximum_total_bytes(),
+            defaults.maximum_spool_bytes(),
+        )
+        .map_err(|error| error.to_string())?
+    };
     let mut options = ArchiveOptions::new(limits).emit_limit_issues(true);
     if let Some(config) = config {
         options = options.path_config(config);

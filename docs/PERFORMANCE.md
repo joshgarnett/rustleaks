@@ -82,6 +82,40 @@ Use quiet host time and avoid concurrent builds, fuzzing, and profiling when
 collecting comparisons. Different native targets and hardware retain separate
 baselines. No benchmark result is a portable latency guarantee.
 
+## Independent development fixtures
+
+`just perf-fixtures` constructs synthetic inputs and independently specified
+answers without invoking a scanner or recording measurements. It has five
+families: source/encoding boundaries, density, multiple decoded secrets in one
+carrier, connection strings, and reader partitions. Dense scaling and decoded
+carrier cases adapt ideas from Kingfisher commit
+`01e7b817376fbf2272be8f162bd32309bf97ee1f`; no upstream implementation or fixture
+bytes are copied.
+
+For example, on a Unix host, use a new absolute directory outside the checkout:
+
+```sh
+just perf-fixtures --family density --output /tmp/rustleaks-development-density
+just perf-fixtures --verify /tmp/rustleaks-development-density
+```
+
+Each bundle separates `inputs/<case>/` from `answers/` and includes a hashed
+inventory. Scan one case's input directory, never the bundle root or answers.
+Verification requires the complete declared family, exact seeded literals,
+independent byte positions, geometry, reader schedules and policy fields.
+Logical case count and distinct input count are separate because some cases
+vary policy or read schedule while retaining identical bytes. A consistent
+hash alone does not establish a correct oracle.
+
+Timing eligibility is specified before scanner execution. Large single-line
+and decoded-carrier stress cases remain quality-only where full line-context
+reports can grow quadratically. Connection cases require explicit review of
+credential extraction and policy before scoring. PAT negative controls apply
+only to that named credential family, not to every selected rule. Successful
+generation or verification establishes fixture integrity, not scanner coverage
+or performance. Evaluation must retain actual completion, limits, occurrence
+multiplicity, native rule attribution and unsupported cases separately.
+
 ## Representative phase measurements
 
 The optional representative suite adds operation timers while retaining the 23
@@ -394,6 +428,17 @@ engine setup. A second heap/VM snapshot observes the retained process after the
 loop. These are live memory observations, not allocation histories, allocation
 site attribution or evidence that every allocation has been freed. Sampling
 overhead is not a performance improvement or regression measurement.
+
+Profiling also accepts `core-realistic-multi-language-256-kib`. This route uses
+the original default-rule generator, full default policy, fragment metadata,
+depth-zero options, budgets and independent planted-finding validator. Its
+input, configuration and operation outcome hashes retain the representative
+workload's identity scheme. The ready and completion records also include
+collected spans, normalization bytes and finding payload bytes; every repeated
+scan checks all usage counters after independent validation. The report records
+scan time separately from the complete loop time, which includes validation,
+hashing and outcome destruction. This workload is not enabled for calibration;
+other realistic workload IDs remain unsupported by investigation commands.
 
 Native collection currently supports macOS. Missing tools, denied attachment or
 unsupported hosts receive explicit unavailable/unsupported dispositions in the

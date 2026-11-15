@@ -1,4 +1,4 @@
-//! Private compatibility layer for Go's `regexp` package.
+//! Private Go compatibility and explicit native byte-regex matchers.
 //!
 //! The public crate deliberately exposes pattern source strings, not this
 //! backend or any `regex` crate type. The translator covers the RE2 syntax used
@@ -290,6 +290,7 @@ impl Error for GoRegexError {}
 #[derive(Clone)]
 pub(crate) struct GoRegex {
     source: Box<str>,
+    whole_input: bool,
     backend: Regex,
     capture_names: Vec<Option<Box<str>>>,
     literal_anchor: Option<Arc<LiteralAnchorShape>>,
@@ -297,11 +298,14 @@ pub(crate) struct GoRegex {
 
 impl PartialEq for GoRegex {
     fn eq(&self, other: &Self) -> bool {
-        self.source == other.source
+        self.source == other.source && self.whole_input == other.whole_input
     }
 }
 
 impl Eq for GoRegex {}
+
+#[cfg(test)]
+mod whole_input_tests;
 
 impl fmt::Debug for GoRegex {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -313,15 +317,129 @@ impl fmt::Debug for GoRegex {
     }
 }
 
+/// Explicit native byte dialect. Its executable matcher never normalizes input
+/// or passes through the compatibility translator.
+#[derive(Clone)]
+pub(crate) struct NativeByteRegex {
+    source: Box<str>,
+    backend: Regex,
+}
+
+impl PartialEq for NativeByteRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source
+    }
+}
+impl Eq for NativeByteRegex {}
+impl fmt::Debug for NativeByteRegex {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NativeByteRegex")
+            .field("source", &self.source)
+            .finish_non_exhaustive()
+    }
+}
+
+impl NativeByteRegex {
+    pub(crate) fn compile(source: &str) -> Result<Self, GoRegexError> {
+        if source.len() > PATTERN_SIZE_LIMIT {
+            return Err(GoRegexError::PatternTooLarge {
+                actual: source.len(),
+                limit: PATTERN_SIZE_LIMIT,
+            });
+        }
+        let backend = GoRegex::on_compile_stack(source, |pattern| {
+            let hir = GoRegex::preflight_dialect(pattern, COMPILED_SIZE_LIMIT, false)?;
+            GoRegex::build_meta_backend_dialect(&hir, COMPILED_SIZE_LIMIT, false)
+        })?;
+        Ok(Self {
+            source: source.into(),
+            backend,
+        })
+    }
+
+    pub(crate) fn capture_count(&self) -> usize {
+        self.backend
+            .group_info()
+            .group_len(regex_automata::PatternID::ZERO)
+            - 1
+    }
+
+    pub(crate) fn find_all_controlled<E>(
+        &self,
+        bytes: &[u8],
+        mut admit_span: impl FnMut() -> Result<(), E>,
+    ) -> Result<Vec<ByteSpan>, E> {
+        let mut spans = Vec::new();
+        // The backend Searcher advances empty matches by bytes under this
+        // dialect, including positions inside UTF-8 and malformed sequences.
+        for whole in self.backend.find_iter(bytes) {
+            admit_span()?;
+            spans.push(ByteSpan {
+                start: whole.start(),
+                end: whole.end(),
+            });
+        }
+        Ok(spans)
+    }
+
+    pub(crate) fn capture_scratch(&self) -> CaptureScratch {
+        CaptureScratch {
+            captures: self.backend.create_captures(),
+            spans: Vec::with_capacity(self.capture_count() + 1),
+        }
+    }
+
+    pub(crate) fn captures_at<'s>(
+        &self,
+        bytes: &[u8],
+        whole: ByteSpan,
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
+        if whole.start > whole.end || whole.end > bytes.len() {
+            return None;
+        }
+        self.backend.search_captures(
+            &Input::new(bytes).span(whole.start..bytes.len()),
+            &mut scratch.captures,
+        );
+        if ByteSpan::from_span(scratch.captures.get_group(0)?) != whole {
+            return None;
+        }
+        scratch.spans.clear();
+        scratch.spans.extend(
+            (0..=self.capture_count())
+                .map(|index| scratch.captures.get_group(index).map(ByteSpan::from_span)),
+        );
+        Some(&scratch.spans)
+    }
+}
+
 impl GoRegex {
     /// Compiles an untrusted Go regexp without panicking.
     pub(crate) fn compile(source: &str) -> Result<Self, GoRegexError> {
+        Self::compile_mode(source, false)
+    }
+
+    /// Compiles a Go pattern constrained to the complete input. Absolute
+    /// anchors enter HIR after source translation and flag interpretation, so
+    /// quote-to-end syntax cannot consume a synthetic pattern suffix.
+    pub(crate) fn compile_whole(source: &str) -> Result<Self, GoRegexError> {
+        Self::compile_mode(source, true)
+    }
+
+    fn compile_mode(source: &str, whole_input: bool) -> Result<Self, GoRegexError> {
         let translated = Self::translate(source)?;
-        let (backend, literal_anchor) =
-            Self::on_compile_stack(&translated.pattern, Self::build_backend)?;
+        let build = if whole_input {
+            Self::build_whole_backend
+        } else {
+            Self::build_backend
+        };
+        let (backend, literal_anchor) = Self::on_compile_stack(&translated.pattern, build)?;
 
         Ok(Self {
             source: source.into(),
+            whole_input,
             backend,
             capture_names: translated.capture_names,
             literal_anchor: literal_anchor.map(Arc::new),
@@ -378,6 +496,14 @@ impl GoRegex {
         Ok((backend, LiteralAnchorShape::analyze(&hir)))
     }
 
+    fn build_whole_backend(
+        pattern: &str,
+    ) -> Result<(Regex, Option<LiteralAnchorShape>), GoRegexError> {
+        let hir = Self::preflight_mode(pattern, COMPILED_SIZE_LIMIT, true, true)?;
+        let backend = Self::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)?;
+        Ok((backend, LiteralAnchorShape::analyze(&hir)))
+    }
+
     // Validation without a meta matcher depends on the backend's error paths:
     // its forward NFA uses this same configuration; Unicode boundary support
     // is a required feature; reverse-NFA size failures retry without hybrid;
@@ -390,24 +516,47 @@ impl GoRegex {
         pattern: &str,
         nfa_size_limit: usize,
     ) -> Result<regex_syntax::hir::Hir, GoRegexError> {
+        Self::preflight_dialect(pattern, nfa_size_limit, true)
+    }
+
+    fn preflight_dialect(
+        pattern: &str,
+        nfa_size_limit: usize,
+        utf8: bool,
+    ) -> Result<regex_syntax::hir::Hir, GoRegexError> {
+        Self::preflight_mode(pattern, nfa_size_limit, utf8, false)
+    }
+
+    fn preflight_mode(
+        pattern: &str,
+        nfa_size_limit: usize,
+        utf8: bool,
+        whole_input: bool,
+    ) -> Result<regex_syntax::hir::Hir, GoRegexError> {
         let hir = syntax::parse_with(
             pattern,
             &syntax::Config::new()
-                .unicode(true)
-                .utf8(true)
+                .unicode(utf8)
+                .utf8(utf8)
                 .nest_limit(NEST_LIMIT),
         )
         .map_err(|_| GoRegexError::Backend {
             // Retain the former Thompson compiler's public error text.
             message: "error parsing regex".into(),
         })?;
+        let hir = if whole_input {
+            use regex_syntax::hir::{Hir, Look};
+            Hir::concat(vec![Hir::look(Look::Start), hir, Hir::look(Look::End)])
+        } else {
+            hir
+        };
         // Meta does not expose its forward NFA. Preserve the existing exact
         // fallback working-set rejection before allocating any search cache.
         // Parse only once and drop this temporary NFA before meta compilation.
         let nfa = thompson::NFA::compiler()
             .configure(
                 thompson::Config::new()
-                    .utf8(true)
+                    .utf8(utf8)
                     .which_captures(WhichCaptures::All)
                     .nfa_size_limit(Some(nfa_size_limit)),
             )
@@ -430,9 +579,17 @@ impl GoRegex {
         hir: &regex_syntax::hir::Hir,
         nfa_size_limit: usize,
     ) -> Result<Regex, GoRegexError> {
+        Self::build_meta_backend_dialect(hir, nfa_size_limit, true)
+    }
+
+    fn build_meta_backend_dialect(
+        hir: &regex_syntax::hir::Hir,
+        nfa_size_limit: usize,
+        utf8: bool,
+    ) -> Result<Regex, GoRegexError> {
         let config = Regex::config()
             .match_kind(MatchKind::LeftmostFirst)
-            .utf8_empty(true)
+            .utf8_empty(utf8)
             .which_captures(WhichCaptures::All)
             .nfa_size_limit(Some(nfa_size_limit))
             .hybrid_cache_capacity(HYBRID_CACHE_CAPACITY)
@@ -477,6 +634,10 @@ impl GoRegex {
 
     pub(crate) fn is_match(&self, haystack: &[u8]) -> bool {
         let normalized = NormalizedHaystack::new(haystack);
+        self.is_match_normalized(&normalized)
+    }
+
+    pub(crate) fn is_match_normalized(&self, normalized: &NormalizedHaystack<'_>) -> bool {
         self.backend.is_match(normalized.bytes())
     }
 
@@ -486,6 +647,21 @@ impl GoRegex {
     }
 
     pub(crate) fn find_all_normalized(&self, normalized: &NormalizedHaystack<'_>) -> Vec<ByteSpan> {
+        match self
+            .find_all_normalized_controlled(normalized, || Ok::<(), std::convert::Infallible>(()))
+        {
+            Ok(spans) => spans,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Admits each whole-match span before appending it. One backend search
+    /// remains indivisible; failure never falls back to an unlimited search.
+    pub(crate) fn find_all_normalized_controlled<E>(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        mut admit_span: impl FnMut() -> Result<(), E>,
+    ) -> Result<Vec<ByteSpan>, E> {
         let bytes = normalized.bytes();
         let end = bytes.len();
         let mut position = 0;
@@ -499,8 +675,8 @@ impl GoRegex {
             let mut accept = true;
             if whole.end() == position {
                 // Go suppresses an empty match at the preceding match end,
-                // then advances one decoded rune. Keep enumeration eager so
-                // the engine's cancellation and work checkpoints do not move.
+                // then advances one decoded rune. The legacy wrapper supplies
+                // no admission callback, preserving its work checkpoints.
                 if previous_match_end == Some(whole.start()) {
                     accept = false;
                 }
@@ -515,6 +691,7 @@ impl GoRegex {
             }
             previous_match_end = Some(whole.end());
             if accept {
+                admit_span()?;
                 results.push(normalized.original_span_in_order(
                     ByteSpan {
                         start: whole.start(),
@@ -524,7 +701,7 @@ impl GoRegex {
                 ));
             }
         }
-        results
+        Ok(results)
     }
 
     /// Finds only the first match, treating this slice as its own haystack.
@@ -553,9 +730,46 @@ impl GoRegex {
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         let normalized = NormalizedHaystack::new(haystack);
+        self.captures_into_normalized(&normalized, scratch)
+    }
+
+    pub(crate) fn captures_into_normalized<'s>(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
         self.backend
             .search_captures(&Input::new(normalized.bytes()), &mut scratch.captures);
         scratch.captures.get_group(0)?;
+        scratch.spans.clear();
+        scratch
+            .spans
+            .extend((0..self.capture_names.len()).map(|index| {
+                scratch
+                    .captures
+                    .get_group(index)
+                    .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+            }));
+        Some(&scratch.spans)
+    }
+
+    /// Recovers captures for an already admitted whole match without slicing
+    /// away anchor or word-boundary context. A different endpoint fails closed.
+    pub(crate) fn captures_at_normalized<'s>(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        whole: ByteSpan,
+        scratch: &'s mut CaptureScratch,
+    ) -> Option<&'s [Option<ByteSpan>]> {
+        let start = normalized.normalized_offset(whole.start)?;
+        self.backend.search_captures(
+            &Input::new(normalized.bytes()).span(start..normalized.bytes().len()),
+            &mut scratch.captures,
+        );
+        let found = normalized.original_span(ByteSpan::from_span(scratch.captures.get_group(0)?));
+        if found != whole {
+            return None;
+        }
         scratch.spans.clear();
         scratch
             .spans
@@ -676,8 +890,51 @@ impl<'a> NormalizedHaystack<'a> {
         }
     }
 
+    /// Exact logical payload, excluding capacities and the borrowed input.
+    pub(crate) fn owned_bytes(&self) -> usize {
+        match &self.bytes {
+            Cow::Borrowed(_) => 0,
+            Cow::Owned(bytes) => {
+                bytes.len() + self.replacement_starts.len() * std::mem::size_of::<usize>()
+            }
+        }
+    }
+
+    /// Computes logical allocation before normalization, with checked growth.
+    pub(crate) fn required_owned_bytes(original: &[u8]) -> Option<usize> {
+        if std::str::from_utf8(original).is_ok() {
+            return Some(0);
+        }
+        let invalid = original
+            .utf8_chunks()
+            .map(|chunk| chunk.invalid().len())
+            .sum::<usize>();
+        original
+            .len()
+            .checked_add(invalid.checked_mul(2)?)?
+            .checked_add(invalid.checked_mul(std::mem::size_of::<usize>())?)
+    }
+
     fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    // Each replacement expands one original byte by two bytes. Search the
+    // original starts of replacements strictly before the requested boundary.
+    fn normalized_offset(&self, original: usize) -> Option<usize> {
+        let mut low = 0;
+        let mut high = self.replacement_starts.len();
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let start = self.replacement_starts[middle].checked_sub(middle.checked_mul(2)?)?;
+            if start < original {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        let normalized = original.checked_add(low.checked_mul(2)?)?;
+        (normalized <= self.bytes.len()).then_some(normalized)
     }
 
     fn original_span(&self, normalized: ByteSpan) -> ByteSpan {
@@ -2917,8 +3174,265 @@ mod tests {
     }
 
     #[test]
+    fn native_capture_lookup_preserves_buffer_context_and_checks_endpoints() {
+        let regex = GoRegex::compile(r"\b(A)B|\B(A)B").unwrap();
+        let normalized = NormalizedHaystack::new(b"xAB \xffAB");
+        let mut scratch = regex.capture_scratch();
+        assert_eq!(
+            regex.captures_at_normalized(&normalized, ByteSpan { start: 1, end: 3 }, &mut scratch),
+            Some(
+                [
+                    Some(ByteSpan { start: 1, end: 3 }),
+                    None,
+                    Some(ByteSpan { start: 1, end: 2 })
+                ]
+                .as_slice()
+            )
+        );
+        assert_eq!(
+            regex.captures_at_normalized(&normalized, ByteSpan { start: 5, end: 7 }, &mut scratch),
+            Some(
+                [
+                    Some(ByteSpan { start: 5, end: 7 }),
+                    Some(ByteSpan { start: 5, end: 6 }),
+                    None
+                ]
+                .as_slice()
+            )
+        );
+        for whole in [
+            ByteSpan { start: 1, end: 2 },
+            ByteSpan { start: 0, end: 3 },
+            ByteSpan {
+                start: 100,
+                end: 101,
+            },
+        ] {
+            assert!(
+                regex
+                    .captures_at_normalized(&normalized, whole, &mut scratch)
+                    .is_none()
+            );
+        }
+        let regex = GoRegex::compile(r"^(AB)|(AB)$").unwrap();
+        let mut scratch = regex.capture_scratch();
+        assert_eq!(
+            regex.captures_at_normalized(
+                &NormalizedHaystack::new("éAB".as_bytes()),
+                ByteSpan { start: 2, end: 4 },
+                &mut scratch
+            ),
+            Some(
+                [
+                    Some(ByteSpan { start: 2, end: 4 }),
+                    None,
+                    Some(ByteSpan { start: 2, end: 4 })
+                ]
+                .as_slice()
+            )
+        );
+        let normalized = NormalizedHaystack::new(b"\xffA\x80B");
+        for (original, expected) in [(0, 0), (1, 3), (2, 4), (3, 7), (4, 8)] {
+            assert_eq!(normalized.normalized_offset(original), Some(expected));
+        }
+        assert_eq!(normalized.normalized_offset(5), None);
+        assert_eq!(normalized.normalized_offset(usize::MAX), None);
+    }
+
+    #[test]
     fn wrapper_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<GoRegex>();
+    }
+}
+
+#[cfg(test)]
+mod native_byte_tests {
+    use super::*;
+
+    fn spans(pattern: &str, bytes: &[u8]) -> Vec<ByteSpan> {
+        NativeByteRegex::compile(pattern)
+            .unwrap()
+            .find_all_controlled(bytes, || Ok::<(), ()>(()))
+            .unwrap()
+    }
+
+    fn span(start: usize, end: usize) -> ByteSpan {
+        ByteSpan { start, end }
+    }
+
+    fn captures(pattern: &str, bytes: &[u8], expected: &[Option<ByteSpan>]) {
+        let regex = NativeByteRegex::compile(pattern).unwrap();
+        let mut scratch = regex.capture_scratch();
+        let whole = expected[0].unwrap();
+        assert_eq!(
+            regex
+                .find_all_controlled(bytes, || Ok::<(), ()>(()))
+                .unwrap()[0],
+            whole
+        );
+        assert_eq!(
+            regex.captures_at(bytes, whole, &mut scratch),
+            Some(expected)
+        );
+        assert!(
+            regex
+                .captures_at(bytes, span(whole.start, whole.end + 1), &mut scratch)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn byte_bridges_backtrack_and_keep_leftmost_first_alternation_and_greediness() {
+        captures(
+            r"a(?s:.{0,2})(X)",
+            "aéaX".as_bytes(),
+            &[Some(span(3, 5)), Some(span(4, 5))],
+        );
+        captures(r"(a|aa)", b"aa", &[Some(span(0, 1)), Some(span(0, 1))]);
+        captures(r"(aa|a)", b"aa", &[Some(span(0, 2)), Some(span(0, 2))]);
+        captures(
+            r"a(?s:.{0,4})(X)",
+            b"aXbX",
+            &[Some(span(0, 4)), Some(span(3, 4))],
+        );
+        captures(
+            r"a(?s:.{0,4}?)(X)",
+            b"aXbX",
+            &[Some(span(0, 2)), Some(span(1, 2))],
+        );
+        captures(
+            r"(?U)a(?s:.{0,4})(X)",
+            b"aXbX",
+            &[Some(span(0, 2)), Some(span(1, 2))],
+        );
+    }
+
+    #[test]
+    fn every_byte_width_invalid_byte_and_control_character_obeys_exact_bridge_cap() {
+        for bridge in [
+            b"z".as_slice(),
+            "é".as_bytes(),
+            "€".as_bytes(),
+            "😀".as_bytes(),
+            b"\xff",
+            b"\0",
+            b"\r",
+            b"\n",
+            b"\x0b",
+            b"\x0c",
+        ] {
+            let input = [b"a".as_slice(), bridge, b"X"].concat();
+            let pattern = format!(r"a(?s:.{{0,{}}})(X)", bridge.len());
+            captures(
+                &pattern,
+                &input,
+                &[
+                    Some(span(0, input.len())),
+                    Some(span(input.len() - 1, input.len())),
+                ],
+            );
+            let narrower = format!(r"a(?s:.{{0,{}}})(X)", bridge.len() - 1);
+            assert!(spans(&narrower, &input).is_empty());
+            let two_bridges = [b"a".as_slice(), bridge, b"X", bridge, b"Y"].concat();
+            let pattern = format!(r"a(?s:.{{0,{0}}})(X)(?s:.{{0,{0}}})(Y)", bridge.len());
+            captures(
+                &pattern,
+                &two_bridges,
+                &[
+                    Some(span(0, two_bridges.len())),
+                    Some(span(1 + bridge.len(), 2 + bridge.len())),
+                    Some(span(two_bridges.len() - 1, two_bridges.len())),
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn byte_iteration_and_capture_context_preserve_original_positions() {
+        assert_eq!(
+            spans(r"", "é".as_bytes()),
+            vec![span(0, 0), span(1, 1), span(2, 2)]
+        );
+        assert_eq!(
+            spans(r"", b"\xff\x80"),
+            vec![span(0, 0), span(1, 1), span(2, 2)]
+        );
+        assert_eq!(
+            spans(r"[^X]", "éX".as_bytes()),
+            vec![span(0, 1), span(1, 2)]
+        );
+        captures(
+            r"[^X](X)",
+            "éX".as_bytes(),
+            &[Some(span(1, 3)), Some(span(2, 3))],
+        );
+        captures(r"[^X](X)", b"\xffX", &[Some(span(0, 2)), Some(span(1, 2))]);
+        captures(
+            r"\b(A)B|\B(A)B",
+            b"xAB",
+            &[Some(span(1, 3)), None, Some(span(1, 2))],
+        );
+        captures(
+            r"^(AB)|(AB)$",
+            "éAB".as_bytes(),
+            &[Some(span(2, 4)), None, Some(span(2, 4))],
+        );
+        captures(
+            r"(A)?()(B)",
+            b"\xffB",
+            &[Some(span(1, 2)), None, Some(span(1, 1)), Some(span(1, 2))],
+        );
+        captures(
+            r"(?m:^)(?i:a)(?-i:B)(?s:.)(X)$",
+            b"z\naB\nX",
+            &[Some(span(2, 6)), Some(span(5, 6))],
+        );
+        assert!(spans(r"(?i:key)", "\u{212a}ey".as_bytes()).is_empty());
+        assert_eq!(
+            spans(r"(?ui:key)", "\u{212a}ey".as_bytes()),
+            vec![span(0, 5)]
+        );
+        assert_eq!(spans(r"(?u:.)", "é".as_bytes()), vec![span(0, 2)]);
+        assert!(spans(r"(?u:.)", b"\xff").is_empty());
+        assert_eq!(spans("(?x) a # ignored\n (X)", b"aX"), vec![span(0, 2)]);
+    }
+
+    #[test]
+    fn native_compilation_uses_existing_caps_without_go_repeat_limit() {
+        assert!(NativeByteRegex::compile(r"(A{16,2048})").is_ok());
+        assert!(GoRegex::compile(r"(A{16,2048})").is_err());
+        assert!(matches!(
+            NativeByteRegex::compile(&"x".repeat(PATTERN_SIZE_LIMIT + 1)),
+            Err(GoRegexError::PatternTooLarge { .. })
+        ));
+        let nested = format!(
+            "{}x{}",
+            "(?:".repeat(NEST_LIMIT as usize + 1),
+            ")".repeat(NEST_LIMIT as usize + 1)
+        );
+        assert!(NativeByteRegex::compile(&nested).is_err());
+        assert!(GoRegex::preflight_dialect(r"[a-z]{10000}", 128, false).is_err());
+        assert!(matches!(
+            NativeByteRegex::compile(&"()".repeat(4096)),
+            Err(GoRegexError::WorkingSetTooLarge { .. })
+        ));
+        assert!(NativeByteRegex::compile(r"(A").is_err());
+        assert!(NativeByteRegex::compile(r"(?u:\p{InvalidProperty})").is_err());
+    }
+
+    #[test]
+    fn byte_span_admission_happens_before_each_append() {
+        let regex = NativeByteRegex::compile(r".").unwrap();
+        let mut admitted = 0;
+        let result = regex.find_all_controlled(b"\xffAB", || {
+            if admitted == 2 {
+                return Err(());
+            }
+            admitted += 1;
+            Ok(())
+        });
+        assert!(result.is_err());
+        assert_eq!(admitted, 2);
     }
 }

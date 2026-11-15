@@ -105,9 +105,13 @@ pub enum ExplanationReason {
     SecretGroupUnavailable,
     /// A decoded candidate did not map to an encoded segment.
     DecodedMappingUnavailable,
-    /// A candidate exceeded the configured entropy threshold.
+    /// A candidate satisfied its configured entropy predicate.
     EntropyAccepted,
-    /// A candidate did not exceed the configured entropy threshold.
+    /// A candidate satisfied its configured bounded structural predicate.
+    NativePredicateAccepted,
+    /// A candidate failed its configured bounded structural predicate.
+    NativePredicateRejected,
+    /// A candidate failed its configured entropy predicate.
     EntropyRejected,
     /// No entropy threshold is configured.
     EntropyNotRequired,
@@ -133,6 +137,12 @@ pub enum ExplanationReason {
     WorkBudgetExceeded,
     /// The scan stopped at its finding-record budget.
     FindingBudgetExceeded,
+    /// The scan stopped before copying finding byte fields.
+    FindingPayloadBudgetExceeded,
+    /// The scan stopped before collecting another whole-match span.
+    CollectedSpanBudgetExceeded,
+    /// The scan stopped before allocating regex normalization payload.
+    NormalizationBudgetExceeded,
     /// An explicitly selected offline check annotated a candidate.
     OfflineValidation {
         /// The exact check; layout is distinct from checksum validity.

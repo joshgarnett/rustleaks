@@ -30,7 +30,9 @@ create a scheduler or require an async/runtime dependency on macOS, Linux, or
 Windows.
 
 `Engine::scan_fragment_controlled` adds cooperative cancellation and aggregate
-decoded-byte, work-unit, and finding-record budgets. The ordinary
+decoded-byte, work-unit, finding-record, finding-payload, collected-span and
+normalization budgets. These are logical counters, not a process heap quota.
+The ordinary
 `scan_fragment` method remains the unlimited, never-cancelled compatibility
 wrapper. Partial outcomes carry structured termination and usage, and never
 include candidates from an unfinished top-level rule.
@@ -39,6 +41,32 @@ Finding match and secret mappings are exact half-open ranges into the original
 fragment when no transform intervenes. Decoded, path-only, nonparticipating,
 and otherwise inexact mappings are explicitly unavailable and must not be
 approximated for rewriting.
+
+Optional provider rules are selected through
+`NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)`.
+The namespaced pack adds Groq, Cerebras, Replicate and NVIDIA detector shapes,
+plus selected Anthropic, DigitalOcean, OpenAI and Fly.io format or delimiter
+coverage, and Cloudsmith, MiniMax, PostHog personal, Figma, Together and Google
+Gemini candidate formats. Nine contextual provider formats, two Slack session
+formats and four finite Veles formats are also included. Six additional Docker
+Hub, Neon, Render, Deno user and Apify rules use explicit native byte entropy.
+Twenty-four shared-prefix companions add escaped-quote and vertical-tab
+endings with explicit byte entropy and independently scoped source exclusions.
+Forty contextual companions cover terminal and assignment-VT gaps, and four
+residual companions cover Anthropic, DigitalOcean refresh and old OpenAI endings.
+The complete pack requires `NativePolicy` or the CLI selector
+`--native-pack rustleaks-providers-v1`; ordinary config loading rejects its
+structured entropy values. It can be composed with `rustleaks-extra-v1`; exact
+pack bytes and order participate in policy identity. See
+[`default/rustleaks-providers-v1.md`](default/rustleaks-providers-v1.md) for
+format limits, source-policy differences and the absence of live validation.
+
+`CONNECTION_RULES_V1` exposes the separate `rustleaks-connections-v1` pack with
+12 rule definitions: eight password rules, three complete Git credential URL
+rules and one hidden tuple-predicate helper. Its
+[contract](default/rustleaks-connections-v1.md) specifies capture, placeholder,
+byte-bound and enumeration behavior. It does not add a general connection
+parser or Unicode-equivalent Kingfisher policy.
 
 Budgets cover one fragment scan. A caller scanning multiple fields or leaves
 owns aggregate input-byte, finding, work, cancellation, and elapsed-time
@@ -55,6 +83,10 @@ disclose; use a narrow caller-owned projection across trust boundaries.
 The independent Rust implementation is MIT licensed. Copied or adapted
 Gitleaks compatibility configuration and test-derived material retains the
 upstream project's MIT terms.
+The optional provider pack retains pinned Betterleaks MIT and Veles Apache-2.0
+source terms. The optional connection pack retains Kingfisher Apache-2.0 and
+Betterleaks MIT terms. Their exact licenses, [additional notice](default/NOTICE), and
+transformation provenance are included in `default/`.
 The safe Rust Eisel-Lemire conversion routine, its detailed powers-of-ten
 table, and the generated Go Unicode 15.0.0 simple-lowercase ranges retain the
 Go Authors' BSD terms. See `LICENSE` and `NOTICE`, both included in the crate
