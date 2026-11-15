@@ -51,6 +51,15 @@ fn validate_source(
 ) -> Result<(), String> {
     let source: toml::Value = toml::from_str(source)
         .map_err(|error| format!("invalid additional {key} TOML: {error}"))?;
+    validate_rules(reviewed, key, &source, count)
+}
+
+fn validate_rules(
+    reviewed: &serde_json::Value,
+    key: &str,
+    source: &toml::Value,
+    count: usize,
+) -> Result<(), String> {
     let rules = source["rules"]
         .as_array()
         .ok_or("additional rules missing")?;
@@ -76,13 +85,22 @@ fn validate_source(
         return Err(format!("preserved {key} source contracts changed"));
     }
     for (native, expected) in rules.iter().zip(expected) {
-        let native = serde_json::to_value(native)
-            .map_err(|error| format!("cannot inspect additional {key} rule: {error}"))?;
-        if native != expected["native"] || native["id"] != expected["origin"]["id"] {
-            return Err(format!(
-                "additional {key} source or native contract differs"
-            ));
-        }
+        validate_rule(key, native, expected)?;
+    }
+    Ok(())
+}
+
+fn validate_rule(
+    key: &str,
+    native: &toml::Value,
+    expected: &serde_json::Value,
+) -> Result<(), String> {
+    let native = serde_json::to_value(native)
+        .map_err(|error| format!("cannot inspect additional {key} rule: {error}"))?;
+    if native != expected["native"] || native["id"] != expected["origin"]["id"] {
+        return Err(format!(
+            "additional {key} source or native contract differs"
+        ));
     }
     Ok(())
 }
@@ -152,6 +170,11 @@ mod tests {
         ] {
             assert!(validate_source(&reviewed, key, source, count).is_ok());
             let original: toml::Value = toml::from_str(source).unwrap();
+            // Encoding preserves every unchanged rule, so each mutated rule is
+            // checked through its own encoding against its reviewed contract.
+            let encoded = toml::to_string(&original).unwrap();
+            assert_eq!(toml::from_str::<toml::Value>(&encoded).unwrap(), original);
+            let expected = reviewed[key].as_array().unwrap();
             for index in 0..count {
                 for field in [
                     "regex",
@@ -164,15 +187,29 @@ mod tests {
                     "skipReport",
                     "predicate",
                 ] {
-                    let mut changed = original.clone();
-                    let rule = changed["rules"][index].as_table_mut().unwrap();
+                    let mut changed = original["rules"][index].clone();
+                    let rule = changed.as_table_mut().unwrap();
                     if rule.remove(field).is_none() {
                         rule.insert(field.into(), toml::Value::String("unreviewed".into()));
                     }
+                    let mut wrapper = toml::Table::new();
+                    wrapper.insert("rules".into(), toml::Value::Array(vec![changed]));
+                    let decoded: toml::Value =
+                        toml::from_str(&toml::to_string(&wrapper).unwrap()).unwrap();
+                    let changed = &decoded["rules"][0];
                     assert!(
-                        validate_source(&reviewed, key, &toml::to_string(&changed).unwrap(), count)
-                            .is_err()
+                        validate_rule(key, changed, &expected[index]).is_err(),
+                        "{key} {index} {field}"
                     );
+                    if index == 0 || index + 1 == count {
+                        let mut document = original.clone();
+                        document["rules"][index] = changed.clone();
+                        let document = toml::to_string(&document).unwrap();
+                        assert!(
+                            validate_source(&reviewed, key, &document, count).is_err(),
+                            "{key} {index} {field}"
+                        );
+                    }
                 }
             }
         }

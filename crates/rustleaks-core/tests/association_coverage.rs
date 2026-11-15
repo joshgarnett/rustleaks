@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use base64::Engine as _;
@@ -1070,6 +1070,79 @@ fn custom<'a>(mut rules: Vec<toml::Value>, ids: impl IntoIterator<Item = &'a str
         .build()
         .unwrap()
 }
+/// Builds mutation variants with fewer embedded default-policy compilations.
+///
+/// Each variant keeps only its own complete graph, as in [`custom`]. Variants
+/// that share a compilation have disjoint rule IDs, so selecting a variant's
+/// IDs yields an engine with exactly that variant's rules beside the same
+/// embedded default/global policy. The projection is checked against
+/// [`custom`] by `batched_mutation_compilation_matches_isolated_compilation`.
+fn custom_batch(variants: Vec<(Vec<toml::Value>, Vec<&str>)>) -> Vec<Engine> {
+    struct Group<'a> {
+        ids: BTreeSet<String>,
+        bytes: usize,
+        rules: Vec<toml::Value>,
+        members: Vec<(usize, Vec<&'a str>)>,
+    }
+    let count = variants.len();
+    let mut groups: Vec<Group<'_>> = Vec::new();
+    for (index, (mut rules, ids)) in variants.into_iter().enumerate() {
+        rules.retain(|rule| ids.contains(&rule["id"].as_str().unwrap()));
+        let rule_ids: BTreeSet<String> = rules
+            .iter()
+            .map(|rule| rule["id"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(rule_ids.len(), rules.len());
+        let mut source = toml::Table::new();
+        source.insert("rules".into(), toml::Value::Array(rules.clone()));
+        let bytes = toml::to_string(&source).unwrap().len();
+        // Half the aggregate limit leaves room for combined table framing.
+        let group = groups.iter_mut().find(|group| {
+            group.ids.is_disjoint(&rule_ids)
+                && group.bytes + bytes <= NativePolicy::MAX_PACK_BYTES / 2
+                && group.ids.len() + rule_ids.len() <= NativePolicy::MAX_NATIVE_RULES
+        });
+        let group = if let Some(group) = group {
+            group
+        } else {
+            groups.push(Group {
+                ids: BTreeSet::new(),
+                bytes: 0,
+                rules: Vec::new(),
+                members: Vec::new(),
+            });
+            groups.last_mut().unwrap()
+        };
+        group.ids.extend(rule_ids);
+        group.bytes += bytes;
+        group.rules.extend(rules);
+        group.members.push((index, ids));
+    }
+    let mut engines: Vec<Option<Engine>> = (0..count).map(|_| None).collect();
+    for group in groups {
+        let mut source = toml::Table::new();
+        source.insert("rules".into(), toml::Value::Array(group.rules));
+        let text = toml::to_string(&source).unwrap();
+        let (compiled, _) = NativePolicy::builder()
+            .with_pack("association-contract-v1", &text)
+            .unwrap()
+            .compile()
+            .unwrap();
+        for (index, ids) in group.members {
+            engines[index] = Some(
+                Engine::builder(compiled.select_rules(ids).unwrap())
+                    .build()
+                    .unwrap(),
+            );
+        }
+    }
+    engines.into_iter().map(Option::unwrap).collect()
+}
+fn graph_ids(graph: &Graph) -> Vec<&str> {
+    std::iter::once(graph.parent.as_str())
+        .chain(graph.helpers.iter().map(String::as_str))
+        .collect()
+}
 fn primary(graph: &Graph) -> &Case {
     fixture()
         .primary
@@ -1248,6 +1321,8 @@ fn every_graph_enforces_independent_resource_limits() {
 
 #[test]
 fn real_graph_source_filters_and_keywords_gate_each_component() {
+    let mut checks = Vec::new();
+    let mut variants = Vec::new();
     for graph in &fixture().graphs {
         let case = primary(graph);
         let ids: Vec<_> = std::iter::once(graph.parent.as_str())
@@ -1302,36 +1377,39 @@ fn real_graph_source_filters_and_keywords_gate_each_component() {
                         .unwrap()
                         .push(toml::from_str(&value).unwrap());
                 }
-                let engine = custom(rules, ids.iter().copied());
-                if kind == "commit" {
-                    let input = bytes(&case.input_base64);
-                    for (commit, count) in [
-                        ("fixture-association-commit", 0),
-                        ("fixture-association-neighbor", 1),
-                    ] {
-                        let fragment = Fragment::builder(input.as_slice())
-                            .file_path(case.path.as_str())
-                            .commit(commit)
-                            .build();
-                        let result = engine.scan_fragment(&fragment, &ScanOptions::default());
-                        assert!(result.is_complete());
-                        assert_eq!(
-                            result.findings().len(),
-                            count,
-                            "{} {}",
-                            case.name,
-                            record.id
-                        );
-                    }
-                } else {
-                    assert!(
-                        scan(&engine, case).is_empty(),
-                        "{} {} {kind}",
-                        case.name,
-                        record.id
-                    );
-                }
+                variants.push((rules, ids.clone()));
+                checks.push((case, record, kind));
             }
+        }
+    }
+    for ((case, record, kind), engine) in checks.into_iter().zip(custom_batch(variants)) {
+        if kind == "commit" {
+            let input = bytes(&case.input_base64);
+            for (commit, count) in [
+                ("fixture-association-commit", 0),
+                ("fixture-association-neighbor", 1),
+            ] {
+                let fragment = Fragment::builder(input.as_slice())
+                    .file_path(case.path.as_str())
+                    .commit(commit)
+                    .build();
+                let result = engine.scan_fragment(&fragment, &ScanOptions::default());
+                assert!(result.is_complete());
+                assert_eq!(
+                    result.findings().len(),
+                    count,
+                    "{} {}",
+                    case.name,
+                    record.id
+                );
+            }
+        } else {
+            assert!(
+                scan(&engine, case).is_empty(),
+                "{} {} {kind}",
+                case.name,
+                record.id
+            );
         }
     }
 }
@@ -1469,6 +1547,8 @@ fn byte_entropy(bytes: &[u8]) -> f64 {
 #[test]
 fn actual_helper_captures_preserve_strict_and_inclusive_entropy_comparators() {
     assert_eq!(fixture().helper_entropy.len(), 26);
+    let mut checks = Vec::new();
+    let mut variants = Vec::new();
     for case in &fixture().helper_entropy {
         let graph = fixture()
             .graphs
@@ -1499,16 +1579,70 @@ fn actual_helper_captures_preserve_strict_and_inclusive_entropy_comparators() {
                 .find(|r| r["id"].as_str() == Some(case.helper.as_str()))
                 .unwrap();
             rule["entropy"]["threshold"] = toml::Value::Float(threshold);
-            let result = custom(rules, ids.iter().copied())
-                .scan_fragment(&Fragment::new(input.as_slice()), &ScanOptions::default());
-            assert!(result.is_complete());
-            assert_eq!(
-                result.findings().len(),
-                expected,
-                "{} {threshold}",
-                case.helper
-            );
+            variants.push((rules, ids.clone()));
+            checks.push((case, input.clone(), threshold, expected));
         }
+    }
+    for ((case, input, threshold, expected), engine) in
+        checks.into_iter().zip(custom_batch(variants))
+    {
+        let result =
+            engine.scan_fragment(&Fragment::new(input.as_slice()), &ScanOptions::default());
+        assert!(result.is_complete());
+        assert_eq!(
+            result.findings().len(),
+            expected,
+            "{} {threshold}",
+            case.helper
+        );
+    }
+}
+
+#[test]
+fn batched_mutation_compilation_matches_isolated_compilation() {
+    let graphs = &fixture().graphs;
+    let unchanged: Vec<_> = graphs
+        .iter()
+        .map(|graph| (selected_rules(), graph_ids(graph)))
+        .collect();
+    for (graph, engine) in graphs.iter().zip(custom_batch(unchanged)) {
+        assert_eq!(
+            engine.config(),
+            &config().select_rules(graph_ids(graph)).unwrap(),
+            "{}",
+            graph.source_id
+        );
+    }
+    // Mutate every graph parent in one shared compilation and compare the
+    // first and last projections with isolated compilations of their variant.
+    let changed = |graph: &Graph| {
+        let mut rules = selected_rules();
+        let rule = rules
+            .iter_mut()
+            .find(|r| r["id"].as_str() == Some(graph.parent.as_str()))
+            .unwrap();
+        rule.as_table_mut().unwrap().insert(
+            "keywords".into(),
+            toml::Value::Array(vec![toml::Value::String(
+                "absent-association-keyword-97".into(),
+            )]),
+        );
+        rules
+    };
+    let engines = custom_batch(
+        graphs
+            .iter()
+            .map(|graph| (changed(graph), graph_ids(graph)))
+            .collect(),
+    );
+    for index in [0, graphs.len() - 1] {
+        let graph = &graphs[index];
+        assert_eq!(
+            engines[index].config(),
+            custom(changed(graph), graph_ids(graph)).config(),
+            "{}",
+            graph.source_id
+        );
     }
 }
 
