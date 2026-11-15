@@ -283,6 +283,10 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
         "default/rustleaks-connections-v1.provenance.json",
         "default/LICENSE.kingfisher",
         "default/LICENSE.veles",
+        "data/README.md",
+        "data/cl100k-vercel60-v1.bin",
+        "data/LICENSE.tiktoken",
+        "data/LICENSE.tiktoken-rs",
     ] {
         if !package_files.lines().any(|path| path == required) {
             return Err(format!(
@@ -301,7 +305,7 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
     ];
     for path in package_files.lines() {
         if !allowed_roots.contains(&path)
-            && !["default/", "src/", "tests/"]
+            && !["data/", "default/", "src/", "tests/"]
                 .iter()
                 .any(|prefix| path.starts_with(prefix))
         {

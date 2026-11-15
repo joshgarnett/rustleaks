@@ -67,9 +67,3 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-The bounded native Vercel tokenizer and its generated cl100k rank table are
-derived from OpenAI tiktoken and tiktoken-rs. The complete source data, derived
-asset identity and provenance are documented in crates/rustleaks-core/data/README.md.
-The adjacent LICENSE.tiktoken and LICENSE.tiktoken-rs retain the MIT notices
-for OpenAI and Shantanu Jain (2022) and Roger Zurawicki (2023), respectively.
