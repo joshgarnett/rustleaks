@@ -14,6 +14,14 @@ use serde_json::Value;
 
 use super::support::sha256_bytes;
 
+/// Directories of frozen historical evidence.
+pub(crate) const FROZEN_DIRECTORIES: &[&str] = manifest::DIRECTORIES;
+
+/// Returns the paths of individually listed frozen historical artifacts.
+pub(crate) fn frozen_artifact_paths() -> impl Iterator<Item = &'static str> {
+    manifest::ARTIFACTS.iter().map(|(path, _, _)| *path)
+}
+
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 

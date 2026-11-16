@@ -5,9 +5,11 @@ decision for the unpublished archive codec forks. It does not authorize a
 dependency change, a reduction in archive behavior, or publication of a codec,
 source, report, or CLI crate.
 
-Replacement criteria use the current Rust 1.95 minimum. Candidate evaluations
-and upstream drafts below retain the Rust 1.88 policy used for the dated
-observation; their toolchain rejections require reevaluation before reuse.
+Replacement criteria use the current Rust 1.95 minimum. The candidate
+evaluations below were observed when the minimum was Rust 1.88. Every recorded
+candidate and dependency requirement is at or below Rust 1.95, so toolchain
+support is not a current rejection reason. Each rejection rests on its other
+recorded reasons. A new evaluation must resolve the dependency graph again.
 
 ## Decision
 
@@ -154,8 +156,8 @@ resource integration.
 | Need | Candidate and observation | Exact graph | Material boundary | Result |
 | --- | --- | --- | --- | --- |
 | BZip2 | `bzip2 0.6.1`, released 2025-10-16, Rust 1.82, archive `f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c`, commit `eebf6e470f6c4a14295fcaf43c619ae4a0e5690a` | Default features; 2 dependencies; lock `a687ecd3b0bf0c340d4196e5f7722f9b286396c1a4891bef7619c8ef26e1bd69` | Adds `libbz2-rs-sys 0.2.5`. Its chosen Rust allocator graph has no build script or `links`. A conservative source scan finds 134 `unsafe` tokens across four Rust files in its C ABI, raw-pointer, and allocation layer. Licenses are MIT or Apache-2.0 plus bzip2-1.0.6. | Reject. It replaces a safe bounded decoder with a larger unsafe boundary and lacks exact peer `safe-to-deploy` coverage. |
-| RAR3/RAR5 | `rars 0.9.3`, released 2026-08-22, declared Rust 1.87, archive `68ff174e95890b9e1c01601a93f35f60c017162fb1bd723dfef9f684ae2ffdb6`, commit `54e744d0e70998d1aea9b1ae8a9bc7eaecd127f3` | No feature selection; 43 dependencies; lock `5f6445a4608eb9b30d5ccc0887862f49f5f9adba55ce90ea1ae6f105698ad28e` | Includes read, write, recovery, crypto, parallel, and filesystem surfaces. The resolved `aes 0.9.3` requires Rust 1.89. The graph includes build scripts, proc macros, and `links = "rayon-core"`. Top-level `rars` has no unsafe Rust, but its full dependency boundary is not the dependency-free decoder boundary. Licenses resolve to the MIT, Apache-2.0, Unicode-3.0, LGPL-2.1-or-later, and Unlicense expressions recorded by Cargo metadata. | Reject. The fresh graph fails Rust 1.88 and cannot select a decoder-only surface. |
-| 7z | `sevenz-rust2 0.22.2`, released 2026-08-25, Rust 1.93, archive `cb967eb8b29410e61e8c9005058fcfd5889d0b827856beb25529c73dfc86a98a`, commit `b7e265168b67342194df332e1456c667476a6574` | No defaults plus `brotli,bzip2,deflate,lz4,zstd`; 45 dependencies; lock `bcb87858a6648735f9615375de9c9262ef9d851487ceb53ad8d370f102d35dce` | Top-level source has no unsafe Rust, but the selected graph includes build scripts, proc macros, and `zstd-sys 2.0.16+zstd.1.5.7` with `links = "zstd"` and bundled native code. Cargo metadata records Apache-2.0, MIT, BSD, Zlib, Unicode, LGPL, and bzip2 license expressions. | Reject. It fails Rust 1.88 and the selected codec set adds a native linked boundary. |
+| RAR3/RAR5 | `rars 0.9.3`, released 2026-08-22, declared Rust 1.87, archive `68ff174e95890b9e1c01601a93f35f60c017162fb1bd723dfef9f684ae2ffdb6`, commit `54e744d0e70998d1aea9b1ae8a9bc7eaecd127f3` | No feature selection; 43 dependencies; lock `5f6445a4608eb9b30d5ccc0887862f49f5f9adba55ce90ea1ae6f105698ad28e` | Includes read, write, recovery, crypto, parallel, and filesystem surfaces. The resolved `aes 0.9.3` requires Rust 1.89. The graph includes build scripts, proc macros, and `links = "rayon-core"`. Top-level `rars` has no unsafe Rust, but its full dependency boundary is not the dependency-free decoder boundary. Licenses resolve to the MIT, Apache-2.0, Unicode-3.0, LGPL-2.1-or-later, and Unlicense expressions recorded by Cargo metadata. | Reject. It cannot select a decoder-only surface. |
+| 7z | `sevenz-rust2 0.22.2`, released 2026-08-25, Rust 1.93, archive `cb967eb8b29410e61e8c9005058fcfd5889d0b827856beb25529c73dfc86a98a`, commit `b7e265168b67342194df332e1456c667476a6574` | No defaults plus `brotli,bzip2,deflate,lz4,zstd`; 45 dependencies; lock `bcb87858a6648735f9615375de9c9262ef9d851487ceb53ad8d370f102d35dce` | Top-level source has no unsafe Rust, but the selected graph includes build scripts, proc macros, and `zstd-sys 2.0.16+zstd.1.5.7` with `links = "zstd"` and bundled native code. Cargo metadata records Apache-2.0, MIT, BSD, Zlib, Unicode, LGPL, and bzip2 license expressions. | Reject. The selected codec set adds a native linked boundary. |
 | 7z alternative | `sevenz-rust 0.6.1`, released 2024-07-17, Rust 1.70, archive `26482cf1ecce4540dc782fc70019eba89ffc4d87b3717eb5ec524b5db6fdefef`, commit `95c3b26f5b702c147a8d3fd33a34be0c85063693` | No defaults plus `bzip2,zstd`; 71 dependencies; lock `31bf31f20b6d367c169593c7058361e6d55f515eeeab3c5632a99be6bf238fcd` | The upstream repository is unavailable. The top-level reader uses unsafe raw-pointer calls. The graph includes `bzip2-sys` and `zstd-sys` build scripts, native code, and `links` declarations, and it cannot select the full required Brotli and LZ4 format set. | Reject. It lacks current source maintenance, required codecs, and the required safe and native-free boundary. |
 
 ### Exact candidate package sets
@@ -296,8 +298,7 @@ Problem statement:
 The released package has no feature boundary between decoding and writer,
 recovery, encryption, parallel, and filesystem functions. A consumer that
 accepts hostile archive bytes cannot select the decoder state machines without
-the unrelated graph. Fresh resolution also exceeds the consumer's Rust 1.88
-policy through a transitive dependency.
+the unrelated graph.
 
 Proposed upstream shape:
 
@@ -309,7 +310,7 @@ Proposed upstream shape:
    allocation and checked arithmetic;
 4. preserve the current decoder tests and add hostile Huffman, VM/filter,
    truncation, and output-limit cases; and
-5. publish a release whose exact feature graph supports Rust 1.88.
+5. publish a release whose exact feature graph supports Rust 1.95.
 
 The local adapter and codec files provide the mechanical extraction and test
 material. An upstream patch should minimize or eliminate the retained encoder
@@ -317,11 +318,11 @@ helpers rather than copying the local crate wholesale.
 
 ### 7z issue and patch draft
 
-Title: `offer a Rust 1.88 decoder-only profile with checked parser limits`
+Title: `offer a decoder-only profile with checked parser limits`
 
 Problem statement:
 
-The current release requires Rust 1.93. The feature set needed for Rustleaks'
+The feature set needed for Rustleaks'
 formats selects a native linked Zstandard implementation, while the retained
 fork uses a private decoder-only surface with checked parser and allocation
 behavior.
@@ -330,7 +331,7 @@ Proposed upstream shape:
 
 1. provide a decoder-only profile without writer, filesystem utility, async,
    or encoder APIs;
-2. preserve a Rust 1.88-compatible release line while it remains supported;
+2. keep a release line compatible with Rust 1.95 while it remains supported;
 3. allow pure Rust Brotli, BZip2, Deflate, LZ4, LZMA/LZMA2, XZ, and Zstandard
    decoder selection without a `links` dependency;
 4. make next-header, block, metadata, allocation, and coder-graph ceilings

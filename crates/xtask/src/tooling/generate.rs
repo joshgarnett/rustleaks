@@ -1,6 +1,16 @@
 //! Dispatch for maintained Rust-owned repository generators.
 use std::path::Path;
 
+/// Generator targets accepted by [`run`]. The documentation command check
+/// reads this list, and a unit test keeps it in step with the dispatch.
+pub(crate) const GENERATE_TARGETS: &[&str] = &[
+    "api-dispositions",
+    "native-pack-identity",
+    "archive-fuzz-seeds",
+    "regex-fuzz-seeds",
+    "vet-inventory",
+];
+
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
         [target] if target == "native-pack-identity" => super::generate_native_pack_identity(root, false),
@@ -17,5 +27,27 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         [target, flag] if target == "api-dispositions" && flag == "--summary" => super::summarize_api_dispositions(root, &root.join("compat/api-dispositions-v1.jsonl")).map(|summary| print!("{summary}")),
         [target, flag, output] if target == "api-dispositions" && flag == "--output" => super::write_api_dispositions(root, Path::new(output)).map(|summary| print!("{summary}")),
         _ => Err("usage: cargo xtask generate <api-dispositions [--check|--self-test|--summary|--output PATH]|native-pack-identity [--check]|archive-fuzz-seeds OUTPUT [--check]|regex-fuzz-seeds REQUESTS OUTPUT|vet-inventory [--check|--output PATH]>; live Go generation is retired; use regression-check for frozen evidence".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn listed_targets_match_dispatch() {
+        let source = include_str!("generate.rs");
+        let start = source.find("pub(crate) fn run(").unwrap();
+        let dispatch = &source[start..];
+        let pattern = "target == \"";
+        let dispatched = dispatch
+            .match_indices(pattern)
+            .filter_map(|(index, _)| dispatch[index + pattern.len()..].split_once('"'))
+            .map(|(name, _)| name)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            dispatched,
+            super::GENERATE_TARGETS.iter().copied().collect()
+        );
     }
 }

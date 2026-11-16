@@ -638,13 +638,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
     let justfile = fs::read_to_string(root.join("justfile"))
         .map_err(|error| format!("cannot read justfile: {error}"))?;
     require_contains(&justfile, "set default-list", "read-only default recipe")?;
-    let recipes = justfile
-        .lines()
-        .filter(|line| line.chars().next().is_some_and(|ch| !ch.is_whitespace()))
-        .filter_map(|line| line.split_once(':').map(|(name, _)| name))
-        .map(|name| name.strip_suffix(" *arguments").unwrap_or(name))
-        .filter(|name| !name.starts_with('[') && !name.chars().any(char::is_whitespace))
-        .collect::<BTreeSet<_>>();
+    let recipes = crate::docs_check::justfile_recipes(&justfile);
     let expected = [
         "build",
         "check",
@@ -674,6 +668,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "test",
     ]
     .into_iter()
+    .map(str::to_owned)
     .collect::<BTreeSet<_>>();
     if recipes != expected {
         return Err(format!(

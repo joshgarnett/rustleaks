@@ -215,10 +215,6 @@ or logs.
 Cross-compilation is not native evidence. A local dry run, package archive, or
 successful command does not grant publication approval.
 
-The incident procedure was exercised without a live report or credential on
-2026-08-24. The record is in
-[`INCIDENT_RESPONSE_EXERCISE.md`](INCIDENT_RESPONSE_EXERCISE.md).
-
 ## Publication and rollback plan
 
 The current public package boundary contains one crate, `rustleaks-core`, so

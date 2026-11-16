@@ -123,8 +123,6 @@ Review result: PASS for the tested macOS arm64 configuration. `just parity`,
 `just perf-check` passed. The retained differential tests found no backend divergence
 in the regex/default-rule corpora or synthetic cases. The generated cargo-vet
 inventory was refreshed for the selected features; no exemption changed.
-The [performance record](../validation/core-fragment-throughput.md) reports
-compile and hostile-miss budgets, peak RSS, and stable warmed-worker retention.
 
 No new advisory, vetting, unsafe or compatibility exception is accepted.
 The native evidence is macOS arm64; all eight declared targets compile, and

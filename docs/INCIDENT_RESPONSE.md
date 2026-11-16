@@ -80,15 +80,9 @@ unexplained fuzz, sanitizer, advisory, provenance, or integrity failure.
 - Add durable controls, tests, documentation, ownership, and a dated follow-up.
   Revisit the threat model, dependency policy, release design, and this
   procedure.
-- Exercise this procedure before the first public release and after a material
-  reporting, CI, release, or ownership change.
+- Exercise this procedure after a material reporting, CI, release, or
+  ownership change.
 
 The verified private intake endpoint is documented in `SECURITY.md`. Do not
 send vulnerability details to a public issue. Setup verified that the route is
-enabled without submitting a live report. Exercise the reporting and response
-procedure before the first public release.
-
-The 2026-08-24 pre-publication exercise is recorded in
-[`INCIDENT_RESPONSE_EXERCISE.md`](INCIDENT_RESPONSE_EXERCISE.md). It used only
-synthetic release-integrity evidence and did not submit a vulnerability report,
-use a credential, yank a crate, or mutate a public release.
+enabled without submitting a live report.

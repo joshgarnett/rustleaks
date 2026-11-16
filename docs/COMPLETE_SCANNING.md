@@ -132,8 +132,10 @@ source assembly or an incomplete-result resource budget.
 
 ## Explicit CLI profile
 
-`--complete-profile /absolute/path/scan.limits` selects this native policy for
-`stdin`, `dir`, or `git`. Without the option, the existing CLI route is unchanged.
+`--complete-profile scan.limits` selects this native policy for `stdin`, `dir`,
+or `git`. The path must be nonempty. A relative path is resolved against the
+current working directory of the `rustleaks` process; an absolute path is used
+as given. Without the option, the existing CLI route is unchanged.
 The option is documented here separately from the frozen legacy help text.
 Configuration selection, environment precedence, automatic configuration
 lookup, enabled rules, allowlists, ignore files, baselines, redaction and report

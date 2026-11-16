@@ -455,7 +455,3 @@ operating proposals. Hosted scheduling and artifact transport require a separate
 reviewed private-retention design. Review and minimize any local failure before
 turning it into a synthetic ordinary regression; this command grants no public
 artifact or disclosure approval.
-
-The [native acceptance record](validation/deep-and-profiling.md) documents the
-validated local run, its explicit source-coverage skips and the retained
-deadline/corpus evidence. It does not qualify a hosted retention design.

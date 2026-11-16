@@ -24,7 +24,8 @@ The ordinary configuration loader rejects these native table values.
 
 ## Scope
 
-For the six original password rules, every consumed match byte is ASCII, including permitted ASCII controls.
+For the six original connection-string password rules in the table below,
+every consumed match byte is ASCII, including permitted ASCII controls.
 The surrounding fragment can contain arbitrary bytes; no text normalization
 occurs. Unicode or invalid-byte connection values are outside these rules'
 scope. Cross-tool comparisons must use entirely ASCII raw inputs and account
@@ -39,13 +40,14 @@ for the tools' separate source, finding, and match-enumeration policies.
 | `jdbc-query` | PostgreSQL, MariaDB, or MySQL JDBC URL | Lowercase `password=` query property, 4 through 128 bytes |
 | `database-uri` | PostgreSQL, MariaDB, or MySQL URI | Userinfo password, 1 through 256 bytes |
 
-The six password-rule IDs start with `rustleaks.connection-string.password.`. The six password rules
-select capture 1. Quotes and enclosing braces are excluded from the secret.
-A doubled ODBC closing brace counts as one unit and retains both source
-bytes, so the braced secret can contain up to 256 source bytes. Percent
-escapes, including malformed or placeholder-shaped percent sequences,
-remain raw text. The rules do not percent-decode passwords or assess client
-validity.
+The six rule IDs in the table start with
+`rustleaks.connection-string.password.`, as do the two libpq rule IDs
+described later. These six rules select capture 1. Quotes and enclosing braces
+are excluded from the secret. A doubled ODBC closing brace counts as one unit
+and retains both source bytes, so the braced secret can contain up to 256
+source bytes. Percent escapes, including malformed or placeholder-shaped
+percent sequences, remain raw text. The rules do not percent-decode passwords
+or assess client validity.
 
 Semicolon forms require a nonempty `Server`, `Host`, `Data Source`, or `DSN`
 before `Password` or `Pwd` on the same line. Field names accept ASCII case
@@ -233,12 +235,12 @@ source limit. Individual regex searches are indivisible. The tests exercise
 long tails, many hosts, dense matches and negative inputs; they do not prove
 a wall-clock or process-memory ceiling.
 
-`tests/connection_rules.rs` covers all six forms, quoted/braced controls,
-exact geometry, bounds, ASCII/Unicode distinctions, stopwords, same-line
-occurrences, the adjacent-connection gap, allowlists, generic and specific
-overlap, composition identity, decoding, and finite scan controls. These
-synthetic controls establish a bounded regression contract, not field
-accuracy or complete connection-string coverage.
+`tests/connection_rules.rs` covers all six forms above, the libpq forms,
+quoted/braced controls, exact geometry, bounds, ASCII/Unicode distinctions,
+stopwords, same-line occurrences, the adjacent-connection gap, allowlists,
+generic and specific overlap, composition identity, decoding, and finite scan
+controls. These synthetic controls establish a bounded regression contract,
+not field accuracy or complete connection-string coverage.
 
 - [Pinned rule definitions](https://github.com/mongodb/kingfisher/blob/01e7b817376fbf2272be8f162bd32309bf97ee1f/crates/kingfisher-rules/data/kingfisher-rules.yml)
 - [Pinned source scope and syntax references](https://github.com/mongodb/kingfisher/blob/01e7b817376fbf2272be8f162bd32309bf97ee1f/crates/kingfisher-rules/data/kingfisher-rules.md)

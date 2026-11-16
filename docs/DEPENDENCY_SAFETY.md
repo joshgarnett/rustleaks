@@ -115,8 +115,10 @@ Rust.
 
 Any dependency version, feature, target, or publication-boundary change reopens
 this review. `cargo deny check` must also pass advisories, bans, licenses, and
-sources. Native Linux/Windows execution remains a nonblocking runtime
-follow-up; target compilation does not validate architecture-specific unsafe
+sources. CI runs the platform-compatible tests natively on all eight required
+targets, as described in [the compatibility profile](COMPATIBILITY.md#platforms).
+The tests run dependency code only with the inputs that Rustleaks tests pass
+to it. Target compilation alone does not validate architecture-specific unsafe
 paths at runtime.
 
 ## Historical Go oracle

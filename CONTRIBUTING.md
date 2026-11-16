@@ -17,6 +17,45 @@ Never put a live credential, raw finding, exploit, private repository content,
 or non-public vulnerability detail in an issue. Follow [the security
 policy](SECURITY.md) for sensitive reports.
 
+### What belongs in an issue
+
+An issue describes one current problem that someone can act on. Open an issue
+only for:
+
+- a defect: Rustleaks behaves incorrectly and you can reproduce it;
+- a compatibility gap: a functional difference from the pinned Gitleaks
+  revision; or
+- a feature proposal: a concrete capability or workflow change with a clear
+  outcome.
+
+Do not open an issue for a tracker, log, status report, plan, or roadmap. Put
+one problem in each issue. Close an issue when it is resolved or no longer
+current. Report security vulnerabilities through [the security
+policy](SECURITY.md), not in an issue.
+
+### Issue labels
+
+The issue forms set the title prefix (`bug: `, `compat: `, or `feat: `) but
+do not apply labels. A maintainer applies labels during triage.
+
+| Label | Use |
+| --- | --- |
+| `bug` | Rustleaks behaves incorrectly. Use for `bug: ` issues and for `compat: ` issues where supported behavior differs. |
+| `enhancement` | A new capability or improvement. Use for `feat: ` issues and for `compat: ` issues about behavior that Rustleaks does not support yet. |
+| `documentation` | The problem or change is in documentation only. |
+| `dependencies` | The issue concerns a dependency, such as an advisory or a required update. |
+| `question` | The reporter must provide more information before work can start. |
+| `good first issue` | Small, well-defined work that suits a new contributor. |
+| `help wanted` | The maintainer welcomes an outside contribution. |
+| `duplicate` | Another issue already covers the problem. Link it and close this issue. |
+| `wontfix` | The maintainer decided not to make the change. Explain why and close the issue. |
+| `invalid` | The report is not a Rustleaks problem or does not follow this policy. Close the issue. |
+
+Dependabot adds `dependencies` and an ecosystem label (`rust`,
+`github_actions`, or `rust_toolchain_package_manager`) to its pull requests.
+Do not apply the ecosystem labels to issues. Add `accessibility` to an issue
+when the problem is a barrier for people with disabilities.
+
 ## Local workflow
 
 Install Bazelisk and Just 1.53.0, matching the maintained CI setup. Use the Rust
