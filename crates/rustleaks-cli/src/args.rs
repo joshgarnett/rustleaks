@@ -1,6 +1,8 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+use rustleaks_core::Base64Mode;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CommandKind {
     Directory,
@@ -47,6 +49,7 @@ pub(crate) struct Options {
     pub enable_rules: Vec<String>,
     pub ignore_path: PathBuf,
     pub max_decode_depth: i64,
+    pub base64_mode: Base64Mode,
     pub max_archive_depth: i64,
     pub timeout_seconds: i64,
     pub platform: String,
@@ -77,6 +80,7 @@ impl Default for Options {
             enable_rules: Vec::new(),
             ignore_path: PathBuf::from("."),
             max_decode_depth: 5,
+            base64_mode: Base64Mode::Compatible,
             max_archive_depth: 0,
             timeout_seconds: 0,
             platform: String::new(),
@@ -327,6 +331,13 @@ fn parse_long(
         "rustleaks-ignore-path" | "gitleaks-ignore-path" => {
             options.ignore_path = path_value(name, attached, arguments, index)?;
         }
+        "base64-mode" => {
+            options.base64_mode = match value(name, attached, arguments, index)? {
+                "compatible" => Base64Mode::Compatible,
+                "extended" => Base64Mode::Extended,
+                other => return Err(invalid_value(name, other)),
+            };
+        }
         "max-decode-depth" => {
             options.max_decode_depth = parse_i64(name, value(name, attached, arguments, index)?)?;
         }
@@ -537,6 +548,36 @@ mod tests {
     use super::*;
     fn parsed(values: &[&str]) -> Result<Action, ParseError> {
         parse(values.iter().map(OsString::from))
+    }
+
+    #[test]
+    fn base64_mode_defaults_to_compatible_and_requires_a_known_value() {
+        for (arguments, expected) in [
+            (vec!["stdin"], Base64Mode::Compatible),
+            (
+                vec!["stdin", "--base64-mode=compatible"],
+                Base64Mode::Compatible,
+            ),
+            (
+                vec!["stdin", "--base64-mode", "extended"],
+                Base64Mode::Extended,
+            ),
+        ] {
+            let Action::Scan(invocation) = parsed(&arguments).unwrap() else {
+                panic!("expected scan");
+            };
+            assert_eq!(invocation.options.base64_mode, expected);
+        }
+        for arguments in [
+            vec!["stdin", "--base64-mode"],
+            vec!["stdin", "--base64-mode="],
+            vec!["stdin", "--base64-mode=unknown"],
+            vec!["stdin", "--base64-mode=Extended"],
+        ] {
+            let error = parsed(&arguments).unwrap_err();
+            assert_eq!(error.kind, ParseErrorKind::Other);
+            assert!(error.message.contains("--base64-mode"));
+        }
     }
 
     #[test]

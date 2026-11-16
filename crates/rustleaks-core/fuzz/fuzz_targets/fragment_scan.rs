@@ -14,10 +14,10 @@ use libfuzzer_sys::fuzz_target;
 use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::session::sort_findings_canonical;
-use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
+use rustleaks_core::{Base64Mode, Engine, ScanBudget, ScanControl, ScanOutcome};
 
 const DECODE_SUFFIX: &[u8] =
-    b"\n7365637265743d46555a5a544f4b454e\nc2VjcmV0PUZVWlpUT0tFTg==\nsecret%3DFUZZTOKEN\n";
+    b"\n7365637265743d46555a5a544f4b454e\nc2VjcmV0PUZVWlpUT0tFTg==\nsecret%3DFUZZTOKEN\n+///AHNlY3JldD1GVVpaVE9LRU4hIQ==\n-___AHNlY3JldD1GVVpaVE9LRU4hIQ\n";
 
 fn engine() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -65,6 +65,11 @@ fuzz_target!(|data: &[u8]| {
         .start_line(start_line)
         .build();
     let options = ScanOptions::builder()
+        .base64_mode(if control & 4 == 0 {
+            Base64Mode::Compatible
+        } else {
+            Base64Mode::Extended
+        })
         .max_decode_depth(limits.decode_depth)
         .max_target_bytes(Some(limits.input_bytes + DECODE_SUFFIX.len()))
         .redaction_percent(usize::from(control % 101))

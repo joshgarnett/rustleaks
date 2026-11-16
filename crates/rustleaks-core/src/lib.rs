@@ -84,5 +84,7 @@ pub use engine::{
     ScanOutcome, ScanTermination, ScanUsage,
 };
 
+pub use model::Base64Mode;
+
 /// Upstream Gitleaks revision targeted for backward compatibility by this build.
 pub const UPSTREAM_REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";

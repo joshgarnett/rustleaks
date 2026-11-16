@@ -803,20 +803,35 @@ rust_binary(
 "#,
     )
     .map_err(|error| format!("cannot write external Bazel build: {error}"))?;
-    command_output(Command::new("bazelisk").current_dir(&root).args([
-        "--ignore_all_rc_files",
-        "run",
-        "//:consumer",
-        "--lockfile_mode=update",
-    ]))?;
-    command_output(Command::new("bazelisk").current_dir(&root).args([
-        "--ignore_all_rc_files",
-        "run",
-        "//:consumer",
-        "--lockfile_mode=error",
-        "--nofetch",
-    ]))?;
+    for locked in [false, true] {
+        command_output(Command::new("bazelisk").current_dir(&root).args(
+            external_bazel_consumer_args(cfg!(target_os = "macos"), locked),
+        ))?;
+    }
     Ok(())
+}
+
+fn external_bazel_consumer_args(macos: bool, locked: bool) -> Vec<&'static str> {
+    let mut args = vec![
+        "--ignore_all_rc_files",
+        "run",
+        "//:consumer",
+        if locked {
+            "--lockfile_mode=error"
+        } else {
+            "--lockfile_mode=update"
+        },
+    ];
+    if macos {
+        // Apple-linked proc macros can have a misaligned LINKEDIT string pool
+        // when debug stripping is enabled. Keep exec artifacts unstripped so
+        // rustc can load them; target code and toolchain versions are unchanged.
+        args.push("--@rules_rust//rust/settings:extra_exec_rustc_flag=-Cstrip=none");
+    }
+    if locked {
+        args.push("--nofetch");
+    }
+    args
 }
 
 fn release_dry_run() -> Result<(), String> {
@@ -2102,6 +2117,25 @@ mod tests {
 
     const TIMEOUT_PROBE_TEST: &str = "tests::resource_launcher_timeout_probe_child";
     const RESOURCE_SELECTOR: &str = "RUSTLEAKS_BOUNDED_RESOURCE_TEST";
+
+    #[test]
+    fn external_bazel_consumer_scopes_strip_override_to_macos_in_both_passes() {
+        let strip = "--@rules_rust//rust/settings:extra_exec_rustc_flag=-Cstrip=none";
+        for macos in [false, true] {
+            let mut update = super::external_bazel_consumer_args(macos, false);
+            let locked = super::external_bazel_consumer_args(macos, true);
+            assert_eq!(update.contains(&strip), macos);
+            assert_eq!(locked.contains(&strip), macos);
+            assert_eq!(
+                &update[..3],
+                ["--ignore_all_rc_files", "run", "//:consumer"]
+            );
+            assert_eq!(update[3], "--lockfile_mode=update");
+            update[3] = "--lockfile_mode=error";
+            update.push("--nofetch");
+            assert_eq!(locked, update);
+        }
+    }
 
     #[test]
     fn public_api_uses_the_pinned_nightly_toolchain() {

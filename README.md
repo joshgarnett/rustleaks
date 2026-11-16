@@ -97,6 +97,15 @@ The corresponding Gitleaks spellings remain accepted only for backward
 compatibility with existing configurations and automation. Native config
 sources take precedence over legacy aliases.
 
+Base64 decoding defaults to `--base64-mode compatible`. Use
+`--base64-mode extended` to scan arbitrary decoded bytes from standard and
+URL-safe Base64, with or without padding. Extended mode requires canonical
+trailing bits. Both modes use the existing candidate discovery and heuristic;
+this is not exhaustive detection of every Base64 carrier. Decode depth remains
+controlled by `--max-decode-depth` (default 5; 0 disables decoding). Library
+callers select `rustleaks_core::Base64Mode::Extended` with
+`ScanOptions::builder().base64_mode(...)`.
+
 ## Compatibility target
 
 The profile is pinned to Gitleaks commit

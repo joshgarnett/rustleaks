@@ -290,6 +290,9 @@ pub const fn rustleaks_core::explanation::ExplanationOptions::bounded(usize) -> 
 pub const fn rustleaks_core::explanation::ExplanationOptions::disabled() -> Self
 pub const fn rustleaks_core::explanation::ExplanationOptions::record_limit(self) -> usize
 pub mod rustleaks_core::model
+pub enum rustleaks_core::model::Base64Mode
+pub rustleaks_core::model::Base64Mode::Compatible
+pub rustleaks_core::model::Base64Mode::Extended
 #[non_exhaustive] pub enum rustleaks_core::model::FindingRange
 pub rustleaks_core::model::FindingRange::Exact(rustleaks_core::model::ByteRange)
 pub rustleaks_core::model::FindingRange::Unavailable
@@ -340,6 +343,15 @@ pub fn rustleaks_core::model::ByteText::new(impl core::convert::Into<alloc::vec:
 pub fn rustleaks_core::model::ByteText::to_string_lossy(&self) -> alloc::borrow::Cow<'_, str>
 impl core::borrow::Borrow<[u8]> for rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::borrow(&self) -> &[u8]
+impl core::clone::Clone for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::clone(&self) -> Self
+impl core::cmp::Eq for rustleaks_core::model::ByteText
+impl core::cmp::Ord for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
 impl core::convert::AsRef<[u8]> for rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::as_ref(&self) -> &[u8]
 impl core::convert::From<&[u8]> for rustleaks_core::model::ByteText
@@ -350,10 +362,14 @@ impl core::convert::From<alloc::string::String> for rustleaks_core::model::ByteT
 pub fn rustleaks_core::model::ByteText::from(alloc::string::String) -> Self
 impl core::convert::From<alloc::vec::Vec<u8>> for rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::from(alloc::vec::Vec<u8>) -> Self
+impl core::default::Default for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::default() -> Self
 impl core::fmt::Debug for rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for rustleaks_core::model::ByteText
+pub fn rustleaks_core::model::ByteText::hash<H: core::hash::Hasher>(&self, &mut H)
 impl serde_core::ser::Serialize for rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 impl<const N: usize> core::convert::From<&[u8; N]> for rustleaks_core::model::ByteText
@@ -504,6 +520,7 @@ impl core::fmt::Debug for rustleaks_core::model::RequiredFindingBuilder
 pub fn rustleaks_core::model::RequiredFindingBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::model::ScanOptions
 impl rustleaks_core::model::ScanOptions
+pub const fn rustleaks_core::model::ScanOptions::base64_mode(self) -> rustleaks_core::model::Base64Mode
 pub fn rustleaks_core::model::ScanOptions::builder() -> rustleaks_core::model::ScanOptionsBuilder
 pub const fn rustleaks_core::model::ScanOptions::honor_allow_markers(self) -> bool
 pub const fn rustleaks_core::model::ScanOptions::honor_gitleaks_allow(self) -> bool
@@ -514,6 +531,7 @@ impl core::default::Default for rustleaks_core::model::ScanOptions
 pub fn rustleaks_core::model::ScanOptions::default() -> Self
 pub struct rustleaks_core::model::ScanOptionsBuilder
 impl rustleaks_core::model::ScanOptionsBuilder
+pub const fn rustleaks_core::model::ScanOptionsBuilder::base64_mode(self, rustleaks_core::model::Base64Mode) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::build(self) -> rustleaks_core::model::ScanOptions
 pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_allow_markers(self, bool) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_gitleaks_allow(self, bool) -> Self
@@ -777,6 +795,9 @@ pub const fn rustleaks_core::validation::OfflineAssessment::check(self) -> rustl
 pub const fn rustleaks_core::validation::OfflineAssessment::reason(self) -> rustleaks_core::explanation::ValidationReason
 pub const fn rustleaks_core::validation::OfflineAssessment::state(self) -> rustleaks_core::explanation::ValidationState
 pub fn rustleaks_core::validation::github_classic_pat(&[u8]) -> [rustleaks_core::validation::OfflineAssessment; 2]
+pub enum rustleaks_core::Base64Mode
+pub rustleaks_core::Base64Mode::Compatible
+pub rustleaks_core::Base64Mode::Extended
 #[non_exhaustive] pub enum rustleaks_core::ScanBudgetKind
 pub rustleaks_core::ScanBudgetKind::CollectedSpans
 pub rustleaks_core::ScanBudgetKind::DecodedBytes
