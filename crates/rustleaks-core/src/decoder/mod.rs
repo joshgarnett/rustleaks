@@ -1020,8 +1020,8 @@ mod tests {
             assert_eq!(&output[4..], expected);
 
             let mut decoder = Decoder::with_base64_mode(Base64Mode::Extended);
-            let (decoded, segments) = decoder.decode(encoded, &[]);
-            assert_eq!(decoded, expected);
+            let (content, segments) = decoder.decode(encoded, &[]);
+            assert_eq!(content, expected);
             assert_eq!(segments.len(), 1);
             assert_eq!(segments[0].decoded_value(), expected);
             assert_eq!(
@@ -1029,7 +1029,7 @@ mod tests {
                 Some((0, encoded.len()))
             );
             // A cache hit retains the same bytes and coordinates.
-            assert_eq!(decoder.decode(encoded, &[]), (decoded, segments));
+            assert_eq!(decoder.decode(encoded, &[]), (content, segments));
         }
     }
 

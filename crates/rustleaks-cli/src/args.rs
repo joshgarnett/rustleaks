@@ -261,6 +261,21 @@ fn append_native_pack(id: &str, options: &mut Options) -> Result<(), ParseError>
     Ok(())
 }
 
+fn append_enabled_rules(value: &str, options: &mut Options) -> Result<(), ParseError> {
+    for rule in value.split(',') {
+        if options.enable_rules.len() == 4_096 {
+            return Err(ParseError::other(
+                "--enable-rule exceeds the 4096-item safety limit",
+            ));
+        }
+        options.enable_rules.try_reserve(1).map_err(|error| {
+            ParseError::other(format!("could not retain --enable-rule: {error}"))
+        })?;
+        options.enable_rules.push(copy_text(rule)?);
+    }
+    Ok(())
+}
+
 fn parse_long(
     argument: &str,
     arguments: &[OsString],
@@ -316,17 +331,7 @@ fn parse_long(
         }
         "no-banner" => options.no_banner = boolean(name, attached)?,
         "enable-rule" => {
-            for rule in value(name, attached, arguments, index)?.split(',') {
-                if options.enable_rules.len() == 4_096 {
-                    return Err(ParseError::other(
-                        "--enable-rule exceeds the 4096-item safety limit",
-                    ));
-                }
-                options.enable_rules.try_reserve(1).map_err(|error| {
-                    ParseError::other(format!("could not retain --enable-rule: {error}"))
-                })?;
-                options.enable_rules.push(copy_text(rule)?);
-            }
+            append_enabled_rules(value(name, attached, arguments, index)?, options)?;
         }
         "rustleaks-ignore-path" | "gitleaks-ignore-path" => {
             options.ignore_path = path_value(name, attached, arguments, index)?;
