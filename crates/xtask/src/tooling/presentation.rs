@@ -38,8 +38,11 @@ const FUNCTIONAL_FIELDS: &[&str] = &[
     "stderr_event_fields",
 ];
 
-/// Variants whose first stderr event is replaced with the current build version.
-const BUILD_VERSION_FIRST_EVENT: &[&str] = &[
+/// Variants whose replay removes the first frozen stderr event, a historical
+/// minimum version warning that the current build does not print because it
+/// satisfies the embedded config's `minVersion`. A message disposition keeps
+/// the frozen index of a later event.
+pub(crate) const REMOVED_FIRST_EVENT_VARIANTS: &[&str] = &[
     "CLI-BB-007/file-embedded",
     "CLI-BB-007/directory-embedded-empty",
 ];
@@ -310,9 +313,11 @@ pub(crate) fn validate_dispositions(
                         "{label}: event {index} is outside the {count} frozen events"
                     ));
                 }
-                if index == 0 && BUILD_VERSION_FIRST_EVENT.contains(&disposition.variant.as_str()) {
+                if index == 0
+                    && REMOVED_FIRST_EVENT_VARIANTS.contains(&disposition.variant.as_str())
+                {
                     return Err(format!(
-                        "{label}: event 0 carries the build version for {}",
+                        "{label}: event 0 of {} is removed from the replay",
                         disposition.variant
                     ));
                 }
@@ -678,7 +683,7 @@ mod tests {
             entry("SYN-1/report-stdout", "stdout", HELP, "new help\n"),
             // A variant with a native platform expectation.
             entry("CLI-BB-013/outside-baseline", "stdout", HELP, "new help\n"),
-            // Event index missing, out of range, inside usage, or build version.
+            // Event index missing, out of range, inside usage, or removed by replay.
             entry("SYN-1/plain", "stderr_event_message", MESSAGE, "new"),
             format!(
                 "{}event = 6\n",

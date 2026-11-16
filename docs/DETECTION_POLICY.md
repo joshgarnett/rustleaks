@@ -307,8 +307,7 @@ matching an identity alone does not establish matching input or scan options.
 `--native-pack <pack-id>` appends a builtin pack to the pinned embedded default.
 Repeat the flag to compose `rustleaks-extra-v1`, `rustleaks-providers-v1` and
 `rustleaks-connections-v1` in the supplied order. Unknown or repeated IDs fail.
-No pack is active unless explicitly selected. CLI help does not list this
-option; this document describes it.
+No pack is active unless explicitly selected.
 
 The CLI first applies its normal configuration precedence and discovery.
 Native selection requires that the resulting source is the embedded default.

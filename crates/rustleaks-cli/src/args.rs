@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use rustleaks_core::Base64Mode;
 
+use crate::cli_spec::{self, Shell, Topic};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CommandKind {
     Directory,
@@ -13,8 +15,9 @@ pub(crate) enum CommandKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Action {
     RootHelp,
-    CommandHelp(CommandKind),
+    CommandHelp(Topic),
     Version { qualified: bool },
+    Completion(Shell),
     Scan(Box<Invocation>),
 }
 
@@ -103,7 +106,8 @@ pub(crate) enum ParseErrorKind {
 pub(crate) struct ParseError {
     pub kind: ParseErrorKind,
     pub message: String,
-    pub command: Option<CommandKind>,
+    /// The command whose usage block follows the error line.
+    pub command: Option<Topic>,
 }
 
 impl ParseError {
@@ -126,12 +130,12 @@ impl ParseError {
     fn unknown_command(value: &str) -> Self {
         Self {
             kind: ParseErrorKind::UnknownCommand,
-            message: format!("unknown command {value:?} for \"rustleaks\""),
+            message: format!("unknown command {value:?}"),
             command: None,
         }
     }
 
-    fn with_command(mut self, command: Option<CommandKind>) -> Self {
+    fn with_command(mut self, command: Option<Topic>) -> Self {
         self.command = command;
         self
     }
@@ -149,7 +153,16 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
     let mut index = 0;
     let mut positional_only = false;
     let mut version_command = false;
+    // Command words after "version", for its arity message.
+    let mut version_words = 0_usize;
+    // The command name or alias as typed, for arity messages.
+    let mut command_name = "";
+    // The help or completion command.
+    let mut meta = None::<Topic>;
     while index < arguments.len() {
+        // The command whose usage block follows a parser error. The version
+        // command has no usage block.
+        let topic = command.map(Topic::from).or(meta);
         let argument = &arguments[index];
         if !positional_only && argument == OsStr::new("--") {
             positional_only = true;
@@ -158,7 +171,7 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
         }
         let text = argument.to_str();
         if text.is_none()
-            && (command.is_none() && !version_command
+            && (topic.is_none() && !version_command
                 || !positional_only && argument.as_encoded_bytes().starts_with(b"-"))
         {
             return Err(ParseError::other(
@@ -166,42 +179,60 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
             ));
         }
         if !positional_only && matches!(text, Some("--help" | "-h")) {
-            return Ok(command.map_or(Action::RootHelp, Action::CommandHelp));
+            let help = topic.or(version_command.then_some(Topic::Version));
+            return Ok(help.map_or(Action::RootHelp, Action::CommandHelp));
         }
         if !positional_only && text == Some("--version") {
-            if command.is_some() {
-                return Err(ParseError::other("--version is a root option"));
+            if topic.is_some() {
+                return Err(ParseError::other("--version works only without a command"));
             }
             return Ok(Action::Version { qualified: true });
+        }
+        if !positional_only
+            && meta == Some(Topic::Completion)
+            && let Some(attached) = text.and_then(|value| {
+                value
+                    .strip_prefix("--no-descriptions")
+                    .filter(|rest| rest.is_empty() || rest.starts_with('='))
+            })
+        {
+            // Gitleaks accepts this completion flag. Rustleaks ignores it.
+            boolean("no-descriptions", attached.strip_prefix('='))
+                .map_err(|error| error.with_command(topic))?;
+            index += 1;
+            continue;
         }
         if !positional_only && text.is_some_and(|value| value.starts_with("--")) {
             let value = text.ok_or_else(|| ParseError::other("option name is not valid UTF-8"))?;
             parse_long(value, &arguments, &mut index, command, &mut options)
-                .map_err(|error| error.with_command(command))?;
+                .map_err(|error| error.with_command(topic))?;
             index += 1;
             continue;
         }
         if !positional_only && text.is_some_and(|value| value.starts_with('-') && value != "-") {
             let value = text.ok_or_else(|| ParseError::other("option name is not valid UTF-8"))?;
             parse_short(value, &arguments, &mut index, &mut options)
-                .map_err(|error| error.with_command(command))?;
+                .map_err(|error| error.with_command(topic))?;
             index += 1;
             continue;
         }
-        if command.is_none() {
+        if topic.is_none() {
+            // After "version", one more command name is still parsed here, as
+            // before; "version git" prints the version.
             let name = text.ok_or_else(|| ParseError::other("command name is not valid UTF-8"))?;
-            command = Some(match name {
-                "git" => CommandKind::Git,
-                "dir" | "file" | "directory" => CommandKind::Directory,
-                "stdin" => CommandKind::Stdin,
-                "version" => {
-                    version_command = true;
-                    command = None;
-                    index += 1;
-                    continue;
-                }
+            if version_command {
+                version_words += 1;
+            }
+            command_name = name;
+            match name {
+                "git" => command = Some(CommandKind::Git),
+                "dir" | "file" | "directory" => command = Some(CommandKind::Directory),
+                "stdin" => command = Some(CommandKind::Stdin),
+                "version" => version_command = true,
+                "help" if !version_command => meta = Some(Topic::Help),
+                "completion" if !version_command => meta = Some(Topic::Completion),
                 value => return Err(ParseError::unknown_command(value)),
-            });
+            }
         } else {
             positionals.try_reserve(1).map_err(|error| {
                 ParseError::other(format!("could not retain source path: {error}"))
@@ -213,23 +244,43 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
 
     if version_command {
         if !positionals.is_empty() {
-            return Err(ParseError::other("version accepts no arguments"));
+            return Err(ParseError::other(format!(
+                "version accepts no arguments, but {}",
+                given(positionals.len() + version_words)
+            )));
         }
         return Ok(Action::Version { qualified: false });
+    }
+    if let Some(meta) = meta {
+        return meta_action(meta, &positionals).map_err(|error| {
+            if error.kind == ParseErrorKind::UnknownCommand {
+                error
+            } else {
+                error.with_command(Some(meta))
+            }
+        });
     }
     let Some(command) = command else {
         return Ok(Action::RootHelp);
     };
-    let maximum = match command {
-        CommandKind::Git | CommandKind::Directory => 1,
-        CommandKind::Stdin => 0,
+    let received = positionals.len();
+    let too_many = match command {
+        CommandKind::Git if received > 1 => Some(format!(
+            "{command_name} accepts at most one repository path, but {}",
+            given(received)
+        )),
+        CommandKind::Directory if received > 1 => Some(format!(
+            "{command_name} accepts at most one path, but {}",
+            given(received)
+        )),
+        CommandKind::Stdin if received > 0 => Some(format!(
+            "{command_name} accepts no arguments, but {}",
+            given(received)
+        )),
+        _ => None,
     };
-    if positionals.len() > maximum {
-        return Err(ParseError::other(format!(
-            "accepts at most {maximum} arg(s), received {}",
-            positionals.len()
-        ))
-        .with_command(Some(command)));
+    if let Some(message) = too_many {
+        return Err(ParseError::other(message).with_command(Some(command.into())));
     }
     let source = positionals
         .pop()
@@ -240,6 +291,56 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
         source,
         options,
     })))
+}
+
+/// Describes how many arguments were given, for arity messages.
+fn given(count: usize) -> String {
+    if count == 1 {
+        "1 was given".to_owned()
+    } else {
+        format!("{count} were given")
+    }
+}
+
+fn meta_action(meta: Topic, positionals: &[PathBuf]) -> Result<Action, ParseError> {
+    let received = positionals.len();
+    match meta {
+        Topic::Help => match positionals {
+            [] => Ok(Action::RootHelp),
+            [name] => {
+                let name = name
+                    .to_str()
+                    .ok_or_else(|| ParseError::other("command name is not valid UTF-8"))?;
+                cli_spec::topic_by_name(name)
+                    .map(Action::CommandHelp)
+                    .ok_or_else(|| ParseError::unknown_command(name))
+            }
+            _ => Err(ParseError::other(format!(
+                "help accepts at most one command name, but {}",
+                given(received)
+            ))),
+        },
+        Topic::Completion => match positionals {
+            [] => Err(ParseError::other(
+                "completion needs one argument: bash, zsh, fish or powershell",
+            )),
+            [name] => name
+                .to_str()
+                .and_then(Shell::from_name)
+                .map(Action::Completion)
+                .ok_or_else(|| {
+                    ParseError::other(format!(
+                        "unknown shell {:?}; use bash, zsh, fish or powershell",
+                        name.to_string_lossy()
+                    ))
+                }),
+            _ => Err(ParseError::other(format!(
+                "completion accepts at most one shell name, but {}",
+                given(received)
+            ))),
+        },
+        _ => Ok(Action::RootHelp),
+    }
 }
 
 fn append_native_pack(id: &str, options: &mut Options) -> Result<(), ParseError> {
@@ -480,7 +581,9 @@ fn parse_i64(name: &str, value: &str) -> Result<i64, ParseError> {
 fn parse_i32(name: &str, value: &str) -> Result<i32, ParseError> {
     value.parse().map_err(|_| {
         ParseError::other(format!(
-            "invalid argument {value:?} for \"--{name}\" flag: strconv.ParseInt: parsing {value:?}: invalid syntax"
+            "the --{name} argument {value:?} is not a whole number from {} to {}",
+            i32::MIN,
+            i32::MAX
         ))
     })
 }
@@ -582,6 +685,232 @@ mod tests {
             let error = parsed(&arguments).unwrap_err();
             assert_eq!(error.kind, ParseErrorKind::Other);
             assert!(error.message.contains("--base64-mode"));
+        }
+    }
+
+    #[test]
+    fn help_and_completion_commands_parse_without_scanning() {
+        assert_eq!(parsed(&[]).unwrap(), Action::RootHelp);
+        assert_eq!(parsed(&["help"]).unwrap(), Action::RootHelp);
+        assert_eq!(parsed(&["-h"]).unwrap(), Action::RootHelp);
+        assert_eq!(
+            parsed(&["help", "file"]).unwrap(),
+            Action::CommandHelp(Topic::Directory)
+        );
+        assert_eq!(
+            parsed(&["version", "--help"]).unwrap(),
+            Action::CommandHelp(Topic::Version)
+        );
+        assert_eq!(
+            parsed(&["completion", "-h"]).unwrap(),
+            Action::CommandHelp(Topic::Completion)
+        );
+        assert_eq!(
+            parsed(&["completion", "--no-banner", "zsh"]).unwrap(),
+            Action::Completion(Shell::Zsh)
+        );
+        assert_eq!(
+            parsed(&["version", "--version"]).unwrap(),
+            Action::Version { qualified: true }
+        );
+        let unknown = parsed(&["help", "nope"]).unwrap_err();
+        assert_eq!(unknown.kind, ParseErrorKind::UnknownCommand);
+        assert_eq!(unknown.command, None);
+        for arguments in [
+            vec!["help", "git", "dir"],
+            vec!["completion"],
+            vec!["completion", "tcsh"],
+            vec!["completion", "bash", "zsh"],
+        ] {
+            let error = parsed(&arguments).unwrap_err();
+            assert_eq!(error.kind, ParseErrorKind::Other, "{arguments:?}");
+            assert!(error.command.is_some(), "{arguments:?}");
+        }
+        let flag = parsed(&["completion", "bash", "--platform=github"]).unwrap_err();
+        assert_eq!(flag.kind, ParseErrorKind::UnknownLong);
+        assert_eq!(flag.command, Some(Topic::Completion));
+        assert!(parsed(&["git", "--version"]).unwrap_err().command.is_none());
+    }
+
+    #[test]
+    fn version_keeps_its_command_name_grammar() {
+        for arguments in [
+            vec!["version", "git"],
+            vec!["version", "file", "--follow-symlinks"],
+            vec!["version", "stdin", "--no-banner"],
+            vec!["version", "version"],
+        ] {
+            assert_eq!(
+                parsed(&arguments).unwrap(),
+                Action::Version { qualified: false },
+                "{arguments:?}"
+            );
+        }
+        assert_eq!(
+            parsed(&["version", "git", "--help"]).unwrap(),
+            Action::CommandHelp(Topic::Git)
+        );
+        for name in ["help", "completion", "nope"] {
+            let error = parsed(&["version", name]).unwrap_err();
+            assert_eq!(error.kind, ParseErrorKind::UnknownCommand, "{name}");
+        }
+        let extra = parsed(&["version", "dir", "a"]).unwrap_err();
+        assert_eq!(extra.kind, ParseErrorKind::Other);
+        assert_eq!(extra.command, None);
+        assert_eq!(
+            extra.message,
+            "version accepts no arguments, but 2 were given"
+        );
+        let flag = parsed(&["version", "--platform=github"]).unwrap_err();
+        assert_eq!(flag.kind, ParseErrorKind::UnknownLong);
+        assert_eq!(flag.command, None);
+    }
+
+    #[test]
+    fn arity_and_integer_messages_name_the_command_and_value() {
+        for (arguments, message) in [
+            (
+                vec!["git", "a", "b"],
+                "git accepts at most one repository path, but 2 were given",
+            ),
+            (
+                vec!["directory", "a", "b", "c"],
+                "directory accepts at most one path, but 3 were given",
+            ),
+            (
+                vec!["file", "a", "b"],
+                "file accepts at most one path, but 2 were given",
+            ),
+            (
+                vec!["version", "dir", "a"],
+                "version accepts no arguments, but 2 were given",
+            ),
+            (
+                vec!["stdin", "a"],
+                "stdin accepts no arguments, but 1 was given",
+            ),
+            (
+                vec!["stdin", "--exit-code=x"],
+                "the --exit-code argument \"x\" is not a whole number from -2147483648 to 2147483647",
+            ),
+        ] {
+            assert_eq!(parsed(&arguments).unwrap_err().message, message);
+        }
+    }
+
+    /// Every flag that the parser accepts, with a sample value and the
+    /// commands that accept it. Written by hand from `parse_long` and
+    /// `parse_short`, not from the help table.
+    const ACCEPTED_FLAGS: &[(&str, &[&str])] = &[
+        ("--config=x", SCAN),
+        ("-c x", SCAN),
+        ("--native-pack=rustleaks-extra-v1", SCAN),
+        ("--complete-profile=x", SCAN),
+        ("--exit-code=3", SCAN),
+        ("--report-path=x", SCAN),
+        ("-r x", SCAN),
+        ("--report-format=json", SCAN),
+        ("-f json", SCAN),
+        ("--report-template=x", SCAN),
+        ("--baseline-path=x", SCAN),
+        ("-b x", SCAN),
+        ("--log-level=debug", SCAN),
+        ("-l debug", SCAN),
+        ("--verbose", SCAN),
+        ("-v", SCAN),
+        ("--no-color", SCAN),
+        ("--max-target-megabytes=1", SCAN),
+        ("--ignore-rustleaks-allow", SCAN),
+        ("--ignore-gitleaks-allow", SCAN),
+        ("--redact=5", SCAN),
+        ("--no-banner", SCAN),
+        ("--enable-rule=x", SCAN),
+        ("--rustleaks-ignore-path=x", SCAN),
+        ("--gitleaks-ignore-path=x", SCAN),
+        ("-i x", SCAN),
+        ("--base64-mode=extended", SCAN),
+        ("--max-decode-depth=1", SCAN),
+        ("--max-archive-depth=1", SCAN),
+        ("--timeout=1", SCAN),
+        ("--platform=github", &["git"]),
+        ("--staged", &["git"]),
+        ("--pre-commit", &["git"]),
+        ("--log-opts=x", &["git"]),
+        ("--follow-symlinks", &["dir", "file", "directory"]),
+        ("--no-descriptions", &["completion"]),
+    ];
+    const SCAN: &[&str] = &["git", "dir", "file", "directory", "stdin"];
+
+    fn flag_name(spelling: &str) -> &str {
+        spelling.split(['=', ' ']).next().unwrap()
+    }
+
+    #[test]
+    fn every_parser_flag_is_in_the_help_table_for_the_same_commands() {
+        use std::collections::BTreeSet;
+
+        let mut literal = BTreeSet::new();
+        for (spelling, commands) in ACCEPTED_FLAGS {
+            for command in *commands {
+                literal.insert((flag_name(spelling).to_owned(), (*command).to_owned()));
+                let mut arguments = vec![*command];
+                if *command == "completion" {
+                    arguments.push("bash");
+                }
+                arguments.extend(spelling.split(' '));
+                let action = parsed(&arguments).unwrap();
+                assert!(
+                    matches!(action, Action::Scan(_) | Action::Completion(_)),
+                    "{arguments:?}"
+                );
+            }
+        }
+        let mut table = BTreeSet::new();
+        for command in cli_spec::COMMANDS {
+            let names = std::iter::once(command.name).chain(command.aliases.iter().copied());
+            for name in names {
+                let flags = command.flags.iter().chain(if command.scan {
+                    cli_spec::SCAN_FLAGS
+                } else {
+                    &[]
+                });
+                for flag in flags {
+                    table.insert((format!("--{}", flag.long), name.to_owned()));
+                    if let Some(short) = flag.short {
+                        table.insert((format!("-{short}"), name.to_owned()));
+                    }
+                }
+                if command.scan {
+                    for legacy in cli_spec::LEGACY_FLAGS {
+                        table.insert((format!("--{}", legacy.long), name.to_owned()));
+                    }
+                }
+            }
+        }
+        assert_eq!(literal, table);
+    }
+
+    #[test]
+    fn completion_accepts_and_ignores_no_descriptions() {
+        for arguments in [
+            vec!["completion", "--no-descriptions", "fish"],
+            vec!["completion", "zsh", "--no-descriptions=false"],
+            vec!["completion", "--no-descriptions=true", "bash"],
+        ] {
+            assert!(
+                matches!(parsed(&arguments).unwrap(), Action::Completion(_)),
+                "{arguments:?}"
+            );
+        }
+        let invalid = parsed(&["completion", "--no-descriptions=maybe", "bash"]).unwrap_err();
+        assert_eq!(invalid.kind, ParseErrorKind::Other);
+        assert_eq!(invalid.command, Some(Topic::Completion));
+        for command in ["stdin", "help", "version"] {
+            assert_eq!(
+                parsed(&[command, "--no-descriptions"]).unwrap_err().kind,
+                ParseErrorKind::UnknownLong,
+                "{command}"
+            );
         }
     }
 

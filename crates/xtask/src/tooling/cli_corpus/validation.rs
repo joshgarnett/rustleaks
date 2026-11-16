@@ -96,7 +96,8 @@ pub(super) fn native_disposition(id: &str, windows: bool) -> Option<&'static str
 }
 
 // Keep historical build metadata frozen; derive only these five release-specific
-// expectations from trusted build metadata, never from the observed binary output.
+// expectations from trusted build metadata or the frozen corpus, never from the
+// observed binary output.
 pub(super) fn current_build_expectation(
     id: &str,
     frozen: &Value,
@@ -125,10 +126,10 @@ pub(super) fn current_build_expectation(
             expected["stdout_sha256"] = json!(sha256_bytes(current.as_bytes()));
             Some("stdout-current-build-version")
         }
-        "CLI-BB-007/file-embedded" | "CLI-BB-007/directory-embedded-empty" => {
+        id if presentation::REMOVED_FIRST_EVENT_VARIANTS.contains(&id) => {
             let historical = json!({
                 "severity": "warn", "class": "config.error", "fields": {},
-                "normalized_message_base64": BASE64.encode(build_version_warning(spec::BUILD_VERSION))
+                "normalized_message_base64": BASE64.encode(historical_build_version_warning())
             });
             if frozen
                 .get("stderr_events")
@@ -138,18 +139,25 @@ pub(super) fn current_build_expectation(
             {
                 return Err(format!("{id}: historical CLI build warning changed"));
             }
-            expected["stderr_events"][0]["normalized_message_base64"] =
-                json!(BASE64.encode(build_version_warning(build_version)));
-            Some("embedded-config-current-build-version")
+            // The historical build compared the embedded config's minVersion
+            // with its own crate version. The current build compares it with
+            // the implemented Gitleaks version, which satisfies it, so the
+            // warning is not printed.
+            expected["stderr_events"]
+                .as_array_mut()
+                .ok_or_else(|| format!("{id}: stderr_events is not an array"))?
+                .remove(0);
+            Some("embedded-config-min-version-satisfied")
         }
         _ => None,
     };
     Ok((expected, marker))
 }
 
-fn build_version_warning(build_version: &str) -> String {
+fn historical_build_version_warning() -> String {
     format!(
-        "config requires a newer Gitleaks version... required=v8.25.0 current={build_version} config path=<embedded-default>"
+        "config requires a newer Gitleaks version... required=v8.25.0 current={} config path=<embedded-default>",
+        spec::BUILD_VERSION
     )
 }
 
@@ -222,6 +230,18 @@ pub(super) fn compare(
             }
             Field::StderrUsage => {}
             Field::StderrEventMessage(frozen_index) => {
+                // Event indices name frozen events. The replay removes the
+                // first frozen event of some variants before comparison.
+                let frozen_index = if presentation::REMOVED_FIRST_EVENT_VARIANTS.contains(&id) {
+                    frozen_index.checked_sub(1).ok_or_else(|| {
+                        format!(
+                            "{id}: disposition {} targets a removed event",
+                            disposition.id
+                        )
+                    })?
+                } else {
+                    frozen_index
+                };
                 let index = match &frozen_usage {
                     Some(range) if range.contains(&frozen_index) => {
                         return Err(format!(
@@ -594,35 +614,45 @@ mod tests {
     }
 
     #[test]
-    fn embedded_warnings_require_the_current_build_and_preserve_other_fields() {
+    fn satisfied_embedded_min_version_removes_only_the_historical_warning() {
         let (_, variants, _) = fixture();
-        let current = "config requires a newer Gitleaks version... required=v8.25.0 current=12.34.56-rc.789+review config path=<embedded-default>";
+        let index = frozen_index(&variants);
+        let historical = "config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.5 config path=<embedded-default>";
+        let current = "config requires Gitleaks v8.25.0 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=<embedded-default>";
         for id in [
             "CLI-BB-007/file-embedded",
             "CLI-BB-007/directory-embedded-empty",
         ] {
-            let frozen = &variants
-                .iter()
-                .find(|variant| variant.id == id)
-                .unwrap()
-                .expected;
+            let variant = variants.iter().find(|variant| variant.id == id).unwrap();
+            let frozen = &variant.expected;
+            let frozen_events = frozen["stderr_events"].as_array().unwrap();
+            assert_eq!(
+                frozen_events[0],
+                json!({"severity": "warn", "class": "config.error", "fields": {},
+                    "normalized_message_base64": BASE64.encode(historical)})
+            );
             let (expected, marker) =
                 current_build_expectation(id, frozen, "12.34.56-rc.789+review").unwrap();
-            assert_eq!(marker, Some("embedded-config-current-build-version"));
+            assert_eq!(marker, Some("embedded-config-min-version-satisfied"));
+            // The projection does not depend on the current build version.
+            assert_eq!(
+                current_build_expectation(id, frozen, "0.1.0-alpha.9").unwrap(),
+                (expected.clone(), marker)
+            );
             let mut actual = frozen.clone();
-            actual["stderr_events"][0]["normalized_message_base64"] = json!(BASE64.encode(current));
+            actual["stderr_events"] = json!(frozen_events[1..].to_vec());
             assert_eq!(actual, expected);
             compare_frozen(id, &actual, &expected, false).unwrap();
+            // The historical warning, or any reworded warning, is a regression.
             assert!(compare_frozen(id, frozen, &expected, false).is_err());
-            for invalid in [
-                format!(" {current}"),
-                format!("{current}\n"),
-                format!("{current} extra"),
-                current.replace("12.34.56-rc.789+review", "99.0.0-wrong"),
-            ] {
-                actual["stderr_events"][0]["normalized_message_base64"] =
-                    json!(BASE64.encode(invalid));
-                assert!(compare_frozen(id, &actual, &expected, false).is_err());
+            for message in [historical, current] {
+                let mut warned = actual.clone();
+                warned["stderr_events"].as_array_mut().unwrap().insert(
+                    0,
+                    json!({"severity": "warn", "class": "config.error", "fields": {},
+                        "normalized_message_base64": BASE64.encode(message)}),
+                );
+                assert!(compare_frozen(id, &warned, &expected, false).is_err());
             }
             for field in ["severity", "class", "fields", "normalized_message_base64"] {
                 let mut changed = frozen.clone();
@@ -649,6 +679,25 @@ mod tests {
                 changed[field] = json!({"mutation": true});
                 assert!(compare_frozen(id, &changed, &expected, false).is_err());
             }
+
+            // A message disposition names a later event by its frozen index.
+            let later = synthetic("SYN-LATER", variant, Field::StderrEventMessage(1));
+            presentation::validate_dispositions(std::slice::from_ref(&later), &index).unwrap();
+            let mut shifted = presented(frozen, std::slice::from_ref(&later));
+            shifted.value["stderr_events"]
+                .as_array_mut()
+                .unwrap()
+                .remove(0);
+            shifted.native.messages.remove(0);
+            let used = compare(id, &shifted, &expected, false, &[&later]).unwrap();
+            assert_eq!(used, ["SYN-LATER"]);
+            assert!(compare(id, &shifted, &expected, false, &[]).is_err());
+            let removed = synthetic("SYN-REMOVED", variant, Field::StderrEventMessage(0));
+            assert!(
+                presentation::validate_dispositions(std::slice::from_ref(&removed), &index)
+                    .is_err()
+            );
+            assert!(compare(id, &observed(&actual), &expected, false, &[&removed]).is_err());
         }
     }
 

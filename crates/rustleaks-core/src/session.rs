@@ -1061,7 +1061,7 @@ struct BaselineFindingVisitor;
 impl<'de> Visitor<'de> for BaselineFindingVisitor {
     type Value = BaselineFindingWire;
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a Gitleaks finding object or null")
+        formatter.write_str("a finding object from a JSON report, or null")
     }
     fn visit_unit<E>(self) -> Result<Self::Value, E>
     where
@@ -1914,6 +1914,19 @@ mod tests {
         let folded = Baseline::from_go_json(folded_json.as_bytes()).unwrap();
         assert_eq!(folded.entries()[0].description().as_bytes(), b"folded");
         assert_eq!(folded.entries()[0].link().as_bytes(), b"kelvin");
+    }
+
+    #[test]
+    fn malformed_baseline_element_names_the_expected_report_shape() {
+        for input in [&b"[1]"[..], b"[\"finding\"]", b"[[]]", b"[true]"] {
+            let error = Baseline::from_go_json(input).unwrap_err().to_string();
+            assert!(error.starts_with("unsupported baseline JSON: "), "{error}");
+            assert!(
+                error.contains("expected a finding object from a JSON report, or null"),
+                "{error}"
+            );
+            assert!(!error.contains("Gitleaks"), "{error}");
+        }
     }
 
     #[test]

@@ -7,6 +7,23 @@
   compatibility guarantees and can change. Findings, configuration meaning,
   report fields, exit codes, and supported Gitleaks commands, flags and
   environment variables stay compatible with the pinned Gitleaks revision.
+- Add the `help [command]` command, which prints the same help as
+  `<command> --help`, and the `completion <shell>` command, which prints a
+  completion script for bash, zsh, fish or PowerShell. `completion` accepts
+  and ignores the Gitleaks `--no-descriptions` flag.
+- Change the CLI help. It now lists every flag, including `--native-pack`,
+  `--complete-profile` and `--base64-mode`, and groups flags by topic. Parser
+  usage blocks are shorter and point to `rustleaks help <command>`. Argument
+  count, `--exit-code` value, unknown command, `version` argument and
+  misplaced `--version` errors are reworded.
+- Change the baseline error for a report element that is not a finding to
+  say that it expects "a finding object from a JSON report, or null".
+- Fix a false "config requires a newer Gitleaks version" warning on every scan
+  with the default configuration. Rustleaks now compares the config
+  `minVersion` with the implemented Gitleaks version, 8.30.0, instead of its
+  own package version, and ignores semantic version build metadata. When a
+  config needs a newer version, the warning now says which Gitleaks version it
+  requires and which one Rustleaks implements.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

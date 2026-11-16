@@ -19,6 +19,7 @@ use crate::complete_profile::{CompleteProfile, CompletionReason, CompletionStatu
 use crate::config::{self, ConfigEnvironment};
 use crate::output::{self, ReportPlan};
 use crate::source;
+use crate::{completion, help};
 
 /// Process context injected into one command execution.
 #[derive(Clone, Debug)]
@@ -70,9 +71,9 @@ pub fn run_from<R: Read + Send + 'static>(
         Err(error) => {
             let _ = output::parse_error(stderr, &error.message);
             if error.kind == ParseErrorKind::UnknownCommand {
-                let _ = output::root_usage_hint(stderr);
+                let _ = help::root_hint(stderr);
             } else if let Some(command) = error.command {
-                let _ = output::command_usage(command, stderr);
+                let _ = help::usage_block(command, stderr);
             }
             if error.kind != ParseErrorKind::UnknownLong {
                 let _ = output::fatal(stderr, &error.message);
@@ -85,8 +86,9 @@ pub fn run_from<R: Read + Send + 'static>(
         }
     };
     match action {
-        Action::RootHelp => output::root_help(stdout).map_or(1, |()| 0),
-        Action::CommandHelp(command) => output::command_help(command, stdout).map_or(1, |()| 0),
+        Action::RootHelp => help::root(stdout).map_or(1, |()| 0),
+        Action::CommandHelp(topic) => help::command_page(topic, stdout).map_or(1, |()| 0),
+        Action::Completion(shell) => completion::write(shell, stdout).map_or(1, |()| 0),
         Action::Version { qualified } => {
             let result = if qualified {
                 writeln!(stdout, "rustleaks version {}", env!("CARGO_PKG_VERSION"))

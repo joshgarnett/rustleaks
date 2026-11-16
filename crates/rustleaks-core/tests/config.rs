@@ -1197,6 +1197,23 @@ fn min_version_is_structured_and_advisory() {
     };
     let loader = ConfigLoader::new().with_current_version("v8.25.0").unwrap();
     assert!(loader.compile(raw).unwrap().requires_newer_version());
+    for (current, required, newer) in [
+        ("8.25.0", "v8.25.0+meta", false),
+        ("8.25.0+build.7", "v8.25.0", false),
+        ("8.25.0+build.7", "v8.25.0+other", false),
+        ("8.25.0", "v8.25.1+meta", true),
+    ] {
+        let raw = RawConfig {
+            min_version: required.into(),
+            ..RawConfig::default()
+        };
+        let loader = ConfigLoader::new().with_current_version(current).unwrap();
+        assert_eq!(
+            loader.compile(raw).unwrap().requires_newer_version(),
+            newer,
+            "{current} {required}"
+        );
+    }
     let invalid = RawConfig {
         min_version: "not semver".into(),
         ..RawConfig::default()
