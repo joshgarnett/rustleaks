@@ -2469,14 +2469,61 @@ mod complete_profile {
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(&(!length).to_le_bytes());
         bytes.extend_from_slice(payload);
-        let crc = !payload.iter().fold(!0_u32, |state, &byte| {
+        bytes.extend_from_slice(&crc32(payload).to_le_bytes());
+        bytes.extend_from_slice(&u32::from(length).to_le_bytes());
+        bytes
+    }
+
+    fn crc32(bytes: &[u8]) -> u32 {
+        !bytes.iter().fold(!0_u32, |state, &byte| {
             (0..8).fold(state ^ u32::from(byte), |value, _| {
                 (value >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(value & 1))
             })
-        });
-        bytes.extend_from_slice(&crc.to_le_bytes());
-        bytes.extend_from_slice(&u32::from(length).to_le_bytes());
-        bytes
+        })
+    }
+
+    // Minimal stored ZIP writer: a local header, name and data per entry, then
+    // the central directory and the end of central directory record.
+    fn stored_zip(entries: &[(&[u8], &[u8])]) -> Vec<u8> {
+        let mut data = Vec::new();
+        let mut central = Vec::new();
+        for &(name, body) in entries {
+            let crc = crc32(body).to_le_bytes();
+            let size = u32::try_from(body.len()).unwrap().to_le_bytes();
+            let name_size = u16::try_from(name.len()).unwrap().to_le_bytes();
+            let offset = u32::try_from(data.len()).unwrap().to_le_bytes();
+            let mut local = [0_u8; 30];
+            local[..4].copy_from_slice(b"PK\x03\x04");
+            local[4..6].copy_from_slice(&20_u16.to_le_bytes());
+            local[14..18].copy_from_slice(&crc);
+            local[18..22].copy_from_slice(&size);
+            local[22..26].copy_from_slice(&size);
+            local[26..28].copy_from_slice(&name_size);
+            data.extend_from_slice(&local);
+            data.extend_from_slice(name);
+            data.extend_from_slice(body);
+            let mut entry = [0_u8; 46];
+            entry[..4].copy_from_slice(b"PK\x01\x02");
+            entry[4..6].copy_from_slice(&20_u16.to_le_bytes());
+            entry[6..8].copy_from_slice(&20_u16.to_le_bytes());
+            entry[16..20].copy_from_slice(&crc);
+            entry[20..24].copy_from_slice(&size);
+            entry[24..28].copy_from_slice(&size);
+            entry[28..30].copy_from_slice(&name_size);
+            entry[42..46].copy_from_slice(&offset);
+            central.extend_from_slice(&entry);
+            central.extend_from_slice(name);
+        }
+        let mut end = [0_u8; 22];
+        end[..4].copy_from_slice(b"PK\x05\x06");
+        let count = u16::try_from(entries.len()).unwrap().to_le_bytes();
+        end[8..10].copy_from_slice(&count);
+        end[10..12].copy_from_slice(&count);
+        end[12..16].copy_from_slice(&u32::try_from(central.len()).unwrap().to_le_bytes());
+        end[16..20].copy_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+        data.extend_from_slice(&central);
+        data.extend_from_slice(&end);
+        data
     }
 
     struct ArchiveCase {
@@ -2542,6 +2589,108 @@ mod complete_profile {
                 "outer.tgz!wrapper.tgz!left.tgz!leaf.txt",
                 "outer.tgz!wrapper.tgz!right.tgz!leaf.txt",
             ],
+            diagnostic: "",
+        },
+        ArchiveCase {
+            name: "outer.tar",
+            depth: "2",
+            code: 0,
+            state: "complete",
+            reason: "complete",
+            reports: "complete",
+            fragments: 0,
+            issues: 2,
+            files: &[],
+            diagnostic: "skipping archive: exceeds maximum archive depth",
+        },
+        ArchiveCase {
+            name: "outer.tar",
+            depth: "3",
+            code: 1,
+            state: "complete",
+            reason: "complete",
+            reports: "complete",
+            fragments: 2,
+            issues: 0,
+            files: &[
+                "outer.tar!wrapper.tar!left.tar!leaf.txt",
+                "outer.tar!wrapper.tar!right.tar!leaf.txt",
+            ],
+            diagnostic: "",
+        },
+        ArchiveCase {
+            name: "outer.zip",
+            depth: "2",
+            code: 0,
+            state: "complete",
+            reason: "complete",
+            reports: "complete",
+            fragments: 0,
+            issues: 2,
+            files: &[],
+            diagnostic: "skipping archive: exceeds maximum archive depth",
+        },
+        ArchiveCase {
+            name: "outer.zip",
+            depth: "3",
+            code: 1,
+            state: "complete",
+            reason: "complete",
+            reports: "complete",
+            fragments: 2,
+            issues: 0,
+            files: &[
+                "outer.zip!wrapper.zip!left.zip!leaf.txt",
+                "outer.zip!wrapper.zip!right.zip!leaf.txt",
+            ],
+            diagnostic: "",
+        },
+        ArchiveCase {
+            name: "checksum.tar",
+            depth: "1",
+            code: 2,
+            state: "incomplete",
+            reason: "coverage_failure",
+            reports: "partial",
+            fragments: 0,
+            issues: 0,
+            files: &[],
+            diagnostic: "invalid TAR header checksum",
+        },
+        ArchiveCase {
+            name: "crc.zip",
+            depth: "1",
+            code: 2,
+            state: "incomplete",
+            reason: "coverage_failure",
+            reports: "partial",
+            fragments: 0,
+            issues: 0,
+            files: &[],
+            diagnostic: "ZIP member size or CRC mismatch",
+        },
+        ArchiveCase {
+            name: "noend.zip",
+            depth: "1",
+            code: 2,
+            state: "incomplete",
+            reason: "coverage_failure",
+            reports: "partial",
+            fragments: 0,
+            issues: 0,
+            files: &[],
+            diagnostic: "",
+        },
+        ArchiveCase {
+            name: "half.tgz",
+            depth: "1",
+            code: 2,
+            state: "incomplete",
+            reason: "coverage_failure",
+            reports: "partial",
+            fragments: 0,
+            issues: 0,
+            files: &[],
             diagnostic: "",
         },
     ];
@@ -2629,6 +2778,27 @@ mod complete_profile {
         let middle = stored_gzip(&siblings);
         let outer = stored_gzip(&tar_named_leaf(b"wrapper.tgz", &middle));
         fixture.write("outer.tgz", outer);
+        let leaf_tar = tar_leaf(b"token=AB12");
+        let mut tar_siblings = tar_named_leaf(b"left.tar", &leaf_tar);
+        tar_siblings.truncate(tar_siblings.len() - 1024);
+        tar_siblings.extend(tar_named_leaf(b"right.tar", &leaf_tar));
+        fixture.write("outer.tar", tar_named_leaf(b"wrapper.tar", &tar_siblings));
+        let leaf_zip = stored_zip(&[(b"leaf.txt", b"token=AB12")]);
+        let middle_zip = stored_zip(&[(b"left.zip", &leaf_zip), (b"right.zip", &leaf_zip)]);
+        fixture.write("outer.zip", stored_zip(&[(b"wrapper.zip", &middle_zip)]));
+        let mut checksum = leaf_tar.clone();
+        checksum[148] ^= 1;
+        fixture.write("checksum.tar", checksum);
+        // Data starts after the 30-byte local header and the 8-byte name, so
+        // byte 47 is the final '2' of the leaf. Both stored CRCs stay intact.
+        let mut crc = leaf_zip.clone();
+        assert_eq!(crc[47], b'2');
+        crc[47] ^= 1;
+        fixture.write("crc.zip", crc);
+        // Drop exactly the 22-byte end of central directory record.
+        fixture.write("noend.zip", &leaf_zip[..leaf_zip.len() - 22]);
+        let half = stored_gzip(&leaf_tar);
+        fixture.write("half.tgz", &half[..half.len() / 2]);
         for case in ARCHIVE_CASES {
             let command_args = ["dir", case.name, "--max-archive-depth", case.depth];
             let mut args = arguments(&command_args);

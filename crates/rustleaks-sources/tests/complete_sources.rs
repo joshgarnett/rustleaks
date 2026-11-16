@@ -16,8 +16,8 @@ use rustleaks_core::{Engine, ScanBudget};
 use rustleaks_sources::{
     COMPLETE_MIME_WINDOW, CancellationToken, DirectoryOptions, DirectorySource, FileOptions,
     FileSource, ReadOutcome, ReadStatus, Source, SourceBudget, SourceBudgetKind, SourceBudgetScope,
-    SourceControl, SourceError, SourceEvent, SourceIssueDisposition, SourceOutcome, SourceReader,
-    SourceRunner, SourceStage, SourceTermination,
+    SourceControl, SourceError, SourceEvent, SourceIssueDisposition, SourceIssueKind,
+    SourceOutcome, SourceReader, SourceRunner, SourceStage, SourceTermination,
 };
 
 struct Partitioned {
@@ -1277,6 +1277,113 @@ mod excluded_archive_members {
                 SourceTermination::SourceError(SourceError::Terminal { .. })
             ));
             assert!(outcome.findings().is_empty());
+        }
+    }
+
+    #[test]
+    fn structural_corruption_has_typed_stage_kind_and_no_partial_leaf() {
+        // Byte 148 is the first octal digit of the first header checksum.
+        let mut header = archive_seeds::synthetic_tar(&[
+            ("first.txt", b"token=A001"),
+            ("second.txt", b"token=B002"),
+        ]);
+        header[148] ^= 1;
+        let crc = stored_zip(&[
+            ("first.txt", b"token=A001", true),
+            ("second.txt", b"token=B002", false),
+        ]);
+        // Drop exactly the 22-byte end of central directory record.
+        let mut no_end = stored_zip(&[("value.txt", b"token=A001", false)]);
+        no_end.truncate(no_end.len() - 22);
+        assert_eq!(&no_end[no_end.len() - 46 - 9..][..4], b"PK\x01\x02");
+        // 10 header + 5 stored-block header + 2048 TAR + 8 trailer bytes. Half
+        // ends inside the stored payload.
+        let mut half = archive_seeds::gzip_stored(&archive_seeds::synthetic_tar(&[(
+            "value.txt",
+            b"token=A001",
+        )]));
+        assert_eq!(half.len(), 2071);
+        half.truncate(half.len() / 2);
+
+        // (bytes, name, legacy issues, legacy finding, complete stage, owned message)
+        let cases = [
+            (
+                header,
+                "header.tar",
+                &[(SourceStage::Archive, SourceIssueKind::CorruptArchive)][..],
+                None,
+                SourceStage::Archive,
+                Some("invalid TAR header checksum"),
+            ),
+            (
+                crc,
+                "crc.zip",
+                &[(SourceStage::Decode, SourceIssueKind::Decode)][..],
+                Some((&b"B002"[..], &b"crc.zip!second.txt"[..])),
+                SourceStage::Decode,
+                Some("ZIP member size or CRC mismatch"),
+            ),
+            (
+                no_end,
+                "noend.zip",
+                &[(SourceStage::Archive, SourceIssueKind::CorruptArchive)][..],
+                None,
+                SourceStage::Archive,
+                None,
+            ),
+            (
+                half,
+                "half.tar.gz",
+                &[(SourceStage::Decode, SourceIssueKind::Decode)][..],
+                None,
+                SourceStage::Decode,
+                None,
+            ),
+        ];
+        for (data, name, legacy_issues, legacy_finding, complete_stage, owned_message) in cases {
+            let legacy = run(
+                &mut source(data.clone(), name, false, false, 10),
+                &token_detector(),
+                ScanOptions::default(),
+            );
+            assert_eq!(
+                legacy.termination(),
+                &SourceTermination::Completed,
+                "{name}"
+            );
+            let issues = legacy
+                .issues()
+                .iter()
+                .map(|issue| (issue.stage(), issue.kind()))
+                .collect::<Vec<_>>();
+            assert_eq!(issues, legacy_issues, "{name}");
+            let findings = legacy
+                .findings()
+                .iter()
+                .map(|finding| (finding.secret().as_bytes(), finding.file().as_bytes()))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                findings,
+                legacy_finding.into_iter().collect::<Vec<_>>(),
+                "{name}"
+            );
+
+            let complete = run(
+                &mut source(data, name, true, false, 10),
+                &token_detector(),
+                ScanOptions::default(),
+            );
+            let SourceTermination::SourceError(SourceError::Terminal { stage, message, .. }) =
+                complete.termination()
+            else {
+                panic!("{name}: {:?}", complete.termination());
+            };
+            assert_eq!(*stage, complete_stage, "{name}");
+            if let Some(owned_message) = owned_message {
+                assert_eq!(message, owned_message, "{name}");
+            }
+            assert!(complete.findings().is_empty(), "{name}");
+            assert!(complete.issues().is_empty(), "{name}");
         }
     }
 }
