@@ -1402,3 +1402,182 @@ mod exact_leaf_exclusions {
         assert_eq!(legacy.findings().len(), 2);
     }
 }
+
+#[cfg(feature = "archives")]
+mod tgz_targets {
+    use super::*;
+    use rustleaks_sources::{ArchiveLimits, ArchiveOptions, ArchiveSource};
+
+    fn tar_gzip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        archive_seeds::gzip_stored(&archive_seeds::synthetic_tar(entries))
+    }
+
+    fn options(depth: usize, member: usize, spool: usize) -> ArchiveOptions {
+        ArchiveOptions::new(ArchiveLimits::new(depth, 20, member, 1 << 20, spool).unwrap())
+            .emit_limit_issues(true)
+    }
+
+    fn source(bytes: Vec<u8>, name: &str, options: ArchiveOptions) -> ArchiveSource {
+        ArchiveSource::with_options(
+            Cursor::new(bytes),
+            name,
+            FileOptions::complete(10).unwrap(),
+            options,
+        )
+    }
+
+    #[test]
+    fn complete_tgz_preserves_leaf_bytes_paths_and_spans_at_one_depth() {
+        let bytes = tar_gzip(&[("leaf.txt", b"token=A001")]);
+        for name in ["outer.tgz", "outer.TGZ"] {
+            let outcome = run(
+                &mut source(bytes.clone(), name, options(1, 4096, 4096)),
+                &token_detector(),
+                ScanOptions::default(),
+            );
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert!(outcome.issues().is_empty());
+            assert_eq!(outcome.findings().len(), 1);
+            let finding = &outcome.findings()[0];
+            assert_eq!(
+                finding.file().as_bytes(),
+                format!("{name}!leaf.txt").as_bytes()
+            );
+            assert_eq!(finding.secret().as_bytes(), b"A001");
+            assert_eq!(finding.secret_range().exact().unwrap().as_range(), 6..10);
+            let actual =
+                fragments(&mut source(bytes.clone(), name, options(1, 4096, 4096))).unwrap();
+            assert_eq!(actual.len(), 1);
+            assert_eq!(actual[0].content().as_bytes(), b"token=A001");
+        }
+        let mut legacy = ArchiveSource::new(Cursor::new(bytes.clone()), "outer.tgz");
+        assert!(fragments(&mut legacy).unwrap().is_empty());
+        let cap = bytes.len();
+        let mut backup = ArchiveSource::with_options(
+            Cursor::new(bytes),
+            "outer.tgz.backup",
+            FileOptions::complete(cap).unwrap(),
+            options(1, 4096, 4096),
+        );
+        // The non-alias remains a binary ordinary target, with no archive leaves.
+        assert!(fragments(&mut backup).unwrap().is_empty());
+    }
+
+    #[test]
+    fn nested_tgz_containers_are_not_leaf_exclusions() {
+        let inner = tar_gzip(&[("leaf.txt", b"token=A001")]);
+        let outer = tar_gzip(&[("inner.TGZ", &inner)]);
+        for excluded in [
+            "outer.tgz",
+            "outer.tgz!inner.TGZ",
+            "outer.tgz!inner.TGZ!leaf.txt",
+        ] {
+            let archive_options =
+                options(2, 16_384, 16_384).exclude_paths(vec![ByteText::from(excluded)]);
+            let outcome = run(
+                &mut source(outer.clone(), "outer.tgz", archive_options),
+                &token_detector(),
+                ScanOptions::default(),
+            );
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            let expected = usize::from(excluded != "outer.tgz!inner.TGZ!leaf.txt");
+            assert_eq!(outcome.findings().len(), expected);
+            if expected == 1 {
+                assert_eq!(
+                    outcome.findings()[0].file().as_bytes(),
+                    b"outer.tgz!inner.TGZ!leaf.txt"
+                );
+            }
+        }
+        let outcome = run(
+            &mut source(outer, "outer.tgz", options(1, 16_384, 16_384)),
+            &token_detector(),
+            ScanOptions::default(),
+        );
+        assert_eq!(outcome.termination(), &SourceTermination::Completed);
+        assert!(outcome.findings().is_empty());
+        assert_eq!(outcome.issues().len(), 1);
+        assert_eq!(
+            outcome.issues()[0].disposition(),
+            SourceIssueDisposition::Excluded
+        );
+    }
+
+    #[test]
+    fn sevenz_member_partitions_recurse_into_complete_tgz_targets() {
+        use sevenz_seeds::{Member, Method, archive};
+
+        let inner = tar_gzip(&[("leaf.txt", b"token=A001")]);
+        for method in [Method::Copy, Method::Deflate, Method::Lz4] {
+            let outer = archive(&[Member::new("inner.tgz", &inner, method)]);
+            let outcome = run(
+                &mut source(outer, "outer.7z", options(2, 16_384, 16_384)),
+                &token_detector(),
+                ScanOptions::default(),
+            );
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert_eq!(outcome.findings().len(), 1);
+            assert_eq!(
+                outcome.findings()[0].file().as_bytes(),
+                b"outer.7z!inner.tgz!leaf.txt"
+            );
+            assert_eq!(
+                outcome.findings()[0]
+                    .secret_range()
+                    .exact()
+                    .unwrap()
+                    .as_range(),
+                6..10
+            );
+        }
+    }
+
+    #[test]
+    fn complete_directory_tgz_exclusions_apply_only_to_emitted_leaves() {
+        let tree = Tree::new();
+        fs::write(
+            tree.0.join("outer.tgz"),
+            tar_gzip(&[("leaf.txt", b"token=A001")]),
+        )
+        .unwrap();
+        for excluded in ["root/outer.tgz", "root/outer.tgz!leaf.txt"] {
+            let directory_options = DirectoryOptions::default()
+                .file_options(FileOptions::complete(10).unwrap())
+                .logical_root("root")
+                .archives(options(1, 4096, 4096))
+                .exclude_paths(vec![ByteText::from(excluded)]);
+            let mut source = DirectorySource::with_options(&tree.0, directory_options);
+            let outcome = run(&mut source, &token_detector(), ScanOptions::default());
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert_eq!(
+                outcome.findings().len(),
+                usize::from(excluded == "root/outer.tgz")
+            );
+        }
+    }
+
+    #[test]
+    fn tgz_corruption_and_finite_limits_never_publish_incomplete_leaves() {
+        let bytes = tar_gzip(&[("leaf.txt", b"token=A001")]);
+        let mut corrupt = bytes.clone();
+        let crc = corrupt.len() - 8;
+        corrupt[crc] ^= 1;
+        let tar_bytes = archive_seeds::synthetic_tar(&[("leaf.txt", b"token=A001")]).len();
+        for (bytes, archive_options) in [
+            (corrupt, options(1, 4096, 4096)),
+            (bytes.clone(), options(1, 4096, bytes.len() - 1)),
+            (bytes, options(1, tar_bytes - 1, 4096)),
+        ] {
+            let outcome = run(
+                &mut source(bytes, "outer.tgz", archive_options),
+                &token_detector(),
+                ScanOptions::default(),
+            );
+            assert!(matches!(
+                outcome.termination(),
+                SourceTermination::SourceError(SourceError::Terminal { .. })
+            ));
+            assert!(outcome.findings().is_empty());
+        }
+    }
+}

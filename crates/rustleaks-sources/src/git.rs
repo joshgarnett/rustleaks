@@ -396,7 +396,10 @@ impl Source for GitSource {
             if file.binary {
                 #[cfg(feature = "archives")]
                 if let Some(options) = self.archives.clone()
-                    && crate::archive::name_is_archive(&file.path)
+                    && crate::archive::name_is_archive(
+                        &file.path,
+                        self.archive_file_options.complete_target_bytes().is_some(),
+                    )
                 {
                     let control = self.visit_archive_blob(&file, options, cancellation, emit)?;
                     if control == SourceControl::Stop {

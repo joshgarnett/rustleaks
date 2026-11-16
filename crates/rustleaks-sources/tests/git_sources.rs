@@ -692,3 +692,39 @@ fn complete_archive_options_reach_git_blobs_without_changing_text_hunks() {
         }
     ));
 }
+
+#[cfg(all(feature = "archives", unix))]
+#[test]
+fn complete_git_expands_tgz_aliases_and_legacy_keeps_binary_exclusion() {
+    let repository = TempRepo::copy_fixture("small");
+    let archive = fs::read(fixture_root().join("testdata/archives/nested.tar.gz")).unwrap();
+    fs::write(repository.path().join("bundle.TGZ"), archive).unwrap();
+    commit_complete_archive_fixture(repository.path(), &["bundle.TGZ"]);
+    let expected = fs::read(fixture_root().join("testdata/archives/files/api.go")).unwrap();
+    for complete in [false, true] {
+        let file_options = if complete {
+            rustleaks_sources::FileOptions::complete(1 << 20).unwrap()
+        } else {
+            rustleaks_sources::FileOptions::default()
+        };
+        let mut source = support::git_source(repository.path())
+            .mode(GitMode::LogArguments(vec!["-1".into()]))
+            .archives(ArchiveOptions::default())
+            .archive_file_options(file_options);
+        let (fragments, issues) = collect(&mut source);
+        assert!(issues.is_empty());
+        if complete {
+            let leaf = fragments
+                .iter()
+                .find(|fragment| {
+                    fragment.file_path().as_bytes() == b"bundle.TGZ!archives/files.zip!files/api.go"
+                })
+                .expect("complete mode admits and expands the binary alias blob");
+            assert_eq!(leaf.content().as_bytes(), expected);
+            assert_eq!(leaf.start_line(), 1);
+            assert!(leaf.commit_metadata().is_some());
+        } else {
+            assert!(fragments.is_empty());
+        }
+    }
+}

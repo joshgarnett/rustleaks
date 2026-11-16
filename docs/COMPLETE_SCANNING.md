@@ -88,6 +88,11 @@ verified. Formats that require decoding shared blocks to obtain later eligible
 members still enforce the decoder and container checks needed for that work.
 Nested members do not acquire a broader path-pruning policy from this mode.
 
+Complete archive targets also recognize a final `.tgz` suffix, ignoring ASCII
+case, as gzip-compressed TAR. This applies to nested members and Git archive
+blobs and consumes one archive depth, like `.tar.gz`. Legacy identification
+remains unchanged. Existing archive limits and exclusions still apply.
+
 Complete archive construction forces strict 7z declared member lengths, even
 if `ArchiveOptions::strict_7z_member_lengths(false)` was supplied. A short
 member stream fails; it is not published as a complete member. This adds no

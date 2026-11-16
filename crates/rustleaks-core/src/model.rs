@@ -7,8 +7,10 @@
 use std::borrow::{Borrow, Cow};
 use std::error::Error;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::str::Utf8Error;
+use std::sync::Arc;
 
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};
@@ -18,20 +20,65 @@ use serde::{Serialize, Serializer};
 /// `ByteText` is used for source-derived values, including paths and commit
 /// metadata. Use [`ByteText::as_str`] when valid UTF-8 is required, or
 /// [`ByteText::to_string_lossy`] for presentation only.
-#[derive(Clone, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ByteText(Vec<u8>);
+pub struct ByteText(ByteStorage);
+
+enum ByteStorage {
+    Owned(Vec<u8>),
+    Shared(Arc<Vec<u8>>),
+}
+
+impl Clone for ByteText {
+    fn clone(&self) -> Self {
+        Self::new(self.as_bytes().to_vec())
+    }
+}
+
+impl Default for ByteText {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
+}
+
+impl PartialEq for ByteText {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
+}
+
+impl Eq for ByteText {}
+
+impl PartialOrd for ByteText {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ByteText {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_bytes().cmp(other.as_bytes())
+    }
+}
+
+impl Hash for ByteText {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_bytes().hash(state);
+    }
+}
 
 impl ByteText {
     /// Creates byte text without validating or changing the bytes.
     #[must_use]
     pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
-        Self(bytes.into())
+        Self(ByteStorage::Owned(bytes.into()))
     }
 
     /// Returns the original bytes.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.0
+        match &self.0 {
+            ByteStorage::Owned(bytes) => bytes,
+            ByteStorage::Shared(bytes) => bytes,
+        }
     }
 
     /// Returns the text as UTF-8 without allocating.
@@ -43,7 +90,7 @@ impl ByteText {
     ///
     /// Returns [`Utf8Error`] when the retained bytes are not valid UTF-8.
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
-        std::str::from_utf8(&self.0)
+        std::str::from_utf8(self.as_bytes())
     }
 
     /// Returns a display-oriented string, replacing invalid UTF-8 sequences.
@@ -51,25 +98,41 @@ impl ByteText {
     /// This conversion does not modify the bytes retained by this value.
     #[must_use]
     pub fn to_string_lossy(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(&self.0)
+        String::from_utf8_lossy(self.as_bytes())
     }
 
     /// Returns whether the value contains no bytes.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.as_bytes().is_empty()
     }
 
     /// Returns the byte length of the value.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.as_bytes().len()
     }
 
     /// Consumes the value and returns its original bytes.
     #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
-        self.0
+        match self.0 {
+            ByteStorage::Owned(bytes) => bytes,
+            ByteStorage::Shared(bytes) => Arc::unwrap_or_clone(bytes),
+        }
+    }
+
+    pub(crate) fn from_shared(bytes: Arc<Vec<u8>>) -> Self {
+        Self(ByteStorage::Shared(bytes))
+    }
+
+    // Internal projections may share immutable context; public Clone remains
+    // independently owned, including ScanSession snapshots.
+    fn clone_shared(&self) -> Self {
+        match &self.0 {
+            ByteStorage::Owned(_) => self.clone(),
+            ByteStorage::Shared(bytes) => Self::from_shared(Arc::clone(bytes)),
+        }
     }
 }
 
@@ -87,43 +150,46 @@ impl Borrow<[u8]> for ByteText {
 
 impl From<Vec<u8>> for ByteText {
     fn from(value: Vec<u8>) -> Self {
-        Self(value)
+        Self::new(value)
     }
 }
 
 impl From<&[u8]> for ByteText {
     fn from(value: &[u8]) -> Self {
-        Self(value.to_vec())
+        Self::new(value.to_vec())
     }
 }
 
 impl<const N: usize> From<&[u8; N]> for ByteText {
     fn from(value: &[u8; N]) -> Self {
-        Self(value.to_vec())
+        Self::new(value.to_vec())
     }
 }
 
 impl<const N: usize> From<[u8; N]> for ByteText {
     fn from(value: [u8; N]) -> Self {
-        Self(value.to_vec())
+        Self::new(value.to_vec())
     }
 }
 
 impl From<String> for ByteText {
     fn from(value: String) -> Self {
-        Self(value.into_bytes())
+        Self::new(value.into_bytes())
     }
 }
 
 impl From<&str> for ByteText {
     fn from(value: &str) -> Self {
-        Self(value.as_bytes().to_vec())
+        Self::new(value.as_bytes().to_vec())
     }
 }
 
 impl fmt::Debug for ByteText {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_tuple("ByteText").field(&self.0).finish()
+        formatter
+            .debug_tuple("ByteText")
+            .field(&self.as_bytes())
+            .finish()
     }
 }
 
@@ -808,7 +874,7 @@ impl RequiredFinding {
             location: finding.location,
             match_range: finding.match_range,
             secret_range: finding.secret_range,
-            line: finding.line.clone(),
+            line: finding.line.clone_shared(),
             match_text: finding.match_text.clone(),
             secret: finding.secret.clone(),
         }
@@ -1904,3 +1970,98 @@ impl fmt::Display for ModelError {
 }
 
 impl Error for ModelError {}
+
+#[cfg(test)]
+mod shared_text_tests {
+    use super::*;
+    use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn shared_text_preserves_value_traits_and_owned_conversions() {
+        for bytes in [b"".as_slice(), b"abc", b"\xff\xc0\r\n"] {
+            let shared = ByteText::from_shared(Arc::new(bytes.to_vec()));
+            let owned = ByteText::new(bytes.to_vec());
+            assert_eq!(shared, owned);
+            assert_eq!(shared.cmp(&owned), std::cmp::Ordering::Equal);
+            assert_eq!(format!("{shared:?}"), format!("{owned:?}"));
+            assert_eq!(
+                serde_json::to_string(&shared).unwrap(),
+                serde_json::to_string(&owned).unwrap()
+            );
+            assert_eq!(shared.as_str(), owned.as_str());
+            assert_eq!(shared.to_string_lossy(), owned.to_string_lossy());
+            let mut hashed = HashSet::new();
+            hashed.insert(shared.clone_shared());
+            hashed.insert(owned.clone());
+            assert_eq!(hashed.len(), 1);
+            assert!(hashed.contains(bytes));
+            let mut ordered = BTreeSet::new();
+            ordered.insert(shared.clone_shared());
+            ordered.insert(owned);
+            assert_eq!(ordered.len(), 1);
+            assert!(ordered.contains(bytes));
+            assert_eq!(shared.into_bytes(), bytes);
+        }
+        let bytes = Arc::new(b"owned conversion".to_vec());
+        let first = ByteText::from_shared(Arc::clone(&bytes));
+        let second = first.clone_shared();
+        assert_eq!(first.into_bytes(), b"owned conversion");
+        assert_eq!(second.as_bytes(), b"owned conversion");
+        drop(bytes);
+        let pointer = second.as_bytes().as_ptr();
+        let owned = second.into_bytes();
+        assert_eq!(pointer, owned.as_ptr());
+    }
+
+    #[test]
+    fn internal_projection_shares_but_public_clone_and_redaction_are_independent() {
+        let backing = Arc::new(b"prefix SECRET suffix".to_vec());
+        let finding = Finding::builder()
+            .rule_id("r")
+            .location(Location::new(1, 1, 8, 13).unwrap())
+            .line(ByteText::from_shared(Arc::clone(&backing)))
+            .match_text("SECRET")
+            .secret("SECRET")
+            .build()
+            .unwrap();
+        let projected = RequiredFinding::from_finding(&finding);
+        assert_eq!(
+            finding.line().as_bytes().as_ptr(),
+            projected.line().as_bytes().as_ptr()
+        );
+        let cloned = finding.clone();
+        assert_eq!(cloned, finding);
+        assert_ne!(
+            cloned.line().as_bytes().as_ptr(),
+            finding.line().as_bytes().as_ptr()
+        );
+        let redacted = finding.redacted(100);
+        assert_eq!(redacted.line().as_bytes(), b"prefix REDACTED suffix");
+        assert_eq!(projected.line().as_bytes(), b"prefix SECRET suffix");
+        assert_eq!(
+            cloned.without_detected_secrets().line().as_bytes(),
+            b"prefix  suffix"
+        );
+        assert_eq!(backing.as_slice(), b"prefix SECRET suffix");
+    }
+
+    #[test]
+    fn shared_lines_do_not_alias_public_session_snapshots() {
+        let finding = Finding::builder()
+            .rule_id("r")
+            .location(Location::new(1, 1, 6, 11).unwrap())
+            .line(ByteText::from_shared(Arc::new(b"line SECRET".to_vec())))
+            .secret("SECRET")
+            .build()
+            .unwrap();
+        let mut session =
+            crate::session::ScanSession::new(crate::session::SessionPolicy::builder().build());
+        session.add_finding(finding);
+        let snapshot = session.snapshot();
+        assert_eq!(snapshot, session.findings());
+        assert_ne!(
+            snapshot[0].line().as_bytes().as_ptr(),
+            session.findings()[0].line().as_bytes().as_ptr()
+        );
+    }
+}

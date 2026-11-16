@@ -422,7 +422,8 @@ impl DirectorySource {
             return Ok(false);
         }
         #[cfg(feature = "archives")]
-        if self.options.archive_options.is_some() && !crate::archive::path_is_leaf(target) {
+        if self.options.archive_options.is_some() && !crate::archive::complete_path_is_leaf(target)
+        {
             return Ok(false);
         }
         let emitted = self.emitted_path(target)?;
