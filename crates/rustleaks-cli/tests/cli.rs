@@ -1285,6 +1285,77 @@ fn stdin_source_local_ignore_is_unioned_with_a_custom_ignore_path() {
 }
 
 #[test]
+fn invalid_ignore_entries_are_warned_once_in_plain_text() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    fixture.write("kept.txt", b"token=AB12\n");
+    fixture.write("ignored.txt", b"token=CD34\n");
+    // Line 2 has two fields. Line 3 is a valid global entry and must still
+    // apply after the invalid line.
+    fixture.write(
+        ".rustleaksignore",
+        b"# synthetic ignore file\na:b\nignored.txt:fixture-token:1\n",
+    );
+    fixture.write("extra.ignore", b"x\n");
+    let warning = |fields: &str, file: &Path, line: u32| {
+        format!(
+            "warn ignore file entry has {fields}, expected 3 or 4 file={} line={line}",
+            file.display()
+        )
+    };
+    let source_warning = warning("2 fields", Path::new(".rustleaksignore"), 2);
+    // A path that differs in text but names the same file.
+    let fixture_name = fixture.0.file_name().unwrap().to_str().unwrap();
+    let parent_path = Path::new("..").join(fixture_name).join(".rustleaksignore");
+    let parent_path_text = parent_path.to_str().unwrap();
+    let cases = vec![
+        // The default ignore path "." and the scanned folder "." name the
+        // same file, so it is read and reported once.
+        (Vec::new(), vec![source_warning.clone()]),
+        (
+            vec!["-i", "extra.ignore"],
+            vec![
+                warning("1 field", Path::new("extra.ignore"), 1),
+                source_warning.clone(),
+            ],
+        ),
+        (
+            vec!["-i", parent_path_text],
+            vec![warning("2 fields", &parent_path, 2)],
+        ),
+    ];
+    // A symlink is a second name for the same file.
+    #[cfg(unix)]
+    let cases = {
+        let mut cases = cases;
+        std::os::unix::fs::symlink(".rustleaksignore", fixture.0.join("link.ignore")).unwrap();
+        cases.push((
+            vec!["-i", "link.ignore"],
+            vec![warning("2 fields", Path::new("link.ignore"), 2)],
+        ));
+        cases
+    };
+
+    for (arguments, expected) in cases {
+        let mut all = vec!["dir", ".", "--no-banner", "-c", "config.toml"];
+        all.extend_from_slice(&arguments);
+        let result = output(&fixture.0, &all);
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert_eq!(result.status.code(), Some(1), "{arguments:?}: {stderr}");
+        let warnings = stderr
+            .lines()
+            .filter(|line| line.contains("ignore file"))
+            .collect::<Vec<_>>();
+        assert_eq!(warnings, expected, "{arguments:?}: {stderr}");
+        assert!(
+            !stderr.contains("InvalidFieldCount") && !stderr.contains("ByteText"),
+            "{stderr}"
+        );
+        assert!(stderr.contains("leaks found: 1"), "{arguments:?}: {stderr}");
+    }
+}
+
+#[test]
 fn redaction_and_custom_zero_exit_are_applied_to_reports() {
     let fixture = Fixture::new();
     fixture.write("config.toml", matching_config());
