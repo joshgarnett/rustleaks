@@ -1,5 +1,4 @@
 # Reviewed synthetic AWS compatibility examples and source assertions.
-README.md:aws-access-token:54
 crates/rustleaks-core/src/lib.rs:aws-access-token:14
 crates/rustleaks-compat/oracle/main_test.go:aws-access-token:498
 crates/rustleaks-sources/tests/git_sources.rs:aws-access-token:354
