@@ -54,7 +54,7 @@ values under the names shown in their sections below.
 | `RuleID` | The ID of the rule that matched. |
 | `Description` | The rule description. |
 | `StartLine`, `EndLine` | The first and last line of the match. Lines start at 1. |
-| `StartColumn`, `EndColumn` | The byte columns of the first and last byte of the match. They have the same values as in Gitleaks reports. |
+| `StartColumn`, `EndColumn` | The byte columns of the first and last byte of the match. They have the same values as in Gitleaks reports. See [Line and column numbers](#line-and-column-numbers). |
 | `Match` | The text that the rule matched. |
 | `Secret` | The part of the match that is the secret. |
 | `File` | The file path, as Rustleaks reports it. Empty for `stdin`. A file inside an archive has `!` between the archive path and the inner path, for example `bundle.zip!config/app.env`. |
@@ -67,6 +67,63 @@ values under the names shown in their sections below.
 | `Fingerprint` | The ID used by ignore files. `file:rule-id:line`, with `commit:` in front for findings in Git history. |
 
 Paths use `/` as the separator, even on Windows.
+
+## Line and column numbers
+
+`StartLine` and `EndLine` count lines from 1. `StartColumn` and `EndColumn`
+count bytes from 1. A character that takes more than one byte in UTF-8 takes
+more than one column. `EndColumn` is the column of the last byte of the match.
+For a finding in decoded text (tag `decoded:...`), the columns cover the
+encoded text in the input.
+
+Rustleaks scans its input in pieces. A piece is the added lines of one Git
+diff hunk, or one part of a file or of standard input. Rustleaks reads Git
+history with `git log -p -U0`, so a hunk is one block of changed lines. Files
+and standard input are read in parts of about 100,000 bytes (see
+[Resource limits](resource-limits.md)), so a smaller input is one piece.
+Rustleaks tries to end a part at a blank line. If it finds none in the next
+25,000 bytes, the next part starts in the middle of a line, and columns on
+that line count from the start of the part.
+
+On the first line of a piece, the column is the position of the byte in its
+line, counting from 1. On every later line, the column is the position plus 1. `EndColumn` follows the same rule. Gitleaks
+counts columns in the same way.
+
+For example, take a configuration with one rule that matches `TOKEN`, and a
+file with these three lines:
+
+```text
+TOKEN
+TOKEN
+  TOKEN
+```
+
+| Line | Position of the first `T` | `StartColumn` | `EndColumn` |
+| ---: | ---: | ---: | ---: |
+| 1 | 1 | 1 | 5 |
+| 2 | 1 | 2 | 6 |
+| 3 | 3 | 4 | 8 |
+
+Line 1 is the first line of the file, so its columns are the positions. Lines
+2 and 3 are later lines, so their columns are 1 higher. To get the position on
+a later line, subtract 1 from the column.
+
+Rustleaks keeps this rule for these reasons:
+
+- Reports from Rustleaks and Gitleaks have the same columns.
+- A baseline entry matches a finding only when `StartColumn` and `EndColumn`
+  are equal. With other columns, findings in existing baselines would come
+  back as new findings. See [Baselines](configuration.md#baselines).
+- SARIF `startColumn` and `endColumn` use the same values.
+
+Ignore files do not use columns. A fingerprint holds only the file, rule ID,
+start line and, for Git history, the commit.
+
+If you use the Rust library and need exact positions, use
+`Finding::match_range()` and `Finding::secret_range()`. They give
+`FindingRange::Exact` byte offsets into the fragment you scanned, or
+`FindingRange::Unavailable` when there is no exact range, for example for
+decoded text. See [Reading findings](library.md#reading-findings).
 
 ## JSON
 

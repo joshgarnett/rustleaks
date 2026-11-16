@@ -50,7 +50,8 @@ parity](../dev/testing-and-parity.md).
   [Configuration](configuration.md).
 - **Findings.** For the same input and configuration, Rustleaks reports the
   same rule IDs, matches, secrets, files, lines, columns, commit details,
-  entropy, tags and fingerprints.
+  entropy, tags and fingerprints. Columns are counted as in Gitleaks. See
+  [Line and column numbers](reports.md#line-and-column-numbers).
 - **Ignore files.** `.gitleaksignore` files work, with the same fingerprint
   format.
 - **Baselines.** A JSON report from Gitleaks at the pinned revision works as a

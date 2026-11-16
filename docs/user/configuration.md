@@ -206,7 +206,9 @@ A finding matches a baseline entry when these fields are equal: rule ID,
 description, start and end line, start and end column, file, commit, author,
 email, date, commit message and entropy. The match and secret must also be
 equal, unless the scan uses `--redact`. Because columns are compared exactly,
-make baselines with Rustleaks or with the same Gitleaks revision.
+make baselines with Rustleaks or with the same Gitleaks revision. See [Line
+and column numbers](reports.md#line-and-column-numbers) for how columns are
+counted.
 
 If Rustleaks cannot read or parse the baseline file, it logs an error and
 scans without a baseline. The exit code does not show this, so check the log.
