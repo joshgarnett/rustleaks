@@ -136,7 +136,7 @@ source assembly or an incomplete-result resource budget.
 or `git`. The path must be nonempty. A relative path is resolved against the
 current working directory of the `rustleaks` process; an absolute path is used
 as given. Without the option, the existing CLI route is unchanged.
-The option is documented here separately from the frozen legacy help text.
+CLI help does not list this option; this document describes it.
 Configuration selection, environment precedence, automatic configuration
 lookup, enabled rules, allowlists, ignore files, baselines, redaction and report
 formats continue to use their normal CLI contracts. Select provider rules with

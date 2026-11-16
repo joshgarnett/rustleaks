@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Adopt a standalone compatibility policy. Help, usage and error wording, log
+  and banner lines, and the order of JSON keys and CSV columns are no longer
+  compatibility guarantees and can change. Findings, configuration meaning,
+  report fields, exit codes, and supported Gitleaks commands, flags and
+  environment variables stay compatible with the pinned Gitleaks revision.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

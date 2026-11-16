@@ -16,6 +16,7 @@ maintainers. For the user-facing compatibility profile, see
 | `test-manifest.toml` | Mapping from upstream tests and identities to Rust tests | Frozen |
 | `api-inventory-v1.json` | Exported upstream API identities | Frozen |
 | `api-dispositions-v1.jsonl` | Disposition of each upstream API identity | Generated and frozen |
+| `presentation-dispositions.toml` | Reviewed changes to presentation text in the frozen CLI corpus, and the behavior records that they replace | Maintained |
 | `quality-corpus/` | Synthetic detection-quality cases and their baseline | Generated |
 | `public-api/` | Supported `rustleaks-core` public API snapshot | Generated |
 | `BUILD.bazel` | Bazel file groups that expose this directory to tests | Maintained |
@@ -39,8 +40,12 @@ the retired process. The frozen files stay unchanged because they are part of
 the hashed evidence.
 
 New expectations go into Rust tests with synthetic inputs and independently
-reviewed expected values. Current Rust output must never become its own
-expected baseline.
+reviewed expected values. For functional fields, such as findings, spans,
+fingerprints, report fields, exit codes and error classes, current Rust output
+must never become its own expected baseline. A reviewed change to presentation
+text in the frozen CLI corpus goes into `presentation-dispositions.toml`, as
+described in [presentation
+dispositions](../docs/COMPATIBILITY.md#presentation-dispositions).
 
 ## Checking the evidence
 

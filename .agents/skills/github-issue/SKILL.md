@@ -39,9 +39,13 @@ Read the applicable file under `.github/ISSUE_TEMPLATE/` and retain its
 required fields:
 
 - `defect.yml` for reproducible incorrect Rustleaks behavior;
-- `compatibility.yml` for a field-level difference from Gitleaks commit
-  `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b`; and
+- `compatibility.yml` for a functional difference from Gitleaks commit
+  `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b`, such as a finding, span,
+  fingerprint, report field, or exit code; and
 - `feature.yml` for a capability or maintained-workflow proposal.
+
+A difference only in help, usage, error wording, or log text uses `defect.yml`
+or `feature.yml`.
 
 Preserve the form's verified title prefix: `bug: `, `compat: `, or `feat: `.
 

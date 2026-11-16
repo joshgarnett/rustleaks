@@ -19,3 +19,5 @@ crates/rustleaks-core/data/LICENSE.tiktoken-rs -text -whitespace
 # Native release notice sources and generated copies retain exact upstream bytes.
 release/notice-inputs/** -text -whitespace
 release/licenses/** -text -whitespace
+# Reviewed presentation text keeps LF line endings in multi-line strings.
+compat/presentation-dispositions.toml text eol=lf

@@ -1,14 +1,15 @@
 # Native detection policy
 
 The native policy requires explicit opt-in. Existing `Engine` callers
-retain their configuration and detection behavior. This contract introduces no
-compatibility exception, copied-default change, or provider network operation.
+retain their configuration and detection behavior. This contract does not
+change a compatibility guarantee or the copied default configuration, and it
+performs no provider network operation.
 
 ## Profiles and selection
 
 The pinned Gitleaks profile remains the default. Its upstream identity, copied
-configuration, byte findings, serialized output, and mapped evidence remain
-subject to [COMPATIBILITY.md](COMPATIBILITY.md).
+configuration, byte findings, report fields and values, and mapped evidence
+remain subject to [COMPATIBILITY.md](COMPATIBILITY.md).
 
 `native::NativePolicy::builder()` explicitly selects `rustleaks-native-v1`.
 The builder starts with the embedded default. `with_pack(id, toml)` appends an
@@ -306,8 +307,8 @@ matching an identity alone does not establish matching input or scan options.
 `--native-pack <pack-id>` appends a builtin pack to the pinned embedded default.
 Repeat the flag to compose `rustleaks-extra-v1`, `rustleaks-providers-v1` and
 `rustleaks-connections-v1` in the supplied order. Unknown or repeated IDs fail.
-No pack is active unless explicitly selected. Legacy help bytes remain frozen;
-this document describes the additive option.
+No pack is active unless explicitly selected. CLI help does not list this
+option; this document describes it.
 
 The CLI first applies its normal configuration precedence and discovery.
 Native selection requires that the resulting source is the embedded default.

@@ -11,12 +11,32 @@ use serde_json::Value;
 
 use super::TempDir;
 use super::fixture;
-use super::normalize;
+use super::normalize::{self, Spelling};
 use super::process::{self, CASE_TIMEOUT, OUTPUT_LIMIT};
 use super::validation::{required_array, required_str};
+use crate::tooling::presentation::DISCLOSURE_MARKER;
 use crate::tooling::support::sha256_bytes;
 
-const MARKER: &[u8] = b"CLI_CORPUS_DISCLOSURE_MARKER_8F20C3";
+/// One CLI run as the frozen legacy projection plus native presentation text.
+pub(super) struct Observed {
+    /// Legacy projection compared with the frozen corpus.
+    pub(super) value: Value,
+    /// Presentation text as the CLI prints it, spelled with `rustleaks`.
+    pub(super) native: NativePresentation,
+}
+
+/// Normalized presentation text that keeps the native executable spelling.
+#[derive(Default)]
+pub(super) struct NativePresentation {
+    /// Normalized standard output.
+    pub(super) stdout: Vec<u8>,
+    /// Complete normalized usage block, when present.
+    pub(super) usage: Option<Vec<u8>>,
+    /// Native message for each legacy stderr event, in the same order.
+    pub(super) messages: Vec<Vec<u8>>,
+    /// Legacy stderr events produced by the first usage block.
+    pub(super) usage_events: Option<std::ops::Range<usize>>,
+}
 
 #[allow(clippy::too_many_lines)] // Observation keeps the ordered black-box protocol in one place.
 pub(super) fn observe(
@@ -24,7 +44,7 @@ pub(super) fn observe(
     case_id: &str,
     spec: &Value,
     fake_git_binary: &Path,
-) -> Result<Value, String> {
+) -> Result<Observed, String> {
     let temporary = TempDir::new(&format!("cli-{}", case_id.to_ascii_lowercase()))?;
     let capture = TempDir::new(&format!("cli-io-{}", case_id.to_ascii_lowercase()))?;
     let root = &temporary.path;
@@ -78,11 +98,17 @@ pub(super) fn observe(
     let executable = binary
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("gitleaks");
-    let names = [executable, "rustleaks", "gitleaks"];
-    let stdout = normalize::normalize_bytes(&result.stdout, root, &names);
-    let events = normalize::events(&result.stderr, root, &names);
-    let usage = normalize::usage(&result.stderr, root, &names);
+        .unwrap_or("rustleaks");
+    let stdout = normalize::normalize_bytes(&result.stdout, root, executable, Spelling::Legacy);
+    let events = normalize::events(&result.stderr, root, executable);
+    let usage = normalize::usage(&result.stderr, root, executable, Spelling::Legacy);
+    let native_stderr = normalize::native_stderr(&result.stderr, root, executable)?;
+    let native = NativePresentation {
+        stdout: normalize::normalize_bytes(&result.stdout, root, executable, Spelling::Native),
+        usage: normalize::usage(&result.stderr, root, executable, Spelling::Native),
+        messages: native_stderr.messages,
+        usage_events: native_stderr.usage_events,
+    };
     let finding_bytes = match spec.get("finding_source").and_then(Value::as_str) {
         Some("report") => report.bytes.as_deref(),
         Some("stdout") => Some(result.stdout.as_slice()),
@@ -126,9 +152,11 @@ pub(super) fn observe(
         stdout.len(),
         quote(&sha256_bytes(&stdout)),
         event_json.join(","),
-        contains(&result.stderr, MARKER)
+        contains(&result.stderr, DISCLOSURE_MARKER.as_bytes())
     );
-    serde_json::from_str(&json).map_err(|error| format!("cannot encode CLI observation: {error}"))
+    let value = serde_json::from_str(&json)
+        .map_err(|error| format!("cannot encode CLI observation: {error}"))?;
+    Ok(Observed { value, native })
 }
 
 fn native_negative_one_exit(exit: i64) -> bool {

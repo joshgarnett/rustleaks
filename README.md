@@ -5,10 +5,11 @@ Rustleaks is an experimental, engine-first secret scanner written in Rust. The
 Source adapters, reports, and the command-line interface are separate workspace
 crates.
 
-Rustleaks is a Rust port of Gitleaks at one pinned revision. It builds on
-Gitleaks' behavior, default rules, tests, and fixtures, and I am grateful to its
-maintainers and contributors for that foundation. Rustleaks is an independent
-project and is not affiliated with or endorsed by Gitleaks or its maintainers.
+Rustleaks is backward compatible with Gitleaks at one pinned revision. It
+builds on Gitleaks' behavior, default rules, tests, and fixtures, and I am
+grateful to its maintainers and contributors for that foundation. Rustleaks is
+an independent project and is not affiliated with or endorsed by Gitleaks or
+its maintainers.
 
 ## Current status
 
@@ -113,6 +114,13 @@ The profile is pinned to Gitleaks commit
 configuration has SHA-256
 `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
 
+Compatibility is functional. Gitleaks configuration files keep their meaning,
+the same input produces the same findings and fingerprints, exit codes do not
+change, and reports keep their field names, types and meanings. Help, usage,
+error wording, log text and the order of JSON keys and CSV columns belong to
+Rustleaks and can change. See the [compatibility
+policy](docs/COMPATIBILITY.md#compatibility-policy) for the full list.
+
 Compatibility is checked through Rust regression tests against frozen
 historical observations and independently specified Rust contracts. The
 evidence includes 6,770 default-rule samples, 3,618 regular
@@ -122,7 +130,7 @@ composite rules, sessions, files, archives, Git, reports, and the CLI. See the
 [compatibility profile](docs/COMPATIBILITY.md) for counts, normalization, and
 known differences.
 
-Run the committed compatibility replay through its canonical Bazel target:
+Run the committed compatibility replay through its Bazel target:
 
 ```sh
 just parity
@@ -132,8 +140,9 @@ just parity
 `cargo xtask qualify` runs complete local Rust release hardening from a clean,
 committed candidate. The live Go oracle and upstream rediscovery are retired;
 these commands require no Go installation or sibling Gitleaks checkout.
-Historical input/output bytes and attribution remain unchanged. Frozen tests
-establish regression coverage for their cases, not equivalence on unseen input.
+Historical input and output bytes and attribution remain unchanged as
+provenance. Frozen tests establish regression coverage for the functional
+results of their cases, not equivalence on unseen input.
 
 ## Platform and dependency evidence
 
@@ -154,7 +163,7 @@ and [resource contract](docs/RESOURCE_LIMITS.md).
 
 The initial port was developed with extensive use of OpenAI Codex and
 GPT-5.6-Sol under human direction. Codex analyzed the pinned Go implementation
-and implemented the Rust port and compatibility tooling. Multiple agent roles
+and implemented Rustleaks and its compatibility tooling. Multiple agent roles
 performed implementation, oracle work, and independent review. Acceptance
 relied on tests, mutation controls, and differential evidence, not an
 assumption that generated code was correct.

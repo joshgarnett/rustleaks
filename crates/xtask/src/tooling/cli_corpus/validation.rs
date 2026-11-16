@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Map, Value, json};
 
+use super::observe::Observed;
 use super::{newline_records, spec};
+use crate::tooling::presentation::{self, Disposition, Field};
 use crate::tooling::support::sha256_bytes;
 
 pub(super) struct Variant {
@@ -151,13 +153,166 @@ fn build_version_warning(build_version: &str) -> String {
     )
 }
 
+/// Compares one observation with its frozen expectation and returns the IDs of
+/// the presentation dispositions it used.
+///
+/// Each disposition requires the native text of its field to equal the
+/// reviewed text exactly and the legacy projection of that field to differ
+/// from the frozen corpus, so a disposition is never a no-op. Only that field
+/// is then removed from the legacy projection on both sides, and every
+/// remaining field must match exactly. The ledger check rejects dispositions
+/// for variants with native platform expectations before replay.
 pub(super) fn compare(
     id: &str,
-    actual: &Value,
+    actual: &Observed,
     frozen: &Value,
     windows: bool,
+    dispositions: &[&Disposition],
+) -> Result<Vec<String>, String> {
+    let mut expected = expected_observations(id, frozen, windows)?;
+    if dispositions.is_empty() {
+        exact(id, &actual.value, &expected)?;
+        return Ok(Vec::new());
+    }
+    let mut observed = actual.value.clone();
+    let mut messages = actual.native.messages.clone();
+    // Remove the usage block first so event indices refer to frozen events
+    // outside it, whatever the length of the new usage text.
+    let mut frozen_usage = None;
+    if let Some(disposition) = dispositions
+        .iter()
+        .find(|disposition| disposition.field == Field::StderrUsage)
+    {
+        require_native(id, disposition, actual.native.usage.as_deref())?;
+        require_changed(id, disposition, &observed, &expected, "/stderr_usage")?;
+        let range = actual
+            .native
+            .usage_events
+            .clone()
+            .ok_or_else(|| format!("{id}: Rust usage block has no stderr events"))?;
+        if messages.len() < range.end {
+            return Err(format!("{id}: Rust usage events are out of range"));
+        }
+        messages.drain(range.clone());
+        remove_usage(&mut observed, range)?;
+        for value in &mut expected {
+            let range = presentation::usage_event_range(value, id)?
+                .ok_or_else(|| format!("{id}: frozen observation has no usage block"))?;
+            remove_usage(value, range.clone())?;
+            frozen_usage = Some(range);
+        }
+    }
+    let mut used = Vec::new();
+    for disposition in dispositions {
+        if disposition.variant != id {
+            return Err(format!(
+                "{id}: disposition {} is for another variant",
+                disposition.id
+            ));
+        }
+        match disposition.field {
+            Field::Stdout => {
+                require_native(id, disposition, Some(actual.native.stdout.as_slice()))?;
+                require_changed(id, disposition, &observed, &expected, "/stdout_base64")?;
+                for value in std::iter::once(&mut observed).chain(&mut expected) {
+                    for key in ["stdout_base64", "stdout_bytes", "stdout_sha256"] {
+                        value[key] = Value::Null;
+                    }
+                }
+            }
+            Field::StderrUsage => {}
+            Field::StderrEventMessage(frozen_index) => {
+                let index = match &frozen_usage {
+                    Some(range) if range.contains(&frozen_index) => {
+                        return Err(format!(
+                            "{id}: disposition {} targets a usage event",
+                            disposition.id
+                        ));
+                    }
+                    Some(range) if frozen_index >= range.end => frozen_index - range.len(),
+                    _ => frozen_index,
+                };
+                require_native(id, disposition, messages.get(index).map(Vec::as_slice))?;
+                let pointer = format!("/stderr_events/{index}/normalized_message_base64");
+                require_changed(id, disposition, &observed, &expected, &pointer)?;
+                for value in std::iter::once(&mut observed).chain(&mut expected) {
+                    mask_message(value, index);
+                }
+            }
+        }
+        used.push(disposition.id.clone());
+    }
+    exact(id, &observed, &expected)?;
+    Ok(used)
+}
+
+fn require_changed(
+    id: &str,
+    disposition: &Disposition,
+    observed: &Value,
+    expected: &[Value],
+    pointer: &str,
 ) -> Result<(), String> {
-    let expected = expected_observations(id, frozen, windows)?;
+    let actual = observed.pointer(pointer);
+    if expected
+        .iter()
+        .any(|value| value.pointer(pointer) == actual)
+    {
+        Err(format!(
+            "{id}: disposition {} is stale because the Rust output still matches the frozen corpus",
+            disposition.id
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_native(
+    id: &str,
+    disposition: &Disposition,
+    native: Option<&[u8]>,
+) -> Result<(), String> {
+    if native == Some(disposition.expected.as_bytes()) {
+        Ok(())
+    } else {
+        // Report the disposition, never captured output.
+        Err(format!(
+            "{id}: Rust presentation differs from reviewed disposition {}",
+            disposition.id
+        ))
+    }
+}
+
+fn remove_usage(value: &mut Value, range: std::ops::Range<usize>) -> Result<(), String> {
+    value["stderr_usage"] = Value::Null;
+    let events = value["stderr_events"]
+        .as_array_mut()
+        .ok_or("CLI observation stderr_events is not an array")?;
+    if events.len() < range.end {
+        return Err("CLI usage events are out of range".into());
+    }
+    events.drain(range);
+    Ok(())
+}
+
+/// Removes one event message, and the message digest that only the
+/// unclassified diagnostic class records. Severity, class and every other
+/// event field stay compared.
+fn mask_message(value: &mut Value, index: usize) {
+    if let Some(event) = value
+        .get_mut("stderr_events")
+        .and_then(|events| events.get_mut(index))
+    {
+        if event["class"] == "diagnostic.other"
+            && let Some(fields) = event.get_mut("fields").and_then(Value::as_object_mut)
+        {
+            fields.remove("message_sha256");
+        }
+        event["normalized_message_base64"] = Value::Null;
+    }
+}
+
+fn exact(id: &str, actual: &Value, expected: &[Value]) -> Result<(), String> {
     if expected.contains(actual) {
         return Ok(());
     }
@@ -331,7 +486,10 @@ pub(super) fn required_u64(value: &Value, field: &str, label: &str) -> Result<u6
 
 #[cfg(test)]
 mod tests {
+    use super::super::observe::NativePresentation;
     use super::*;
+    use crate::tooling::presentation::FrozenVariant;
+    use std::collections::BTreeMap;
 
     fn fixture() -> (Vec<Value>, Vec<Variant>, Vec<u8>) {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/cli-corpus");
@@ -344,6 +502,24 @@ mod tests {
         let bytes = std::fs::read(root.join("outcomes-v1.jsonl")).unwrap();
         let variants = bind_expected(&rows, &bytes).unwrap();
         (rows, variants, bytes)
+    }
+
+    fn observed(value: &Value) -> Observed {
+        Observed {
+            value: value.clone(),
+            native: NativePresentation::default(),
+        }
+    }
+
+    fn compare_frozen(
+        id: &str,
+        actual: &Value,
+        frozen: &Value,
+        windows: bool,
+    ) -> Result<(), String> {
+        let used = compare(id, &observed(actual), frozen, windows, &[])?;
+        assert!(used.is_empty());
+        Ok(())
     }
 
     fn set_stdout(observation: &mut Value, bytes: &[u8]) {
@@ -389,9 +565,9 @@ mod tests {
                 let mut actual = frozen.clone();
                 set_stdout(&mut actual, stdout.as_bytes());
                 assert_eq!(actual, expected);
-                compare(id, &actual, &expected, false).unwrap();
+                compare_frozen(id, &actual, &expected, false).unwrap();
                 assert!(
-                    compare(id, frozen, &expected, false).is_err(),
+                    compare_frozen(id, frozen, &expected, false).is_err(),
                     "stale build: {id}"
                 );
                 for invalid in [
@@ -402,7 +578,10 @@ mod tests {
                     stdout.replace(build_version, "99.0.0-wrong"),
                 ] {
                     set_stdout(&mut actual, invalid.as_bytes());
-                    assert!(compare(id, &actual, &expected, false).is_err(), "{id}");
+                    assert!(
+                        compare_frozen(id, &actual, &expected, false).is_err(),
+                        "{id}"
+                    );
                 }
                 for field in ["stdout_base64", "stdout_bytes", "stdout_sha256"] {
                     let mut changed = frozen.clone();
@@ -433,8 +612,8 @@ mod tests {
             let mut actual = frozen.clone();
             actual["stderr_events"][0]["normalized_message_base64"] = json!(BASE64.encode(current));
             assert_eq!(actual, expected);
-            compare(id, &actual, &expected, false).unwrap();
-            assert!(compare(id, frozen, &expected, false).is_err());
+            compare_frozen(id, &actual, &expected, false).unwrap();
+            assert!(compare_frozen(id, frozen, &expected, false).is_err());
             for invalid in [
                 format!(" {current}"),
                 format!("{current}\n"),
@@ -443,7 +622,7 @@ mod tests {
             ] {
                 actual["stderr_events"][0]["normalized_message_base64"] =
                     json!(BASE64.encode(invalid));
-                assert!(compare(id, &actual, &expected, false).is_err());
+                assert!(compare_frozen(id, &actual, &expected, false).is_err());
             }
             for field in ["severity", "class", "fields", "normalized_message_base64"] {
                 let mut changed = frozen.clone();
@@ -468,7 +647,7 @@ mod tests {
             ] {
                 let mut changed = expected.clone();
                 changed[field] = json!({"mutation": true});
-                assert!(compare(id, &changed, &expected, false).is_err());
+                assert!(compare_frozen(id, &changed, &expected, false).is_err());
             }
         }
     }
@@ -486,10 +665,10 @@ mod tests {
                 continue;
             }
             assert_eq!(expected, variant.expected);
-            compare(&variant.id, &variant.expected, &expected, false).unwrap();
+            compare_frozen(&variant.id, &variant.expected, &expected, false).unwrap();
             let mut changed = variant.expected.clone();
             set_stdout(&mut changed, b"12.34.56-rc.789+review\n");
-            assert!(compare(&variant.id, &changed, &expected, false).is_err());
+            assert!(compare_frozen(&variant.id, &changed, &expected, false).is_err());
         }
         assert_eq!(projected, 5);
     }
@@ -539,46 +718,450 @@ mod tests {
                 .find(|variant| variant.id == id)
                 .unwrap()
                 .expected;
-            compare(&id, frozen, frozen, false).unwrap();
+            compare_frozen(&id, frozen, frozen, false).unwrap();
             let mut changed = frozen.clone();
-            match control["expected_failure_class"].as_str().unwrap() {
-                "selected-findings" => {
-                    // Selecting the matching environment config instead of the
-                    // explicit no-match config introduces this fixture finding.
-                    changed["findings"] = variants
-                        .iter()
-                        .find(|variant| variant.id == "CLI-BB-002/dir")
-                        .unwrap()
-                        .expected["findings"]
-                        .clone();
-                }
-                "complete-findings" => {
-                    let removed = changed["findings"].as_array_mut().unwrap().pop();
-                    assert!(removed.is_some(), "{id}: no finding available to remove");
-                }
-                "safe-arity"
-                | "stdout-format"
-                | "terminal-exit"
-                | "report-open-failure"
-                | "persistent-grammar"
-                | "shorthand-grammar"
-                | "raw-template-grammar"
-                | "exit" => changed["exit"] = json!(99),
-                "dormant-report" | "report-before-exit" | "safe-preflight" | "report-bytes" => {
-                    changed["report"] = json!({"state": "mutated"});
-                }
-                "non-disclosure" => changed["stderr_contains_disclosure_marker"] = json!(true),
-                "help-golden" => changed["stdout_base64"] = json!(BASE64.encode(b"changed help")),
-                "stderr-severity" => changed["stderr_events"][0]["severity"] = json!("fatal"),
-                "process-cleanup" => changed["child_reaped"] = json!(false),
-                unknown => panic!("unmapped control {unknown}"),
-            }
+            mutate_for_control(
+                control["expected_failure_class"].as_str().unwrap(),
+                &mut changed,
+                &variants,
+            );
             assert!(
                 &changed != frozen,
                 "{id}: mutation did not change its observation"
             );
-            assert!(compare(&id, &changed, frozen, false).is_err(), "{id}");
+            assert!(
+                compare_frozen(&id, &changed, frozen, false).is_err(),
+                "{id}"
+            );
         }
+    }
+
+    fn mutate_for_control(class: &str, changed: &mut Value, variants: &[Variant]) {
+        match class {
+            "selected-findings" => {
+                // Selecting the matching environment config instead of the
+                // explicit no-match config introduces this fixture finding.
+                changed["findings"] = variants
+                    .iter()
+                    .find(|variant| variant.id == "CLI-BB-002/dir")
+                    .unwrap()
+                    .expected["findings"]
+                    .clone();
+            }
+            "complete-findings" => {
+                let removed = changed["findings"].as_array_mut().unwrap().pop();
+                assert!(removed.is_some(), "no finding available to remove");
+            }
+            "safe-arity"
+            | "stdout-format"
+            | "terminal-exit"
+            | "report-open-failure"
+            | "persistent-grammar"
+            | "shorthand-grammar"
+            | "raw-template-grammar"
+            | "exit" => changed["exit"] = json!(99),
+            "dormant-report" | "report-before-exit" | "safe-preflight" | "report-bytes" => {
+                changed["report"] = json!({"state": "mutated"});
+            }
+            "non-disclosure" => changed["stderr_contains_disclosure_marker"] = json!(true),
+            "help-golden" => changed["stdout_base64"] = json!(BASE64.encode(b"changed help")),
+            "stderr-severity" => changed["stderr_events"][0]["severity"] = json!("fatal"),
+            "process-cleanup" => changed["child_reaped"] = json!(false),
+            unknown => panic!("unmapped control {unknown}"),
+        }
+    }
+
+    fn frozen_index(variants: &[Variant]) -> BTreeMap<String, FrozenVariant> {
+        variants
+            .iter()
+            .map(|variant| {
+                (
+                    variant.id.clone(),
+                    FrozenVariant {
+                        help_stdout: presentation::help_stdout(&variant.request),
+                        observation: variant.expected.clone(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn decode(value: &Value, pointer: &str) -> Vec<u8> {
+        BASE64
+            .decode(value.pointer(pointer).unwrap().as_str().unwrap())
+            .unwrap()
+    }
+
+    fn legacy(text: &str) -> String {
+        text.replace("rustleaks", "gitleaks")
+            .replace("Rustleaks", "Gitleaks")
+    }
+
+    fn synthetic(id: &str, variant: &Variant, field: Field) -> Disposition {
+        let frozen = &variant.expected;
+        let (frozen, expected) = match field {
+            Field::Stdout => (
+                decode(frozen, "/stdout_base64"),
+                "synthetic Rustleaks help for rustleaks\n".to_owned(),
+            ),
+            Field::StderrUsage => (
+                decode(frozen, "/stderr_usage/bytes_base64"),
+                "Usage:\n  rustleaks synthetic [flags]\n\nFlags:\n  -h, --help   show help\n"
+                    .to_owned(),
+            ),
+            Field::StderrEventMessage(index) => (
+                decode(
+                    frozen,
+                    &format!("/stderr_events/{index}/normalized_message_base64"),
+                ),
+                format!("synthetic rustleaks message {index}"),
+            ),
+        };
+        Disposition {
+            id: id.into(),
+            variant: variant.id.clone(),
+            field,
+            frozen_sha256: sha256_bytes(&frozen),
+            expected,
+            reason: "Synthetic review.".into(),
+        }
+    }
+
+    /// Builds what a CLI printing the reviewed text for each disposition
+    /// observes, with every functional field left at its frozen value.
+    fn presented(frozen: &Value, dispositions: &[Disposition]) -> Observed {
+        let events = frozen["stderr_events"].as_array().unwrap();
+        let mut native = NativePresentation {
+            stdout: decode(frozen, "/stdout_base64"),
+            usage: frozen["stderr_usage"]
+                .is_object()
+                .then(|| decode(frozen, "/stderr_usage/bytes_base64")),
+            messages: (0..events.len())
+                .map(|index| {
+                    decode(
+                        frozen,
+                        &format!("/stderr_events/{index}/normalized_message_base64"),
+                    )
+                })
+                .collect(),
+            usage_events: presentation::usage_event_range(frozen, "frozen").unwrap(),
+        };
+        let mut value = frozen.clone();
+        for disposition in dispositions {
+            let text = legacy(&disposition.expected);
+            match disposition.field {
+                Field::Stdout => {
+                    set_stdout(&mut value, text.as_bytes());
+                    native.stdout = disposition.expected.clone().into_bytes();
+                }
+                Field::StderrEventMessage(index) => {
+                    let event = &mut value["stderr_events"][index];
+                    event["normalized_message_base64"] = json!(BASE64.encode(&text));
+                    if event["class"] == "diagnostic.other" {
+                        event["fields"]["message_sha256"] = json!(sha256_bytes(text.as_bytes()));
+                    }
+                    native.messages[index] = disposition.expected.clone().into_bytes();
+                }
+                Field::StderrUsage => {}
+            }
+        }
+        if let Some(disposition) = dispositions.iter().find(|d| d.field == Field::StderrUsage) {
+            let range = native.usage_events.clone().unwrap();
+            let lines = disposition
+                .expected
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>();
+            let replacement = lines.iter().map(|line| {
+                let line = legacy(line);
+                json!({"severity": "error", "class": "diagnostic.other",
+                    "fields": {"message_sha256": sha256_bytes(line.as_bytes())},
+                    "normalized_message_base64": BASE64.encode(&line)})
+            });
+            value["stderr_events"]
+                .as_array_mut()
+                .unwrap()
+                .splice(range.clone(), replacement);
+            native.messages.splice(
+                range.clone(),
+                lines.iter().map(|line| line.as_bytes().to_vec()),
+            );
+            native.usage_events = Some(range.start..range.start + lines.len());
+            native.usage = Some(disposition.expected.clone().into_bytes());
+            let usage = legacy(&disposition.expected).replace("Gitleaks", "gitleaks");
+            value["stderr_usage"] = json!({
+                "bytes_base64": BASE64.encode(&usage), "bytes": usage.len(),
+                "sha256": sha256_bytes(usage.as_bytes())
+            });
+        }
+        Observed { value, native }
+    }
+
+    #[test]
+    fn presentation_disposition_pins_replacement_and_nothing_else() {
+        let (_, variants, _) = fixture();
+        let index = frozen_index(&variants);
+        for (id, fields) in [
+            ("CLI-BB-001/help", vec![Field::Stdout]),
+            (
+                "CLI-BB-018/following-positional",
+                vec![
+                    Field::StderrUsage,
+                    Field::StderrEventMessage(0),
+                    Field::StderrEventMessage(22),
+                ],
+            ),
+        ] {
+            let variant = variants.iter().find(|variant| variant.id == id).unwrap();
+            let frozen = &variant.expected;
+            let dispositions = fields
+                .iter()
+                .enumerate()
+                .map(|(n, field)| synthetic(&format!("SYN-{n}"), variant, *field))
+                .collect::<Vec<_>>();
+            presentation::validate_dispositions(&dispositions, &index).unwrap();
+            let refs = dispositions.iter().collect::<Vec<_>>();
+            let actual = presented(frozen, &dispositions);
+            assert_ne!(actual.value, *frozen);
+            let used = compare(id, &actual, frozen, false, &refs).unwrap();
+            assert_eq!(used.len(), dispositions.len(), "{id}");
+            // Without the dispositions the new text is a regression.
+            assert!(compare(id, &actual, frozen, false, &[]).is_err(), "{id}");
+            // A disposition whose legacy field still matches the frozen corpus
+            // is a no-op, even when the native text equals the reviewed text.
+            for disposition in &dispositions {
+                let mut noop = presented(frozen, std::slice::from_ref(disposition));
+                noop.value = frozen.clone();
+                let error = compare(id, &noop, frozen, false, &[disposition]).unwrap_err();
+                assert!(error.contains("stale"), "{id}: {error}");
+            }
+
+            for (n, disposition) in dispositions.iter().enumerate() {
+                // Stale: the CLI still prints the frozen text.
+                let mut stale = presented(frozen, &dispositions);
+                let frozen_text = synthetic("stale", variant, disposition.field);
+                let native = match disposition.field {
+                    Field::Stdout => decode(frozen, "/stdout_base64"),
+                    Field::StderrUsage => decode(frozen, "/stderr_usage/bytes_base64"),
+                    Field::StderrEventMessage(index) => decode(
+                        frozen,
+                        &format!("/stderr_events/{index}/normalized_message_base64"),
+                    ),
+                };
+                assert_eq!(sha256_bytes(&native), frozen_text.frozen_sha256);
+                set_native(&mut stale, frozen, disposition.field, native);
+                assert!(
+                    compare(id, &stale, frozen, false, &refs).is_err(),
+                    "{id}: stale {n}"
+                );
+                // Wrong: the CLI prints text other than the reviewed text.
+                let mut wrong = presented(frozen, &dispositions);
+                set_native(
+                    &mut wrong,
+                    frozen,
+                    disposition.field,
+                    b"other text\n".to_vec(),
+                );
+                assert!(
+                    compare(id, &wrong, frozen, false, &refs).is_err(),
+                    "{id}: wrong {n}"
+                );
+            }
+
+            for field in [
+                "implementation",
+                "exit",
+                "stderr_contains_disclosure_marker",
+                "report",
+                "findings",
+                "finding_count",
+                "child_reaped",
+            ] {
+                let mut changed = presented(frozen, &dispositions);
+                changed.value[field] = json!({"mutation": true});
+                assert!(
+                    compare(id, &changed, frozen, false, &refs).is_err(),
+                    "{id}: {field}"
+                );
+            }
+            let count = actual.value["stderr_events"].as_array().unwrap().len();
+            for event in 0..count {
+                for field in ["severity", "class", "fields"] {
+                    let mut changed = presented(frozen, &dispositions);
+                    let in_usage = changed
+                        .native
+                        .usage_events
+                        .as_ref()
+                        .is_some_and(|range| range.contains(&event))
+                        && refs.iter().any(|d| d.field == Field::StderrUsage);
+                    if in_usage {
+                        continue;
+                    }
+                    changed.value["stderr_events"][event][field] = json!("mutation");
+                    assert!(
+                        compare(id, &changed, frozen, false, &refs).is_err(),
+                        "{id}: event {event} {field}"
+                    );
+                }
+            }
+            let mut extra = presented(frozen, &dispositions);
+            extra.value["stderr_events"]
+                .as_array_mut()
+                .unwrap()
+                .push(frozen["stderr_events"].get(0).cloned().unwrap_or(json!({})));
+            assert!(
+                compare(id, &extra, frozen, false, &refs).is_err(),
+                "{id}: extra event"
+            );
+        }
+    }
+
+    #[test]
+    fn usage_disposition_replaces_the_block_as_one_unit() {
+        let (_, variants, _) = fixture();
+        let index = frozen_index(&variants);
+        let id = "CLI-BB-003/surplus";
+        let variant = variants.iter().find(|variant| variant.id == id).unwrap();
+        let frozen = &variant.expected;
+        let frozen_events = frozen["stderr_events"].as_array().unwrap().len();
+        let frozen_usage = presentation::usage_event_range(frozen, id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (frozen_usage.start, frozen_usage.end),
+            (1, frozen_events - 1)
+        );
+        // The new usage text adds flags, so it has more lines than the frozen one.
+        let mut disposition = synthetic("SYN-USAGE", variant, Field::StderrUsage);
+        let added = (0..40)
+            .map(|n| format!("      --synthetic-{n} string   synthetic rustleaks flag {n}\n"))
+            .collect::<String>();
+        disposition.expected = format!("{}{added}", disposition.expected);
+        presentation::validate_dispositions(std::slice::from_ref(&disposition), &index).unwrap();
+        let refs = [&disposition];
+        let actual = presented(frozen, std::slice::from_ref(&disposition));
+        let count = actual.value["stderr_events"].as_array().unwrap().len();
+        assert!(count > frozen_events);
+        assert_eq!(
+            compare(id, &actual, frozen, false, &refs).unwrap(),
+            ["SYN-USAGE"]
+        );
+        // The leading Error event and the trailing fatal event stay pinned.
+        for event in [0, count - 1] {
+            for (field, value) in [
+                ("severity", json!("warn")),
+                ("class", json!("diagnostic.other")),
+                ("normalized_message_base64", json!(BASE64.encode("changed"))),
+            ] {
+                let mut changed = presented(frozen, std::slice::from_ref(&disposition));
+                changed.value["stderr_events"][event][field] = value;
+                assert!(
+                    compare(id, &changed, frozen, false, &refs).is_err(),
+                    "event {event} {field}"
+                );
+            }
+        }
+        // An extra or missing event outside the block still fails.
+        let mut extra = presented(frozen, std::slice::from_ref(&disposition));
+        let events = extra.value["stderr_events"].as_array_mut().unwrap();
+        events.push(events[0].clone());
+        assert!(compare(id, &extra, frozen, false, &refs).is_err());
+        let mut missing = presented(frozen, std::slice::from_ref(&disposition));
+        missing.value["stderr_events"]
+            .as_array_mut()
+            .unwrap()
+            .remove(0);
+        assert!(compare(id, &missing, frozen, false, &refs).is_err());
+        // The new usage text is pinned exactly.
+        let mut wrong = presented(frozen, std::slice::from_ref(&disposition));
+        wrong.native.usage = Some(b"Usage:\n  rustleaks other\n".to_vec());
+        assert!(compare(id, &wrong, frozen, false, &refs).is_err());
+    }
+
+    fn set_native(observed: &mut Observed, frozen: &Value, field: Field, text: Vec<u8>) {
+        match field {
+            Field::Stdout => observed.native.stdout = text,
+            Field::StderrUsage => observed.native.usage = Some(text),
+            Field::StderrEventMessage(frozen_index) => {
+                // A replaced usage block before this event moves its index.
+                let frozen_usage = presentation::usage_event_range(frozen, "frozen").unwrap();
+                let index = match (frozen_usage, &observed.native.usage_events) {
+                    (Some(old), Some(new)) if frozen_index >= old.end => {
+                        frozen_index - old.len() + new.len()
+                    }
+                    _ => frozen_index,
+                };
+                observed.native.messages[index] = text;
+            }
+        }
+    }
+
+    #[test]
+    fn negative_controls_fail_under_synthetic_dispositions() {
+        let (_, variants, _) = fixture();
+        let index = frozen_index(&variants);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/cli-corpus");
+        let controls: Value =
+            serde_json::from_slice(&std::fs::read(root.join("negative-controls-v1.json")).unwrap())
+                .unwrap();
+        let mut presented_controls = 0;
+        for control in controls["controls"].as_array().unwrap() {
+            let id = format!(
+                "{}/{}",
+                control["case_id"].as_str().unwrap(),
+                control["variant_id"].as_str().unwrap()
+            );
+            assert!(native_disposition(&id, true).is_none(), "{id}");
+            let variant = variants.iter().find(|variant| variant.id == id).unwrap();
+            let frozen = &variant.expected;
+            let events = frozen["stderr_events"].as_array().unwrap().len();
+            // Every presentation field that the ledger rules allow for this variant.
+            let dispositions = [Field::Stdout, Field::StderrUsage]
+                .into_iter()
+                .chain((0..events).map(Field::StderrEventMessage))
+                .enumerate()
+                .filter_map(|(n, field)| {
+                    if field == Field::StderrUsage && frozen["stderr_usage"].is_null() {
+                        return None;
+                    }
+                    let disposition = synthetic(&format!("SYN-{n}"), variant, field);
+                    presentation::validate_dispositions(std::slice::from_ref(&disposition), &index)
+                        .is_ok()
+                        .then_some(disposition)
+                })
+                .collect::<Vec<_>>();
+            presentation::validate_dispositions(&dispositions, &index).unwrap();
+            presented_controls += usize::from(!dispositions.is_empty());
+            let refs = dispositions.iter().collect::<Vec<_>>();
+            let mut actual = presented(frozen, &dispositions);
+            assert_eq!(
+                compare(&id, &actual, frozen, false, &refs).unwrap().len(),
+                dispositions.len()
+            );
+            let class = control["expected_failure_class"].as_str().unwrap();
+            mutate_for_control(class, &mut actual.value, &variants);
+            if class == "help-golden" {
+                // A changed help text changes the native text too.
+                actual.native.stdout = b"changed help".to_vec();
+            }
+            assert!(
+                compare(&id, &actual, frozen, false, &refs).is_err(),
+                "{id}: {class}"
+            );
+        }
+        assert!(presented_controls >= 19, "{presented_controls}");
+    }
+
+    #[test]
+    fn ledger_lists_every_native_expectation_variant() {
+        let (_, variants, _) = fixture();
+        let native = variants
+            .iter()
+            .filter(|variant| native_disposition(&variant.id, true).is_some())
+            .map(|variant| variant.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(native, presentation::NATIVE_EXPECTATION_VARIANTS);
     }
 
     #[test]
@@ -594,12 +1177,12 @@ mod tests {
                 .unwrap()
                 .expected;
             for expected in expected_observations(id, frozen, true).unwrap() {
-                compare(id, &expected, frozen, true).unwrap();
+                compare_frozen(id, &expected, frozen, true).unwrap();
                 for field in expected.as_object().unwrap().keys() {
                     let mut changed = expected.clone();
                     changed[field] = json!({"mutation": true});
                     assert!(
-                        compare(id, &changed, frozen, true).is_err(),
+                        compare_frozen(id, &changed, frozen, true).is_err(),
                         "{id}: {field}"
                     );
                 }
@@ -610,7 +1193,7 @@ mod tests {
             .find(|v| v.id == "CLI-BB-019/outside-i32")
             .unwrap();
         assert_eq!(outside_i32.expected["exit"], 1);
-        compare(
+        compare_frozen(
             &outside_i32.id,
             &outside_i32.expected,
             &outside_i32.expected,
@@ -619,7 +1202,7 @@ mod tests {
         .unwrap();
         let mut changed = outside_i32.expected.clone();
         changed["exit"] = json!(-2_147_483_648_i64);
-        assert!(compare(&outside_i32.id, &changed, &outside_i32.expected, true).is_err());
+        assert!(compare_frozen(&outside_i32.id, &changed, &outside_i32.expected, true).is_err());
     }
 
     #[test]

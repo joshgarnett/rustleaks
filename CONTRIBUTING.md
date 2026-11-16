@@ -1,8 +1,11 @@
 # Contributing
 
-Rustleaks is in alpha development. Contributions must preserve the pinned
-compatibility profile and the boundaries between the core engine, source
-adapters, reports, compatibility tools, and CLI.
+Rustleaks is in alpha development. Contributions must preserve the functional
+compatibility guarantees in [the compatibility
+policy](docs/COMPATIBILITY.md#compatibility-policy) and the boundaries between
+the core engine, source adapters, reports, compatibility tools, and CLI.
+Rustleaks owns its help, usage, error wording, logs and other presentation, and
+may change them with reviewed test expectations.
 
 ## Before opening an issue
 
@@ -10,8 +13,10 @@ Search existing issues and choose the defect, compatibility-gap, or feature
 form. Provide the exact Rustleaks revision, target, feature set, commands, and
 smallest synthetic reproducer needed by that form. Compatibility reports must
 compare against Gitleaks commit
-`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and identify the field-level
-difference.
+`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and identify the functional
+difference, such as a finding, span, fingerprint, report field, or exit code. A
+difference only in help, usage, error wording, or log text is not a
+compatibility gap. Report it as a defect or a feature proposal.
 
 Never put a live credential, raw finding, exploit, private repository content,
 or non-public vulnerability detail in an issue. Follow [the security
@@ -135,10 +140,18 @@ corpora, fixtures, public API snapshot, or safe Rust dispositions in isolation.
 Follow [the upstream update procedure](docs/UPDATING_UPSTREAM.md). Historical
 Go corpora remain immutable; their generation commands describe the archived
 workflow and are no longer executable maintenance instructions. New Rust
-regressions need independently specified expected bytes, errors and spans,
-positive and negative cases, and stable identities. Do not generate accepted
-expectations from current Rust output. Explain every intentional difference
-and add evidence that fails when the contract is violated.
+regressions need independently specified findings, spans, fingerprints, report
+fields, exit codes and error classes, positive and negative cases, and stable
+identities. Do not generate these functional expectations from current Rust
+output. Explain every intentional functional difference and add evidence that
+fails when the contract is violated.
+
+A change to presentation, such as help, usage, error wording, or log text,
+updates the affected test expectation. A reviewer checks the new text against
+the stated intent of the change. When the change replaces frozen CLI evidence,
+record it as a presentation disposition in
+`compat/presentation-dispositions.toml`, as described in [presentation
+dispositions](docs/COMPATIBILITY.md#presentation-dispositions).
 
 Use synthetic or reviewed upstream test values. Preserve copied bytes, modes,
 symlinks, provenance, hashes, licenses, and attribution. Keep suspected
@@ -199,8 +212,9 @@ validation, and run `git diff --cached --check`.
 
 ## Pull requests
 
-Explain the resulting behavior, rationale, exact validation, compatibility or
-security impact, and real issue linkage in the pull request template. The pull
+Explain the resulting behavior, rationale, exact validation, functional
+compatibility or security impact, presentation changes, and real issue linkage
+in the pull request template. The pull
 request title follows the commit subject grammar because pull requests are
 squash merged. Do not merge while required checks, required reviews, or
 blocking review conversations are incomplete. An approving review is required

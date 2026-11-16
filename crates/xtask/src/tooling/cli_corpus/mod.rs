@@ -7,12 +7,13 @@ mod process;
 mod spec;
 mod validation;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
+use super::presentation::{self, Disposition};
 use super::support::{TempDir, sha256_bytes};
 
 // Historical corpus bytes are accepted once. A replay never refreshes them
@@ -78,15 +79,19 @@ pub(crate) fn check_cli_corpus(
         &manifest,
     )?;
     let variants = validation::bind_expected(&rows, &files["outcomes-v1.jsonl"])?;
+    let ledger = presentation::load_ledger(root)?;
     let mut records = Vec::new();
     let mut executed = 0;
     let mut inapplicable = 0;
     let mut native_dispositions = 0;
+    let mut used = BTreeSet::new();
+    let mut skipped = BTreeSet::new();
     for variant in variants {
         if let Some(reason) =
             validation::inapplicable(&variant.request, cfg!(windows), cfg!(target_os = "linux"))
         {
             inapplicable += 1;
+            skipped.insert(variant.id.clone());
             records.push(
                 json!({"id": variant.id, "status": "platform-inapplicable", "reason": reason}),
             );
@@ -103,19 +108,34 @@ pub(crate) fn check_cli_corpus(
             &variant.expected,
             env!("CARGO_PKG_VERSION"),
         )?;
-        validation::compare(&variant.id, &actual, &expected, cfg!(windows))?;
+        let dispositions = ledger
+            .dispositions
+            .iter()
+            .filter(|disposition| disposition.variant == variant.id)
+            .collect::<Vec<_>>();
+        let presentation_dispositions = validation::compare(
+            &variant.id,
+            &actual,
+            &expected,
+            cfg!(windows),
+            &dispositions,
+        )?;
+        check_usage_range(&variant.id, &actual, &dispositions)?;
+        used.extend(presentation_dispositions.iter().cloned());
         executed += 1;
         let disposition = validation::native_disposition(&variant.id, cfg!(windows));
         native_dispositions += usize::from(disposition.is_some());
         records.push(json!({
             "id": variant.id, "status": "executed", "native_disposition": disposition,
             "build_version_expectation": build_version_expectation,
-            "observation": safe_observation_summary(&actual, &variant.id)?
+            "presentation_dispositions": presentation_dispositions,
+            "observation": safe_observation_summary(&actual.value, &variant.id)?
         }));
     }
     if executed + inapplicable != spec::VARIANT_COUNT {
         return Err("CLI executed and inapplicable identity counts do not reconcile".into());
     }
+    require_used(&ledger.dispositions, &used, &skipped)?;
     let ledger = json!({
         "schema_version": 1, "mode": "rust-cli-regression",
         "historical_upstream_revision": spec::REVISION,
@@ -129,14 +149,62 @@ pub(crate) fn check_cli_corpus(
         "platform": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         "declared_variants": spec::VARIANT_COUNT, "executed_variants": executed,
         "platform_inapplicable_variants": inapplicable, "native_disposition_variants": native_dispositions,
+        "presentation_dispositions": used.len(),
         "records": records
     });
     write_observation_ledger(&ledger)?;
     println!(
-        "CLI regression: {} declared variants, {executed} executed, {inapplicable} platform-inapplicable, {native_dispositions} native dispositions",
-        spec::VARIANT_COUNT
+        "CLI regression: {} declared variants, {executed} executed, {inapplicable} platform-inapplicable, {native_dispositions} native dispositions, {} presentation dispositions",
+        spec::VARIANT_COUNT,
+        used.len()
     );
     Ok(())
+}
+
+/// Checks that the usage event range inferred from recorded text agrees with
+/// the range found while parsing stderr lines.
+///
+/// A usage disposition removes frozen usage events by the inferred range, so
+/// the two must agree on every variant whose usage text is unchanged. This
+/// runs after the comparison so that a real usage change reports its field.
+fn check_usage_range(
+    id: &str,
+    actual: &observe::Observed,
+    dispositions: &[&Disposition],
+) -> Result<(), String> {
+    if dispositions
+        .iter()
+        .any(|disposition| disposition.field == presentation::Field::StderrUsage)
+        || actual.native.usage_events == presentation::usage_event_range(&actual.value, id)?
+    {
+        Ok(())
+    } else {
+        Err(format!("{id}: usage event ranges disagree"))
+    }
+}
+
+/// Rejects ledger dispositions that the replay did not use, except those for
+/// variants that are not applicable on this platform.
+fn require_used(
+    dispositions: &[Disposition],
+    used: &BTreeSet<String>,
+    skipped: &BTreeSet<String>,
+) -> Result<(), String> {
+    let unused = dispositions
+        .iter()
+        .filter(|disposition| {
+            !used.contains(&disposition.id) && !skipped.contains(&disposition.variant)
+        })
+        .map(|disposition| disposition.id.as_str())
+        .collect::<Vec<_>>();
+    if unused.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "unused presentation dispositions: {}",
+            unused.join(", ")
+        ))
+    }
 }
 
 fn executable_path(path: &Path, label: &str) -> Result<PathBuf, String> {
@@ -302,6 +370,65 @@ mod tests {
         let helper =
             runfile("RUSTLEAKS_CLI_FIXTURE_RUNFILE").expect("Bazel native fixture runfile");
         check_cli_corpus(&root, &cli, &helper).expect("frozen Rust CLI regression replay");
+    }
+
+    #[test]
+    fn usage_range_inference_must_agree_with_parsed_lines() {
+        use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+        let event = |message: &str| {
+            json!({"severity": "error", "class": "diagnostic.other", "fields": {},
+                "normalized_message_base64": BASE64.encode(message)})
+        };
+        let usage = "Usage:\n  gitleaks dir [flags]\n";
+        let mut actual = observe::Observed {
+            value: json!({
+                "stderr_usage": {"bytes_base64": BASE64.encode(usage)},
+                "stderr_events": [event("Error: synthetic"), event("Usage:"),
+                    event("gitleaks dir [flags]"), event("synthetic")],
+            }),
+            native: observe::NativePresentation {
+                usage_events: Some(1..3),
+                ..observe::NativePresentation::default()
+            },
+        };
+        check_usage_range("SYN/usage", &actual, &[]).unwrap();
+        actual.native.usage_events = Some(1..4);
+        assert!(check_usage_range("SYN/usage", &actual, &[]).is_err());
+        actual.native.usage_events = None;
+        assert!(check_usage_range("SYN/usage", &actual, &[]).is_err());
+        let disposition = Disposition {
+            id: "SYN-USAGE".into(),
+            variant: "SYN/usage".into(),
+            field: presentation::Field::StderrUsage,
+            frozen_sha256: String::new(),
+            expected: "synthetic".into(),
+            reason: "synthetic".into(),
+        };
+        check_usage_range("SYN/usage", &actual, &[&disposition]).unwrap();
+        actual.value["stderr_usage"] = Value::Null;
+        check_usage_range("SYN/usage", &actual, &[]).unwrap();
+    }
+
+    #[test]
+    fn unused_dispositions_are_rejected() {
+        let disposition = |id: &str, variant: &str| Disposition {
+            id: id.into(),
+            variant: variant.into(),
+            field: presentation::Field::Stdout,
+            frozen_sha256: String::new(),
+            expected: "synthetic".into(),
+            reason: "synthetic".into(),
+        };
+        let dispositions = [
+            disposition("SYN-1", "CASE/used"),
+            disposition("SYN-2", "CASE/skipped"),
+        ];
+        let used = BTreeSet::from(["SYN-1".to_owned()]);
+        let skipped = BTreeSet::from(["CASE/skipped".to_owned()]);
+        require_used(&dispositions, &used, &skipped).unwrap();
+        let error = require_used(&dispositions, &BTreeSet::new(), &skipped).unwrap_err();
+        assert!(error.contains("SYN-1"), "{error}");
+        assert!(require_used(&dispositions, &used, &BTreeSet::new()).is_err());
     }
 
     #[test]
