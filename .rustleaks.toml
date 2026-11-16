@@ -24,3 +24,33 @@ paths = [
   '''(^|/)target/''',
   '''(^|/)bazel-(bin|out|testlogs|rustleaks)/''',
 ]
+
+[[allowlists]]
+description = "Native rule pack test fixtures contain reviewed synthetic detection cases"
+paths = [
+  '''^crates/rustleaks-core/tests/support/(additional|association|format|special)_coverage\.json$''',
+  '''^crates/rustleaks-core/tests/support/remaining_verified_rules\.json$''',
+]
+
+[[allowlists]]
+description = "The native coverage review record and the providers pack provenance record contain Git revisions"
+condition = "AND"
+paths = [
+  '''^crates/xtask/src/tooling/native_coverage/reviewed\.json$''',
+  '''^crates/rustleaks-core/default/rustleaks-providers-v1\.provenance\.json$''',
+]
+regexTarget = "line"
+regexes = [
+  '''^\s*"(crate_|generated_source_|kingfisher_|openai_submodule_|source_)?revision": "[0-9a-f]{40}",?\s*$''',
+]
+
+[[allowlists]]
+description = "The release license index contains SHA-256 hashes of release inputs"
+condition = "AND"
+paths = [
+  '''^release/licenses/index\.json$''',
+]
+regexTarget = "line"
+regexes = [
+  '''^\s*"[A-Za-z0-9._/+-]+": "[0-9a-f]{64}",?\s*$''',
+]

@@ -391,7 +391,12 @@ Scan the worktree and Git history with Rustleaks before a release.
 
 - The root `.rustleaks.toml` extends the default rules and skips only
   generated compatibility corpora, the two generated API traceability
-  indexes, copied fixtures, Git metadata and build output.
+  indexes, copied fixtures, the native rule pack test fixtures, Git
+  metadata and build output. In the providers pack provenance record and
+  the native coverage review record it allows only Git revision lines, and
+  in the release license index only SHA-256 hash lines. A directory scan
+  skips every file that matches an allowlist path, so only the Git history
+  scan applies these line rules.
 - The root `.rustleaksignore` lists reviewed fingerprints of synthetic
   examples and generated hashes.
 - GitHub secret scanning skips only the generated corpora, copied fixtures and
