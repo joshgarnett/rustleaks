@@ -21,6 +21,22 @@ Only `rustleaks-core` is in the current public package boundary. P1 and P2 are
 repository evidence and do not make the corresponding workspace crates public
 packages.
 
+## Base64 decoding modes
+
+`Base64Mode::Compatible` is the default and preserves the pinned decoder
+behavior, including printable-ASCII output filtering. The CLI selects it with
+`--base64-mode compatible`. `Base64Mode::Extended` (`--base64-mode extended`)
+is an explicit Rustleaks extension: accepted candidates can decode to arbitrary
+bytes, using standard or URL-safe alphabets with or without padding. Extended
+mode rejects noncanonical trailing bits.
+
+Both modes retain candidate discovery and its digit-or-symbol heuristic.
+Discovery requires at least 16 alphabet characters and can select substrings
+of surrounding input. Neither mode guarantees exhaustive discovery or validates
+an entire malformed carrier. Decode depth, source mapping, and scan budgets
+continue to apply. Extended results are outside the pinned compatibility
+profile; the default preserves historical regression expectations.
+
 ## Native and legacy names
 
 Rustleaks provides native `RUSTLEAKS_CONFIG`, `RUSTLEAKS_CONFIG_TOML`,

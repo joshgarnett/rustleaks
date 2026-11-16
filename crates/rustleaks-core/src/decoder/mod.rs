@@ -11,6 +11,7 @@ use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, general_purpose};
 
+use crate::model::Base64Mode;
 use crate::regex::{GoRegex, NormalizedHaystack};
 
 const ENCODINGS_PATTERN: &str = concat!(
@@ -117,12 +118,12 @@ impl Encoding {
 
     /// Appends the decoded form of `encoded` to `output`, or leaves `output`
     /// unchanged when `encoded` does not decode to a value.
-    fn append_decoded(self, encoded: &[u8], output: &mut Vec<u8>) {
+    fn append_decoded(self, encoded: &[u8], output: &mut Vec<u8>, mode: Base64Mode) {
         match self {
             Self::Percent => append_percent(encoded, output),
             Self::Unicode => append_unicode(encoded, output),
             Self::Hex => append_hex(encoded, output),
-            Self::Base64 => append_base64(encoded, output),
+            Self::Base64 => append_base64_with_mode(encoded, output, mode),
         }
     }
 }
@@ -187,13 +188,19 @@ pub(crate) enum DecodeCheckpoint {
 
 #[derive(Debug)]
 pub(crate) struct Decoder {
+    base64_mode: Base64Mode,
     decoded: BTreeMap<Vec<u8>, Arc<[u8]>>,
     encodings: &'static GoRegex,
 }
 
 impl Decoder {
     pub(crate) fn new() -> Self {
+        Self::with_base64_mode(Base64Mode::Compatible)
+    }
+
+    pub(crate) fn with_base64_mode(base64_mode: Base64Mode) -> Self {
         Self {
+            base64_mode,
             decoded: BTreeMap::new(),
             encodings: ENCODINGS_REGEX.get_or_init(|| {
                 GoRegex::compile(ENCODINGS_PATTERN)
@@ -297,30 +304,33 @@ impl Decoder {
                 continue;
             };
             let encoded_value = &data[encoded_range.clone()];
-            let (decoded_value, decoded_in_output): (Arc<[u8]>, bool) =
-                if let Some(cached) = self.decoded.get(encoded_value) {
-                    (Arc::clone(cached), false)
+            let (decoded_value, decoded_in_output): (Arc<[u8]>, bool) = if let Some(cached) =
+                self.decoded.get(encoded_value)
+            {
+                (Arc::clone(cached), false)
+            } else {
+                let in_output = !segments.is_empty();
+                let value: Arc<[u8]> = if in_output {
+                    output.extend_from_slice(&data[copied_to..encoded_range.start]);
+                    copied_to = encoded_range.start;
+                    let value_start = output.len();
+                    candidate
+                        .encoding
+                        .append_decoded(encoded_value, &mut output, self.base64_mode);
+                    Arc::from(&output[value_start..])
                 } else {
-                    let in_output = !segments.is_empty();
-                    let value: Arc<[u8]> = if in_output {
-                        output.extend_from_slice(&data[copied_to..encoded_range.start]);
-                        copied_to = encoded_range.start;
-                        let value_start = output.len();
-                        candidate
-                            .encoding
-                            .append_decoded(encoded_value, &mut output);
-                        Arc::from(&output[value_start..])
-                    } else {
-                        scratch.clear();
-                        candidate
-                            .encoding
-                            .append_decoded(encoded_value, &mut scratch);
-                        Arc::from(scratch.as_slice())
-                    };
-                    self.decoded
-                        .insert(encoded_value.to_vec(), Arc::clone(&value));
-                    (value, in_output)
+                    scratch.clear();
+                    candidate.encoding.append_decoded(
+                        encoded_value,
+                        &mut scratch,
+                        self.base64_mode,
+                    );
+                    Arc::from(scratch.as_slice())
                 };
+                self.decoded
+                    .insert(encoded_value.to_vec(), Arc::clone(&value));
+                (value, in_output)
+            };
             if decoded_value.is_empty() {
                 continue;
             }
@@ -728,6 +738,10 @@ fn append_hex(encoded: &[u8], output: &mut Vec<u8>) {
 }
 
 fn append_base64(encoded: &[u8], output: &mut Vec<u8>) {
+    append_base64_with_mode(encoded, output, Base64Mode::Compatible);
+}
+
+fn append_base64_with_mode(encoded: &[u8], output: &mut Vec<u8>, mode: Base64Mode) {
     if !encoded
         .iter()
         .any(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'))
@@ -735,12 +749,23 @@ fn append_base64(encoded: &[u8], output: &mut Vec<u8>) {
         return;
     }
     let value_start = output.len();
-    for engine in [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64] {
+    let engines = match mode {
+        Base64Mode::Compatible => [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64],
+        Base64Mode::Extended if encoded.ends_with(b"=") => {
+            [&general_purpose::STANDARD, &general_purpose::URL_SAFE]
+        }
+        Base64Mode::Extended => [
+            &general_purpose::STANDARD_NO_PAD,
+            &general_purpose::URL_SAFE_NO_PAD,
+        ],
+    };
+    for engine in engines {
         if engine.decode_vec(encoded, output).is_ok()
-            && output[value_start..]
-                .iter()
-                .copied()
-                .all(is_printable_ascii)
+            && (mode == Base64Mode::Extended
+                || output[value_start..]
+                    .iter()
+                    .copied()
+                    .all(is_printable_ascii))
         {
             return;
         }
@@ -977,6 +1002,96 @@ mod tests {
         data.iter()
             .flat_map(|byte| [HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 0x0f)]])
             .collect()
+    }
+
+    #[test]
+    fn extended_base64_decodes_binary_payloads_with_both_alphabets_and_padding_forms() {
+        let expected = b"\xfb\xff\xff\x00token=AB12!!";
+        for encoded in [
+            b"+///AHRva2VuPUFCMTIhIQ==".as_slice(),
+            b"+///AHRva2VuPUFCMTIhIQ",
+            b"-___AHRva2VuPUFCMTIhIQ==",
+            b"-___AHRva2VuPUFCMTIhIQ",
+        ] {
+            assert!(decode_base64(encoded).is_empty());
+            let mut output = b"seed".to_vec();
+            append_base64_with_mode(encoded, &mut output, Base64Mode::Extended);
+            assert_eq!(&output[..4], b"seed");
+            assert_eq!(&output[4..], expected);
+
+            let mut decoder = Decoder::with_base64_mode(Base64Mode::Extended);
+            let (decoded, segments) = decoder.decode(encoded, &[]);
+            assert_eq!(decoded, expected);
+            assert_eq!(segments.len(), 1);
+            assert_eq!(segments[0].decoded_value(), expected);
+            assert_eq!(
+                adjust_match_index(&segments, 4, 14),
+                Some((0, encoded.len()))
+            );
+            // A cache hit retains the same bytes and coordinates.
+            assert_eq!(decoder.decode(encoded, &[]), (decoded, segments));
+        }
+    }
+
+    #[test]
+    fn extended_base64_rejects_noncanonical_whole_inputs_without_appending() {
+        for encoded in [
+            b"+///AHRva2VuPUFCMTIhIQ=".as_slice(), // Missing padding.
+            b"+///AHRva2VuPUFCMTIhIQ===",          // Excess padding.
+            b"+///AHRv=2VuPUFCMTIhIQ==",           // Interior padding.
+            b"+___AHRva2VuPUFCMTIhIQ==",           // Mixed alphabets.
+            b"+///AHRva2VuPUFCMTIhIR==",           // Nonzero trailing bits.
+            b"+///AHRva2VuPUFCMTIhIR",
+            b"+///AHRva2VuPUFCMTIhIQ!", // Invalid alphabet byte.
+            b"+///AHRva2VuPUFCMTIhI",   // Impossible length.
+        ] {
+            let mut output = b"seed".to_vec();
+            append_base64_with_mode(encoded, &mut output, Base64Mode::Extended);
+            assert_eq!(output, b"seed");
+        }
+        // Candidate discovery retains its historical heuristic in both modes.
+        let mut output = b"seed".to_vec();
+        append_base64_with_mode(b"QUFBQUFBQUFBQUFB", &mut output, Base64Mode::Extended);
+        assert_eq!(output, b"seed");
+    }
+
+    #[test]
+    fn extended_base64_nested_segments_retain_outer_mapping_and_work_checkpoints() {
+        let inner = b"+///AHRva2VuPUFCMTIhIQ==";
+        let outer = general_purpose::STANDARD.encode(inner);
+        let mut decoder = Decoder::with_base64_mode(Base64Mode::Extended);
+        let (first, predecessors) = decoder.decode(outer.as_bytes(), &[]);
+        assert_eq!(first, inner);
+        let (second, segments) = decoder.decode(&first, &predecessors);
+        assert_eq!(second, b"\xfb\xff\xff\x00token=AB12!!");
+        assert_eq!(segments[0].depth(), 2);
+        assert_eq!(adjust_match_index(&segments, 4, 14), Some((0, outer.len())));
+
+        let mut work = 0;
+        let completed = Decoder::with_base64_mode(Base64Mode::Extended).decode_controlled(
+            inner,
+            &[],
+            |units| {
+                work += units;
+                Ok::<(), usize>(())
+            },
+        );
+        assert!(completed.is_ok());
+        for stop in 0..work {
+            let mut consumed = 0;
+            let result = Decoder::with_base64_mode(Base64Mode::Extended).decode_controlled(
+                inner,
+                &[],
+                |units| {
+                    if consumed + units > stop {
+                        return Err(stop);
+                    }
+                    consumed += units;
+                    Ok(())
+                },
+            );
+            assert_eq!(result, Err(stop));
+        }
     }
 
     #[test]

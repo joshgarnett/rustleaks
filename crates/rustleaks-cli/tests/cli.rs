@@ -293,6 +293,58 @@ fn stdin_scans_and_rejects_positional_arguments_before_side_effects() {
 }
 
 #[test]
+fn extended_base64_mode_is_opt_in_and_respects_decode_depth() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    // Standard and URL-safe encodings of b"\xfftoken=AB12xx\xfe", with and
+    // without padding. These literals are independent of the decoder under test.
+    for encoded in [
+        "/3Rva2VuPUFCMTJ4eP4=",
+        "/3Rva2VuPUFCMTJ4eP4",
+        "_3Rva2VuPUFCMTJ4eP4=",
+        "_3Rva2VuPUFCMTJ4eP4",
+    ] {
+        fixture.write("encoded.txt", encoded);
+        for (extra, expected_exit) in [
+            (vec![], 0),
+            (vec!["--base64-mode=compatible"], 0),
+            (vec!["--base64-mode=extended"], 1),
+            (vec!["--base64-mode=extended", "--max-decode-depth=0"], 0),
+        ] {
+            let result = command(&fixture.0)
+                .args([
+                    "dir",
+                    "encoded.txt",
+                    "--config=config.toml",
+                    "--no-banner",
+                    "--log-level=fatal",
+                    "--report-path=-",
+                    "--report-format=json",
+                ])
+                .args(extra)
+                .output()
+                .unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(expected_exit),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let report = String::from_utf8(result.stdout).unwrap();
+            if expected_exit == 1 {
+                assert!(report.contains("\"Secret\": \"AB12\""));
+                assert_eq!(report.matches("\"RuleID\"").count(), 1);
+            } else {
+                assert_eq!(report.trim(), "[]");
+            }
+        }
+    }
+    let rejected = output(&fixture.0, &["stdin", "--base64-mode=unknown"]);
+    assert_eq!(rejected.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("invalid value"));
+}
+
+#[test]
 fn explicit_config_wins_and_inline_errors_do_not_disclose_contents() {
     let fixture = Fixture::new();
     fixture.write("explicit.toml", no_match_config());

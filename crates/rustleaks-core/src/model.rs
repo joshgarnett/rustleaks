@@ -1764,9 +1764,25 @@ impl FindingBuilder {
     }
 }
 
+/// Base64 decoding policy for recursive fragment decoding.
+///
+/// Both modes retain the candidate minimum length, encoding precedence, and
+/// digit or special-character heuristic. Candidate discovery may decode a
+/// substring of a malformed carrier; this is not whole-carrier validation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Base64Mode {
+    /// Preserves the pinned upstream alphabets, padding, and printable-byte filters.
+    #[default]
+    Compatible,
+    /// Accepts standard or URL-safe base64 with canonical trailing bits,
+    /// canonical padding or no padding, and arbitrary decoded bytes.
+    Extended,
+}
+
 /// Per-fragment options that alter core detection behavior.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScanOptions {
+    base64_mode: Base64Mode,
     max_decode_depth: usize,
     max_target_bytes: Option<usize>,
     redaction_percent: usize,
@@ -1778,6 +1794,12 @@ impl ScanOptions {
     #[must_use]
     pub fn builder() -> ScanOptionsBuilder {
         ScanOptionsBuilder::default()
+    }
+
+    /// Returns the base64 policy used by recursive decoding.
+    #[must_use]
+    pub const fn base64_mode(self) -> Base64Mode {
+        self.base64_mode
     }
 
     /// Returns the maximum number of recursive decode passes.
@@ -1830,6 +1852,7 @@ impl ScanOptions {
 impl Default for ScanOptions {
     fn default() -> Self {
         Self {
+            base64_mode: Base64Mode::Compatible,
             // NewDetector scans only the raw fragment until the CLI supplies 5.
             max_decode_depth: 0,
             max_target_bytes: None,
@@ -1846,6 +1869,13 @@ pub struct ScanOptionsBuilder {
 }
 
 impl ScanOptionsBuilder {
+    /// Selects the base64 policy. Decoding still requires a nonzero depth.
+    #[must_use]
+    pub const fn base64_mode(mut self, value: Base64Mode) -> Self {
+        self.options.base64_mode = value;
+        self
+    }
+
     /// Sets the maximum number of recursive decode passes.
     #[must_use]
     pub const fn max_decode_depth(mut self, value: usize) -> Self {

@@ -1027,7 +1027,7 @@ impl Engine {
             }
             let bounded_spans = context.control.budget.collected_spans.is_some();
             let decode_result = decoder
-                .get_or_insert_with(Decoder::new)
+                .get_or_insert_with(|| Decoder::with_base64_mode(options.base64_mode()))
                 .decode_with_resources(&current_raw, &encoded_segments, bounded_spans, |event| {
                     match event {
                         DecodeCheckpoint::Work(units) => context.work_many(units),
@@ -3542,6 +3542,82 @@ keywords = ["gamma"]
         // One pass start, one emitted keyword, three admitted rules, and one
         // content match for each admitted rule.
         assert_eq!(outcome.usage().work_units(), 1 + 1 + 3 + 3);
+    }
+
+    #[test]
+    fn extended_base64_options_preserve_defaults_and_decoded_byte_admission() {
+        use crate::Base64Mode;
+
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Base64Mode>();
+        assert_send_sync::<ScanOptions>();
+        assert_eq!(Base64Mode::default(), Base64Mode::Compatible);
+        assert_eq!(ScanOptions::default().base64_mode(), Base64Mode::Compatible);
+        let detector = engine(
+            r#"
+[[rules]]
+id = "binary-base64"
+regex = 'token=(AB12)'
+secretGroup = 1
+"#,
+        );
+        let fragment = Fragment::new(b"+///AHRva2VuPUFCMTIhIQ==");
+        let compatible = ScanOptions::builder().max_decode_depth(1).build();
+        assert!(
+            detector
+                .scan_fragment(&fragment, &compatible)
+                .findings()
+                .is_empty()
+        );
+        let disabled = ScanOptions::builder()
+            .base64_mode(Base64Mode::Extended)
+            .build();
+        assert!(
+            detector
+                .scan_fragment(&fragment, &disabled)
+                .findings()
+                .is_empty()
+        );
+        let options = ScanOptions::builder()
+            .base64_mode(Base64Mode::Extended)
+            .max_decode_depth(1)
+            .build();
+        let admitted = detector.scan_fragment_controlled(
+            &fragment,
+            &options,
+            &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_decoded_bytes(16)),
+        );
+        assert!(admitted.is_complete());
+        assert_eq!(admitted.usage().decoded_bytes(), 16);
+        assert_eq!(admitted.findings().len(), 1);
+        assert_eq!(admitted.findings()[0].secret().as_bytes(), b"AB12");
+        assert_eq!(
+            admitted.findings()[0].match_text().as_bytes(),
+            b"token=AB12"
+        );
+        let rejected = detector.scan_fragment_controlled(
+            &fragment,
+            &options,
+            &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_decoded_bytes(15)),
+        );
+        assert!(rejected.findings().is_empty());
+        assert_eq!(rejected.usage().decoded_bytes(), 0);
+        assert!(matches!(
+            rejected.termination(),
+            Some(ScanTermination::BudgetExceeded {
+                kind: ScanBudgetKind::DecodedBytes,
+                limit: 15,
+                consumed: 0,
+                requested: 16,
+            })
+        ));
+        let cancelled = detector.scan_fragment_controlled(
+            &fragment,
+            &options,
+            &ScanControl::cancellable(&|| true),
+        );
+        assert!(cancelled.findings().is_empty());
+        assert_eq!(cancelled.termination(), Some(&ScanTermination::Cancelled));
     }
 
     #[test]

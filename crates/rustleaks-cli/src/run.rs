@@ -482,6 +482,7 @@ fn build_scan_options(invocation: &Invocation) -> Result<ScanOptions, String> {
     };
     Ok(ScanOptions::builder()
         .max_decode_depth(decode_depth)
+        .base64_mode(invocation.options.base64_mode)
         .max_target_bytes(source::engine_maximum(invocation)?)
         .redaction_percent(invocation.options.redact)
         .honor_allow_markers(!invocation.options.ignore_allow_markers)

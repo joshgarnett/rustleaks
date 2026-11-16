@@ -5,6 +5,13 @@ wrapper and uses an unlimited, never-cancelled control. Callers handling
 untrusted or open-ended work should use `scan_fragment_controlled` with a
 `ScanControl` and explicit `ScanBudget`.
 
+Base64 decoding defaults to `Base64Mode::Compatible`. Opting into
+`Base64Mode::Extended` permits arbitrary decoded bytes and standard or URL-safe
+Base64 with or without padding, subject to canonical trailing bits. It retains
+the same candidate discovery, heuristic, depth limit, work accounting, and
+decoded-byte budget. It does not make discovery exhaustive or validate whole
+malformed carriers. The CLI exposes this choice as `--base64-mode extended`.
+
 Budgets are inclusive and aggregate across one fragment scan:
 
 - decoded bytes count every successful decoded pass before it is scanned;
