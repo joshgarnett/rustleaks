@@ -24,6 +24,13 @@
   own package version, and ignores semantic version build metadata. When a
   config needs a newer version, the warning now says which Gitleaks version it
   requires and which one Rustleaks implements.
+- Fix a repeated warning for an invalid ignore file entry when the ignore path
+  and the scanned folder are the same folder. An ignore file reached by two
+  paths, such as the default ignore path and the scanned folder, a relative
+  path or a symlink, is now read once. The warning for an entry with the wrong
+  number of fields gives the field count, file and line in plain text instead
+  of Rust debug output. The warning for a line of 64 KiB or longer also gives
+  the file and line.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

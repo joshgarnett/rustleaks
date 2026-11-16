@@ -12,7 +12,7 @@ use rustleaks_core::model::ByteText;
 use rustleaks_core::native::{
     CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, NativePolicyError, PROVIDER_RULES_V1,
 };
-use rustleaks_core::session::{Baseline, IgnoreSet, SessionPolicy};
+use rustleaks_core::session::{Baseline, IgnoreIssue, IgnoreSet, SessionPolicy};
 use rustleaks_sources::LogicalPath;
 
 use crate::args::{CommandKind, Invocation};
@@ -95,25 +95,23 @@ pub(crate) fn assemble(
         warnings.push(minimum_version_warning(&full, &origin)?);
     }
     let mut errors = missing_required_rule_errors(&selected)?;
-    let named = resolve(cwd, &invocation.options.ignore_path);
-    append_ignore_if_file(&named, &mut ignores, &mut warnings)?;
-    append_ignore_if_file(&named.join(".rustleaksignore"), &mut ignores, &mut warnings)?;
-    append_ignore_if_file(&named.join(".gitleaksignore"), &mut ignores, &mut warnings)?;
-    let source_local = if invocation.command == CommandKind::Stdin {
-        cwd.to_path_buf()
+    let named = invocation.options.ignore_path.as_path();
+    let source = if invocation.command == CommandKind::Stdin {
+        Path::new(".")
     } else {
-        resolve(cwd, &invocation.source)
+        invocation.source.as_path()
     };
-    append_ignore_if_file(
-        &source_local.join(".rustleaksignore"),
-        &mut ignores,
-        &mut warnings,
-    )?;
-    append_ignore_if_file(
-        &source_local.join(".gitleaksignore"),
-        &mut ignores,
-        &mut warnings,
-    )?;
+    let mut loader = IgnoreLoader {
+        cwd,
+        loaded: Vec::new(),
+        ignores: &mut ignores,
+        warnings: &mut warnings,
+    };
+    loader.append_if_file(named)?;
+    for directory in [named, source] {
+        loader.append_if_file(&directory.join(".rustleaksignore"))?;
+        loader.append_if_file(&directory.join(".gitleaksignore"))?;
+    }
 
     let mut policy = SessionPolicy::builder()
         .ignores(ignores)
@@ -427,34 +425,87 @@ fn validate_numbers(invocation: &Invocation) -> Result<(), String> {
     Ok(())
 }
 
-fn append_ignore_if_file(
-    path: &Path,
-    ignores: &mut IgnoreSet,
-    warnings: &mut Vec<String>,
-) -> Result<(), String> {
-    match fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() => {
-            let bytes = fs::read(path).map_err(|error| {
-                format!("could not read ignore file {}: {error}", path.display())
-            })?;
-            for issue in ignores.extend_go_compatible(&bytes) {
-                warnings.push(format!("ignore file {}: {issue:?}", path.display()));
+/// Loads ignore files and reports each physical file at most once.
+///
+/// The named ignore path and the scanned source often resolve to the same
+/// folder, so files are deduplicated by canonical path.
+struct IgnoreLoader<'a> {
+    cwd: &'a Path,
+    loaded: Vec<PathBuf>,
+    ignores: &'a mut IgnoreSet,
+    warnings: &'a mut Vec<String>,
+}
+
+impl IgnoreLoader<'_> {
+    fn append_if_file(&mut self, path: &Path) -> Result<(), String> {
+        let physical = resolve(self.cwd, path);
+        // Errors name the lexically cleaned path; file access uses the
+        // resolved path so symlinked parents are not bypassed.
+        let shown = clean_native_path(&physical).unwrap_or_else(|_| physical.clone());
+        match fs::metadata(&physical) {
+            Ok(metadata) if metadata.is_file() => {}
+            Ok(_) => return Ok(()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Ok(());
+            }
+            Err(error) => {
+                return Err(format!(
+                    "could not inspect ignore path {}: {error}",
+                    shown.display()
+                ));
             }
         }
-        Ok(_) => {}
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-            ) => {}
-        Err(error) => {
-            return Err(format!(
-                "could not inspect ignore path {}: {error}",
-                path.display()
-            ));
+        let canonical = fs::canonicalize(&physical).unwrap_or_else(|_| physical.clone());
+        if self.loaded.contains(&canonical) {
+            return Ok(());
         }
+        self.loaded
+            .try_reserve(1)
+            .map_err(|error| format!("could not retain ignore file path: {error}"))?;
+        self.loaded.push(canonical);
+        let bytes = fs::read(&physical)
+            .map_err(|error| format!("could not read ignore file {}: {error}", shown.display()))?;
+        let display = clean_native_path(path).unwrap_or(shown);
+        let file = display.display();
+        // Feed one line at a time so each diagnostic can name its line. The
+        // parser splits on line feeds, so the installed entries are the same
+        // as for one call over the whole file.
+        for (index, line) in bytes.split_inclusive(|byte| *byte == b'\n').enumerate() {
+            let line_number = index.saturating_add(1);
+            let mut stop = false;
+            for issue in self.ignores.extend_go_compatible(line) {
+                let warning = match issue {
+                    IgnoreIssue::InvalidFieldCount { fields, .. } => {
+                        let noun = if fields == 1 { "field" } else { "fields" };
+                        format!(
+                            "ignore file entry has {fields} {noun}, expected 3 or 4 \
+                             file={file} line={line_number}"
+                        )
+                    }
+                    IgnoreIssue::TokenTooLong { .. } => {
+                        stop = true;
+                        format!(
+                            "ignore file line is 64 KiB or longer, so it and later \
+                             lines are skipped file={file} line={line_number}"
+                        )
+                    }
+                };
+                self.warnings
+                    .try_reserve(1)
+                    .map_err(|error| format!("could not retain ignore warning: {error}"))?;
+                self.warnings.push(warning);
+            }
+            if stop {
+                break;
+            }
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn config_exclusions(invocation: &Invocation) -> Result<Vec<ByteText>, String> {
@@ -655,6 +706,25 @@ mod tests {
             &mut |_| {},
         )
         .unwrap()
+    }
+
+    #[test]
+    fn ignore_warnings_name_the_line_and_stop_after_an_overlong_line() {
+        let root = temporary_directory("ignore-warnings");
+        let mut ignore = b"one:two\n".to_vec();
+        ignore.extend(std::iter::repeat_n(b'x', 64 * 1024));
+        ignore.extend_from_slice(b"\nthree\n");
+        std::fs::write(root.join(".rustleaksignore"), ignore).unwrap();
+        let assembly = assemble_inline(&root, None);
+        assert_eq!(
+            assembly.warnings,
+            [
+                "ignore file entry has 2 fields, expected 3 or 4 file=.rustleaksignore line=1",
+                "ignore file line is 64 KiB or longer, so it and later lines are skipped \
+                 file=.rustleaksignore line=2",
+            ]
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

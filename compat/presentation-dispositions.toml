@@ -559,3 +559,21 @@ event = 2
 frozen_sha256 = "c9013a8b1ef886959aa382e4ed682397e21a5e0894292267395400f7b8297136"
 expected = "unknown command \"unknown\""
 reason = "The message no longer repeats the program name."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0026"
+variant = "CLI-BB-011/named-plus-source"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "1a74fd2ea8c1809b015209e2c61eadc80bc2d7795a315ff6fa54c4dbc1b38cf6"
+expected = "ignore file entry has 1 field, expected 3 or 4 file=named.ignore line=2"
+reason = "The warning names the field count, file and line in plain text instead of Rust debug output."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0027"
+variant = "CLI-BB-011/stdin-named-plus-local"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "1a74fd2ea8c1809b015209e2c61eadc80bc2d7795a315ff6fa54c4dbc1b38cf6"
+expected = "ignore file entry has 1 field, expected 3 or 4 file=named.ignore line=1"
+reason = "The warning names the field count, file and line in plain text instead of Rust debug output."

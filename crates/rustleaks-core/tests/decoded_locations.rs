@@ -8,7 +8,9 @@ use std::ops::Range;
 use base64::Engine as _;
 use rustleaks_core::Engine;
 use rustleaks_core::config::{ConfigLoader, RawConfig, RuleSpec};
-use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
+use rustleaks_core::model::{
+    Base64Mode, ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions,
+};
 
 const VALUE: &[u8] = b"item=TEST-0123456789";
 const OTHER_VALUE: &[u8] = b"item=TEST-9876543210";
@@ -486,4 +488,203 @@ fn decoded_match_overlap_geometries_keep_original_envelopes_under_budgets() {
             }
         }
     }
+}
+
+const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+/// A distinct synthetic `ghp_` token for each `index < 256`, built at run
+/// time so that this source holds no token-shaped literal.
+fn carrier_token(index: usize) -> Vec<u8> {
+    let mut token = b"ghp".to_vec();
+    token.push(b'_');
+    token.push(ALNUM[index / 62]);
+    token.push(ALNUM[index % 62]);
+    token.extend_from_slice(
+        ["Q7m2Z9v4L1c8R5s0", "N6b3XK4p6T1w3h8J5d"]
+            .concat()
+            .as_bytes(),
+    );
+    assert_eq!(token.len(), 40);
+    token
+}
+
+/// The same token with one body byte outside `[0-9a-zA-Z]`, so
+/// `ghp_[0-9a-zA-Z]{36}` cannot match it anywhere.
+fn broken_carrier_token(index: usize) -> Vec<u8> {
+    let mut token = carrier_token(index);
+    token[24] = b'-';
+    token
+}
+
+/// `n` records of exactly 128 bytes. Each starts with a three-byte UTF-8
+/// arrow, so its decoded bytes are not all printable ASCII.
+fn carrier_records(n: usize, repeated: bool, value: fn(usize) -> Vec<u8>) -> Vec<u8> {
+    let mut records = Vec::with_capacity(n * 128);
+    for index in 0..n {
+        let start = records.len();
+        records.extend_from_slice("\u{2192} ref=".as_bytes());
+        records.extend_from_slice(&value(if repeated { 0 } else { index }));
+        records.resize(start + 127, b' ');
+        records.push(b'\n');
+    }
+    assert_eq!(records.len(), n * 128);
+    records
+}
+
+fn base64_layers(bytes: &[u8], layers: usize) -> Vec<u8> {
+    (0..layers).fold(bytes.to_vec(), |value, _| {
+        let encoded = base64::engine::general_purpose::STANDARD
+            .encode(value)
+            .into_bytes();
+        // The decoder considers only runs with a digit, '+', '/', '-' or '_'.
+        assert!(
+            encoded
+                .iter()
+                .any(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'/'))
+        );
+        encoded
+    })
+}
+
+fn carrier_line(records: &[u8], layers: usize) -> Vec<u8> {
+    let mut raw = b"carrier=".to_vec();
+    raw.extend_from_slice(&base64_layers(records, layers));
+    raw.push(b'\n');
+    raw
+}
+
+fn pat_engine() -> &'static Engine {
+    static ENGINE: std::sync::OnceLock<Engine> = std::sync::OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let source = "[[rules]]\nid = 'github-pat'\nregex = '''ghp_[0-9a-zA-Z]{36}'''\n\
+                      entropy = 3\nkeywords = ['ghp_']\n";
+        Engine::builder(ConfigLoader::new().load_toml(source).unwrap())
+            .build()
+            .unwrap()
+    })
+}
+
+fn carrier_options(mode: Base64Mode, depth: usize) -> ScanOptions {
+    ScanOptions::builder()
+        .base64_mode(mode)
+        .max_decode_depth(depth)
+        .build()
+}
+
+fn carrier_findings(engine: &Engine, raw: &[u8], options: &ScanOptions) -> Vec<Finding> {
+    let fragment = Fragment::builder(raw.to_vec()).start_line(1).build();
+    let outcome = engine.scan_fragment(&fragment, options);
+    assert!(outcome.is_complete());
+    outcome.findings().to_vec()
+}
+
+fn assert_carrier_findings(findings: &[Finding], raw: &[u8], layers: usize, expected: &[Vec<u8>]) {
+    let mut secrets = findings
+        .iter()
+        .map(|finding| finding.secret().as_bytes().to_vec())
+        .collect::<Vec<_>>();
+    secrets.sort();
+    let mut expected = expected.to_vec();
+    expected.sort();
+    assert_eq!(secrets, expected);
+    let tags = [
+        "decoded:base64".to_owned(),
+        format!("decode-depth:{layers}"),
+    ];
+    for finding in findings {
+        assert_eq!(finding.rule_id().as_bytes(), b"github-pat");
+        // Every record maps back to the one outer candidate after `carrier=`.
+        assert_eq!(
+            finding.location(),
+            Location::new(1, 1, 9, raw.len() - 1).unwrap()
+        );
+        assert_eq!(
+            finding
+                .tags()
+                .iter()
+                .map(rustleaks_core::model::ByteText::as_bytes)
+                .collect::<Vec<_>>(),
+            tags.iter().map(String::as_bytes).collect::<Vec<_>>()
+        );
+        assert_eq!(finding.match_range(), FindingRange::Unavailable);
+        assert_eq!(finding.secret_range(), FindingRange::Unavailable);
+    }
+}
+
+#[test]
+fn multi_record_carriers_need_extended_mode_and_every_layer() {
+    for n in [16, 256] {
+        for layers in [1, 2] {
+            for repeated in [false, true] {
+                let records = carrier_records(n, repeated, carrier_token);
+                let raw = carrier_line(&records, layers);
+                let planted = (0..n)
+                    .map(|index| carrier_token(if repeated { 0 } else { index }))
+                    .collect::<Vec<_>>();
+                // Compatible mode keeps only printable decoded bytes, and
+                // every record contains the UTF-8 arrow.
+                assert!(
+                    carrier_findings(
+                        pat_engine(),
+                        &raw,
+                        &carrier_options(Base64Mode::Compatible, 5)
+                    )
+                    .is_empty(),
+                    "n={n} layers={layers} repeated={repeated}"
+                );
+                // Extended mode reports every record, repeated values included.
+                let findings = carrier_findings(
+                    pat_engine(),
+                    &raw,
+                    &carrier_options(Base64Mode::Extended, layers),
+                );
+                assert_eq!(findings.len(), n);
+                assert_carrier_findings(&findings, &raw, layers, &planted);
+                // Each layer needs its own pass.
+                assert!(
+                    carrier_findings(
+                        pat_engine(),
+                        &raw,
+                        &carrier_options(Base64Mode::Extended, layers - 1)
+                    )
+                    .is_empty()
+                );
+            }
+            // Negative mutation: the same carriers with no matchable token.
+            let raw = carrier_line(&carrier_records(n, false, broken_carrier_token), layers);
+            for options in [
+                carrier_options(Base64Mode::Compatible, 5),
+                carrier_options(Base64Mode::Extended, layers),
+            ] {
+                assert!(carrier_findings(pat_engine(), &raw, &options).is_empty());
+            }
+        }
+    }
+    // The packaged rules find the same 16 tokens. Deeper passes also decode
+    // each 40-byte token as URL-safe Base64, which yields no further finding.
+    let raw = carrier_line(&carrier_records(16, false, carrier_token), 2);
+    let default_rules = rustleaks_core::native::NativePolicy::builder()
+        .build()
+        .unwrap();
+    let findings = carrier_findings(
+        default_rules.engine(),
+        &raw,
+        &carrier_options(Base64Mode::Extended, 5),
+    );
+    assert_eq!(findings.len(), 16);
+    for finding in &findings {
+        assert_eq!(finding.rule_id().as_bytes(), b"github-pat");
+        assert_eq!(
+            finding.location(),
+            Location::new(1, 1, 9, raw.len() - 1).unwrap()
+        );
+    }
+    let mut secrets = findings
+        .iter()
+        .map(|finding| finding.secret().as_bytes().to_vec())
+        .collect::<Vec<_>>();
+    secrets.sort();
+    let mut planted = (0..16).map(carrier_token).collect::<Vec<_>>();
+    planted.sort();
+    assert_eq!(secrets, planted);
 }

@@ -1553,3 +1553,375 @@ fn libpq_explicit_allowlists_keep_targets_and_fragment_context() {
     }
     assert!(scan(libpq_engine(), b"host=db.invalid password='Q7\xffv9R2'").is_empty());
 }
+
+fn default_rules() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| NativePolicy::builder().build().unwrap().engine().clone())
+}
+
+fn all_rules() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        NativePolicy::builder()
+            .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
+            .unwrap()
+            .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
+            .unwrap()
+            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
+            .unwrap()
+            .build()
+            .unwrap()
+            .engine()
+            .clone()
+    })
+}
+
+/// One expected finding: rule ID, secret and exact secret range, or `None`
+/// for a decoded finding, which has no exact range in the original fragment.
+type Outcome = (String, String, Option<(usize, usize)>);
+
+fn outcomes(engine: &Engine, input: &str, options: &ScanOptions) -> Vec<Outcome> {
+    let outcome = engine.scan_fragment(&Fragment::new(input.as_bytes()), options);
+    assert!(outcome.is_complete(), "scan did not complete");
+    let mut found = outcome
+        .findings()
+        .iter()
+        .map(|finding| {
+            let exact = finding.secret_range().exact();
+            if exact.is_none() {
+                // Decoded findings carry neither exact range and name the
+                // single percent layer that produced them.
+                assert_eq!(finding.match_range(), FindingRange::Unavailable);
+                let tags = finding
+                    .tags()
+                    .iter()
+                    .map(|tag| tag.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>();
+                assert!(
+                    tags.iter().any(|tag| tag == "decoded:percent"),
+                    "decoded finding lacks the decoded:percent tag"
+                );
+                assert!(
+                    tags.iter().any(|tag| tag == "decode-depth:1"),
+                    "decoded finding lacks the decode-depth:1 tag"
+                );
+            }
+            (
+                finding.rule_id().to_string_lossy().into_owned(),
+                finding.secret().to_string_lossy().into_owned(),
+                exact.map(|range| (range.start(), range.end())),
+            )
+        })
+        .collect::<Vec<_>>();
+    found.sort();
+    found
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Form {
+    Uri,
+    Jdbc,
+    Odbc,
+    Libpq,
+}
+
+impl Form {
+    const ALL: [Self; 4] = [Self::Uri, Self::Jdbc, Self::Odbc, Self::Libpq];
+
+    const fn parts(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Uri => ("postgresql://bench:", "@db.invalid:5432/application"),
+            Self::Jdbc => (
+                "jdbc:postgresql://db.invalid/application?user=bench&password=",
+                "&sslmode=require",
+            ),
+            Self::Odbc => (
+                "Driver={Synthetic};Server=db.invalid;UID=bench;PWD=",
+                ";Database=application;",
+            ),
+            Self::Libpq => (
+                "host=db.invalid user=bench password='",
+                "' dbname=application",
+            ),
+        }
+    }
+
+    const fn omitted(self) -> &'static str {
+        match self {
+            Self::Uri => "postgresql://bench@db.invalid/application",
+            Self::Jdbc => "jdbc:postgresql://db.invalid/application?user=bench",
+            Self::Odbc => "Driver={Synthetic};Server=db.invalid;UID=bench;",
+            Self::Libpq => "host=db.invalid user=bench dbname=application",
+        }
+    }
+
+    const fn malformed(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Uri => ("postgresql://bench;", "@db.invalid/application"),
+            Self::Jdbc => (
+                "jdbc:postgresql://db.invalid/application?user=bench&password:",
+                "",
+            ),
+            Self::Odbc => ("Server=db.invalid;UID=bench;PWD:", ";"),
+            Self::Libpq => ("host=db.invalid user=bench password:'", "'"),
+        }
+    }
+
+    // The specific rule that owns a well-formed password slot.
+    const fn rule(self) -> &'static str {
+        match self {
+            Self::Uri => "database-uri",
+            Self::Jdbc => "jdbc-query",
+            Self::Odbc => "unquoted",
+            Self::Libpq => "libpq-quoted",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Shape {
+    Literal,
+    Percent,
+    Empty,
+    Env,
+    Template,
+    Omitted,
+    PublicUrl,
+    Prose,
+    Malformed,
+}
+
+impl Shape {
+    const ALL: [Self; 9] = [
+        Self::Literal,
+        Self::Percent,
+        Self::Empty,
+        Self::Env,
+        Self::Template,
+        Self::Omitted,
+        Self::PublicUrl,
+        Self::Prose,
+        Self::Malformed,
+    ];
+
+    /// Writes this shape of password into a connection form. Returns the
+    /// input line and the byte where a secret in it starts.
+    fn input(self, form: Form, password: &str, escaped: &str) -> (String, usize) {
+        let (prefix, suffix) = form.parts();
+        // A secret starts after the prefix written before it.
+        let mut start = prefix.len();
+        let input = match self {
+            Self::Literal => format!("{prefix}{password}{suffix}\n"),
+            Self::Percent => format!("{prefix}{escaped}{suffix}\n"),
+            Self::Empty => format!("{prefix}{suffix}\n"),
+            Self::Env => format!("{prefix}${{PASSWORD}}{suffix}\n"),
+            Self::Template => format!("{prefix}{{{{PASSWORD}}}}{suffix}\n"),
+            Self::Omitted => format!("{}\n", form.omitted()),
+            Self::PublicUrl => "https://public.invalid/documentation?language=en\n".to_owned(),
+            Self::Prose => {
+                "The database password is supplied by the application at startup.\n".to_owned()
+            }
+            Self::Malformed => {
+                let (left, right) = form.malformed();
+                start = left.len();
+                format!("{left}{password}{right}\n")
+            }
+        };
+        (input, start)
+    }
+}
+
+struct Expected {
+    all_depth_0: Vec<Outcome>,
+    all_depth_5_adds: Vec<Outcome>,
+    default_depth_0: Vec<Outcome>,
+    default_depth_5_adds: Vec<Outcome>,
+}
+
+fn exact(rule: &str, secret: &str, start: usize) -> Outcome {
+    (
+        rule.to_owned(),
+        secret.to_owned(),
+        Some((start, start + secret.len())),
+    )
+}
+
+/// The outcomes expected for one form and shape of the connection matrix.
+fn expected_outcomes(
+    form: Form,
+    shape: Shape,
+    password: &str,
+    escaped: &str,
+    start: usize,
+) -> Expected {
+    let connection = |form: Form| format!("{PREFIX}{}", form.rule());
+    let decoded = |rule: &str| -> Outcome { (rule.to_owned(), password.to_owned(), None) };
+    let none = Vec::new;
+    match (form, shape) {
+        // Percent escapes are literal text to every connection rule;
+        // a decode pass then finds the same rule in the decoded line.
+        (_, Shape::Literal) if form != Form::Libpq => Expected {
+            all_depth_0: vec![exact(&connection(form), password, start)],
+            all_depth_5_adds: none(),
+            default_depth_0: none(),
+            default_depth_5_adds: none(),
+        },
+        (_, Shape::Percent) if form != Form::Libpq => Expected {
+            all_depth_0: vec![exact(&connection(form), escaped, start)],
+            all_depth_5_adds: vec![decoded(&connection(form))],
+            default_depth_0: none(),
+            default_depth_5_adds: none(),
+        },
+        // The quoted libpq value is also a generic assignment. With the
+        // connection pack the specific rule owns that secret.
+        (Form::Libpq, Shape::Literal) => Expected {
+            all_depth_0: vec![exact(&connection(form), password, start)],
+            all_depth_5_adds: none(),
+            default_depth_0: vec![exact("generic-api-key", password, start)],
+            default_depth_5_adds: none(),
+        },
+        // Generic entropy rejects the escaped spelling; the decoded
+        // line restores the literal password for generic-api-key.
+        (Form::Libpq, Shape::Percent) => Expected {
+            all_depth_0: vec![exact(&connection(form), escaped, start)],
+            all_depth_5_adds: vec![decoded(&connection(form))],
+            default_depth_0: none(),
+            default_depth_5_adds: vec![decoded("generic-api-key")],
+        },
+        // No connection rule accepts ':' for '='; generic-api-key
+        // does, and only JDBC and libpq have a generic keyword.
+        (Form::Jdbc | Form::Libpq, Shape::Malformed) => Expected {
+            all_depth_0: vec![exact("generic-api-key", password, start)],
+            all_depth_5_adds: none(),
+            default_depth_0: vec![exact("generic-api-key", password, start)],
+            default_depth_5_adds: none(),
+        },
+        _ => Expected {
+            all_depth_0: none(),
+            all_depth_5_adds: none(),
+            default_depth_0: none(),
+            default_depth_5_adds: none(),
+        },
+    }
+}
+
+#[test]
+fn connection_matrix_has_independent_outcomes_under_all_and_default_rules() {
+    // A 24-byte synthetic password with mixed classes and no stopword.
+    let password = ["Q7v9R2m8", "K4p6T1w3", "Z5s0N2h4"].concat();
+    // Its first byte 'Q' (0x51) spelled as one percent escape: 26 bytes.
+    let escaped = format!("%51{}", &password[1..]);
+    let depth_5 = ScanOptions::builder().max_decode_depth(5).build();
+    let depth_0 = ScanOptions::default();
+    let mut cases = 0;
+    let (mut all_total_0, mut all_total_5) = (0, 0);
+    let (mut default_total_0, mut default_total_5) = (0, 0);
+    for form in Form::ALL {
+        for shape in Shape::ALL {
+            let (input, start) = shape.input(form, &password, &escaped);
+            let expected = expected_outcomes(form, shape, &password, &escaped, start);
+            let with = |base: &[Outcome], adds: &[Outcome]| {
+                let mut all = base.to_vec();
+                all.extend_from_slice(adds);
+                all.sort();
+                all
+            };
+            let label = format!("{form:?} {shape:?}");
+            let mut sorted = expected.all_depth_0.clone();
+            sorted.sort();
+            assert_eq!(
+                outcomes(all_rules(), &input, &depth_0),
+                sorted,
+                "all rules, depth 0: {label}"
+            );
+            assert_eq!(
+                outcomes(all_rules(), &input, &depth_5),
+                with(&expected.all_depth_0, &expected.all_depth_5_adds),
+                "all rules, depth 5: {label}"
+            );
+            let mut sorted = expected.default_depth_0.clone();
+            sorted.sort();
+            assert_eq!(
+                outcomes(default_rules(), &input, &depth_0),
+                sorted,
+                "default rules, depth 0: {label}"
+            );
+            let default_5 = outcomes(default_rules(), &input, &depth_5);
+            assert_eq!(
+                default_5,
+                with(&expected.default_depth_0, &expected.default_depth_5_adds),
+                "default rules, depth 5: {label}"
+            );
+            cases += 1;
+            all_total_0 += expected.all_depth_0.len();
+            all_total_5 += expected.all_depth_0.len() + expected.all_depth_5_adds.len();
+            default_total_0 += expected.default_depth_0.len();
+            default_total_5 += expected.default_depth_0.len() + expected.default_depth_5_adds.len();
+            // The connection pack is opt-in: default rules never report it.
+            assert!(
+                default_5
+                    .iter()
+                    .all(|(rule, _, _)| !rule.starts_with(PREFIX))
+            );
+        }
+    }
+    assert_eq!(cases, 36);
+    assert_eq!((all_total_0, all_total_5), (10, 14));
+    assert_eq!((default_total_0, default_total_5), (3, 4));
+}
+
+#[test]
+fn global_allowlist_suppresses_slack_token_containing_false() {
+    // The packaged global allowlist regex `(?i)^true|false|null$` anchors
+    // only `true` at the start and only `null` at the end, so any secret that
+    // contains `false` is suppressed. That is the pinned upstream behavior and
+    // is intended here; this test records it and must not weaken it.
+    let token = [
+        "xoxb-",
+        "284719365012",
+        "-",
+        "7391846205738",
+        "-Q7m2",
+        "false",
+        "R5s0N6b3X",
+    ]
+    .concat();
+    let control = token.replace("false", "fa1se");
+    assert_eq!(token.len(), 50);
+    let isolated = Engine::builder(
+        ConfigLoader::new()
+            .load_toml(
+                "[[rules]]\nid = 'slack-bot-token'\n\
+                 regex = '''xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*'''\n\
+                 entropy = 3\nkeywords = ['xoxb']\n",
+            )
+            .unwrap(),
+    )
+    .build()
+    .unwrap();
+    let options = ScanOptions::default();
+    for (engine, suppressed) in [
+        (default_rules(), true),
+        (all_rules(), true),
+        (&isolated, false),
+    ] {
+        for (secret, expected) in [(&token, !suppressed), (&control, true)] {
+            let found = outcomes(engine, &format!("{secret}\n"), &options);
+            let want = if expected {
+                vec![(
+                    "slack-bot-token".to_owned(),
+                    secret.clone(),
+                    Some((0, secret.len())),
+                )]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(
+                found,
+                want,
+                "{} suppressed={suppressed}",
+                if *secret == token { "token" } else { "control" }
+            );
+        }
+    }
+}
