@@ -510,6 +510,7 @@ mod tests {
     use super::*;
     use crate::tooling::presentation::FrozenVariant;
     use std::collections::BTreeMap;
+    use std::fmt::Write as _;
 
     fn fixture() -> (Vec<Value>, Vec<Variant>, Vec<u8>) {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/cli-corpus");
@@ -1018,52 +1019,64 @@ mod tests {
                 );
             }
 
-            for field in [
-                "implementation",
-                "exit",
-                "stderr_contains_disclosure_marker",
-                "report",
-                "findings",
-                "finding_count",
-                "child_reaped",
-            ] {
-                let mut changed = presented(frozen, &dispositions);
-                changed.value[field] = json!({"mutation": true});
-                assert!(
-                    compare(id, &changed, frozen, false, &refs).is_err(),
-                    "{id}: {field}"
-                );
-            }
-            let count = actual.value["stderr_events"].as_array().unwrap().len();
-            for event in 0..count {
-                for field in ["severity", "class", "fields"] {
-                    let mut changed = presented(frozen, &dispositions);
-                    let in_usage = changed
-                        .native
-                        .usage_events
-                        .as_ref()
-                        .is_some_and(|range| range.contains(&event))
-                        && refs.iter().any(|d| d.field == Field::StderrUsage);
-                    if in_usage {
-                        continue;
-                    }
-                    changed.value["stderr_events"][event][field] = json!("mutation");
-                    assert!(
-                        compare(id, &changed, frozen, false, &refs).is_err(),
-                        "{id}: event {event} {field}"
-                    );
-                }
-            }
-            let mut extra = presented(frozen, &dispositions);
-            extra.value["stderr_events"]
-                .as_array_mut()
-                .unwrap()
-                .push(frozen["stderr_events"].get(0).cloned().unwrap_or(json!({})));
+            assert_unrelated_fields_stay_pinned(id, &actual, frozen, &dispositions);
+        }
+    }
+
+    /// Asserts that presentation dispositions do not excuse a change to any
+    /// field other than the presentation text they replace.
+    fn assert_unrelated_fields_stay_pinned(
+        id: &str,
+        actual: &Observed,
+        frozen: &Value,
+        dispositions: &[Disposition],
+    ) {
+        let refs = dispositions.iter().collect::<Vec<_>>();
+        for field in [
+            "implementation",
+            "exit",
+            "stderr_contains_disclosure_marker",
+            "report",
+            "findings",
+            "finding_count",
+            "child_reaped",
+        ] {
+            let mut changed = presented(frozen, dispositions);
+            changed.value[field] = json!({"mutation": true});
             assert!(
-                compare(id, &extra, frozen, false, &refs).is_err(),
-                "{id}: extra event"
+                compare(id, &changed, frozen, false, &refs).is_err(),
+                "{id}: {field}"
             );
         }
+        let count = actual.value["stderr_events"].as_array().unwrap().len();
+        for event in 0..count {
+            for field in ["severity", "class", "fields"] {
+                let mut changed = presented(frozen, dispositions);
+                let in_usage = changed
+                    .native
+                    .usage_events
+                    .as_ref()
+                    .is_some_and(|range| range.contains(&event))
+                    && refs.iter().any(|d| d.field == Field::StderrUsage);
+                if in_usage {
+                    continue;
+                }
+                changed.value["stderr_events"][event][field] = json!("mutation");
+                assert!(
+                    compare(id, &changed, frozen, false, &refs).is_err(),
+                    "{id}: event {event} {field}"
+                );
+            }
+        }
+        let mut extra = presented(frozen, dispositions);
+        extra.value["stderr_events"]
+            .as_array_mut()
+            .unwrap()
+            .push(frozen["stderr_events"].get(0).cloned().unwrap_or(json!({})));
+        assert!(
+            compare(id, &extra, frozen, false, &refs).is_err(),
+            "{id}: extra event"
+        );
     }
 
     #[test]
@@ -1083,9 +1096,13 @@ mod tests {
         );
         // The new usage text adds flags, so it has more lines than the frozen one.
         let mut disposition = synthetic("SYN-USAGE", variant, Field::StderrUsage);
-        let added = (0..40)
-            .map(|n| format!("      --synthetic-{n} string   synthetic rustleaks flag {n}\n"))
-            .collect::<String>();
+        let added = (0..40).fold(String::new(), |mut added, n| {
+            let _ = writeln!(
+                added,
+                "      --synthetic-{n} string   synthetic rustleaks flag {n}"
+            );
+            added
+        });
         disposition.expected = format!("{}{added}", disposition.expected);
         presentation::validate_dispositions(std::slice::from_ref(&disposition), &index).unwrap();
         let refs = [&disposition];

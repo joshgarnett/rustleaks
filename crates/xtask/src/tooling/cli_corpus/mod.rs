@@ -61,15 +61,7 @@ pub(crate) fn check_cli_corpus(
     let rust_binary = executable_path(rust_binary, "Rust CLI")?;
     let fake_git_binary = executable_path(fake_git_binary, "CLI fixture helper")?;
     let git = git_executable()?;
-    let corpus = root.join("compat/cli-corpus");
-    let mut files = BTreeMap::new();
-    for (name, digest) in FROZEN_FILES {
-        let bytes = read(&corpus.join(name))?;
-        if sha256_bytes(&bytes) != *digest {
-            return Err(format!("frozen CLI evidence changed: {name}"));
-        }
-        files.insert(*name, bytes);
-    }
+    let files = read_frozen_files(&root.join("compat/cli-corpus"))?;
     let manifest = parse_json(&files["manifest-v1.json"], "CLI manifest")?;
     let negative = parse_json(&files["negative-controls-v1.json"], "CLI controls")?;
     let rows = spec::validate_inputs(
@@ -159,6 +151,19 @@ pub(crate) fn check_cli_corpus(
         used.len()
     );
     Ok(())
+}
+
+/// Reads every frozen corpus file and rejects any whose digest changed.
+fn read_frozen_files(corpus: &Path) -> Result<BTreeMap<&'static str, Vec<u8>>, String> {
+    let mut files = BTreeMap::new();
+    for (name, digest) in FROZEN_FILES {
+        let bytes = read(&corpus.join(name))?;
+        if sha256_bytes(&bytes) != *digest {
+            return Err(format!("frozen CLI evidence changed: {name}"));
+        }
+        files.insert(*name, bytes);
+    }
+    Ok(files)
 }
 
 /// Checks that the usage event range inferred from recorded text agrees with
