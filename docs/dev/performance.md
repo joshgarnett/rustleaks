@@ -370,6 +370,9 @@ These costs follow from current behavior:
   UTF-8 input use the unanchored search and get none of that speedup.
 - With a cancellation signal, bulk work charges poll the signal once per work
   unit. The faster single bulk charge applies only to scans without a signal.
+  Decoder predecessor charges and native line coordinates are linear in the
+  input, so this polling is too. See [Engine
+  internals](engine-internals.md#cancellation).
 - Hostile input or large Unicode classes can make the lazy DFA cache thrash or
   give up. The search then falls back to PikeVM. One search stays linear in
   input length for a fixed pattern, but the speedup is lost.

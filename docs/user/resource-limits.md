@@ -42,6 +42,11 @@ makes the scan incomplete, and it exits with 2. See [Complete
 scanning](complete-scanning.md#profile-keys). Complete scanning is not in
 0.1.0-alpha.9.
 
+Detection work grows with the input size, the number of rules and the decode
+depth. Many encoded values in one piece of input, such as one Base64 value on
+each line, need work in proportion to their number. Work counts can change
+between releases, so measure them again before you reuse work limits.
+
 `--timeout` is checked between steps. A single long step, such as one pattern
 search over a large input, finishes before the scan stops. The timeout is not
 a hard deadline.

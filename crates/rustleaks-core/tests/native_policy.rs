@@ -2077,7 +2077,7 @@ mod native_bytes {
         // The rule then publishes both candidates with no intervening poll.
         let rule_completion_polls = 1 + usage.work_units() + 2;
         let mut cancelled_after_both_admissions = false;
-        for threshold in 0..=rule_completion_polls + 2 {
+        for threshold in 0..=rule_completion_polls + 4 {
             let polls = AtomicUsize::new(0);
             let signal = || polls.fetch_add(1, Ordering::Relaxed) >= threshold;
             let result = engine.scan_fragment_controlled(
@@ -2090,13 +2090,14 @@ mod native_bytes {
                 assert!(result.findings().is_empty());
                 assert!(result.usage().work_units() < usage.work_units());
                 cancelled_after_both_admissions |= result.usage().finding_records() == 2;
-            } else if threshold < rule_completion_polls + 2 {
-                // Final filtering polls once before each non-generic finding.
-                // All rule work is complete, so cancellation exposes exactly
-                // the already finalized prefix: zero findings, then one.
+            } else if threshold < rule_completion_polls + 4 {
+                // Final filtering polls once to classify each finding, then
+                // once before each non-generic finding. All rule work is
+                // complete, so cancellation exposes exactly the already
+                // finalized prefix: zero findings three times, then one.
                 assert_eq!(result.termination(), Some(&ScanTermination::Cancelled));
                 assert_eq!(result.usage(), usage);
-                let finalized = threshold - rule_completion_polls;
+                let finalized = (threshold - rule_completion_polls).saturating_sub(2);
                 assert_eq!(result.findings(), &complete.findings()[..finalized]);
             } else {
                 assert_eq!(result, complete);
@@ -2175,6 +2176,107 @@ skipReport=true
             FindingRange::Exact(ByteRange::new(4, 6).unwrap())
         );
         assert!(scan(&selected(&source), b"PXY\n\nHZ", 0).is_empty());
+    }
+
+    #[test]
+    fn native_line_coordinates_charge_each_counted_byte_once() {
+        let engine = selected(&pack("TOK[0-9]{4}", &["tok"]));
+        let mut totals = Vec::new();
+        for lines in [64, 128] {
+            let bytes = b"x=TOK0123\n".repeat(lines);
+            let outcome = engine.scan_fragment(&Fragment::new(bytes), &ScanOptions::default());
+            assert!(outcome.is_complete());
+            assert_eq!(outcome.findings().len(), lines);
+            // With 10 bytes per line and the match at bytes 2..9 of each:
+            // 1 pass start, 1 prefilter hit per line, 1 rule entry, 1 for the
+            // one keyword plus 10 per line for its search, 2 per candidate,
+            // and line coordinates counted once up to the last match end,
+            // 10 * lines - 1 bytes. Recounting each prefix would instead add
+            // the sum of every match end, 5 * lines * lines + 4 * lines.
+            assert_eq!(
+                outcome.usage().work_units(),
+                23 * lines + 2,
+                "{lines} lines"
+            );
+            totals.push(outcome.usage().work_units());
+        }
+        assert_eq!(totals, [1474, 2946]);
+        assert_eq!(totals[1] - 2, 2 * (totals[0] - 2));
+    }
+
+    #[test]
+    fn same_line_windows_pair_only_on_their_own_line_across_many_candidates() {
+        let source = format!(
+            "{}[rules.required]\ncontract='buffer-v1'\nedges=[{{id='rustleaks.helper',relation='full-match-window',window='1L'}}]\n[[rules]]\nid='rustleaks.helper'\nregex={{dialect='bytes-v1',pattern='H[0-9]{{3}}'}}\nskipReport=true\n",
+            pack("P[0-9]{3}", &[])
+        );
+        let engine = selected(&source);
+        // Every line has a primary match; only even lines have a helper.
+        let mut bytes = Vec::new();
+        for line in 0..64 {
+            bytes.extend_from_slice(format!("P{line:03}").as_bytes());
+            if line % 2 == 0 {
+                bytes.extend_from_slice(format!(" H{line:03}").as_bytes());
+            }
+            bytes.push(b'\n');
+        }
+        let findings = scan(&engine, &bytes, 0);
+        let pairs = findings
+            .iter()
+            .map(|finding| {
+                assert_eq!(finding.required_findings().len(), 1);
+                (
+                    finding.secret().to_string_lossy().into_owned(),
+                    finding.required_findings()[0]
+                        .secret()
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let expected = (0..64)
+            .step_by(2)
+            .map(|line| (format!("P{line:03}"), format!("H{line:03}")))
+            .collect::<Vec<_>>();
+        assert_eq!(pairs, expected);
+    }
+
+    #[test]
+    fn line_cursor_advances_past_a_newline_inside_an_admitted_match() {
+        // Each helper match ends with its line's LF, so the next counted
+        // line must start after it. A helper placed one line too early
+        // would pair with the odd-line primary that has no helper.
+        let source = format!(
+            "{}[rules.required]\ncontract='buffer-v1'\nedges=[{{id='rustleaks.helper',relation='full-match-window',window='1L'}}]\n[[rules]]\nid='rustleaks.helper'\nregex={{dialect='bytes-v1',pattern='H[0-9]{{3}}\\n'}}\nskipReport=true\n",
+            pack("P[0-9]{3}", &[])
+        );
+        let engine = selected(&source);
+        let mut bytes = Vec::new();
+        for line in 0..64 {
+            bytes.extend_from_slice(format!("P{line:03}").as_bytes());
+            if line % 2 == 0 {
+                bytes.extend_from_slice(format!(" H{line:03}").as_bytes());
+            }
+            bytes.push(b'\n');
+        }
+        let pairs = scan(&engine, &bytes, 0)
+            .iter()
+            .map(|finding| {
+                assert_eq!(finding.required_findings().len(), 1);
+                (
+                    finding.secret().to_string_lossy().into_owned(),
+                    finding.required_findings()[0]
+                        .secret()
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let expected = (0..64)
+            .step_by(2)
+            .map(|line| (format!("P{line:03}"), format!("H{line:03}\n")))
+            .collect::<Vec<_>>();
+        assert_eq!(pairs, expected);
     }
 
     #[test]

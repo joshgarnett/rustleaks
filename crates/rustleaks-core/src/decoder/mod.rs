@@ -338,11 +338,14 @@ impl Decoder {
             let decoded_start = candidate.range.start + decoded_shift;
             let decoded_end = decoded_start + isize::try_from(decoded_value.len()).unwrap();
             let mut encodings = candidate.encoding.bit();
-            if !predecessors.is_empty() {
-                // Each visited predecessor is one public work unit.
-                checkpoint(DecodeCheckpoint::Work(predecessors.len()))?;
-                for predecessor in &predecessors[overlapping_indices(predecessors, candidate.range)]
-                {
+            // Each visited predecessor is one public work unit. Two binary
+            // searches find the overlapping run and only that run is visited,
+            // so a candidate that overlaps no predecessor charges nothing
+            // here; its own candidate unit above already covers the search.
+            let visited = overlapping_indices(predecessors, candidate.range);
+            if !visited.is_empty() {
+                checkpoint(DecodeCheckpoint::Work(visited.len()))?;
+                for predecessor in &predecessors[visited] {
                     encodings |= predecessor.encodings;
                 }
             }
@@ -1714,9 +1717,12 @@ mod tests {
             depth: 1,
             line: LineBounds::default(),
         };
+        // The first candidate (bytes 0..24) overlaps the first two
+        // predecessors, the second (25..41) overlaps none, and the rejected
+        // third (42..58) is never compared.
         let predecessors = [
             predecessor(0, 2, 100),
-            predecessor(30, 32, 200),
+            predecessor(10, 12, 200),
             predecessor(60, 62, 300),
         ];
         let data = b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0 AAAAAAAAAAAAAAAA";
@@ -1731,9 +1737,11 @@ mod tests {
             .unwrap_or_else(|never| match never {});
 
         // Three regex matches, three shadow-filter visits, a candidate unit
-        // and a run of three predecessor visits for each accepted candidate,
-        // one candidate unit for the rejected value, and two assembly units.
-        assert_eq!(charged, [1, 1, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1]);
+        // and one run of two overlapping predecessor visits for the first
+        // accepted candidate, a candidate unit and no predecessor charge for
+        // the second, one candidate unit for the rejected value, and two
+        // assembly units.
+        assert_eq!(charged, [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]);
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].depth(), 2);
     }
@@ -1750,18 +1758,22 @@ mod tests {
             depth: 1,
             line: LineBounds::default(),
         };
-        let predecessors = [predecessor(0, 2), predecessor(30, 32), predecessor(60, 62)];
+        let predecessors = [predecessor(0, 2), predecessor(10, 12), predecessor(60, 62)];
         let data = b"QUJDREVGR0hJSktMTU5PUA== dGhpcy1pcy0xMjM0";
 
-        // Failing the bulk predecessor charge returns the caller's error
-        // without assembling or returning any output.
+        // Failing the bulk charge for the two overlapping predecessors of the
+        // first candidate returns the caller's error without assembling or
+        // returning any output, and nothing is charged after it.
         let mut decoder = Decoder::new();
+        let mut charged = Vec::new();
         let error = decoder
             .decode_controlled(data, &predecessors, |units| {
-                if units == 3 { Err("stop") } else { Ok(()) }
+                charged.push(units);
+                if units == 2 { Err("stop") } else { Ok(()) }
             })
             .unwrap_err();
         assert_eq!(error, "stop");
+        assert_eq!(charged, [1, 1, 1, 1, 1, 2]);
     }
 
     #[test]

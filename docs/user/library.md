@@ -212,7 +212,7 @@ What your program must do:
   to build your own time limit.
 - Limit the size of each fragment before you scan it.
 - A work unit is an internal count of detection steps. It has no fixed time
-  cost.
+  cost, and the count for the same input can change between releases.
 - Detection is synchronous. If you call it from an async runtime, run it on a
   blocking thread.
 - Findings hold secret bytes. See [Reading findings](#reading-findings).

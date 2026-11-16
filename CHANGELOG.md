@@ -31,6 +31,14 @@
   number of fields gives the field count, file and line in plain text instead
   of Rust debug output. The warning for a line of 64 KiB or longer also gives
   the file and line.
+- Remove quadratic work in decoding, native rule line numbers and the
+  cancellable generic finding filter. Decoding now charges work only for the
+  earlier decoded segments that a candidate overlaps. Native rules count line
+  numbers once per rule and input instead of once per match. Work for many
+  encoded values or dense native matches now grows linearly with the input.
+  Findings and reports do not change. The `work_units` value in the
+  `--complete-profile` status line is lower for such inputs, so more input
+  fits a given work budget.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

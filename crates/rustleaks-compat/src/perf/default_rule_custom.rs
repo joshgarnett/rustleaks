@@ -88,8 +88,9 @@ keywords = ["spectoken="]
 
 /// Generic-rule findings are filtered only against non-generic findings on
 /// their own line. Every generic finding here has its own line, and specific
-/// findings use separate lines, so all of them must be retained while the
-/// quadratic comparison still runs over every pair.
+/// findings use separate lines, so all of them must be retained. Both filter
+/// paths compare a generic finding only with the non-generic findings in its
+/// own line and commit bucket, which is empty here.
 fn generic_filter(ctx: &mut Context<'_>, generic: usize) -> Fallible<Plan> {
     ensure_rule_count(ctx, 2)?;
     let generic_rule = ctx.rule_index("generic-filter-token")?;

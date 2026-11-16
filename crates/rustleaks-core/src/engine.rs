@@ -1503,6 +1503,10 @@ impl Engine {
         let mut candidates = Vec::new();
         let mut line_allowlists = LineAllowlistMemo::default();
         let mut capture_scratch = None;
+        // The byte offset and 1-based line of the last admitted whole-match
+        // end. Spans arrive in ascending, non-overlapping order, so each
+        // input byte is counted once for line coordinates.
+        let mut line_cursor = (0_usize, 1_usize);
         for (candidate_ordinal, whole) in spans.into_iter().enumerate() {
             context.work()?;
             context.explanations.record(
@@ -1564,22 +1568,38 @@ impl Engine {
                 context,
             )? {
                 // Count LF bytes at their actual input positions, including a
-                // trailing LF at the exclusive whole-match endpoint. No index
-                // or coordinate registry is retained outside admitted records.
-                context.work_many(whole.end)?;
+                // trailing LF at the exclusive whole-match endpoint. Counting
+                // resumes at the previous admitted end, so one unit is charged
+                // per byte counted and a rule's candidates in one input cost
+                // the last admitted end in total. A span that starts before the
+                // cursor, which `find_all` does not produce, recounts from the
+                // input start. No index or coordinate registry is retained
+                // outside admitted records.
+                debug_assert!(
+                    whole.start >= line_cursor.0,
+                    "native spans arrive in ascending, non-overlapping order"
+                );
+                let (from, line_at) = if whole.start >= line_cursor.0 {
+                    line_cursor
+                } else {
+                    (0, 1)
+                };
+                context.work_many(whole.end - from)?;
                 // No byte-counting dependency is admitted; the scan is already
                 // charged above as bounded work.
                 #[allow(clippy::naive_bytecount)]
-                let start_line = 1 + input.bytes[..whole.start]
-                    .iter()
-                    .filter(|&&byte| byte == b'\n')
-                    .count();
+                let start_line = line_at
+                    + input.bytes[from..whole.start]
+                        .iter()
+                        .filter(|&&byte| byte == b'\n')
+                        .count();
                 #[allow(clippy::naive_bytecount)]
                 let end_line = start_line
                     + input.bytes[whole.start..whole.end]
                         .iter()
                         .filter(|&&byte| byte == b'\n')
                         .count();
+                line_cursor = (whole.end, end_line);
                 candidates.push(NativeCandidate {
                     finding,
                     input: input.id,
@@ -2290,50 +2310,53 @@ fn filter_findings_cancellable(
     if control.cancellation.is_none() {
         return (filter_findings(findings, redact), None);
     }
-    // Index construction and a whole bucket search can each visit every
-    // finding. A cancellation signal must run before each comparison, not
-    // after the search has completed, so keep this path interleaved.
     filter_findings_with_cancellation(findings, redact, control, suppresses_generic_finding)
 }
 
-/// Keeps each potentially expensive comparison behind its cancellation poll.
+/// Applies the same bucketed selection as [`filter_findings`] with a
+/// cancellation poll before every visit to a finding.
+///
+/// Index construction polls once per finding classified and, when any finding
+/// is generic, once per finding indexed. The filter then polls once per
+/// finding and once before each comparison with a candidate from the generic
+/// finding's bucket, so no bucket is searched in advance and the polls are
+/// linear in the findings plus the comparisons made. On cancellation the
+/// findings decided so far are returned, as a prefix of the list.
 fn filter_findings_with_cancellation(
     findings: Vec<Finding>,
     redact: usize,
     control: ScanControl<'_>,
     mut suppresses: impl FnMut(&Finding, &Finding) -> bool,
 ) -> (Vec<Finding>, Option<ScanTermination>) {
+    let Some(suppression) = GenericSuppression::build(&findings, || control.is_cancelled()) else {
+        return (Vec::new(), Some(ScanTermination::Cancelled));
+    };
     let mut include = Vec::with_capacity(findings.len());
-    for finding in &findings {
+    let mut cancelled = false;
+    'findings: for (index, finding) in findings.iter().enumerate() {
         if control.is_cancelled() {
-            return (
-                apply_finding_filter(findings, include, redact),
-                Some(ScanTermination::Cancelled),
-            );
+            cancelled = true;
+            break;
         }
-        if !contains_bytes(
-            &go_lowercase_bytes(finding.rule_id().as_bytes()),
-            b"generic",
-        ) {
+        if !suppression.is_generic(index) {
             include.push(true);
             continue;
         }
         let mut retained = true;
-        for other in &findings {
+        for &candidate in suppression.bucket(index) {
             if control.is_cancelled() {
-                return (
-                    apply_finding_filter(findings, include, redact),
-                    Some(ScanTermination::Cancelled),
-                );
+                cancelled = true;
+                break 'findings;
             }
-            if suppresses(finding, other) {
+            if suppresses(finding, &findings[candidate]) {
                 retained = false;
                 break;
             }
         }
         include.push(retained);
     }
-    (apply_finding_filter(findings, include, redact), None)
+    let termination = cancelled.then_some(ScanTermination::Cancelled);
+    (apply_finding_filter(findings, include, redact), termination)
 }
 
 fn suppresses_generic_finding(finding: &Finding, other: &Finding) -> bool {
@@ -2358,10 +2381,20 @@ struct GenericSuppression<'a> {
 
 impl<'a> GenericSuppression<'a> {
     fn new(findings: &'a [Finding]) -> Self {
+        Self::build(findings, || false).expect("an unpolled index is never cancelled")
+    }
+
+    /// Builds the index, calling `cancelled` before each finding is
+    /// classified and before each finding is indexed. Returns `None` as soon
+    /// as it reports cancellation.
+    fn build(findings: &'a [Finding], mut cancelled: impl FnMut() -> bool) -> Option<Self> {
         let mut generic = Vec::with_capacity(findings.len());
         // Findings arrive grouped by rule; the flag depends only on the ID bytes.
         let mut previous = None;
         for finding in findings {
+            if cancelled() {
+                return None;
+            }
             let rule_id = finding.rule_id().as_bytes();
             let flag = match previous {
                 Some((previous_id, flag)) if previous_id == rule_id => flag,
@@ -2373,6 +2406,9 @@ impl<'a> GenericSuppression<'a> {
         let mut specific_by_line_and_commit = BTreeMap::<_, Vec<usize>>::new();
         if generic.contains(&true) {
             for (index, finding) in findings.iter().enumerate() {
+                if cancelled() {
+                    return None;
+                }
                 if !generic[index] {
                     specific_by_line_and_commit
                         .entry((finding.location().start_line(), finding.commit().as_bytes()))
@@ -2381,29 +2417,35 @@ impl<'a> GenericSuppression<'a> {
                 }
             }
         }
-        Self {
+        Some(Self {
             findings,
             generic,
             specific_by_line_and_commit,
-        }
+        })
     }
 
     fn is_generic(&self, index: usize) -> bool {
         self.generic[index]
     }
 
+    /// Returns, in list order, the non-generic findings with the same start
+    /// line and commit as the finding at `index`: the only findings that can
+    /// suppress it.
+    fn bucket(&self, index: usize) -> &[usize] {
+        let finding = &self.findings[index];
+        self.specific_by_line_and_commit
+            .get(&(finding.location().start_line(), finding.commit().as_bytes()))
+            .map_or(&[], Vec::as_slice)
+    }
+
     /// Returns the lowest list index that suppresses the generic finding.
     fn first_suppressor(&self, index: usize) -> Option<usize> {
         let finding = &self.findings[index];
-        self.specific_by_line_and_commit
-            .get(&(finding.location().start_line(), finding.commit().as_bytes()))?
-            .iter()
-            .copied()
-            .find(|&candidate| {
-                let other = &self.findings[candidate];
-                finding.rule_id() != other.rule_id()
-                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
-            })
+        self.bucket(index).iter().copied().find(|&candidate| {
+            let other = &self.findings[candidate];
+            finding.rule_id() != other.rule_id()
+                && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+        })
     }
 }
 
@@ -4686,7 +4728,12 @@ paths = ['''C:\\secret\.txt$''']
     // Frozen quadratic filters, retained only as differential evidence. The
     // explicit cases below state the expected results independently.
     fn frozen_filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
-        let include = findings
+        let include = frozen_include(&findings);
+        apply_finding_filter(findings, include, redact)
+    }
+
+    fn frozen_include(findings: &[Finding]) -> Vec<bool> {
+        findings
             .iter()
             .map(|finding| {
                 if !contains_bytes(
@@ -4706,51 +4753,46 @@ paths = ['''C:\\secret\.txt$''']
                         )
                 })
             })
-            .collect::<Vec<_>>();
-        apply_finding_filter(findings, include, redact)
+            .collect()
     }
 
-    fn frozen_filter_findings_cancellable(
-        findings: Vec<Finding>,
-        redact: usize,
-        control: ScanControl<'_>,
-    ) -> (Vec<Finding>, Option<ScanTermination>) {
-        let mut include = Vec::with_capacity(findings.len());
-        for finding in &findings {
-            if control.is_cancelled() {
-                return (
-                    apply_finding_filter(findings, include, redact),
-                    Some(ScanTermination::Cancelled),
-                );
-            }
-            if !contains_bytes(
+    /// The expected poll schedule of the cancellable filter, stated from its
+    /// contract rather than its code: one poll per finding classified, one
+    /// per finding indexed when any finding is generic, then per finding one
+    /// poll plus, for a generic finding, one poll per bucket candidate
+    /// compared up to and including the first suppressor. Returns the polls
+    /// spent on the index and, for each finding, the poll count after which
+    /// it is decided.
+    fn expected_filter_polls(findings: &[Finding]) -> (usize, Vec<usize>) {
+        let is_generic = |finding: &Finding| {
+            contains_bytes(
                 &go_lowercase_bytes(finding.rule_id().as_bytes()),
                 b"generic",
-            ) {
-                include.push(true);
-                continue;
-            }
-            let mut retained = true;
-            for other in &findings {
-                if control.is_cancelled() {
-                    return (
-                        apply_finding_filter(findings, include, redact),
-                        Some(ScanTermination::Cancelled),
-                    );
+            )
+        };
+        let any_generic = findings.iter().any(is_generic);
+        let index = findings.len() * if any_generic { 2 } else { 1 };
+        let mut polls = index;
+        let mut decided = Vec::new();
+        for finding in findings {
+            polls += 1;
+            if is_generic(finding) {
+                for other in findings.iter().filter(|other| {
+                    !is_generic(other)
+                        && other.location().start_line() == finding.location().start_line()
+                        && other.commit() == finding.commit()
+                }) {
+                    polls += 1;
+                    if other.rule_id() != finding.rule_id()
+                        && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
+                    {
+                        break;
+                    }
                 }
-                if finding.location().start_line() == other.location().start_line()
-                    && finding.commit() == other.commit()
-                    && finding.rule_id() != other.rule_id()
-                    && contains_bytes(other.secret().as_bytes(), finding.secret().as_bytes())
-                    && !contains_bytes(&go_lowercase_bytes(other.rule_id().as_bytes()), b"generic")
-                {
-                    retained = false;
-                    break;
-                }
             }
-            include.push(retained);
+            decided.push(polls);
         }
-        (apply_finding_filter(findings, include, redact), None)
+        (index, decided)
     }
 
     fn filter_probe(rule_id: &[u8], start_line: usize, commit: &[u8], secret: &[u8]) -> Finding {
@@ -4788,29 +4830,69 @@ paths = ['''C:\\secret\.txt$''']
                 "{findings:?}",
             );
         }
+        let complete = frozen_filter_findings(findings.to_vec(), 0);
         assert_eq!(
             filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
-            frozen_filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
+            (complete.clone(), None),
             "{findings:?}",
         );
-        let run = |limit: usize, frozen: bool| {
+        // The retained flags of the complete frozen filter, by list index.
+        let retained = frozen_include(findings);
+        let (index_polls, decided) = expected_filter_polls(findings);
+        let total = decided.last().copied().unwrap_or(index_polls);
+        let run = |limit: usize| {
             let polls = AtomicUsize::new(0);
             let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
-            let control = ScanControl::cancellable(&cancel);
-            let outcome = if frozen {
-                frozen_filter_findings_cancellable(findings.to_vec(), 0, control)
-            } else {
-                filter_findings_cancellable(findings.to_vec(), 0, control)
-            };
+            let outcome = filter_findings_cancellable(
+                findings.to_vec(),
+                0,
+                ScanControl::cancellable(&cancel),
+            );
             (outcome, polls.load(Ordering::SeqCst))
         };
-        let (complete, total) = run(usize::MAX, true);
-        assert_eq!(complete.1, None);
         for limit in (0..=total + 1).chain([usize::MAX]) {
+            let ((filtered, termination), polls) = run(limit);
+            if limit >= total {
+                assert_eq!(
+                    termination,
+                    None,
+                    "limit {limit}, {} findings",
+                    findings.len()
+                );
+                assert_eq!(polls, total, "limit {limit}, {} findings", findings.len());
+                assert_eq!(
+                    filtered,
+                    complete,
+                    "limit {limit}, {} findings",
+                    findings.len()
+                );
+                continue;
+            }
             assert_eq!(
-                run(limit, false),
-                run(limit, true),
-                "limit {limit}, {findings:?}"
+                termination,
+                Some(ScanTermination::Cancelled),
+                "limit {limit}, {} findings",
+                findings.len()
+            );
+            // The poll numbered `limit` cancels, so it is the last one made.
+            assert_eq!(
+                polls,
+                limit + 1,
+                "limit {limit}, {} findings",
+                findings.len()
+            );
+            let prefix = decided.iter().filter(|&&after| after <= limit).count();
+            let expected = findings[..prefix]
+                .iter()
+                .zip(&retained)
+                .filter(|(_, kept)| **kept)
+                .map(|(finding, _)| finding.clone())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                filtered,
+                expected,
+                "limit {limit}, {} findings",
+                findings.len()
             );
         }
     }
@@ -4854,15 +4936,21 @@ paths = ['''C:\\secret\.txt$''']
         ];
         findings.extend((0..32).map(|_| filter_probe(b"specific", 7, b"same", b"other")));
 
-        for cancel_at in 0..8 {
+        // Polls 0 to 67 classify and index the 34 findings, 68 and 69 enter
+        // the plain and generic findings, and 70 onward precede comparisons.
+        let first_comparison = 2 * findings.len() + 2;
+        assert_eq!(first_comparison, 70);
+        for cancel_at in 0..first_comparison + 8 {
             let polls = AtomicUsize::new(0);
             let comparisons = AtomicUsize::new(0);
             let cancel = || {
                 let poll = polls.fetch_add(1, Ordering::SeqCst);
-                // The first two polls enter the plain and generic findings.
-                // Each later poll must precede its comparison, including the
-                // poll that cancels. No bucket may be searched in advance.
-                assert_eq!(comparisons.load(Ordering::SeqCst), poll.saturating_sub(2));
+                // Each comparison poll must precede its comparison, including
+                // the poll that cancels. No bucket may be searched in advance.
+                assert_eq!(
+                    comparisons.load(Ordering::SeqCst),
+                    poll.saturating_sub(first_comparison)
+                );
                 poll == cancel_at
             };
             let (filtered, termination) = filter_findings_with_cancellation(
@@ -4878,15 +4966,51 @@ paths = ['''C:\\secret\.txt$''']
             assert_eq!(polls.load(Ordering::SeqCst), cancel_at + 1);
             assert_eq!(
                 comparisons.load(Ordering::SeqCst),
-                cancel_at.saturating_sub(2)
+                cancel_at.saturating_sub(first_comparison)
             );
-            if cancel_at == 0 {
+            if cancel_at <= first_comparison - 2 {
                 assert!(filtered.is_empty());
             } else {
                 assert_eq!(filtered.len(), 1);
                 assert_eq!(filtered[0].rule_id().as_bytes(), b"plain");
                 assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
             }
+        }
+    }
+
+    #[test]
+    fn cancellable_generic_filter_polls_grow_linearly_and_match_the_plain_filter() {
+        // `lines` lines, each with one generic finding, one specific finding
+        // that contains its secret, and one plain finding that does not, in
+        // the rule-grouped order a scan produces.
+        let findings = |lines: usize| {
+            let mut findings = Vec::new();
+            for (rule, secret) in [
+                (b"generic-a".as_slice(), b"ab".as_slice()),
+                (b"specific", b"xaby"),
+                (b"plain", b"zz"),
+            ] {
+                findings.extend((1..=lines).map(|line| filter_probe(rule, line, b"c", secret)));
+            }
+            findings
+        };
+        for lines in [64, 128] {
+            let findings = findings(lines);
+            let polls = AtomicUsize::new(0);
+            let count = || {
+                polls.fetch_add(1, Ordering::SeqCst);
+                false
+            };
+            let (filtered, termination) =
+                filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&count));
+            assert_eq!(termination, None);
+            assert_eq!(filtered, filter_findings(findings, 0));
+            assert_eq!(filtered.len(), 2 * lines);
+            // 3 * lines findings: two index polls and one outer poll each,
+            // plus one comparison per generic finding, whose bucket starts
+            // with its suppressor. A full-list search would instead compare
+            // each generic finding with every finding before its suppressor.
+            assert_eq!(polls.load(Ordering::SeqCst), 10 * lines, "{lines} lines");
         }
     }
 
@@ -4908,12 +5032,17 @@ paths = ['''C:\\secret\.txt$''']
                 .map(|finding| finding.rule_id().as_bytes().to_vec())
                 .collect::<Vec<_>>()
         };
+        // Each case first spends 2 polls per finding on the index (classify,
+        // then bucket), because each contains a generic finding.
         let cases: Vec<Case> = vec![
-            // Suppressor after the generic finding: 1 outer + 2 compared + 1 outer.
-            (vec![generic(), specific()], vec![b"specific".as_slice()], 4),
-            // Suppressor before the generic finding: 1 outer + 1 outer + 1 compared.
-            (vec![specific(), generic()], vec![b"specific".as_slice()], 3),
-            // No suppressor: every finding is compared.
+            // Suppressor after the generic finding: 4 index + 1 outer
+            // + 1 compared + 1 outer.
+            (vec![generic(), specific()], vec![b"specific".as_slice()], 7),
+            // Suppressor before the generic finding: 4 index + 1 outer
+            // + 1 outer + 1 compared.
+            (vec![specific(), generic()], vec![b"specific".as_slice()], 7),
+            // No suppressor on the same line and commit: the bucket is empty,
+            // so 6 index + 3 outer and nothing is compared.
             (
                 vec![generic(), other_line(), other_commit()],
                 vec![
@@ -4921,19 +5050,21 @@ paths = ['''C:\\secret\.txt$''']
                     b"specific".as_slice(),
                     b"specific".as_slice(),
                 ],
-                6,
+                9,
             ),
-            // Generic findings do not suppress each other, by either direction.
+            // Generic findings do not suppress each other, by either
+            // direction, and are never bucket candidates: 4 index + 2 outer.
             (
                 vec![generic(), another_generic()],
                 vec![b"generic-a".as_slice(), b"GENERIC-b".as_slice()],
                 6,
             ),
-            // An empty generic secret is contained in every other secret.
+            // An empty generic secret is contained in every other secret:
+            // 4 index + 1 outer + 1 compared + 1 outer.
             (
                 vec![empty_secret(), specific()],
                 vec![b"specific".as_slice()],
-                4,
+                7,
             ),
         ];
         for (findings, retained, expected_polls) in cases {
@@ -4950,20 +5081,22 @@ paths = ['''C:\\secret\.txt$''']
             assert_eq!(ids(&filter_findings(findings, 0)), retained);
         }
 
-        // Polls are numbered from zero: 0 and 1 are the outer checks for the
-        // first two findings, 2 through 4 visit findings 0 through 2 for the
-        // generic comparison, and 5 is the outer check for the last finding.
+        // Polls are numbered from zero: 0 through 5 classify and index the
+        // three findings, 6 and 7 are the outer checks for the first two
+        // findings, 8 compares the generic finding with its only bucket
+        // candidate, and 9 is the outer check for the last finding.
         let findings = vec![filter_probe(b"plain", 1, b"", b"p"), generic(), specific()];
         let plain = vec![b"plain".to_vec()];
         for (limit, expected) in [
             (0, Vec::new()),
-            (1, plain.clone()),
-            (2, plain.clone()),
-            (3, plain.clone()),
-            (4, plain.clone()),
+            (3, Vec::new()),
+            (5, Vec::new()),
+            (6, Vec::new()),
+            (7, plain.clone()),
+            (8, plain.clone()),
             // The generic finding is finalized as suppressed; the specific one
             // is not yet finalized, so it is outside the returned prefix.
-            (5, plain.clone()),
+            (9, plain.clone()),
         ] {
             let polls = AtomicUsize::new(0);
             let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
@@ -4977,7 +5110,7 @@ paths = ['''C:\\secret\.txt$''']
             assert_eq!(ids(&filtered), expected, "limit {limit}");
         }
         let polls = AtomicUsize::new(0);
-        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 6;
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 10;
         let (filtered, termination) =
             filter_findings_cancellable(findings, 0, ScanControl::cancellable(&cancel));
         assert_eq!(termination, None);

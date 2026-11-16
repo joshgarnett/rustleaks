@@ -27,6 +27,11 @@ All budgets include their value and count one fragment scan:
 | Collected spans | Whole-match spans admitted from rules and decoders |
 | Normalization bytes | Owned regex-normalized bytes and replacement offset maps |
 
+A decoded pass charges one work unit for each segment of the previous pass
+that a candidate overlaps. A candidate that overlaps none adds no unit beyond
+its own, so decoder work grows with the number of candidates and overlaps,
+not with candidates times earlier segments.
+
 A partial outcome holds findings only from top-level rules that finished. It
 carries a structured termination and the measured usage. A budget for one
 fragment is not a budget for an operation split across many fragments. Using
@@ -43,6 +48,13 @@ to the match list, and cancellation is polled between admissions. Without that
 budget, match collection keeps its normal checkpoints. Work-unit and
 finding-record budgets alone do not bound the temporary match list, so pair
 them with source byte limits.
+
+The final filter that removes generic-rule findings charges no work units.
+With a cancellation flag it polls once for each finding it classifies and,
+when any finding is generic, once for each finding it indexes. It then polls
+once more for each finding, and before each comparison of a generic finding
+with a non-generic finding on the same line and commit. It compares a generic
+finding only with non-generic findings on the same line and commit.
 
 File sources poll cancellation between buffered reads of at most 4,096
 bytes. A blocking reader call cannot be interrupted. The CLI `--timeout` is
@@ -220,8 +232,10 @@ line, and redaction can create separate lines.
   raw bytes and charge the input length before each search. Unicode searches
   share one lowercase string per buffer; building it charges two input
   lengths, and each search charges the folded length.
-- Native line coordinates scan the input prefix, one work unit per byte, with
-  no newline index. This can repeat prefix work across candidates.
+- Native line coordinates count newlines from the end of the previous
+  admitted candidate in the same input, one work unit per byte counted, with
+  no newline index. When matches arrive in order, which they do, one rule's
+  candidates in one input cost at most the input length in total.
 - A native candidate and each nested required projection use the normal
   finding-record and payload budgets. All buffers for one rule must finish
   before the rule publishes findings in a decode pass.
