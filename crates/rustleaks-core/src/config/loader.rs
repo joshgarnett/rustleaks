@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use semver::Version;
+use semver::{BuildMetadata, Version};
 use thiserror::Error;
 
 use crate::regex::{GoRegex, NativeByteRegex};
@@ -611,7 +611,8 @@ impl ConfigLoader {
         let requires_newer_version = if raw.min_version.is_empty() {
             false
         } else if let Some(current) = &self.current_version {
-            current < &parse_version(&raw.min_version)?
+            // Semantic versioning gives build metadata no precedence.
+            without_build(current) < without_build(&parse_version(&raw.min_version)?)
         } else {
             false
         };
@@ -984,6 +985,13 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
     }
     current.allowlists.extend(base.allowlists);
     current.ordered_rule_ids.sort_unstable();
+}
+
+fn without_build(version: &Version) -> Version {
+    Version {
+        build: BuildMetadata::EMPTY,
+        ..version.clone()
+    }
 }
 
 fn parse_version(value: &str) -> Result<Version, ConfigError> {

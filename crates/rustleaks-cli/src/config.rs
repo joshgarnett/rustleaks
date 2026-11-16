@@ -17,6 +17,13 @@ use rustleaks_sources::LogicalPath;
 
 use crate::args::{CommandKind, Invocation};
 
+/// Gitleaks release whose behavior this build implements.
+///
+/// `compat/upstream-revision.txt` pins the upstream commit with the
+/// description `v8.30.0-27-gb58d3f1`. A config `minVersion` above this
+/// version produces an advisory warning.
+const IMPLEMENTED_GITLEAKS_VERSION: &str = "8.30.0";
+
 pub(crate) struct ConfigAssembly {
     pub full: Arc<CompiledConfig>,
     pub selected: CompiledConfig,
@@ -63,7 +70,7 @@ pub(crate) fn assemble(
 ) -> Result<ConfigAssembly, String> {
     validate_numbers(invocation)?;
     let loader = ConfigLoader::new()
-        .with_current_version(env!("CARGO_PKG_VERSION"))
+        .with_current_version(IMPLEMENTED_GITLEAKS_VERSION)
         .map_err(|error| format!("could not configure current version: {error}"))?
         .with_resolver(CwdResolver {
             cwd: cwd.to_path_buf(),
@@ -141,15 +148,15 @@ pub(crate) fn assemble(
 }
 
 fn minimum_version_warning(config: &CompiledConfig, origin: &str) -> Result<String, String> {
-    const PREFIX: &str = "config requires a newer Gitleaks version... required=";
-    const CURRENT: &str = " current=";
-    const ORIGIN: &str = " config path=";
+    const PREFIX: &str = "config requires Gitleaks ";
+    const IMPLEMENTED: &str = " or later; Rustleaks implements Gitleaks ";
+    const SUFFIX: &str = ", so newer settings may not be supported; config path=";
     let capacity = PREFIX
         .len()
         .checked_add(config.min_version().len())
-        .and_then(|value| value.checked_add(CURRENT.len()))
-        .and_then(|value| value.checked_add(env!("CARGO_PKG_VERSION").len()))
-        .and_then(|value| value.checked_add(ORIGIN.len()))
+        .and_then(|value| value.checked_add(IMPLEMENTED.len()))
+        .and_then(|value| value.checked_add(IMPLEMENTED_GITLEAKS_VERSION.len()))
+        .and_then(|value| value.checked_add(SUFFIX.len()))
         .and_then(|value| value.checked_add(origin.len()))
         .ok_or_else(|| "config warning length overflowed".to_owned())?;
     let mut warning = String::new();
@@ -158,9 +165,8 @@ fn minimum_version_warning(config: &CompiledConfig, origin: &str) -> Result<Stri
         .map_err(|error| format!("could not allocate config warning: {error}"))?;
     write!(
         warning,
-        "{PREFIX}{}{CURRENT}{}{ORIGIN}{origin}",
+        "{PREFIX}{}{IMPLEMENTED}{IMPLEMENTED_GITLEAKS_VERSION}{SUFFIX}{origin}",
         config.min_version(),
-        env!("CARGO_PKG_VERSION")
     )
     .map_err(|_| "could not render config warning".to_owned())?;
     Ok(warning)
@@ -630,35 +636,68 @@ mod tests {
         path
     }
 
-    #[test]
-    fn embedded_default_warns_against_the_workspace_version() {
-        assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0-alpha.9");
-        let root = temporary_directory("default-version");
+    fn assemble_inline(root: &Path, inline: Option<&str>) -> ConfigAssembly {
+        let inline = inline.map(OsString::from);
         let invocation = Invocation {
             command: CommandKind::Stdin,
             source: PathBuf::from("."),
             options: Options::default(),
         };
-        let assembly = assemble(
+        assemble(
             &invocation,
             ConfigEnvironment {
                 path: None,
-                inline: None,
+                inline: inline.as_ref(),
                 legacy_path: None,
                 legacy_inline: None,
             },
-            &root,
+            root,
             &mut |_| {},
         )
-        .unwrap();
-        assert!(assembly.full.requires_newer_version());
+        .unwrap()
+    }
+
+    #[test]
+    fn embedded_default_minimum_version_is_satisfied() {
+        let root = temporary_directory("default-version");
+        let assembly = assemble_inline(&root, None);
+        assert_eq!(assembly.origin, "<embedded-default>");
         assert_eq!(assembly.full.min_version(), "v8.25.0");
-        assert_eq!(
-            assembly.warnings,
-            [
-                "config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.9 config path=<embedded-default>"
-            ]
-        );
+        assert!(!assembly.full.requires_newer_version());
+        assert!(assembly.warnings.is_empty(), "{:?}", assembly.warnings);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn minimum_version_warns_only_above_the_implemented_gitleaks_version() {
+        let root = temporary_directory("minimum-version");
+        for satisfied in [
+            "v8.30.0",
+            "8.30.0",
+            "v8.29.9",
+            "v8.30.0-rc.1",
+            "v8.30.0+meta",
+        ] {
+            let config = format!("minVersion = '{satisfied}'\n");
+            let assembly = assemble_inline(&root, Some(&config));
+            assert!(!assembly.full.requires_newer_version(), "{satisfied}");
+            assert!(assembly.warnings.is_empty(), "{satisfied}");
+        }
+        for (required, expected) in [
+            (
+                "v8.30.1",
+                "config requires Gitleaks v8.30.1 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
+            ),
+            (
+                "v99.0.0",
+                "config requires Gitleaks v99.0.0 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
+            ),
+        ] {
+            let config = format!("minVersion = '{required}'\n");
+            let assembly = assemble_inline(&root, Some(&config));
+            assert!(assembly.full.requires_newer_version(), "{required}");
+            assert_eq!(assembly.warnings, [expected]);
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 

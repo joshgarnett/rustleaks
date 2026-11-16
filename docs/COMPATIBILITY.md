@@ -80,6 +80,13 @@ upstream names. Each such occurrence is compatibility data, not Rustleaks
 branding. The Rustleaks executable name, banner, project metadata, package
 names, and primary help text use the Rustleaks name.
 
+### Report tool name
+
+SARIF and JUnit reports name the tool `gitleaks`: the SARIF driver `name` and
+the JUnit `testsuite` `name`. The SARIF driver `semanticVersion` is the fixed
+value `v8.0.0`. These values stay the same so that existing SARIF consumers,
+such as GitHub code scanning, see the same tool name.
+
 ## Evidence
 
 The committed gates include:
@@ -130,13 +137,17 @@ checks the new text against the stated intent of the change before it becomes
 the expected text. This policy keeps the selected regression contracts and runs
 no new Go comparison; it makes no equivalence claim for unseen inputs.
 
-CLI replay derives the expected current build version from package metadata for
-only the three `CLI-BB-001` version outputs and the two `CLI-BB-007` embedded
-configuration warnings. It first validates their exact historical fields, then
-projects the version-dependent expectations without changing recorded output.
-All other fields remain exact unless a presentation disposition replaces them.
-The execution ledger identifies both historical and current build versions and
-marks these five expectations explicitly.
+CLI replay derives the expected current build version from package metadata
+only for the three `CLI-BB-001` version outputs. It first checks their exact
+historical fields, then expects the current build version. The two `CLI-BB-007`
+embedded configuration variants recorded a minimum version warning, because
+the historical build compared the config `minVersion` with its own crate
+version. Rustleaks now compares `minVersion` with the implemented Gitleaks
+version, 8.30.0, so the warning is not printed. The replay checks the exact
+historical warning, which is event 0, and then expects it to be absent. All
+other fields remain exact unless a presentation disposition replaces them. The
+execution ledger names the historical and current build versions and marks
+these five expectations explicitly.
 
 ## Presentation dispositions
 
@@ -175,6 +186,9 @@ and after the block stay pinned. The replay still compares exit status,
 findings, reports, error class, severity, child process cleanup and disclosure
 checks with the frozen evidence. A disposition for any of those functional
 fields is rejected, and a disposition that no replay uses fails the check.
+Message dispositions on the two `CLI-BB-007` embedded configuration variants
+use frozen event indices. Event 0 of those variants is the removed warning and
+takes no disposition.
 
 The replay computes the error class of an event from its message text with a
 keyword classifier, and its severity from the log level token. New wording

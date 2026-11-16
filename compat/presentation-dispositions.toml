@@ -8,7 +8,7 @@
 # Each [[presentation_disposition]] entry replaces one presentation field of
 # one corpus variant with the exact text the Rust CLI must now print:
 #
-#   id             unique identifier, for example "CLI-PRESENT-001"
+#   id             unique identifier, for example "PRES-CLI-0001"
 #   variant        corpus variant, "<case id>/<variant id>"
 #   field          "stdout" (help output only), "stderr_usage" or
 #                  "stderr_event_message"
@@ -46,3 +46,516 @@ behavior = "CLI-009"
 historical_status = "implemented-normalized-diagnostics"
 status = "narrowed"
 statement = "Stream routing, error class, severity and non-disclosure of inline configuration stay guaranteed. Diagnostic and error message wording is Rustleaks presentation and may change only through a reviewed presentation disposition with the exact new text."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0001"
+variant = "CLI-BB-001/root"
+field = "stdout"
+frozen_sha256 = "e10817928d97514364ad4d36eddf9c2f3ec08b453ab3858df8d328d468f7b043"
+expected = '''
+Rustleaks finds secrets in Git history, files, directories and standard
+input. It reads Gitleaks configuration, ignore and baseline files.
+
+Usage:
+  rustleaks <command> [flags]
+
+Commands:
+  git         Scan the commits of a Git repository.
+  dir         Scan a directory or a file. Other names: file, directory.
+  stdin       Scan text from standard input.
+  version     Print the Rustleaks version.
+  help        Print help for Rustleaks or for one command.
+  completion  Print a shell completion script.
+
+Configuration flags:
+  -c, --config <path>
+          Read the configuration from this file.
+          See "Configuration order" in 'rustleaks help'.
+      --enable-rule <ids>
+          Use only these rules. Separate rule IDs with commas.
+          You can repeat this flag.
+      --native-pack <id>
+          Add a built-in rule pack to the default configuration.
+          Packs: rustleaks-extra-v1, rustleaks-providers-v1 and
+          rustleaks-connections-v1. Repeat the flag to add more packs.
+          This works only with the default configuration.
+
+Suppression flags:
+  -b, --baseline-path <path>
+          Ignore findings that are already in this JSON report.
+  -i, --rustleaks-ignore-path <path>
+          Read ignore entries from this file or folder.
+          In a folder, Rustleaks reads .rustleaksignore and
+          .gitleaksignore. Default: ".", the current folder.
+          Ignore files in the scanned folder are always read.
+      --ignore-rustleaks-allow
+          Do not skip lines that have an allow comment.
+          Allow comments are rustleaks:allow and gitleaks:allow.
+
+Report flags:
+  -r, --report-path <path>
+          Write a report to this file.
+          Use "-" to write the report to standard output.
+  -f, --report-format <format>
+          Write the report in this format.
+          Formats: json, csv, junit, sarif and template.
+          Without this flag, the format comes from the file
+          extension of --report-path: .json, .csv or .sarif.
+      --report-template <path>
+          Use this template file for the report.
+          Also give --report-format template.
+      --exit-code <number>
+          Exit with this status when leaks are found.
+          Default: 1.
+      --redact[=<percent>]
+          Hide secrets in logs, verbose output and reports.
+          Without a value, hide the whole secret.
+          --redact=20 hides 20 percent. Always use "=" here.
+  -v, --verbose
+          Print each finding to standard output.
+      --no-color
+          Accepted for Gitleaks compatibility.
+          Rustleaks never prints color.
+
+Limit and decoding flags:
+      --max-target-megabytes <number>
+          Skip files that are larger than this many megabytes.
+          0 means no limit. Default: 0.
+      --max-decode-depth <number>
+          Decode encoded text up to this many levels deep.
+          0 turns decoding off. Default: 5.
+      --base64-mode <mode>
+          Choose how to find base64 text.
+          Modes: compatible and extended. Default: compatible.
+          compatible keeps the pinned Gitleaks behavior.
+          extended also finds URL-safe base64, base64 without
+          padding, and base64 of binary data.
+      --max-archive-depth <number>
+          Scan inside archives nested up to this many levels deep.
+          0 means archives are not opened. Default: 0.
+      --timeout <seconds>
+          Stop the scan after this many seconds.
+          0 means no time limit. Default: 0.
+      --complete-profile <path>
+          Scan with the limits in this profile file.
+          Rustleaks then reports whether the scan was complete.
+          The exit status is 2 when the scan was not complete.
+
+Logging flags:
+  -l, --log-level <level>
+          Show log messages at this level and above.
+          Levels: trace, debug, info, warn, error and fatal.
+          Default: info.
+      --no-banner
+          Do not print the banner.
+
+Other flags:
+  -h, --help
+          Print help.
+      --version
+          Print the Rustleaks version.
+
+Legacy flag names:
+  These Gitleaks names also work.
+      --gitleaks-ignore-path <path>
+          Same as --rustleaks-ignore-path.
+      --ignore-gitleaks-allow
+          Same as --ignore-rustleaks-allow.
+
+Configuration order:
+  Rustleaks uses the first configuration that it finds:
+    1. --config or -c
+    2. RUSTLEAKS_CONFIG, the path of a configuration file
+    3. RUSTLEAKS_CONFIG_TOML, the configuration text
+    4. GITLEAKS_CONFIG, then GITLEAKS_CONFIG_TOML (legacy names)
+    5. .rustleaks.toml in the scanned folder
+    6. .gitleaks.toml in the scanned folder (legacy name)
+  For stdin, the scanned folder is the current folder.
+  If it finds none, Rustleaks uses its built-in default configuration.
+
+Exit status:
+  0    No leaks were found.
+  1    Leaks were found, the scan stopped early, or an error occurred.
+       Use --exit-code to change the status for leaks.
+  2    The scan was not complete. Only with --complete-profile.
+  126  An unknown long flag, such as --nope, was given.
+
+Run 'rustleaks help <command>' for details.
+'''
+reason = "Rustleaks help lists every flag and command."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0002"
+variant = "CLI-BB-001/help"
+field = "stdout"
+frozen_sha256 = "e10817928d97514364ad4d36eddf9c2f3ec08b453ab3858df8d328d468f7b043"
+expected = '''
+Rustleaks finds secrets in Git history, files, directories and standard
+input. It reads Gitleaks configuration, ignore and baseline files.
+
+Usage:
+  rustleaks <command> [flags]
+
+Commands:
+  git         Scan the commits of a Git repository.
+  dir         Scan a directory or a file. Other names: file, directory.
+  stdin       Scan text from standard input.
+  version     Print the Rustleaks version.
+  help        Print help for Rustleaks or for one command.
+  completion  Print a shell completion script.
+
+Configuration flags:
+  -c, --config <path>
+          Read the configuration from this file.
+          See "Configuration order" in 'rustleaks help'.
+      --enable-rule <ids>
+          Use only these rules. Separate rule IDs with commas.
+          You can repeat this flag.
+      --native-pack <id>
+          Add a built-in rule pack to the default configuration.
+          Packs: rustleaks-extra-v1, rustleaks-providers-v1 and
+          rustleaks-connections-v1. Repeat the flag to add more packs.
+          This works only with the default configuration.
+
+Suppression flags:
+  -b, --baseline-path <path>
+          Ignore findings that are already in this JSON report.
+  -i, --rustleaks-ignore-path <path>
+          Read ignore entries from this file or folder.
+          In a folder, Rustleaks reads .rustleaksignore and
+          .gitleaksignore. Default: ".", the current folder.
+          Ignore files in the scanned folder are always read.
+      --ignore-rustleaks-allow
+          Do not skip lines that have an allow comment.
+          Allow comments are rustleaks:allow and gitleaks:allow.
+
+Report flags:
+  -r, --report-path <path>
+          Write a report to this file.
+          Use "-" to write the report to standard output.
+  -f, --report-format <format>
+          Write the report in this format.
+          Formats: json, csv, junit, sarif and template.
+          Without this flag, the format comes from the file
+          extension of --report-path: .json, .csv or .sarif.
+      --report-template <path>
+          Use this template file for the report.
+          Also give --report-format template.
+      --exit-code <number>
+          Exit with this status when leaks are found.
+          Default: 1.
+      --redact[=<percent>]
+          Hide secrets in logs, verbose output and reports.
+          Without a value, hide the whole secret.
+          --redact=20 hides 20 percent. Always use "=" here.
+  -v, --verbose
+          Print each finding to standard output.
+      --no-color
+          Accepted for Gitleaks compatibility.
+          Rustleaks never prints color.
+
+Limit and decoding flags:
+      --max-target-megabytes <number>
+          Skip files that are larger than this many megabytes.
+          0 means no limit. Default: 0.
+      --max-decode-depth <number>
+          Decode encoded text up to this many levels deep.
+          0 turns decoding off. Default: 5.
+      --base64-mode <mode>
+          Choose how to find base64 text.
+          Modes: compatible and extended. Default: compatible.
+          compatible keeps the pinned Gitleaks behavior.
+          extended also finds URL-safe base64, base64 without
+          padding, and base64 of binary data.
+      --max-archive-depth <number>
+          Scan inside archives nested up to this many levels deep.
+          0 means archives are not opened. Default: 0.
+      --timeout <seconds>
+          Stop the scan after this many seconds.
+          0 means no time limit. Default: 0.
+      --complete-profile <path>
+          Scan with the limits in this profile file.
+          Rustleaks then reports whether the scan was complete.
+          The exit status is 2 when the scan was not complete.
+
+Logging flags:
+  -l, --log-level <level>
+          Show log messages at this level and above.
+          Levels: trace, debug, info, warn, error and fatal.
+          Default: info.
+      --no-banner
+          Do not print the banner.
+
+Other flags:
+  -h, --help
+          Print help.
+      --version
+          Print the Rustleaks version.
+
+Legacy flag names:
+  These Gitleaks names also work.
+      --gitleaks-ignore-path <path>
+          Same as --rustleaks-ignore-path.
+      --ignore-gitleaks-allow
+          Same as --ignore-rustleaks-allow.
+
+Configuration order:
+  Rustleaks uses the first configuration that it finds:
+    1. --config or -c
+    2. RUSTLEAKS_CONFIG, the path of a configuration file
+    3. RUSTLEAKS_CONFIG_TOML, the configuration text
+    4. GITLEAKS_CONFIG, then GITLEAKS_CONFIG_TOML (legacy names)
+    5. .rustleaks.toml in the scanned folder
+    6. .gitleaks.toml in the scanned folder (legacy name)
+  For stdin, the scanned folder is the current folder.
+  If it finds none, Rustleaks uses its built-in default configuration.
+
+Exit status:
+  0    No leaks were found.
+  1    Leaks were found, the scan stopped early, or an error occurred.
+       Use --exit-code to change the status for leaks.
+  2    The scan was not complete. Only with --complete-profile.
+  126  An unknown long flag, such as --nope, was given.
+
+Run 'rustleaks help <command>' for details.
+'''
+reason = "Rustleaks help lists every flag and command."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0003"
+variant = "CLI-BB-003/surplus"
+field = "stderr_usage"
+frozen_sha256 = "f16a28e5df700b633b1bbab1c19285c445e2ff997c6cf0cc94e9e72e2310a875"
+expected = '''
+Usage:
+  rustleaks git [flags] [repository]
+
+Run 'rustleaks help git' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0004"
+variant = "CLI-BB-003/surplus"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "36c6c352fb0ceb8ef686e2bdc1653ca06f3229340cdf678bff2cd26d692440f1"
+expected = "Error: git accepts at most one repository path, but 2 were given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0005"
+variant = "CLI-BB-003/surplus"
+field = "stderr_event_message"
+event = 26
+frozen_sha256 = "70c813e8469626d26cfd0e2ea4c23e221ae4c36bbb5fa61f1f50cdf94798ec51"
+expected = "git accepts at most one repository path, but 2 were given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0006"
+variant = "CLI-BB-004/dir-surplus"
+field = "stderr_usage"
+frozen_sha256 = "c9054a13695b77ae32f7a2cb738a9f94d5656c7a44f568d432bdc96b1b716ab3"
+expected = '''
+Usage:
+  rustleaks dir [flags] [path]
+
+Run 'rustleaks help dir' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0007"
+variant = "CLI-BB-004/dir-surplus"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "36c6c352fb0ceb8ef686e2bdc1653ca06f3229340cdf678bff2cd26d692440f1"
+expected = "Error: dir accepts at most one path, but 2 were given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0008"
+variant = "CLI-BB-004/dir-surplus"
+field = "stderr_event_message"
+event = 23
+frozen_sha256 = "70c813e8469626d26cfd0e2ea4c23e221ae4c36bbb5fa61f1f50cdf94798ec51"
+expected = "dir accepts at most one path, but 2 were given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0009"
+variant = "CLI-BB-004/stdin-surplus"
+field = "stderr_usage"
+frozen_sha256 = "790cb8cb7111f3322ffb6c4eeac50df9ad3a6f623a2d3a2264f9acdd360f2cbd"
+expected = '''
+Usage:
+  rustleaks stdin [flags]
+
+Run 'rustleaks help stdin' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0010"
+variant = "CLI-BB-004/stdin-surplus"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "471ad7ec39eef3c0e6da3f584ca3f744625d7f8c2b362e273b7a9bf6700fe549"
+expected = "Error: stdin accepts no arguments, but 1 was given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0011"
+variant = "CLI-BB-004/stdin-surplus"
+field = "stderr_event_message"
+event = 22
+frozen_sha256 = "2c3f35b22546fa368e73ab907595609d3603de2928c0951421c89925a97a7038"
+expected = "stdin accepts no arguments, but 1 was given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0012"
+variant = "CLI-BB-018/following-positional"
+field = "stderr_usage"
+frozen_sha256 = "790cb8cb7111f3322ffb6c4eeac50df9ad3a6f623a2d3a2264f9acdd360f2cbd"
+expected = '''
+Usage:
+  rustleaks stdin [flags]
+
+Run 'rustleaks help stdin' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0013"
+variant = "CLI-BB-018/following-positional"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "471ad7ec39eef3c0e6da3f584ca3f744625d7f8c2b362e273b7a9bf6700fe549"
+expected = "Error: stdin accepts no arguments, but 1 was given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0014"
+variant = "CLI-BB-018/following-positional"
+field = "stderr_event_message"
+event = 22
+frozen_sha256 = "2c3f35b22546fa368e73ab907595609d3603de2928c0951421c89925a97a7038"
+expected = "stdin accepts no arguments, but 1 was given"
+reason = "The message names the command and the number of arguments."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0015"
+variant = "CLI-BB-019/outside-i32"
+field = "stderr_usage"
+frozen_sha256 = "790cb8cb7111f3322ffb6c4eeac50df9ad3a6f623a2d3a2264f9acdd360f2cbd"
+expected = '''
+Usage:
+  rustleaks stdin [flags]
+
+Run 'rustleaks help stdin' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0016"
+variant = "CLI-BB-019/outside-i32"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "07ac1ae772f42b9af4cb4d50e4430f3b6ccbefbe0493f8852cc29627ad808218"
+expected = "Error: the --exit-code argument \"2147483648\" is not a whole number from -2147483648 to 2147483647"
+reason = "The message says which whole numbers --exit-code accepts."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0017"
+variant = "CLI-BB-019/outside-i32"
+field = "stderr_event_message"
+event = 22
+frozen_sha256 = "8b62660f39dda4af501373d9a4211448672717e7ff3fb97a92681961a300d0cf"
+expected = "the --exit-code argument \"2147483648\" is not a whole number from -2147483648 to 2147483647"
+reason = "The message says which whole numbers --exit-code accepts."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0018"
+variant = "CLI-BB-032/unknown-long"
+field = "stderr_usage"
+frozen_sha256 = "790cb8cb7111f3322ffb6c4eeac50df9ad3a6f623a2d3a2264f9acdd360f2cbd"
+expected = '''
+Usage:
+  rustleaks stdin [flags]
+
+Run 'rustleaks help stdin' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0019"
+variant = "CLI-BB-032/unknown-short"
+field = "stderr_usage"
+frozen_sha256 = "790cb8cb7111f3322ffb6c4eeac50df9ad3a6f623a2d3a2264f9acdd360f2cbd"
+expected = '''
+Usage:
+  rustleaks stdin [flags]
+
+Run 'rustleaks help stdin' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0020"
+variant = "CLI-BB-032/bad-integer"
+field = "stderr_usage"
+frozen_sha256 = "790cb8cb7111f3322ffb6c4eeac50df9ad3a6f623a2d3a2264f9acdd360f2cbd"
+expected = '''
+Usage:
+  rustleaks stdin [flags]
+
+Run 'rustleaks help stdin' for details.
+'''
+reason = "The usage block is short and points to the command help."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0021"
+variant = "CLI-BB-032/bad-integer"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "72ead4860056233c86ee8cac124883421c28197fce910937fab56c1531bfd579"
+expected = "Error: the --exit-code argument \"nope\" is not a whole number from -2147483648 to 2147483647"
+reason = "The message says which whole numbers --exit-code accepts."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0022"
+variant = "CLI-BB-032/bad-integer"
+field = "stderr_event_message"
+event = 22
+frozen_sha256 = "a01309c9e157bf282398eb0b3fb04518f32af2e850a4b8743aac695a608aea7e"
+expected = "the --exit-code argument \"nope\" is not a whole number from -2147483648 to 2147483647"
+reason = "The message says which whole numbers --exit-code accepts."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0023"
+variant = "CLI-BB-032/unknown-command"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "301227de5c5b8de285404369e43b9c576429c5a47e7ad21152226528d6144b7e"
+expected = "Error: unknown command \"unknown\""
+reason = "The message no longer repeats the program name."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0024"
+variant = "CLI-BB-032/unknown-command"
+field = "stderr_event_message"
+event = 1
+frozen_sha256 = "bf44af6f9ac14d62a1df6fe44af8cb93f26f04578d35308e1ee84bf3a532a378"
+expected = "Run 'rustleaks help' to list the commands."
+reason = "The hint points to the help command."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0025"
+variant = "CLI-BB-032/unknown-command"
+field = "stderr_event_message"
+event = 2
+frozen_sha256 = "c9013a8b1ef886959aa382e4ed682397e21a5e0894292267395400f7b8297136"
+expected = "unknown command \"unknown\""
+reason = "The message no longer repeats the program name."

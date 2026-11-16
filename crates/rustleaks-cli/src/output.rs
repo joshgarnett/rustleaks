@@ -11,120 +11,16 @@ use rustleaks_report::{
     TemplateReporter,
 };
 
-use crate::args::{CommandKind, Options};
+use crate::args::Options;
 
-const GLOBAL_FLAGS_HEAD: &str = "  -b, --baseline-path string          path to baseline with issues that can be ignored
-  -c, --config string                 config file path
-                                      order of precedence:
-                                      1. --config/-c
-                                      2. env var RUSTLEAKS_CONFIG
-                                      3. env var RUSTLEAKS_CONFIG_TOML with the file content
-                                      4. legacy GITLEAKS_CONFIG or GITLEAKS_CONFIG_TOML
-                                      5. (target path)/.rustleaks.toml
-                                      6. legacy (target path)/.gitleaks.toml
-                                      Otherwise Rustleaks uses the embedded default config
-      --enable-rule strings           only enable specific rules by id
-      --exit-code int                 exit code when leaks have been encountered (default 1)
-  -i, --rustleaks-ignore-path string  path to .rustleaksignore file or folder containing one
-      --gitleaks-ignore-path string   backward-compatible alias for --rustleaks-ignore-path (default \".\")
-";
-const GLOBAL_FLAGS_TAIL: &str = "      --ignore-rustleaks-allow        ignore rustleaks:allow and backward-compatible gitleaks:allow comments
-      --ignore-gitleaks-allow         backward-compatible alias for --ignore-rustleaks-allow
-  -l, --log-level string              log level (trace, debug, info, warn, error, fatal) (default \"info\")
-      --max-archive-depth int         allow scanning into nested archives up to this depth (default \"0\", no archive traversal is done)
-      --max-decode-depth int          allow recursive decoding up to this depth (default 5)
-      --max-target-megabytes int      files larger than this will be skipped
-      --no-banner                     suppress banner
-      --no-color                      turn off color for verbose output
-      --redact uint[=100]             redact secrets from logs and stdout. To redact only parts of the secret just apply a percent value from 0..100. For example --redact=20 (default 100%)
-  -f, --report-format string          output format (json, csv, junit, sarif, template)
-  -r, --report-path string            report file (use \"-\" for stdout)
-      --report-template string        template file used to generate the report (implies --report-format=template)
-      --timeout int                   set a timeout for Rustleaks commands in seconds (default \"0\", no timeout is set)
-  -v, --verbose                       show verbose output from scan
-";
-const ROOT_HELP_PREFIX: &str = "Rustleaks scans code, past or present, for secrets
-
-Usage:
-  rustleaks [command]
-
-Available Commands:
-  dir         scan directories or files for secrets
-  git         scan git repositories for secrets
-  stdin       detect secrets from stdin
-  version     display Rustleaks version
-
-Flags:
-";
-const ROOT_HELP_SUFFIX: &str = "      --version                       version for rustleaks
-
-Use \"rustleaks [command] --help\" for more information about a command.
-";
 const BANNER: &str = "\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    rustleaks\n\n";
 const STDOUT_REPORT_BUFFER_BYTES: usize = 64 * 1024;
-
-pub(crate) fn root_help(writer: &mut dyn Write) -> io::Result<()> {
-    writer.write_all(ROOT_HELP_PREFIX.as_bytes())?;
-    writer.write_all(GLOBAL_FLAGS_HEAD.as_bytes())?;
-    writer.write_all(b"  -h, --help                          help for rustleaks\n")?;
-    writer.write_all(GLOBAL_FLAGS_TAIL.as_bytes())?;
-    writer.write_all(ROOT_HELP_SUFFIX.as_bytes())
-}
-
-pub(crate) fn command_help(command: CommandKind, writer: &mut dyn Write) -> io::Result<()> {
-    let (prefix, local) = match command {
-        CommandKind::Directory => (
-            "scan directories or files for secrets\n\nUsage:\n  rustleaks dir [flags] [path]\n\nAliases:\n  dir, file, directory\n\nFlags:\n",
-            "      --follow-symlinks   scan files that are symlinks to other files\n  -h, --help              help for dir\n",
-        ),
-        CommandKind::Git => (
-            "scan git repositories for secrets\n\nUsage:\n  rustleaks git [flags] [repo]\n\nFlags:\n",
-            "  -h, --help              help for git\n      --log-opts string   git log options\n      --platform string   the target platform used to generate links (github, gitlab)\n      --pre-commit        scan using git diff\n      --staged            scan staged commits (good for pre-commit)\n",
-        ),
-        CommandKind::Stdin => (
-            "detect secrets from stdin\n\nUsage:\n  rustleaks stdin [flags]\n\nFlags:\n",
-            "  -h, --help   help for stdin\n",
-        ),
-    };
-    writer.write_all(prefix.as_bytes())?;
-    writer.write_all(local.as_bytes())?;
-    writer.write_all(b"\nGlobal Flags:\n")?;
-    writer.write_all(GLOBAL_FLAGS_HEAD.as_bytes())?;
-    writer.write_all(GLOBAL_FLAGS_TAIL.as_bytes())
-}
-
-pub(crate) fn command_usage(command: CommandKind, writer: &mut dyn Write) -> io::Result<()> {
-    let (usage, local) = match command {
-        CommandKind::Directory => (
-            "Usage:\n  rustleaks dir [flags] [path]\n\nFlags:\n",
-            "      --follow-symlinks   scan files that are symlinks to other files\n  -h, --help              help for dir\n",
-        ),
-        CommandKind::Git => (
-            "Usage:\n  rustleaks git [flags] [repo]\n\nFlags:\n",
-            "  -h, --help              help for git\n      --log-opts string   git log options\n      --platform string   the target platform used to generate links (github, gitlab)\n      --pre-commit        scan using git diff\n      --staged            scan staged commits (good for pre-commit)\n",
-        ),
-        CommandKind::Stdin => (
-            "Usage:\n  rustleaks stdin [flags]\n\nFlags:\n",
-            "  -h, --help   help for stdin\n",
-        ),
-    };
-    writer.write_all(usage.as_bytes())?;
-    writer.write_all(local.as_bytes())?;
-    writer.write_all(b"\nGlobal Flags:\n")?;
-    writer.write_all(GLOBAL_FLAGS_HEAD.as_bytes())?;
-    writer.write_all(GLOBAL_FLAGS_TAIL.as_bytes())?;
-    writer.write_all(b"\n")
-}
 
 pub(crate) fn parse_error(
     writer: &mut dyn Write,
     message: impl std::fmt::Display,
 ) -> io::Result<()> {
     writer.write_all(terminal_line("Error: ", &message.to_string()).as_bytes())
-}
-
-pub(crate) fn root_usage_hint(writer: &mut dyn Write) -> io::Result<()> {
-    writeln!(writer, "Run 'rustleaks --help' for usage.")
 }
 
 pub(crate) fn banner(writer: &mut dyn Write) -> io::Result<()> {

@@ -91,6 +91,19 @@ Build and scan a directory with the authoritative Bazel CLI target:
 bazelisk run //crates/rustleaks-cli:rustleaks -- dir ./src --no-banner
 ```
 
+The built binary is `bazel-bin/crates/rustleaks-cli/rustleaks`.
+`rustleaks help` lists the commands and the shared flags. Each command page,
+such as `rustleaks help git`, lists the flags of that command too. Print the
+help for one command, or a shell completion script:
+
+```sh
+rustleaks help git
+rustleaks completion bash
+```
+
+`rustleaks help completion` shows how to install the script for bash, zsh,
+fish and PowerShell.
+
 Rustleaks uses `RUSTLEAKS_CONFIG`, `RUSTLEAKS_CONFIG_TOML`,
 `.rustleaks.toml`, `.rustleaksignore`, `rustleaks:allow`,
 `--rustleaks-ignore-path`, and `--ignore-rustleaks-allow` as native names.
