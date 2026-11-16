@@ -555,8 +555,13 @@ fn completion_scripts_offer_git_flags_only_for_git() {
 }
 
 /// Runs the bash completion function for `words`, the last word being the
-/// one under the cursor. Returns `None` when bash cannot run.
+/// one under the cursor. Returns `None` when bash cannot run. Windows hosts
+/// are skipped because `bash` there may be a WSL launcher without a usable
+/// shell.
 fn bash_completion(cwd: &Path, words: &[&str]) -> Option<Vec<String>> {
+    if cfg!(windows) {
+        return None;
+    }
     let quoted = words
         .iter()
         .map(|word| format!("'{word}'"))
@@ -592,6 +597,10 @@ fn bash_completion(cwd: &Path, words: &[&str]) -> Option<Vec<String>> {
 fn check_shell_syntax(shell: &str, cwd: &Path, script: &str) {
     let path = cwd.join(format!("rustleaks.{shell}"));
     fs::write(&path, script).unwrap();
+    // `bash` on Windows hosts may be a WSL launcher without a usable shell.
+    if cfg!(windows) {
+        return;
+    }
     let Ok(result) = Command::new(shell).arg("-n").arg(&path).output() else {
         return;
     };
