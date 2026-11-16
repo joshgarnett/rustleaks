@@ -2,9 +2,17 @@
 
 ## Repository contract
 
-Rustleaks is an engine-first Rust port of selected behavior from one pinned
-Gitleaks revision. Keep `rustleaks-core` independent of files, archives, Git,
-reports, the CLI, async runtimes, and native libraries. Source adapters belong
+Rustleaks is an independent, engine-first secret scanner in Rust. It stays
+backward compatible with one pinned Gitleaks revision, as defined in [the
+compatibility policy](docs/COMPATIBILITY.md#compatibility-policy).
+Configuration meaning, findings, fingerprints, ignores, baselines, allow
+comments, exit codes, report fields, and supported Gitleaks commands, flags,
+environment variables and file names do not change. Help, usage, error wording,
+logs, the banner, and JSON key or CSV column order are presentation that
+Rustleaks owns.
+
+Keep `rustleaks-core` independent of files, archives, Git, reports, the CLI,
+async runtimes, and native libraries. Source adapters belong
 in `rustleaks-sources`, formatting in `rustleaks-report`, orchestration in
 `rustleaks-cli`, and unpublished regression or maintenance code in
 `rustleaks-compat` or `xtask`. Owned codec crates are source implementation
@@ -53,14 +61,21 @@ native evidence.
 
 ## Invariants
 
-- Preserve supported configuration and detection behavior, byte findings,
-  exact spans, structured errors, and the mappings in
-  `compat/test-manifest.toml`. Historical Go observations are frozen provenance;
-  validate current behavior with Rust regression tests and local evidence
-  checks. Specify new expectations independently of the implementation under
-  test. Never normalize away a semantic difference or bless current output as
-  an expected baseline. The live Go oracle and automatic upstream rediscovery
-  are retired.
+- Keep configuration meaning, findings, exact spans, fingerprints, exit codes,
+  report fields, error classes, and the mappings in
+  `compat/test-manifest.toml` unchanged. Error classes include the structured
+  error kinds of the `rustleaks-core` library, such as `ConfigError` kinds.
+  Historical Go observations are frozen provenance; validate current behavior
+  with Rust regression tests and local evidence checks. Specify new
+  expectations for these functional fields independently of the implementation
+  under test. Never hide a functional difference with normalization. Never use
+  current output as the expected value for these fields. The live Go oracle
+  and automatic upstream rediscovery are retired.
+- Presentation (help, usage, error wording, logs, banner, summaries, and JSON
+  key or CSV column order) may change. Each change needs an updated
+  expectation that a reviewer checks against its stated intent. When the
+  change replaces frozen CLI evidence, record it as a presentation disposition
+  in `compat/presentation-dispositions.toml`.
 - Keep detection synchronous, in-memory, `Send + Sync`, and free of implicit
   file, environment, log, thread, async-runtime, or process-global behavior.
   Keep C and C++ build steps and dependency implementation types out of the
@@ -74,8 +89,9 @@ native evidence.
   `docs/RESOURCE_LIMITS.md`, and `docs/DEPENDENCY_SAFETY.md` when their
   boundaries change.
 - Write concise factual prose. Do not include marketing claims, em dashes,
-  emojis, private context, goal history, or unsupported compatibility,
-  security, performance, platform, or readiness claims.
+  emojis, private context, change history outside `CHANGELOG.md`, or
+  unsupported compatibility, security, performance, platform, or readiness
+  claims.
 
 Use the matching repository skill for upstream synchronization, parity audit,
 rule maintenance, build maintenance, release work, or security audit. Those
@@ -119,6 +135,10 @@ self-approval for a sole-maintainer pull request.
 Stop for maintainer approval before adding or updating dependencies,
 toolchains, `rules_rust`, the Gitleaks pin, or copied default configuration;
 changing GitHub settings or ownership; enabling paid services; accepting a
-security or compatibility exception; selecting a release version; creating or
-publishing a release or crate; or using a credential. A local dry run does not
-authorize publication.
+security exception, or changing a functional compatibility guarantee
+(configuration meaning, findings, fingerprints, report fields, exit codes, or
+accepted Gitleaks commands, flags, environment variables and file names);
+selecting a release version; creating or publishing a release or crate; or
+using a credential. A local dry run does not authorize publication. Changes to
+help, usage, error wording, log, banner and summary lines, and JSON key and CSV
+column order need review but not maintainer approval.

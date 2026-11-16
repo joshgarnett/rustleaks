@@ -67,11 +67,14 @@ order when applicable.
 For Rust, inspect relevant ownership and lifetime assumptions, unnecessary
 cloning, panic and ignored-result paths, integer and path handling, platform
 assumptions, cancellation and resource budgets, `Send + Sync`, and the owned
-crates' unsafe prohibition. Preserve exact bytes, findings, spans, errors, and
-the synchronous in-memory core boundary. For Bazel, inspect target boundaries,
-visibility, direct dependencies, hermeticity, feature representation,
-generated artifacts, and nearby BUILD conventions. Apply the matching
-Rustleaks maintenance skill when the change crosses its specialized boundary.
+crates' unsafe prohibition. Preserve findings, spans, fingerprints, error
+classes, exit codes, report fields, and the synchronous in-memory core
+boundary. Check that each change to help, usage, error wording, or log text has
+an updated expectation that matches its stated intent. For Bazel, inspect
+target boundaries, visibility, direct dependencies, hermeticity, feature
+representation, generated artifacts, and nearby BUILD conventions. Apply the
+matching Rustleaks maintenance skill when the change crosses its specialized
+boundary.
 
 Verify suspected defects against surrounding code and existing tests when
 practical. Run focused targets such as

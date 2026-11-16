@@ -12,8 +12,14 @@
 
 ## Compatibility and security
 
-<!-- Describe impact on the pinned profile, findings, spans, sensitive data,
-dependencies, unsafe code, resource limits, or write "No impact" with a reason. -->
+<!-- Describe functional compatibility impact (configuration meaning, findings,
+spans, fingerprints, report fields, exit codes, supported commands and flags),
+sensitive data, dependencies, unsafe code, resource limits, or write
+"No impact" with a reason.
+
+List presentation changes (help, usage, error wording, log or banner text,
+JSON key or CSV column order) with their presentation dispositions or
+comparison changes, or write "None". -->
 
 ## Issues
 

@@ -1,11 +1,11 @@
 name: Compatibility gap
-description: Report a difference between Rustleaks and the pinned Gitleaks compatibility profile.
+description: Report a functional difference between Rustleaks and the pinned Gitleaks revision.
 title: "compat: "
 body:
   - type: markdown
     attributes:
       value: |
-        The accepted profile is documented in docs/COMPATIBILITY.md. Do not include live credentials or private vulnerability details.
+        The compatibility policy is documented in docs/COMPATIBILITY.md. Use this form for functional differences, such as findings, spans, fingerprints, report fields, configuration meaning, or exit codes. A difference only in help, usage, error wording, or log text is not a compatibility gap; use the defect or feature form. Do not include live credentials or private vulnerability details.
   - type: dropdown
     id: domain
     attributes:
@@ -47,7 +47,7 @@ body:
     id: outcomes
     attributes:
       label: Compared outcomes
-      description: Record the exact redacted Go and Rust outcomes, including spans, locations, ordering, errors, or exit status that differ.
+      description: Record the redacted Gitleaks and Rustleaks functional outcomes that differ, such as findings, spans, locations, fingerprints, report fields, error class, or exit status.
     validations:
       required: true
   - type: textarea

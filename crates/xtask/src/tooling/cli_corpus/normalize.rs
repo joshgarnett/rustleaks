@@ -1,5 +1,6 @@
 //! Host-independent stdout, stderr-event, usage, and finding normalization.
 
+use std::ops::Range;
 use std::path::Path;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -14,7 +15,47 @@ pub(super) struct Event {
     pub(super) message: Vec<u8>,
 }
 
-pub(super) fn normalize_bytes(bytes: &[u8], root: &Path, executable_names: &[&str]) -> Vec<u8> {
+/// Selects how executable names are spelled in normalized output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Spelling {
+    /// Rewrites Rustleaks names to the historical `gitleaks` spelling. This is
+    /// used only to compare observations with the frozen corpus.
+    Legacy,
+    /// Keeps the `rustleaks` spelling that the CLI prints. This is used for
+    /// reviewed presentation text.
+    Native,
+}
+
+impl Spelling {
+    fn names(self, executable: &str) -> Vec<&str> {
+        match self {
+            Self::Legacy => vec![executable, "rustleaks", "gitleaks"],
+            Self::Native => vec![executable, "rustleaks"],
+        }
+    }
+
+    fn target(self) -> &'static str {
+        match self {
+            Self::Legacy => "gitleaks",
+            Self::Native => "rustleaks",
+        }
+    }
+}
+
+/// Native message text and usage block position for legacy stderr events.
+pub(super) struct NativeStderr {
+    /// Native message for each legacy stderr event, in the same order.
+    pub(super) messages: Vec<Vec<u8>>,
+    /// Legacy stderr events produced by the first usage block.
+    pub(super) usage_events: Option<Range<usize>>,
+}
+
+pub(super) fn normalize_bytes(
+    bytes: &[u8],
+    root: &Path,
+    executable: &str,
+    spelling: Spelling,
+) -> Vec<u8> {
     let mut value = bytes.to_vec();
     let root_bytes = root.to_string_lossy();
     if cfg!(target_os = "macos") && root_bytes.starts_with("/var/") {
@@ -24,25 +65,69 @@ pub(super) fn normalize_bytes(bytes: &[u8], root: &Path, executable_names: &[&st
     if cfg!(windows) {
         value = replace(&value, b"<TMP>\\", b"<TMP>/");
     }
-    let mut names = executable_names.to_vec();
+    let target = spelling.target().as_bytes();
+    let mut capitalized_target = target.to_vec();
+    capitalized_target[0].make_ascii_uppercase();
+    let mut names = spelling.names(executable);
     names.sort_by_key(|name| std::cmp::Reverse(name.len()));
     for name in names {
-        value = replace(&value, name.as_bytes(), b"gitleaks");
+        value = replace(&value, name.as_bytes(), target);
         let mut capitalized = name.as_bytes().to_vec();
         if let Some(first) = capitalized.first_mut() {
             first.make_ascii_uppercase();
         }
-        value = replace(&value, &capitalized, b"Gitleaks");
+        value = replace(&value, &capitalized, &capitalized_target);
     }
     strip_ansi(&value)
 }
 
-pub(super) fn events(bytes: &[u8], root: &Path, names: &[&str]) -> Vec<Event> {
-    let normalized = normalize_bytes(bytes, root, names);
+pub(super) fn events(bytes: &[u8], root: &Path, executable: &str) -> Vec<Event> {
+    let normalized = normalize_bytes(bytes, root, executable, Spelling::Legacy);
     let text = String::from_utf8_lossy(&normalized);
+    let lines = text.lines().collect::<Vec<_>>();
+    let (indices, _) = event_lines(&lines);
+    indices
+        .into_iter()
+        .map(|index| event_for(lines[index].trim()))
+        .collect()
+}
+
+/// Returns native messages aligned with [`events`].
+///
+/// Line selection and usage detection use the legacy text so that indices
+/// match the legacy events exactly. Message text comes from the native text.
+pub(super) fn native_stderr(
+    bytes: &[u8],
+    root: &Path,
+    executable: &str,
+) -> Result<NativeStderr, String> {
+    let legacy = normalize_bytes(bytes, root, executable, Spelling::Legacy);
+    let native = normalize_bytes(bytes, root, executable, Spelling::Native);
+    let legacy = String::from_utf8_lossy(&legacy);
+    let native = String::from_utf8_lossy(&native);
+    let legacy = legacy.lines().collect::<Vec<_>>();
+    let native = native.lines().collect::<Vec<_>>();
+    if legacy.len() != native.len() {
+        return Err("native and legacy stderr line counts differ".into());
+    }
+    let (indices, usage_events) = event_lines(&legacy);
+    Ok(NativeStderr {
+        messages: indices
+            .into_iter()
+            .map(|index| event_for(native[index].trim()).message)
+            .collect(),
+        usage_events,
+    })
+}
+
+/// Selects the lines that become stderr events and the event range of the
+/// first usage block.
+fn event_lines(lines: &[&str]) -> (Vec<usize>, Option<Range<usize>>) {
     let mut in_usage = false;
     let mut result = Vec::new();
-    for line in text.lines() {
+    let mut usage: Option<Range<usize>> = None;
+    let mut usage_closed = false;
+    for (index, line) in lines.iter().enumerate() {
         let stripped = line.trim();
         if stripped.is_empty() {
             continue;
@@ -56,13 +141,24 @@ pub(super) fn events(bytes: &[u8], root: &Path, names: &[&str]) -> Vec<Event> {
         if in_usage && versioned_usage_line(stripped) {
             continue;
         }
-        result.push(event_for(stripped));
+        if in_usage && !usage_closed {
+            let start = usage.as_ref().map_or(result.len(), |range| range.start);
+            usage = Some(start..result.len() + 1);
+        } else if !in_usage && usage.is_some() {
+            usage_closed = true;
+        }
+        result.push(index);
     }
-    result
+    (result, usage)
 }
 
-pub(super) fn usage(bytes: &[u8], root: &Path, names: &[&str]) -> Option<Vec<u8>> {
-    let normalized = normalize_bytes(bytes, root, names);
+pub(super) fn usage(
+    bytes: &[u8],
+    root: &Path,
+    executable: &str,
+    spelling: Spelling,
+) -> Option<Vec<u8>> {
+    let normalized = normalize_bytes(bytes, root, executable, spelling);
     let text = String::from_utf8_lossy(&normalized);
     let lines = text.lines().collect::<Vec<_>>();
     let start = lines.iter().position(|line| line.trim() == "Usage:")?;
@@ -72,15 +168,19 @@ pub(super) fn usage(bytes: &[u8], root: &Path, names: &[&str]) -> Option<Vec<u8>
         if !kept.is_empty() && rendered_log_line(stripped) {
             break;
         }
-        if !versioned_usage_line(stripped) {
+        // The legacy projection drops lines that differed across historical
+        // releases. Native text keeps every line.
+        if spelling == Spelling::Native || !versioned_usage_line(stripped) {
             kept.push(*line);
         }
     }
-    let mut value = kept
-        .join("\n")
-        .trim_end()
-        .replace("Gitleaks", "gitleaks")
-        .into_bytes();
+    let joined = kept.join("\n");
+    let trimmed = joined.trim_end();
+    let mut value = match spelling {
+        Spelling::Legacy => trimmed.replace("Gitleaks", "gitleaks"),
+        Spelling::Native => trimmed.to_owned(),
+    }
+    .into_bytes();
     value.push(b'\n');
     Some(value)
 }
@@ -518,7 +618,7 @@ fn unescape_html_json(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::event_for;
+    use super::*;
 
     #[test]
     fn windows_fatal_stat_operations_are_config_selection_errors() {
@@ -577,5 +677,52 @@ mod tests {
             remote.message,
             b"skipping finding links: unable to parse remote URL error=\"command failed (-1): signal: killed, stderr: \""
         );
+    }
+
+    #[test]
+    fn native_spelling_keeps_rustleaks_and_legacy_spelling_is_unchanged() {
+        let root = Path::new("/synthetic-root");
+        let output = b"rustleaks.exe scan\nRustleaks help for rustleaks; see .gitleaksignore\n";
+        assert_eq!(
+            normalize_bytes(output, root, "rustleaks.exe", Spelling::Legacy),
+            b"gitleaks scan\nGitleaks help for gitleaks; see .gitleaksignore\n"
+        );
+        assert_eq!(
+            normalize_bytes(output, root, "rustleaks.exe", Spelling::Native),
+            b"rustleaks scan\nRustleaks help for rustleaks; see .gitleaksignore\n"
+        );
+        assert_eq!(
+            normalize_bytes(
+                b"/synthetic-root/a gitleaks",
+                root,
+                "rustleaks",
+                Spelling::Native
+            ),
+            b"<TMP>/a gitleaks"
+        );
+    }
+
+    #[test]
+    fn native_stderr_aligns_with_legacy_events_and_usage() {
+        let root = Path::new("/synthetic-root");
+        let stderr = b"Error: accepts at most 1 arg(s), received 2\nUsage:\n  rustleaks git [flags]\n\nFlags:\n  -h, --help   help for git\n  completion   Generate the autocompletion script\nFTL accepts at most 1 arg(s), received 2\n";
+        let events = events(stderr, root, "rustleaks");
+        let native = native_stderr(stderr, root, "rustleaks").unwrap();
+        assert_eq!(events.len(), 6);
+        assert_eq!(native.messages.len(), events.len());
+        assert_eq!(native.usage_events, Some(1..5));
+        assert_eq!(events[2].message, b"gitleaks git [flags]");
+        assert_eq!(native.messages[2], b"rustleaks git [flags]");
+        assert_eq!(events[5].severity, "fatal");
+        assert_eq!(
+            usage(stderr, root, "rustleaks", Spelling::Legacy).unwrap(),
+            b"Usage:\n  gitleaks git [flags]\n\nFlags:\n  -h, --help   help for git\n"
+        );
+        assert_eq!(
+            usage(stderr, root, "rustleaks", Spelling::Native).unwrap(),
+            b"Usage:\n  rustleaks git [flags]\n\nFlags:\n  -h, --help   help for git\n  completion   Generate the autocompletion script\n"
+        );
+        let plain = native_stderr(b"WRN no usage here\n", root, "rustleaks").unwrap();
+        assert_eq!(plain.usage_events, None);
     }
 }

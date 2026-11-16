@@ -37,9 +37,11 @@ modes, symlinks and licenses. Keep old generator hashes as historical facts,
 not requirements that deleted generator code still exists.
 
 Classify every difference as exact behavior, a named safe Rust disposition,
-an explicitly approved profile exclusion, or a defect. No normalization may
-conceal semantic differences. Add direct Rust tests and material negative
-controls for the adopted behavior and its exact bytes, spans and errors.
+an explicitly approved profile exclusion, a presentation change, or a defect.
+Rustleaks does not need to adopt upstream presentation changes. No
+normalization may conceal functional differences. Add direct Rust tests and
+material negative controls for the adopted behavior and its exact findings,
+spans, and error classes.
 
 ## Validate
 

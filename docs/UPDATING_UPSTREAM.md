@@ -24,8 +24,16 @@ that current Rust replay verifies a different upstream revision.
    licenses and NOTICE attribution. Use reviewed deterministic tooling for
    generated changes; do not hand-edit historical outcomes or inventories.
 5. Classify every behavior difference as exact supported behavior, a named safe
-   Rust disposition, an approved profile exclusion, or a defect. Retain explicit
-   executable tests and negative controls; do not normalize away differences.
+   Rust disposition, an approved profile exclusion, a presentation change, or a
+   defect. A presentation change affects only help, usage, error wording, log,
+   banner or summary text, or JSON key or CSV column order. It needs a reviewed
+   test expectation and, for frozen CLI evidence, a presentation disposition,
+   but not maintainer approval. A key or column order change first needs a
+   reviewed change to the report and findings comparisons so that they compare
+   parsed fields. Rustleaks does not need to adopt upstream
+   presentation changes. The other classes apply to functional behavior.
+   Retain explicit executable tests and negative controls; do not normalize away
+   functional differences.
 6. Run `cargo xtask regression-check`, `just ci`, `just security`, and complete
    `cargo xtask qualify` from a clean, committed candidate. Qualification covers
    package/external consumers, Miri, fuzz and performance checks. Refresh the

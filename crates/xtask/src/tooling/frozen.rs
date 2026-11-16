@@ -27,6 +27,7 @@ const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258a
 
 pub(crate) fn check_frozen_evidence(root: &Path) -> Result<(), String> {
     verify_tree(root, manifest::ARTIFACTS, manifest::DIRECTORIES)?;
+    super::presentation::check_ledger(root)?;
     super::fixtures::verify_fixtures(root)?;
     super::inventory::check_inventory(root, &root.join("compat/test-manifest.toml"))?;
     super::traceability::api::self_test_api_dispositions(

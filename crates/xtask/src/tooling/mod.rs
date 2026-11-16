@@ -16,6 +16,7 @@ mod git_corpus;
 mod inventory;
 mod native_assets;
 mod native_coverage_assets;
+mod presentation;
 mod provider_byte_entropy_assets;
 mod provider_followup_assets;
 mod report;

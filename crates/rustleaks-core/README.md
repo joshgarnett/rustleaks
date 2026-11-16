@@ -1,10 +1,10 @@
 # rustleaks-core
 
 `rustleaks-core` is the byte-first synchronous configuration and detection
-engine for the independent `rustleaks` port.
+engine for the independent `rustleaks` secret scanner.
 
-The compatibility profile targets one pinned Gitleaks revision. References to
-Gitleaks in config fields, `.gitleaksignore`, and copied assets are retained
+Rustleaks is backward compatible with one pinned Gitleaks revision. References
+to Gitleaks in config fields, `.gitleaksignore`, and copied assets are retained
 only for backward compatibility and attribution. Rustleaks is independent and
 is not affiliated with or endorsed by the upstream project.
 

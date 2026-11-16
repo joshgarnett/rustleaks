@@ -1,0 +1,48 @@
+# Reviewed presentation changes for the frozen CLI corpus replay.
+#
+# The files in compat/cli-corpus are frozen historical evidence. The replay
+# compares every Rust CLI observation with them exactly. Help text, parser
+# usage text and diagnostic message wording are Rustleaks presentation, so a
+# reviewed change to that text is recorded here instead of editing the corpus.
+#
+# Each [[presentation_disposition]] entry replaces one presentation field of
+# one corpus variant with the exact text the Rust CLI must now print:
+#
+#   id             unique identifier, for example "CLI-PRESENT-001"
+#   variant        corpus variant, "<case id>/<variant id>"
+#   field          "stdout" (help output only), "stderr_usage" or
+#                  "stderr_event_message"
+#   event          zero-based frozen stderr event index, only for
+#                  "stderr_event_message"
+#   frozen_sha256  SHA-256 of the frozen text being replaced
+#   expected       exact new normalized text, spelled with "rustleaks"
+#   reason         why the text changed
+#
+# A "stderr_usage" entry replaces the whole usage block, including the stderr
+# events produced by its lines. Exit status, findings, reports, error class,
+# severity, child cleanup and disclosure checks stay exact for every variant.
+# An entry fails the check when the CLI output differs from its expected text,
+# when the output it replaces still matches the frozen corpus, or when the
+# replay does not use it.
+#
+# Each [[behavior_supersession]] entry records how a guarantee in the frozen
+# compat/behavior-matrix.toml changed. The matrix itself stays unchanged.
+#
+#   behavior           behavior matrix ID
+#   historical_status  status recorded in the behavior matrix
+#   status             "superseded" or "narrowed"
+#   statement          what is still guaranteed and what is not
+
+schema_version = 1
+
+[[behavior_supersession]]
+behavior = "CLI-DEFER-001"
+historical_status = "explicit-cli-polish-follow-up"
+status = "superseded"
+statement = "Help text and parser usage bytes are Rustleaks presentation and are not pinned to the frozen bytes. A change to them needs a reviewed presentation disposition with the exact new text. Command and flag acceptance stays a functional guarantee."
+
+[[behavior_supersession]]
+behavior = "CLI-009"
+historical_status = "implemented-normalized-diagnostics"
+status = "narrowed"
+statement = "Stream routing, error class, severity and non-disclosure of inline configuration stay guaranteed. Diagnostic and error message wording is Rustleaks presentation and may change only through a reviewed presentation disposition with the exact new text."
