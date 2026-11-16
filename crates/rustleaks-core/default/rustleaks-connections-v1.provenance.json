@@ -2058,6 +2058,38 @@
       "source_id": "betterleaks.generic-credential-uri",
       "source_pattern": "(?i)\\b(?P<uri>(?P<scheme>https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|rediss?|amqps?|ldaps?|smtps?|ftps?|ssh)://(?P<username>[^:/@\\s'\"\\x60]{0,128}):(?P<password>[^/@\\s'\"\\x60]{1,256})@(?P<host>(?:\\[[0-9a-f:.%]+\\]|[a-z0-9][a-z0-9._-]{0,252}))(?::[0-9]{1,5})?(?:,(?:\\[[0-9a-f:.%]+\\]|[a-z0-9][a-z0-9._-]{0,252})(?::[0-9]{1,5})?)*(?:[/?][a-z0-9._~!$&(*+,;=:@%/?-]*)?)(?:[\\s'\"\\x60#<>{}\\[\\],;)]|\\\\[nr]|$)",
       "validation_and_revocation_not_imported": true
+    },
+    {
+      "id": "rustleaks.connection-string.password.libpq-quoted",
+      "intentional_native_selection": {
+        "allowlists": "Native inherited globals and conventional rule-local password placeholder stopwords remain active.",
+        "boundary": "Zero-width Go ASCII word boundary before host/hostaddr; punctuation and non-ASCII surrounding bytes can precede the match. Terminating whitespace is consumed without hiding a subsequent host boundary.",
+        "capture": "Explicit group 1; quotes excluded, backslash and percent escapes retained.",
+        "domain": "Same-line ASCII host/hostaddr followed by up to seven simple recognized properties and a lowercase password key; quoted or unquoted values of 1..128 literal/escape units; source spelling retained.",
+        "limits": "Host/intermediate values 1..128 ASCII bytes; password units are one printable ASCII byte or backslash plus printable ASCII byte. Host and intermediate values exclude quoting and escapes."
+      },
+      "native_id": "rustleaks.connection-string.password.libpq-quoted",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-16",
+        "syntax_reference": "https://www.postgresql.org/docs/18/libpq-connect.html#LIBPQ-CONNSTRING"
+      }
+    },
+    {
+      "id": "rustleaks.connection-string.password.libpq-unquoted",
+      "intentional_native_selection": {
+        "allowlists": "Native inherited globals and conventional rule-local password placeholder stopwords remain active.",
+        "boundary": "Zero-width Go ASCII word boundary before host/hostaddr; punctuation and non-ASCII surrounding bytes can precede the match. Terminating whitespace is consumed without hiding a subsequent host boundary.",
+        "capture": "Explicit group 1; quotes excluded, backslash and percent escapes retained.",
+        "domain": "Same-line ASCII host/hostaddr followed by up to seven simple recognized properties and a lowercase password key; quoted or unquoted values of 1..128 literal/escape units; source spelling retained.",
+        "limits": "Host/intermediate values 1..128 ASCII bytes; password units are one printable ASCII byte or backslash plus printable ASCII byte. Host and intermediate values exclude quoting and escapes."
+      },
+      "native_id": "rustleaks.connection-string.password.libpq-unquoted",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-16",
+        "syntax_reference": "https://www.postgresql.org/docs/18/libpq-connect.html#LIBPQ-CONNSTRING"
+      }
     }
   ],
   "schema_version": 1,

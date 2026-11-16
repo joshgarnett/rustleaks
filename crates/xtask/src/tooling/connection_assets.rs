@@ -212,7 +212,7 @@ fn validate_contents(
     let origins = provenance["rules"]
         .as_array()
         .ok_or("connection provenance has no rules")?;
-    if rules.len() != REVIEWED.len() + 7 || origins.len() != REVIEWED.len() + 7 {
+    if rules.len() != REVIEWED.len() + 9 || origins.len() != REVIEWED.len() + 9 {
         return Err("connection rule inventory differs".into());
     }
     for ((rule, origin), reviewed) in rules.iter().zip(origins).zip(&REVIEWED) {

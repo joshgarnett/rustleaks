@@ -391,3 +391,25 @@ regexes = ["(?:(?i)^[a-z][a-z0-9+.-]*://[^@\\s]+@(?:(?:[a-z0-9_-]+\\.)*example(?
 description = "Original URI mechanically non-literal password rejection"
 regexTarget = "secret"
 regexes = ["(?:^\\*+$)", "(?:^\\.+$)", "(?:(?i)^x{4,}$)", "(?:^•+$)", "(?:(?i)^\\[?(?:redacted|masked|filtered)\\]?$)", "(?:^\\$\\{.*}$)", "(?:^\\$\\([^\\r\\n]+\\)$)", "(?:^#\\{[^}\\r\\n]+}$)", "(?:^\\{\\{[ \\t]*.+[ \\t]*}}$)", "(?:^%\\{[^}]+}$)", "(?:^\\$[A-Za-z_][A-Za-z0-9_]*$)", "(?:(?i)^\\$env:[A-Za-z_][A-Za-z0-9_]*$)", "(?:^%[A-Za-z_][A-Za-z0-9_]*%$)", "(?:^<[^>]+>$)", "(?:^\\[[A-Za-z_][A-Za-z0-9_.-]*]$)", "(?:^\\{[^}]+}$)", "(?:(?:\\$\\{|#\\{|\\{\\{|%\\{))"]
+
+[[rules]]
+id = "rustleaks.connection-string.password.libpq-quoted"
+description = "ASCII libpq keyword password (quoted)"
+regex = "(?m)\\b(?:host|hostaddr)[ \\t]*=[ \\t]*[A-Za-z0-9._:/-]{1,128}(?:[ \\t]+(?:user|dbname|port|sslmode|application_name|connect_timeout)[ \\t]*=[ \\t]*[A-Za-z0-9._:/-]{1,128}){0,7}[ \\t]+password[ \\t]*=[ \\t]*'((?:[\\x20-\\x26\\x28-\\x5b\\x5d-\\x7e]|\\\\[\\x20-\\x7e]){1,128})'(?:[ \\t]|\\r?$)"
+secretGroup = 1
+keywords = ["password"]
+[[rules.allowlists]]
+description = "Conventional password placeholders"
+regexTarget = "secret"
+stopwords = ["${", "$(", "#{", "{{", "$env:", "redacted", "masked", "filtered", "****", "xxxx", "placeholder", "your_password", "yourpassword", "your-password", "your password", "insert_password", "replace_password", "changeme", "change_me", "change-me", "change.me", "change me", "replaceme", "replace_me", "replace-me", "replace.me", "replace me"]
+
+[[rules]]
+id = "rustleaks.connection-string.password.libpq-unquoted"
+description = "ASCII libpq keyword password (unquoted)"
+regex = "(?m)\\b(?:host|hostaddr)[ \\t]*=[ \\t]*[A-Za-z0-9._:/-]{1,128}(?:[ \\t]+(?:user|dbname|port|sslmode|application_name|connect_timeout)[ \\t]*=[ \\t]*[A-Za-z0-9._:/-]{1,128}){0,7}[ \\t]+password[ \\t]*=[ \\t]*((?:[\\x21\\x23-\\x26\\x28-\\x5b\\x5d-\\x7e]|\\\\[\\x20-\\x7e]){1,128})(?:[ \\t]|\\r?$)"
+secretGroup = 1
+keywords = ["password"]
+[[rules.allowlists]]
+description = "Conventional password placeholders"
+regexTarget = "secret"
+stopwords = ["${", "$(", "#{", "{{", "$env:", "redacted", "masked", "filtered", "****", "xxxx", "placeholder", "your_password", "yourpassword", "your-password", "your password", "insert_password", "replace_password", "changeme", "change_me", "change-me", "change.me", "change me", "replaceme", "replace_me", "replace-me", "replace.me", "replace me"]

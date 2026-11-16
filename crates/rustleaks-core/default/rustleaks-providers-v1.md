@@ -357,7 +357,7 @@ and additional alerts for already detected credentials. Ordinary Monday JWT
 and Grafana forms can also gain provider attribution without a new occurrence.
 Independent tests compare against an explicit 440-rule prior composition and
 retain existing specific findings. The format and special-case suites retain their historical 476-rule composition.
-The complete composition now contains 537 rules, including 32 hidden helpers.
+The complete composition now contains 539 rules, including 32 hidden helpers.
 The association suite retains its historical 534-rule composition.
 
 GitLab incoming-mail token length and HCP assignment whitespace retain their

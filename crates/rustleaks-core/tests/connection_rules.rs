@@ -1285,3 +1285,279 @@ fn database_uri_detector_and_rejection_predicates_keep_distinct_whitespace() {
         assert!(scan(isolated(), format!("{uri} ").as_bytes()).is_empty());
     }
 }
+
+fn libpq_engine() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let (config, _) = NativePolicy::builder()
+            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
+            .unwrap()
+            .compile()
+            .unwrap();
+        Engine::builder(
+            config
+                .select_rules([
+                    "rustleaks.connection-string.password.libpq-quoted",
+                    "rustleaks.connection-string.password.libpq-unquoted",
+                ])
+                .unwrap(),
+        )
+        .build()
+        .unwrap()
+    })
+}
+
+#[test]
+fn libpq_passwords_preserve_literal_spelling_and_exact_ranges() {
+    // Expected offsets follow the literal prefixes, not detector output.
+    for (suffix, prefix, ending, offset) in [
+        ("quoted", "host=db.invalid user=bench password='", "' ", 37),
+        ("unquoted", "host=db.invalid user=bench password=", " ", 36),
+    ] {
+        for secret in [
+            "Q7v9R2m8K4p6T1w3Z5s0N2h4",
+            "%517v9R2m8K4p6T1w3Z5s0N2h4",
+            r"Q7\'v9R2",
+            r"Q7\\v9R2",
+            r"Q7\ v9R2",
+        ] {
+            let matched = format!("{prefix}{secret}{ending}");
+            let input = format!("{matched}dbname=application");
+            let findings = scan(libpq_engine(), input.as_bytes());
+            assert_eq!(findings.len(), 1, "{input:?}");
+            let finding = &findings[0];
+            assert_eq!(
+                finding.rule_id().as_bytes(),
+                format!("{PREFIX}libpq-{suffix}").as_bytes()
+            );
+            assert_eq!(finding.secret().as_bytes(), secret.as_bytes());
+            assert_eq!(finding.match_text().as_bytes(), matched.as_bytes());
+            assert_eq!(finding.secret_range(), range(offset, offset + secret.len()));
+            assert_eq!(finding.match_range(), range(0, matched.len()));
+            assert_eq!(
+                finding.location(),
+                Location::new(0, 0, 1, matched.len()).unwrap()
+            );
+        }
+    }
+    let input = "hostaddr = 192.0.2.1 password = 'Q7 v9 R2'";
+    let findings = scan(libpq_engine(), input.as_bytes());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].secret().as_bytes(), b"Q7 v9 R2");
+    assert_eq!(findings[0].secret_range(), range(33, 41));
+    assert_eq!(findings[0].match_range(), range(0, 42));
+}
+
+#[test]
+fn libpq_rejects_incomplete_values_and_out_of_scope_context() {
+    for input in [
+        "host=db.invalid password=",
+        "host=db.invalid password=''",
+        "host=db.invalid user=bench",
+        "password='Q7v9R2'",
+        "host=db.invalid password:'Q7v9R2'",
+        "host=db.invalid password='Q7v9R2",
+        "host=db.invalid password='Q7v9R2'junk",
+        "host=db.invalid password=Q7v9'R2",
+        "host=db.invalid password=\"Q7v9R2\"",
+        "host=db.invalid password=Q7v9R2\\",
+        "host=db.invalid password='Q7v9R2\\'",
+        "host=db.invalid\npassword='Q7v9R2'",
+        "host=db.invalid password='Q7\nv9R2'",
+        "host=db.invalid password='Q7雪v9R2'",
+        "host=db.invalid Password='Q7v9R2'",
+        "ghost=db.invalid password='Q7v9R2'",
+        "xhost=db.invalid password='Q7v9R2'",
+        "_host=db.invalid password='Q7v9R2'",
+        "host=db.invalid unknown=word password='Q7v9R2'",
+        "https://db.invalid/password/Q7v9R2",
+        "The password for the host is Q7v9R2.",
+    ] {
+        assert!(
+            scan(libpq_engine(), input.as_bytes()).is_empty(),
+            "{input:?}"
+        );
+    }
+    for secret in ["${DB_PASSWORD}", "{{DB_PASSWORD}}", "changeme", "REDACTED"] {
+        for (left, right) in [("'", "'"), ("", "")] {
+            let input = format!("host=db.invalid password={left}{secret}{right}");
+            assert!(
+                scan(libpq_engine(), input.as_bytes()).is_empty(),
+                "{input:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn libpq_value_and_context_bounds_do_not_admit_prefixes() {
+    for (left, right) in [("'", "'"), ("", "")] {
+        for unit in ["Q", r"\Q"] {
+            for count in [1, 128, 129] {
+                // A final distinct byte avoids the inherited repeated-letter allowlist.
+                let secret = format!("{}7", unit.repeat(count - 1));
+                let input = format!("host=db.invalid password={left}{secret}{right}");
+                let findings = scan(libpq_engine(), input.as_bytes());
+                assert_eq!(findings.len(), usize::from(count <= 128), "{input:?}");
+                if let Some(finding) = findings.first() {
+                    assert_eq!(finding.secret().as_bytes(), secret.as_bytes());
+                }
+            }
+        }
+        for count in [7, 8] {
+            let input = format!(
+                "host=db.invalid{} password={left}Q7v9R2{right}",
+                " user=bench".repeat(count)
+            );
+            assert_eq!(
+                scan(libpq_engine(), input.as_bytes()).len(),
+                usize::from(count == 7)
+            );
+        }
+        for count in [128, 129] {
+            let input = format!("host={} password={left}Q7v9R2{right}", "h".repeat(count));
+            assert_eq!(
+                scan(libpq_engine(), input.as_bytes()).len(),
+                usize::from(count == 128)
+            );
+        }
+    }
+}
+
+#[test]
+fn libpq_occurrences_and_global_path_suppression_remain_distinct() {
+    let input = b"\xff\nhost=db.invalid password='Q7v9R2'\nhost=db.invalid password=T8w0S3\n\xfe";
+    let findings = scan(libpq_engine(), input);
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0].secret().as_bytes(), b"Q7v9R2");
+    assert_eq!(findings[0].secret_range(), range(28, 34));
+    assert_eq!(findings[1].secret().as_bytes(), b"T8w0S3");
+    assert_eq!(findings[1].secret_range(), range(61, 67));
+    let fragment = Fragment::builder(b"host=db.invalid password='Q7v9R2'".to_vec())
+        .file_path("vendor/github.com/example/settings.conf")
+        .build();
+    assert!(
+        libpq_engine()
+            .scan_fragment(&fragment, &ScanOptions::default())
+            .findings()
+            .is_empty()
+    );
+}
+
+#[test]
+fn libpq_full_composition_has_explicit_attribution_and_negative_multisets() {
+    let base = NativePolicy::builder().build().unwrap();
+    let composed = NativePolicy::builder()
+        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
+        .unwrap()
+        .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
+        .unwrap()
+        .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
+        .unwrap()
+        .build()
+        .unwrap();
+    let secret = "Q7v9R2m8K4p6T1w3Z5s0N2h4";
+    for (suffix, left, right, start) in [("quoted", "'", "'", 26), ("unquoted", "", "", 25)] {
+        let input = format!("host=db.invalid password={left}{secret}{right}");
+        let old = scan(base.engine(), input.as_bytes());
+        assert_eq!(old.len(), 1);
+        assert_eq!(old[0].rule_id().as_bytes(), b"generic-api-key");
+        assert_eq!(old[0].secret().as_bytes(), secret.as_bytes());
+        let new = scan(composed.engine(), input.as_bytes());
+        // Existing generic suppression prefers specific attribution for the
+        // same secret; do not count that old alert as another occurrence.
+        assert_eq!(new.len(), 1);
+        assert_eq!(
+            new[0].rule_id().as_bytes(),
+            format!("{PREFIX}libpq-{suffix}").as_bytes()
+        );
+        assert_eq!(new[0].secret().as_bytes(), secret.as_bytes());
+        assert_eq!(new[0].secret_range(), range(start, start + 24));
+    }
+    // Invalid libpq syntax remains eligible for a generic assignment rule.
+    let malformed = format!("host=db.invalid password:'{secret}'");
+    let findings = scan(composed.engine(), malformed.as_bytes());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule_id().as_bytes(), b"generic-api-key");
+    assert_eq!(findings[0].secret().as_bytes(), secret.as_bytes());
+    for input in [
+        "host=db.invalid password='${DB_PASSWORD}'",
+        "host=db.invalid password=changeme",
+        "host=db.invalid password=''",
+        "https://db.invalid/password/Q7v9R2",
+    ] {
+        assert!(
+            scan(composed.engine(), input.as_bytes()).is_empty(),
+            "{input:?}"
+        );
+    }
+}
+
+#[test]
+fn libpq_adjacent_occurrences_keep_zero_width_ascii_boundaries() {
+    for (left, right) in [("'", "'"), ("", "")] {
+        let first = format!("host=db.invalid password={left}Q7v9R2{right}");
+        let second = format!("host=db.invalid password={left}T8w0S3{right}");
+        for between in [" ", "  ", "\t"] {
+            let input = format!("{first}{between}{second}");
+            let findings = scan(libpq_engine(), input.as_bytes());
+            assert_eq!(findings.len(), 2);
+            assert_eq!(findings[0].secret().as_bytes(), b"Q7v9R2");
+            assert_eq!(findings[1].secret().as_bytes(), b"T8w0S3");
+            assert_eq!(
+                findings[1].match_range(),
+                range(first.len() + between.len(), input.len())
+            );
+        }
+    }
+    // Go regex word boundaries are ASCII. Surrounding punctuation and UTF-8
+    // are outside the match and do not become part of source coordinates.
+    for prefix in ["(", ":", "é", " "] {
+        let input = format!("{prefix}host=db.invalid password='Q7v9R2'");
+        let findings = scan(libpq_engine(), input.as_bytes());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].match_range(), range(prefix.len(), input.len()));
+        assert_eq!(
+            findings[0].secret_range(),
+            range(prefix.len() + 26, prefix.len() + 32)
+        );
+    }
+}
+
+#[test]
+fn libpq_explicit_allowlists_keep_targets_and_fragment_context() {
+    for condition in [
+        "regexTarget = 'secret'\nregexes = ['Q7v9R2']",
+        "stopwords = ['7v9']",
+        "paths = ['^allowed[.]conf$']",
+        "commits = ['synthetic-commit']",
+    ] {
+        let mut source: toml::Value = toml::from_str(CONNECTION_RULES_V1).unwrap();
+        source["rules"].as_array_mut().unwrap().retain(|rule| {
+            rule["id"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{PREFIX}libpq-"))
+        });
+        let mut raw: RawConfig = toml::from_str(&toml::to_string(&source).unwrap()).unwrap();
+        let targeted: RawConfig = toml::from_str(&format!(
+            "[[allowlists]]\ntargetRules = ['{PREFIX}libpq-quoted']\n{condition}\n"
+        ))
+        .unwrap();
+        raw.allowlists = targeted.allowlists;
+        let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
+            .build()
+            .unwrap();
+        let fragment = Fragment::builder(
+            b"host=db.invalid password='Q7v9R2'\nhost=db.invalid password=T8w0S3".to_vec(),
+        )
+        .file_path("allowed.conf")
+        .commit("synthetic-commit")
+        .build();
+        let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
+        assert!(outcome.is_complete());
+        assert_eq!(outcome.findings().len(), 1);
+        assert_eq!(outcome.findings()[0].secret().as_bytes(), b"T8w0S3");
+    }
+    assert!(scan(libpq_engine(), b"host=db.invalid password='Q7\xffv9R2'").is_empty());
+}

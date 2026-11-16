@@ -264,12 +264,13 @@ Its [pack contract and provenance](../crates/rustleaks-core/default/rustleaks-pr
 record the source scopes, ASCII translation, entropy rules and policy
 differences. Provider attribution can replace a generic finding for the same
 occurrence through existing overlap filtering; this is not an extra recovered
-secret. The separate `rustleaks-connections-v1` pack contains 12 rule
-definitions: eight password rules, three complete Git credential URL rules and
+secret. The separate `rustleaks-connections-v1` pack contains 14 rule
+definitions: ten password rules, three complete Git credential URL rules and
 one hidden tuple-predicate helper. Its
 [contract](../crates/rustleaks-core/default/rustleaks-connections-v1.md)
 records source predicates, extraction, byte limits and enumeration gaps;
-general URI, libpq and Unicode-equivalent detection are outside that pack.
+general URI and Unicode-equivalent detection are outside that pack. Libpq
+keyword passwords have a bounded ASCII subset with host context.
 Native composition retains the default global exclusions, including the
 documented URI placeholder differences from isolated pack loading.
 None of these packs is selected automatically.

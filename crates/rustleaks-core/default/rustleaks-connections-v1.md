@@ -1,7 +1,7 @@
 # Rustleaks connection rules v1
 
-This optional pack adds twelve namespaced rules to the unchanged
-pinned defaults: eight password rules, three complete Git credential URLs
+This optional pack adds fourteen namespaced rules to the unchanged
+pinned defaults: ten password rules, three complete Git credential URLs
 and one hidden tuple-predicate helper. Select it with the existing native composition API:
 
 ```rust
@@ -54,7 +54,7 @@ horizontal whitespace. Horizontal whitespace around separators has no
 separate length cap. An optional intermediate segment permits at most 200
 bytes before its terminating semicolon. Quotes and braces in host or
 intermediate fields are excluded. Password-first order and space-delimited
-libpq properties are outside this scope.
+libpq properties are outside these six original rules.
 
 JDBC SQL Server context is accepted only for unquoted and braced passwords.
 The JDBC query rule also accepts MySQL `loadbalance` and `replication`
@@ -63,7 +63,8 @@ bytes. Up to 16 preceding options can have keys of 1 through 64 bytes and
 optional values of at most 200 bytes. Bare options and `&amp;` separators are
 permitted. The password key is case-sensitive even when the dialect and
 preceding option names vary in ASCII case. Oracle and SQLite JDBC dialects
-and libpq syntax have no rule in this pack.
+have no rule in this pack. The separate libpq rules below cover a bounded
+keyword syntax subset.
 
 The database URI rule accepts `postgres`, `postgresql`, `mysql`, and
 `mariadb`, including ASCII case variants. It permits an empty username or up
@@ -283,3 +284,42 @@ confidence domain. The native inherited global policy remains unchanged.
 All three additions derive from the pinned MIT Betterleaks configuration.
 Their exact source fields, attribution and selections are in the adjacent
 provenance. They make no client-validity or remote-credential claim.
+
+## Libpq keyword passwords
+
+The original Rustleaks rules `rustleaks.connection-string.password.libpq-quoted`
+and `rustleaks.connection-string.password.libpq-unquoted` use the
+[PostgreSQL keyword/value syntax](https://www.postgresql.org/docs/18/libpq-connect.html#LIBPQ-CONNSTRING).
+They are independent implementations, not imported scanner patterns.
+
+Both require lowercase `host` or `hostaddr` before lowercase `password` on the
+same line. Host values contain 1 through 128 ASCII letters, digits, or
+`._:/-`. Up to seven intervening `user`, `dbname`, `port`, `sslmode`,
+`application_name`, or `connect_timeout` assignments accept the same value
+alphabet and bound. Spaces and tabs separate assignments and may surround
+`=`. Password-first ordering, quoted or escaped host/intermediate values,
+unknown intermediate properties, and multiline connections are outside this
+subset. These rules detect credential syntax without validating a connection.
+
+Passwords contain 1 through 128 units. A unit is one printable ASCII byte or
+backslash followed by one printable ASCII byte, so a raw capture can contain
+up to 256 bytes. Single quotes enclose the quoted form and are excluded from
+the capture; unquoted values exclude bare spaces and both quote characters.
+Bare backslashes are excluded in both forms. Escaped spaces, quotes, and
+backslashes retain their exact source spelling, as do percent sequences.
+A completed value must end at a space, tab, or line end. Incomplete quotes,
+trailing escapes, and overlong uninterrupted values do not produce truncated
+password captures. Unicode password bytes are outside this subset.
+
+The rules select secret group 1 and have no entropy floor. Inherited global
+allowlists and conventional password placeholder stopwords remain active.
+Optional general decoding can emit separate decoded findings; this does not
+change libpq's literal percent-containing password semantics or the raw
+capture. The rules do not claim complete libpq parsing or catalog precision.
+
+The host key starts at a zero-width ASCII word boundary. A preceding letter,
+digit, or underscore excludes it; punctuation and non-ASCII surrounding bytes
+can precede a match. The preceding byte is never consumed. Matching consumes
+the password's terminating horizontal separator, but adjacent connections
+separated by one space or tab retain their next host boundary. This is a
+credential-syntax detector, not validation of the surrounding document.
