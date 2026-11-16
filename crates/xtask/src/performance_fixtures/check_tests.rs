@@ -449,10 +449,24 @@ fn original_limits_equal_the_documented_example_profile() {
 
 #[test]
 fn check_arguments_require_one_absolute_directory_and_known_flags() {
+    // Absolute paths differ by platform, so build them from the temp folder.
+    let absolute = |name: &str| {
+        std::env::temp_dir()
+            .join(name)
+            .to_str()
+            .expect("UTF-8 temp path")
+            .to_owned()
+    };
+    let (fixtures, cli, limits) = (
+        absolute("fixtures"),
+        absolute("rustleaks"),
+        absolute("limits"),
+    );
+    let (a, b) = (absolute("a"), absolute("b"));
     assert_eq!(
-        Request::parse(&arguments(&["--check", "/fixtures"])).unwrap(),
+        Request::parse(&arguments(&["--check", &fixtures])).unwrap(),
         Request {
-            directory: "/fixtures".into(),
+            directory: fixtures.clone().into(),
             cli: None,
             profile: None,
         }
@@ -460,25 +474,25 @@ fn check_arguments_require_one_absolute_directory_and_known_flags() {
     assert_eq!(
         Request::parse(&arguments(&[
             "--cli",
-            "/bin/rustleaks",
+            &cli,
             "--check",
-            "/fixtures",
+            &fixtures,
             "--profile",
-            "/limits",
+            &limits,
         ]))
         .unwrap(),
         Request {
-            directory: "/fixtures".into(),
-            cli: Some("/bin/rustleaks".into()),
-            profile: Some("/limits".into()),
+            directory: fixtures.clone().into(),
+            cli: Some(cli.clone().into()),
+            profile: Some(limits.clone().into()),
         }
     );
     for invalid in [
         &["--check"][..],
-        &["--cli", "/bin/rustleaks"],
-        &["--check", "/a", "--check", "/b"],
-        &["--check", "/a", "--family", "density"],
-        &["--check", "/a", "--verify", "/a"],
+        &["--cli", &cli],
+        &["--check", &a, "--check", &b],
+        &["--check", &a, "--family", "density"],
+        &["--check", &a, "--verify", &a],
     ] {
         assert_eq!(Request::parse(&arguments(invalid)).unwrap_err(), USAGE);
     }
@@ -488,11 +502,11 @@ fn check_arguments_require_one_absolute_directory_and_known_flags() {
             "--check requires an absolute path",
         ),
         (
-            &["--check", "/a", "--cli", "rustleaks"],
+            &["--check", &a, "--cli", "rustleaks"],
             "--cli requires an absolute path",
         ),
         (
-            &["--check", "/a", "--profile", "x.limits"],
+            &["--check", &a, "--profile", "x.limits"],
             "--profile requires an absolute path",
         ),
     ] {
