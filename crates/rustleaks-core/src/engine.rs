@@ -1,11 +1,12 @@
 //! Immutable raw-fragment detection engine.
 
 use std::borrow::Cow;
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
 
@@ -21,7 +22,7 @@ use crate::explanation::{
 };
 use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes};
 use crate::model::{
-    ByteRange, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
+    ByteRange, ByteText, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
 use crate::native::{NativeKeyword, NativeRelation, NativeRequired};
 use crate::regex::{
@@ -476,9 +477,39 @@ struct OriginalFragmentContext {
     newlines: OnceCell<Vec<usize>>,
     marker: Cell<Option<(usize, usize, bool)>>,
     tail: Cell<Option<(usize, usize)>>,
+    line: RefCell<Option<SharedLine>>,
+}
+
+struct SharedLine {
+    start: usize,
+    end: usize,
+    bytes: Weak<Vec<u8>>,
 }
 
 impl OriginalFragmentContext {
+    // Call only after full logical finding admission. One weak entry cannot
+    // retain line bytes after all admitted findings have been dropped.
+    fn admitted_line(&self, line: &[u8], start: usize, end: usize) -> ByteText {
+        if line.len() < 4096 {
+            return line.into();
+        }
+        let mut previous = self.line.borrow_mut();
+        if let Some(entry) = previous.as_ref()
+            && entry.start == start
+            && entry.end == end
+            && let Some(bytes) = entry.bytes.upgrade()
+        {
+            return ByteText::from_shared(bytes);
+        }
+        let bytes = Arc::new(line.to_vec());
+        *previous = Some(SharedLine {
+            start,
+            end,
+            bytes: Arc::downgrade(&bytes),
+        });
+        ByteText::from_shared(bytes)
+    }
+
     fn has_allow_marker(&self, line: &[u8], start: usize, end: usize) -> bool {
         if let Some((previous_start, previous_end, matched)) = self.marker.get()
             && previous_start == start
@@ -1924,7 +1955,10 @@ impl Engine {
             .location(location)
             .match_range(match_range)
             .secret_range(secret_range)
-            .line(line)
+            .line(
+                pass.original
+                    .admitted_line(line, source.start_line_index, source.end_line_index),
+            )
             .match_text(trimmed)
             .secret(secret)
             .file(fragment.file_path().as_bytes())
@@ -4008,6 +4042,59 @@ stopwords = ["abcd"]
             location.end_line_index = end;
         }
         location
+    }
+
+    #[test]
+    fn shared_line_cache_is_exact_bounded_and_weak() {
+        let context = OriginalFragmentContext::default();
+        let raw = vec![0xff; 8192];
+        let first = context.admitted_line(&raw[..4096], 0, 4096);
+        let again = context.admitted_line(&raw[..4096], 0, 4096);
+        assert_eq!(first.as_bytes().as_ptr(), again.as_bytes().as_ptr());
+        let weak = context.line.borrow().as_ref().unwrap().bytes.clone();
+        let other = context.admitted_line(&raw[4096..], 4096, 8192);
+        assert_ne!(first.as_bytes().as_ptr(), other.as_bytes().as_ptr());
+        let other_fragment = OriginalFragmentContext::default();
+        let independent = other_fragment.admitted_line(&raw[..4096], 0, 4096);
+        assert_ne!(first.as_bytes().as_ptr(), independent.as_bytes().as_ptr());
+        drop(first);
+        drop(again);
+        assert!(weak.upgrade().is_none());
+        let weak = context.line.borrow().as_ref().unwrap().bytes.clone();
+        drop(other);
+        assert!(weak.upgrade().is_none());
+        let short = context.admitted_line(b"short", 0, 5);
+        assert_eq!(short.as_bytes(), b"short");
+        assert!(
+            context
+                .line
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .bytes
+                .upgrade()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn decoded_and_raw_findings_share_only_the_original_line() {
+        let detector = engine("[[rules]]\nid = 'r'\nregex = 'abcdefghijkl'\n");
+        let mut raw = vec![b'.'; 4096];
+        raw.extend_from_slice(b"abcdefghijkl YWJjZGVmZ2hpamts");
+        let fragment = Fragment::new(raw);
+        let options = ScanOptions::builder().max_decode_depth(1).build();
+        let outcome = detector.scan_fragment(&fragment, &options);
+        assert!(outcome.is_complete());
+        assert_eq!(outcome.findings().len(), 2);
+        for finding in outcome.findings() {
+            assert_eq!(finding.line().as_bytes(), fragment.content().as_bytes());
+            assert_eq!(finding.secret().as_bytes(), b"abcdefghijkl");
+        }
+        assert_eq!(
+            outcome.findings()[0].line().as_bytes().as_ptr(),
+            outcome.findings()[1].line().as_bytes().as_ptr()
+        );
     }
 
     #[test]

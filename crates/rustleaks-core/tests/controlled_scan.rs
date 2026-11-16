@@ -515,7 +515,7 @@ fn finding_payload_is_admitted_before_long_line_copies_with_inclusive_limits() {
     let mut bytes = vec![b'.'; 32_768];
     bytes.extend_from_slice(b"X X X");
     let fragment = Fragment::new(bytes);
-    // Each record owns the 32,773-byte physical line, one-byte rule ID,
+    // Each record charges the 32,773-byte physical line, one-byte rule ID,
     // one-byte match and one-byte secret. No descriptions or metadata exist.
     let per_record = 32_776;
     for maximum in [3 * per_record, 3 * per_record + 1] {
@@ -529,6 +529,11 @@ fn finding_payload_is_admitted_before_long_line_copies_with_inclusive_limits() {
         assert_eq!(outcome.findings().len(), 3);
         assert_eq!(outcome.usage().finding_payload_bytes(), 3 * per_record);
         assert_eq!(outcome.usage().finding_records(), 3);
+        let pointer = outcome.findings()[0].line().as_bytes().as_ptr();
+        for finding in outcome.findings() {
+            assert_eq!(finding.line().as_bytes(), fragment.content().as_bytes());
+            assert_eq!(finding.line().as_bytes().as_ptr(), pointer);
+        }
     }
     let partial = bounded_outcome(
         &engine,
@@ -979,5 +984,139 @@ fn redaction_and_session_retained_fields_obey_the_conservative_payload_bound() {
             .map(owned_finding_fields)
             .sum::<usize>(),
         208
+    );
+}
+
+#[test]
+fn dense_shared_lines_keep_exact_work_payload_and_cancellable_publication() {
+    let detector = engine("[[rules]]\nid = 'r'\nregex = 'X'\n");
+    let mut bytes = vec![0xff; 4096];
+    bytes.extend_from_slice(&b"X ".repeat(256));
+    let fragment = Fragment::new(bytes);
+    let options = ScanOptions::default();
+    // One pass, one rule, and 256 candidate checkpoints. Each finding charges
+    // rule ID, complete original line, match, and secret, despite sharing.
+    let work = 258;
+    let payload = 256 * (4608 + 3);
+    let never = AtomicBool::new(false);
+    let budget = ScanBudget::unlimited()
+        .max_work_units(work)
+        .max_finding_payload_bytes(payload);
+    let outcome = detector.scan_fragment_controlled(
+        &fragment,
+        &options,
+        &ScanControl::cancellable(&never).with_budget(budget),
+    );
+    assert!(outcome.is_complete());
+    assert_eq!(outcome.usage().work_units(), work);
+    assert_eq!(outcome.usage().finding_payload_bytes(), payload);
+    assert_eq!(outcome.usage().finding_records(), 256);
+    assert_eq!(outcome.findings().len(), 256);
+    let pointer = outcome.findings()[0].line().as_bytes().as_ptr();
+    for (index, finding) in outcome.findings().iter().enumerate() {
+        assert_eq!(finding.line().as_bytes(), fragment.content().as_bytes());
+        assert_eq!(finding.line().as_bytes().as_ptr(), pointer);
+        assert_eq!(finding.match_text().as_bytes(), b"X");
+        assert_eq!(finding.secret().as_bytes(), b"X");
+        assert_eq!(
+            finding.match_range(),
+            rustleaks_core::model::FindingRange::Exact(
+                rustleaks_core::model::ByteRange::new(4096 + 2 * index, 4097 + 2 * index).unwrap()
+            )
+        );
+    }
+    for budget in [
+        budget.max_work_units(work - 1),
+        budget.max_finding_payload_bytes(payload - 1),
+    ] {
+        let partial = detector.scan_fragment_controlled(
+            &fragment,
+            &options,
+            &ScanControl::cancellable(&never).with_budget(budget),
+        );
+        assert!(!partial.is_complete());
+        assert!(partial.findings().is_empty());
+        assert_eq!(partial.usage().finding_records(), 255);
+        assert_eq!(partial.usage().finding_payload_bytes(), 255 * 4611);
+    }
+}
+
+#[test]
+fn required_projections_share_admitted_context_and_charge_full_payload() {
+    let detector = engine(
+        "[[rules]]\nid = 'a'\nregex = 'PRIMARY'\n[[rules.required]]\nid = 'z'\n[[rules]]\nid = 'z'\nregex = 'AUX'\nskipReport = true\n",
+    );
+    let mut bytes = vec![b'.'; 4096];
+    bytes.extend_from_slice(b"PRIMARY AUX");
+    let fragment = Fragment::new(bytes);
+    // Primary, auxiliary, and required projection each charge the full line.
+    let payload = (4107 + 1 + 7 + 7) + 2 * (4107 + 1 + 3 + 3);
+    let outcome = bounded_outcome(
+        &detector,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(payload),
+    );
+    assert!(outcome.is_complete());
+    assert_eq!(outcome.usage().finding_records(), 3);
+    assert_eq!(outcome.usage().finding_payload_bytes(), payload);
+    assert_eq!(outcome.findings().len(), 1);
+    let primary = &outcome.findings()[0];
+    assert_eq!(primary.required_findings().len(), 1);
+    let required = &primary.required_findings()[0];
+    assert_eq!(primary.line().as_bytes(), fragment.content().as_bytes());
+    assert_eq!(required.line().as_bytes(), fragment.content().as_bytes());
+    assert_eq!(
+        primary.line().as_bytes().as_ptr(),
+        required.line().as_bytes().as_ptr()
+    );
+    let partial = bounded_outcome(
+        &detector,
+        &fragment,
+        &ScanOptions::default(),
+        ScanBudget::unlimited().max_finding_payload_bytes(payload - 1),
+    );
+    assert!(!partial.is_complete());
+    assert!(partial.findings().is_empty());
+    assert_eq!(partial.usage().finding_records(), 2);
+}
+
+#[test]
+fn long_crlf_lines_keep_distinct_original_context_ranges() {
+    let detector = engine("[[rules]]\nid = 'r'\nregex = 'X'\n");
+    let mut bytes = vec![b'a'; 4096];
+    bytes.extend_from_slice(b"X X\r\n");
+    bytes.extend_from_slice(&vec![b'b'; 4096]);
+    bytes.extend_from_slice(b"X X\r\n");
+    let fragment = Fragment::new(bytes);
+    let outcome = detector.scan_fragment(&fragment, &ScanOptions::default());
+    assert!(outcome.is_complete());
+    assert_eq!(outcome.findings().len(), 4);
+    let findings = outcome.findings();
+    // Preserve the pinned original-line convention: CR remains, and a later
+    // line includes the preceding LF. The cache must not trim or normalize it.
+    for finding in &findings[..2] {
+        assert_eq!(
+            finding.line().as_bytes(),
+            &fragment.content().as_bytes()[..4100]
+        );
+        assert_eq!(
+            finding.line().as_bytes().as_ptr(),
+            findings[0].line().as_bytes().as_ptr()
+        );
+    }
+    for finding in &findings[2..] {
+        assert_eq!(
+            finding.line().as_bytes(),
+            &fragment.content().as_bytes()[4100..8201]
+        );
+        assert_eq!(
+            finding.line().as_bytes().as_ptr(),
+            findings[2].line().as_bytes().as_ptr()
+        );
+    }
+    assert_ne!(
+        findings[0].line().as_bytes().as_ptr(),
+        findings[2].line().as_bytes().as_ptr()
     );
 }

@@ -190,8 +190,15 @@ redaction are at most `9P + 24R`. Session fingerprints increase that bound to
 A conservative transient logical-field bound across those phases is
 `12P + (4D + 33)R`. These formulas exclude source buffers, configuration,
 regex and decoder scratch, and SCM links. Callers adding decorations must bound
-those separately. Copying a whole physical line into each finding can still
-consume the payload allowance quickly on dense single-line input.
+those separately. Each finding still charges its complete physical line, so
+dense single-line input can consume the logical payload allowance quickly.
+After admission, the engine can share immutable line storage of at least 4 KiB
+between findings with the same original-source range. A fragment-local cache
+holds one weak reference and does not keep line bytes alive after findings are
+dropped. This reduces repeated physical copies without changing logical charges,
+work checkpoints or cancellation. Revisited lines can miss this one-entry cache.
+Public clones and session snapshots remain deep copies; redaction can allocate
+separate transformed lines. These paths can still require substantial memory.
 
 Normalization admission precedes allocation. Valid UTF-8 remains borrowed.
 An input of T bytes with I invalid bytes charges
@@ -344,6 +351,11 @@ Owned code forbids unsafe. Feature-selected dependencies can contain reviewed
 unsafe internals and are documented separately. Native Linux/Windows runtime
 measurement remains a nonblocking follow-up; no limit or portability claim is
 derived solely from cross-compilation.
+
+Complete-target archive identification additionally accepts a final `.tgz`
+suffix, ignoring ASCII case. It uses the existing gzip-compressed TAR path,
+including one depth increment, spool admission, decoded-byte accounting and
+member limits. Legacy name identification is unchanged.
 
 `ArchiveOptions::strict_7z_member_lengths(true)` requires every 7z member to
 produce its declared uncompressed byte count. A mismatch emits a recoverable

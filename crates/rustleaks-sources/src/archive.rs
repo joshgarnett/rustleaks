@@ -145,7 +145,7 @@ impl ArchiveOptions {
     fn target_excluded(&self, logical: &LogicalPath, name: &[u8]) -> bool {
         // Containers never emit a fragment under their own path. An exact
         // leaf exclusion must not suppress descendants of such a container.
-        is_leaf_name(name)
+        is_leaf_name(name, true)
             && self
                 .excluded_paths
                 .iter()
@@ -292,7 +292,7 @@ impl ArchiveSource {
         {
             return Ok(SourceControl::Continue);
         }
-        if identify(&name).is_none() {
+        if identify_for_mode(&name, self.file_options.complete_target_bytes().is_some()).is_none() {
             return plain_source(
                 reader,
                 &self.physical_path,
@@ -369,7 +369,9 @@ impl ArchiveState<'_> {
         {
             return Ok(SourceControl::Continue);
         }
-        let Some(format) = identify(name) else {
+        let Some(format) =
+            identify_for_mode(name, self.file_options.complete_target_bytes().is_some())
+        else {
             return plain_source(
                 Box::new(Cursor::new(data)),
                 self.physical_path,
@@ -476,7 +478,12 @@ impl ArchiveState<'_> {
         if let Err(issue) = self.account(data.len()) {
             return emit_issue(issue, emit);
         }
-        if identify(native_name).is_some() {
+        if identify_for_mode(
+            native_name,
+            self.file_options.complete_target_bytes().is_some(),
+        )
+        .is_some()
+        {
             return self.process(data, native_name, &logical, depth + 1, cancellation, emit);
         }
         plain_source(
@@ -1224,12 +1231,24 @@ enum Format {
     Stream(Codec),
 }
 
-pub(crate) fn path_is_leaf(path: &Path) -> bool {
-    is_leaf_name(&native_file_name_bytes(path))
+pub(crate) fn complete_path_is_leaf(path: &Path) -> bool {
+    is_leaf_name(&native_file_name_bytes(path), true)
 }
 
-fn is_leaf_name(name: &[u8]) -> bool {
-    matches!(identify(name), None | Some(Format::Stream(_)))
+fn is_leaf_name(name: &[u8], complete: bool) -> bool {
+    matches!(
+        identify_for_mode(name, complete),
+        None | Some(Format::Stream(_))
+    )
+}
+
+fn identify_for_mode(name: &[u8], complete: bool) -> Option<Format> {
+    // Complete targets extend the pinned name-only profile with this alias.
+    // Require a final suffix so directory names and backups do not opt in.
+    if complete && name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case(b".tgz") {
+        return Some(Format::CompressedTar(Codec::Gzip));
+    }
+    identify(name)
 }
 
 fn identify(name: &[u8]) -> Option<Format> {
@@ -1275,8 +1294,8 @@ fn identify(name: &[u8]) -> Option<Format> {
     None
 }
 
-pub(crate) fn name_is_archive(name: &[u8]) -> bool {
-    identify(name).is_some()
+pub(crate) fn name_is_archive(name: &[u8], complete: bool) -> bool {
+    identify_for_mode(name, complete).is_some()
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -2099,6 +2118,22 @@ mod tests {
             assert!(ArchiveLimits::new(values.0, values.1, values.2, values.3, values.4).is_err());
         }
         assert!(ArchiveLimits::new(0, 1, 1, 1, 1).is_ok());
+    }
+
+    #[test]
+    fn tgz_alias_is_a_complete_only_container_with_a_final_suffix() {
+        for name in [b"x.tgz".as_slice(), b"x.TGZ", b"dir/x.tGz"] {
+            assert!(matches!(
+                identify_for_mode(name, true),
+                Some(Format::CompressedTar(Codec::Gzip))
+            ));
+            assert!(identify_for_mode(name, false).is_none());
+            assert!(!is_leaf_name(name, true));
+            assert!(is_leaf_name(name, false));
+        }
+        for name in [b"x.tgz.backup".as_slice(), b"x.tgz/file", b"x.tgz\\file"] {
+            assert!(identify_for_mode(name, true).is_none());
+        }
     }
 
     #[test]
