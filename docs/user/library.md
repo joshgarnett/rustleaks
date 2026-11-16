@@ -220,6 +220,68 @@ What your program must do:
 See [Resource limits](resource-limits.md) for the limits of the `rustleaks`
 command.
 
+### Budgets across many fragments
+
+`rustleaks-sources` is not published on crates.io. This section applies when
+you build on it from this repository. Its `SourceRunner` reads a source in
+fragments and scans them on worker threads. `SourceRunner::new` and
+`SourceRunner::default` have no scan limits. To limit a whole source
+operation, install a `SourceBudget`:
+
+```rust
+use rustleaks_core::ScanBudget;
+use rustleaks_sources::{SourceBudget, SourceRunner};
+
+let runner = SourceRunner::new(4, 8)?.with_budget(
+    SourceBudget::unlimited()
+        .max_fragment_bytes(1024 * 1024)
+        .max_original_bytes(128 * 1024 * 1024)
+        .max_fragments(10_000)
+        .max_issues(100)
+        .per_fragment(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(1024 * 1024)
+                .max_work_units(100_000)
+                .max_finding_records(1_000)
+                .max_finding_payload_bytes(8 * 1024 * 1024)
+                .max_collected_spans(10_000)
+                .max_normalization_bytes(16 * 1024 * 1024),
+        )
+        .aggregate(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(32 * 1024 * 1024)
+                .max_work_units(10_000_000)
+                .max_finding_records(10_000)
+                .max_finding_payload_bytes(64 * 1024 * 1024)
+                .max_collected_spans(100_000)
+                .max_normalization_bytes(128 * 1024 * 1024),
+        ),
+)?;
+```
+
+- Every limit includes its value, and zero is valid. Each finite `aggregate`
+  limit needs a finite `per_fragment` limit of the same kind.
+- The first budget that runs out stops the operation. The outcome holds
+  `SourceTermination::BudgetExceeded` with the scope, resource, limit, amount
+  used and the rejected request. Treat it as incomplete coverage.
+- Only fragments that finished scanning add findings. After a budget stop,
+  which findings you get, and their order, depend on scheduling.
+- Original bytes and the fragment count are counted when a fragment is
+  admitted, before it is queued. `SourceOutcome::usage` separates admitted
+  fragments from fragments that were scanned completely.
+- Finding records are counted before ignore and baseline filtering, so the
+  aggregate finding-record limit also limits how many findings are kept.
+- Near the end of a budget, fewer scans can run at the same time.
+- The limits do not set a heap quota. They do not interrupt one engine step,
+  and they cannot make a custom source check its cancellation flag. Set
+  original bytes, fragment count, issues and engine limits together for a
+  source that has no natural end.
+- Reaching the issue limit is allowed. Rejecting the next issue ends the run
+  as incomplete.
+
+[Engine internals](../dev/engine-internals.md#source-runner-budgets)
+describes how reservations and charges work.
+
 ## Reading findings
 
 `ScanOutcome::findings()` returns the findings. Text fields are `ByteText`,

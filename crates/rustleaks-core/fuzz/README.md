@@ -1,87 +1,55 @@
 # `rustleaks-core` fuzz targets
 
-The limits below describe smoke and extended campaigns. The optional deep
-profile raises each target input cap to 64 KiB. Fragment scanning additionally
-permits depth 4, 2 MiB decoded bytes, 65,536 work units and 512 findings. The
-runner records the selected profile; the test-only shared helper supplies both
-harness limits and synthetic seeds. Large config rules and match suffixes lie
-beyond the smoke boundary. Separate structured cases check decoded-byte,
-finding-record and configuration-selection boundaries. See the
-[structured-case contract](../../../docs/SECURITY_STRESS.md).
-
-This is a standalone `cargo-fuzz` package. Its inner `[workspace]` keeps root
-workspace resolution, commands, and `Cargo.lock` unchanged.
+This page is for contributors. This folder is a standalone `cargo-fuzz`
+package for the core engine. Its own `[workspace]` keeps the root workspace,
+its commands and `Cargo.lock` unchanged.
 
 ## Targets
 
-### `go_regex`
+| Target | What it covers | Input limit | Seeds |
+| --- | --- | --- | --- |
+| `go_regex` | Go regex translation, compiling, captures, empty matches, invalid bytes and repeated matching | 4 KiB | Generated from `compat/regex-corpus/requests-v1.jsonl` |
+| `config` | TOML parsing, compiling and `load_toml`, rule extension, allowlists and composite rules | 8 KiB | `seeds/config/` |
+| `fragment_scan` | Decoders, locations, invalid bytes, overlaps, redaction, limits and repeated scans | 8 KiB | `seeds/fragment_scan/` |
+| `session` | Baseline JSON, ignore records, deduplication and session state | 16 KiB | `seeds/session/` |
 
-The target includes the crate-private production module directly, compiles
-patterns fallibly, and exercises its source, backend/capture metadata,
-existence, whole-match iteration, and capture iteration APIs. Every input is
-framed as:
+Each target has a dictionary in `dictionaries/<target>.dict`. The deep
+profile raises every input limit to 64 KiB. In that profile,
+`fragment_scan` also allows decode depth 4, 2 MiB of decoded bytes, 65,536
+work units and 512 findings.
 
-```text
-u16 little-endian pattern length | pattern bytes | arbitrary haystack bytes
-```
+## Input formats
 
-The declared length is reduced modulo the payload boundary, so every input of
-at least two bytes is usable. Pattern bytes are converted with UTF-8 loss
-replacement because Rust patterns must be valid UTF-8; haystack bytes remain
-unchanged, including malformed UTF-8.
+- `go_regex` reads a little-endian `u16` pattern length, the pattern bytes,
+  and then the haystack bytes. The length is reduced modulo the remaining
+  input, so every input of two or more bytes is used. Pattern bytes are
+  converted to UTF-8 with replacement. Haystack bytes stay unchanged,
+  including malformed UTF-8.
+- `config` converts the input to UTF-8 with replacement. The loader has no
+  file resolver and an empty default, so extension requests do no I/O.
+- `fragment_scan` scans the input with fixed percent, hex and Base64 decoder
+  seeds, two small rules and decode depth two. It checks that repeated scans
+  are equal and that every location has valid line and column order.
+- `session` splits the input into baseline JSON, ignore records and finding
+  bytes. It also runs fixed baseline and ignore suppression cases.
 
-`just fuzz-smoke` generates the frozen 3,618-request Go regex seed corpus and
-runs all eight bounded targets with private diagnostics. For retained local
-output, run `just fuzz run --output /private/tmp/rustleaks-core-fuzz-run` from
-the repository root. The output path must be new and outside the checkout;
-this example uses macOS's non-symlink temporary directory.
+The targets check for panics, memory errors and resource problems. They make
+no Go parity claim; the frozen corpus replay covers parity.
 
-The target intentionally has no semantic assertions: any Go/Rust parity claim
-continues to come from the frozen oracle replay. Fuzzing is for panics, memory
-safety defects, and resource pathologies over arbitrary input.
+## Running
 
-Resource limits matter. Production accepts source patterns up to 1 MiB and
-caps the compiled Thompson NFA at 256 MiB. Malformed haystacks allocate a
-normalized buffer plus an offset map, and `find_all`/`captures_all` allocate in
-proportion to the number of matches and capture slots. Keep `-max_len`, RSS,
-wall-time, and CI duration bounded; increase them deliberately for longer
-campaigns.
-
-### `config`
-
-`config` converts at most 8 KiB of arbitrary bytes with UTF-8 loss replacement,
-then exercises both the separate parse/compile path and `load_toml`. The loader
-uses no filesystem resolver and an empty fuzz default, so random extension
-requests cannot perform I/O or repeatedly compile the full embedded ruleset.
-
-### `fragment_scan`
-
-`fragment_scan` scans at most 8 KiB of arbitrary content plus fixed percent,
-hex, and base64 decoder seeds. It uses two small fixed rules, decode depth two,
-an exact target-byte ceiling, path/origin variants, and canonical repeated-scan
-equality. Every returned location is checked for valid line/column ordering.
-
-### `session`
-
-`session` frames at most 16 KiB into arbitrary baseline JSON, ignore records,
-and finding bytes. It also runs guaranteed baseline and exact-ignore
-suppression cases, repeated immutable-policy classification, and mutable
-session collection.
-
-Use the maintained runner from the repository root:
+Run these commands from the repository root:
 
 ```sh
+just fuzz-build
 just fuzz-smoke
 just fuzz run --output /private/tmp/rustleaks-core-fuzz-run
 ```
 
-Failed runs retain a private reproduction bundle. Explicit-output successful
-runs retain evolved corpora. The [private fuzz workflow](../../../docs/SECURITY_CONTROLS.md#private-local-fuzz-evidence)
-documents exact-option campaign replay, artifact reproduction and crash
-minimization, successful corpus merging, and explicit reviewed local promotion.
-Direct cargo-fuzz commands print raw crash bytes and do not supply that
-retention policy. Treat all crash inputs and diagnostics as sensitive.
-
-The harness caps protect routine fuzz jobs; production boundary behavior still
-requires focused tests at the larger documented limits. OOM may abort and is
-not represented as a universal fallible-allocation guarantee.
+The output folder must be new and outside the checkout. Treat crash inputs
+and diagnostics as sensitive. Direct `cargo fuzz` commands print raw crash
+bytes and do not keep the private output rules. See the [private fuzz
+workflow](../../../docs/dev/security-checks.md#private-local-fuzz-evidence)
+for replay, minimizing and corpus promotion, and the [larger structured
+tests](../../../docs/dev/security-checks.md#larger-structured-tests) for
+inputs above these limits.

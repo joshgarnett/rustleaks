@@ -54,8 +54,9 @@ by `CONTRIBUTING.md` for the changed boundary. Record exact successful commands
 and explain a required command that was not run. Never copy a result from a
 different tree or claim an unrun command passed.
 
-The title becomes the permanent squash commit subject. Apply the
-`github-commit` grammar and verified scopes. Follow
+The title becomes the permanent squash commit subject. Follow the [commit
+grammar](../../../CONTRIBUTING.md#commits) and the [pull request
+rules](../../../CONTRIBUTING.md#pull-requests). Follow
 `.github/pull_request_template.md` with `Summary`, `Rationale`, `Validation`,
 `Compatibility and security`, and `Issues` sections. Use
 `Closes #<issue-number>` only when the pull request fully resolves that real

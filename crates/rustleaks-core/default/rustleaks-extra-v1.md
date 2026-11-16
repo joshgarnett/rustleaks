@@ -1,120 +1,141 @@
 # Rustleaks extra rules v1
 
-This first-party TOML pack is explicitly selected as `rustleaks-extra-v1`.
-It adds namespaced rules to the unchanged pinned default configuration. It uses
-existing matching, allowlist, overlap filtering and decoding semantics. It does
-not contact a provider or establish whether credentials are active.
+The `rustleaks-extra-v1` pack adds 3 namespaced rules for Azure Service Bus
+and Event Hubs keys, Azure App Configuration keys and MongoDB URI passwords.
+It has no hidden helper rules. The pack is opt-in and runs locally. It does
+not contact a provider or check whether a credential is active. It uses the
+normal matching, allowlist, overlap filtering and decoding behavior, and it
+does not change the packaged default rules.
 
-The definitions and fixtures were independently authored from the primary
-format references below, reviewed on 2026-11-06. No third-party pattern, code or
-fixture was copied. They are covered by this repository's MIT license. Refresh
-requires reviewing provider format changes, updating independent controls and
-rerunning the full quality comparison. There are no automatic downloads.
+## Selection
 
-## Formats and extraction
+- CLI: `--native-pack rustleaks-extra-v1`.
+- Library: `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?.build()?`,
+  with `EXTRA_RULES_V1` from `rustleaks_core::native`.
+- The pack can be combined with `rustleaks-providers-v1` and
+  `rustleaks-connections-v1` in any order. The exact bytes and the order of
+  the packs are part of the policy identity.
+- The pack uses no native-only tables. The pack file also loads with
+  `--config` or `ConfigLoader`, but then it is a plain configuration with
+  only these 3 rules and without the default rules. Use `--native-pack` to
+  add the rules to the default rules.
 
-| Rule ID | Bounded recognized form | Extracted secret |
-| --- | --- | --- |
-| `rustleaks.azure-servicebus-key` | Public-cloud `sb://` endpoint, nonempty `SharedAccessKeyName` and 43 base64 characters plus padding in `SharedAccessKey`; six core-field orders; optional interleaved `EntityPath` | Key value including padding |
-| `rustleaks.azure-app-configuration-key` | Public-cloud `https://` endpoint, nonempty `Id` and bounded base64 `Secret`; six field orders | Secret value including padding |
-| `rustleaks.mongodb-password` | Standard or SRV URI with nonempty ASCII or percent-encoded username/password; standard DNS/IPv4 host list or SRV DNS host without a port | Password bytes as written, including percent escapes |
+See [Native rule packs](../../../docs/user/native-rule-packs.md) for users and
+[Rule pack authoring](../../../docs/dev/rule-pack-authoring.md) for
+contributors.
 
-Azure field names are case insensitive, horizontal space around separators is
-accepted, and the first `=` separates each field name from its value. The
-existing loader's first participating capture selects the secret across the
-order alternatives. The key name, credential ID, username and endpoint never
-form part of the secret range. Input byte ranges and original spelling remain
-unchanged.
+## Rules
 
-Microsoft describes Service Bus signing keys as 256-bit base64 values. App
-Configuration documents base64 secrets without a universal length contract;
-this pilot accepts complete base64 groups bounded to 16 through 131 nonpadding
-characters. That bound is a detection scope choice, not issuer validity.
-Both Azure rules require Shannon entropy above 3.5 bits per character to avoid
-repeated-value placeholders; this precision guard is not an issuer validity
-check and can omit low-entropy credentials. MongoDB passwords are user chosen,
-so the URI rule has no entropy floor. Its rule-local allowlist recognizes only
-the documented conventional percent-encoded password template spellings
-`<password>`, `<your_password>`, `${PASSWORD}` and `{{password}}`. Escaped
-reserved URI characters remain escaped in raw findings. A whole encoded URI or
-connection string can be found by the existing optional decoding pass, whose
-source ranges remain explicitly unavailable.
+Rule IDs in the table leave out the `rustleaks.` prefix. Entropy is Shannon
+entropy of the secret. "Above N" means that values at or below N are
+rejected.
 
-The pack is not a complete connection-string parser. Azure sovereign endpoints,
-custom hosts, new fields interleaved between App Configuration fields, Unicode
-field whitespace and strings outside the explicit size bounds are outside the
-pilot. MongoDB IPv6 addresses, Unix sockets, literal non-ASCII userinfo, more
-than four standard hosts and very long credentials are outside it. Source
-language escaping requires an applicable caller-selected decoding pass. The
-rules do not infer unknown escape semantics or validity from a partial match.
-Missing coverage remains visible in the quality corpus; a missing alert never
-establishes a credential-free input.
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `azure-servicebus-key` | Public cloud `sb://` endpoint, a nonempty `SharedAccessKeyName` and a `SharedAccessKey` of 43 base64 characters plus padding, in any of the 6 orders of the 3 core fields, with an optional `EntityPath` between fields | Key value, including padding | Shannon entropy above 3.5 |
+| `azure-app-configuration-key` | Public cloud `https://` endpoint, a nonempty `Id` and a base64 `Secret`, in any of the 6 field orders | Secret value, including padding | Shannon entropy above 3.5 |
+| `mongodb-password` | Standard or SRV URI with a nonempty ASCII or percent-encoded user name and password. Standard URIs take a DNS or IPv4 host list; SRV URIs take one DNS host without a port | Password bytes as written, including percent escapes | None; an allowlist for template values |
 
-## Primary format references
+Azure notes:
 
-- [Service Bus connection-string properties](https://learn.microsoft.com/en-us/javascript/api/@azure/service-bus/servicebusconnectionstringproperties?view=azure-node-latest)
-  specifies endpoint, policy name/key and optional entity path.
-- [Service Bus shared access signatures](https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-sas)
-  specifies the 256-bit base64 key representation.
-- [Event Hubs connection strings](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-get-connection-string)
-  identifies the shared endpoint/policy/key form and entity path.
-- [App Configuration connection setup](https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-app-configuration)
-  identifies `Endpoint`, `Id` and `Secret`.
-- [App Configuration HMAC authentication](https://learn.microsoft.com/en-us/azure/azure-app-configuration/rest-api-authentication-hmac)
-  specifies base64 decoding of the access-key value.
-- [Azure SDK connection-string parser](https://github.com/Azure/azure-sdk-for-net/blob/main/sdk/core/Azure.Core/src/Shared/ConnectionString.cs)
-  establishes field-order independence, case-insensitive names, whitespace
-  trimming and the first `=` delimiter. No parser implementation was copied.
-- [MongoDB connection-string formats](https://www.mongodb.com/docs/manual/reference/connection-string-formats/)
-  specifies credentials, reserved-character percent encoding, standard host
-  lists and the SRV single-host/no-port restriction.
+- Field names are case-insensitive. Spaces and tabs around separators are
+  accepted. The first `=` separates a field name from its value.
+- The first capture that takes part in the match is the secret. This selects
+  the secret across the field order alternatives.
+- The key name, credential ID and endpoint are never part of the secret
+  range.
+- Microsoft describes Service Bus signing keys as 256-bit base64 values. App
+  Configuration has no published length for secrets, so the rule accepts
+  complete base64 groups with 16 to 131 characters before padding. This bound
+  is a detection choice, not an issuer rule.
+- The entropy floor removes repeated-value placeholders. It is not an issuer
+  check and can miss credentials with low entropy.
 
-## Evaluation and dispositions
+MongoDB notes:
 
-The maintained quality generator adds credential-role labels, all six Azure
-field orders, repeats, invalid-byte surroundings, percent envelopes, MongoDB
-percent userinfo, short passwords, and negative templates and near misses.
-`all-default-rules` and `all-native-rules` assess the identical corpus, with
-individual native selections reported separately. This comparison retains
-existing generic coverage, attribution differences, duplicates, missed
-occurrences, unlocated decoded values and reviewed-negative alerts.
+- Passwords are chosen by users, so the rule has no entropy floor.
+- The rule allowlist accepts only these percent-encoded template spellings:
+  `<password>`, `<your_password>`, `${PASSWORD}` and `{{password}}`.
+- Escaped reserved URI characters stay escaped in raw findings.
 
-Sovereign Azure endpoints and MongoDB IPv6 inputs are retained as explicit
-positive gap cases. They do not qualify as negative examples merely because
-this pack omits them. Existing generic rules may still cover their key values.
-The pack neither suppresses nor replaces existing specific rules. Its admission
-requires no held-out positive loss, no added reviewed-negative alerts, and no
-unreviewed duplicate alerts on the fixed synthetic comparison. These controls are
-small, related structural cases, not independent deployment accuracy evidence.
+## Shared boundaries
 
-The `mongodb-provider-overlap` control deliberately uses a synthetic database
-password with a GitHub-token shape. Both specific rules can attribute that one
-exact occurrence. One additional contextual alert is retained in this case;
-no existing provider alert is suppressed to improve the duplicate metric.
-Other added duplicates fail the maintained pilot gate.
+- Input byte ranges and the original spelling are kept.
+- The optional decoding pass can find a whole encoded URI or connection
+  string. The source range of such a finding is unavailable.
+- Escaping in source languages needs a decoding pass that the caller selects.
+  The rules do not guess unknown escapes or decide validity from a partial
+  match.
+- The pack is not a complete connection string parser.
+- Known gaps for Azure: sovereign cloud endpoints, custom hosts, new fields
+  between App Configuration fields, Unicode whitespace around fields and
+  strings outside the size bounds.
+- Known gaps for MongoDB: IPv6 addresses, Unix sockets, literal non-ASCII user
+  information, more than 4 standard hosts and very long credentials.
+- Default generic rules can still find key values in these gaps. A missing
+  finding never shows that an input has no credentials.
+- The pack does not suppress or replace existing provider rules. When a
+  MongoDB password also has the shape of a provider token, both rules can
+  report the same occurrence.
 
-The initial 72-case comparison qualifies all three bounded rules:
+## Provenance and license
 
-| Candidate | Measured benefit | Remaining disposition |
-| --- | --- | --- |
-| Service Bus/Event Hubs | 11 existing occurrences gain provider attribution; no additional exact occurrences claimed | Sovereign endpoint remains generic-only; encoded source range remains unavailable |
-| App Configuration | 10 existing occurrences gain provider attribution; no additional exact occurrences claimed | Sovereign endpoint remains generic-only; encoded source range remains unavailable |
-| MongoDB | Eight additional exact occurrences and one additional encoded value recognized | IPv6 remains missed; one reviewed provider overlap produces two attributed alerts |
+The rules and fixtures were written for Rustleaks from the primary format
+references below. No third-party pattern, code or fixture was copied. They
+are covered by the repository's MIT license.
 
-Across the identical corpus, full-default versus full-native exact true
-positives are 36 versus 44, false negatives 13 versus 5, and false positives
-one versus one. Attribution mismatches decrease from 23 to two. Duplicate
-alerts increase from zero to the one reviewed MongoDB/provider overlap.
-The preexisting false alert is the deliberately benign `api_key` UUID control;
-there are no new reviewed-negative alerts. All scans complete. Four remaining
-exact-location misses are decoded findings, and the fifth is the MongoDB IPv6
-gap. These are corpus-specific results, not estimated field accuracy.
+References:
 
-The generated report is the source of measured counts. Candidate acceptance
-must cite that report and its source/configuration identity; successful report
-generation by itself is not an acceptance decision.
+- [Service Bus connection string properties](https://learn.microsoft.com/en-us/javascript/api/@azure/service-bus/servicebusconnectionstringproperties?view=azure-node-latest):
+  endpoint, policy name and key, and optional entity path.
+- [Service Bus shared access signatures](https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-sas):
+  the 256-bit base64 key form.
+- [Event Hubs connection strings](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-get-connection-string):
+  the shared endpoint, policy and key form, and entity path.
+- [App Configuration connection setup](https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-app-configuration):
+  the `Endpoint`, `Id` and `Secret` fields.
+- [App Configuration HMAC authentication](https://learn.microsoft.com/en-us/azure/azure-app-configuration/rest-api-authentication-hmac):
+  base64 decoding of the access key value.
+- [Azure SDK connection string parser](https://github.com/Azure/azure-sdk-for-net/blob/main/sdk/core/Azure.Core/src/Shared/ConnectionString.cs):
+  any field order, case-insensitive names, trimmed whitespace and the first
+  `=` as separator. No parser code was copied.
+- [MongoDB connection string formats](https://www.mongodb.com/docs/manual/reference/connection-string-formats/):
+  credentials, percent encoding of reserved characters, standard host lists,
+  and one SRV host without a port.
 
-The packaged `.sha256` identity is generated with
-`bazelisk run //crates/xtask:xtask -- generate native-pack-identity`. The normal
-build contract checks its exact agreement with the TOML bytes. Regenerate it
-after an intentional pack change; never edit the digest by hand.
+## Maintenance
+
+- Tests: `crates/rustleaks-core/tests/native_rules.rs`, with the native loader
+  and identity in `native_policy.rs`.
+- Edit `rustleaks-extra-v1.toml` by hand. A change in what the pack detects
+  needs a new pack ID.
+- A refresh needs a review of provider format changes, new independent test
+  cases and a new run of the quality comparison. Nothing is downloaded.
+- Regenerate the `.sha256` identity after a change, and check it:
+
+  ```sh
+  cargo xtask generate native-pack-identity
+  cargo xtask generate native-pack-identity --check
+  ```
+
+  Never edit the digest by hand. The build checks that it matches the TOML
+  bytes.
+
+### Quality evaluation
+
+The synthetic [quality corpus](../../../compat/quality-corpus/README.md)
+compares the default rules with and without this pack on the same inputs.
+It has Azure field orders, repeats, invalid bytes, percent-encoded wrappers,
+MongoDB percent-encoded user information, short passwords, templates and near
+misses. Sovereign Azure endpoints and MongoDB IPv6 inputs are kept as positive
+gap cases. They are not negative examples.
+
+The pack is accepted only when the comparison shows no lost held-out
+positives, no new alerts on reviewed negatives and no unreviewed duplicate
+alerts. The one reviewed duplicate is the `mongodb-provider-overlap` case,
+where a synthetic MongoDB password has the shape of a GitHub token. These
+cases are small structural controls, not a measure of accuracy on real data.
+
+Run `just quality-eval` for the current counts. A change must cite that
+report and its source and configuration identity. A report that runs
+successfully is not by itself an acceptance decision.

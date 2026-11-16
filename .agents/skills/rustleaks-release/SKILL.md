@@ -5,12 +5,12 @@ description: Prepare and audit a Rustleaks release candidate, including versions
 
 # Rustleaks release
 
-Read `docs/RELEASING.md`, `docs/SECURITY_CONTROLS.md`,
-`docs/COMPATIBILITY.md`, `SECURITY.md`, `CHANGELOG.md`, workspace manifests,
-and `compat/public-api/README.md`. Establish the proposed version and exact
-commit. Selecting a version, creating a release, publishing a crate, changing
-release settings, or using a credential requires explicit maintainer approval.
-A dry run does not grant publication approval.
+Read `docs/dev/releasing.md`, `docs/dev/security-checks.md`,
+`docs/dev/testing-and-parity.md`, `SECURITY.md`, `CHANGELOG.md`, workspace
+manifests, and `compat/public-api/README.md`. Establish the proposed version
+and exact commit. The release actions listed under [Approval
+boundaries](../../../AGENTS.md#approval-boundaries) need explicit maintainer
+approval. A dry run does not grant publication approval.
 
 Choose the mode before running gates:
 

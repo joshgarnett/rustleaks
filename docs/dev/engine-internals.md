@@ -1,0 +1,391 @@
+# Engine internals
+
+This page is for contributors who change the engine, the sources or the
+limits. It explains how work and memory are counted, how cancellation works,
+and how complete-target scanning is built. The limits that users see, and
+what callers must do, are in [Resource limits](../user/resource-limits.md)
+and [Complete scanning](../user/complete-scanning.md).
+
+None of the limits below is a limit on total process memory (RSS) or on
+wall-clock time. Many ordinary Rust allocations can still abort the process
+when memory runs out.
+
+## Scan control and budgets
+
+`rustleaks-core` is synchronous. `Engine::scan_fragment` runs with no limits
+and is never cancelled. `scan_fragment_controlled` takes a `ScanControl` with
+an optional cancellation flag and a `ScanBudget`.
+
+All budgets include their value and count one fragment scan:
+
+| Budget | What it counts |
+| --- | --- |
+| Decoded bytes | Every successful decoded pass, before it is scanned |
+| Work units | Fixed checkpoints for rules, decoders, keywords, matches, required rules and proximity checks |
+| Finding records | Primary, auxiliary and projected required findings that are created |
+| Finding payload bytes | The first owned byte fields of those records |
+| Collected spans | Whole-match spans admitted from rules and decoders |
+| Normalization bytes | Owned regex-normalized bytes and replacement offset maps |
+
+A partial outcome holds findings only from top-level rules that finished. It
+carries a structured termination and the measured usage. A budget for one
+fragment is not a budget for an operation split across many fragments. Using
+the same budget for each fragment does not create an operation limit.
+
+## Cancellation
+
+Cancellation is cooperative. The engine polls it between bounded units of
+owned work, including between decoder candidates and encoding transforms. One
+regex search or one transform cannot be interrupted.
+
+With a finite collected-span budget, each span is admitted before it is added
+to the match list, and cancellation is polled between admissions. Without that
+budget, match collection keeps its normal checkpoints. Work-unit and
+finding-record budgets alone do not bound the temporary match list, so pair
+them with source byte limits.
+
+File sources poll cancellation between buffered reads of at most 4,096
+bytes. A blocking reader call cannot be interrupted. The CLI `--timeout` is
+built on this, so it is not a hard deadline.
+
+## Regex compilation and caches
+
+| Item | Limit |
+| --- | --- |
+| Pattern source | 1 MiB |
+| Nesting | 4,096 |
+| Go nested repeat product | 1,000 (Go dialect only) |
+| Each compiled NFA | 256 MiB |
+| Estimated PikeVM search working set | 256 MiB |
+| Optional one-pass DFA | 1 MiB |
+| Lazy DFA cache | 2 MiB for each direction, grows on demand |
+
+These limits apply to each expression or component, not to the whole engine.
+
+- The private meta backend applies the NFA limit to each NFA it builds,
+  including the reverse NFA. A temporary forward NFA checks the PikeVM
+  working set before any search cache exists. It is dropped before the meta
+  engine is built from the same parsed expression.
+- If the reverse NFA is too large, compilation retries without DFA
+  acceleration, so the forward pattern is still accepted.
+- The `bytes-v1` dialect has no separate repeat limit. The NFA and working
+  set limits still bound its expansion.
+- If the one-pass DFA fails to build, another capture engine is used. Full
+  DFA construction is turned off, also under downstream feature unification.
+- Forward, reverse and fallback caches stay in the compiled regex pool across
+  scans of one `Engine`. Concurrent searches can hold more caches. Cloning an
+  `Engine` creates new pools and shares the compiled automata. Pool
+  bookkeeping and allocator overhead are not counted.
+- Hostile input or large Unicode classes can make the lazy DFA cache thrash
+  or give up. The search then falls back to bounded engines and finally to
+  PikeVM. One search stays linear in input length for a fixed pattern, but the
+  speedup is lost. There is no linear bound for an eager enumeration of every
+  match.
+
+Literal-anchor analysis runs once for every compiled expression, including
+allowlist and path expressions, and the result is kept with the regex. It keeps
+at most 32 literal-node choices, each with at most 64 literals of at most 64
+bytes. Enumeration spends at most 16,384 steps. Hitting a limit drops only
+longer choices.
+
+## Keyword automaton
+
+The keyword automaton is separate from the regex engines. It is a full
+Aho-Corasick DFA when the keywords total at most 16 KiB and the lengths of all
+their prefixes sum to at most 64 Ki bytes. Otherwise the builder chooses the
+kind, and that choice still builds a full DFA for at most 100 keywords. These
+limits do not bound that construction work.
+
+At the 16 KiB limit, the DFA table is about 17 MiB, at most one kilobyte per
+state. Building a state's row follows a failure chain for each byte class
+without a transition, and the chain is no longer than the state's depth. Every
+state is a keyword prefix, so the prefix limit bounds the sum of depths; a
+long keyword counts quadratically. The default keywords total 1,755 bytes,
+their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
+kind never changes which keyword hits are reported.
+
+## Scan-local buffers
+
+These buffers live only for one scan. They are not kept in the engine's
+search caches.
+
+- The newline index of the original fragment is built only when a finding
+  needs a location. It is reused across decoded passes and required rules.
+- The first pass borrows the original fragment. Each decoded pass owns its
+  output buffer.
+- The Gitleaks-compatible path normalizes each pass's bytes for regex
+  matching at most once, lazily, after its gates.
+- Native buffer-local rules normalize a buffer only when a Go content matcher
+  needs it, and share it with the primary's Go helpers. Byte matchers borrow
+  the raw input without normalization.
+- Path, allowlist and trimmed-secret searches keep their own haystacks.
+- Keyword folding for the prefilter runs when the prefilter exists. Its
+  temporary bytes are dropped before rule matching. ASCII folding matches Go;
+  other characters and malformed bytes keep the pinned Go Unicode behavior.
+  This allocation is not counted as normalization bytes. The prefilter also
+  includes keywords of selected native rules, so a selection of only byte
+  rules can still allocate a full lowercase view.
+
+## Literal-anchored search
+
+Rules whose prefix shape is proven at compile time use anchored search, but
+only on pure-ASCII passes.
+
+- The keyword pass records the start of each hit for keywords that these
+  rules use. For a haystack of `len` bytes, each pass records at most
+  `len / 64 + 1` offsets per keyword and `len / 16 + 1` across all keywords.
+  A rule with a keyword past either limit uses the unanchored search.
+- Recorded offsets stay until the next pass starts. Vector capacity is reused
+  across passes and released when the fragment finishes. These are length
+  limits, not heap limits.
+- Anchored search charges an upper bound on the bytes each attempt can scan.
+  When the charges exceed the haystack length, it falls back to the unanchored
+  search. Both paths return the same matches and the same keyword work charge.
+- With a finite collected-span budget, the engine uses the exact unanchored
+  collector, so speculative attempts cannot use the span allowance. Without
+  that budget, span usage includes abandoned anchor attempts and can differ
+  between anchored and unanchored scans with the same findings.
+
+Non-ASCII and invalid UTF-8 input always use the unanchored search.
+
+## Normalization
+
+Invalid UTF-8 normalization stores one offset checkpoint per replaced source
+byte, not one index per normalized byte. Valid UTF-8 runs are copied in bulk.
+Each malformed byte becomes one replacement character, and every reported
+span refers to the original bytes. Ordered whole matches use a local cursor
+with a short linear step and a binary search for larger jumps. Capture offsets
+use separate binary lookups.
+
+Normalization is admitted before allocation. Valid UTF-8 stays borrowed. An
+input of T bytes with I invalid bytes charges `T + (2 + sizeof(usize)) * I`
+when normalization is needed. Each separate normalization charges again. On a
+64-bit target, input that is all invalid charges 11T.
+
+Backend caches and the lowercase, newline-index and decoder buffers are not
+counted. Decoder span admission bounds the number of candidates, not
+allocation bytes. Decoded-byte admission happens after each transform.
+
+## Filtering caches
+
+Original-source helpers cache the last allow-marker result by exact byte
+range, and reuse a covered suffix for trailing CR and LF lookups. Each rule
+pass keeps one line-regex result per evaluated allowlist slot, keyed by the
+exact slice and predicate identity. Secret-dependent checks still run for
+every candidate. These caches end with their fragment or rule pass, before
+decoded bytes are replaced. Work, cancellation and explanation checkpoints
+keep their order.
+
+## Finding payload
+
+Finding-record and payload admission is atomic. It happens before the engine
+copies owned finding fields, including line context, metadata, tags and
+required projections. The counter measures the first copy, even when a later
+filter drops the record. It does not measure vector capacity, struct storage,
+allocator overhead, report output or later field changes.
+
+For admitted payload P and R records:
+
+- retained logical fields after redaction are at most `9P + 24R`;
+- with session fingerprints, at most `10P + (D + 27)R`, where D is the number
+  of decimal digits in `usize::MAX`; and
+- a safe bound for temporary fields across those steps is
+  `12P + (4D + 33)R`.
+
+These formulas leave out source buffers, configuration, regex and decoder
+scratch, and links to findings. Callers that add more data must bound it.
+
+Each finding charges its complete physical line. Dense findings on one long
+line can use the payload allowance quickly, even for a small input. After
+admission, findings on the same original line of at least 4 KiB share one
+immutable copy. A fragment-local cache holds one weak reference, so it does
+not keep the line alive after the findings are dropped. A revisited line can
+miss this one-entry cache. Public clones and session snapshots still copy the
+line, and redaction can create separate lines.
+
+## Native rule costs
+
+- Byte entropy uses a fixed 256-entry `usize` histogram and one pass over the
+  secret, then at most 256 binary64 terms. It allocates nothing per
+  candidate. One calculation cannot be interrupted. Rejected candidates use
+  no finding record or payload budget.
+- `buffer-v1` relations borrow each decoded segment's bytes and keep
+  coordinates inline with admitted candidates. There is no scan-wide
+  candidate registry. The Go-normalized buffer is shared by the primary and
+  its helpers and released after projection.
+- Native keyword metadata is kept only for `buffer-v1` roots and helpers and
+  for `bytes-v1` rules. It counts toward the selected-rule source limit.
+- The per-target byte limit applies to each native input buffer on its own.
+- Native keyword checks have a work checkpoint each. ASCII searches borrow
+  raw bytes and charge the input length before each search. Unicode searches
+  share one lowercase string per buffer; building it charges two input
+  lengths, and each search charges the folded length.
+- Native line coordinates scan the input prefix, one work unit per byte, with
+  no newline index. This can repeat prefix work across candidates.
+- A native candidate and each nested required projection use the normal
+  finding-record and payload budgets. All buffers for one rule must finish
+  before the rule publishes findings in a decode pass.
+- The Mapbox predicate rejects secrets above 926 bytes, accepts at most 308
+  encoded and 231 decoded bytes, and uses 539 bytes of fixed buffers. It
+  charges one work unit before decoding and one before matching. These checks
+  do not use the decoded-byte budget or change the decode depth.
+- The Vercel predicate checks exactly 60 bytes and borrows a 470,103-byte
+  generated table. Its scratch is 61 byte offsets and 60 u32 ranks, 301 bytes
+  in total. It allocates nothing and has no global setup. It makes at most 121
+  work checkpoints. One merge step scans at most 59 ranks and makes at most
+  two binary searches over 34,471 keys of at most 48 bytes.
+
+## Source runner budgets
+
+`SourceRunner::new` and `SourceRunner::default` have no scan limits.
+`with_budget` installs a `SourceBudget` with limits for fragment size, total
+original bytes, fragment count, retained issues, and per-fragment and
+operation engine budgets. [Using
+rustleaks-core](../user/library.md#budgets-across-many-fragments) has an
+example.
+
+- All limits include their value; zero is valid. Each finite operation engine
+  limit needs a finite per-fragment limit of the same kind.
+- Before a scan, the runner reserves the full per-fragment allowance in every
+  operation dimension at once. After the scan it charges the measured usage
+  and returns the rest. When a reservation does not fit while other scans
+  run, workers wait; then a worker may use the exact remaining capacity. So
+  concurrency can drop near exhaustion. Usage never exceeds an operation
+  limit, and workers do not get extra allowance each.
+- Original bytes and fragment count are admitted before queueing, so they
+  include fragments later dropped. `scanned_bytes` counts admitted fragments
+  without errors, not proof that detection finished. `SourceOutcome::usage`
+  separates admitted and completely scanned fragments. Engine usage includes
+  partial scans whose findings are discarded.
+- Finding records are charged before session suppression, so an operation
+  finding-record limit also bounds retained findings across workers.
+- The first exhausted budget stops production, cancels running scans,
+  discards queued fragments and joins every worker. The outcome holds
+  `SourceTermination::BudgetExceeded` with scope, resource, limit, consumed
+  units and the rejected request. Equal fragment and operation limits are
+  reported as the fragment limit. Reaching an issue limit is allowed;
+  rejecting the next issue ends the run as incomplete.
+- Scans that already hold a reservation can use more units before they see
+  the cancellation. They always stay within the shared limit. The final
+  totals are in `SourceUsage`.
+- Worker panic wins over cancellation, which wins over budget termination. A
+  separate source error stays visible. A panic keeps that scan's full
+  reservation charged and marks usage inexact. Dimensions without an
+  operation limit have unknown extra usage. The panicking worker's batch
+  can be lost. The caller's cancellation token is never changed by the
+  runner.
+- At most `queue_capacity + workers + 1` fragments without errors are held by
+  the scheduling path. Source adapters can hold more data, so their own limits
+  still apply. Issue limits count issues, not message length.
+- A complete run returns findings in producer order, the same as one worker.
+  After a budget stop, the returned subset and its order depend on
+  scheduling.
+
+## Complete targets
+
+`FileOptions::complete(maximum)` reads one eligible target to a clean end of
+file before it is scanned. The CLI uses this for `--complete-profile`.
+
+### Reads
+
+- Each read asks for at most the remaining allowance plus one byte. Input
+  exactly at the limit is accepted after end of file; seeing one more byte
+  fails the target. File metadata is not the only size check.
+- Data with end of file completes the target. Data with an error other than
+  end of file fails it, and none of its bytes are published. A reader that
+  returns zero bytes with `ReadStatus::Continue` fails as no progress; there
+  is no retry. A reader that reports too many bytes also fails.
+- A complete `FileSource` allows one visit. It cannot publish the rest of a
+  failed attempt later.
+- MIME selection looks at the first `min(length, 100000)` bytes after the
+  full read. The size limit comes first, so an oversized binary file fails
+  the limit instead of being skipped as binary.
+
+### Exclusions and failures
+
+- Intentional exclusions stay exclusions: path allowlists, directory size
+  limits, symbolic links that are not followed, directory link targets, empty
+  files, binary MIME types and archive depth. `SourceIssueDisposition`
+  separates `Excluded` from `CoverageFailure`.
+- Complete directory traversal applies a known path exclusion before it reads
+  metadata, follows links or opens the file. An excluded dangling link does
+  not stop later files. The legacy traversal keeps its original order.
+- Complete TAR and ZIP traversal can skip an excluded member before copying
+  or decoding it. Container, entry-count, spool, TAR header and padding, and
+  ZIP header and range checks still apply. A bad CRC in an excluded ZIP member
+  need not be checked. Formats with shared blocks still decode what later
+  eligible members need. Path pruning still covers only first-level members.
+- Directory, archive spool, member, decode, corruption and resource failures
+  are terminal `SourceError` results. A failed target is never scanned.
+  Earlier completed targets can stay in the result.
+- `SourceRunner::fail_on_coverage_error(true)` turns a coverage-failure issue
+  from any source into an incomplete result, before its fragment is scheduled.
+- Runner terminations are `SourceError`, `BudgetExceeded`, `Cancelled`,
+  `WorkerPanic` and `Stopped`. Only `Completed` means complete coverage.
+
+### Archives
+
+- A final `.tgz` suffix, in any ASCII case, is read as gzip-compressed TAR in
+  complete mode. It uses one archive depth level, like `.tar.gz`. The legacy
+  path does not recognize it.
+- Complete mode forces strict 7z member lengths, even if
+  `ArchiveOptions::strict_7z_member_lengths(false)` was set. A short member
+  fails. The default outside complete mode is `false`, which keeps the
+  pinned short-EOF behavior. Outside complete mode, a caller can turn it on
+  with `strict_7z_member_lengths(true)`. A length mismatch then gives a
+  recoverable decode issue before any member of that archive is published.
+  Strict lengths add no authenticity or CRC check.
+- 7z coder graphs reject duplicate bindings, invalid packed inputs and cycles
+  before any decoder is built. This check is linear in the stream and coder
+  counts.
+- Compressed RAR3, RAR5 and 7z decoding relies on catching panics on
+  malformed input. When the final binary uses `panic=abort`, those paths are
+  rejected as unsupported-archive issues before the decoder runs. Stored RAR
+  members and the other decoders still work.
+
+### Coordinates and Git
+
+- For a complete file or archive member, raw byte ranges refer to the
+  target's original bytes from offset zero. Findings on the same line stay
+  separate; fingerprints are not a deduplication key. Decoded findings keep
+  their encoded-segment location, and their raw range is
+  `FindingRange::Unavailable`.
+- Git text targets are still the added lines of each hunk. Context and
+  deleted lines are not scanned, and separate hunks are not joined. Raw
+  ranges refer to the hunk buffer. Archive blobs from Git use complete reads
+  only when the archive file options select it.
+- `ScanOptions::max_target_bytes` skips a target. It is not a complete-mode
+  limit and does not make a result incomplete.
+
+### CLI profile
+
+- Known configuration and baseline files are excluded before any read, using
+  the same normalized `FilePath` values as the CLI's normal filter. Symbolic
+  link aliases are not resolved. Archive members use exact decorated paths;
+  excluding a container path does not exclude its members. Directory mapping
+  uses the emitted spelling, including `./`.
+- Skipped control files use no admitted source bytes in complete mode.
+- Standard input keeps its plain text domain. Archive depth does not add a
+  file name or detect archives by content.
+- Archive limits apply to each archive traversal and are separate from target
+  and operation admission. Link limits count exact link bytes. Each link is
+  checked against its own limit and the operation limit before it is built.
+  An unknown or disabled platform, a missing remote and an empty commit mean
+  that no link applies. A discovery, build or admission failure makes the
+  result incomplete.
+
+## What these limits do not bound
+
+- Directory enumeration, configuration loading, compiled rule storage,
+  allocator capacity and regex caches.
+- Session decoration, redaction, fingerprints and report conversion.
+- The total size of ignore-file input. One ignore-file token is limited to
+  64 KiB; the caller limits the total.
+- Elapsed time. Use cancellation for a time limit.
+
+An 8 MiB source limit is not an 8 MiB memory limit. Record an exhausted
+budget as incomplete coverage, not as a fast clean scan.
+
+Owned code forbids unsafe Rust. CI runs the resource-limit tests natively on
+all eight required targets. These tests do not measure time or memory. See
+[Testing and parity](testing-and-parity.md#platforms).

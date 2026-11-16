@@ -85,7 +85,7 @@ trust, criteria changes, or exceptions were used.
   raw configuration limits, selected-rule limits, controlled scan budgets,
   and caller-owned outer input limits remain the applicable boundary.
   Ordinary allocation failure and sufficiently deep caller-created values can
-  still abort as documented in `docs/RESOURCE_LIMITS.md`.
+  still abort as documented in `docs/user/resource-limits.md`.
 - Failure behavior: malformed data and representation mismatches return
   serializer or deserializer errors. Two map-value `expect` calls enforce the
   documented `MapAccess` protocol, and the serializer map-value `expect`

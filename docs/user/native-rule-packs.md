@@ -61,6 +61,16 @@ With `--log-level debug`, Rustleaks logs a line that names the selected packs
 in order, with a SHA-256 hash of each pack. Keep this line with your results
 if you need to show later which rules a scan used.
 
+That line covers the whole pack composition, not an `--enable-rule`
+selection. To make a scan record that someone can reproduce, also record the
+Rustleaks binary, the selected rule IDs, the scan options and any complete
+scanning profile.
+
+If you keep review or cache decisions next to scan results, store the pack
+identity with each decision. Reject a stored decision when the identity does
+not match. A matching identity alone does not prove that the input or the
+scan options were the same.
+
 ## Using a pack file with --config
 
 Pack files use TOML, but some pack rules use fields that only the pack loader
@@ -87,9 +97,13 @@ See [Using rustleaks-core](library.md#native-rule-packs) for an example.
 
 A pack rule and a default rule can match the same secret. Rustleaks uses the
 same filter as Gitleaks for rules with `generic` in their ID, such as
-`generic-api-key`. The filter drops a finding from such a rule in one case:
-another rule finds a secret on the same line and in the same commit, that
-rule has no `generic` in its ID, and its secret contains the generic secret.
-Pack rule IDs do not contain `generic`, so a pack
-rule can replace a `generic-api-key` finding in this way. In all other cases,
-both findings are reported.
+`generic-api-key`. The filter drops a finding from such a rule only when all
+of these are true:
+
+- another rule finds a secret on the same line and in the same commit;
+- that rule has no `generic` in its ID; and
+- its secret contains the generic secret.
+
+Pack rule IDs do not contain `generic`, so a pack rule can replace a
+`generic-api-key` finding in this way. In all other cases, both findings are
+reported.

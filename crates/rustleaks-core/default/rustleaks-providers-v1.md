@@ -1,466 +1,835 @@
 # Rustleaks provider rules v1
 
-This optional pack adds 300 namespaced rules to the unchanged pinned defaults.
-It includes standalone and contextual provider formats, bounded companions,
-Slack session formats, eighteen Apache Veles formats and a native ADC
-refresh-token selection. Select it through the native API:
+The `rustleaks-providers-v1` pack adds 300 namespaced rules for provider API
+keys, tokens and related credentials. 31 of them are hidden helper rules: 30
+association helpers and 1 Azure Service Bus tuple helper. The other 269 rules
+report findings. The pack is opt-in and runs locally. It does not contact a
+provider or check whether a credential is active, and it does not change the
+packaged default rules. It covers selected formats. It does not claim complete
+coverage of any provider or scanner.
 
-```rust
-use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
+## Selection
 
-let engine = NativePolicy::builder()
-    .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?
-    .build()?;
-# Ok::<(), Box<dyn std::error::Error>>(())
-```
+- CLI: `--native-pack rustleaks-providers-v1`.
+- Library: `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?.build()?`,
+  with `PROVIDER_RULES_V1` from `rustleaks_core::native`.
+- The pack can be combined with `rustleaks-extra-v1` and
+  `rustleaks-connections-v1` in any order. The exact bytes and the order of
+  the packs are part of the policy identity. Existing engine constructors do
+  not turn it on.
+- The CLI native pack route uses the embedded default rules and rejects a
+  conflicting custom configuration. It does not turn on complete-target
+  scanning.
+- The pack uses native-only tables:
+  - 211 rules use `byte-shannon-f64-v1` byte entropy: 150 reject values
+    below the threshold (`lt`) and 61 reject values at or below it (`le`).
+    18 rules use scalar entropy and 71 have no entropy check.
+  - 27 rules use `buffer-v1` required relations.
+  - 58 rules use the `bytes-v1` regex dialect.
+  - 2 rules use secret predicates.
+- The normal configuration loader (`ConfigLoader`, `--config`, inline
+  configuration or joined TOML files) rejects these tables before scanning.
+- An explicit rule selection must include every hidden helper that a selected
+  rule needs. A selected parent without its helpers fails to build.
 
-The provider pack includes native structured entropy, association and predicate tables. Load the
-complete pack through `NativePolicy`, or select it in the CLI with
-`--native-pack rustleaks-providers-v1`. Passing it through ordinary
-`ConfigLoader`, `--config`, inline configuration or TOML concatenation rejects
-the structured value before scanning. 211 rules require native byte entropy;
-the other 89 use scalar entropy or have no entropy predicate.
-Native CLI composition uses the embedded default and rejects conflicting custom
-configuration selection. It does not activate complete-target scanning.
+See [Native rule packs](../../../docs/user/native-rule-packs.md) for users and
+[Rule pack authoring](../../../docs/dev/rule-pack-authoring.md) for
+contributors, including the meaning of the native tables.
 
-The pack can be composed with `rustleaks-extra-v1`. Exact bytes and pack order
-participate in policy identity. Existing constructors do not activate it.
-Rules detect candidates locally; they do not contact providers or establish
-whether a credential is active. This is bounded format coverage, not a claim
-of complete provider or scanner coverage.
+## Rules
 
-## Provider formats
+Rule IDs in the tables leave out the `rustleaks.` prefix. Unless a table
+says otherwise, the secret is capture 1. Consumed delimiters belong to the
+match, not the secret.
 
-| Rule ID | ASCII secret form | Native entropy requirement |
+Entropy is Shannon entropy of the secret. "Above N" means that values at or
+below N are rejected. "At least N" means that values below N are rejected.
+"Byte Shannon entropy" is the native `byte-shannon-f64-v1` table, which
+counts bytes. Plain "Shannon entropy" is the normal Gitleaks check, which
+counts characters.
+
+### Provider prefixes (10 rules)
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `groq-api-key` | `gsk_` and 52 alphanumeric bytes | Token | Shannon entropy above 3.5 |
+| `cerebras-api-key` | `csk-` and 48 alphanumeric bytes | Token | Shannon entropy above 3.0 |
+| `replicate-api-token` | `r8_` and 37 alphanumeric bytes | Token | Shannon entropy above 3.0 |
+| `nvidia-api-key` | `nvapi-` and 60 to 70 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 3.5 |
+| `cloudsmith-api-key` | `csa_`, 30 lowercase hexadecimal bytes, then 6 alphanumeric bytes | Token | None |
+| `minimax-api-key` | `sk-api-` and 119 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 3.5 |
+| `posthog-personal-api-key` | `phx_` and 41 to 49 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 3.0 |
+| `figma-personal-access-token` | `figd_` and 38 to 42 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 3.5 |
+| `togetherai-api-key` | `tgp_v1_` and 43 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 3.0 |
+| `gcp-gemini-api` | `AQ.Ab8RN6` and 44 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 4.0 |
+
+- All 10 rules need a leading ASCII word boundary and a terminal delimiter.
+  The delimiter is an ordinary or backslash-escaped single quote, double
+  quote or backtick, ASCII whitespace (bytes 09 to 0d and 20), a semicolon, a
+  literal `\n` or `\r`, or end of input.
+- Groq, Cerebras, Replicate, NVIDIA, MiniMax, PostHog, Figma and Together
+  accept ASCII case variants of the prefix and body, and also accept `\N` and
+  `\R`. Cloudsmith and `gcp-gemini-api` prefixes are case-sensitive and
+  accept only lowercase `\n` and `\r`. Non-ASCII case-fold variants never
+  match.
+- The last 6 Cloudsmith bytes can be uppercase; the hexadecimal part must be
+  lowercase.
+- Replicate documents a 40-byte total with the `r8_` prefix. The other
+  references give the credential role and prefix but not the exact lengths.
+  The lengths are pinned detector scopes, not issuer rules.
+- Only PostHog personal `phx_` tokens match. Public project `phc_` tokens do
+  not.
+- `AQ.Ab8RN6` is a Google or Gemini API key candidate. The syntax does not
+  prove Gemini access, key activity or key restrictions. Google `AIza` keys
+  stay with the default rule.
+
+### Escaped and segment companions (5 rules)
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `anthropic-api-key-escaped` | `sk-ant-api03-`, 93 alphanumeric, underscore or hyphen bytes and `AA`, before a backslash-escaped quote or backtick | Token | None |
+| `anthropic-admin-api-key-escaped` | The same body and delimiter with `sk-ant-admin01-` | Token | None |
+| `digitalocean-refresh-token-escaped` | `dor_v1_` and 64 hexadecimal bytes, before a backslash-escaped quote or backtick | Token | None |
+| `openai-api-key-20-segment` | `sk-`, role `proj`, `svcacct` or `admin`, hyphen, left segment, `T3BlbkFJ`, right segment, where at least one segment has 20 bytes | Token | Shannon entropy above 3.0 |
+| `flyio-flyv1` | `FlyV1`, exactly 1 ASCII whitespace byte, then at least 100 body bytes | Token | Shannon entropy above 4.0 |
+
+- The Anthropic and DigitalOcean rules keep the leading word boundary.
+  Anthropic prefixes, bodies and `AA` endings are case-sensitive.
+  DigitalOcean accepts ASCII case variants of the prefix and hexadecimal
+  body. Ordinary endings stay with the default rules.
+- OpenAI accepts exactly 5 left and right segment length pairs for each role:
+  (20,20), (20,58), (20,74), (58,20) and (74,20). Segment bytes are
+  alphanumeric, underscore or hyphen. The prefix, roles and marker are
+  case-sensitive. Leading and trailing ASCII word boundaries are required.
+  The (58,74) family and the unscoped `sk-` form stay with the default rule.
+- Fly.io is case-sensitive. The body alphabet is alphanumeric, `=`, `_`, `-`,
+  `,`, `/` and `+`. The `fo1_`, `fm1a_`, `fm1r_` and `fm2_` formats stay with
+  the default rule. The separator can be LF, so the secret can span lines.
+- OpenAI and Fly.io end at an ordinary or escaped quote or backtick, ASCII
+  whitespace, a semicolon, a literal lowercase `\n` or `\r`, or end of input.
+
+### Contextual provider formats (9 rules)
+
+These rules keep the assignment context of the source. The context is part
+of the match; only the token is the secret.
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `checkout-secret-key` | Label `checkout`; `sk_` and hexadecimal groups 8-4-4-4-12 | Token | None |
+| `crates-io-api-key` | Label `crates` with optional `.io`, `_io`, `-io` or `io`; `cio` and 32 alphanumeric bytes | Token | None |
+| `cursor-api-key` | Label `cursor`; `key_` and 64 hexadecimal bytes | Token | Shannon entropy above 3.5 |
+| `databento-api-key` | Label `databento`; `db-` and 29 alphanumeric bytes | Token | None |
+| `elevenlabs-api-key` | Label `elevenlabs`; `sk_` and 48 hexadecimal bytes | Token | Shannon entropy above 3.5 |
+| `figma-personal-access-header-token` | Label `x-figma-token`, `xfigmatoken` or `x_figma_token`; hexadecimal groups 4-8-4-4-4-12 | Token | None |
+| `ollama-api-key` | Label `ollama`; 32 hexadecimal bytes, a dot and 24 alphanumeric, underscore or hyphen bytes | Token | Shannon entropy above 3.5 |
+| `polymarket-private-key` | Label `poly`, up to 20 non-LF characters, `private`, up to 20 non-LF characters, `key`; `0x` and 64 hexadecimal bytes | Token | Shannon entropy above 3.5 |
+| `stability-ai-api-key` | Label `stability`; `sk-` and 48 alphanumeric bytes | Token | Shannon entropy above 3.5 |
+
+- A label allows 0 to 20 ASCII word, space, tab, dot or hyphen bytes. Then
+  come up to 3 whitespace or quote bytes and an assignment separator. Up to
+  5 whitespace, quote, backtick or `=` bytes can come before the token.
+- The separators are `=`, `>`, `:=`, `::=`, `:::=`, `||`, `:`, `=>`, `?=` and
+  a comma.
+- The context has no leading word boundary, so a matching part of a longer
+  label is accepted.
+- ASCII case variants are written out. Polymarket's `0x` prefix and escaped
+  `n` and `r` endings are case-sensitive, and its dot context keeps character
+  meaning, including non-ASCII characters. The other rules also accept `\N`
+  and `\R`.
+- All 9 rules use the terminal delimiters of the provider prefix rules.
+  Non-ASCII case folding and whitespace do not replace the ASCII classes.
+- The context is detection evidence, not issuer or permission validation.
+  Polymarket's context does not turn bare hexadecimal hashes or public
+  addresses into private keys. Bare tokens without context do not match.
+- The Figma header rule has no entropy floor. A value that the generic rule
+  rejects for low entropy can add an occurrence. A value with higher entropy
+  under the same label only changes attribution.
+
+### Slack session formats (2 rules)
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `slack-session-token` | `xoxc-`, 3 digit groups of 9 to 15 bytes joined by hyphens, a hyphen and 64 lowercase hexadecimal bytes | Token | Shannon entropy above 3.5 |
+| `slack-session-cookie` | `xoxd-`, at least 100 ASCII word, `/`, `\`, `+` or `-` bytes, then 0 to 2 `=` padding bytes | Cookie value | Shannon entropy above 3.5 |
+
+- Both prefixes are case-sensitive and neither rule has a leading boundary.
+- The token needs a trailing ASCII word boundary. The source describes use
+  together with a cookie, but detection does not need a cookie. A token match
+  does not show full session access.
+- The cookie ends at end of input or at a byte outside ASCII word, `/`, `+`,
+  `=` and `-`. A consumed delimiter belongs to the match. A backslash belongs
+  to both the body and the delimiter; greedy matching keeps it in the body
+  when it can, while padding can make it the delimiter. Non-ASCII terminal
+  characters and invalid bytes keep the normal character and range
+  behavior.
+- The cookie body has no length limit. See [Shared boundaries](#shared-boundaries).
+
+### Finite Veles formats (4 rules)
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `circleci-project-token` | `CCIPRJ_`, 22 alphanumeric bytes, `_`, 40 lowercase hexadecimal bytes (70 bytes) | Whole match | None |
+| `deno-organization-token` | `ddo_` and 36 alphanumeric bytes (40 bytes) | Whole match | None |
+| `xai-api-key-80` | `xai-` and 80 alphanumeric bytes (84 bytes) | Whole match | None |
+| `postman-collection-token` | `PMAT-` and 26 alphanumeric bytes (31 bytes) | Whole match | None |
+
+- The forms are case-sensitive. The rules have no keywords, entropy check or
+  delimiters. A longer alphanumeric run can contain a match.
+- The source `MaxLen` equals the full match length. This is a rule on the
+  expression only, not a claim of equal behavior with the source scanner's
+  streaming code.
+- Low-entropy matches are reported when the pack runs alone. Global
+  allowlists still apply in a composition.
+- The xAI rule uses only the Apache 80-byte body expression. The MIT rule for
+  70 to 120 byte bodies and the Kingfisher suppression overlay are not
+  selected. `xai-token-` management keys do not match.
+- CircleCI personal tokens, Deno user tokens and Postman account API tokens
+  are different roles. These rules do not match them.
+
+### Byte entropy provider formats (6 rules)
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `dockerhub-personal-access-token` | `dckr_pat_` and 27 alphanumeric, underscore or hyphen bytes | Token | Byte Shannon entropy of at least 3.5 |
+| `dockerhub-organization-access-token` | `dckr_oat_` and 32 alphanumeric, underscore or hyphen bytes | Token | Byte Shannon entropy of at least 3.5 |
+| `neon-api-key` | `napi_` and 64 alphanumeric bytes | Token | Byte Shannon entropy of at least 3.5 |
+| `render-api-key` | `rnd_` and 28 alphanumeric bytes | Token | Byte Shannon entropy of at least 3.5 |
+| `deno-account-token` | `ddp_` and 36 alphanumeric bytes | Token | Byte Shannon entropy of at least 3.5 |
+| `apify-api-token` | `apify_api_` and 34 to 38 alphanumeric bytes | Token | Byte Shannon entropy of at least 3.5 |
+
+- All forms are case-sensitive. Uppercase prefixes and non-ASCII case-fold
+  variants do not match.
+- The first 5 rules need a leading ASCII word boundary and a terminal
+  delimiter. The delimiter is an ordinary or escaped quote or backtick,
+  ASCII whitespace, a semicolon, a literal lowercase `\n` or `\r`, or end of
+  input. Apify uses leading and trailing word boundaries and consumes no
+  delimiter.
+- An entropy exactly at 3.5 is accepted.
+- Deno account `ddp_` tokens are separate from the `ddo_` organization rule.
+  Docker Hub personal and organization tokens are reported under separate
+  rules.
+- Each rule carries the source predicates as local allowlists: 13 global
+  secret regexes, 2 stopwords and the strict entropy rejection. Nothing is
+  left out. Predicate whitespace is kept as written; it is not widened to the
+  detector whitespace class.
+- The default global allowlist joins its regexes with the legacy flag scope.
+  For these 6 prefix forms only the first global expression
+  (true, false or null) can be reached. The other 12 need a whole value of
+  repeated letters, stars or dots, or a leading `$`, `{`, `%`, `@` or slash.
+  None of them can match a captured token here.
+
+### Shared-prefix delimiter companions (24 rules)
+
+These rules add occurrences before a literal backslash and quote (single,
+double or backtick) or a vertical tab. Ordinary delimiters and end of input
+stay with the default rules. No decoding pass is needed. Prefixes, token
+alphabets, bounds, alternatives and captures follow the pinned Betterleaks
+source. Each rule uses byte entropy with `reject = "le"`.
+
+| Rule ID | Matches | Entropy or predicate |
 | --- | --- | --- |
-| `rustleaks.groq-api-key` | `gsk_` and 52 alphanumeric characters | Greater than 3.5 |
-| `rustleaks.cerebras-api-key` | `csk-` and 48 alphanumeric characters | Greater than 3.0 |
-| `rustleaks.replicate-api-token` | `r8_` and 37 alphanumeric characters | Greater than 3.0 |
-| `rustleaks.nvidia-api-key` | `nvapi-` and 60 through 70 alphanumeric, underscore or hyphen characters | Greater than 3.5 |
+| `aws-amazon-bedrock-api-key-long-lived-delimiter` | Amazon Bedrock long-lived key | Byte Shannon entropy above 3.0 |
+| `digitalocean-access-token-delimiter` | DigitalOcean access token | Byte Shannon entropy above 3.0 |
+| `gcp-api-key-delimiter` | GCP API key | Byte Shannon entropy above 4.0 |
+| `huggingface-access-token-delimiter` | Hugging Face access token | Byte Shannon entropy above 2.0 |
+| `huggingface-organization-api-token-delimiter` | Hugging Face organization token | Byte Shannon entropy above 2.0 |
+| `infracost-api-token-delimiter` | Infracost | Byte Shannon entropy above 3.0 |
+| `intra42-client-secret-delimiter` | Intra42 | Byte Shannon entropy above 3.0 |
+| `maxmind-license-key-delimiter` | MaxMind | Byte Shannon entropy above 4.0 |
+| `notion-api-token-delimiter` | Notion | Byte Shannon entropy above 4.0 |
+| `octopus-deploy-api-key-delimiter` | Octopus Deploy | Byte Shannon entropy above 3.0 |
+| `planetscale-oauth-token-delimiter` | PlanetScale OAuth token | Byte Shannon entropy above 3.0 |
+| `planetscale-password-delimiter` | PlanetScale password | Byte Shannon entropy above 3.0 |
+| `prefect-api-token-delimiter` | Prefect | Byte Shannon entropy above 2.0 |
+| `pulumi-api-token-delimiter` | Pulumi | Byte Shannon entropy above 2.0 |
+| `readme-api-token-delimiter` | ReadMe | Byte Shannon entropy above 2.0 |
+| `rubygems-api-token-delimiter` | RubyGems | Byte Shannon entropy above 2.0 |
+| `scalingo-api-token-delimiter` | Scalingo | Byte Shannon entropy above 2.0 |
+| `settlemint-application-access-token-delimiter` | Settlemint application token | Byte Shannon entropy above 3.0 |
+| `settlemint-personal-access-token-delimiter` | Settlemint personal token | Byte Shannon entropy above 3.0 |
+| `settlemint-service-access-token-delimiter` | Settlemint service token | Byte Shannon entropy above 3.0 |
+| `shippo-api-token-delimiter` | Shippo | Byte Shannon entropy above 2.0 |
+| `square-access-token-delimiter` | Square | Byte Shannon entropy above 2.0 |
+| `vault-batch-token-delimiter` | Vault batch token | Byte Shannon entropy above 4.0 |
+| `vault-service-token-delimiter` | Vault service token | Byte Shannon entropy above 3.5 |
 
-These four rules accept ASCII upper/lower prefix variants and exclude
-non-ASCII case-fold variants. Replicate documents a 40-character total and
-`r8_` prefix. The other references establish credential role and prefix
-without guaranteeing the exact detector lengths.
+- Source secret exclusions are copied into each rule, each regex scoped on
+  its own. They include the GCP examples and the Vault letter-only legacy
+  token exclusion.
+- The legacy Vault `s.` form still needs the source `vault` keyword context.
+  The `hvs.` prefix supplies its own keyword.
+- Case changes caused by the global regex joining cannot be reached for these
+  fixed-prefix forms. Detection whitespace and predicate whitespace keep
+  their separate source meanings.
 
-Each requires a leading ASCII word boundary and a following delimiter:
-ordinary or backslash-escaped single quote, double quote or backtick; ASCII
-whitespace (`09` through `0d` and `20`); semicolon; literal `\n`, `\N`, `\r`
-or `\R`; or end of input.
+### Contextual and residual delimiter companions (44 rules)
 
-## Additional provider formats
+20 contextual families each have 2 rules: a `-delimiter` rule and a
+`-context-vt` rule. That gives 40 rules. 4 residual rules cover other
+vertical tab and escaped quote gaps.
 
-| Rule ID | ASCII secret form | Native entropy requirement |
+| Family | Rule IDs | Entropy or predicate |
 | --- | --- | --- |
-| `rustleaks.cloudsmith-api-key` | `csa_`, 30 lowercase hexadecimal bytes, then 6 alphanumeric bytes | None |
-| `rustleaks.minimax-api-key` | `sk-api-` and 119 alphanumeric, underscore or hyphen bytes | Greater than 3.5 |
-| `rustleaks.posthog-personal-api-key` | `phx_` and 41 through 49 alphanumeric, underscore or hyphen bytes | Greater than 3.0 |
-| `rustleaks.figma-personal-access-token` | `figd_` and 38 through 42 alphanumeric, underscore or hyphen bytes | Greater than 3.5 |
-| `rustleaks.togetherai-api-key` | `tgp_v1_` and 43 alphanumeric, underscore or hyphen bytes | Greater than 3.0 |
-| `rustleaks.gcp-gemini-api` | `AQ.Ab8RN6` and 44 alphanumeric, underscore or hyphen bytes | Greater than 4.0 |
+| Beamer | `beamer-api-token-delimiter`, `beamer-api-token-context-vt` | None |
+| Defined Networking | `defined-networking-api-token-delimiter`, `defined-networking-api-token-context-vt` | None |
+| Terraform password | `hashicorp-tf-password-delimiter`, `hashicorp-tf-password-context-vt` | Byte Shannon entropy above 2.0 |
+| Heroku legacy UUID | `heroku-api-key-delimiter`, `heroku-api-key-context-vt` | None |
+| HubSpot | `hubspot-api-key-delimiter`, `hubspot-api-key-context-vt` | None |
+| Lob private key | `lob-api-key-delimiter`, `lob-api-key-context-vt` | None |
+| Mailchimp | `mailchimp-api-key-delimiter`, `mailchimp-api-key-context-vt` | None |
+| Mailgun private key | `mailgun-private-api-token-delimiter`, `mailgun-private-api-token-context-vt` | None |
+| Mailgun signing key | `mailgun-signing-key-delimiter`, `mailgun-signing-key-context-vt` | None |
+| Okta | `okta-access-token-delimiter`, `okta-access-token-context-vt` | Byte Shannon entropy above 4.0 |
+| Plaid | `plaid-api-token-delimiter`, `plaid-api-token-context-vt` | None |
+| Sidekiq | `sidekiq-secret-delimiter`, `sidekiq-secret-context-vt` | None |
+| Snyk | `snyk-api-token-delimiter`, `snyk-api-token-context-vt` | None |
+| Sonar | `sonar-api-token-delimiter`, `sonar-api-token-context-vt` (secret is capture 2) | None |
+| Squarespace | `squarespace-access-token-delimiter`, `squarespace-access-token-context-vt` | None |
+| Telegram | `telegram-bot-api-token-delimiter`, `telegram-bot-api-token-context-vt` | None |
+| Typeform | `typeform-api-token-delimiter`, `typeform-api-token-context-vt` | None |
+| Yandex access token | `yandex-access-token-delimiter`, `yandex-access-token-context-vt` | None |
+| Yandex API key | `yandex-api-key-delimiter`, `yandex-api-key-context-vt` | None |
+| Yandex AWS access token | `yandex-aws-access-token-delimiter`, `yandex-aws-access-token-context-vt` | None |
+| Residual: Anthropic | `anthropic-api-key-vt`, `anthropic-admin-api-key-vt` | None |
+| Residual: DigitalOcean | `digitalocean-refresh-token-vt` | None |
+| Residual: OpenAI | `openai-api-key-legacy-delimiter` | Byte Shannon entropy above 3.0 |
 
-Cloudsmith and Google/Gemini prefixes are case-sensitive. MiniMax, PostHog,
-Figma and Together accept explicit ASCII prefix/body case variants. All six
-require a leading ASCII word boundary and the same terminal delimiters as the
-first four provider rules. The two case-sensitive rules accept only lowercase
-literal `\n` and `\r`, while the other four also accept `\N` and `\R`.
-Cloudsmith's final six bytes can be uppercase; its preceding hexadecimal part
-must remain lowercase. These bounds describe pinned detector scopes, not an
-exhaustive specification of provider-issued keys.
+- A `-delimiter` rule matches an escaped single, double or backtick quote, or
+  a vertical tab, after a token whose assignment whitespace has no vertical
+  tab.
+- A `-context-vt` rule needs a vertical tab near the separator. It must be in
+  the 3 bytes before the separator or the 5 bytes after it. The rule keeps
+  all source endings.
+  The first-VT alternatives keep the total bounds. They do not add a vertical
+  tab to the separate label tail class of 0 to 20 bytes. For one assignment,
+  only one of the two rules can match.
+- Optional native ASCII preambles stay for match geometry, including both
+  Okta preambles. Removing a preamble alone would not recover an occurrence.
+- Provider labels and body alternatives are kept. The public Lob publishable
+  key and Mailgun validation key roles are not included.
+- Terraform keeps the `.tf` and `.hcl` path condition and captures the quotes
+  with the password. Quoted bodies of 8 or 9 characters can add occurrences;
+  the generic rule can already report longer bodies, which then only gain
+  attribution or a different capture.
+- Sonar rules report capture 2, because capture 1 is the login or token label.
+- Okta accepts only the source label forms `okta`, `Okta` and `OKTA`, and only
+  lowercase escaped `n` and `r`.
+- Telegram's `A` after the numeric prefix is case-sensitive. Mailchimp keeps
+  the source dot wildcard as a character wildcard.
+- The Anthropic and DigitalOcean `-vt` rules cover the vertical tab ending of
+  those families. `openai-api-key-legacy-delimiter` covers the (58,74) role
+  segment pairs and the bare (20,20) form before escaped quotes or a vertical
+  tab. The 20-segment role companion covers the new forms. Ordinary endings
+  stay with the default rules.
+- Every rule carries the full source secret predicates, each regex scoped on
+  its own. Go predicate whitespace is separate from detector whitespace,
+  which includes vertical tab. Overlapping assignments keep native match
+  enumeration.
 
-Only PostHog personal `phx_` tokens are included. Public-write project `phc_`
-tokens are outside that rule; inherited generic rules remain unchanged.
-The `AQ.Ab8RN6` form is a Google/Gemini API-key candidate. Its syntax does not
-prove Gemini authorization, key activity or key restrictions. Existing Google
-`AIza` detections retain their default rule and behavior.
+### Source-predicate provider formats (102 rules)
 
-Bare candidates can add detected occurrences. A candidate already captured
-by an assigned generic key is an attribution change under the existing overlap
-policy. Regression controls distinguish those cases by exact secret ranges.
-No credential is submitted to a provider for validation or analysis.
+101 rules come from the pinned MIT Betterleaks configuration, and 1 rule is a
+native Google ADC refresh token rule. Each rule keeps the source keywords,
+capture, full rejection predicate and byte entropy comparison. The
+provenance JSON records the original pattern and every change for each rule.
 
-## Incremental companions
-
-| Rule ID | Added scope | Native entropy requirement |
+| Rule ID | Matches | Entropy or predicate |
 | --- | --- | --- |
-| `rustleaks.anthropic-api-key-escaped` | `sk-ant-api03-`, 93 alphanumeric/underscore/hyphen bytes, `AA`, then a backslash-escaped quote or backtick | None |
-| `rustleaks.anthropic-admin-api-key-escaped` | The same body and delimiter with `sk-ant-admin01-` | None |
-| `rustleaks.digitalocean-refresh-token-escaped` | `dor_v1_`, 64 hexadecimal bytes, then a backslash-escaped quote or backtick | None |
-| `rustleaks.openai-api-key-20-segment` | `sk-`, role `proj`, `svcacct` or `admin`, hyphen, left segment, `T3BlbkFJ`, right segment; at least one segment has 20 bytes | Greater than 3.0 |
-| `rustleaks.flyio-flyv1` | `FlyV1`, exactly one ASCII whitespace byte, then at least 100 body bytes | Greater than 4.0 |
+| `abuseipdb-api-key` | AbuseIPDB account API key | Byte Shannon entropy of at least 3.5 |
+| `aikido-ci-token` | Aikido CI scan token | Byte Shannon entropy of at least 3.0 |
+| `asaas-api-token` | Asaas payment API token, including sandbox `hmlg` | Byte Shannon entropy of at least 3.5 |
+| `brave-search-api-key` | Brave Search API key | Byte Shannon entropy of at least 3.2 |
+| `buildkite-service-token` | Buildkite agent, job, package or portal token | Byte Shannon entropy of at least 3.5 |
+| `buildkite-user-access-token` | Buildkite user access token | Byte Shannon entropy of at least 3.5 |
+| `canadian-digital-service-notify-api-key` | GC Notify API key | Byte Shannon entropy of at least 3.5 |
+| `cartesia-api-key` | Cartesia voice API key | Byte Shannon entropy of at least 3.5 |
+| `clerk-secret-key-delimiter` | Clerk backend secret key, including test keys | Byte Shannon entropy of at least 3.3 |
+| `clickup-personal-api-token` | ClickUp personal API token (`pk_` is not a publishable key here) | Byte Shannon entropy of at least 3.5 |
+| `cockroachlabs-cloud-api-key` | CockroachDB Cloud service account key | Byte Shannon entropy of at least 3.5 |
+| `couchbase-capella-api-key` | Couchbase Capella management API secret | Byte Shannon entropy of at least 4.0 |
+| `datastax-astra-application-token` | DataStax Astra application token | Byte Shannon entropy of at least 4.0 |
+| `devcycle-server-sdk-key` | DevCycle server SDK key | Byte Shannon entropy of at least 3.0 |
+| `devin-personal-api-key` | Devin personal API key | Byte Shannon entropy of at least 3.5 |
+| `devin-service-api-key` | Devin organization service API key | Byte Shannon entropy of at least 3.5 |
+| `devin-service-user-token` | Devin service user token | Byte Shannon entropy of at least 3.5 |
+| `docker-swarm-join-token` | Docker Swarm join token | Byte Shannon entropy of at least 3.5 |
+| `docker-swarm-unlock-key` | Docker Swarm unlock key | Byte Shannon entropy of at least 3.5 |
+| `elastic-cloud-api-key` | Elastic Cloud API key | Byte Shannon entropy of at least 3.5 |
+| `endorlabs-api-key` | Endor Labs API key part | Byte Shannon entropy of at least 3.0 |
+| `endorlabs-api-secret` | Endor Labs API secret part | Byte Shannon entropy of at least 3.5 |
+| `fal-api-key` | fal API key with key ID and secret | Byte Shannon entropy of at least 3.5 |
+| `fullstory-api-key` | Fullstory server API key | Byte Shannon entropy of at least 3.3 |
+| `highnote-secret-live-key` | Highnote live secret key | Byte Shannon entropy of at least 3.5 |
+| `hunter-api-key` | Hunter API key | Byte Shannon entropy of at least 3.5 |
+| `ibm-cloud-user-api-key` | IBM Cloud user API key | Byte Shannon entropy of at least 3.5 |
+| `instantly-api-key` | Instantly API key | Byte Shannon entropy of at least 3.3 |
+| `ionic-personal-access-token` | Ionic Appflow personal token | Byte Shannon entropy of at least 3.5 |
+| `kagi-api-key` | Kagi API key | Byte Shannon entropy of at least 3.5 |
+| `klaviyo-api-key` | Klaviyo private API key (`pk_` prefix) | Byte Shannon entropy of at least 3.5 |
+| `labelbox-api-key` | Labelbox API key | Byte Shannon entropy of at least 3.5 |
+| `labelbox-recursion-api-key` | Labelbox Recursion key | Byte Shannon entropy of at least 3.5 |
+| `langchain-langsmith-personal-access-token` | LangSmith personal key | Byte Shannon entropy of at least 4.0 |
+| `langchain-langsmith-service-key` | LangSmith service key | Byte Shannon entropy of at least 4.0 |
+| `lichess-personal-access-token` | Lichess personal token | Byte Shannon entropy of at least 3.5 |
+| `llama-cloud-api-key` | LlamaCloud API key | Byte Shannon entropy of at least 3.5 |
+| `mailersend-api-token` | MailerSend API token | Byte Shannon entropy of at least 3.5 |
+| `mem0-api-key` | Mem0 API key | Byte Shannon entropy of at least 3.0 |
+| `mercury-production-api-token` | Mercury production API token | Byte Shannon entropy of at least 3.5 |
+| `mergify-application-key` | Mergify application key | Byte Shannon entropy of at least 3.2 |
+| `midtrans-production-server-key` | Midtrans production server key (`Mid-server-` only) | Byte Shannon entropy of at least 2.8 |
+| `miro-access-token` | Miro OAuth access token | Byte Shannon entropy of at least 3.5 |
+| `ngrok-api-key` | ngrok API key or agent authtoken | Byte Shannon entropy of at least 3.5 |
+| `nuget-api-key` | NuGet API key | Byte Shannon entropy of at least 3.5 |
+| `nylas-api-key` | Nylas API key | Byte Shannon entropy of at least 3.5 |
+| `onesignal-rich-authentication-token` | OneSignal rich authentication token | Byte Shannon entropy of at least 3.5 |
+| `onfido-live-api-token-ca` | Onfido live API token, Canada | Byte Shannon entropy of at least 3.5 |
+| `onfido-live-api-token-eu` | Onfido live API token, EU | Byte Shannon entropy of at least 3.5 |
+| `onfido-live-api-token-us` | Onfido live API token, US | Byte Shannon entropy of at least 3.5 |
+| `opsgenie-api-key` | Opsgenie API key | Byte Shannon entropy of at least 3.0 |
+| `paddle-live-api-key` | Paddle live API key | Byte Shannon entropy of at least 3.5 |
+| `pagerduty-authorization-token` | PagerDuty authorization token | Byte Shannon entropy of at least 3.5 |
+| `persona-production-api-key` | Persona production API key | Byte Shannon entropy of at least 3.5 |
+| `pinecone-api-key-uuid` | Pinecone API key, UUID form | Byte Shannon entropy of at least 3.0 |
+| `pinecone-api-key-pcsk` | Pinecone API key, `pcsk` form | Byte Shannon entropy of at least 3.5 |
+| `pinterest-access-token` | Pinterest access token | Byte Shannon entropy of at least 3.5 |
+| `polar-oauth-access-token` | Polar OAuth access token | Byte Shannon entropy of at least 3.5 |
+| `polar-organization-access-token` | Polar organization token | Byte Shannon entropy of at least 3.5 |
+| `polar-personal-access-token` | Polar personal token | Byte Shannon entropy of at least 3.5 |
+| `postmark-api-token` | Postmark server or account token | Byte Shannon entropy of at least 3.0 |
+| `proof-full-access-api-key` | Proof production full-access key | Byte Shannon entropy of at least 3.5 |
+| `rainforest-pay-production-api-key` | Rainforest Pay production key | Byte Shannon entropy of at least 3.5 |
+| `redirect-pizza-api-token` | redirect.pizza API token | Byte Shannon entropy of at least 3.5 |
+| `resend-api-key` | Resend API key | Byte Shannon entropy of at least 3.5 |
+| `retell-api-key` | Retell AI API key | Byte Shannon entropy of at least 3.0 |
+| `rootly-api-key` | Rootly API key | Byte Shannon entropy of at least 3.5 |
+| `runpod-api-key` | RunPod API key | Byte Shannon entropy of at least 3.5 |
+| `samsara-api-token` | Samsara API token | Byte Shannon entropy of at least 3.0 |
+| `scaleway-secret-key` | Scaleway secret key | Byte Shannon entropy of at least 3.0 |
+| `scalr-api-access-token-delimiter` | Scalr API access token | Byte Shannon entropy of at least 3.5 |
+| `segment-public-api-token` | Segment Public API token | Byte Shannon entropy of at least 3.3 |
+| `tailscale-api-key` | Tailscale API access token | Byte Shannon entropy of at least 3.5 |
+| `tailscale-auth-key` | Tailscale device enrollment key | Byte Shannon entropy of at least 3.5 |
+| `tailscale-key` | Tailscale legacy untyped key | Byte Shannon entropy of at least 3.5 |
+| `tailscale-oauth-client-secret` | Tailscale OAuth client secret | Byte Shannon entropy of at least 3.5 |
+| `tailscale-scim-key` | Tailscale SCIM key | Byte Shannon entropy of at least 3.5 |
+| `tailscale-webhook-secret` | Tailscale webhook signing secret | Byte Shannon entropy of at least 3.5 |
+| `telnyx-api-v2-key` | Telnyx API v2 key | Byte Shannon entropy of at least 3.5 |
+| `upcloud-api-token` | UpCloud API token | Byte Shannon entropy of at least 3.0 |
+| `virustotal-api-key` | VirusTotal API key | Byte Shannon entropy of at least 3.5 |
+| `voyageai-api-key` | Voyage AI API key | Byte Shannon entropy of at least 4.0 |
+| `vultr-api-key` | Vultr API key | Byte Shannon entropy of at least 3.4 |
+| `wakatime-api-key-uuid` | WakaTime API key, UUID form | Byte Shannon entropy of at least 3.0 |
+| `wakatime-api-key-prefixed` | WakaTime API key, `waka_` form | Byte Shannon entropy of at least 3.0 |
+| `woocommerce-consumer-secret` | WooCommerce consumer secret | Byte Shannon entropy of at least 3.5 |
+| `workato-developer-api-token` | Workato developer API token | Byte Shannon entropy of at least 4.0 |
+| `workos-production-api-key` | WorkOS production API key | Byte Shannon entropy of at least 3.5 |
+| `xendit-production-api-key` | Xendit production API key | Byte Shannon entropy of at least 3.0 |
+| `zoho-oauth-token` | Zoho OAuth access or refresh token | Byte Shannon entropy of at least 3.5 |
+| `zoho-zapi-key` | Zoho ZAPI key | Byte Shannon entropy of at least 3.5 |
+| `zuplo-consumer-api-key` | Zuplo consumer API key | Byte Shannon entropy of at least 3.3 |
+| `supabase-management-token` | Supabase management token | Byte Shannon entropy above 3.5 |
+| `thunderstore-api-token` | Thunderstore API token | Byte Shannon entropy of at least 3.5 |
+| `unkey-root-key` | Unkey root key | Byte Shannon entropy of at least 3.5 |
+| `val-town-api-token` | Val Town API token | Byte Shannon entropy of at least 3.5 |
+| `temporal-cloud-api-key` | Temporal Cloud API key | Byte Shannon entropy of at least 3.2 |
+| `openrouter-api-key` | OpenRouter API key | Byte Shannon entropy above 3.5 |
+| `deepseek-api-key` | DeepSeek API key | Byte Shannon entropy above 3.5 |
+| `kimi-api-key` | Kimi API key | Byte Shannon entropy above 3.5 |
+| `zai-api-key` | Z.ai API key | Byte Shannon entropy above 3.5 |
+| `gcp-adc-refresh-token` | Google OAuth refresh token in an ADC file | None |
 
-The first three retain the leading ASCII word boundary. Anthropic prefixes,
-bodies and `AA` endings remain case-sensitive. DigitalOcean accepts ASCII
-case variants of the prefix and hexadecimal body. Their ordinary delimiters
-remain covered only by the pinned defaults. Three separate `-vt` companions cover the vertical-tab suffix for these families.
+- All 23 source path exclusions stay as rule allowlists, including root and
+  nested `bun.lock` and `bun.lockb`. The rules also keep 13 source secret
+  regex exclusions, 2 case-insensitive substring exclusions and local
+  exclusions. The native loader keeps these predicates when single rules are
+  selected.
+- Source roles are chosen one by one. DevCycle server keys are included;
+  DevCycle client and mobile keys and ConfigCat SDK keys are not. Midtrans
+  includes only `Mid-server-`. The 2 Endor Labs rules keep separate IDs and
+  thresholds; 2 attributions for one occurrence are not 2 credentials.
+- Ionic, Miro and Resend keep their source keywords, even when the token
+  itself cannot contain that keyword. Voyage, DeepSeek, Kimi and Z.ai keep
+  the source assignment context.
+- Clerk and Scalr select only their documented delimiter forms. WorkOS
+  candidates with plain alphanumeric bodies can already be attributed to
+  Stripe. A new provider finding is therefore not always a new occurrence.
+- Capella keeps the 4 source proximity gaps of 32, 12, 12 and 32 ASCII
+  bytes. Fal's wildcard context allows 1 ASCII byte other than LF. Asaas and
+  Buildkite service delimiters use explicit ASCII classes. Scaleway's context
+  allows up to 20 ASCII bytes other than LF. Non-ASCII and malformed bytes in
+  those positions do not match.
+- Supabase, Thunderstore and Val Town keep their two-digit predicates. Unkey
+  needs a digit, an uppercase and a lowercase letter in the whole secret; its
+  lowercase prefix supplies the lowercase letter. Temporal's marker supplies
+  its required digits. These are anchored secret allowlists; no field or
+  expression interpreter is added.
+- `gcp-adc-refresh-token` captures only a `1//` refresh token value in a file
+  named `application_default_credentials.json`, and needs the Google client
+  ID keyword `.apps.googleusercontent.com`. The body has at least 20 bytes,
+  the token at most 512 bytes, and whitespace is bounded. It does not capture
+  or parse the JSON document. Whole service account documents and the
+  generated Bitwarden pair expression are not included.
 
-The OpenAI companion admits exactly five left/right length pairs:
-`(20,20)`, `(20,58)`, `(20,74)`, `(58,20)` and `(74,20)`, for each of the three
-roles. Segment bytes are alphanumeric, underscore or hyphen; the prefix,
-roles and marker are case-sensitive. Both leading and terminal ASCII word
-boundaries remain required. The four existing pairs from `{58,74}` and the
-legacy unscoped `sk-` form retain their default ordinary-ending coverage. The
-separate `-legacy-delimiter` companion covers their escaped-quote and VT endings.
+### Format and boundary supplements (27 rules)
 
-The Fly.io companion is case-sensitive. Its body alphabet is alphanumeric,
-equals, underscore, hyphen, comma, slash and plus. The existing `fo1_`,
-`fm1a_`, `fm1r_` and `fm2_` formats remain covered only by the default rule.
+17 rules come from the pinned MIT Betterleaks configuration and 10 from the
+pinned Apache-2.0 Veles detectors.
 
-The OpenAI and Fly.io companions accept ordinary or backslash-escaped quotes
-and backticks, ASCII whitespace, semicolon, literal lowercase `\n` or `\r`,
-or end of input as their terminal delimiter. Fly.io also permits LF as its
-single separator, making its captured secret potentially multiline.
+| Rule ID | Matches | Source | Entropy or predicate |
+| --- | --- | --- | --- |
+| `adobe-client-secret-delimiter` | Adobe client secret before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `authress-service-client-access-key-boundary` | Authress service client access key at selected punctuation | Betterleaks | Byte Shannon entropy of at least 4.0 |
+| `databricks-api-token-delimiter` | Databricks API token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `datadog-api-key` | Datadog API key in provider assignment context | Betterleaks | Byte Shannon entropy of at least 3.5 |
+| `datadog-application-key-delimiter` | Datadog application key before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.5 |
+| `etsy-open-api-key` | Etsy keystring and shared secret pair in API key context | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `gitlab-incoming-mail-address-token` | GitLab incoming mail address token | Betterleaks | Byte Shannon entropy above 3.0 |
+| `gitlab-pat-routable-versioned` | Complete versioned GitLab routable personal access token | Betterleaks | Byte Shannon entropy above 4.0 |
+| `gocardless-api-token-delimiter` | GoCardless live API token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.5 |
+| `grafana-api-key-base64` | Grafana API key with standard Base64 body characters | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `grafana-cloud-api-token-delimiter` | Grafana Cloud API token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `grafana-service-account-token-delimiter` | Grafana service account token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `heroku-api-key-v2-trailing-hyphen-delimiter` | Heroku token with a trailing hyphen `AA` body, before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy above 4.0 |
+| `monday-api-token` | Monday API token in provider assignment context | Betterleaks | Byte Shannon entropy of at least 3.5 |
+| `sendinblue-api-token-boundary` | Sendinblue API token at selected punctuation | Betterleaks | Byte Shannon entropy of at least 3.2 |
+| `sourcegraph-access-token-delimiter` | Sourcegraph access token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy above 3.0 |
+| `stripe-access-token-delimiter` | Stripe access token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy above 2.0 |
+| `digitalocean-pat-boundary` | DigitalOcean personal access token at selected punctuation | Veles | None |
+| `hcp-client-secret` | HCP client secret in an exact source label assignment | Veles | None |
+| `heroku-platform-key-boundary` | Heroku `AA` platform key at selected punctuation | Veles | None |
+| `npm-access-token-boundary` | npm access token at selected punctuation | Veles | None |
+| `openrouter-api-key-boundary` | OpenRouter API key before a comma, `]`, `)` or `}` | Veles | None |
+| `packagist-organization-read-token` | Packagist organization read token | Veles | None |
+| `packagist-organization-update-token` | Packagist organization update token | Veles | None |
+| `postman-api-token-boundary` | Postman API token at selected punctuation | Veles | None |
+| `sendgrid-api-token-boundary` | SendGrid API token at selected punctuation | Veles | None |
+| `slack-config-refresh-token-147` | Slack configuration refresh token with a 147-byte body | Veles | None |
 
-The two Sonar companions select capture 2 as the secret because capture 1 is
-the login/token label. All other rules select capture 1. Consumed terminal delimiters
-belong to the match, not the secret. Existing trimming removes trailing LF
-from matches and retains CR. Raw-byte and decoded-range contracts are
-unchanged. `Fragment::new` starts locations at line zero, and the frozen
-location helper includes the preceding LF in its byte-column origin.
-Unsupported forms remain coverage gaps; they do not show a value is harmless.
+- Source predicates stay local to each rule. Betterleaks rules keep the
+  source keywords, all source secret and path exclusions, generated
+  supersession filters and the exact byte entropy comparison. Veles rules do
+  not get Betterleaks filters.
+- GoCardless rejects entropy below 3.5. Stripe excludes `sk_test_` and
+  WorkOS prefixes.
+- The Betterleaks Heroku rule accepts only trailing-hyphen `AA` bodies. The
+  Veles Heroku rule keeps the source final word boundary.
+- Authress keeps lowercase credential prefixes, `acc` and account IDs.
+  Datadog API and application keys keep their 32-byte and 40-byte
+  hexadecimal bodies. Etsy captures the full keystring and shared secret
+  pair. Grafana accepts the standard Base64 body alphabet. HCP matches a
+  secret assignment without a client ID. Packagist organization tokens do
+  not need a repository URL. Optional validation parts are not required
+  rules or separate findings.
+- Most rules consume selected punctuation, escaped quotes or a vertical tab
+  after a complete bounded token. HCP, Packagist and Slack refresh keep the
+  source fixed-width prefix extraction above the nominal length. HCP's Go
+  whitespace excludes vertical tab; Betterleaks byte whitespace includes it.
+  All token alphabets are explicit ASCII.
+- The full versioned GitLab token and the 147-byte Slack refresh body can
+  appear next to shorter findings from other rules. Before an escaped quote,
+  the default `jwt` finding for a Monday token includes one extra backslash,
+  while the Monday rule extracts the exact credential. Ordinary Monday JWT
+  and Grafana forms can gain provider attribution without a new occurrence.
+- Broader xAI body and prefix forms and Slack segments with several digits
+  are not included.
 
-## Providers with explicit byte entropy
+### Connection keys and structured context (6 rules, 1 hidden)
 
-Six rules use `entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt",
-threshold = 3.5 }`. They reject byte entropy strictly below 3.5, accepting an
-exact threshold. This is separate from the unchanged scalar entropy predicates
-of the earlier rules.
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `azure-app-configuration-key-comma` | Azure App Configuration access key before an unquoted comma and a space or tab | 44-byte key | Byte Shannon entropy above 3.5 |
+| `azure-servicebus-key-comma` | Azure Service Bus shared access key before an unquoted comma and a space or tab | 44-byte key (capture 2) | Byte Shannon entropy above 3.5; `buffer-v1` `same-candidate` relation to the helper |
+| `azure-servicebus-key-comma-tuple` | Hidden helper (`skipReport = true`) for the whole Service Bus tuple | None reported | Byte Shannon entropy above 3.0; source tuple exclusions |
+| `jwt-unsigned-bearer-escaped` | `Authorization: Bearer`, one of 3 literal `alg:none` header encodings, a base64url payload, an empty signature, then an escaped quote or backtick | Token without the escaped delimiter | Byte Shannon entropy above 3.0 |
+| `kubernetes-secret-yaml-long-context` | One Kubernetes Secret data item with 201 to 1000 ASCII bytes between `kind` and the data item, in either order | Data item, key and value | Source YAML path, keyword, template and empty value predicates |
+| `cloudflare-api-token-context` | One of 7 credential labels and a 40-byte token before a comma | Token | None |
 
-| Rule ID suffix (under `rustleaks.`) | Case-sensitive ASCII form | Boundaries |
-| --- | --- | --- |
-| `dockerhub-personal-access-token` | `dckr_pat_` and 27 alphanumeric, underscore or hyphen bytes | Leading word boundary and terminal delimiter |
-| `dockerhub-organization-access-token` | `dckr_oat_` and 32 alphanumeric, underscore or hyphen bytes | Leading word boundary and terminal delimiter |
-| `neon-api-key` | `napi_` and 64 alphanumeric bytes | Leading word boundary and terminal delimiter |
-| `render-api-key` | `rnd_` and 28 alphanumeric bytes | Leading word boundary and terminal delimiter |
-| `deno-account-token` | `ddp_` and 36 alphanumeric bytes | Leading word boundary and terminal delimiter |
-| `apify-api-token` | `apify_api_` and 34 through 38 alphanumeric bytes | Leading and trailing word boundaries; no consumed delimiter |
+- The Azure key rules in the default rules and the extra pack still apply
+  on their own.
+- The Service Bus parent needs its own complete tuple through the helper. The
+  helper keeps the source whole-tuple entropy and exclusions, and the parent
+  also needs key entropy above 3.5. The detection input and both ends of the
+  full match must be the same, also inside decoded inputs. An explicit rule
+  selection must name both IDs.
+- The JWT rule is a text pattern for an authentication candidate. It is not a
+  JSON or JOSE parser and does not check signatures. Bare unsigned data and
+  signed JWTs do not match. The default `jwt` rule can report a signed
+  escaped token with its trailing backslash.
+- The Kubernetes rule rejects matches that cross `---` or `...` document
+  marker lines, including indented marker-like lines, and rejects overlaps
+  with a short-context default match. Mapping keys that start with
+  `---suffix` or `...suffix` still match. It does not parse YAML.
+- Cloudflare excludes the public `CF_ACCOUNT_ID`. Its forward ASCII context
+  does not reproduce the Veles pair algorithm. It keeps the source terminal
+  word boundary and adds no Betterleaks path or secret predicates.
 
-For the first five, terminal delimiters are ordinary or backslash-escaped
-single quote, double quote or backtick, ASCII whitespace (`09` through `0d`
-and `20`), semicolon, literal lowercase `\n` or `\r`, or EOF. Word boundaries
-are ASCII. Uppercase prefixes and non-ASCII case-fold variants are excluded.
-Deno user `ddp_` tokens remain distinct from the Apache organization `ddo_`
-rule. Personal and organization Docker Hub tokens are separately attributed.
-The exact lengths are pinned source detector scopes, not an exhaustive issuer
-specification or proof of token activity.
+### Associated credentials (56 rules, 30 hidden)
 
-The named algorithm builds a 256-byte histogram, divides each nonzero count
-by the total byte length in binary64, and accumulates in ascending byte order.
-The exact original strict comparison is retained. These six ASCII rule
-languages avoid an arbitrary-byte source string-equivalence claim. This
-algorithm contract does not claim arbitrary-platform `log2` bit equivalence;
-the candidate reports the native predicate's entropy with the existing f32
-report conversion. Its metadata survives compiled rule selection.
+26 reporting rules need 30 hidden helper rules through `buffer-v1` relations.
+All 56 rules use the `bytes-v1` dialect with the exact generated source
+pattern. Rule IDs below leave out `rustleaks.association.`; helper IDs leave
+out `rustleaks.association.helper.`. A window of `0` has no line limit.
 
-All six complete generated source predicates contain the same 13 global
-secret regexes, two stopwords and strict entropy rejection. There is no omitted
-component requirement, tokenizer or precedence overlay. Global secret
-exclusions are retained as explicit rule-local predicates and inherited through
-the native base. Each of the 13 rule-local regexes has its own noncapturing
-scope, preserving source flags and alternatives when the native allowlist joins
-them. Predicate whitespace is preserved literally; it is not widened to the
-detector delimiter whitespace class. Source-path differences remain documented
-below. Whole-pack ordinary loading fails, preventing silent
-loss of the native predicate. Exact comparator/histogram controls, source
-arithmetic witnesses, native metadata inspection, rule selection, low-entropy
-admission accounting and actual provider-format cases are separate tests.
+| Reporting rule | Hidden helpers | Window | Entropy or predicate |
+| --- | --- | --- | --- |
+| `aikido-client-secret` | `aikido-client-id` | 0 | Byte Shannon entropy of at least 3.5 |
+| `artifactory-api-key` | `artifactory-jfrog-url` | 0 | Byte Shannon entropy of at least 3.5 |
+| `artifactory-reference-token` | `artifactory-jfrog-url` | 0 | Byte Shannon entropy of at least 3.5 |
+| `auth0-client-secret-v1` | `auth0-client-id-v1`, `auth0-domain-v1` | 10L | Byte Shannon entropy of at least 3.5 |
+| `aws-session-token` | `aws-access-token`, `aws-secret-access-key` | 5L | Byte Shannon entropy above 0.0 |
+| `azure-storage-account-key` | `azure-storage-account-name` | 8L | Byte Shannon entropy above 4.0 |
+| `browserstack-access-key-v1` | `browserstack-username-v1` | 5L | Byte Shannon entropy of at least 3.0 |
+| `canva-client-secret` | `canva-client-id` | 0 | Byte Shannon entropy of at least 3.5 |
+| `ebay-client-secret` | `ebay-client-id` | 0 | Byte Shannon entropy of at least 3.0 |
+| `exoscale-api-key` | `exoscale-api-secret` | 5L | Byte Shannon entropy of at least 3.0 |
+| `langfuse-secret-key-v1` | `langfuse-public-key-v1` | 5L | Byte Shannon entropy of at least 3.0 |
+| `miro-client-secret` | `miro-client-id` | 5L | Byte Shannon entropy of at least 3.5 |
+| `mongodb-atlas-service-account-secret` | `mongodb-atlas-service-account-id` | 0 | Byte Shannon entropy above 3.0 |
+| `mux-access-token-secret-v1` | `mux-access-token-id-v1` | 5L | Byte Shannon entropy of at least 3.5 |
+| `ovh-application-secret` | `ovh-application-key`, `ovh-consumer-key` | 20L | Byte Shannon entropy above 3.0 |
+| `paypal-client-secret-v1` | `paypal-client-id-v1` | 5L | Byte Shannon entropy of at least 3.5 |
+| `planetscale-api-token` | `planetscale-id` | 0 | Byte Shannon entropy above 3.0 |
+| `polymarket-api-key` | `polymarket-api-secret`, `polymarket-passphrase` | 20L | Byte Shannon entropy above 3.0 |
+| `ramp-client-secret` | `ramp-client-id` | 0 | Byte Shannon entropy of at least 3.5 |
+| `razorpay-key-secret-v1` | `razorpay-key-id-v1` | 5L | Byte Shannon entropy of at least 3.0 |
+| `salesforce-access-token-v1` | `salesforce-instance-url-v1` | 30L | Byte Shannon entropy of at least 3.3 |
+| `supabase-project-api-key` | `supabase-project-url` | 0 | Byte Shannon entropy above 4.0 |
+| `tableau-personal-access-token-v1` | `tableau-personal-access-token-name-v1`, `tableau-server-host-v1` | 20L | Byte Shannon entropy of at least 3.5 |
+| `upstash-redis-rest-token-v1` | `upstash-redis-rest-url-v1` | 5L | Byte Shannon entropy of at least 3.5 |
+| `wiz-client-secret-v1` | `wiz-client-id-v1` | 5L | Byte Shannon entropy of at least 4.0 |
+| `zoho-client-secret-v1` | `zoho-client-id-v1` | 5L | Byte Shannon entropy of at least 3.5 |
 
-The unchanged inherited base joins its global regexes with legacy flag scope.
-For these six captured prefix languages, only the first global true/false/null
-expression is reachable. The other twelve require an entire repeated-letter,
-star or dot value, or a leading `$`, `{`, `%`, `@` or slash. None intersects a
-captured token, so inherited cross-alternative flags cannot change this domain.
-Independent predicate probes cover case-sensitive path prefixes and vertical
-tab without altering the provider patterns or legacy global policy.
+- All edges use the `full-match-window` relation. The source contract is
+  pinned Kingfisher `scan_blob_with_context` without `DetectionOptions`. The
+  window and buffer rules are in
+  [Rule pack authoring](../../../docs/dev/rule-pack-authoring.md). Raw,
+  decoded, sibling and nested buffers cannot supply each other's helpers.
+  Native depth-two isolation does not claim that the source API decodes
+  recursively.
+- These rules set `secretGroup = 0`, so the secret is the first nonempty
+  capture of the real match in the full buffer.
+- Each helper applies its own keywords, paths, allowlists and byte entropy in
+  its buffer. Each source global and local secret predicate is kept, and all
+  23 source path exclusions stay on every rule. AWS session tokens and
+  Polymarket passphrases reject byte entropy at or below 0, as in the source
+  scanner floor.
+- The `bytes-v1` patterns match raw bytes with source ASCII case folding and
+  the original inline flags, repetition bounds, captures and leftmost-first
+  greedy or lazy choice. The AWS session capture keeps the source 16 to 2048
+  repetition without Go adaptation.
+- 9 bounded bridges in 7 rules keep arbitrary source bytes: 2 Azure key and
+  name bridges, 2 Canva ID bridges, 2 PlanetScale ID bridges and 3 Polymarket
+  bridges. Limits count bytes. Complete UTF-8 characters and invalid bytes
+  are accepted within each byte limit; one byte over is rejected. Dot-all and
+  ordinary dot LF and CR rules stay as in the source.
+- JFrog, Salesforce and Tableau delimiter guards own exactly one byte, also
+  when the range starts or ends inside a UTF-8 character. Next helpers can
+  consume other bytes of that character. Matching never normalizes malformed
+  input or counts characters instead of bytes.
+- Each qualifying helper occurrence appears once per parent in core
+  `required_findings`, ordered by edge and occurrence. Helpers never become
+  separate reports. Parent finding serialization and ordinary JSON reports
+  leave out these records. Explicit support serialization and the core
+  accessor show the support bytes. Primary-only redaction keeps supports;
+  `without_detected_secrets` removes their secrets too.
+- The default AWS access token rule and other default rules stay visible.
 
-## Contextual provider formats
+### Private Packagist credential roles (2 rules)
 
-These nine rules retain assignment context from the pinned MIT source. Context
-is part of the match; only the token is the secret. Labels allow zero through
-20 ASCII word, space, tab, dot or hyphen bytes before up to three whitespace or
-quote bytes, a source assignment separator, and up to five whitespace, quote,
-backtick or equals bytes before the token. The separators are `=`, `>`, `:=`,
-`::=`, `:::=`, `||`, `:`, `=>`, `?=` and comma. Context has no leading word
-boundary, so a matching substring of a longer label remains eligible.
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `packagist-api-secret` | `packagist_acs_` and 64 to 96 lowercase hexadecimal bytes | Token | None |
+| `packagist-api-key` | `packagist_ack_` and 28 to 32 lowercase hexadecimal bytes | Token | None |
 
-| Rule ID suffix (under `rustleaks.`) | Required context and ASCII secret form | Entropy |
-| --- | --- | --- |
-| `checkout-secret-key` | `checkout`; `sk_` and hexadecimal groups 8-4-4-4-12 | None |
-| `crates-io-api-key` | `crates` with optional `.io`, `_io`, `-io` or `io`; `cio` and 32 alphanumeric bytes | None |
-| `cursor-api-key` | `cursor`; `key_` and 64 hexadecimal bytes | Greater than 3.5 |
-| `databento-api-key` | `databento`; `db-` and 29 alphanumeric bytes | None |
-| `elevenlabs-api-key` | `elevenlabs`; `sk_` and 48 hexadecimal bytes | Greater than 3.5 |
-| `figma-personal-access-header-token` | `x-figma-token`, `xfigmatoken` or `x_figma_token`; hexadecimal groups 4-8-4-4-4-12 | None |
-| `ollama-api-key` | `ollama`; 32 hexadecimal bytes, dot, then 24 alphanumeric, underscore or hyphen bytes | Greater than 3.5 |
-| `polymarket-private-key` | `poly`, up to 20 non-LF runes, `private`, up to 20 non-LF runes, `key`; `0x` and 64 hexadecimal bytes | Greater than 3.5 |
-| `stability-ai-api-key` | `stability`; `sk-` and 48 alphanumeric bytes | Greater than 3.5 |
+- Both prefixes are case-sensitive. ASCII word boundaries that consume no
+  bytes reject identifier substrings and slices of longer tokens. This is
+  stricter than the unguarded source expressions.
+- Each token is its own finding. No counterpart, assignment, path, gap,
+  uniqueness, padding, entropy or checksum condition is added. 2 tokens give
+  2 findings; 2 pairs give 4.
+- The issuer describes ACS as an HMAC secret and documents ACK-only GET
+  authentication. See the
+  [issuer's authentication documentation](https://packagist.com/docs/api/api-authentication).
+  ACS follows the visible Kingfisher selection, whose optional validation
+  does not gate detection. Reporting ACK is broader than the hidden
+  Kingfisher helper and the conditional partial detection in Veles. Veles
+  tuple weighting is not implemented.
 
-ASCII case variants are explicit. Polymarket's `0x` prefix and escaped `n`/`r`
-terminal alternatives stay case-sensitive; its bounded dot context retains
-existing rune semantics, including non-ASCII runes. Other contextual rules
-accept uppercase escaped `N`/`R`. All nine require the ordinary or escaped
-quote, ASCII whitespace, semicolon, escaped newline or EOF terminal delimiter
-used above. Non-ASCII case folding and non-ASCII whitespace do not substitute
-for their explicit ASCII literal, body and whitespace classes.
+### Secret predicates (2 rules)
 
-These contexts are detection evidence, not issuer or permission validation.
-Polymarket's private-key context does not classify bare hexadecimal hashes or
-public addresses as private keys. Figma header and private-key assignments can
-already produce generic findings; those are attribution changes. Context-only
-assignments for other rows can add occurrences. Bare opaque bodies remain
-outside these contextual rules.
-The Figma header rule has no entropy floor: a value rejected by the generic
-rule's entropy threshold can add an occurrence, while a higher-entropy value
-under the same label can change only attribution.
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `mapbox-secret-token` | `sk.`, 23 to 308 base64url payload bytes that start with `eyJ1Ijoi`, a dot, and a 22-byte signature ending in `A`, `Q`, `g` or `w` | Token, 49 to 334 bytes | Byte Shannon entropy of at least 4.0; `base64url-segment-go-regex-v1` |
+| `vercel-ai-gateway-key` | `vck_` and exactly 56 ASCII letters, digits, underscores or hyphens | Token, always 60 bytes | Byte Shannon entropy of at least 3.5; `vercel-cl100k-ratio-v1` |
 
-## Slack session formats
+- Both rules use `bytes-v1` outer regexes. Every source global secret filter,
+  stopword and path prefilter stays as a separate local allowlist. Paths are
+  never tested as secret regexes.
+- Mapbox: the prefix is case-sensitive, and the source ASCII word and right
+  delimiter guards stay. The predicate decodes only the payload, into at
+  most 231 bytes, and applies the source Go expression. It needs the ordered
+  `u` and `a` fields, a nonempty user and alphanumeric authorization text,
+  and the source whitespace positions. Unicode user text is allowed; other
+  JSON layouts, escaped user text and extra fields are not. Nonzero unused
+  Base64 bits are allowed. Bad encoding or UTF-8 rejects the candidate and
+  scanning continues; the source returns an error instead.
+- Vercel: the prefix accepts ASCII case variants. The delimiters are an
+  ordinary or escaped quote or backtick, ASCII whitespace, a semicolon, a
+  literal `\n` or `\r` in either case, or end of input. Pinned cl100k
+  encoding must give at least 25 tokens; 24 tokens gives a ratio of exactly
+  2.5 and is rejected. The predicate covers the full source alphabet and
+  case range. It uses no dictionary or approximation.
+- Predicate details and costs are in
+  [Rule pack authoring](../../../docs/dev/rule-pack-authoring.md). The
+  tokenizer data is described in the
+  [tokenizer data README](../data/README.md).
 
-`rustleaks.slack-session-token` captures case-sensitive `xoxc-`, three digit
-groups of 9 through 15 bytes separated by hyphens, another hyphen and 64
-lowercase hexadecimal bytes. It requires a trailing ASCII word boundary and
-no leading boundary. The complete token is capture 1. The source describes
-session use together with a cookie, but does not require a cookie for detection.
-No independent full-session access claim follows from a token match.
+### Bitwarden CLI client secret (1 rule)
 
-`rustleaks.slack-session-cookie` captures case-sensitive `xoxd-`, at least 100
-ASCII word, slash, backslash, plus or hyphen bytes, then zero through two equals
-padding bytes. Its following delimiter is EOF or a character outside ASCII
-word, slash, plus, equals and hyphen. A consumed delimiter belongs to the
-match. Backslash belongs to both the body and delimiter languages; greedy
-matching owns it in the body when possible, while padding can make it the
-delimiter. There is no leading boundary. Non-ASCII terminal characters and
-invalid source bytes retain the existing rune and exact-range behavior.
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `bitwarden-cli-client-secret` | Quoted alphanumeric value of the `user_<UUID>_token_apiKeyClientSecret` property | Value, 10 to 50 bytes (capture 2) | Byte Shannon entropy above 0.0 |
 
-Both rules require native entropy greater than 3.5. The cookie has no regex
-maximum. Regression controls specify 8 KiB and 256 KiB synthetic bodies,
-input admission, finding payload, finding count and work limits. Input and
-payload limits must be chosen by the caller; work units are engine checkpoints,
-not a time limit or a bound on every internal regex operation. The full secret
-is retained when admitted, so a long candidate can have a large sensitive
-payload. A finite payload budget rejects it with an incomplete result before
-owned finding fields are copied. No resource benchmark or field accuracy
-claim is made by these synthetic regression expectations.
+- The property can be at any position or depth and can repeat. Go ASCII
+  whitespace before the colon has no limit; whitespace after it is at most 20
+  bytes. No outer object or fragment limit is added.
+- The path must end with the source lowercase suffix
+  `bitwarden cli/data.json`, compared with the frozen Go lowercase tables.
+  Those include dotted capital I and exclude long s. Backslashes, repeated
+  separators and hyphenated folder names do not match. No path component
+  boundary is needed before the suffix.
+- The rule binds the named property directly. It does not use arbitrary
+  bridges or reversed tuples, and it does not bind a nearby string when the
+  property is null. It does not reproduce Veles weighted tuple selection or
+  the broader generated Kingfisher path expression. It does not check that
+  the JSON is complete.
+- The generic rule keeps its own entropy threshold. The default global
+  allowlist still removes its alphabet stopword. `placeholder123` is still
+  accepted; no general placeholder check is added.
 
-## Finite Apache Veles formats
+## Shared boundaries
 
-| Rule ID | Case-sensitive source form | Total match bytes |
-| --- | --- | --- |
-| `rustleaks.circleci-project-token` | `CCIPRJ_`, 22 alphanumeric bytes, underscore, 40 lowercase hexadecimal bytes | 70 |
-| `rustleaks.deno-organization-token` | `ddo_` and 36 alphanumeric bytes | 40 |
-| `rustleaks.xai-api-key-80` | `xai-` and 80 alphanumeric bytes | 84 |
-| `rustleaks.postman-collection-token` | `PMAT-` and 26 alphanumeric bytes | 31 |
+ASCII and bytes:
 
-These rules preserve the finite source expressions and their unconditional
-whole-match extraction. They have no keywords, entropy threshold or leading or
-trailing delimiter. A longer surrounding alphanumeric run can contain an
-admitted finite prefix match. Low-entropy matches remain eligible in the
-isolated pack; composed global allowlists still apply. The finite source
-`MaxLen` equals the complete match length. This is a local expression contract,
-not equivalence with the source scanner's streaming implementation.
+- Token alphabets and case variants are written as explicit ASCII classes.
+  Non-ASCII case folding and non-ASCII whitespace never replace them.
+- Byte whitespace in detectors is bytes 09 to 0d and 20, including vertical
+  tab. Go whitespace in source predicates leaves out vertical tab.
+- Consumed delimiters belong to the match, not the secret. Match trimming
+  removes leading or trailing LF and keeps CR; neither changes the secret
+  bytes. Raw byte ranges and decoded ranges keep the normal engine rules.
+  `Fragment::new` starts locations at line zero, and the location helper
+  includes the LF before a line in its byte column origin.
 
-The xAI selection includes only the Apache 80-byte body expression. The MIT
-70-through-120-body rule overlaps it and uses entropy and delimiters; that
-rule and Kingfisher's suppression overlay are not selected. The optional pack
-does not implement their union, and this rule excludes `xai-token-` management
-keys. CircleCI personal tokens, Deno user tokens and Postman account API tokens
-are distinct roles; these four rules do not broaden into those formats.
+Entropy:
 
-## Additional source predicates and provider formats
+- Scalar entropy keeps the Gitleaks behavior: a character count and `<=`
+  rejection. These rules keep their stated thresholds and the f64
+  calculation.
+- `byte-shannon-f64-v1` builds a 256-entry byte histogram, divides each
+  nonzero count by the total length in binary64, and adds terms in ascending
+  byte order. It does not claim bit-equal `log2` results on every platform.
+  The finding reports the native entropy with the normal f32 conversion. The
+  value stays available after rule selection.
+- Thresholds can drop valid credentials with low entropy, and do not show
+  issuer validity. No expression interpreter, tokenizer, word list,
+  dependency or validator is added, except the fixed predicates above.
 
-The pack also contains 101 MIT provider selections and one native ADC
-refresh-token selection. The adjacent provenance identifies every rule,
-original pattern, capture, keyword, full rejection predicate and adaptation.
-These additions retain all 23 source path exclusions in independently scoped
-rule allowlists, including root and nested `bun.lock` and `bun.lockb`.
-They retain 13 source secret-regex exclusions, two case-insensitive substring
-exclusions, local exclusions and the declared byte-entropy comparator.
-The native loader preserves these predicates when selecting individual rules.
+Inherited policy:
 
-Source roles are selected explicitly. DevCycle server keys are included;
-DevCycle client/mobile and ConfigCat SDK keys are excluded. Midtrans includes
-only `Mid-server-`. The two Endor components retain separate rule identities
-and thresholds; two attributions for one occurrence are not two credentials.
-Ionic, Miro and Resend retain their source keywords even when the token cannot
-supply that keyword itself. Original provider assignment context remains
-required for contextual rules, including Voyage, DeepSeek, Kimi and Z.ai.
+- A composition keeps the default global allowlists. For the
+  Betterleaks rules, its 13 secret regex exclusions and 2 stopwords match the
+  source's global secret exclusions for the ASCII domain. The Veles rules
+  inherit them as an extra layer.
+- Path exclusions differ. Rustleaks keeps its office, PDF, binary and `.git`
+  exclusions. The pinned Betterleaks source also excludes Bun lock files; the
+  rules from that source keep that exclusion locally.
+- The global allowlist joins its regexes with the legacy flag scope. It can
+  suppress mixed-case letter-only Asaas values that the source filters keep.
+  A local copy cannot undo a global exclusion.
+- Native allow comments, decoding, required-rule behavior and resource
+  controls still apply. There is no switch to turn off inherited filtering.
+  The pack does not claim the same policy as any source scanner.
 
-The Clerk and Scalr companions select only their documented delimiter
-increments. WorkOS candidates with ordinary alphanumeric unpadded bodies can
-already have Stripe attribution. A new provider finding therefore does not
-automatically represent a new complete secret occurrence. Independent tests
-compare exact secret bytes and byte ranges against the previous composition.
+Overlap:
 
-Capella's four proximity gaps use explicit ASCII bytes and preserve the source
-32/12/12/32 byte bounds. Fal's wildcard context admits one ASCII byte other
-than LF. Asaas and Buildkite service consumed delimiters use explicit ASCII
-classes. Scaleway's free context admits up to 20 ASCII non-LF bytes. Non-ASCII
-and malformed bytes in those positions remain outside these bounded selections.
-The DataStax, Fullstory, Workato and Temporal bodies, and Notify's service name
-and whitespace, retain their unbounded source repetitions. Callers must select input, work and finding-payload limits;
-synthetic large-payload tests are not performance guarantees.
+- The native generic suppression can replace an overlapping generic finding
+  with the provider rule. A token that the generic rule already found then
+  gets a better attribution; it is not a new secret. Findings from other
+  specific rules stay.
+- Bare tokens without an assignment can add occurrences. Tests compare exact
+  secret ranges to tell new occurrences from attribution changes.
+- Each rule finds matches on its own. A long OpenAI token can contain a
+  shorter token-shaped part, old inside new or the reverse. Both findings
+  stay at their own spans. One combined source expression would report only
+  the outer match. Such nested findings are extra alerts, not extra
+  credentials. Output across provider rules is not guaranteed to be
+  disjoint.
+- Count exact occurrences apart from attribution and duplicates when you
+  evaluate the pack.
 
-Supabase, Thunderstore and Val Town retain their two-digit predicates. Unkey
-requires a digit, uppercase and lowercase somewhere in the complete captured
-secret; its fixed lowercase prefix satisfies that part of the predicate.
-Temporal's mandatory marker already supplies its required digit count. These
-conditions are anchored secret-target rejection complements, with no added
-configuration field or expression interpreter.
+Resources:
 
-The ADC detector captures only a `1//` refresh-token value from the canonical
-`application_default_credentials.json` basename and requires the Google
-client-ID keyword. Its 20-byte body minimum, 512-byte complete-token maximum
-and bounded whitespace are conservative selections. It does not capture the
-whole JSON document or implement JSON parsing. Whole service-account document
-capture and the lossy generated Bitwarden pair expression are excluded.
+- Some bodies and contexts keep unbounded source repetitions:
+  - the Slack session cookie body;
+  - the DataStax, Fullstory, Workato and Temporal bodies;
+  - the Notify service name and whitespace;
+  - the GitLab incoming mail token and HCP assignment whitespace;
+  - the first segment of the Yandex access token; and
+  - the Bitwarden whitespace before the colon.
+- Callers must choose input, work and finding-payload limits. Work units are
+  engine checkpoints, not a time limit and not a bound on every regex
+  operation.
+- The full secret is kept when it is admitted, so a long candidate can have a
+  large sensitive payload. A finite payload budget rejects it with an
+  incomplete result before finding fields are copied.
+- Helpers and their projected copies use work, span, finding and payload
+  budgets. Running out of budget gives an incomplete result and never
+  publishes a parent with only some of its helpers.
+- Cancellation and budget limits in the predicates give typed incomplete
+  results. Synthetic large-input tests are not performance guarantees.
 
-The inherited default global filter remains additional policy. In particular,
-its existing alternation flag scope can suppress mixed-case letter-only Asaas
-values that the independently scoped source filters would retain. Rule-local
-copies cannot reverse that global exclusion. These additions do not claim
-source-policy equivalence or introduce a switch to disable inherited filtering.
+Known gaps stay visible. A missing finding does not show that a value is
+harmless.
 
-## Credential format and boundary supplements
+## Provenance and license
 
-Twenty-seven rules add selected credential formats and delimiters. Seventeen
-are derived from the pinned MIT Betterleaks configuration and ten from the
-pinned Apache-2.0 Veles detectors. Each origin records its immutable source
-URL, digest, original expression, generated overlay and native selection.
+| Source | Revision | Rules | License |
+| --- | --- | --- | --- |
+| [Betterleaks](https://github.com/betterleaks/betterleaks) `config/betterleaks.toml`, SHA-256 in the provenance JSON | `8f376ff9c31e` | The other 282 rules, including the hidden helpers | MIT, `LICENSE.betterleaks` |
+| [Veles in OSV-SCALIBR](https://github.com/google/osv-scalibr) `veles/secrets` | `e8621f1fff93` | 18 rules: the 4 finite Veles formats, 10 format supplements, `cloudflare-api-token-context`, the 2 Private Packagist roles and `bitwarden-cli-client-secret` | Apache-2.0, `LICENSE.veles` |
+| [Kingfisher](https://github.com/mongodb/kingfisher) | `01e7b817376f` | Archive used to read the Betterleaks and Veles sources as data, and the association contract | Apache-2.0, `LICENSE.kingfisher` |
 
-The source predicates remain local to their rules. Betterleaks selections
-retain source keywords, all source secret and path exclusions, generated
-supersession filters and the exact byte-entropy comparison. GoCardless rejects
-entropy strictly below 3.5. Stripe excludes `sk_test_` and WorkOS prefixes.
-The Betterleaks Heroku supplement accepts only trailing-hyphen AA bodies;
-the Veles Heroku supplement retains the original final word boundary.
-Veles selections do not acquire Betterleaks source filters. Inherited native
-global filtering remains additional policy for every rule.
+The table shows 12-character revisions. The provenance JSON records the full
+commit IDs and the SHA-256 of each source file.
 
-The Authress selection retains lowercase credential prefixes, `acc` and
-account identifiers. Datadog API and application keys retain distinct 32-byte
-and 40-byte hexadecimal bodies. Etsy captures the complete keystring and
-shared-secret pair. Grafana accepts the selected standard-Base64 body alphabet.
-HCP preserves a secret-only assignment without a client ID. Packagist ORT and
-OUT tokens do not require a repository URL. The optional validation components
-are neither required rules nor independent secret findings.
+- The Betterleaks and Veles sources were read as data from the archive in
+  the pinned Kingfisher revision
+  (`crates/kingfisher-rules/generated/upstream-sources.json.gz`). Generated
+  Kingfisher patterns are not the copied source.
+- For Veles, the exact detector files, source pattern lines and SHA-256
+  values are recorded for each rule. The license and the Google copyrights
+  are in `LICENSE.veles` and the adjacent [NOTICE](NOTICE). The archived
+  source has no upstream NOTICE.
+- `gcp-adc-refresh-token` is a narrower selection of the Betterleaks
+  `gcp-application-default-credentials` rule, checked against Google's
+  OAuth and ADC documentation.
+- `rustleaks-providers-v1.provenance.json` records, for each rule, the source
+  URL and SHA-256, original pattern, filters, keywords, selection and every
+  change. The `NOTICE` keeps the attribution for each source.
+- No downloaded scanner code runs or ships in the pack.
 
-Most supplements consume selected punctuation, escaped quotes or vertical tab
-after a complete bounded token. HCP, Packagist and Slack refresh instead retain
-their source fixed-width prefix extraction above the nominal length. HCP's
-original Go whitespace excludes vertical tab; Betterleaks byte whitespace
-includes it. All selected token alphabets are explicit ASCII.
+Changes made:
 
-The complete versioned GitLab PAT and the 147-byte Slack refresh body can
-coexist with shorter findings from retained rules. For Monday before an
-escaped quote, the retained JWT finding includes one extra backslash; the
-Monday finding extracts the exact credential. These are extraction changes
-and additional alerts for already detected credentials. Ordinary Monday JWT
-and Grafana forms can also gain provider attribution without a new occurrence.
-Independent tests compare against an explicit 440-rule prior composition and
-retain existing specific findings. The format and special-case suites retain their historical 476-rule composition.
-The complete composition now contains 539 rules, including 32 hidden helpers.
-The association suite retains its historical 534-rule composition.
+- IDs are namespaced and descriptions are factual.
+- ASCII case-insensitive flags are expanded to explicit classes, and byte
+  whitespace is written out.
+- Source scalar entropy rules use `<=`. Byte entropy rules keep the exact
+  source comparison: 150 rules reject below the threshold and 61 at or below
+  it, including source scanner floors.
+- Companion rules select reviewed format and delimiter cases only.
 
-GitLab incoming-mail token length and HCP assignment whitespace retain their
-unbounded source repetitions. Callers can set target-size, work and finding
-payload limits. Synthetic resource tests do not establish performance or
-issuer acceptance. Broader xAI body/prefix variants and presumed multi-digit
-Slack segments are outside these selections.
-
-## Connection-key and structured-context supplements
-
-Five reporting rules and one hidden predicate rule add selected credential
-contexts. Azure App Configuration and Service Bus extract exact 44-byte keys
-before an unquoted comma and horizontal whitespace. Existing ordinary-ending
-key rules remain unchanged. The Service Bus parent requires its own complete
-tuple through native `buffer-v1` `same-candidate` association. Its hidden helper
-preserves source whole-tuple entropy and exclusions; the parent additionally
-requires key entropy greater than 3.5. Both detection-input identity and full
-match endpoints must agree, including inside decoded inputs. Selecting the
-parent explicitly requires selecting its helper ID as well.
-
-The unsigned JWT companion requires `Authorization: Bearer`, one of three
-literal `alg:none` header encodings, a base64url-shaped payload, an empty
-signature and a backslash-escaped quote or backtick. It excludes the escaped
-delimiter from the secret. This is a lexical authentication candidate rule,
-not a JSON/JOSE parser or signature validator. Bare unsigned data and signed
-JWTs are outside the companion's scope. The retained `jwt` rule can report a
-signed escaped token including its trailing backslash.
-
-The Kubernetes companion extracts one data item with 201 through 1000 ASCII
-bytes between kind and data/item, in either order. It preserves the source
-YAML path, keyword, template and empty-value predicates. It rejects matches
-crossing `---` or `...` document-marker lines, conservatively including indented
-marker-like lines, and rejects overlaps containing a short-context default
-match. Ordinary mapping keys beginning `---suffix` or `...suffix` remain
-eligible. This is bounded lexical coverage, not YAML parsing.
-
-The Cloudflare companion requires one of seven credential labels and a
-40-byte token before a comma. Public `CF_ACCOUNT_ID` is excluded. Its selected
-forward ASCII context does not reproduce the original Veles pair algorithm.
-It retains the source terminal word boundary and adds no Betterleaks-only
-path or secret predicates. The inherited native global policy still applies.
-
-The Betterleaks selections retain local source filters and paths. Service Bus
-filters apply to the complete tuple through its hidden helper. Source URLs,
-digests, original detection fields and the selected domains are recorded in
-the adjacent provenance. Validators and remote service calls are not included.
-Raw findings preserve exact secret and match byte ranges. Existing location
-semantics and unavailable decoded ranges remain unchanged.
-
-## Source and modifications
-
-223 patterns are adapted directly from the MIT-licensed Betterleaks source at
-`8f376ff9c31ed5309ac448fe601c5dd21b376155`. The original source archived by
-Kingfisher was read as data; generated Kingfisher patterns are not the copied
-source. The adjacent provenance JSON records the immutable source URL and
-SHA-256, original patterns, filters, keywords, and each added rule's selection
-and transformations. `LICENSE.betterleaks` and `NOTICE` retain attribution.
-
-Seventeen patterns are adapted directly from Apache-2.0 Veles/OSV-SCALIBR source
-at `e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845`, archived as data by the same
-pinned Kingfisher revision. Exact detector files, source pattern lines and
-SHA-256 values are recorded per rule; the source license and retained Google
-copyrights are in `LICENSE.veles` and the adjacent `NOTICE`. The archived source
-records no upstream NOTICE. No downloaded scanner implementation is executed
-or included in the pack.
-
-Rustleaks namespaces IDs, uses factual descriptions, expands applicable
-ASCII-insensitive flags to explicit classes, and spells byte whitespace
-explicitly. Companion rules select reviewed format and delimiter increments.
-The earlier scalar source entropy rejection predicates use `<=`; those native
-rules retain their stated thresholds and existing f64 calculation.
-The byte predicates reject below the threshold for 150 rules and at or below
-it for 61 rules, including source scanner floors and the existing native floor.
-All use their stated byte calculation. Numeric equivalence beyond the stated
-algorithm contracts is not asserted.
-Thresholds can omit valid low-entropy credentials and do not establish issuer
-validity. No expression interpreter, tokenizer, wordlist, dependency or
-validator is added.
-
-Composition inherits Rustleaks' unchanged global allowlists. For the MIT
-imports, its 13 secret-regex exclusions and two stopwords correspond to the
-source's global secret exclusions for the reviewed ASCII domain. The fifteen
-Apache formats inherit those exclusions as additional native policy. Source-path exclusions
-differ: Rustleaks retains its office/PDF/binary and `.git` exclusions, while
-the pinned Betterleaks source additionally excludes Bun lockfiles. This pack
-does not claim source-policy equivalence. Native allow markers, decoding,
-required-rule behavior and resource controls still apply.
-
-Provider attribution can replace an overlapping generic finding under the
-existing native generic-suppression rule. An assigned token already detected
-by the generic rule is an attribution improvement, not a newly found secret.
-Independent specific-provider findings remain present. Count exact occurrences
-and duplicate attribution separately when evaluating the pack.
-
-Each rule enumerates matches independently. A long OpenAI token can contain a
-shorter token-shaped suffix, including an old shape inside a new one or the
-reverse. Both specific candidates remain visible at their distinct spans.
-This differs from enumerating one combined source expression, which can select
-only the outer match. Such nested candidates are additional alerts, not proof
-of additional credentials or recovered secrets. The pack does not promise
-disjoint output across provider rules.
-
-## References and maintenance
+References:
 
 - [Pinned Veles source](https://github.com/google/osv-scalibr/tree/e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845/veles/secrets)
 - [Pinned Betterleaks source](https://github.com/betterleaks/betterleaks/blob/8f376ff9c31ed5309ac448fe601c5dd21b376155/config/betterleaks.toml)
@@ -468,244 +837,42 @@ disjoint output across provider rules.
 - [Cerebras support source](https://github.com/Cerebras/vscode-cerebras-chat/blob/main/SUPPORT.md)
 - [Replicate API tokens](https://replicate.com/docs/topics/security/api-tokens)
 - [NVIDIA registry authentication](https://docs.nvidia.com/nvcf/dev/third-party-registries)
+- [Private Packagist API authentication](https://packagist.com/docs/api/api-authentication)
 
-`tests/provider_rules.rs`, `tests/additional_coverage.rs` and
-`tests/format_coverage.rs` and `tests/special_coverage.rs` specify synthetic positives, near misses, entropy
-boundaries, exact locations, ASCII/Unicode distinctions, invalid bytes,
-allowlists, old/new format unions, generic overlap, identity and finite scan
-controls. Fixtures are independently authored and never submitted to a
-provider. Those controls establish a bounded regression contract, not field
-accuracy or an exhaustive provider specification.
+## Maintenance
 
-Refresh requires reviewing source changes, recording exact provenance and
-license bytes, and evaluating changed predicates and overlaps. A changed
-published pack needs a new versioned identifier. No runtime downloads occur.
-The maintained `crates/xtask/src/tooling/native_coverage/` source contracts
-generate the additional TOML blocks and provenance. Prior rule bytes and
-provenance are hash-bound before append generation. Regenerate assets and
-content identities with
-`bazelisk run //crates/xtask:xtask -- generate native-pack-identity`; the normal
-build contract checks both pack digests and provider provenance consistency.
+- Tests in `crates/rustleaks-core/tests/`:
 
+  | Test file | Covers |
+  | --- | --- |
+  | `provider_rules.rs` | The provider rules up to the generated part |
+  | `shared_rule_deltas.rs`, `contextual_rule_deltas.rs` | Delimiter companions |
+  | `additional_coverage.rs`, `format_coverage.rs`, `special_coverage.rs`, `association_coverage.rs`, `remaining_verified_rules.rs` | The generated rules, with expectations in `tests/support/*.json` |
+  | `native_policy.rs`, `native_predicates.rs` | Native loading, identity, entropy and predicates |
 
-## Shared-prefix delimiter companions
+  The tests use synthetic positives, near misses, entropy boundaries, exact
+  locations, ASCII and Unicode differences, invalid bytes, allowlists, old
+  and new format unions, generic overlap, identity and scan budgets. Some
+  tests compare with fixed smaller rule compositions and check that existing
+  specific findings stay. Fixtures are written by hand and never sent to a
+  provider. The tests are a regression contract, not a measure of accuracy
+  on real data.
+- All 3 packs with the default rules give 539 rules, including 32 hidden
+  helpers.
+- The rules after the line
+  `# Maintained additional coverage; generated by xtask generate native-pack-identity.`
+  come from `crates/xtask/src/tooling/native_coverage/providers.toml`, with
+  their records in `native_coverage/reviewed.json`. The rules before that
+  line are bound by hash. Do not edit generated rules in the pack file.
+- Regenerate and check the pack, its provenance and its identity:
 
-Twenty-four additional rules ending in `-delimiter` add raw occurrences before
-literal backslash-plus-quote (single, double or backtick) and vertical tab. Their
-prefixes, token alphabets, bounds, alternatives and exact secret captures follow
-the pinned Betterleaks source. Ordinary delimiters and EOF remain covered by the
-unchanged default rules, without matching these companions. No decoding pass is
-needed to recover the literal escaped endings.
+  ```sh
+  cargo xtask generate native-pack-identity
+  cargo xtask generate native-pack-identity --check
+  ```
 
-The companions cover Amazon Bedrock long-lived keys, DigitalOcean access tokens,
-GCP keys, both Hugging Face token forms, Infracost, Intra42, MaxMind, Notion,
-Octopus, both PlanetScale forms, Prefect, Pulumi, ReadMe, RubyGems, Scalingo, all
-three Settlemint forms, Shippo, Square, and both Vault forms. Their independently
-scoped secret exclusions include the GCP examples and the Vault letter-only
-legacy-token exclusion. The legacy `s.` Vault form still needs the source's
-`vault` keyword context; the `hvs.` prefix supplies its own keyword.
-
-Each companion uses native `byte-shannon-f64-v1` entropy with `reject = "le"`
-and its source threshold. Source secret predicates are copied into each rule,
-with every regex scoped independently; native global and path policy also
-applies. Case differences caused by the unchanged global regex joining are
-unreachable for these fixed-prefix token languages. Detection whitespace and
-predicate whitespace retain their separate source meanings. These fields require
-`NativePolicy` or the CLI native-pack route; the legacy config loader rejects
-structured entropy. Existing scalar entropy behavior is unchanged.
-
-The contextual and residual delimiter companions below cover their separately
-reviewed gaps. This pack does not claim complete source-catalog semantics.
-
-
-## Contextual and residual delimiter companions
-
-Twenty contextual families each have a `-delimiter` rule and a `-context-vt`
-rule: Beamer, Defined Networking, Terraform passwords, legacy Heroku UUIDs,
-HubSpot, Lob private keys, Mailchimp, Mailgun private/signing keys, Okta, Plaid,
-Sidekiq, Snyk, Sonar, Squarespace, Telegram, Typeform and three Yandex formats.
-The public Lob publishable and Mailgun validation-key rows remain excluded.
-
-`-delimiter` accepts escaped single/double/backtick quotes or VT after a token
-whose assignment whitespace contains no VT. `-context-vt` requires VT within
-the source's at-most-three pre-separator or at-most-five post-separator bytes
-and retains all source terminal endings. The first-VT alternatives preserve
-the total bounds. They do not admit VT into the separate 0..20 label-tail class.
-The two classes are disjoint for a given assignment. Optional native ASCII
-preambles remain for match geometry, including both Okta preambles. Removing
-those preambles alone would not recover a secret occurrence.
-
-Required provider labels and body alternatives are retained. Terraform retains
-the `.tf`/`.hcl` path constraint and captures the quotes with the password.
-Eight- and nine-character quoted bodies can add occurrences; longer bodies
-may already be reported by the generic rule and instead gain attribution or
-different capture geometry. Sonar retains capture 2. Okta accepts exactly the
-source's `okta`, `Okta` and `OKTA` label forms, and only lowercase escaped `n`/`r`.
-Telegram's `A` after the numeric prefix remains case-sensitive. Mailchimp's
-source dot wildcard is retained as a rune wildcard. Yandex access tokens retain
-the unbounded first segment and require caller input/payload/work limits.
-
-Three `-vt` companions cover the prior Anthropic API/admin and DigitalOcean
-refresh token VT gaps. `openai-api-key-legacy-delimiter` covers the old 58/74
-role-segment pairs and old bare 20/20 form before escaped quotes or VT. Existing
-20-segment role companions continue to own their new forms; ordinary endings
-remain covered by the defaults. None of the existing sixty rules is changed.
-
-Every addition carries the complete source secret predicates, with each regex
-scoped independently. Go-style predicate whitespace is distinct from detector
-VT whitespace. Five additions use byte entropy `reject = "le"`: the two
-Terraform rules at 2, the two Okta rules at 4 and the OpenAI residual at 3.
-The other 39 additions have no source entropy predicate. Native global/path
-policy still applies. Overlapping distinct assignments retain native enumeration;
-this is not a claim of cross-engine enumeration or source-policy equivalence.
-
-
-## Buffer-local associated credentials
-
-Twenty-six reporting rules use thirty hidden helper rules. Each mandatory
-source edge is retained through native `required = { contract = "buffer-v1",
-edges = [...] }`. Select the complete pack through `NativePolicy`; the legacy
-configuration loader rejects these tables. A selected parent without every
-required helper fails closed. Existing standalone default rules, including the
-AWS access-token rule, keep their visibility.
-
-The associated families are Aikido, Artifactory API and reference tokens,
-Auth0, AWS session credentials, Azure storage, BrowserStack, Canva, eBay,
-Exoscale, Langfuse, Miro, MongoDB Atlas service accounts, Mux, OVH, PayPal,
-PlanetScale, Polymarket, Ramp, Razorpay, Salesforce, Supabase, Tableau,
-Upstash, Wiz and Zoho. Source files, source predicates and every edge are
-recorded in the adjacent provenance JSON.
-
-The selected source contract is pinned Kingfisher `scan_blob_with_context`
-without `DetectionOptions`. A helper must belong to the same raw buffer or
-individual decoded buffer as the parent. A window `NL` accepts helper full-match
-start lines from the parent's full-match start minus `N-1` through its exclusive
-full-match end plus `N-1`, inclusive. The lower bound is one. Window `0` removes
-the line limit while retaining buffer identity. Consumed trailing LF affects
-that exclusive endpoint even though public match text trims LF. Captures come
-from the full logical buffer. Raw, decoded, sibling and nested buffers cannot
-supply one another's helpers. Native depth-two isolation does not claim that
-the source no-options API recursively decodes.
-
-Each helper evaluates its own keywords, paths, allowlists and byte entropy in
-its buffer. Each applicable source global and local secret predicate is retained, and all
-23 source path exclusions remain on every node. AWS session tokens and
-Polymarket passphrases explicitly reject byte entropy at or below zero,
-preserving the source scanner floor that is independent of filter ASTs. Native inherited policy is an additional
-layer. Every association node uses
-`regex = { dialect = "bytes-v1", pattern = "..." }` with its exact generated
-source pattern. This explicit native form matches raw bytes with source ASCII
-case folding and original inline flags, repetition bounds, captures and
-leftmost-first greedy or lazy selection. String regexes retain their existing
-Go-compatible meaning. The AWS session capture directly retains the original
-16 through 2048 repetition without Go adaptation.
-
-The nine bounded bridges in seven nodes retain arbitrary source bytes: Azure
-key/name, the two Canva ID bridges, the two PlanetScale ID bridges, and three
-Polymarket rules. Limits count bytes. Complete UTF-8 scalars and invalid bytes
-are accepted within each original byte cap, while one byte over is rejected.
-Source dotall and ordinary-dot LF/CR distinctions remain intact. JFrog,
-Salesforce and Tableau delimiter guards retain their actual one-byte ownership,
-including ranges starting or ending inside a UTF-8 scalar. Adjacent helpers may
-consume separate bytes of that scalar. Matching does not normalize malformed
-input, expand ranges, or substitute rune counts for source byte limits.
-
-Every qualifying helper occurrence appears once per parent in core
-`required_findings`, ordered by required edge and occurrence. Helpers have
-`skipReport = true` and never become standalone reports. Parent finding
-serialization and ordinary JSON reports omit these records. Explicit support
-serialization and the core accessor expose support bytes. Primary-only
-redaction preserves supports; `without_detected_secrets` removes their detected
-secrets too. Helpers and projected copies consume work, span, finding and payload
-budgets. Exhaustion is incomplete and cannot publish a partially satisfied
-parent. Support records are not additional source-coverage successes.
-
-## Private Packagist credential roles
-
-`rustleaks.packagist-api-secret` reports `packagist_acs_` followed by 64 through
-96 lowercase hexadecimal characters. `rustleaks.packagist-api-key` reports
-`packagist_ack_` followed by 28 through 32 lowercase hexadecimal characters.
-Both prefixes are case-sensitive. Nonconsuming ASCII word boundaries reject
-identifier substrings and overlong token-prefix slices. This is an explicit
-precision restriction relative to the source's unguarded expressions.
-
-Each token is an independent finding whose match and secret own only the token.
-No counterpart, assignment, path, gap, uniqueness, padding, entropy or checksum
-condition is added. Two token roles yield two findings; two retained pairs yield
-four. Ordinary configuration values, punctuation, multiline context and long
-gaps remain eligible. Existing native allowlists and budgets still apply.
-
-The issuer identifies ACS as an HMAC secret and documents ACK-only GET
-authentication. This supports independent credential detection without claiming
-ACS-only bearer authentication. ACS follows the pinned visible Kingfisher
-selection, whose optional validation dependency does not gate detection. Making
-ACK visible is a deliberate selection broader than Kingfisher's hidden helper
-and Veles's conditional partial detection. Veles tuple weighting and source
-output parity are not implemented or claimed. These are offline format
-candidates, with no live-validity or measured false-positive claim. See the
-[issuer's authentication documentation](https://packagist.com/docs/api/api-authentication).
-
-
-## Mapbox secret tokens
-
-`rustleaks.mapbox-secret-token` accepts the complete pinned `sk.` grammar:
-23 through 308 base64url payload bytes beginning `eyJ1Ijoi`, a dot, and a
-22-byte signature whose final byte is `A`, `Q`, `g` or `w`. The prefix is
-case-sensitive. Source ASCII word and right-delimiter guards remain intact.
-The full selected secret has 49 through 334 bytes and must have byte entropy
-at least 4.0.
-
-The native `base64url-segment-go-regex-v1` predicate decodes only the payload
-into at most 231 bytes and applies the exact source Go-compatible expression.
-It requires the original ordered `u` and `a` fields, nonempty user and
-alphanumeric authorization text, and the source ASCII whitespace positions.
-Unicode user text is allowed; arbitrary JSON layouts, escaped user text and
-additional fields are outside this expression. Nonzero unused Base64 trailing
-bits remain allowed. Malformed encoding or UTF-8 rejects that candidate and
-continues; this intentionally differs from source filter-error propagation.
-Cancellation and resource exhaustion remain typed incomplete outcomes.
-
-## Vercel AI Gateway keys
-
-`rustleaks.vercel-ai-gateway-key` selects `vck_` followed by exactly 56 ASCII
-letters, digits, underscores or hyphens. Prefix case is ASCII-insensitive.
-The exact source delimiter alternatives include ordinary or escaped quotes
-and backticks, ASCII whitespace, semicolon, literal backslash `n`/`r` in
-either case, and end of input. The whole secret capture is always 60 bytes.
-
-The rule separately requires byte entropy at least 3.5 and the native
-`vercel-cl100k-ratio-v1` predicate. Pinned cl100k ordinary encoding must produce
-at least 25 tokens; 24 tokens gives ratio exactly 2.5 and is rejected. The
-predicate covers the complete source capture alphabet and case domain. It
-does not use a dictionary, approximate ratio or restricted witness grammar.
-The pinned tokenizer data, algorithm version and source chain are recorded
-in provenance. Its immutable packaged asset and licenses are maintained by
-the native predicate tooling.
-
-Mapbox and Vercel use explicit `bytes-v1` outer regexes and preserve every
-source global secret filter, stopword and path prefilter as distinct local
-allowlists. Existing native global suppression remains an additional layer.
-Paths are never tested as secret regexes. Consumed LF is trimmed from public
-match bytes, while CR is retained; neither changes selected secret bytes.
-
-## Bitwarden CLI client secrets
-
-`rustleaks.bitwarden-cli-client-secret` binds the quoted alphanumeric value of
-`user_<UUID>_token_apiKeyClientSecret` directly. Values have 10 through 50
-bytes and positive byte entropy. The named property may appear at any field
-position or nesting depth and may repeat. Source Go ASCII whitespace before
-the colon is unbounded; whitespace after it has a 20-byte cap. No outer
-object or fragment length limit is added.
-
-The path follows the original lowercase literal suffix `bitwarden cli/data.json`.
-The frozen Go lowercase preimages include dotted capital I and exclude long s.
-Backslashes, repeated separators and hyphenated directory names do not match.
-No path-component boundary is required before the suffix.
-
-This is direct lexical property binding. It deliberately excludes arbitrary
-bridges, reversed tuples and binding a nearby unrelated string when the named
-property is null. It does not reproduce Veles weighted tuple selection or the
-broader generated Kingfisher path expression. It does not validate complete
-JSON. The generic rule's entropy threshold is unchanged. Inherited policy
-still suppresses its existing alphabet stopword; `placeholder123` remains a
-locally accepted value, without an added general placeholder classifier.
+  The build also checks both pack digests and that the provider provenance
+  is consistent. Nothing is downloaded at build or run time.
+- A refresh needs a review of source changes, exact provenance and license
+  bytes, and an evaluation of changed predicates and overlaps. A change in
+  what the pack detects needs a new pack ID.

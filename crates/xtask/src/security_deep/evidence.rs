@@ -25,7 +25,7 @@ const POLICY: &[&str] = &[
     "supply-chain/audits.toml",
     "supply-chain/imports.lock",
     "supply-chain/inventory-v1.json",
-    "docs/DEPENDENCY_SAFETY.md",
+    "docs/dev/dependencies.md",
     "MODULE.bazel",
 ];
 const TARGETS: &[&str] = &[

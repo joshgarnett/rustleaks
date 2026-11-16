@@ -239,6 +239,16 @@ text have tags such as `decoded:base64` and `decode-depth:1`.
   extension. It can find secrets that `compatible` mode misses, so its
   findings can differ from Gitleaks.
 
+Limits of the Base64 modes:
+
+- `extended` rejects Base64 whose unused trailing bits are not zero.
+- Both modes find candidates the same way. A candidate needs at least 16
+  Base64 characters and must contain a digit or a symbol. It can be part of
+  a longer run of text.
+- Neither mode finds every Base64 value. Neither mode checks that a whole
+  carrier, such as a long malformed string, is valid Base64.
+- The decode depth and scan budgets still apply.
+
 ## Archives
 
 With `--max-archive-depth N` above 0, Rustleaks opens archives and scans the

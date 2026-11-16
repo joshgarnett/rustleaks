@@ -59,7 +59,7 @@ impl OfflineAssessment {
 /// Checksum is always unknown: GitHub's published description does not specify
 /// the CRC variant, hashed portion, and Base62 alphabet ordering precisely
 /// enough for this implementation to assert checksum validity. See
-/// `docs/DETECTION_POLICY.md`. Both results omit input bytes.
+/// `docs/dev/rule-pack-authoring.md`. Both results omit input bytes.
 /// The operation examines at most 40 bytes and allocates nothing.
 #[must_use]
 pub fn github_classic_pat(candidate: &[u8]) -> [OfflineAssessment; 2] {

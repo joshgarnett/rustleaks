@@ -10,20 +10,37 @@ Gitleaks. See [NOTICE](../../NOTICE) for attribution.
 
 Rustleaks is backward compatible with one pinned Gitleaks revision: commit
 `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` (`v8.30.0-27-gb58d3f1`). It
-implements the configuration features of Gitleaks 8.30.0. In short:
+implements the configuration features of Gitleaks 8.30.0. The packaged
+default rules are the Gitleaks default configuration at that revision, with
+SHA-256 `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
+The Gitleaks name only names the compatibility target. It does not mean that
+Rustleaks is an official Gitleaks release.
+
+Compatibility covers these points:
 
 - Gitleaks configuration files load and mean the same thing.
-- The same input and configuration give the same findings, with the same
-  fingerprints.
+- The same input and configuration give the same findings, including rule
+  ID, match, secret, file, line and column, commit details and fingerprints.
 - Ignore files, baselines and allow comments keep working.
-- The Gitleaks commands, flags, environment variables and file names that
-  Rustleaks supports keep working.
-- Exit codes, error classes and output streams stay the same.
-- Report fields keep their names, types and meanings.
+- The Gitleaks commands, flags, environment variables and file names (such
+  as `.gitleaks.toml` and `.gitleaksignore`) that Rustleaks supports keep
+  working.
+- Exit codes do not change.
+- Error classes and output streams do not change. Each error keeps its
+  class, and each kind of output goes to the same stream.
+- JSON, CSV, JUnit, SARIF and template reports keep their field names, types
+  and meanings.
 
-Rustleaks can change its own help text, usage and error wording, banner, log
-lines and the order of JSON keys and CSV columns. The full policy is in [the
-compatibility policy](../COMPATIBILITY.md#compatibility-policy).
+Rustleaks owns its help text, usage and error wording, banner, log and
+summary lines, other diagnostic output, and the order of JSON keys and CSV
+columns. It can change them. Each such change updates a test expectation,
+and a reviewer checks the new text against the stated intent.
+
+A change to any point in the list above needs maintainer approval, a
+changelog entry and tests that show the new behavior.
+
+Contributors can find how this policy is tested in [Testing and
+parity](../dev/testing-and-parity.md).
 
 ## What works the same
 

@@ -1,0 +1,329 @@
+# Releasing
+
+This page is for maintainers. It lists the steps to qualify and publish a
+release. It does not authorize a release. Only `rustleaks-core` is
+published to crates.io. The CLI ships as release archives.
+
+Each of these actions needs explicit maintainer approval for that action:
+selecting a version, creating a GitHub release or tag, publishing a crate,
+changing a release setting, turning on trusted publishing, and using a
+credential. A successful local or hosted dry run is not approval.
+
+## Checklist
+
+### 1. Prepare the candidate
+
+- [ ] The maintainer approved the version.
+- [ ] The workspace manifests and `CHANGELOG.md` name that version.
+- [ ] The Gitleaks revision and default configuration hash agree across the
+      package and the compatibility evidence.
+- [ ] The candidate is merged to `main`.
+
+### 2. Qualify locally
+
+From a clean clone of the candidate commit:
+
+```sh
+cargo fetch --locked
+just ci
+just security
+just fuzz-smoke
+just release-dry-run
+```
+
+- [ ] All commands pass.
+- [ ] If compatibility inputs or behavior changed, `cargo xtask qualify`
+      passes.
+- [ ] If a previous release exists, `cargo-semver-checks` passes for each
+      public crate and feature profile against the latest published release,
+      and a person reviewed the API change.
+
+### 3. Run the hosted dry run
+
+- [ ] Dispatch `Release Dry Run` with the full 40-character candidate commit
+      and the version.
+- [ ] Every job passes. See
+      [Non-publishing release candidate](#non-publishing-release-candidate).
+- [ ] The independently scheduled CodeQL result for the commit is green.
+
+### 4. Ask for approval
+
+- [ ] Prepare the [approval packet](#approval-packet).
+- [ ] Get a separate approval for the crates.io publication and for the
+      GitHub release.
+
+### 5. Revalidate just before publishing
+
+- [ ] The candidate is still the clean current `main` commit, with the
+      approved version.
+- [ ] The dry run passed for that commit, and its artifacts have not expired.
+- [ ] Every required branch check is still green.
+- [ ] The current package is byte-identical to the package kept by the dry
+      run.
+- [ ] Evidence that can change without a source edit, such as the advisory
+      database result, is still fresh.
+
+If any of these fail, or the candidate, version, workflow, package bytes or
+release inputs changed, run a new dry run. The publication workflow repeats
+the identity, dry run, artifact retention and package byte checks before it
+requests a crates.io credential.
+
+### 6. Publish
+
+- [ ] Dispatch `Publish Crate` with the candidate commit, version and dry run
+      ID. See [Publishing the crate](#publishing-the-crate).
+- [ ] Dispatch `Publish GitHub Release` from `release.yml` with the same
+      values. See [Publishing the GitHub release](#publishing-the-github-release).
+
+### 7. Verify
+
+- [ ] All eight native verification jobs of the release workflow pass.
+- [ ] Registry owner and metadata are correct.
+- [ ] The downloaded `.crate` matches the expected hash.
+- [ ] The external Cargo and Bazel consumers build against the registry
+      version.
+- [ ] Every GitHub artifact attestation and checksum verifies.
+
+If anything differs from the approval packet, follow
+[Rollback](#rollback).
+
+## Appendix
+
+### Local qualification details
+
+`cargo fetch --locked` downloads the exact locked registry inputs. The
+package and external consumer checks then run offline. The fetch changes no
+manifest or lockfile.
+
+`just ci` covers prose and links, Rustdoc, the committed parity tests, all
+first-party tests, and compile checks for the eight declared targets.
+`just release-dry-run` inspects the package archive, builds clean external
+Cargo and Bazel consumers, and runs the locked Cargo publish check without
+upload. The package metadata selects docs.rs documentation for all features
+with warnings denied; the hosted dry run repeats that and keeps the exact
+`.crate` archive and its file list.
+
+`cargo xtask qualify` checks frozen evidence and runs Rust regression and
+release hardening checks. It needs no Go installation or Gitleaks checkout.
+
+Qualification is bound to the candidate commit and tree. Reuse a successful
+result while the commit, version, lockfiles, workflow definitions and release
+inputs are unchanged. Do not run the full local suite again only because the
+candidate moves from qualification to publication. A changed candidate or
+release input needs new qualification for the affected part.
+
+### Non-publishing release candidate
+
+`Release Dry Run` runs after the candidate is merged to `main`. It does not
+use a protected environment. It rejects any commit other than the current
+`origin/main`, receives no registry token, and fails if either usual
+crates.io token variable is set. Qualification therefore uses no approval
+that protects a later publication.
+
+The package job and the native matrix run beside acceptance, Rust
+qualification, security, extended AddressSanitizer fuzz, and worktree and
+history self-scan jobs. The summary accepts the candidate only when every job
+passes.
+
+Every native job builds the CLI twice with separate Bazel output roots,
+requires byte-identical binaries and bundles, then extracts each archive and
+runs help and a redacted scan from the packaged executable. Each job emits:
+
+- `rustleaks-<version>-<target>.tar.gz`;
+- `SHA256SUMS` for the archive, SBOM and provenance predicate;
+- a CycloneDX 1.6 SBOM for the target, with registry checksums and a
+  reconciliation of the Cargo and Bazel graphs;
+- an unsigned SLSA v1 dry-run provenance predicate;
+- a signed GitHub SLSA provenance attestation for the archive, verified
+  against the exact `main` commit and release workflow; and
+- a reproducibility proof and a release manifest.
+
+The source package is built twice into separate Cargo target folders,
+compared byte for byte, and gets the same signed provenance check.
+
+#### Licenses and notices
+
+Every native archive has a `licenses/` tree with a target-specific
+`index.json`. It covers the release build graph, including the CLI root and
+build and proc-macro inputs. It does not claim that every listed package is
+linked at runtime. Reviewed runtime groups record their source identities and
+targets. The root `LICENSE` and `NOTICE` keep their project meaning.
+
+The notice sources are in `release/notice-inputs/`. The generated catalog and
+notice copies are in `release/licenses/`. Regenerate and check them with:
+
+```sh
+cargo xtask release-artifact notices
+cargo xtask release-artifact notices --check
+```
+
+Generation reads all eight target-filtered Cargo graphs and the
+checksum-verified locked `.crate` archives from the local Cargo cache. It
+keeps nested notices and license alternatives, and rejects missing texts,
+stale source supplements, unsafe paths and incomplete runtime mappings. It
+uses the current workspace bytes, including uncommitted edits; preparation
+uses the candidate's Git blobs. Source supplements have their own version,
+archive checksum, VCS pin and file digest. Preparation and verification never
+download notices.
+
+CI and release acceptance run `notices --check` after downloading the locked
+archives. Preparation matches package coverage with the selected Cargo and
+Bazel graph and collects each package's documents again. Verification reads
+the candidate's committed catalog, runtime inputs and notice bytes, matches
+SBOM coverage, and requires the archive's file set, bytes, order and modes to
+match. The release manifest records the notice index digest and the
+component and document counts. Notice files are inside the archive and
+covered by its checksums and attestation.
+
+Notice collection is attribution evidence only. Any other source or
+redistribution requirement stays part of release qualification.
+
+#### Archive verification
+
+The native verifier checks raw tar metadata and the exact expected paths and
+sizes before it reads any payload, then hashes payloads in bounded chunks. It
+accepts only the emitted gzip format and bounded GNU long paths. Limits are
+128 MiB per binary, 256 MiB per decompressed archive, 4,096 regular files and
+4,096 bytes per path. The binary size must match the reproducibility proof.
+
+GNU manifests record the highest `GLIBC_X.Y` symbol version found in the
+binary. Musl archives must have no ELF interpreter and no dynamic `NEEDED`
+entry. macOS builds leave out the nondeterministic Mach-O UUID before the
+linker adds any ad-hoc signature. No other difference is normalized.
+
+#### Windows runtime providers
+
+Each Windows lane uses fresh Bazel roots, rejects stale linker maps, and
+captures linker maps and library search traces for the CLI. The collector
+finds the configured CLI Rustc action and linker, checks the output against
+the selected binary, and matches the map's image hash, image base and entry
+point. Each native library must have one observed provider path that matches
+the reviewed MSVC and SDK identities and file hashes. A missing, changed,
+extra or ambiguous provider stops packaging.
+
+Provider identities are bound into the signed notice index and the release
+manifest. The raw Windows evidence is kept as
+`runtime-provider-evidence-<target>-<candidate>`, next to the nine releasable
+bundles. It is not one of the 63 public release assets. Public verification
+checks the portable evidence without a Microsoft toolchain.
+
+#### GNU corresponding source
+
+GNU bundles also contain `rustleaks-<version>-corresponding-source.tar.gz`
+and `source-relink.json`. The source archive holds the application source and
+the pinned glibc sources, patches, generated headers and build recipes. Each
+GNU lane builds from that source, checks that its binary matches the release
+binary, changes the startup code, rebuilds and runs a smoke test. Packaging
+fails if this proof is missing or does not match.
+
+The signed notice index of the native archive binds the source archive and
+`source-relink.json`. The manifest, checksum file and provenance repeat those
+bindings. The
+[reconstruction instructions](../../release/corresponding-source/README.md)
+describe the materials.
+
+Source download is an explicit, pinned `release-artifact fetch-source` step
+before offline preparation. Source preparation and public verification never
+download replacement inputs. The two GNU lanes must produce the same source
+archive. Public verification on GNU targets downloads the source archive and
+relink proof and checks their bindings before it extracts or runs the
+executable. Publication keeps one source archive and both relink proofs, for 63
+public assets. Changed source or runtime evidence needs a new qualification
+and dry run.
+
+### Approval packet
+
+Before any external action, present:
+
+- the exact version, commit and tree;
+- the packages, artifacts and archive contents;
+- native target evidence and command results;
+- the public API comparison;
+- compatibility and security risks;
+- checksums, SBOM reconciliation and provenance; and
+- the requested external actions, and the rollback or yank plan.
+
+Stop if a required check is missing, failing, pending, stale or unexplained.
+
+Name the exact version, candidate, dry run ID and external action in the
+request. An approval stays valid for that unchanged action while its checks
+run; do not ask again. A changed value, a wider scope or a different retry
+needs new approval. Crates.io publication and the GitHub tag or release are
+separate actions, and each approval must name the action it covers.
+Qualification needs no approval, because it cannot publish, tag or use a
+registry token.
+
+### Publishing the crate
+
+Dispatch `Publish Crate` from `main` with the candidate commit, version and
+`Release Dry Run` run ID. The workflow checks that the candidate is the
+current `main`, downloads the kept source package, requires byte-identical
+package bytes, and publishes with crates.io Trusted Publishing in the
+protected `release` environment. It installs only the pinned Rust toolchain.
+
+The trusted publisher for `rustleaks-core` is:
+
+- repository owner `joshgarnett`;
+- repository `rustleaks`;
+- workflow `publish.yml`; and
+- environment `release`.
+
+Only the publication job gets `id-token: write`. It gets a temporary token
+through the official crates.io action and reads no registry secret. Its post
+step revokes the token. Once the trusted publisher configuration is verified,
+require trusted publishing for the crate.
+
+Cargo adds `.cargo_vcs_info.json` to a package built from a Git worktree. A
+squash merge therefore changes the package bytes and checksum even when the
+source is the same. The package built from the final `main` commit is the
+release package; a branch package does not replace it.
+
+#### First publication of a crate
+
+crates.io
+[trusted publishing](https://crates.io/docs/trusted-publishing) needs the
+crate to exist before a trusted publisher can be set. The first publication
+therefore needs either future registry support for this, or an explicitly
+approved, short-lived API token limited to creating that package. Revoke the
+token after publication and set up trusted publishing before the next
+release. Never store a registry token in the repository, workflow
+configuration, artifacts or logs, and never add a long-lived token as a
+fallback.
+
+### Publishing the GitHub release
+
+For an approved `<version>`, the tag is `v<version>` and the release name is
+`Rustleaks <version>`. Dispatch `Publish GitHub Release` from `release.yml`
+with the same candidate, version and dry run ID. Its protected `release` job
+downloads all nine kept artifacts, checks package and native checksums,
+manifests, SBOMs, provenance and attestations again, then creates the
+prerelease. It attaches the source package evidence and the evidence for all
+eight targets. It does not rebuild anything.
+
+Afterwards the workflow runs a read-only verification on all eight native
+targets. Each job downloads its seven public assets and restores the original
+bundle file names. It checks the version, candidate and target, and verifies
+checksums, archive contents, SBOM and provenance bindings and the signed
+attestation. Only then does it run the published CLI for help and a redacted
+scan. It does not rebuild the CLI or ask for another approval. All eight jobs
+must pass.
+
+If a verification job fails, the release and tag may already exist. Find the
+cause and rerun only the failed verification jobs when a retry makes sense.
+Do not rerun the publication job, recreate the tag or replace public assets
+as an automatic fix.
+
+### Rollback
+
+If registry metadata, package contents, checksums, attestations, native smoke
+tests or the public API differ from the approval packet:
+
+1. Stop further publication.
+2. Remove or quarantine the GitHub release assets.
+3. Follow the [incident response](incident-response.md) procedure.
+4. Yank the crates.io version when new installs would create risk. Yanking
+   does not delete the package and does not replace a fixed release, an
+   advisory or coordinated disclosure.
+
+Never move a tag or release that points to the wrong tree. Publish a factual
+correction only after the incident review and a new explicit approval.

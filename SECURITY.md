@@ -26,7 +26,9 @@ hostile configuration, and uses cooperative cancellation and explicit resource
 budgets for controlled scans. Owned crates forbid unsafe code. Allocation
 failure can still abort, cancellation is cooperative rather than a hard
 deadline, and dependency code may contain narrowly reviewed unsafe internals;
-see `docs/RESOURCE_LIMITS.md` and `docs/DEPENDENCY_SAFETY.md`.
+see [Resource limits](docs/user/resource-limits.md), [Engine
+internals](docs/dev/engine-internals.md) and
+[Dependencies](docs/dev/dependencies.md).
 
 Finding, baseline, and fragment `Debug` output omits retained byte contents.
 Compatibility serialization and reporting intentionally preserve raw fields.
@@ -40,6 +42,6 @@ policy, and expiry date. Expired or unreferenced exceptions fail the local
 release gate.
 
 The maintained boundary map, exact local commands, and response procedure are
-documented in [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md),
-[`docs/SECURITY_CONTROLS.md`](docs/SECURITY_CONTROLS.md), and
-[`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md).
+documented in the [threat model](docs/dev/threat-model.md),
+[security checks](docs/dev/security-checks.md) and
+[incident response](docs/dev/incident-response.md).
