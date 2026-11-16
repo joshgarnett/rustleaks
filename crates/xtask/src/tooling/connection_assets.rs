@@ -97,7 +97,7 @@ const REVIEWED: [ReviewedRule; 5] = [
         upstream_id: "kingfisher.connection-string.password.double-quoted",
         description: "ASCII database connection password (double quoted)",
         source_pattern_sha256: "af11c3749b82660407fd16c14c35c96f277073a1eb45a8a8b8800537367d81e6",
-        native_pattern_sha256: "cfddc90155c54c43645188c3ca9be81ecc7ee93de62fce1f52f551e685e10e55",
+        native_pattern_sha256: "b8b90305ffcedf4d268d3e5ac03f8ef1948181b3d513df4ac565ec934bcaa579",
         unquoted_requirements: false,
         source_line: 24,
     },
@@ -106,7 +106,7 @@ const REVIEWED: [ReviewedRule; 5] = [
         upstream_id: "kingfisher.connection-string.password.single-quoted",
         description: "ASCII database connection password (single quoted)",
         source_pattern_sha256: "140cb1b544c58910b7d2463036f5c652d20836ea69574c8c8867b408841124f1",
-        native_pattern_sha256: "0019316c90fab431cf15a60ae3f9b2d93ef1ef1e45ef719546f3eb267430e43f",
+        native_pattern_sha256: "5e08b77e1e24c2ad627e61fb803f235a28262b8bb1cab50e63945197333ee48c",
         unquoted_requirements: false,
         source_line: 83,
     },
@@ -115,7 +115,7 @@ const REVIEWED: [ReviewedRule; 5] = [
         upstream_id: "kingfisher.connection-string.password.odbc-braced",
         description: "ASCII database connection password (odbc braced)",
         source_pattern_sha256: "0366f804bcf6d23ac694ae9790cef01fb710e56652d6ef797ea7c9c39986eb28",
-        native_pattern_sha256: "9e29696a6df533022c8509b9dcf8f87b40aee20c461dd21ffaaf2c958f10ce29",
+        native_pattern_sha256: "594c6e650c1934ef8282cbdc53181350ed4fb3a4653a76a05ccc745b31576c73",
         unquoted_requirements: false,
         source_line: 104,
     },
@@ -124,7 +124,7 @@ const REVIEWED: [ReviewedRule; 5] = [
         upstream_id: "kingfisher.connection-string.password.unquoted",
         description: "ASCII database connection password (unquoted)",
         source_pattern_sha256: "a522f1cc289b0c02c41e633b0fbd0a5e5fa585a77f4e2da93a31295462ee8779",
-        native_pattern_sha256: "ae4c6c866a23dd3bab61994f11db142a08a4a0b3189ed6b4e3f45efa38158011",
+        native_pattern_sha256: "415af969f0692f1031a3b9d98b22c9c103dd91a13c6b3c07a668df124e67be45",
         unquoted_requirements: true,
         source_line: 129,
     },
@@ -154,13 +154,14 @@ const SOURCE_IDENTITY: &str = r#"{
   "tests_sha256": "4e44b4acd59a82f1807cfffbd6931b063d463c285c87b15fcadee27424358d38"
 }"#;
 
-const TRANSFORMATIONS: [&str; 6] = [
+const TRANSFORMATIONS: [&str; 7] = [
     "Namespace rule IDs and descriptions; preserve source order and capture 1.",
     "Remove reviewed extended-mode formatting; expand ASCII-insensitive literals and positive classes explicitly; preserve the case-sensitive JDBC password key.",
     "Intersect negated byte classes with ASCII using explicit positive byte ranges; preserve all bounds, greediness, alternatives, and consumed delimiters.",
     "Unroll the capture-free JDBC preceding-option repetition into sixteen sequential greedy optional groups; preserve 0 through 16 options without exceeding the existing nested-repeat product limit.",
     "Map the complete case-insensitive secret substring exclusions to rule-local secret stopwords; preserve absent keywords as an empty list and omit the zero entropy floor.",
     "Retain raw percent spelling and doubled ODBC braces; inherit unchanged Rustleaks source policy, global allowlists, finding geometry, decoding, and resource controls.",
+    "Add a zero-width ASCII word boundary as the last host-key start alternative in the four semicolon forms, so a semicolon consumed by one match does not hide the next connection.",
 ];
 
 pub(super) fn validate(root: &Path) -> Result<(), String> {

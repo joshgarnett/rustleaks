@@ -800,8 +800,8 @@
       }
     }
   ],
-  "connections_legacy_provenance_sha256": "4f506bdc427fa4b0c88d9e81dfaccbe9e7f5a9e8f70ce463999bbbe342857206",
-  "connections_legacy_toml_sha256": "7097f73345bdb794f965e3137271b329297665b05227d571d3b6ae149c158084",
+  "connections_legacy_provenance_sha256": "6103fd60afb29a632997ec4aa3a7984a21993b61fef28389e0c547077f5fb5b1",
+  "connections_legacy_toml_sha256": "ab149e5c04d2aadb2f27dd5f90a136ec03476a25200d097676bc4364324be435",
   "preserved_prefixes": {
     "connections": {
       "count": 6,

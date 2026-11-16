@@ -43,6 +43,11 @@
   Alibaba Cloud AccessKey IDs with 17 to 21 byte bodies, Slack configuration
   access tokens with 1 to 10 digit segments, and xAI API keys with 70 to 120
   byte bodies before a delimiter. The pack now has 303 rules.
+- Fix the opt-in `rustleaks-connections-v1` semicolon connection rules so
+  adjacent connections that share one semicolon each give a finding. In
+  `Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;` both passwords are now reported. A
+  host key can also start after other ASCII punctuation, a control byte or a
+  non-ASCII byte, and the match then starts at the key.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

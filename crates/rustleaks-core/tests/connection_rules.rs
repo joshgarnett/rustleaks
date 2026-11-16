@@ -352,11 +352,29 @@ fn multiple_occurrences_preserve_nearest_selection_and_consumed_delimiters() {
             }
         }
     }
-    let adjacent = "Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;";
-    // The first full match consumes the semicolon required to start the next
-    // match. This explicitly records the native occurrence gap. Cross-tool
-    // enumeration is a separate question, not proved by this regression.
-    assert_one(adjacent, "R7!q", "unquoted");
+    // The first match consumes the shared semicolon. The next host key then
+    // starts at an ASCII word boundary, so each connection gives a finding.
+    for (suffix, open, close) in FORMS {
+        let input = format!("Host=one;Pwd={open}R7!q{close};Host=two;Pwd={open}T8!w{close};");
+        let open_len = open.len();
+        let length = 18 + open_len + close.len();
+        assert_eq!(input.len(), 2 * length);
+        let findings = scan(isolated(), input.as_bytes());
+        assert_eq!(findings.len(), 2, "{suffix}");
+        for (finding, secret, offset) in [(&findings[0], "R7!q", 0), (&findings[1], "T8!w", length)]
+        {
+            assert_eq!(
+                finding.rule_id().as_bytes(),
+                format!("{PREFIX}{suffix}").as_bytes()
+            );
+            assert_eq!(finding.secret().as_bytes(), secret.as_bytes());
+            assert_eq!(
+                finding.secret_range(),
+                range(offset + 13 + open_len, offset + 17 + open_len)
+            );
+            assert_eq!(finding.match_range(), range(offset, offset + length));
+        }
+    }
     let repeated = "FIRST=Host=one;Pwd=R7!q; SECOND=Host=two;Pwd=R7!q;";
     assert_eq!(scan(isolated(), repeated.as_bytes()).len(), 2);
     let input = "jdbc:mysql://one/?password=R7!q jdbc:mysql://two/?password=T8!w";
@@ -364,6 +382,79 @@ fn multiple_occurrences_preserve_nearest_selection_and_consumed_delimiters() {
     assert_eq!(findings.len(), 2);
     assert_eq!(findings[0].secret().as_bytes(), b"R7!q");
     assert_eq!(findings[1].secret().as_bytes(), b"T8!w");
+}
+
+/// A half-open byte range as `(start, end)`.
+type Span = (usize, usize);
+
+/// Checks findings of one form as `(match, secret)` range pairs in order.
+fn assert_form_ranges(suffix: &str, input: &str, expected: &[(Span, Span)]) {
+    let findings = scan(isolated(), input.as_bytes());
+    assert_eq!(
+        findings.len(),
+        expected.len(),
+        "{suffix}, {}-byte input",
+        input.len()
+    );
+    for (finding, ((match_start, match_end), (secret_start, secret_end))) in
+        findings.iter().zip(expected)
+    {
+        assert_eq!(
+            finding.rule_id().as_bytes(),
+            format!("{PREFIX}{suffix}").as_bytes()
+        );
+        assert_eq!(finding.match_range(), range(*match_start, *match_end));
+        assert_eq!(finding.secret_range(), range(*secret_start, *secret_end));
+    }
+}
+
+fn assert_unquoted_ranges(input: &str, expected: &[(Span, Span)]) {
+    assert_form_ranges("unquoted", input, expected);
+}
+
+#[test]
+fn semicolon_host_keys_start_at_a_listed_byte_or_an_ascii_word_boundary() {
+    // Three adjacent connections give three findings. Each later match starts
+    // at the host key because the previous match consumed the semicolon.
+    assert_unquoted_ranges(
+        "Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;Host=six;Pwd=U9!e;",
+        &[
+            ((0, 18), (13, 17)),
+            ((18, 36), (31, 35)),
+            ((36, 54), (49, 53)),
+        ],
+    );
+    // An intermediate segment does not change the boundary.
+    assert_unquoted_ranges(
+        "Host=one;Uid=a;Pwd=R7!q;Host=two;Uid=b;Pwd=T8!w;",
+        &[((0, 24), (19, 23)), ((24, 48), (43, 47))],
+    );
+    // Unlisted ASCII punctuation and non-ASCII bytes before the key are not
+    // consumed. The match starts at the key.
+    assert_unquoted_ranges(".Host=d;Pwd=R7!q;", &[((1, 17), (12, 16))]);
+    assert_unquoted_ranges("-Server=d;Pwd=R7!q;", &[((1, 19), (14, 18))]);
+    assert_unquoted_ranges("éHost=d;Pwd=R7!q;", &[((2, 18), (13, 17))]);
+    assert_unquoted_ranges("Proxy-Server=d;Pwd=R7!q;", &[((6, 24), (19, 23))]);
+    assert_unquoted_ranges(".Data Source=d;Pwd=R7!q;", &[((1, 24), (19, 23))]);
+    assert_form_ranges(
+        "double-quoted",
+        ".Host=d;Pwd=\"R7!q\";",
+        &[((1, 19), (13, 17))],
+    );
+    // Control bytes outside tab through carriage return are not consumed.
+    assert_unquoted_ranges("\x01Host=d;Pwd=R7!q;", &[((1, 17), (12, 16))]);
+    // A letter, digit or underscore before the key still blocks the match.
+    for input in [
+        "xHost=d;Pwd=R7!q;",
+        "_Host=d;Pwd=R7!q;",
+        "9Host=d;Pwd=R7!q;",
+    ] {
+        assert_unquoted_ranges(input, &[]);
+    }
+    // The earliest key after unlisted punctuation starts the match.
+    assert_unquoted_ranges(".Host=a;Server=b;Pwd=R7!q;", &[((1, 26), (21, 25))]);
+    // A listed byte before the key is still consumed by the match.
+    assert_unquoted_ranges("x=Host=d;Pwd=R7!q;", &[((1, 18), (13, 17))]);
 }
 
 #[test]
