@@ -62,7 +62,7 @@ pack bytes and order participate in policy identity. See
 format limits, source-policy differences and the absence of live validation.
 
 `CONNECTION_RULES_V1` exposes the separate `rustleaks-connections-v1` pack with
-12 rule definitions: eight password rules, three complete Git credential URL
+14 rule definitions: ten password rules, three complete Git credential URL
 rules and one hidden tuple-predicate helper. Its
 [contract](default/rustleaks-connections-v1.md) specifies capture, placeholder,
 byte-bound and enumeration behavior. It does not add a general connection

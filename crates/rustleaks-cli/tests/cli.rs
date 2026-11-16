@@ -1843,6 +1843,180 @@ mod complete_profile {
         archive
     }
 
+    fn stored_gzip(payload: &[u8]) -> Vec<u8> {
+        let length = u16::try_from(payload.len()).expect("small synthetic gzip payload");
+        let mut bytes = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255, 1];
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.extend_from_slice(&(!length).to_le_bytes());
+        bytes.extend_from_slice(payload);
+        let crc = !payload.iter().fold(!0_u32, |state, &byte| {
+            (0..8).fold(state ^ u32::from(byte), |value, _| {
+                (value >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(value & 1))
+            })
+        });
+        bytes.extend_from_slice(&crc.to_le_bytes());
+        bytes.extend_from_slice(&u32::from(length).to_le_bytes());
+        bytes
+    }
+
+    struct ArchiveCase {
+        name: &'static str,
+        depth: &'static str,
+        code: i32,
+        state: &'static str,
+        reason: &'static str,
+        reports: &'static str,
+        fragments: usize,
+        issues: usize,
+        files: &'static [&'static str],
+        diagnostic: &'static str,
+    }
+
+    const ARCHIVE_CASES: &[ArchiveCase] = &[
+        ArchiveCase {
+            name: "partial.tar",
+            depth: "1",
+            code: 2,
+            state: "incomplete",
+            reason: "coverage_failure",
+            reports: "partial",
+            fragments: 1,
+            issues: 0,
+            files: &["partial.tar!first.txt"],
+            diagnostic: "truncated TAR member",
+        },
+        ArchiveCase {
+            name: "corrupt.tgz",
+            depth: "1",
+            code: 2,
+            state: "incomplete",
+            reason: "coverage_failure",
+            reports: "partial",
+            fragments: 0,
+            issues: 0,
+            files: &[],
+            diagnostic: "gzip size or CRC mismatch",
+        },
+        ArchiveCase {
+            name: "outer.tgz",
+            depth: "2",
+            code: 0,
+            state: "complete",
+            reason: "complete",
+            reports: "complete",
+            fragments: 0,
+            issues: 2,
+            files: &[],
+            diagnostic: "skipping archive: exceeds maximum archive depth",
+        },
+        ArchiveCase {
+            name: "outer.tgz",
+            depth: "3",
+            code: 1,
+            state: "complete",
+            reason: "complete",
+            reports: "complete",
+            fragments: 2,
+            issues: 0,
+            files: &[
+                "outer.tgz!wrapper.tgz!left.tgz!leaf.txt",
+                "outer.tgz!wrapper.tgz!right.tgz!leaf.txt",
+            ],
+            diagnostic: "",
+        },
+    ];
+
+    fn assert_archive_case(case: &ArchiveCase, result: &Output) {
+        let ArchiveCase {
+            name,
+            depth,
+            code,
+            state,
+            reason,
+            reports,
+            fragments,
+            issues,
+            files,
+            diagnostic,
+        } = *case;
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert_eq!(result.status.code(), Some(code), "{name}/{depth}: {stderr}");
+        let fields = status(&result.stderr)
+            .split_whitespace()
+            .collect::<Vec<_>>();
+        for expected in [
+            format!("status={state}"),
+            format!("reason={reason}"),
+            format!("reports={reports}"),
+            "source_scope=directory_targets".to_owned(),
+            "resource=none".to_owned(),
+            "budget_scope=none".to_owned(),
+            "usage=available".to_owned(),
+            "usage_exact=1".to_owned(),
+            format!("archive_depth={depth}"),
+            format!("findings={fragments}"),
+            format!("original_bytes={}", fragments * 10),
+            format!("fragments={fragments}"),
+            format!("completed_fragments={fragments}"),
+            format!("issues={issues}"),
+        ] {
+            assert!(fields.contains(&expected.as_str()), "{expected}: {stderr}");
+        }
+        let report = rustleaks_core::session::Baseline::from_go_json(&result.stdout).unwrap();
+        assert!(!report.was_null());
+        let rows = report.entries();
+        assert_eq!(rows.len(), files.len());
+        let mut actual_files = rows
+            .iter()
+            .map(|row| row.file().as_bytes())
+            .collect::<Vec<_>>();
+        actual_files.sort_unstable();
+        let mut expected_files = files.iter().map(|file| file.as_bytes()).collect::<Vec<_>>();
+        expected_files.sort_unstable();
+        assert_eq!(actual_files, expected_files);
+        for row in rows {
+            assert_eq!(row.rule_id().as_bytes(), b"fixture-token");
+            assert_eq!(row.start_line(), 1);
+            assert_eq!(row.end_line(), 1);
+            assert_eq!(row.start_column(), 1);
+            assert_eq!(row.end_column(), 10);
+            assert_eq!(row.match_text().as_bytes(), b"token=AB12");
+            assert_eq!(row.secret().as_bytes(), b"AB12");
+        }
+        if !diagnostic.is_empty() {
+            assert!(stderr.contains(diagnostic), "{stderr}");
+        }
+    }
+
+    #[test]
+    fn complete_archive_status_distinguishes_partial_members_and_depth_exclusions() {
+        let fixture = Fixture::new();
+        fixture.write("config.toml", matching_config());
+        profile(&fixture, &[]);
+        let mut partial = tar_named_leaf(b"first.txt", b"token=AB12");
+        partial.truncate(partial.len() - 1024);
+        partial.extend(tar_named_leaf(b"second.txt", b"token=CD34"));
+        partial.truncate(1024 + 512 + 7);
+        fixture.write("partial.tar", partial);
+        let inner = stored_gzip(&tar_leaf(b"token=AB12"));
+        let mut corrupt = inner.clone();
+        let crc = corrupt.len() - 8;
+        corrupt[crc] ^= 1;
+        fixture.write("corrupt.tgz", corrupt);
+        let mut siblings = tar_named_leaf(b"left.tgz", &inner);
+        siblings.truncate(siblings.len() - 1024);
+        siblings.extend(tar_named_leaf(b"right.tgz", &inner));
+        let middle = stored_gzip(&siblings);
+        let outer = stored_gzip(&tar_named_leaf(b"wrapper.tgz", &middle));
+        fixture.write("outer.tgz", outer);
+        for case in ARCHIVE_CASES {
+            let command_args = ["dir", case.name, "--max-archive-depth", case.depth];
+            let mut args = arguments(&command_args);
+            args.extend(["--log-level", "info"]);
+            assert_archive_case(case, &output(&fixture.0, &args));
+        }
+    }
+
     #[test]
     fn complete_profile_reaches_stdin_directory_and_git_archive_leaves() {
         let fixture = Fixture::new();

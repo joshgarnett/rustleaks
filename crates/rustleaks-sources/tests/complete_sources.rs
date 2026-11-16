@@ -1556,15 +1556,77 @@ mod tgz_targets {
         }
     }
 
+    fn run_counted(source: &mut dyn Source) -> SourceOutcome {
+        SourceRunner::new(1, 1)
+            .unwrap()
+            .with_budget(SourceBudget::unlimited())
+            .unwrap()
+            .run(
+                source,
+                &token_detector(),
+                ScanOptions::default(),
+                &SessionPolicy::default(),
+                &CancellationToken::new(),
+            )
+    }
+
+    #[test]
+    fn truncated_tar_retains_only_verified_prefix_members() {
+        let mut bytes = archive_seeds::synthetic_tar(&[
+            ("first.txt", b"token=A001"),
+            ("second.txt", b"token=B002"),
+        ]);
+        // One complete header/body/padding, then a header and partial body.
+        bytes.truncate(1024 + 512 + 7);
+        let outcome = run_counted(&mut source(bytes, "partial.tar", options(1, 4096, 4096)));
+        assert!(matches!(
+            outcome.termination(),
+            SourceTermination::SourceError(SourceError::Terminal {
+                stage: SourceStage::Archive,
+                message,
+                ..
+            }) if message == "truncated TAR member"
+        ));
+        assert!(outcome.issues().is_empty());
+        assert_eq!(outcome.scanned_bytes(), 10);
+        let usage = outcome.usage().unwrap();
+        assert_eq!(usage.original_bytes(), 10);
+        assert_eq!(usage.fragments(), 1);
+        assert_eq!(usage.completed_fragments(), 1);
+        assert!(usage.is_exact());
+        assert_eq!(outcome.findings().len(), 1);
+        let finding = &outcome.findings()[0];
+        assert_eq!(finding.file().as_bytes(), b"partial.tar!first.txt");
+        assert_eq!(finding.secret().as_bytes(), b"A001");
+        assert_eq!(finding.secret_range().exact().unwrap().as_range(), 6..10);
+    }
+
     #[test]
     fn tgz_corruption_and_finite_limits_never_publish_incomplete_leaves() {
         let bytes = tar_gzip(&[("leaf.txt", b"token=A001")]);
         let mut corrupt = bytes.clone();
         let crc = corrupt.len() - 8;
         corrupt[crc] ^= 1;
+        let corrupt_outcome =
+            run_counted(&mut source(corrupt, "outer.tgz", options(1, 4096, 4096)));
+        assert!(matches!(
+            corrupt_outcome.termination(),
+            SourceTermination::SourceError(SourceError::Terminal {
+                stage: SourceStage::Decode,
+                message,
+                ..
+            }) if message == "gzip size or CRC mismatch"
+        ));
+        assert!(corrupt_outcome.findings().is_empty());
+        assert!(corrupt_outcome.issues().is_empty());
+        assert_eq!(corrupt_outcome.scanned_bytes(), 0);
+        let usage = corrupt_outcome.usage().unwrap();
+        assert_eq!(usage.original_bytes(), 0);
+        assert_eq!(usage.fragments(), 0);
+        assert_eq!(usage.completed_fragments(), 0);
+        assert!(usage.is_exact());
         let tar_bytes = archive_seeds::synthetic_tar(&[("leaf.txt", b"token=A001")]).len();
         for (bytes, archive_options) in [
-            (corrupt, options(1, 4096, 4096)),
             (bytes.clone(), options(1, 4096, bytes.len() - 1)),
             (bytes, options(1, tar_bytes - 1, 4096)),
         ] {

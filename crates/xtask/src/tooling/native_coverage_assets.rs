@@ -14,7 +14,7 @@ pub(super) fn generate(root: &Path, check: bool) -> Result<(), String> {
         .map_err(|error| format!("invalid additional coverage source contract: {error}"))?;
     for (name, key, source, count, additional) in [
         ("rustleaks-providers-v1", "providers", PROVIDERS, 104, 196),
-        ("rustleaks-connections-v1", "connections", CONNECTIONS, 6, 6),
+        ("rustleaks-connections-v1", "connections", CONNECTIONS, 6, 8),
     ] {
         validate_source(&reviewed, key, source, additional)?;
         let pack = root.join(DIRECTORY).join(format!("{name}.toml"));
@@ -166,7 +166,7 @@ mod tests {
         let reviewed: serde_json::Value = serde_json::from_str(REVIEWED).unwrap();
         for (key, source, count) in [
             ("providers", PROVIDERS, 196),
-            ("connections", CONNECTIONS, 6),
+            ("connections", CONNECTIONS, 8),
         ] {
             assert!(validate_source(&reviewed, key, source, count).is_ok());
             let original: toml::Value = toml::from_str(source).unwrap();
