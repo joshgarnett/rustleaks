@@ -1,4 +1,5 @@
-//! Independent development fixtures. This module never invokes a scanner.
+//! Independent development fixtures. Generation and `--verify` never invoke a
+//! scanner. Only the manual `--check` mode in `check.rs` runs one.
 //!
 //! Dense scaling and multiple decoded values in one carrier are independently
 //! authored adaptations of benchmark ideas in Kingfisher commit
@@ -20,6 +21,8 @@ use crate::tooling::sha256_bytes;
 
 #[path = "performance_fixtures/boundaries.rs"]
 mod boundaries;
+#[path = "performance_fixtures/check.rs"]
+mod check;
 #[path = "performance_fixtures/connections.rs"]
 mod connections;
 #[path = "performance_fixtures/density.rs"]
@@ -283,6 +286,9 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
         && flag == "--verify"
     {
         return verification::run(std::path::Path::new(path));
+    }
+    if arguments.iter().any(|argument| argument == "--check") {
+        return check::run(arguments);
     }
     let request = Request::parse(arguments)?;
     let parent = request.output.parent().ok_or("missing output parent")?;
