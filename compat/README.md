@@ -2,8 +2,10 @@
 
 This directory holds the evidence that Rustleaks tests replay to check its
 compatibility with the pinned Gitleaks revision. It is for contributors and
-maintainers. For the user-facing compatibility profile, see
-[`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md).
+maintainers. For the compatibility policy, see [Differences from
+Gitleaks](../docs/user/gitleaks-differences.md#compatibility-policy). For how
+the evidence is tested, see [Testing and
+parity](../docs/dev/testing-and-parity.md).
 
 ## Contents
 
@@ -39,13 +41,20 @@ frozen README says that CI replays a Go oracle or its generators, it describes
 the retired process. The frozen files stay unchanged because they are part of
 the hashed evidence.
 
+Frozen files also name documentation paths that have since moved. The
+`design_evidence` field in `api-dispositions-v1.jsonl` names
+`docs/ARCHITECTURE.md` anchors. Those anchors now live in
+[`docs/dev/architecture.md`](../docs/dev/architecture.md). Paths such as
+`docs/COMPATIBILITY.md` and `docs/RESOURCE_LIMITS.md` in
+`behavior-matrix.toml` and `detect-corpus/` are historical labels.
+
 New expectations go into Rust tests with synthetic inputs and independently
 reviewed expected values. For functional fields, such as findings, spans,
 fingerprints, report fields, exit codes and error classes, current Rust output
 must never become its own expected baseline. A reviewed change to presentation
 text in the frozen CLI corpus goes into `presentation-dispositions.toml`, as
 described in [presentation
-dispositions](../docs/COMPATIBILITY.md#presentation-dispositions).
+dispositions](../docs/dev/testing-and-parity.md#presentation-dispositions).
 
 ## Checking the evidence
 

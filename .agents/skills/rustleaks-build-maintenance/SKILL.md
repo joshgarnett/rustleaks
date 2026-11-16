@@ -5,8 +5,8 @@ description: Maintain Rustleaks Bazel, rules_rust, Rust toolchain, crate-univers
 
 # Rustleaks build maintenance
 
-Read `docs/ARCHITECTURE.md`, `docs/DEPENDENCIES.md`,
-`docs/DEPENDENCY_SAFETY.md`, `MODULE.bazel`, `.bazelrc`, `justfile`, and
+Read `docs/dev/architecture.md`, `docs/dev/dependencies.md`,
+`MODULE.bazel`, `.bazelrc`, `justfile`, and
 `crates/xtask/src/build_system.rs`. Bazel is the build authority. Cargo remains
 the metadata, package, and named-tooling interface.
 
@@ -24,9 +24,10 @@ the metadata, package, and named-tooling interface.
 - Keep Just recipes small and cross-platform. Put nontrivial logic in tested
   Rust `xtask` code rather than Just or Bazel command strings.
 
-Adding or updating a dependency, Rust toolchain, `rules_rust`, or the
-crate-universe dependency input requires maintainer approval before the edit.
-Ordinary first-party Bazel target and feature maintenance does not add an
+Dependency, toolchain and `rules_rust` changes are listed under [Approval
+boundaries](../../../AGENTS.md#approval-boundaries) and need maintainer
+approval before the edit. The crate-universe dependency input counts as a
+dependency change. Ordinary first-party Bazel target and feature maintenance does not add an
 approval boundary, but it must preserve and validate the graph contract.
 Use only this public regeneration command after approval:
 

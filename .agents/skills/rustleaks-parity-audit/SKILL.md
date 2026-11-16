@@ -5,7 +5,9 @@ description: Audit Rustleaks functional compatibility against frozen historical 
 
 # Rustleaks parity audit
 
-Audit evidence, not similarity. Read `docs/COMPATIBILITY.md`,
+Audit evidence, not similarity. Read the [compatibility
+policy](../../../docs/user/gitleaks-differences.md#compatibility-policy),
+`docs/dev/testing-and-parity.md`,
 `compat/upstream-revision.txt`, `compat/test-manifest.toml`,
 `compat/behavior-matrix.toml`, `compat/presentation-dispositions.toml`,
 `compat/api-inventory-v1.json`, and `compat/api-dispositions-v1.jsonl` before

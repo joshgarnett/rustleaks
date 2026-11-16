@@ -1037,7 +1037,7 @@ fn provenance(evidence: &ReleaseEvidence<'_>, sbom_name: &str, sbom_sha256: &str
         "predicateType": "https://slsa.dev/provenance/v1",
         "predicate": {
             "buildDefinition": {
-                "buildType": format!("{REPOSITORY}/blob/{}/docs/RELEASING.md#non-publishing-release-candidate", evidence.commit),
+                "buildType": format!("{REPOSITORY}/blob/{}/docs/dev/releasing.md#non-publishing-release-candidate", evidence.commit),
                 "externalParameters": {
                     "bazelConfig": evidence.bazel_config,
                     "features": ["archives"],

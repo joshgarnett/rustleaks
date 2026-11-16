@@ -160,4 +160,4 @@ A template file can be at most 1 MiB. Rendering stops with an error after
 The order of keys in JSON objects and of columns in CSV files can change in a
 later Rustleaks version. Read fields by name, not by position. Field names,
 types and meanings do not change. See the [compatibility
-policy](../COMPATIBILITY.md#compatibility-policy).
+policy](gitleaks-differences.md#compatibility-policy).

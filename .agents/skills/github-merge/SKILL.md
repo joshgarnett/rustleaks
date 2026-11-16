@@ -29,7 +29,7 @@ condition:
 
 - the pull request is open, is not a draft, and targets `main`;
 - the complete change matches its title, body, and linked issue intent;
-- the title satisfies the `github-commit` Conventional Commit grammar;
+- the title follows the [commit grammar](../../../CONTRIBUTING.md#commits);
 - every check required by the live ruleset is present and successful, with no
   required job pending, skipped unexpectedly, cancelled, stale, or failing;
 - an eligible approving review exists when the live ruleset requires one or

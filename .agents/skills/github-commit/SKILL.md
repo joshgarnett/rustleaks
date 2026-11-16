@@ -34,8 +34,8 @@ requests are squash merged; each checkpoint must still be understandable and
 reviewable.
 
 When the changes are associated with a real issue, inspect it with
-`gh issue view <issue-number>` and ensure the commit group is consistent with
-its intent and acceptance criteria. Do not invent linkage.
+`gh issue view <issue-number>` and check that the commit group is consistent
+with its intent and acceptance criteria. Do not invent linkage.
 
 Do not use `git add .` or `git add -A` unless every affected path was read and
 belongs to the same commit. Stage explicit paths or hunks. Do not discard,
@@ -43,8 +43,9 @@ stash, or overwrite unrelated work.
 
 ## Validate the staged state
 
-Run the narrowest relevant repository command before committing. Verified
-examples include:
+Run the narrowest relevant repository command before committing. The
+[local workflow](../../../CONTRIBUTING.md#local-workflow) table names the
+command for each kind of change. Focused examples:
 
 ```sh
 just docs-check
@@ -54,12 +55,11 @@ bazelisk test //crates/rustleaks-report:parity_tests
 bazelisk test //crates/rustleaks-cli:cli_test
 ```
 
-Use `just ci` and `just security` for pull-request-ready changes. Add
-`just package-check`, both fuzz recipes, or `cargo xtask qualify` only for
-the boundaries named in `CONTRIBUTING.md` and the applicable Rustleaks
-maintenance skill. Bazel is authoritative for normal build and test work;
-Cargo does not bypass a failed Bazel action. Report only commands that passed
-against the staged content.
+Use `just ci` and `just security` for pull-request-ready changes, and the
+other commands only for the boundaries named in `CONTRIBUTING.md` and the
+applicable Rustleaks maintenance skill. Bazel is the authority for normal
+build and test work; Cargo does not bypass a failed Bazel action. Report only
+commands that passed against the staged content.
 
 Validation that reads the working tree cannot prove the finalized staged state
 while unstaged tracked changes are present. Preserve unrelated work, but use an
@@ -74,54 +74,28 @@ git diff --cached --check
 ```
 
 Verify that required tests, generated files, lockfiles, licenses, provenance,
-and attribution are included. Adding or updating dependencies, toolchains,
-`rules_rust`, the Gitleaks pin, or copied default configuration requires prior
-maintainer approval. Never hand-edit generated corpora, inventories,
-snapshots, or lockfiles; use the maintained generator or regeneration command.
+and attribution are included. Changes listed under [Approval
+boundaries](../../../AGENTS.md#approval-boundaries) need maintainer approval
+first. Never hand-edit generated corpora, inventories, snapshots, or
+lockfiles; use the maintained generator or regeneration command.
 
 ## Write the message
 
-Use `<type>(<scope>)!: <description>`. The optional scope and `!` remain inside
-the grammar. The description is imperative and present tense, starts with a
-lowercase word or project identifier as grammar requires, has no final period,
-and is at most 72 characters. Describe the resulting repository state, not the
-activity used to reach it.
+Follow [Commits](../../../CONTRIBUTING.md#commits) in `CONTRIBUTING.md` for
+the subject grammar, types, scopes, breaking changes, reverts, bodies and
+trailers. Describe the resulting repository state, not the activity used to
+reach it. Never use an issue number or ticket identifier as a scope.
 
-Choose the narrowest type:
-
-- `feat` adds user-visible capability or public behavior;
-- `fix` corrects behavior, compatibility, security, or reliability;
-- `perf` improves measured performance without changing supported behavior;
-- `refactor` changes internal structure without changing behavior;
-- `test` changes tests, corpora, fixtures, or test infrastructure;
-- `docs` changes documentation only;
-- `build` changes Cargo, Bazel, toolchains, packaging, or build inputs;
-- `ci` changes automation workflows or CI configuration;
-- `style` applies formatting only without semantic change; and
-- `chore` is narrow maintenance that fits no more specific type.
-
-Use the standard Git-generated `Revert "..."` subject only for a real revert
-and preserve its explanation of the reverted commit. Choose a stable scope only
-when useful: `core`, `sources`, `report`, `cli`, `compat`, `xtask`, `bazel`,
-`deps`, `docs`, `ci`, or `release`. Omit a scope for a cross-cutting change.
-Never use a goal, agent, review round, issue number, or temporary task as a
-scope, and do not use another ticket identifier as one.
-
-These subjects use verified repository history and boundaries:
+These subjects come from repository history:
 
 ```text
-test(sources): refresh CLI runtime provenance
-build(deps): replace tree hashes with boundary checks
-docs(security): record hosted repository controls
+feat(cli): write Rustleaks help, usage and error text
+test(cli): skip shell syntax checks on Windows hosts
+docs: adopt a standalone compatibility policy
 ```
 
-Use `!` only for an intentional breaking change and add a
-`BREAKING CHANGE: ...` footer that explains the affected API and migration.
-Use a body for lasting reasons, compatibility effects, security constraints,
-or non-obvious decisions, separated from the subject by a blank line. Do not
-include goal status, agent narration, review history, raw command logs, or
-post-goal planning references. Add only true trailers. Do not invent issue
-links, signoffs, co-authors, or reviews; prefer issue-closing references in the
+Do not include goal status, agent narration, review history, raw command logs
+or planning references in the body. Prefer issue-closing references in the
 pull request.
 
 ## Commit and verify

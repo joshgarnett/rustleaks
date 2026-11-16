@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The compatibility policy is documented in docs/COMPATIBILITY.md. Use this form for functional differences, such as findings, spans, fingerprints, report fields, configuration meaning, or exit codes. A difference only in help, usage, error wording, or log text is not a compatibility gap; use the defect or feature form. Do not include live credentials or private vulnerability details.
+        The compatibility policy is in docs/user/gitleaks-differences.md. Use this form for functional differences, such as findings, spans, fingerprints, report fields, configuration meaning, or exit codes. A difference only in help, usage, error wording, or log text is not a compatibility gap; use the defect or feature form. Do not include live credentials or private vulnerability details.
   - type: dropdown
     id: domain
     attributes:

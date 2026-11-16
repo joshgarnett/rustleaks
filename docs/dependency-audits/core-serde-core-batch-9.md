@@ -84,7 +84,7 @@ No peer audits, wildcard trust, criteria changes, or exceptions were used.
   destination type for traversal. Rustleaks' configuration, decoded-byte,
   work, finding, and process-allocation boundaries continue to govern hostile
   input. Ordinary allocation failure can still abort as documented in
-  `docs/RESOURCE_LIMITS.md`.
+  `docs/user/resource-limits.md`.
 - Failure behavior: malformed values and unsupported representations normally
   return serializer or deserializer errors. Fixed-buffer formatting unwraps
   are protected by the reviewed maximum encoded lengths. The zero-length

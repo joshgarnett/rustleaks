@@ -1,26 +1,18 @@
 # Contributing
 
-Rustleaks is in alpha development. Contributions must preserve the functional
-compatibility guarantees in [the compatibility
-policy](docs/COMPATIBILITY.md#compatibility-policy) and the boundaries between
-the core engine, source adapters, reports, compatibility tools, and CLI.
-Rustleaks owns its help, usage, error wording, logs and other presentation, and
-may change them with reviewed test expectations.
+Rustleaks is in alpha development. This file is the single source for the
+issue, commit and pull request rules. People and agents follow the same
+rules.
 
-## Before opening an issue
+Every contribution must keep the functional guarantees in the
+[compatibility policy](docs/user/gitleaks-differences.md#compatibility-policy)
+and the boundaries between the core engine, source adapters, reports,
+compatibility tools and CLI described in the
+[architecture](docs/dev/architecture.md). Rustleaks owns its help, usage,
+error wording, logs and other presentation, and may change them with reviewed
+test expectations.
 
-Search existing issues and choose the defect, compatibility-gap, or feature
-form. Provide the exact Rustleaks revision, target, feature set, commands, and
-smallest synthetic reproducer needed by that form. Compatibility reports must
-compare against Gitleaks commit
-`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and identify the functional
-difference, such as a finding, span, fingerprint, report field, or exit code. A
-difference only in help, usage, error wording, or log text is not a
-compatibility gap. Report it as a defect or a feature proposal.
-
-Never put a live credential, raw finding, exploit, private repository content,
-or non-public vulnerability detail in an issue. Follow [the security
-policy](SECURITY.md) for sensitive reports.
+## Issues
 
 ### What belongs in an issue
 
@@ -33,15 +25,30 @@ only for:
 - a feature proposal: a concrete capability or workflow change with a clear
   outcome.
 
-Do not open an issue for a tracker, log, status report, plan, or roadmap. Put
+Do not open an issue for a tracker, log, status report, plan or roadmap. Put
 one problem in each issue. Close an issue when it is resolved or no longer
 current. Report security vulnerabilities through [the security
 policy](SECURITY.md), not in an issue.
 
+### Before opening an issue
+
+Search the existing issues and choose the defect, compatibility-gap or
+feature form. Give the exact Rustleaks revision, target, feature set,
+commands and the smallest synthetic reproducer that the form asks for.
+
+A compatibility report compares against Gitleaks commit
+`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and names the functional
+difference, such as a finding, span, fingerprint, report field or exit code.
+A difference only in help, usage, error wording or log text is not a
+compatibility gap. Report it as a defect or a feature proposal.
+
+Never put a live credential, raw finding, exploit, private repository content
+or non-public vulnerability detail in an issue.
+
 ### Issue labels
 
-The issue forms set the title prefix (`bug: `, `compat: `, or `feat: `) but
-do not apply labels. A maintainer applies labels during triage.
+The issue forms set the title prefix (`bug: `, `compat: ` or `feat: `) but do
+not apply labels. A maintainer applies labels during triage.
 
 | Label | Use |
 | --- | --- |
@@ -49,7 +56,7 @@ do not apply labels. A maintainer applies labels during triage.
 | `enhancement` | A new capability or improvement. Use for `feat: ` issues and for `compat: ` issues about behavior that Rustleaks does not support yet. |
 | `documentation` | The problem or change is in documentation only. |
 | `dependencies` | The issue concerns a dependency, such as an advisory or a required update. |
-| `question` | The reporter must provide more information before work can start. |
+| `question` | The reporter must give more information before work can start. |
 | `good first issue` | Small, well-defined work that suits a new contributor. |
 | `help wanted` | The maintainer welcomes an outside contribution. |
 | `duplicate` | Another issue already covers the problem. Link it and close this issue. |
@@ -57,50 +64,39 @@ do not apply labels. A maintainer applies labels during triage.
 | `invalid` | The report is not a Rustleaks problem or does not follow this policy. Close the issue. |
 
 Dependabot adds `dependencies` and an ecosystem label (`rust`,
-`github_actions`, or `rust_toolchain_package_manager`) to its pull requests.
+`github_actions` or `rust_toolchain_package_manager`) to its pull requests.
 Do not apply the ecosystem labels to issues. Add `accessibility` to an issue
 when the problem is a barrier for people with disabilities.
 
 ## Local workflow
 
-Install Bazelisk and Just 1.53.0, matching the maintained CI setup. Use the Rust
-toolchain selected by `rust-toolchain.toml`; the repository pins Bazel in
-`.bazelversion`. `just doctor` reports the selected versions without installing
-or changing anything.
-Rust regression and qualification checks need neither a Go installation nor a
-sibling Gitleaks checkout. Security checks require the exact tools listed in
-[the security controls](docs/SECURITY_CONTROLS.md).
+Install Bazelisk and Just 1.53.0, as in CI. The Rust toolchain comes from
+`rust-toolchain.toml`, and `.bazelversion` pins Bazel. `just doctor` reports
+the selected versions and changes nothing. No Go installation or Gitleaks
+checkout is needed. Security checks need the exact tools listed in
+[Security checks](docs/dev/security-checks.md).
 
-Just is the public command interface, and Bazel is the build authority. Use
-`just --list` to see maintained recipes. Start with a focused Bazel target:
+Just is the public command interface, and Bazel is the build authority. Run
+`just --list` to see the recipes. Start with a focused Bazel target, for
+example:
 
 ```sh
 bazelisk test //crates/rustleaks-core:engine_test
-bazelisk test //crates/rustleaks-sources:all_tests
-bazelisk test //crates/rustleaks-report:parity_tests
 bazelisk test //crates/rustleaks-cli:cli_test
 ```
 
-Then run the affected broader command:
+Then run the broader command that fits the change:
 
-- `just format` for formatting;
-- `just check` for prose, links, formatting, Clippy, Rustdoc, build, and all
-  eight declared target compile checks;
-- `just test` for every first-party Bazel test;
-- `just flake-check` for ten uncached executions of every first-party test;
-- `just parity` for the committed compatibility replay;
-- `just package-check` for package contents and external Cargo/Bazel
-  consumers; and
-- `just security`, `just fuzz-build`, and `just fuzz-smoke` for
-  security-sensitive or hostile-input changes.
-
-Package checks deliberately run Cargo consumers offline. Hydrate the exact
-locked registry dependencies once before `just package-check` or `just
-release-dry-run` in a fresh clone:
-
-```sh
-cargo fetch --locked
-```
+| Change | Command |
+| --- | --- |
+| Formatting | `just format` |
+| Prose, links, Clippy, Rustdoc, build and the eight-target compile check | `just check` |
+| Any code | `just test` |
+| Timers, cancellation, subprocesses, directory traversal, temporary paths or concurrency | `just flake-check` (all ten runs must pass) |
+| Compatibility evidence | `just parity` and `cargo xtask regression-check` |
+| Public API, manifests, features, packaged assets or release inputs | `just package-check` |
+| Parser, matcher, decoder, source, report, CLI, resource limit or fuzz input | `just fuzz-build` and `just fuzz-smoke` |
+| Supported compatibility behavior or its evidence | `cargo xtask qualify`, from a clean, committed tree |
 
 Before opening a pull request, run:
 
@@ -109,115 +105,117 @@ just ci
 just security
 ```
 
-`just ci` includes maintained prose, links, Rustdoc, the committed parity
-tests, all first-party tests, and the compile-only target matrix. Run
-`just package-check` when public APIs, manifests, features, packaged assets, or
-release inputs change. Run both fuzz recipes when parser, matcher, decoder,
-source, report, CLI, resource-limit, or fuzz inputs change. Use
-`cargo xtask regression-check` to verify frozen evidence and Rust replay, and
-`cargo xtask qualify` from a clean, committed candidate for changes to supported
-compatibility behavior or its evidence. Qualification includes package,
-external-consumer, fuzz, Miri, and performance checks.
+Package checks run Cargo consumers offline. In a fresh clone, run
+`cargo fetch --locked` once before `just package-check` or
+`just release-dry-run`.
 
-Run `just flake-check` after changing timers, cancellation, subprocesses,
-filesystem traversal, temporary paths, or concurrency. A test must pass all
-ten executions. Keep functional assertions separate from performance budgets;
-the dedicated performance gate measures latency from fresh samples.
+Keep functional assertions apart from performance budgets. See
+[Testing and parity](docs/dev/testing-and-parity.md) for how to add and
+register tests.
 
-Cross-compilation is compile-only evidence. It does not establish native
+Cross-compilation proves only that the code compiles. It does not establish
 runtime support for a target.
 
-Cargo remains authoritative for standard package metadata and crates.io
-packaging. It is also used by `xtask` and named security, fuzz, Miri, and MSRV
-tools. Do not use Cargo as a fallback for a failed Bazel action.
-`just deps-repin` is the only public command that regenerates Cargo,
-crate-universe, and Bazel module lockfiles.
+Use Cargo only for package metadata, crates.io packaging, `cargo xtask`, and
+the named security, fuzz, Miri and MSRV tools. Never use Cargo to work around
+a failed Bazel action. `just deps-repin` is the only command that regenerates
+the Cargo, crate-universe and Bazel module lockfiles.
 
 ## Compatibility and test data
 
-Do not update the upstream revision, packaged default configuration, frozen
-corpora, fixtures, public API snapshot, or safe Rust dispositions in isolation.
-Follow [the upstream update procedure](docs/UPDATING_UPSTREAM.md). Historical
-Go corpora remain immutable; their generation commands describe the archived
-workflow and are no longer executable maintenance instructions. New Rust
-regressions need independently specified findings, spans, fingerprints, report
-fields, exit codes and error classes, positive and negative cases, and stable
-identities. Do not generate these functional expectations from current Rust
-output. Explain every intentional functional difference and add evidence that
-fails when the contract is violated.
+- Do not change the upstream revision, the packaged default configuration,
+  frozen corpora, fixtures, the public API snapshot or safe Rust dispositions
+  on their own. Follow [Updating upstream](docs/dev/updating-upstream.md).
+- Historical Go corpora never change. Their generation commands describe the
+  retired process and do not run.
+- New regression tests need findings, spans, fingerprints, report fields,
+  exit codes and error classes that are specified independently, positive and
+  negative cases, and stable names. Never generate these expected values from
+  current Rust output.
+- Explain every intended functional difference, and add a test that fails
+  when the contract is broken.
+- A presentation change, such as help, usage, error wording or log text,
+  updates the affected test expectation. A reviewer checks the new text
+  against the stated intent. When it replaces frozen CLI evidence, record it
+  as a [presentation
+  disposition](docs/dev/testing-and-parity.md#presentation-dispositions) in
+  `compat/presentation-dispositions.toml`.
+- Use synthetic or reviewed upstream test values. Keep copied bytes, modes,
+  symbolic links, provenance, hashes, licenses and attribution.
+- Keep suspected findings and fuzz crash artifacts private until their
+  contents are reviewed.
 
-A change to presentation, such as help, usage, error wording, or log text,
-updates the affected test expectation. A reviewer checks the new text against
-the stated intent of the change. When the change replaces frozen CLI evidence,
-record it as a presentation disposition in
-`compat/presentation-dispositions.toml`, as described in [presentation
-dispositions](docs/COMPATIBILITY.md#presentation-dispositions).
+## Commits
 
-Use synthetic or reviewed upstream test values. Preserve copied bytes, modes,
-symlinks, provenance, hashes, licenses, and attribution. Keep suspected
-findings and fuzz crash artifacts private until their contents are reviewed.
-
-## Commit standard
-
-Every commit uses this Conventional Commit subject grammar:
+Every commit subject uses this grammar:
 
 ```text
 <type>(<scope>)!: <description>
 ```
 
-The scope and `!` are optional. The description must be imperative and present
-tense, start with a lowercase word or project identifier as grammar requires,
-contain no final period, and remain at most 72 characters. Use `!` only for an
-intentional breaking change and add a `BREAKING CHANGE: ...` footer explaining
-the affected API and migration.
-
-Use the standard Git-generated `Revert "..."` subject only for a real revert,
-and preserve its explanation of the reverted commit.
+- The scope and `!` are optional.
+- The description is imperative and in the present tense, starts with a
+  lowercase word or a project identifier as grammar requires, has no final
+  period, and is at most 72 characters.
+- Use `!` only for an intended breaking change, and add a
+  `BREAKING CHANGE: ...` footer that explains the affected API and the
+  migration.
+- Use the standard Git `Revert "..."` subject only for a real revert, and keep
+  its explanation of the reverted commit.
 
 Choose the narrowest type:
 
 | Type | Use |
 | --- | --- |
 | `feat` | Add user-visible capability or public behavior. |
-| `fix` | Correct behavior, compatibility, security, or reliability. |
+| `fix` | Correct behavior, compatibility, security or reliability. |
 | `perf` | Improve measured performance without changing supported behavior. |
 | `refactor` | Change internal structure without changing behavior. |
-| `test` | Add or correct tests, corpora, fixtures, or test infrastructure. |
+| `test` | Add or correct tests, corpora, fixtures or test infrastructure. |
 | `docs` | Change documentation only. |
-| `build` | Change Cargo, Bazel, toolchains, packaging, or build inputs. |
+| `build` | Change Cargo, Bazel, toolchains, packaging or build inputs. |
 | `ci` | Change automation workflows or CI configuration. |
-| `style` | Apply formatting only, with no semantic change. |
-| `chore` | Perform narrow maintenance that fits no more specific type. |
+| `style` | Apply formatting only, with no change in meaning. |
+| `chore` | Narrow maintenance that fits no other type. |
 
-Use the narrowest stable lowercase scope when useful: `core`, `sources`,
-`report`, `cli`, `compat`, `xtask`, `bazel`, `deps`, `docs`, `ci`, or
-`release`. Omit the scope for a truly cross-cutting change. Do not use a goal,
-agent, review round, ticket, or temporary task as a scope.
+When useful, choose the narrowest stable lowercase scope: `core`, `sources`,
+`report`, `cli`, `compat`, `xtask`, `bazel`, `deps`, `docs`, `ci` or
+`release`. Omit the scope for a change that crosses many areas. Never use a
+goal, agent, review round, ticket or temporary task as a scope.
 
-Use a commit body when the reason, compatibility effect, security constraint,
-or non-obvious decision will matter later. Separate it from the subject with a
-blank line. Add only true trailers. Never invent issue links, signoffs,
-co-authors, or review attribution.
+Add a body, after a blank line, when the reason, compatibility effect,
+security constraint or a non-obvious decision will matter later. Add only
+true trailers. Never invent issue links, sign-offs, co-authors or review
+credits.
 
-Keep one reviewable logical state per commit. Keep behavior changes with direct
-tests, generators with generated artifacts, and manifest changes with required
-lockfile changes. Separate unrelated documentation, dependency, build, and
-behavior work. Do not commit build output, local settings, credentials, raw
-audit notes, or planning files.
+Each commit is one reviewable logical state:
 
-Before committing, inspect `git status --short`, `git diff`,
-`git diff --cached`, and `git ls-files --others --exclude-standard`. Stage
-explicit paths or hunks, inspect the complete staged diff, run the appropriate
-validation, and run `git diff --cached --check`.
+- Keep behavior changes with their direct tests, generators with their
+  generated files, and manifest changes with the lockfile changes they need.
+- Separate unrelated documentation, dependency, build and behavior work.
+- Do not commit build output, local settings, credentials, raw audit notes or
+  planning files.
+
+Before committing:
+
+1. Inspect `git status --short`, `git diff`, `git diff --cached` and
+   `git ls-files --others --exclude-standard`.
+2. Stage explicit paths or hunks.
+3. Inspect the complete staged diff.
+4. Run the relevant checks and `git diff --cached --check`.
 
 ## Pull requests
 
-Explain the resulting behavior, rationale, exact validation, functional
-compatibility or security impact, presentation changes, and real issue linkage
-in the pull request template. The pull
-request title follows the commit subject grammar because pull requests are
-squash merged. Do not merge while required checks, required reviews, or
-blocking review conversations are incomplete. An approving review is required
-only when the live repository ruleset requires one or the maintainer explicitly
-requests independent review; absence of a self-approval is not a blocker for a
+Fill in the pull request template: the resulting behavior, the reason, the
+exact checks you ran, the functional compatibility or security impact, any
+presentation changes, and real linked issues.
+
+The pull request title follows the commit subject grammar, because pull
+requests are squash merged.
+
+Do not merge while required checks, required reviews or blocking review
+conversations are incomplete. An approving review is required only when the
+live repository ruleset requires one or the maintainer asks for an
+independent review. For a pull request by the sole maintainer, a missing
+self-approval is not a blocker. Do not create a self-approval for a
 sole-maintainer pull request.

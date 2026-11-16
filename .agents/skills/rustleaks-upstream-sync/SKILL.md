@@ -5,7 +5,9 @@ description: Assess an approved candidate Gitleaks baseline and its import plan,
 
 # Rustleaks upstream sync
 
-Read `docs/UPDATING_UPSTREAM.md`, `docs/COMPATIBILITY.md`,
+Read `docs/dev/updating-upstream.md`, `docs/dev/testing-and-parity.md`, the
+[compatibility
+policy](../../../docs/user/gitleaks-differences.md#compatibility-policy),
 `compat/upstream-revision.txt`, and `compat/test-manifest.toml`.
 The live Go oracle and automatic upstream rediscovery are retired. Historical
 generator commands are not current maintenance commands.
