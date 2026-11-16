@@ -1,8 +1,8 @@
 # Rustleaks provider rules v1
 
-The `rustleaks-providers-v1` pack adds 300 namespaced rules for provider API
+The `rustleaks-providers-v1` pack adds 303 namespaced rules for provider API
 keys, tokens and related credentials. 31 of them are hidden helper rules: 30
-association helpers and 1 Azure Service Bus tuple helper. The other 269 rules
+association helpers and 1 Azure Service Bus tuple helper. The other 272 rules
 report findings. The pack is opt-in and runs locally. It does not contact a
 provider or check whether a credential is active, and it does not change the
 packaged default rules. It covers selected formats. It does not claim complete
@@ -21,9 +21,9 @@ coverage of any provider or scanner.
   conflicting custom configuration. It does not turn on complete-target
   scanning.
 - The pack uses native-only tables:
-  - 211 rules use `byte-shannon-f64-v1` byte entropy: 150 reject values
-    below the threshold (`lt`) and 61 reject values at or below it (`le`).
-    18 rules use scalar entropy and 71 have no entropy check.
+  - 213 rules use `byte-shannon-f64-v1` byte entropy: 151 reject values
+    below the threshold (`lt`) and 62 reject values at or below it (`le`).
+    18 rules use scalar entropy and 72 have no entropy check.
   - 27 rules use `buffer-v1` required relations.
   - 58 rules use the `bytes-v1` regex dialect.
   - 2 rules use secret predicates.
@@ -180,9 +180,12 @@ of the match; only the token is the secret.
   streaming code.
 - Low-entropy matches are reported when the pack runs alone. Global
   allowlists still apply in a composition.
-- The xAI rule uses only the Apache 80-byte body expression. The MIT rule for
-  70 to 120 byte bodies and the Kingfisher suppression overlay are not
-  selected. `xai-token-` management keys do not match.
+- `xai-api-key-80` uses only the Apache 80-byte body expression, and
+  `xai-token-` management keys do not match it. The MIT form for 70 to 120
+  byte bodies is the separate `xai-api-key-delimiter` rule in
+  [Format and boundary supplements](#format-and-boundary-supplements-30-rules),
+  which does match `xai-token-` keys. Neither rule uses the Kingfisher
+  overlay that leaves exact 80-byte bodies to one rule.
 - CircleCI personal tokens, Deno user tokens and Postman account API tokens
   are different roles. These rules do not match them.
 
@@ -470,14 +473,15 @@ provenance JSON records the original pattern and every change for each rule.
   or parse the JSON document. Whole service account documents and the
   generated Bitwarden pair expression are not included.
 
-### Format and boundary supplements (27 rules)
+### Format and boundary supplements (30 rules)
 
-17 rules come from the pinned MIT Betterleaks configuration and 10 from the
+19 rules come from the pinned MIT Betterleaks configuration and 11 from the
 pinned Apache-2.0 Veles detectors.
 
 | Rule ID | Matches | Source | Entropy or predicate |
 | --- | --- | --- | --- |
 | `adobe-client-secret-delimiter` | Adobe client secret before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.0 |
+| `alibaba-access-key-id-boundary` | Alibaba Cloud AccessKey ID: `LTAI` and 17 to 21 alphanumeric bytes between word boundaries | Betterleaks | Byte Shannon entropy of at least 3.0 |
 | `authress-service-client-access-key-boundary` | Authress service client access key at selected punctuation | Betterleaks | Byte Shannon entropy of at least 4.0 |
 | `databricks-api-token-delimiter` | Databricks API token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy of at least 3.0 |
 | `datadog-api-key` | Datadog API key in provider assignment context | Betterleaks | Byte Shannon entropy of at least 3.5 |
@@ -494,6 +498,7 @@ pinned Apache-2.0 Veles detectors.
 | `sendinblue-api-token-boundary` | Sendinblue API token at selected punctuation | Betterleaks | Byte Shannon entropy of at least 3.2 |
 | `sourcegraph-access-token-delimiter` | Sourcegraph access token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy above 3.0 |
 | `stripe-access-token-delimiter` | Stripe access token before escaped quotes or vertical tab | Betterleaks | Byte Shannon entropy above 2.0 |
+| `xai-api-key-delimiter` | xAI API key: `xai-` in any ASCII case and 70 to 120 alphanumeric, underscore or hyphen bytes, before a delimiter | Betterleaks | Byte Shannon entropy above 3.5 |
 | `digitalocean-pat-boundary` | DigitalOcean personal access token at selected punctuation | Veles | None |
 | `hcp-client-secret` | HCP client secret in an exact source label assignment | Veles | None |
 | `heroku-platform-key-boundary` | Heroku `AA` platform key at selected punctuation | Veles | None |
@@ -503,12 +508,17 @@ pinned Apache-2.0 Veles detectors.
 | `packagist-organization-update-token` | Packagist organization update token | Veles | None |
 | `postman-api-token-boundary` | Postman API token at selected punctuation | Veles | None |
 | `sendgrid-api-token-boundary` | SendGrid API token at selected punctuation | Veles | None |
+| `slack-config-access-token-166` | Slack configuration access token: `xoxe.xoxp-`, 1 to 10 digits, `-` and a 166-byte alphanumeric body | Veles | None |
 | `slack-config-refresh-token-147` | Slack configuration refresh token with a 147-byte body | Veles | None |
 
 - Source predicates stay local to each rule. Betterleaks rules keep the
   source keywords, all source secret and path exclusions, generated
-  supersession filters and the exact byte entropy comparison. Veles rules do
-  not get Betterleaks filters.
+  supersession filters and the exact byte entropy comparison. The one
+  exception is the generated Kingfisher filter that leaves exact 80-byte xAI
+  bodies to its own rule. `xai-api-key-delimiter` does not keep it: by
+  maintainer decision the rule stays independent of the legacy
+  `xai-api-key-80` rule, and same-span duplicate findings with that rule are
+  accepted. Veles rules do not get Betterleaks filters.
 - GoCardless rejects entropy below 3.5. Stripe excludes `sk_test_` and
   WorkOS prefixes.
 - The Betterleaks Heroku rule accepts only trailing-hyphen `AA` bodies. The
@@ -521,17 +531,34 @@ pinned Apache-2.0 Veles detectors.
   not need a repository URL. Optional validation parts are not required
   rules or separate findings.
 - Most rules consume selected punctuation, escaped quotes or a vertical tab
-  after a complete bounded token. HCP, Packagist and Slack refresh keep the
-  source fixed-width prefix extraction above the nominal length. HCP's Go
-  whitespace excludes vertical tab; Betterleaks byte whitespace includes it.
-  All token alphabets are explicit ASCII.
+  after a complete bounded token. Alibaba matches between word boundaries
+  and consumes no delimiter. HCP, Packagist and both Slack configuration
+  rules keep the source fixed-width prefix extraction above the nominal
+  length. HCP's Go whitespace excludes vertical tab; Betterleaks byte
+  whitespace includes it. All token alphabets are explicit ASCII.
 - The full versioned GitLab token and the 147-byte Slack refresh body can
   appear next to shorter findings from other rules. Before an escaped quote,
   the default `jwt` finding for a Monday token includes one extra backslash,
   while the Monday rule extracts the exact credential. Ordinary Monday JWT
   and Grafana forms can gain provider attribution without a new occurrence.
-- Broader xAI body and prefix forms and Slack segments with several digits
-  are not included.
+- Three rules report the same secret span as another rule for a shared
+  form. Nothing removes these duplicate findings:
+  - `alibaba-access-key-id-boundary` and the default `alibaba-access-key-id`
+    rule both report a 20-byte body before a delimiter that the default rule
+    accepts, such as a space. Other lengths and a comma give only the pack
+    finding.
+  - `slack-config-access-token-166` and the default
+    `slack-config-access-token` rule both report a one-digit segment with a
+    166-byte body. Segments of 2 to 10 digits give only the pack finding.
+  - `xai-api-key-delimiter` and `xai-api-key-80` both report an 80-byte body
+    before a delimiter or the end of input. On an 81 to 120 byte alphanumeric
+    body, `xai-api-key-80` reports its 84-byte prefix and
+    `xai-api-key-delimiter` reports the full token.
+- The source marks the Betterleaks Alibaba rule `skipReport`, as a part of
+  its `alibaba-secret-key` rule. This pack reports it, as the default rule
+  does. `xai-api-key-delimiter` also reports `xai-token-` management keys,
+  as the source does. `slack-config-refresh-token-147` keeps a one-digit
+  segment.
 
 ### Connection keys and structured context (6 rules, 1 hidden)
 
@@ -796,8 +823,8 @@ harmless.
 
 | Source | Revision | Rules | License |
 | --- | --- | --- | --- |
-| [Betterleaks](https://github.com/betterleaks/betterleaks) `config/betterleaks.toml`, SHA-256 in the provenance JSON | `8f376ff9c31e` | The other 282 rules, including the hidden helpers | MIT, `LICENSE.betterleaks` |
-| [Veles in OSV-SCALIBR](https://github.com/google/osv-scalibr) `veles/secrets` | `e8621f1fff93` | 18 rules: the 4 finite Veles formats, 10 format supplements, `cloudflare-api-token-context`, the 2 Private Packagist roles and `bitwarden-cli-client-secret` | Apache-2.0, `LICENSE.veles` |
+| [Betterleaks](https://github.com/betterleaks/betterleaks) `config/betterleaks.toml`, SHA-256 in the provenance JSON | `8f376ff9c31e` | The other 284 rules, including the hidden helpers | MIT, `LICENSE.betterleaks` |
+| [Veles in OSV-SCALIBR](https://github.com/google/osv-scalibr) `veles/secrets` | `e8621f1fff93` | 19 rules: the 4 finite Veles formats, 11 format supplements, `cloudflare-api-token-context`, the 2 Private Packagist roles and `bitwarden-cli-client-secret` | Apache-2.0, `LICENSE.veles` |
 | [Kingfisher](https://github.com/mongodb/kingfisher) | `01e7b817376f` | Archive used to read the Betterleaks and Veles sources as data, and the association contract | Apache-2.0, `LICENSE.kingfisher` |
 
 The table shows 12-character revisions. The provenance JSON records the full
@@ -825,7 +852,7 @@ Changes made:
 - ASCII case-insensitive flags are expanded to explicit classes, and byte
   whitespace is written out.
 - Source scalar entropy rules use `<=`. Byte entropy rules keep the exact
-  source comparison: 150 rules reject below the threshold and 61 at or below
+  source comparison: 151 rules reject below the threshold and 62 at or below
   it, including source scanner floors.
 - Companion rules select reviewed format and delimiter cases only.
 
@@ -845,7 +872,7 @@ References:
 
   | Test file | Covers |
   | --- | --- |
-  | `provider_rules.rs` | The provider rules up to the generated part |
+  | `provider_rules.rs` | The provider rules up to the generated part, and the Alibaba, Slack access and xAI supplements |
   | `shared_rule_deltas.rs`, `contextual_rule_deltas.rs` | Delimiter companions |
   | `additional_coverage.rs`, `format_coverage.rs`, `special_coverage.rs`, `association_coverage.rs`, `remaining_verified_rules.rs` | The generated rules, with expectations in `tests/support/*.json` |
   | `native_policy.rs`, `native_predicates.rs` | Native loading, identity, entropy and predicates |
@@ -857,7 +884,7 @@ References:
   specific findings stay. Fixtures are written by hand and never sent to a
   provider. The tests are a regression contract, not a measure of accuracy
   on real data.
-- All 3 packs with the default rules give 539 rules, including 32 hidden
+- All 3 packs with the default rules give 542 rules, including 32 hidden
   helpers.
 - The rules after the line
   `# Maintained additional coverage; generated by xtask generate native-pack-identity.`

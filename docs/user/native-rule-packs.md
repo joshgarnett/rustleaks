@@ -18,11 +18,11 @@ unless you ask for it.
 | Pack ID | Rules | What it adds | Details |
 | --- | ---: | --- | --- |
 | `rustleaks-extra-v1` | 3 | Azure Service Bus and Event Hubs keys, Azure App Configuration secrets, and MongoDB URI passwords | [pack contract](../../crates/rustleaks-core/default/rustleaks-extra-v1.md) |
-| `rustleaks-providers-v1` | 300 | API keys and tokens for many service providers, such as Groq, NVIDIA, Figma, Slack session tokens, Mapbox and Vercel | [pack contract](../../crates/rustleaks-core/default/rustleaks-providers-v1.md) |
+| `rustleaks-providers-v1` | 303 | API keys and tokens for many service providers, such as Groq, NVIDIA, Figma, Slack session tokens, Mapbox and Vercel | [pack contract](../../crates/rustleaks-core/default/rustleaks-providers-v1.md) |
 | `rustleaks-connections-v1` | 14 | Passwords in database connection strings, JDBC and ODBC URLs, libpq keyword strings, and Git URLs with credentials | [pack contract](../../crates/rustleaks-core/default/rustleaks-connections-v1.md) |
 
 The rule counts include helper rules that other rules depend on and that do
-not report findings by themselves. With all three packs, a scan uses 539
+not report findings by themselves. With all three packs, a scan uses 542
 rules.
 
 All pack rule IDs start with `rustleaks.`, for example

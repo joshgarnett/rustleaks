@@ -39,6 +39,10 @@
   Findings and reports do not change. The `work_units` value in the
   `--complete-profile` status line is lower for such inputs, so more input
   fits a given work budget.
+- Add three forms to the opt-in `rustleaks-providers-v1` pack. They are
+  Alibaba Cloud AccessKey IDs with 17 to 21 byte bodies, Slack configuration
+  access tokens with 1 to 10 digit segments, and xAI API keys with 70 to 120
+  byte bodies before a delimiter. The pack now has 303 rules.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

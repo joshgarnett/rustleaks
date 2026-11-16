@@ -7278,3 +7278,46 @@ path = '''[Bb][Ii\x{130}][Tt][Ww][Aa][Rr][Dd][Ee][Nn] [Cc][Ll][Ii\x{130}]/[Dd][A
 secretGroup = 2
 keywords = ['''_token_apikeyclientsecret''']
 entropy = { algorithm = '''byte-shannon-f64-v1''', reject = '''le''', threshold = 0.0 }
+
+[[rules]]
+id = '''rustleaks.alibaba-access-key-id-boundary'''
+description = '''Alibaba Cloud AccessKey ID with a 17 to 21 byte body'''
+regex = '''\b(LTAI[A-Za-z0-9]{17,21})\b'''
+secretGroup = 1
+keywords = ['''ltai''']
+entropy = { algorithm = '''byte-shannon-f64-v1''', reject = '''lt''', threshold = 3.0 }
+
+[[rules.allowlists]]
+description = '''Pinned source secret predicates'''
+regexTarget = '''secret'''
+regexes = ['''(?:(?i)^true|false|null$)''', '''(?:^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\*+|\.+)$)''', '''(?:^\$(?:\d+|{\d+})$)''', '''(?:^\$(?:[A-Z_]+|[a-z_]+)$)''', '''(?:^\${(?:[A-Z_]+|[a-z_]+)}$)''', '''(?:^\{\{[ \t]*[\w ().|]+[ \t]*}}$)''', '''(?:^\$\{\{[ \t]*(?:(?:env|github|secrets|vars)(?:\.[A-Za-z]\w+)+[\w "'&./=|]*)[ \t]*}}$)''', '''(?:^%(?:[A-Z_]+|[a-z_]+)%$)''', '''(?:^%[+\-# 0]?[bcdeEfFgGoOpqstTUvxX]$)''', '''(?:^\{\d{0,2}}$)''', '''(?:^@(?:[A-Z_]+|[a-z_]+)@$)''', '''(?:^/Users/(?i)[a-z0-9]+/[\w .-/]+$)''', '''(?:^/(?:bin|etc|home|opt|tmp|usr|var)/[\w ./-]+$)''']
+stopwords = ['''abcdefghijklmnopqrstuvwxyz''', '''014df517-39d1-4453-b7b3-9930c563627c''']
+
+[[rules.allowlists]]
+description = '''Pinned source path prefilter'''
+paths = ['''(?:gitleaks\.toml)''', '''(?:(?i)\.(?:bmp|gif|jpe?g|png|svg|tiff?)$)''', '''(?:(?i)\.(?:eot|[ot]tf|woff2?)$)''', '''(?:go\.(?:mod|sum|work(?:\.sum)?)$)''', '''(?:(?:^|/)vendor/modules\.txt$)''', '''(?:(?:^|/)vendor/(?:github\.com|golang\.org/x|google\.golang\.org|gopkg\.in|istio\.io|k8s\.io|sigs\.k8s\.io)(?:/.*)?$)''', '''(?:(?:^|/)gradlew(?:\.bat)?$)''', '''(?:(?:^|/)gradle\.lockfile$)''', '''(?:(?:^|/)mvnw(?:\.cmd)?$)''', '''(?:(?:^|/)\.mvn/wrapper/MavenWrapperDownloader\.java$)''', '''(?:(?:^|/)node_modules(?:/.*)?$)''', '''(?:(?:^|/)(?:bun\.lockb?|deno\.lock|npm-shrinkwrap\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$)''', '''(?:(?:^|/)bower_components(?:/.*)?$)''', '''(?:(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\.min)?\.js(?:\.map)?$)''', '''(?:(?:^|/)javascript\.json$)''', '''(?:(?:^|/)(?:Pipfile|poetry)\.lock$)''', '''(?:(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$)''', '''(?:(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$)''', '''(?:(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$)''', '''(?:(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$)''', '''(?:\.gem$)''', '''(?:verification-metadata\.xml)''', '''(?:Database.refactorlog)''']
+
+[[rules]]
+id = '''rustleaks.slack-config-access-token-166'''
+description = '''Slack configuration access token with a 166-byte body'''
+regex = '''(xoxe\.xoxp-[0-9]{1,10}-[a-zA-Z0-9]{166})'''
+secretGroup = 1
+keywords = []
+
+[[rules]]
+id = '''rustleaks.xai-api-key-delimiter'''
+description = '''xAI API key with a 70 to 120 byte body before a delimiter'''
+regex = '''\b([xX][aA][iI]-[A-Za-z0-9_-]{70,120})(?:\\?['"\x60]|[\x09-\x0d ;]|\\[nNrR]|$)'''
+secretGroup = 1
+keywords = ['''xai-''']
+entropy = { algorithm = '''byte-shannon-f64-v1''', reject = '''le''', threshold = 3.5 }
+
+[[rules.allowlists]]
+description = '''Pinned source secret predicates'''
+regexTarget = '''secret'''
+regexes = ['''(?:(?i)^true|false|null$)''', '''(?:^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\*+|\.+)$)''', '''(?:^\$(?:\d+|{\d+})$)''', '''(?:^\$(?:[A-Z_]+|[a-z_]+)$)''', '''(?:^\${(?:[A-Z_]+|[a-z_]+)}$)''', '''(?:^\{\{[ \t]*[\w ().|]+[ \t]*}}$)''', '''(?:^\$\{\{[ \t]*(?:(?:env|github|secrets|vars)(?:\.[A-Za-z]\w+)+[\w "'&./=|]*)[ \t]*}}$)''', '''(?:^%(?:[A-Z_]+|[a-z_]+)%$)''', '''(?:^%[+\-# 0]?[bcdeEfFgGoOpqstTUvxX]$)''', '''(?:^\{\d{0,2}}$)''', '''(?:^@(?:[A-Z_]+|[a-z_]+)@$)''', '''(?:^/Users/(?i)[a-z0-9]+/[\w .-/]+$)''', '''(?:^/(?:bin|etc|home|opt|tmp|usr|var)/[\w ./-]+$)''']
+stopwords = ['''abcdefghijklmnopqrstuvwxyz''', '''014df517-39d1-4453-b7b3-9930c563627c''']
+
+[[rules.allowlists]]
+description = '''Pinned source path prefilter'''
+paths = ['''(?:gitleaks\.toml)''', '''(?:(?i)\.(?:bmp|gif|jpe?g|png|svg|tiff?)$)''', '''(?:(?i)\.(?:eot|[ot]tf|woff2?)$)''', '''(?:go\.(?:mod|sum|work(?:\.sum)?)$)''', '''(?:(?:^|/)vendor/modules\.txt$)''', '''(?:(?:^|/)vendor/(?:github\.com|golang\.org/x|google\.golang\.org|gopkg\.in|istio\.io|k8s\.io|sigs\.k8s\.io)(?:/.*)?$)''', '''(?:(?:^|/)gradlew(?:\.bat)?$)''', '''(?:(?:^|/)gradle\.lockfile$)''', '''(?:(?:^|/)mvnw(?:\.cmd)?$)''', '''(?:(?:^|/)\.mvn/wrapper/MavenWrapperDownloader\.java$)''', '''(?:(?:^|/)node_modules(?:/.*)?$)''', '''(?:(?:^|/)(?:bun\.lockb?|deno\.lock|npm-shrinkwrap\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$)''', '''(?:(?:^|/)bower_components(?:/.*)?$)''', '''(?:(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\.min)?\.js(?:\.map)?$)''', '''(?:(?:^|/)javascript\.json$)''', '''(?:(?:^|/)(?:Pipfile|poetry)\.lock$)''', '''(?:(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$)''', '''(?:(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$)''', '''(?:(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$)''', '''(?:(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$)''', '''(?:\.gem$)''', '''(?:verification-metadata\.xml)''', '''(?:Database.refactorlog)''']

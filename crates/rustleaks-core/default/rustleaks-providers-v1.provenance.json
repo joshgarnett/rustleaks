@@ -26530,6 +26530,203 @@
         "source_id": "veles.secrets/bitwardenoauth2access"
       },
       "validation_and_revocation_not_imported": true
+    },
+    {
+      "adaptation": {
+        "description": "Factual credential description; detection fields retain the selected source contract.",
+        "keywords": [
+          "ltai"
+        ],
+        "narrowing": "The source marks this rule skipReport = true because it is a component of alibaba-secret-key. The native rule reports it, as the default alibaba-access-key-id rule does. The 20-byte body before a default delimiter also matches the default rule at the same secret span.",
+        "regex": "\\b(LTAI[A-Za-z0-9]{17,21})\\b",
+        "secret_group": 1,
+        "source_partial_behavior": null,
+        "validation_and_revocation_not_imported": true
+      },
+      "credential_role": "Alibaba Cloud AccessKey ID with a 17 to 21 byte body",
+      "generated_filter_ast_sha256": "1aef5f4f663d247f8692bd94d631a8f64062cc042281506b789d989b43509129",
+      "generated_keywords": [
+        "ltai"
+      ],
+      "generated_pattern": "\\b(LTAI[A-Za-z0-9]{17,21})\\b",
+      "generated_source_pointer": "crates/kingfisher-rules/generated/rules/betterleaks.yml:3760",
+      "generated_source_revision": "01e7b817376fbf2272be8f162bd32309bf97ee1f",
+      "id": "rustleaks.alibaba-access-key-id-boundary",
+      "issuer_references": [],
+      "native_id": "rustleaks.alibaba-access-key-id-boundary",
+      "original_detection_rule": {
+        "confidence": "high",
+        "description": "Detected an Alibaba Cloud AccessKey ID, posing a risk of unauthorized cloud resource access and potential data compromise.",
+        "filter": "entropy(finding[\"secret\"]) < 3.0\n",
+        "id": "alibaba-access-key-id",
+        "keywords": [
+          "ltai"
+        ],
+        "regex": "\\b(LTAI[A-Za-z0-9]{17,21})\\b",
+        "skipReport": true
+      },
+      "retained_filter": {
+        "ast_sha256": "1aef5f4f663d247f8692bd94d631a8f64062cc042281506b789d989b43509129",
+        "entropy": {
+          "algorithm": "byte-shannon-f64-v1",
+          "reject": "lt",
+          "threshold": 3.0
+        },
+        "regexes": [
+          "(?i)^true|false|null$",
+          "^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\\*+|\\.+)$",
+          "^\\$(?:\\d+|{\\d+})$",
+          "^\\$(?:[A-Z_]+|[a-z_]+)$",
+          "^\\${(?:[A-Z_]+|[a-z_]+)}$",
+          "^\\{\\{[ \\t]*[\\w ().|]+[ \\t]*}}$",
+          "^\\$\\{\\{[ \\t]*(?:(?:env|github|secrets|vars)(?:\\.[A-Za-z]\\w+)+[\\w \"'&./=|]*)[ \\t]*}}$",
+          "^%(?:[A-Z_]+|[a-z_]+)%$",
+          "^%[+\\-# 0]?[bcdeEfFgGoOpqstTUvxX]$",
+          "^\\{\\d{0,2}}$",
+          "^@(?:[A-Z_]+|[a-z_]+)@$",
+          "^/Users/(?i)[a-z0-9]+/[\\w .-/]+$",
+          "^/(?:bin|etc|home|opt|tmp|usr|var)/[\\w ./-]+$"
+        ],
+        "stopwords": [
+          "abcdefghijklmnopqrstuvwxyz",
+          "014df517-39d1-4453-b7b3-9930c563627c"
+        ]
+      },
+      "source": {
+        "license": "MIT",
+        "line": 432,
+        "sha256": "7c305ade42d5dbad4650b97cca0299f9c16d152ec555ae47bd6f321f049f82e5",
+        "url": "https://raw.githubusercontent.com/betterleaks/betterleaks/8f376ff9c31ed5309ac448fe601c5dd21b376155/config/betterleaks.toml"
+      },
+      "source_archive_sha256": "f4f881f1680bffd9836767ebefcd8f6937bcf71d19b91b105602cd8bd03c060b",
+      "source_global_filter": "(matchesAny(finding[\"secret\"], [\n  `(?i)^true|false|null$`,\n  `^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\\*+|\\.+)$`,\n  `^\\$(?:\\d+|{\\d+})$`,\n  `^\\$(?:[A-Z_]+|[a-z_]+)$`,\n  `^\\${(?:[A-Z_]+|[a-z_]+)}$`,\n  `^\\{\\{[ \\t]*[\\w ().|]+[ \\t]*}}$`,\n  `^\\$\\{\\{[ \\t]*(?:(?:env|github|secrets|vars)(?:\\.[A-Za-z]\\w+)+[\\w \"'&./=|]*)[ \\t]*}}$`,\n  `^%(?:[A-Z_]+|[a-z_]+)%$`,\n  `^%[+\\-# 0]?[bcdeEfFgGoOpqstTUvxX]$`,\n  `^\\{\\d{0,2}}$`,\n  `^@(?:[A-Z_]+|[a-z_]+)@$`,\n  `^/Users/(?i)[a-z0-9]+/[\\w .-/]+$`,\n  `^/(?:bin|etc|home|opt|tmp|usr|var)/[\\w ./-]+$`\n]) || containsAny(finding[\"secret\"], [\n  \"abcdefghijklmnopqrstuvwxyz\",\n  \"014df517-39d1-4453-b7b3-9930c563627c\"\n]))\n\n",
+      "source_global_prefilter": "matchesAny(attributes[\"path\"], [\n  `gitleaks\\.toml`,\n  `(?i)\\.(?:bmp|gif|jpe?g|png|svg|tiff?)$`,\n  `(?i)\\.(?:eot|[ot]tf|woff2?)$`,\n  `go\\.(?:mod|sum|work(?:\\.sum)?)$`,\n  `(?:^|/)vendor/modules\\.txt$`,\n  `(?:^|/)vendor/(?:github\\.com|golang\\.org/x|google\\.golang\\.org|gopkg\\.in|istio\\.io|k8s\\.io|sigs\\.k8s\\.io)(?:/.*)?$`,\n  `(?:^|/)gradlew(?:\\.bat)?$`,\n  `(?:^|/)gradle\\.lockfile$`,\n  `(?:^|/)mvnw(?:\\.cmd)?$`,\n  `(?:^|/)\\.mvn/wrapper/MavenWrapperDownloader\\.java$`,\n  `(?:^|/)node_modules(?:/.*)?$`,\n  `(?:^|/)(?:bun\\.lockb?|deno\\.lock|npm-shrinkwrap\\.json|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$`,\n  `(?:^|/)bower_components(?:/.*)?$`,\n  `(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\\.min)?\\.js(?:\\.map)?$`,\n  `(?:^|/)javascript\\.json$`,\n  `(?:^|/)(?:Pipfile|poetry)\\.lock$`,\n  `(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$`,\n  `(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\\.\\d{1,2})+|python/[23](?:\\.\\d{1,2})+/lib(?:64)?)(?:/.*)?$`,\n  `(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\\.dist-info(?:/.+)?$`,\n  `(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$`,\n  `\\.gem$`,\n  `verification-metadata\\.xml`,\n  `Database.refactorlog`,\n])\n\n",
+      "source_id": "betterleaks.alibaba-access-key-id"
+    },
+    {
+      "adaptation": {
+        "description": "Factual credential description; detection fields retain the selected source contract.",
+        "keywords": [],
+        "narrowing": "\\d is written as [0-9]. The 1..10 digit segment follows the source pattern and was approved by the maintainer; the source calls that maximum presumed. No trailing boundary is added, so a body of 167 or more bytes reports its 166-byte prefix, as the source does. rustleaks.slack-config-refresh-token-147 keeps its one-digit segment.",
+        "regex": "(xoxe\\.xoxp-[0-9]{1,10}-[a-zA-Z0-9]{166})",
+        "secret_group": 1,
+        "source_partial_behavior": null,
+        "validation_and_revocation_not_imported": true
+      },
+      "credential_role": "Slack configuration access token with a 166-byte body",
+      "generated_filter_ast_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "generated_keywords": [],
+      "generated_pattern": "(xoxe\\.xoxp-\\d{1,10}-[a-zA-Z0-9]{166})",
+      "generated_source_pointer": "crates/kingfisher-rules/generated/rules/veles.yml:565",
+      "generated_source_revision": "01e7b817376fbf2272be8f162bd32309bf97ee1f",
+      "id": "rustleaks.slack-config-access-token-166",
+      "issuer_references": [
+        {
+          "does_not_support": "It does not establish a ten-digit segment. The original Veles source describes that maximum as presumed.",
+          "supports": "Configuration and app-level tokens are credentials with distinct authorization roles.",
+          "url": "https://docs.slack.dev/authentication/tokens/"
+        },
+        {
+          "does_not_support": "The 166-byte body and multi-digit segments come from the source, not the abbreviated issuer examples.",
+          "supports": "Issuer examples use the xoxe.xoxp-1 access token form.",
+          "url": "https://docs.slack.dev/authentication/using-token-rotation/"
+        }
+      ],
+      "native_id": "rustleaks.slack-config-access-token-166",
+      "original_detector_patterns": [
+        "xapp-\\d{1,10}-[A-Za-z0-9]{11}-[0-9]{13}-[a-fA-F0-9]{64}",
+        "xoxe\\.xoxp-\\d{1,10}-[a-zA-Z0-9]{166}",
+        "xoxe-\\d{1,10}-[a-zA-Z0-9]{147}"
+      ],
+      "retained_filter": {
+        "ast_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "entropy": null,
+        "regexes": [],
+        "stopwords": []
+      },
+      "source": {
+        "license": "Apache-2.0",
+        "line": 45,
+        "sha256": "bde9533747bef28b5e7a85ed421242d25c3d1e89e20cbee4d199ee6506fb799f",
+        "url": "https://raw.githubusercontent.com/google/osv-scalibr/e8621f1fff93beb5b70e5d6ba5fdc3e9854ec845/veles/secrets/slacktoken/detector.go"
+      },
+      "source_archive_sha256": "f4f881f1680bffd9836767ebefcd8f6937bcf71d19b91b105602cd8bd03c060b",
+      "source_id": "veles.secrets/slackappconfigaccesstoken"
+    },
+    {
+      "adaptation": {
+        "description": "Factual credential description; detection fields retain the selected source contract.",
+        "keywords": [
+          "xai-"
+        ],
+        "narrowing": "(?i) is written as ASCII case pairs on xai. Byte \\s is written as [\\x09-\\x0d ;] with the semicolon, and \\\\[nr] under (?i) as \\\\[nNrR]. Validation and analysis blocks are not imported. A management key such as xai-token- followed by a qualifying body is reported, as in the source.",
+        "regex": "\\b([xX][aA][iI]-[A-Za-z0-9_-]{70,120})(?:\\\\?['\"\\x60]|[\\x09-\\x0d ;]|\\\\[nNrR]|$)",
+        "secret_group": 1,
+        "source_partial_behavior": null,
+        "validation_and_revocation_not_imported": true
+      },
+      "credential_role": "xAI API key with a 70 to 120 byte body before a delimiter",
+      "generated_filter_ast_sha256": "baf30f8e1c24a97ebaff62ea07a8f2323dc2191e5476e7c904cb93ca377b1a62",
+      "generated_filter_overlay_not_retained": {
+        "reason": "The generated Kingfisher filter adds this secret regex so that only its own 80-byte xAI rule reports exact 80-byte bodies. It is not in the pinned Betterleaks source. It is not retained by maintainer decision: this rule stays independent of the legacy rustleaks.xai-api-key-80 rule, and same-span duplicate findings with that rule are accepted. An 80-byte body before a delimiter or the end of input is reported by both rules at the same secret span.",
+        "regex": "^xai-[A-Za-z0-9]{80}$"
+      },
+      "generated_keywords": [
+        "xai-"
+      ],
+      "generated_pattern": "(?i)\\b(xai-[A-Za-z0-9_-]{70,120})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+      "generated_source_pointer": "crates/kingfisher-rules/generated/rules/betterleaks.yml:127874",
+      "generated_source_revision": "01e7b817376fbf2272be8f162bd32309bf97ee1f",
+      "id": "rustleaks.xai-api-key-delimiter",
+      "issuer_references": [],
+      "native_id": "rustleaks.xai-api-key-delimiter",
+      "original_detection_rule": {
+        "confidence": "high",
+        "description": "Detected an xAI (Grok) API Key, which may expose Grok AI model access to unauthorized parties.",
+        "filter": "entropy(finding[\"secret\"]) <= 3.5\n",
+        "id": "xai-api-key",
+        "keywords": [
+          "xai-"
+        ],
+        "regex": "(?i)\\b(xai-[A-Za-z0-9_-]{70,120})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)"
+      },
+      "retained_filter": {
+        "ast_sha256": "baf30f8e1c24a97ebaff62ea07a8f2323dc2191e5476e7c904cb93ca377b1a62",
+        "entropy": {
+          "algorithm": "byte-shannon-f64-v1",
+          "reject": "le",
+          "threshold": 3.5
+        },
+        "regexes": [
+          "(?i)^true|false|null$",
+          "^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\\*+|\\.+)$",
+          "^\\$(?:\\d+|{\\d+})$",
+          "^\\$(?:[A-Z_]+|[a-z_]+)$",
+          "^\\${(?:[A-Z_]+|[a-z_]+)}$",
+          "^\\{\\{[ \\t]*[\\w ().|]+[ \\t]*}}$",
+          "^\\$\\{\\{[ \\t]*(?:(?:env|github|secrets|vars)(?:\\.[A-Za-z]\\w+)+[\\w \"'&./=|]*)[ \\t]*}}$",
+          "^%(?:[A-Z_]+|[a-z_]+)%$",
+          "^%[+\\-# 0]?[bcdeEfFgGoOpqstTUvxX]$",
+          "^\\{\\d{0,2}}$",
+          "^@(?:[A-Z_]+|[a-z_]+)@$",
+          "^/Users/(?i)[a-z0-9]+/[\\w .-/]+$",
+          "^/(?:bin|etc|home|opt|tmp|usr|var)/[\\w ./-]+$"
+        ],
+        "stopwords": [
+          "abcdefghijklmnopqrstuvwxyz",
+          "014df517-39d1-4453-b7b3-9930c563627c"
+        ]
+      },
+      "source": {
+        "license": "MIT",
+        "line": 12845,
+        "sha256": "7c305ade42d5dbad4650b97cca0299f9c16d152ec555ae47bd6f321f049f82e5",
+        "url": "https://raw.githubusercontent.com/betterleaks/betterleaks/8f376ff9c31ed5309ac448fe601c5dd21b376155/config/betterleaks.toml"
+      },
+      "source_archive_sha256": "f4f881f1680bffd9836767ebefcd8f6937bcf71d19b91b105602cd8bd03c060b",
+      "source_global_filter": "(matchesAny(finding[\"secret\"], [\n  `(?i)^true|false|null$`,\n  `^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\\*+|\\.+)$`,\n  `^\\$(?:\\d+|{\\d+})$`,\n  `^\\$(?:[A-Z_]+|[a-z_]+)$`,\n  `^\\${(?:[A-Z_]+|[a-z_]+)}$`,\n  `^\\{\\{[ \\t]*[\\w ().|]+[ \\t]*}}$`,\n  `^\\$\\{\\{[ \\t]*(?:(?:env|github|secrets|vars)(?:\\.[A-Za-z]\\w+)+[\\w \"'&./=|]*)[ \\t]*}}$`,\n  `^%(?:[A-Z_]+|[a-z_]+)%$`,\n  `^%[+\\-# 0]?[bcdeEfFgGoOpqstTUvxX]$`,\n  `^\\{\\d{0,2}}$`,\n  `^@(?:[A-Z_]+|[a-z_]+)@$`,\n  `^/Users/(?i)[a-z0-9]+/[\\w .-/]+$`,\n  `^/(?:bin|etc|home|opt|tmp|usr|var)/[\\w ./-]+$`\n]) || containsAny(finding[\"secret\"], [\n  \"abcdefghijklmnopqrstuvwxyz\",\n  \"014df517-39d1-4453-b7b3-9930c563627c\"\n]))\n\n",
+      "source_global_prefilter": "matchesAny(attributes[\"path\"], [\n  `gitleaks\\.toml`,\n  `(?i)\\.(?:bmp|gif|jpe?g|png|svg|tiff?)$`,\n  `(?i)\\.(?:eot|[ot]tf|woff2?)$`,\n  `go\\.(?:mod|sum|work(?:\\.sum)?)$`,\n  `(?:^|/)vendor/modules\\.txt$`,\n  `(?:^|/)vendor/(?:github\\.com|golang\\.org/x|google\\.golang\\.org|gopkg\\.in|istio\\.io|k8s\\.io|sigs\\.k8s\\.io)(?:/.*)?$`,\n  `(?:^|/)gradlew(?:\\.bat)?$`,\n  `(?:^|/)gradle\\.lockfile$`,\n  `(?:^|/)mvnw(?:\\.cmd)?$`,\n  `(?:^|/)\\.mvn/wrapper/MavenWrapperDownloader\\.java$`,\n  `(?:^|/)node_modules(?:/.*)?$`,\n  `(?:^|/)(?:bun\\.lockb?|deno\\.lock|npm-shrinkwrap\\.json|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$`,\n  `(?:^|/)bower_components(?:/.*)?$`,\n  `(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\\.min)?\\.js(?:\\.map)?$`,\n  `(?:^|/)javascript\\.json$`,\n  `(?:^|/)(?:Pipfile|poetry)\\.lock$`,\n  `(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$`,\n  `(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\\.\\d{1,2})+|python/[23](?:\\.\\d{1,2})+/lib(?:64)?)(?:/.*)?$`,\n  `(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\\.dist-info(?:/.+)?$`,\n  `(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$`,\n  `\\.gem$`,\n  `verification-metadata\\.xml`,\n  `Database.refactorlog`,\n])\n\n",
+      "source_id": "betterleaks.xai-api-key"
     }
   ],
   "schema_version": 1,
