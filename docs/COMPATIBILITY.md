@@ -47,8 +47,8 @@ sources take precedence when both forms are present. Native and legacy ignore
 files are unioned.
 
 Some report schema labels, help details, warning text, config fields, file
-names, and oracle protocol values retain an upstream spelling when exact bytes
-or established automation require it. Each such occurrence is compatibility
+names, and historical oracle protocol values retain an upstream spelling when
+exact bytes or established automation require it. Each such occurrence is compatibility
 data, not Rustleaks branding. The Rustleaks executable name, banner, project
 metadata, package names, and primary help text use the Rustleaks name.
 
@@ -119,23 +119,43 @@ applications can unify those maintained dependency lines. Their Unicode tables
 include additions after the pinned Go Unicode 15 baseline. Consequently,
 Unicode properties and case folding can differ for newly assigned or
 reclassified code points; for example, U+105C0 is a letter in the compatible
-backend but unassigned in the pinned oracle. The accepted property-name
-namespace, ASCII behavior, byte spans, and generated lowercase helpers remain
+backend but unassigned in the pinned Go Unicode 15 tables. The accepted
+property-name namespace, ASCII behavior, byte spans, and generated lowercase helpers remain
 under the existing compatibility boundaries.
 
 ## Platforms
 
-Native GitHub Actions runtime evidence covers `x86_64` and `aarch64` for Linux
-GNU, Linux musl, macOS, and Windows MSVC. Each native lane builds the maintained
-Bazel graph, feature profiles, and all platform-compatible first-party tests.
-The Linux musl lanes exclude only stable-channel Bazel doctest runners because
-rules_rust 0.72.0 generates invalid runfiles paths for their LLVM link inputs;
-the authoritative Linux GNU gate runs those same doctests. Complete local
-evidence also covers `aarch64-apple-darwin`. Hermetic cross-compilation remains
-compilation evidence only and is not used to make runtime support claims. The
-absence of native evidence is not a compatibility exception.
+The CI workflow (`.github/workflows/ci.yml`) has one native lane for each of
+the eight required targets. It runs on every pull request, on every push to
+`main`, and weekly. Each lane uses a GitHub-hosted runner with the target's
+operating system and architecture:
 
-Run `just parity` for the committed Rust replay. Native lanes run the complete
-platform-compatible Rust test suite and retain payload-free CLI execution
-ledgers. Historical native Go ledgers remain provenance; new ledgers describe
-only actual Rust executions and explicit host limitations.
+| Targets | Runner |
+| --- | --- |
+| `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` | `ubuntu-24.04` |
+| `aarch64-unknown-linux-gnu`, `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` |
+| `x86_64-apple-darwin` | `macos-15-intel` |
+| `aarch64-apple-darwin` | `macos-15` |
+| `x86_64-pc-windows-msvc` | `windows-2025` |
+| `aarch64-pc-windows-msvc` | `windows-11-arm` |
+
+Each lane checks the host architecture, builds `//:build` for the target
+(including the feature-profile library targets), and runs `//:test`. The
+`//:test` suite contains every `//:parity` replay target and the CLI tests.
+The musl lanes run musl target binaries on the Ubuntu host. Bazel doc tests
+are marked incompatible on Windows and musl targets; the Linux GNU and macOS
+lanes run them. Each lane keeps its payload-free CLI regression ledger as a workflow
+artifact. The workflow's `Required` job fails unless every lane passes.
+
+Other CI jobs run on one host only. `just ci` and the Cargo stable and MSRV
+feature-profile checks run on `ubuntu-24.04` (`x86_64`).
+`cargo xtask regression-check` runs on `macos-15` (`aarch64`).
+
+Hermetic cross-compilation of the eight targets is compilation evidence only
+and is not used to make runtime support claims. The native lanes run the
+tests; they do not measure performance or process memory on each platform.
+The absence of native evidence is not a compatibility exception.
+
+Run `just parity` for the committed Rust replay. Historical native Go ledgers
+remain provenance; new ledgers describe only actual Rust executions and
+explicit host limitations.

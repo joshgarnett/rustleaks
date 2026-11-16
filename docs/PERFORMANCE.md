@@ -215,16 +215,6 @@ runs remain informational and ineligible as clean baselines. Record quiet-host
 conditions with retained native samples before selecting thresholds or a
 profiling target. These synthetic workloads do not establish field speed.
 
-The [initial native record](validation/evidence-and-workloads.md) documents the
-2026-11-05 Apple M1 Max measurements and their limits. Its dirty candidate source
-is explicitly ineligible as a clean baseline. P2 owns profiling attribution and
-noise calibration before any new performance threshold or optimization.
-
-The [profiling and calibration acceptance record](validation/deep-and-profiling.md)
-contains the subsequent native CPU/retained-memory observations and two
-independent calibration runs. Its measured candidate remains dirty and the
-empirical bands create no release threshold.
-
 ## Adversarial core and worker measurements
 
 The optional edge matrix varies long-line length and candidate count,
@@ -260,9 +250,6 @@ validation and destruction, so attribute scan costs using stacks below the
 scan call. Freeze workload definitions before collecting comparison runs,
 retain ordinary controls, and measure serially on a quiet host.
 
-The [filtering and normalization measurements](validation/core-edge-performance.md)
-record synthetic alpha.7 edge cases, measured fixes and remaining limits.
-
 ## Decoder, session and report workloads
 
 The `decode-report` group adds synthetic decoder, baseline-classification,
@@ -283,7 +270,7 @@ compiled rule and allowlist counts.
 | --- | --- |
 | `core-decode-many-base64-depth-1` | 20,000 base64 lines; one finding per line; work `6N + 4` |
 | `core-decode-many-base64-depth-2` | The same lines double-encoded; findings only at depth 2; for `N > 1`, work `N * N + 10 * N + 6`, including one unit per predecessor |
-| `core-decode-long-line-many-findings` | One 1 MiB line with 10,000 encoded tokens; 10,000 findings, each retaining a copy of the full line, so one scan holds about 10 GiB |
+| `core-decode-long-line-many-findings` | One 1 MiB line with 10,000 encoded tokens; 10,000 findings, each charging the full line against the payload budget |
 | `core-decode-long-line-allowlisted` | The same line with every finding allowlisted; no retained findings and the same work |
 | `core-decode-lookalike-4-mib-depth-1` | Lockfile-like hashes and identifiers that fail decoding; no findings or decoded bytes |
 | `core-decode-none-4-mib-depth-5` | Prose with no encoding candidates; two work units |
@@ -380,21 +367,9 @@ stops working fails the fixture.
 `core-long-lived-diverse` reports retained behavior through the collector's
 existing fresh-process peak RSS, which covers the whole child process. It is
 not an isolated cache-memory measurement. By construction,
-`core-minified-findings-1024-on-1-mib` copies its 1 MiB line into each of its
-1,024 findings. `core-generic-filter-*` was quadratic before generic suppression
-compared only findings on the same line and commit.
-
-The [default-rule throughput record](validation/default-rule-throughput.md)
-reports baseline and candidate results for these groups, per-change effects,
-rejected changes and remaining limits.
-
-The [comparison against main](validation/main-branch-performance.md) measures
-the complete change across 163 workloads, with separate reverse-order repeats
-and reported construction, Git, archive and startup costs.
-
-The [comparison against alpha.6](validation/alpha6-branch-performance.md)
-measures the combined improvements since the earlier PikeVM implementation,
-with its original dependency features and explicit startup and memory costs.
+`core-minified-findings-1024-on-1-mib` charges its 1 MiB line to each of its
+1,024 findings. `core-generic-filter-*` covers generic suppression, which
+compares only findings on the same line and commit.
 
 ## CPU and retained-memory investigation
 
@@ -525,9 +500,9 @@ deviation must exceed it. No physical timer-error bound is claimed or added.
 Zero training variation remains `degenerate-training-no-gate`. Invalid
 arithmetic or protocol data is a failure, not a discarded timing outlier.
 
-The fixed [observation-window packet](plans/baseline-observation-windows.md)
-predeclares two lengths, four workloads, two runs and all stopping rules. Its
-matrix command accepts only the named protocol and a new private destination:
+The `observation-window-v2` matrix fixes two window lengths, four workloads,
+two runs and all stopping rules. Its command accepts only the named protocol
+and a new private destination:
 
 ```sh
 bazelisk run //crates/xtask:xtask -- perf calibrate --matrix observation-window-v2 --output /private/tmp/rustleaks-window-matrix
@@ -542,33 +517,8 @@ The matrix continues after empirical calibration failure for the remaining
 predeclared characterization, but stops after any integrity or deadline failure.
 There is no retry, candidate comparison, baseline update or release threshold.
 
-The [completed matrix](validation/baseline-observation-windows.md) did not
-qualify the longer length across all guards. The later
-[whole-process CPU investigation](validation/process-cpu-and-completion.md)
-completed with qualified controls and an explicitly rejected candidate.
 Component emission and collector activity can overlap later scans, so the
 window observations do not isolate a causal effect of window length.
-
-## Whole-span matcher experiment
-
-The first matcher experiment preserved exact outcomes but did not exceed its
-predeclared primary performance band. It was rejected and removed; no production
-speedup is claimed. The [validation record](validation/semantics-and-matching.md)
-and [ordered measurements](validation/matcher-experiment-2026-11-05.json) retain
-the isolated and integrated comparisons, complete CLI measurements, guard
-slowdowns, build identities and scope limits. This experiment adds no release
-threshold or required periodic timing run.
-
-## Dense scan investigation
-
-Two native profiles of `core-dense-16-kib` retain the existing fixture and
-exact 256-finding outcome. The [validation record](validation/source-semantics-and-dense-profiling.md)
-distinguishes engine subtrees, inlined finding construction and measurement-loop
-work. The [location experiment](validation/location-lookup-experiment.md)
-preserved tested semantics but stopped on failed baseline calibration before
-candidate timing. Its helper was restored. The observation-window packet above
-examines that measurement prerequisite; no production speedup or new release
-threshold is accepted from profiling alone.
 
 ## Optional reports
 
@@ -622,6 +572,33 @@ latency promise. Other hosts run the same exact invariants and report medians
 without enforcing this uncalibrated latency threshold. A different host
 budget requires separate measurement and review.
 
-The [fragment throughput record](validation/core-fragment-throughput.md)
-compares the backend and preprocessing stages, exact outcome invariants,
-retained memory and unchanged legacy budgets.
+## Known costs
+
+The faster scan paths add some setup and memory costs. The numbers below
+compare `v0.1.0-alpha.6` with development commit `7612d99` (before
+`v0.1.0-alpha.7`) on one Apple M1 Max host. They are
+not portable guarantees.
+
+- Configuration parse and compile take about 20 to 30 percent longer. The
+  packaged default configuration went from about 55 ms to about 68 ms.
+- Engine construction with the default configuration went from about 0.2 ms
+  to about 0.7 ms.
+- CLI startup with empty standard input is about 13 ms slower, from about
+  61 ms to about 75 ms.
+- Peak process memory for a generated 5,000-rule configuration went from about
+  49 MiB to about 119 MiB.
+
+These costs follow from current behavior:
+
+- Each finding charges its complete physical line against the logical payload
+  budget, so dense findings on one long line use that budget quickly.
+- Findings on the same original line of at least 4 KiB share one stored copy.
+  Public clones and session snapshots copy the line again.
+- The anchored literal search runs only on ASCII input. Non-ASCII and invalid
+  UTF-8 input use the unanchored search and get none of that speedup.
+- With a cancellation signal, bulk work charges poll the signal once per work
+  unit. The faster single bulk charge applies only to scans without a signal.
+- Hostile input or large Unicode classes can make the lazy DFA cache thrash or
+  give up. The search then falls back to PikeVM. One search stays linear in
+  input length for a fixed pattern, but the speedup is lost.
+- There is no linear-time bound for a whole scan that enumerates every match.

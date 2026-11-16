@@ -10,6 +10,13 @@ from a durable problem record. Do not require an issue for trivial work. Keep
 implementation, commits, reviews, pull requests, and merges in their matching
 skills.
 
+## What to file
+
+Follow [What belongs in an issue](../../../CONTRIBUTING.md#what-belongs-in-an-issue)
+and [Issue labels](../../../CONTRIBUTING.md#issue-labels) in `CONTRIBUTING.md`.
+Never file a tracker, log, or status report. Draft the issue first and file it
+only after the maintainer approves the draft.
+
 ## Investigate first
 
 Confirm the remote is `joshgarnett/rustleaks`, then inspect existing issues and
@@ -43,9 +50,8 @@ constraints, exact revision and environment when applicable, and validation
 already run. Use the repository terms `rustleaks-core`,
 `rustleaks-sources`, `rustleaks-report`, `rustleaks-cli`, compatibility
 evidence, and `xtask` only when they match the actual boundary. Use synthetic
-or reviewed public data. Keep live credentials, raw findings, private
-repository content, exploit details, and non-public vulnerabilities out of an
-issue; route sensitive reports through `SECURITY.md`.
+or reviewed public data and follow the sensitive data rules in
+`CONTRIBUTING.md`.
 
 Link dependencies or blockers only after inspecting both issues. Use
 `Closes #<issue-number>` later in a pull request only when the change fully

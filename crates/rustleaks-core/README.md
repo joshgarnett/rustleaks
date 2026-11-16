@@ -42,6 +42,21 @@ fragment when no transform intervenes. Decoded, path-only, nonparticipating,
 and otherwise inexact mappings are explicitly unavailable and must not be
 approximated for rewriting.
 
+The packaged default configuration and the optional native rule packs are in
+`default/`. Counts are `[[rules]]` definitions, including hidden helpers, not
+distinct secret families. The native packs are opt-in and add to the default
+configuration.
+
+| Pack | Constant | Rules | Contract |
+| --- | --- | ---: | --- |
+| Pinned Gitleaks default (`gitleaks.toml`) | `config::DEFAULT_CONFIG` | 222 | [`COMPATIBILITY.md`](https://github.com/joshgarnett/rustleaks/blob/main/docs/COMPATIBILITY.md) |
+| `rustleaks-extra-v1` | `native::EXTRA_RULES_V1` | 3 | [`default/rustleaks-extra-v1.md`](default/rustleaks-extra-v1.md) |
+| `rustleaks-providers-v1` | `native::PROVIDER_RULES_V1` | 300 | [`default/rustleaks-providers-v1.md`](default/rustleaks-providers-v1.md) |
+| `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 14 | [`default/rustleaks-connections-v1.md`](default/rustleaks-connections-v1.md) |
+
+`rustleaks-extra-v1` adds Azure Service Bus or Event Hubs, Azure App
+Configuration and MongoDB URI password rules.
+
 Optional provider rules are selected through
 `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)`.
 The namespaced pack adds Groq, Cerebras, Replicate and NVIDIA detector shapes,

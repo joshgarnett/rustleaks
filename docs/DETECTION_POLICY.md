@@ -3,8 +3,6 @@
 The native policy requires explicit opt-in. Existing `Engine` callers
 retain their configuration and detection behavior. This contract introduces no
 compatibility exception, copied-default change, or provider network operation.
-Version-specific qualification is recorded in the [roadmap](ROADMAP.md) and
-[completion record](validation/process-cpu-and-completion.md).
 
 ## Profiles and selection
 
@@ -227,13 +225,33 @@ rule and candidate ordinal. Counts and decisions still reveal scan activity,
 so consumers must choose where diagnostics may be disclosed.
 
 The first extension is the historical GitHub classic PAT format pilot.
-[Issuer-source review](validation/offline-validation.md) records its exact
-scope and specification gap. Historical layout and checksum are distinct
-checks. The layout can be valid, invalid, or unknown; the incompletely specified
-checksum remains unknown. No inference about activation, expiry, revocation,
-or safety is made. Validators are annotations only. Findings remain
-visible under every validator result. No network, plugin interpreter, or
-credential use enters core.
+Historical layout and checksum are distinct checks. The layout can be valid,
+invalid, or unknown; the incompletely specified checksum remains unknown. No
+inference about activation, expiry, revocation, or safety is made. Validators
+are annotations only. Findings remain visible under every validator result. No
+network, plugin interpreter, or credential use enters core.
+Rustleaks does not check whether a credential is live, revoke credentials, load
+runtime plugins, or use learned filters. Adding any of these needs a concrete
+user need and a reviewed safety design.
+
+The layout check covers only the 40-byte `ghp_` classic token. A candidate with
+that exact prefix, that length, and 36 ASCII alphanumeric body bytes has a
+`Valid` layout. Within that prefix and length, a non-alphanumeric body is
+`Invalid`. Other lengths and prefixes are `Unknown`, including truncated
+values, legacy hexadecimal tokens, `github_pat_` fine-grained tokens, and newer
+installation token formats. A prefix captured from a longer token is `Unknown`
+with `AmbiguousBoundary`.
+
+GitHub documents that `ghp_` tokens end with a CRC32 checksum encoded as six
+Base62 characters. GitHub's public documents do not specify the checksum input
+bytes, the CRC32 variant, or the Base62 alphabet order. A guessed combination
+could label real tokens as invalid or other values as valid. For this reason
+the engine computes no checksum. The checksum result is `Unknown` with
+`UnspecifiedChecksumContract` for an in-scope candidate and `UnsupportedFormat`
+for other candidates. Adding a checksum check would need an issuer contract or
+reviewed issuer test vectors that settle all three parameters. A checksum
+result would still not remove a finding, because a checksum cannot show that a
+token is active or relevant.
 
 ## Evidence and migration
 
@@ -279,11 +297,7 @@ and independently specified Rust contracts.
 
 The native API includes executable documentation examples and focused tests
 for composition, identity changes, unchanged legacy outcomes, partial outcomes,
-bounded diagnostics, decoding, redaction, and uncertainty. Source-bound local
-results include exact generated API validation, packaging, external Cargo/Bazel
-consumers and the historical full pinned-Go differential. Current Rust-owned
-qualification and hosted delivery are identified separately in the
-[local validation record](ROADMAP.md#current-local-validation).
+bounded diagnostics, decoding, redaction, and uncertainty.
 Consumers must reject stale review or cache decisions on identity mismatch;
 matching an identity alone does not establish matching input or scan options.
 

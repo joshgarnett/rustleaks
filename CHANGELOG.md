@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+- Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
+  file and archive targets are read to the end under explicit limits. Each
+  such scan writes one final `rustleaks_scan_status` line to standard error,
+  and an incomplete scan exits with code 2.
+- Add the `--native-pack` CLI option and the opt-in native rule packs
+  `rustleaks-providers-v1` and `rustleaks-connections-v1`. Select packs with
+  `NativePolicy` or `--native-pack`; `rustleaks-extra-v1` can be selected the
+  same way.
+- Add the `bytes-v1` native regex dialect and `buffer-v1` rule associations.
+  An associated helper rule binds only to a primary match from the same
+  decoded buffer.
+- Add bounded local checks for Mapbox secret tokens and Vercel AI Gateway
+  tokens. The `rustleaks-core` package now includes the static token table
+  and licenses for the Vercel check.
+- Recognize a final `.tgz` suffix as a gzip-compressed TAR archive in
+  complete-target scans, including nested archives, directories and Git blobs.
+- Share retained source lines of 4 KiB or more between findings with the same
+  original byte range, which reduces memory for dense findings on long lines.
+- Add opt-in extended Base64 decoding with `Base64Mode::Extended` through
+  `ScanOptions::builder().base64_mode(...)` and `--base64-mode extended`.
+  Extended mode decodes candidates to arbitrary bytes with standard or
+  URL-safe alphabets, with or without padding. `Base64Mode::Compatible`
+  remains the default.
+- Add libpq keyword password rules for quoted and unquoted values to
+  `rustleaks-connections-v1`, which now has 14 rule definitions.
+- Add archive regression tests for verified TAR members before truncation,
+  corrupt gzip input, and archive-depth exclusions.
+
+The pinned default configuration and default detection behavior are unchanged.
+
 ## [0.1.0-alpha.9] - 2026-11-12
 
 - Buffer built-in CLI reports written to standard output and preserve rendering,
@@ -124,14 +156,13 @@ Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
-[0.1.0-alpha.1]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.1
+[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.9...HEAD
+[0.1.0-alpha.1]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.4]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.5]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.5
-[0.1.0-alpha.6]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.6
-
+[0.1.0-alpha.6]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.7]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.7
-
 [0.1.0-alpha.8]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.9]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.9

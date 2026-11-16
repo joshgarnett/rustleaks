@@ -35,7 +35,8 @@ including between decoder candidates and encoding transforms. Individual regex
 searches and transforms remain indivisible. A finite collected-span budget
 admits each span before adding it to the eager match list and polls cancellation
 between admissions. Without that budget, eager enumeration retains its existing
-checkpoints. Work-unit and finding-record budgets alone do not bound the
+checkpoints. File sources poll cancellation between buffered reads of at most
+4,096 bytes. Work-unit and finding-record budgets alone do not bound the
 temporary match list. Pair the scan budgets with source byte limits. A partial
 outcome contains findings only from completed top-level rules and carries
 structured termination plus measured usage. Callers must not treat partial
@@ -355,9 +356,11 @@ rejected as structured unsupported-archive issues before entering the
 dependency; stored RAR members and other owned/safe decoders remain available.
 
 Owned code forbids unsafe. Feature-selected dependencies can contain reviewed
-unsafe internals and are documented separately. Native Linux/Windows runtime
-measurement remains a nonblocking follow-up; no limit or portability claim is
-derived solely from cross-compilation.
+unsafe internals and are documented separately. CI runs the resource-limit
+regression tests natively on all eight required targets, as described in
+[the compatibility profile](COMPATIBILITY.md#platforms). Those tests do not
+measure wall-clock time or process memory on each platform, and no limit or
+portability claim is derived solely from cross-compilation.
 
 Complete-target archive identification additionally accepts a final `.tgz`
 suffix, ignoring ASCII case. It uses the existing gzip-compressed TAR path,

@@ -20,8 +20,8 @@ The workspace manifest and changelog identify the current release candidate.
 Availability of a version is established by its crates.io entry and matching
 GitHub release, not by version text in this README.
 
-Planned engineering work and current delivery status are tracked in the
-[development roadmap](docs/ROADMAP.md).
+Defects, compatibility gaps and feature proposals are tracked in
+[GitHub issues](https://github.com/joshgarnett/rustleaks/issues).
 
 Platform evidence and its limitations are summarized below. Rustleaks is not
 described as production-ready.
@@ -143,12 +143,12 @@ dependency boundary is documented in
 [dependency safety](docs/DEPENDENCY_SAFETY.md). The default core graph has no
 native library, C, C++, archive, Git, report, CLI, or async-runtime dependency.
 
-Native GitHub Actions runtime evidence covers `x86_64` and `aarch64` for Linux
-GNU, Linux musl, macOS, and Windows MSVC. Each lane runs binaries on the
-matching architecture and target runtime, builds the maintained Bazel graph,
-and runs the platform-compatible first-party tests. Cross-compilation remains
-compilation evidence only. See the [architecture](docs/ARCHITECTURE.md) and
-[resource contract](docs/RESOURCE_LIMITS.md).
+CI builds and runs the platform-compatible first-party tests, including the
+parity replay targets, on a native runner for each of the eight required
+targets. Cross-compilation remains compilation evidence only. The
+[platform section of the compatibility profile](docs/COMPATIBILITY.md#platforms)
+lists the runners and limits. See also the [architecture](docs/ARCHITECTURE.md)
+and [resource contract](docs/RESOURCE_LIMITS.md).
 
 ## AI-assisted development
 

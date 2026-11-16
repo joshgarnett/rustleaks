@@ -20,7 +20,7 @@
   `regex-syntax` requires `^0.8.5` and `regex-automata` requires `^0.4.12` so
   downstream applications can unify the maintained 0.8 and 0.4 release lines.
   These minima use Unicode 16 tables, making post-Unicode-15 property and case
-  data an explicit compatibility difference from the pinned Go oracle. The
+  data an explicit compatibility difference from the pinned Go behavior. The
   private frontend still limits accepted property names to the Go namespace,
   and generated Go simple-lowercase tables used outside regular expressions
   remain pinned to Unicode 15. Dependency updates require the complete regex
@@ -73,9 +73,9 @@ policy. Package versions, sources, checksums and licenses are unchanged.
   structured failures and replaces `crc32fast` with owned safe CRC code. The
   current `bzip2 0.6.1` alternative uses `libbz2-rs-sys`, which would add a
   large unsafe dependency boundary without cargo-vet coverage.
-- `rustleaks-rar-codec` remains isolated because upstream `rars 0.9.3` requires
-  Rust 1.87 and brings writing, encryption, recovery, parallelism, and
-  filesystem functionality outside the source adapter contract.
+- `rustleaks-rar-codec` remains isolated because upstream `rars 0.9.3` has no
+  decoder-only feature. It brings writing, encryption, recovery, parallelism,
+  and filesystem functionality outside the source adapter contract.
 - `rustleaks-sevenz` remains isolated from `sevenz-rust2 0.20.2` because the
   owned decoder removes encoder and filesystem APIs and carries checked parser,
   allocation, and coder-graph hardening used by the archive resource boundary.

@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod docs_check;
 mod fuzzing;
 mod performance;
 mod release_artifact;
@@ -83,7 +84,7 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "supply-chain-check" => supply_chain_check(),
         [command] if command == "dependency-safety-check" => dependency_safety_check(),
         [command] if command == "owned-safety-check" => owned_safety_check(),
-        [command] if command == "docs-check" => docs_check(),
+        [command] if command == "docs-check" => docs_check::run(&workspace_root()?),
         [command] if command == "quality-check" => quality_check(),
         [command] if command == "miri-check" => miri_check(),
         [command] if command == "panic-abort-check" => panic_abort_check(),
@@ -97,9 +98,7 @@ fn run(args: &[String]) -> Result<(), String> {
             performance::run(arguments)
         }
         [command, subcommand] if command == "perf" && subcommand == "check" => performance::check(),
-        [command, subcommand, arguments @ ..]
-            if command == "perf" && subcommand == "fixtures" =>
-        {
+        [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "fixtures" => {
             performance::fixtures(arguments)
         }
         [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "report" => {
@@ -116,8 +115,66 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
-        _ => Err("usage: cargo xtask {manifest-check|frozen-evidence-check|regression-check|qualify|public-api-check|build-system-check|package-check|release-dry-run|release-artifact [ARGS]|security-check|security-deep [ARGS]|rustsec-check|vet-check|unsafe-inventory-check|supply-chain-check|dependency-safety-check|owned-safety-check|docs-check|quality-check|miri-check|panic-abort-check|fuzz-check|fuzz-build|fuzz-smoke|fuzz [ARGS]|generate [ARGS]|perf <run|check|fixtures|representative|profile|calibrate|report> [ARGS]}".into()),
+        _ => Err(usage()),
     }
+}
+
+/// Top-level subcommands accepted by `run`. The usage text and the
+/// documentation command check read this list, and a unit test keeps it in
+/// step with the dispatch.
+const XTASK_COMMANDS: &[&str] = &[
+    "manifest-check",
+    "frozen-evidence-check",
+    "regression-check",
+    "qualify",
+    "public-api-check",
+    "build-system-check",
+    "package-check",
+    "release-dry-run",
+    "release-artifact",
+    "security-check",
+    "security-deep",
+    "rustsec-check",
+    "vet-check",
+    "unsafe-inventory-check",
+    "supply-chain-check",
+    "dependency-safety-check",
+    "owned-safety-check",
+    "docs-check",
+    "quality-check",
+    "miri-check",
+    "panic-abort-check",
+    "fuzz-check",
+    "fuzz-build",
+    "fuzz-smoke",
+    "fuzz",
+    "generate",
+    "perf",
+];
+
+/// Subcommands accepted after `perf`.
+const PERF_SUBCOMMANDS: &[&str] = &[
+    "run",
+    "check",
+    "fixtures",
+    "representative",
+    "profile",
+    "calibrate",
+    "report",
+];
+
+fn usage() -> String {
+    let commands = XTASK_COMMANDS
+        .iter()
+        .map(|command| match *command {
+            "release-artifact" | "security-deep" | "fuzz" | "generate" => {
+                format!("{command} [ARGS]")
+            }
+            "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),
+            _ => (*command).to_owned(),
+        })
+        .collect::<Vec<_>>();
+    format!("usage: cargo xtask {{{}}}", commands.join("|"))
 }
 
 fn workspace_root() -> Result<PathBuf, String> {
@@ -1567,162 +1624,6 @@ fn run_quality_tests(
     tools.unchanged()
 }
 
-fn collect_documentation(
-    directory: &Path,
-    root: &Path,
-    files: &mut Vec<PathBuf>,
-) -> Result<(), String> {
-    for entry in std::fs::read_dir(directory).map_err(|error| {
-        format!(
-            "cannot read documentation directory {}: {error}",
-            directory.display()
-        )
-    })? {
-        let entry = entry.map_err(|error| format!("cannot read documentation entry: {error}"))?;
-        let path = entry.path();
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|error| format!("cannot relativize documentation path: {error}"))?;
-        let verbatim_upstream_fixture = [
-            "compat/fixtures/upstream/testdata/expected/report/template_markdown.md",
-            "compat/fixtures/upstream/testdata/repos/archives/README.md",
-            "compat/fixtures/upstream/testdata/repos/small/README.md",
-            "compat/fixtures/upstream/testdata/repos/staged/README.md",
-        ]
-        .iter()
-        .any(|fixture| relative == Path::new(fixture));
-        if relative.starts_with("target")
-            || relative.starts_with(".git")
-            || relative.starts_with("release/notice-inputs")
-            || relative.starts_with("release/licenses")
-            || verbatim_upstream_fixture
-        {
-            continue;
-        }
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
-        if file_type.is_dir() {
-            collect_documentation(&path, root, files)?;
-        } else if file_type.is_file()
-            && path
-                .extension()
-                .is_some_and(|value| matches!(value.to_str(), Some("md" | "rs" | "yml" | "yaml")))
-        {
-            files.push(path);
-        }
-    }
-    Ok(())
-}
-
-fn markdown_local_links(contents: &str) -> impl Iterator<Item = &str> {
-    contents
-        .split("](")
-        .skip(1)
-        .filter_map(|tail| tail.split_once(')').map(|(target, _)| target.trim()))
-}
-
-fn rust_documentation(contents: &str) -> String {
-    contents
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim_start();
-            line.strip_prefix("//!")
-                .or_else(|| line.strip_prefix("///"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn docs_check() -> Result<(), String> {
-    let root = workspace_root()?;
-    workflows::check(&root)?;
-    let mut files = Vec::new();
-    collect_documentation(&root, &root, &mut files)?;
-    files.sort();
-    if files.is_empty() {
-        return Err("documentation check found no maintained prose surfaces".into());
-    }
-    let mut prose_files = 0_usize;
-    let mut rust_doc_surfaces = 0_usize;
-    for path in &files {
-        let contents = std::fs::read_to_string(path)
-            .map_err(|error| format!("cannot read documentation {}: {error}", path.display()))?;
-        let is_rust = path.extension().is_some_and(|value| value == "rs");
-        let prose = if is_rust {
-            rust_documentation(&contents)
-        } else {
-            contents.clone()
-        };
-        if prose.is_empty() {
-            continue;
-        }
-        if is_rust {
-            rust_doc_surfaces += 1;
-        } else {
-            prose_files += 1;
-        }
-        if prose.contains('\u{2014}') {
-            return Err(format!(
-                "documentation contains an em dash: {}",
-                path.display()
-            ));
-        }
-        if prose.chars().any(|character| {
-            ('\u{1f000}'..='\u{1faff}').contains(&character)
-                || ('\u{2600}'..='\u{27bf}').contains(&character)
-        }) {
-            return Err(format!(
-                "documentation contains an emoji: {}",
-                path.display()
-            ));
-        }
-        let lowercase = prose.to_ascii_lowercase();
-        for phrase in [
-            "100% safe",
-            "blazing fast",
-            "best-in-class",
-            "production-quality",
-            "world-class",
-            "ultra-fast",
-        ] {
-            if lowercase.contains(phrase) {
-                return Err(format!(
-                    "documentation contains disallowed marketing phrase {phrase:?}: {}",
-                    path.display()
-                ));
-            }
-        }
-        if path.extension().is_some_and(|value| value == "md") {
-            let parent = path
-                .parent()
-                .ok_or_else(|| format!("{} has no parent", path.display()))?;
-            for target in markdown_local_links(&contents) {
-                let target = target.trim_matches(['<', '>']);
-                if target.is_empty()
-                    || target.starts_with('#')
-                    || target.starts_with("http://")
-                    || target.starts_with("https://")
-                    || target.starts_with("mailto:")
-                {
-                    continue;
-                }
-                let target = target.split('#').next().unwrap_or(target);
-                if !parent.join(target).exists() {
-                    return Err(format!(
-                        "broken local documentation link {target:?} in {}",
-                        path.display()
-                    ));
-                }
-            }
-        }
-    }
-    println!(
-        "checked {prose_files} maintained prose files and {rust_doc_surfaces} Rust documentation surfaces for links and style"
-    );
-    Ok(())
-}
-
 fn quality_check() -> Result<(), String> {
     let root = workspace_root()?;
     let target = ScopedTempDir::new("release-quality")?;
@@ -2079,7 +1980,7 @@ fn bounded_composite_resources() -> Result<(), String> {
 
 fn qualify() -> Result<(), String> {
     clean_worktree_check()?;
-    docs_check()?;
+    docs_check::run(&workspace_root()?)?;
     quality_check()?;
     owned_safety_check()?;
     dependency_safety_check()?;
@@ -2662,5 +2563,35 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
     #[test]
     fn cargo_and_bazel_build_contracts_match() {
         build_system::check(&workspace_root().unwrap()).unwrap();
+    }
+
+    /// Returns the quoted names compared with `variable` in `source`.
+    fn compared_names<'a>(source: &'a str, variable: &str) -> BTreeSet<&'a str> {
+        let pattern = format!(" {variable} == \"");
+        source
+            .match_indices(&pattern)
+            .filter_map(|(index, _)| source[index + pattern.len()..].split_once('"'))
+            .map(|(name, _)| name)
+            .collect()
+    }
+
+    #[test]
+    fn listed_commands_match_dispatch() {
+        let source = include_str!("main.rs");
+        let start = source.find("fn run(args: &[String])").unwrap();
+        let end = start + source[start..].find("\nfn usage()").unwrap();
+        let dispatch = &source[start..end];
+        assert_eq!(
+            compared_names(dispatch, "command"),
+            super::XTASK_COMMANDS.iter().copied().collect()
+        );
+        assert_eq!(
+            compared_names(dispatch, "subcommand"),
+            super::PERF_SUBCOMMANDS.iter().copied().collect()
+        );
+        let usage = super::usage();
+        for command in super::XTASK_COMMANDS.iter().chain(super::PERF_SUBCOMMANDS) {
+            assert!(usage.contains(command), "usage omits {command}");
+        }
     }
 }

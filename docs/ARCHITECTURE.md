@@ -68,6 +68,6 @@ structured partial outcome. Source adapters may schedule fragments, but the
 engine does not create threads or retain process-global state.
 
 Project-native names use `rustleaks`. Upstream names remain only where required
-for backward-compatible configuration, CLI behavior, report bytes, oracle
-protocols, fixture identity, or attribution. These compatibility names do not
-identify the product or imply upstream endorsement.
+for backward-compatible configuration, CLI behavior, report bytes, historical
+oracle records, fixture identity, or attribution. These compatibility names do
+not identify the product or imply upstream endorsement.
