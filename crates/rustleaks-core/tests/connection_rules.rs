@@ -1324,7 +1324,7 @@ fn libpq_passwords_preserve_literal_spelling_and_exact_ranges() {
             let matched = format!("{prefix}{secret}{ending}");
             let input = format!("{matched}dbname=application");
             let findings = scan(libpq_engine(), input.as_bytes());
-            assert_eq!(findings.len(), 1, "{input:?}");
+            assert_eq!(findings.len(), 1);
             let finding = &findings[0];
             assert_eq!(
                 finding.rule_id().as_bytes(),
@@ -1373,18 +1373,12 @@ fn libpq_rejects_incomplete_values_and_out_of_scope_context() {
         "https://db.invalid/password/Q7v9R2",
         "The password for the host is Q7v9R2.",
     ] {
-        assert!(
-            scan(libpq_engine(), input.as_bytes()).is_empty(),
-            "{input:?}"
-        );
+        assert!(scan(libpq_engine(), input.as_bytes()).is_empty());
     }
     for secret in ["${DB_PASSWORD}", "{{DB_PASSWORD}}", "changeme", "REDACTED"] {
         for (left, right) in [("'", "'"), ("", "")] {
             let input = format!("host=db.invalid password={left}{secret}{right}");
-            assert!(
-                scan(libpq_engine(), input.as_bytes()).is_empty(),
-                "{input:?}"
-            );
+            assert!(scan(libpq_engine(), input.as_bytes()).is_empty());
         }
     }
 }
@@ -1398,7 +1392,7 @@ fn libpq_value_and_context_bounds_do_not_admit_prefixes() {
                 let secret = format!("{}7", unit.repeat(count - 1));
                 let input = format!("host=db.invalid password={left}{secret}{right}");
                 let findings = scan(libpq_engine(), input.as_bytes());
-                assert_eq!(findings.len(), usize::from(count <= 128), "{input:?}");
+                assert_eq!(findings.len(), usize::from(count <= 128));
                 if let Some(finding) = findings.first() {
                     assert_eq!(finding.secret().as_bytes(), secret.as_bytes());
                 }
@@ -1486,10 +1480,7 @@ fn libpq_full_composition_has_explicit_attribution_and_negative_multisets() {
         "host=db.invalid password=''",
         "https://db.invalid/password/Q7v9R2",
     ] {
-        assert!(
-            scan(composed.engine(), input.as_bytes()).is_empty(),
-            "{input:?}"
-        );
+        assert!(scan(composed.engine(), input.as_bytes()).is_empty());
     }
 }
 
