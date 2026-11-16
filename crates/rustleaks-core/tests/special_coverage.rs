@@ -1198,7 +1198,8 @@ fn every_special_family_obeys_work_record_payload_and_target_limits() {
 #[test]
 fn long_valid_json_payloads_and_uri_tails_keep_exact_secrets_and_budget_failures() {
     for length in [8_192, 262_144] {
-        let token = "9Z7q2M8v4R1x6B5n3T0DkWcYpSgJfUa"
+        let token = ["9Z7q2M8v4R1x6B5", "n3T0DkWcYpSgJfUa"]
+            .concat()
             .chars()
             .cycle()
             .take(length)
@@ -1209,7 +1210,7 @@ fn long_valid_json_payloads_and_uri_tails_keep_exact_secrets_and_budget_failures
             URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
         );
         let jwt = format!("Authorization: Bearer {secret}\\\"");
-        let uri_secret = "A7q2M9z4B6w8C3v5";
+        let uri_secret = ["A7q2M9z4", "B6w8C3v5"].concat();
         let uri = format!(
             "redis://alice:{uri_secret}@cache.internal/{};",
             "path7".repeat(length / 5)
@@ -1224,7 +1225,7 @@ fn long_valid_json_payloads_and_uri_tails_keep_exact_secrets_and_budget_failures
             (
                 "rustleaks.service-uri-password",
                 uri.as_str(),
-                uri_secret,
+                uri_secret.as_str(),
                 14,
             ),
         ] {

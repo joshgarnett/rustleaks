@@ -15,6 +15,7 @@ crates/rustleaks-compat/src/evaluation/generator.rs:private-key:167
 crates/rustleaks-compat/src/evaluation/generator.rs:generic-api-key:217
 crates/rustleaks-compat/src/evaluation/pilot.rs:github-pat:182
 crates/rustleaks-core/tests/native_policy.rs:aws-access-token:30
+crates/rustleaks-core/tests/native_policy.rs:aws-access-token:37
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:340
 
 # Reviewed generated hashes and synthetic decoder test values.
@@ -27,6 +28,10 @@ crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1793
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1798
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1814
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1818
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1976
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1981
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1997
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2001
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
 crates/rustleaks-core/tests/engine.rs:generic-api-key:353
@@ -40,6 +45,12 @@ docs/validation/default-rule-throughput.md:sourcegraph-access-token:7
 # Reviewed synthetic private-key compatibility fixtures.
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
 crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
+
+# Reviewed synthetic native rule pack test values and malformed-table markers.
+crates/rustleaks-core/tests/native_policy.rs:generic-api-key:948
+crates/rustleaks-sources/tests/complete_sources.rs:github-pat:392
+crates/rustleaks-sources/tests/complete_sources.rs:github-pat:393
+crates/xtask/src/main.rs:generic-api-key:731
 
 # Commit-qualified synthetic fixtures from the initial compatibility import.
 4e1cf3fb09e60301d930564467bf2749c071c7ea:README.md:aws-access-token:48
@@ -77,3 +88,18 @@ crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
 
 # Commit-qualified synthetic consumer example introduced after the import.
 44695c5ddb786661dcd70841a433ee837b35bae8:crates/xtask/src/main.rs:aws-access-token:748
+
+# Commit-qualified synthetic native rule pack test values from earlier revisions.
+bdce80ddb61a647dbae5cd752f0812672d24cf59:crates/rustleaks-core/tests/connection_rules.rs:generic-api-key:563
+bdce80ddb61a647dbae5cd752f0812672d24cf59:crates/rustleaks-core/tests/native_policy.rs:generic-api-key:941
+bdce80ddb61a647dbae5cd752f0812672d24cf59:crates/rustleaks-sources/tests/complete_sources.rs:github-pat:350
+bdce80ddb61a647dbae5cd752f0812672d24cf59:crates/rustleaks-sources/tests/complete_sources.rs:github-pat:351
+bdce80ddb61a647dbae5cd752f0812672d24cf59:crates/xtask/src/main.rs:generic-api-key:670
+655ece6c058402109c66661d1511d0cbec13f4af:crates/rustleaks-core/tests/special_coverage.rs:generic-api-key:1200
+655ece6c058402109c66661d1511d0cbec13f4af:crates/rustleaks-core/tests/special_coverage.rs:generic-api-key:1211
+90ac22e54c9591446b09973879a503ac337e35c7:crates/rustleaks-core/tests/connection_rules.rs:generic-api-key:596
+90ac22e54c9591446b09973879a503ac337e35c7:crates/rustleaks-core/tests/special_coverage.rs:generic-api-key:1201
+90ac22e54c9591446b09973879a503ac337e35c7:crates/rustleaks-core/tests/special_coverage.rs:generic-api-key:1212
+90ac22e54c9591446b09973879a503ac337e35c7:crates/xtask/src/main.rs:generic-api-key:674
+c2744796b6d04b1927f6c83009629a2357542775:crates/rustleaks-core/tests/connection_rules.rs:generic-api-key:1459
+42bb1aa203eaec28fd07d4c94ac2dedbff2d8437:crates/rustleaks-core/tests/connection_rules.rs:generic-api-key:1453

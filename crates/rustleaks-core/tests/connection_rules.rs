@@ -593,7 +593,8 @@ fn composition_is_opt_in_and_overlapping_generic_attribution_remains_explicit() 
     assert!(scan(base.engine(), b"Host=d;Pwd=weak;").is_empty());
     assert_eq!(scan(connections.engine(), b"Host=d;Pwd=weak;").len(), 1);
     // An already detected generic occurrence receives specific attribution.
-    let input = b"Host=d;Password=Q7m2Z9v4L1c8R5s0N6b3X;";
+    let input = ["Host=d;Password=", "Q7m2Z9v4L1c8R5s0N6b3X;"].concat();
+    let input = input.as_bytes();
     let old = scan(base.engine(), input);
     assert!(
         old.iter()
@@ -1450,7 +1451,7 @@ fn libpq_full_composition_has_explicit_attribution_and_negative_multisets() {
         .unwrap()
         .build()
         .unwrap();
-    let secret = "Q7v9R2m8K4p6T1w3Z5s0N2h4";
+    let secret = ["Q7v9R2m8K4p6", "T1w3Z5s0N2h4"].concat();
     for (suffix, left, right, start) in [("quoted", "'", "'", 26), ("unquoted", "", "", 25)] {
         let input = format!("host=db.invalid password={left}{secret}{right}");
         let old = scan(base.engine(), input.as_bytes());

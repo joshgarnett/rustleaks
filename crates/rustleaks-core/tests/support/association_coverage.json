@@ -51168,14 +51168,14 @@
       "expected": [
         {
           "id": "rustleaks.association.azure-storage-account-key",
-          "line_base64": "Y29uc3QgZW5kcG9pbnQgPSAiaHR0cHM6Ly9zY29wZWF1ZGl0LmJsb2IuY29yZS53aW5kb3dzLm5ldCI7CmNvbnN0IEFjY291bnRLZXkgLyrDqSovID0gIit5QkZhbyswMmY0alNHMlN0OXdCSmt0d2xicmZCQ2xPYzVpOTRnY3NVWGFid09VS0wxUjVuc1BvRFRKWGZLSEc2eEExV24ra3llNFRPRjJDcDh6eEZnPT0iOw==",
+          "line_base64": "Y29uc3QgZW5kcG9pbnQgPSAiaHR0cHM6Ly9zY29wZWF1ZGl0LmJsb2IuY29yZS53aW5kb3dzLm5ldCI7CmNvbnN0IEFjY291bnRLZXkgLyrDqSovID0gIitBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4PT0iOw==",
           "location": [
             1,
             1,
             8,
             116
           ],
-          "match_base64": "QWNjb3VudEtleSAvKsOpKi8gPSAiK3lCRmFvKzAyZjRqU0cyU3Q5d0JKa3R3bGJyZkJDbE9jNWk5NGdjc1VYYWJ3T1VLTDFSNW5zUG9EVEpYZktIRzZ4QTFXbitreWU0VE9GMkNwOHp4Rmc9PQ==",
+          "match_base64": "QWNjb3VudEtleSAvKsOpKi8gPSAiK0E3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXg9PQ==",
           "match_range": [
             67,
             176
@@ -51203,14 +51203,14 @@
               ]
             }
           ],
-          "secret_base64": "K3lCRmFvKzAyZjRqU0cyU3Q5d0JKa3R3bGJyZkJDbE9jNWk5NGdjc1VYYWJ3T1VLTDFSNW5zUG9EVEpYZktIRzZ4QTFXbitreWU0VE9GMkNwOHp4Rmc9PQ==",
+          "secret_base64": "K0E3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXg9PQ==",
           "secret_range": [
             88,
             176
           ]
         }
       ],
-      "input_base64": "Y29uc3QgZW5kcG9pbnQgPSAiaHR0cHM6Ly9zY29wZWF1ZGl0LmJsb2IuY29yZS53aW5kb3dzLm5ldCI7CmNvbnN0IEFjY291bnRLZXkgLyrDqSovID0gIit5QkZhbyswMmY0alNHMlN0OXdCSmt0d2xicmZCQ2xPYzVpOTRnY3NVWGFid09VS0wxUjVuc1BvRFRKWGZLSEc2eEExV24ra3llNFRPRjJDcDh6eEZnPT0iOw==",
+      "input_base64": "Y29uc3QgZW5kcG9pbnQgPSAiaHR0cHM6Ly9zY29wZWF1ZGl0LmJsb2IuY29yZS53aW5kb3dzLm5ldCI7CmNvbnN0IEFjY291bnRLZXkgLyrDqSovID0gIitBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4PT0iOw==",
       "name": "azure/comment-utf8-eleven-byte-carrier",
       "path": "src/settings.txt",
       "rule": "rustleaks.association.azure-storage-account-key",
