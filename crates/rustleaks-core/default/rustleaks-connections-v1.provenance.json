@@ -1303,7 +1303,7 @@
   "rules": [
     {
       "id": "rustleaks.connection-string.password.double-quoted",
-      "native_pattern": "(?:^|[;\\x09-\\x0d\\x20'\"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*\"([\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x7f]{4,128})\"[\\t\\x20]*(?:;|[\\r\\n']|$)",
+      "native_pattern": "(?:^|[;\\x09-\\x0d\\x20'\"=(]|\\b)(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*\"([\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x7f]{4,128})\"[\\t\\x20]*(?:;|[\\r\\n']|$)",
       "secret_group": 1,
       "source_confidence": "medium",
       "source_filter": null,
@@ -1349,7 +1349,7 @@
     },
     {
       "id": "rustleaks.connection-string.password.single-quoted",
-      "native_pattern": "(?:^|[;\\x09-\\x0d\\x20'\"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*'([\\x00-\\x09\\x0b-\\x0c\\x0e-\\x26\\x28-\\x7f]{4,128})'[\\t\\x20]*(?:;|[\\r\\n\"]|$)",
+      "native_pattern": "(?:^|[;\\x09-\\x0d\\x20'\"=(]|\\b)(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*'([\\x00-\\x09\\x0b-\\x0c\\x0e-\\x26\\x28-\\x7f]{4,128})'[\\t\\x20]*(?:;|[\\r\\n\"]|$)",
       "secret_group": 1,
       "source_confidence": "medium",
       "source_filter": null,
@@ -1395,7 +1395,7 @@
     },
     {
       "id": "rustleaks.connection-string.password.odbc-braced",
-      "native_pattern": "(?:(?:^|[;\\x09-\\x0d\\x20'\"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;|\\b[jJ][dD][bB][cC]:[sS][qQ][lL][sS][eE][rR][vV][eE][rR]://[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;)(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*\\{((?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x7c\\x7e-\\x7f]|}}){4,128})\\}[\\t\\x20]*(?:;|[\\r\\n'\"]|$)",
+      "native_pattern": "(?:(?:^|[;\\x09-\\x0d\\x20'\"=(]|\\b)(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;|\\b[jJ][dD][bB][cC]:[sS][qQ][lL][sS][eE][rR][vV][eE][rR]://[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;)(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*\\{((?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x7c\\x7e-\\x7f]|}}){4,128})\\}[\\t\\x20]*(?:;|[\\r\\n'\"]|$)",
       "secret_group": 1,
       "source_confidence": "medium",
       "source_filter": null,
@@ -1441,7 +1441,7 @@
     },
     {
       "id": "rustleaks.connection-string.password.unquoted",
-      "native_pattern": "(?:(?:^|[;\\x09-\\x0d\\x20'\"=(])(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;|\\b[jJ][dD][bB][cC]:[sS][qQ][lL][sS][eE][rR][vV][eE][rR]://[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;)(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*([\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{4,128})[\\t\\x20]*(?:;|[\\r\\n'\"]|$)",
+      "native_pattern": "(?:(?:^|[;\\x09-\\x0d\\x20'\"=(]|\\b)(?:[sS][eE][rR][vV][eE][rR]|[hH][oO][sS][tT]|[dD][aA][tT][aA][\\t\\x20]+[sS][oO][uU][rR][cC][eE]|[dD][sS][nN])[\\t\\x20]*=[\\t\\x20]*[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;|\\b[jJ][dD][bB][cC]:[sS][qQ][lL][sS][eE][rR][vV][eE][rR]://[\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f][\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{0,127}[\\t\\x20]*;)(?:[\\x00-\\x09\\x0b-\\x0c\\x0e-\\x21\\x23-\\x26\\x28-\\x7a\\x7c\\x7e-\\x7f]{0,200}?;)??[\\t\\x20]*(?:[pP][aA][sS][sS][wW][oO][rR][dD]|[pP][wW][dD])[\\t\\x20]*=[\\t\\x20]*([\\x00-\\x08\\x0e-\\x1f\\x21\\x23-\\x26\\x28-\\x3a\\x3c-\\x7a\\x7c\\x7e-\\x7f]{4,128})[\\t\\x20]*(?:;|[\\r\\n'\"]|$)",
       "secret_group": 1,
       "source_confidence": "medium",
       "source_filter": null,
@@ -2114,6 +2114,7 @@
     "Intersect negated byte classes with ASCII using explicit positive byte ranges; preserve all bounds, greediness, alternatives, and consumed delimiters.",
     "Unroll the capture-free JDBC preceding-option repetition into sixteen sequential greedy optional groups; preserve 0 through 16 options without exceeding the existing nested-repeat product limit.",
     "Map the complete case-insensitive secret substring exclusions to rule-local secret stopwords; preserve absent keywords as an empty list and omit the zero entropy floor.",
-    "Retain raw percent spelling and doubled ODBC braces; inherit unchanged Rustleaks source policy, global allowlists, finding geometry, decoding, and resource controls."
+    "Retain raw percent spelling and doubled ODBC braces; inherit unchanged Rustleaks source policy, global allowlists, finding geometry, decoding, and resource controls.",
+    "Add a zero-width ASCII word boundary as the last host-key start alternative in the four semicolon forms, so a semicolon consumed by one match does not hide the next connection."
   ]
 }

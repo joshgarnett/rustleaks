@@ -13,7 +13,7 @@ pub(super) fn generate(root: &Path, check: bool) -> Result<(), String> {
     let reviewed: serde_json::Value = serde_json::from_str(REVIEWED)
         .map_err(|error| format!("invalid additional coverage source contract: {error}"))?;
     for (name, key, source, count, additional) in [
-        ("rustleaks-providers-v1", "providers", PROVIDERS, 104, 196),
+        ("rustleaks-providers-v1", "providers", PROVIDERS, 104, 199),
         ("rustleaks-connections-v1", "connections", CONNECTIONS, 6, 8),
     ] {
         validate_source(&reviewed, key, source, additional)?;
@@ -165,7 +165,7 @@ mod tests {
     fn additional_contract_rejects_dropped_filters_paths_and_source_attribution() {
         let reviewed: serde_json::Value = serde_json::from_str(REVIEWED).unwrap();
         for (key, source, count) in [
-            ("providers", PROVIDERS, 196),
+            ("providers", PROVIDERS, 199),
             ("connections", CONNECTIONS, 8),
         ] {
             assert!(validate_source(&reviewed, key, source, count).is_ok());

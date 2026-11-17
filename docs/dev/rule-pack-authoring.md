@@ -13,7 +13,7 @@ The packs live in `crates/rustleaks-core/default/` and are built into
 | Pack | Rules | Files |
 | --- | ---: | --- |
 | `rustleaks-extra-v1` | 3 | `.toml`, `.md`, `.sha256` |
-| `rustleaks-providers-v1` | 300 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
+| `rustleaks-providers-v1` | 303 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
 | `rustleaks-connections-v1` | 14 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
 
 - `<pack>.toml` holds the rules.

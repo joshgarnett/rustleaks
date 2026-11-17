@@ -609,7 +609,9 @@ fn supervisor_enforces_absolute_deadline_and_its_own_capture_limit() {
         super::collect_supervised(
             &mut command,
             &oversized,
-            Instant::now() + Duration::from_secs(10),
+            // A slow shared runner can take several seconds to start Python and
+            // write 4 MiB; the deadline must not end the child first.
+            Instant::now() + Duration::from_mins(2),
         )
         .is_err()
     );

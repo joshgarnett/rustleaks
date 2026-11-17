@@ -7,7 +7,8 @@ use std::sync::OnceLock;
 use rustleaks_core::config::{ConfigLoader, RawConfig};
 use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
 use rustleaks_core::native::{
-    EXTRA_RULES_V1, NativeEngine, NativePolicy, PROVIDER_RULES_V1, PROVIDER_RULES_V1_SHA256,
+    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativeEngine, NativePolicy, PROVIDER_RULES_V1,
+    PROVIDER_RULES_V1_SHA256,
 };
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
@@ -1428,14 +1429,40 @@ fn followup_text(case: &FollowupCase) -> String {
     }
 }
 
+/// In the full provider pack, `rustleaks.xai-api-key-delimiter` also reports
+/// an 80-byte xAI body followed by a delimiter or the end of input, at the
+/// same secret span as `rustleaks.xai-api-key-80`. Check and remove that
+/// accepted duplicate so the remaining assertions cover the follow-up rule.
+fn without_same_span_xai(id: &str, full_pack: bool, mut findings: Vec<Finding>) -> Vec<Finding> {
+    if full_pack && id == "rustleaks.xai-api-key-80" {
+        let index = findings
+            .iter()
+            .position(|f| f.rule_id().as_bytes() == XAI.as_bytes())
+            .expect("same-span xAI delimiter finding");
+        let extra = findings.remove(index);
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.rule_id().as_bytes() == id.as_bytes()
+                    && f.secret_range() == extra.secret_range())
+        );
+    }
+    findings
+}
+
 #[test]
 fn followup_exact_match_secret_locations_and_invalid_bytes_are_independent() {
     for case in followup_cases() {
         let text = followup_text(&case);
         let input = format!("lead\nx {text}{}", case.suffix);
         let secret_start = 7 + text.len() - case.secret.len();
-        for engine in [isolated(), composed().engine(), both_packs().engine()] {
-            let findings = scan(engine, input.as_bytes());
+        for (engine, full_pack) in [
+            (isolated(), false),
+            (composed().engine(), true),
+            (both_packs().engine(), true),
+        ] {
+            let findings =
+                without_same_span_xai(case.id, full_pack, scan(engine, input.as_bytes()));
             assert_eq!(findings.len(), 1, "{}", case.id);
             let finding = &findings[0];
             assert_eq!(finding.rule_id().as_bytes(), case.id.as_bytes());
@@ -1865,7 +1892,8 @@ fn followup_raw_occurrences_and_generic_attribution_are_separate() {
             assert_eq!(old[0].rule_id().as_bytes(), b"generic-api-key");
             assert_eq!(old[0].secret().as_bytes(), case.secret.as_bytes());
         }
-        let raw_after = scan(composed().engine(), raw.as_bytes());
+        let raw_after =
+            without_same_span_xai(case.id, true, scan(composed().engine(), raw.as_bytes()));
         assert_eq!(raw_after.len(), 1, "{}", case.id);
         assert_eq!(raw_after[0].rule_id().as_bytes(), case.id.as_bytes());
         assert_eq!(raw_after[0].secret().as_bytes(), case.secret.as_bytes());
@@ -1887,7 +1915,11 @@ fn followup_raw_occurrences_and_generic_attribution_are_separate() {
             assert_eq!(before[0].secret().as_bytes(), case.secret.as_bytes());
             assert_eq!(before[0].secret_range(), expected);
         }
-        let after = scan(composed().engine(), assigned.as_bytes());
+        let after = without_same_span_xai(
+            case.id,
+            true,
+            scan(composed().engine(), assigned.as_bytes()),
+        );
         assert_eq!(after.len(), 1, "{}", case.id);
         assert_eq!(after[0].rule_id().as_bytes(), case.id.as_bytes());
         assert_eq!(after[0].secret_range(), expected);
@@ -2135,7 +2167,7 @@ fn native_byte_predicate() -> toml::Value {
 fn scalar_provider_config() -> RawConfig {
     let mut pack: toml::Value = toml::from_str(PROVIDER_RULES_V1).unwrap();
     let rules = pack["rules"].as_array_mut().unwrap();
-    assert_eq!(rules.len(), 300);
+    assert_eq!(rules.len(), 303);
     rules.truncate(104);
     assert_eq!(
         rules[60..]
@@ -2731,3 +2763,316 @@ const CONTEXTUAL_ADDITION_IDS: [&str; 44] = [
     "rustleaks.digitalocean-refresh-token-vt",
     "rustleaks.openai-api-key-legacy-delimiter",
 ];
+
+// Widened provider forms. Each expectation below follows the reviewed source
+// form, not detector output: Alibaba `LTAI` plus 17 to 21 ASCII alphanumerics
+// between word boundaries with byte entropy below 3.0 rejected; Slack
+// `xoxe.xoxp-`, 1 to 10 decimal digits, `-` and 166 ASCII alphanumerics with
+// no trailing boundary; xAI `xai-` (ASCII case-insensitive) plus 70 to 120
+// bytes of `[A-Za-z0-9_-]`, one delimiter, and byte entropy at or below 3.5
+// rejected.
+const WIDENED_IDS: [&str; 3] = [
+    "rustleaks.alibaba-access-key-id-boundary",
+    "rustleaks.slack-config-access-token-166",
+    "rustleaks.xai-api-key-delimiter",
+];
+const ALIBABA: &str = "rustleaks.alibaba-access-key-id-boundary";
+const SLACK_ACCESS: &str = "rustleaks.slack-config-access-token-166";
+const XAI: &str = "rustleaks.xai-api-key-delimiter";
+
+fn widened() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let (full, _) = NativePolicy::builder()
+            .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
+            .unwrap()
+            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
+            .unwrap()
+            .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
+            .unwrap()
+            .compile()
+            .unwrap();
+        Engine::builder(full.select_rules(WIDENED_IDS).unwrap())
+            .build()
+            .unwrap()
+    })
+}
+
+/// Independent copy of the documented `byte-shannon-f64-v1` arithmetic,
+/// used only to check that fixtures sit exactly on a threshold.
+fn byte_shannon(bytes: &[u8]) -> f64 {
+    let mut counts = [0_u32; 256];
+    for byte in bytes {
+        counts[usize::from(*byte)] += 1;
+    }
+    let total = f64::from(u32::try_from(bytes.len()).unwrap());
+    counts
+        .iter()
+        .filter(|count| **count > 0)
+        .fold(0.0, |sum, count| {
+            let frequency = f64::from(*count) / total;
+            sum - frequency * frequency.log2()
+        })
+}
+
+/// Scans `key=` + `secret` + `tail` and expects exactly one finding from `id`
+/// whose secret is `secret` at bytes 4.. and whose match keeps `delimiter`.
+fn assert_widened(id: &str, secret: &str, tail: &str, delimiter: &str) {
+    let input = format!("key={secret}{tail}");
+    let findings = scan(widened(), input.as_bytes());
+    assert_eq!(findings.len(), 1, "{id} {tail:?} {}", secret.len());
+    let finding = &findings[0];
+    assert_eq!(finding.rule_id().as_bytes(), id.as_bytes());
+    assert_eq!(finding.secret().as_bytes(), secret.as_bytes());
+    assert_eq!(finding.secret_range(), range(4, 4 + secret.len()));
+    assert_eq!(
+        finding.match_range(),
+        range(4, 4 + secret.len() + delimiter.len()),
+        "{id} {tail:?}"
+    );
+    assert_eq!(
+        finding.match_text().as_bytes(),
+        format!("{secret}{delimiter}").as_bytes()
+    );
+}
+
+fn assert_widened_none(input: &str) {
+    assert!(
+        scan(widened(), input.as_bytes()).is_empty(),
+        "{}-byte input",
+        input.len()
+    );
+}
+
+#[test]
+fn alibaba_boundary_rule_accepts_17_to_21_bytes_between_word_boundaries() {
+    for length in 17..=21 {
+        let secret = format!("LTAI{}", body(length));
+        // The source regex consumes no delimiter, so the match is the secret.
+        for tail in ["\n", ",", ")", ""] {
+            assert_widened(ALIBABA, &secret, tail, "");
+        }
+    }
+    for length in [16, 22] {
+        assert_widened_none(&format!("key=LTAI{}\n", body(length)));
+    }
+    for input in [
+        format!("key=ltai{}\n", body(20)),
+        format!("key=xLTAI{}\n", body(20)),
+        format!("key=_LTAI{}\n", body(20)),
+        format!("key=LTAI{}-{}\n", body(10), body(10)),
+    ] {
+        assert_widened_none(&input);
+    }
+    // 24 bytes of 8 symbols, 3 each: exactly 3.0, which `lt` keeps. Moving
+    // one E to B lowers it to about 2.98.
+    let equal = format!("{}BBBCCCDDDEEE", "LTAI".repeat(3));
+    assert_eq!(byte_shannon(equal.as_bytes()).to_bits(), 3.0_f64.to_bits());
+    assert_widened(ALIBABA, &equal, "\n", "");
+    let lower = format!("{}BBBBCCCDDDEE", "LTAI".repeat(3));
+    assert!(byte_shannon(lower.as_bytes()) < 3.0);
+    assert_widened_none(&format!("key={lower}\n"));
+}
+
+#[test]
+fn slack_access_rule_accepts_one_to_ten_digits_and_a_166_byte_body() {
+    for digits in ["1", "12", "1234567890"] {
+        let secret = format!("xoxe.xoxp-{digits}-{}", body(166));
+        assert_widened(SLACK_ACCESS, &secret, "\n", "");
+    }
+    for input in [
+        format!("xoxe.xoxp-12345678901-{}", body(166)),
+        format!("xoxe.xoxp--{}", body(166)),
+        format!("xoxe.xoxp-1a-{}", body(166)),
+        format!("xoxe.xoxp-1-{}", body(165)),
+        format!("xoxe.xoxb-1-{}", body(166)),
+        format!("xoxeXxoxp-1-{}", body(166)),
+    ] {
+        assert_widened_none(&format!("key={input}\n"));
+    }
+    // No trailing boundary: a 167-byte body reports its 166-byte prefix.
+    let longer = format!("xoxe.xoxp-1-{}", body(167));
+    let prefix = &longer[..longer.len() - 1];
+    let findings = scan(widened(), format!("key={longer}\n").as_bytes());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule_id().as_bytes(), SLACK_ACCESS.as_bytes());
+    assert_eq!(findings[0].secret().as_bytes(), prefix.as_bytes());
+    assert_eq!(findings[0].secret_range(), range(4, 4 + prefix.len()));
+    // No leading boundary either: the source token can follow a word byte.
+    let token = format!("xoxe.xoxp-1-{}", body(166));
+    let findings = scan(widened(), format!("key=a{token}\n").as_bytes());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule_id().as_bytes(), SLACK_ACCESS.as_bytes());
+    assert_eq!(findings[0].secret().as_bytes(), token.as_bytes());
+    assert_eq!(findings[0].secret_range(), range(5, 5 + token.len()));
+}
+
+#[test]
+fn xai_delimiter_rule_accepts_70_to_120_bytes_and_one_delimiter() {
+    for length in [70, 80, 120] {
+        let secret = format!("xai-{}", body(length));
+        // A trailing LF is part of the regex match but public match text and
+        // ranges trim surrounding newlines.
+        for (tail, delimiter) in [
+            ("\n", ""),
+            ("\"", "\""),
+            ("\\\"", "\\\""),
+            (";", ";"),
+            ("\t", "\t"),
+            ("\u{b}", "\u{b}"),
+            ("'", "'"),
+            ("`", "`"),
+            ("\\'", "\\'"),
+            ("\\n", "\\n"),
+            ("\\N", "\\N"),
+            ("\\R", "\\R"),
+            ("", ""),
+        ] {
+            assert_widened(XAI, &secret, tail, delimiter);
+        }
+    }
+    assert_widened(XAI, &format!("XAI-{}", body(80)), ";", ";");
+    assert_widened(XAI, &format!("xAi-{}", body(80)), ";", ";");
+    assert_widened(XAI, &format!("xai-{}_-{}", body(39), body(39)), ";", ";");
+    for input in [
+        format!("xai-{}\n", body(69)),
+        format!("xai-{}\n", body(121)),
+        format!("xai-{}.", body(80)),
+        format!("xai-{},", body(80)),
+        format!("axai-{}\n", body(80)),
+        format!("xai-{}\n", "0".repeat(80)),
+    ] {
+        assert_widened_none(&format!("key={input}"));
+    }
+    // 80 bytes: 8 symbols 5 times and 4 symbols 10 times is exactly 3.5,
+    // which `le` rejects. Changing the last byte raises it above 3.5.
+    let equal = format!(
+        "xai-xxxxaaaaiiii----BBBBBCCCCCDDDDDEEEEE{}{}{}{}",
+        "F".repeat(10),
+        "G".repeat(10),
+        "H".repeat(10),
+        "J".repeat(10)
+    );
+    assert_eq!(equal.len(), 80);
+    assert_eq!(byte_shannon(equal.as_bytes()).to_bits(), 3.5_f64.to_bits());
+    assert_widened_none(&format!("key={equal};"));
+    let higher = format!("{}K", &equal[..79]);
+    assert!(byte_shannon(higher.as_bytes()) > 3.5);
+    assert_widened(XAI, &higher, ";", ";");
+    // The source pattern also reports `xai-token-` management keys.
+    assert_widened(XAI, &format!("xai-token-{}", body(70)), ";", ";");
+}
+
+#[test]
+fn widened_betterleaks_rules_keep_source_path_and_secret_filters() {
+    let alibaba = format!("LTAI{}", body(20));
+    let xai = format!("xai-{}", body(80));
+    let slack = format!("xoxe.xoxp-1-{}", body(166));
+    let scan_path = |secret: &str, path: &str| {
+        let input = format!("key={secret}\n");
+        let fragment = Fragment::builder(input.as_bytes()).file_path(path).build();
+        let result = widened().scan_fragment(&fragment, &ScanOptions::default());
+        assert!(result.is_complete());
+        result.findings().len()
+    };
+    for secret in [&alibaba, &xai, &slack] {
+        assert_eq!(scan_path(secret, "src/settings.txt"), 1);
+        assert_eq!(scan_path(secret, "node_modules/x"), 0);
+    }
+    // The default global path allowlist does not list `bun.lock`; the pinned
+    // source path prefilter on the two Betterleaks rules does. The Veles
+    // Slack rule has no rule allowlist.
+    assert_eq!(scan_path(&alibaba, "bun.lock"), 0);
+    assert_eq!(scan_path(&xai, "bun.lock"), 0);
+    assert_eq!(scan_path(&slack, "bun.lock"), 1);
+    // The rule allowlists hold the pinned source secret predicates. The
+    // default global allowlist has the same `(?i)^true|false|null$` regex and
+    // alphabet stopword, so the scans below cannot tell the two apart; the
+    // compiled rule data shows that each Betterleaks rule carries its own.
+    let config = widened().config();
+    for id in [ALIBABA, XAI] {
+        let allowlists = config.rule(id).unwrap().allowlists();
+        assert_eq!(allowlists.len(), 2, "{id}");
+        assert!(
+            allowlists[0]
+                .regexes()
+                .iter()
+                .any(|regex| regex == "(?:(?i)^true|false|null$)")
+        );
+        assert!(
+            allowlists[0]
+                .stop_words()
+                .any(|word| word == "abcdefghijklmnopqrstuvwxyz")
+        );
+        assert!(
+            allowlists[1]
+                .paths()
+                .iter()
+                .any(|path| path.contains("bun"))
+        );
+    }
+    assert!(config.rule(SLACK_ACCESS).unwrap().allowlists().is_empty());
+    // `(?i)^true|false|null$` matches `false` anywhere in the secret.
+    let alibaba_false = format!("LTAIfalse{}", body(12));
+    assert_eq!(alibaba_false.len(), 21);
+    assert_widened_none(&format!("key={alibaba_false}\n"));
+    assert_widened(ALIBABA, &format!("LTAIfa1se{}", body(12)), "\n", "");
+    let stopword = "abcdefghijklmnopqrstuvwxyz";
+    assert_widened_none(&format!("key=xai-{}{stopword};", body(44)));
+    assert_widened(XAI, &format!("xai-{}{}", body(44), body(26)), ";", ";");
+}
+
+#[test]
+fn widened_rules_overlap_default_and_legacy_rules_only_at_shared_forms() {
+    let findings = |input: &str| -> Vec<(String, FindingRange)> {
+        let mut found: Vec<_> = scan(composed().engine(), input.as_bytes())
+            .iter()
+            .map(|f| {
+                (
+                    String::from_utf8(f.rule_id().as_bytes().to_vec()).unwrap(),
+                    f.secret_range(),
+                )
+            })
+            .collect();
+        found.sort_by(|left, right| left.0.cmp(&right.0));
+        found
+    };
+    let expect = |input: String, expected: &[(&str, usize)]| {
+        let mut expected: Vec<_> = expected
+            .iter()
+            .map(|(id, length)| ((*id).to_owned(), range(4, 4 + length)))
+            .collect();
+        expected.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(findings(&input), expected, "expected {expected:?}");
+    };
+    // Default alibaba-access-key-id needs exactly 20 bytes and a delimiter
+    // from its own set; a comma is not one.
+    let twenty = format!("LTAI{}", body(20));
+    expect(
+        format!("key={twenty} "),
+        &[("alibaba-access-key-id", 24), (ALIBABA, 24)],
+    );
+    expect(format!("key={twenty},"), &[(ALIBABA, 24)]);
+    expect(format!("key=LTAI{} ", body(19)), &[(ALIBABA, 23)]);
+    // Default slack-config-access-token allows one digit only.
+    let one = format!("xoxe.xoxp-1-{}", body(166));
+    expect(
+        format!("key={one}\n"),
+        &[
+            ("slack-config-access-token", one.len()),
+            (SLACK_ACCESS, one.len()),
+        ],
+    );
+    let two = format!("xoxe.xoxp-12-{}", body(166));
+    expect(format!("key={two}\n"), &[(SLACK_ACCESS, two.len())]);
+    // rustleaks.xai-api-key-80 has no trailing boundary: on an 81-byte body it
+    // reports the 84-byte prefix, while the new rule reports all 85 bytes.
+    expect(
+        format!("key=xai-{}\n", body(80)),
+        &[("rustleaks.xai-api-key-80", 84), (XAI, 84)],
+    );
+    expect(
+        format!("key=xai-{}\n", body(81)),
+        &[("rustleaks.xai-api-key-80", 84), (XAI, 85)],
+    );
+}

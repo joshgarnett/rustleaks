@@ -31,6 +31,23 @@
   number of fields gives the field count, file and line in plain text instead
   of Rust debug output. The warning for a line of 64 KiB or longer also gives
   the file and line.
+- Remove quadratic work in decoding, native rule line numbers and the
+  cancellable generic finding filter. Decoding now charges work only for the
+  earlier decoded segments that a candidate overlaps. Native rules count line
+  numbers once per rule and input instead of once per match. Work for many
+  encoded values or dense native matches now grows linearly with the input.
+  Findings and reports do not change. The `work_units` value in the
+  `--complete-profile` status line is lower for such inputs, so more input
+  fits a given work budget.
+- Add three forms to the opt-in `rustleaks-providers-v1` pack. They are
+  Alibaba Cloud AccessKey IDs with 17 to 21 byte bodies, Slack configuration
+  access tokens with 1 to 10 digit segments, and xAI API keys with 70 to 120
+  byte bodies before a delimiter. The pack now has 303 rules.
+- Fix the opt-in `rustleaks-connections-v1` semicolon connection rules so
+  adjacent connections that share one semicolon each give a finding. In
+  `Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;` both passwords are now reported. A
+  host key can also start after other ASCII punctuation, a control byte or a
+  non-ASCII byte, and the match then starts at the key.
 - Add opt-in complete-target scanning with `--complete-profile FILE`. Eligible
   file and archive targets are read to the end under explicit limits. Each
   such scan writes one final `rustleaks_scan_status` line to standard error,

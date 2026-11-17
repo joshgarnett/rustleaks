@@ -42,6 +42,11 @@ makes the scan incomplete, and it exits with 2. See [Complete
 scanning](complete-scanning.md#profile-keys). Complete scanning is not in
 0.1.0-alpha.9.
 
+Detection work grows with the input size, the number of rules and the decode
+depth. Many encoded values in one piece of input, such as one Base64 value on
+each line, need work in proportion to their number. Work counts can change
+between releases, so measure them again before you reuse work limits.
+
 `--timeout` is checked between steps. A single long step, such as one pattern
 search over a large input, finishes before the scan stops. The timeout is not
 a hard deadline.
@@ -63,6 +68,49 @@ a hard deadline.
 | Complete-scan profile file | 16 KiB |
 
 A configuration or rule pack that exceeds these limits fails to load.
+
+## Large inputs under the example profile
+
+This section shows what the [example
+profile](complete-scanning.md#the-profile-file) does with some large inputs.
+Use it to judge whether that profile fits your input. It is not a promise
+about other inputs, rules or releases.
+
+A scan that stops at a limit is incomplete. It exits with 2, and its report
+can miss secrets. It is not a pass. In the runs below, a stopped scan reported
+none or only some of the GitHub tokens planted in its input.
+
+How the scans were run:
+
+- An optimized build from source.
+- All rules: the default rules plus the `rustleaks-extra-v1`,
+  `rustleaks-providers-v1` and `rustleaks-connections-v1` native packs.
+- `--complete-profile` with the example profile, `--max-decode-depth 5`,
+  `--max-archive-depth 0` and `--base64-mode compatible`.
+- Synthetic inputs with known GitHub tokens. Each row is one scan of one file,
+  or of one folder where the row says so.
+
+| Input | Size | Result | Limit that stopped the scan |
+| --- | --- | --- | --- |
+| A folder of 132 files with plain tokens, or of 186 files with Base64 tokens. Each file has one token, or one almost valid token, across byte 4,096. | 4,160 to 4,216 bytes per file | Complete. Every planted token was found once, on the right line. | None |
+| The same, with the token across byte 65,536, 100,000, 125,000, 153,672 or 182,344 | 65,600 to 182,464 bytes per file | Stopped. Each scan reported 7 to 16 of its 50 or 72 planted tokens. | `operation_work_units`, the limit for the whole scan |
+| One 64-byte JSON record per line. A token on every line, on every other line, or on no line. | 512 KiB and 2 MiB | Stopped. No planted token was reported. | `fragment_work_units`, the limit for one file |
+| The same records on one long line, with tokens | 512 KiB and 2 MiB | Stopped. No planted token was reported. | `fragment_finding_payload_bytes`, because each finding keeps a copy of the whole line |
+| The same records on one long line, without valid tokens | 512 KiB and 2 MiB | Stopped | `fragment_work_units` |
+| One Base64 value that holds 4,096 records, encoded once or twice | 289,467 and 385,951 bytes | Stopped. No planted token was reported. | `fragment_work_units` |
+| 20,000 lines, each the Base64 form of one token | 1,140,021 bytes | Stopped. No planted token was reported. | `fragment_work_units` |
+
+The last row comes from a separate scan, not from the fixture check that
+produced the other rows. It used the same options. A second run of that input
+with a much larger profile completed. It needed about 71 million work units in one file with `--base64-mode compatible`,
+and about 95 million with `--base64-mode extended`. The example profile allows
+10 million for one file. With the default rules alone, the same input
+completed under the example profile in both modes and needed less than 250,000
+work units.
+
+If your input looks like a stopped row, raise the limit that the status line
+names, run the scan again, and check that the status line says
+`status=complete`. See [Complete scanning](complete-scanning.md#the-status-line).
 
 ## Memory
 

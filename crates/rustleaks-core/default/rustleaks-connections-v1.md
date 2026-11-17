@@ -48,6 +48,13 @@ Semicolon forms:
 - A nonempty `Server`, `Host`, `Data Source` or `DSN` must come before
   `Password` or `Pwd` on the same line. Field names accept ASCII case
   variants.
+- The host key starts at the start of the input, after one consumed
+  semicolon, ASCII whitespace (tab, line feed, vertical tab, form feed,
+  carriage return or space), quote, `=` or `(`, or at an ASCII word
+  boundary. Other punctuation, other control bytes and non-ASCII bytes
+  before the key are not consumed, and the match starts at the key. A
+  letter, digit or underscore before the key blocks the match, so
+  `ProxyServer=` is not a host key, but `Proxy-Server=` is.
 - The host value is at most 128 bytes, before optional trailing spaces or
   tabs. Spaces and tabs around separators have no separate length limit.
 - One optional segment between the host and the password is at most 200
@@ -236,11 +243,9 @@ Findings and overlap:
   with the connection rule. Findings from specific provider rules stay next to
   connection findings for the same password. Count exact occurrences apart
   from rule attribution and duplicates.
-- Known gap: matches do not overlap, so one match can consume the semicolon
-  that the next connection needs. `Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;` has 2
-  passwords, but the `unquoted` rule reports only the first. Another accepted
-  boundary between the connections gives separate findings, including for
-  repeated values.
+- Adjacent connections that share one semicolon each give a finding. In
+  `Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;` the first match consumes the shared
+  semicolon, and the second match starts at the next host key.
 - Known gap: the URI rule keeps the greedy path match of the source. A
   semicolon followed by another URI can belong to the first URI's path, so
   only the first password is reported. Whitespace, quotes or a closing
@@ -296,6 +301,9 @@ Changes made:
 - Greedy and lazy choices, capture selection, delimiter consumption, the
   stopword target and substring matching are kept within the ASCII
   translation.
+- The 4 semicolon forms add an ASCII word boundary as a last way for the host
+  key to start. A semicolon consumed by one match then does not hide the next
+  connection.
 
 The pack does not claim to match the full source rules or the Kingfisher
 scanner. It finds local candidates and does not show that a remote service
@@ -315,9 +323,9 @@ References:
 - Tests: `crates/rustleaks-core/tests/connection_rules.rs` covers the 6
   connection string forms, the libpq forms, and quoted and braced controls.
   It also checks exact geometry, bounds, ASCII and Unicode differences,
-  stopwords and findings on the same line. Other cases cover the
-  adjacent-connection gap, allowlists, generic and provider overlap,
-  composition identity, decoding and scan budgets. The generated
+  stopwords and findings on the same line. Other cases cover adjacent
+  connections, host-key boundaries, allowlists, generic and provider
+  overlap, composition identity, decoding and scan budgets. The generated
   rules are also covered by the coverage tests listed in
   [Rule pack authoring](../../../docs/dev/rule-pack-authoring.md). These
   synthetic tests are a regression contract, not a measure of accuracy on

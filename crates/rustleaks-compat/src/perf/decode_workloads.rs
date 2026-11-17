@@ -9,8 +9,8 @@
 //! * one unit per encoding-regex match;
 //! * one shadow-filter unit per match, only when more than one match exists;
 //! * one candidate unit per surviving match;
-//! * one unit per predecessor for every candidate with a non-empty decoded
-//!   value (the N x N term at `decoder/mod.rs:252-258`);
+//! * one unit per overlapping predecessor segment for every candidate with a
+//!   non-empty decoded value; a candidate that overlaps none adds nothing;
 //! * one assembly unit per segment, when any segment exists.
 
 use std::error::Error;
@@ -34,8 +34,8 @@ const TOKEN_PREFIX: usize = b"token=".len();
 const SECRET: &[u8] = b"ABCDEFGHIJKLMNOP";
 const KEYWORD: &[u8] = b"token";
 
-// 20,000 is the shape requested for the depth-2 predecessor term: its N x N
-// checkpoints stay within seconds per scan, so N was not reduced.
+// 20,000 is the shape requested for the depth-2 predecessor term. Each
+// depth-2 candidate overlaps exactly one depth-1 segment, so the term is N.
 const MANY_LINES: usize = 20_000;
 const LONG_TOKENS: usize = 10_000;
 const LONG_STRIDE: usize = 104;
@@ -209,10 +209,11 @@ impl Fixture {
 }
 
 /// Work charged by one decode attempt. Fixtures here have no shadowed matches,
-/// so `matches` also counts the candidates reaching the segment loop.
-const fn decode_work(matches: usize, segments: usize, predecessors: usize) -> usize {
+/// so `matches` also counts the candidates reaching the segment loop, and
+/// each segment overlaps `overlaps` predecessor segments.
+const fn decode_work(matches: usize, segments: usize, overlaps: usize) -> usize {
     let shadow_filter = if matches > 1 { matches } else { 0 };
-    1 + matches + shadow_filter + matches + segments * predecessors + segments
+    1 + matches + shadow_filter + matches + segments * overlaps + segments
 }
 
 fn encode(input: &[u8]) -> Vec<u8> {
@@ -374,12 +375,12 @@ fn many_base64(lines: usize, depth: usize) -> Result<Fixture, Box<dyn Error>> {
     let (decoded_bytes, work_units) = if depth == 1 {
         (plain_pass, 1 + decode_work(lines, lines, 0) + final_pass)
     } else {
-        // Pass 1 decodes N candidates against the N segments of pass 0, which
-        // charges N * N predecessor checkpoints. For N > 1 the total is
-        // N * N + 10 * N + 6.
+        // Pass 1 decodes N candidates against the N segments of pass 0. Each
+        // candidate overlaps only the segment of its own line, which charges
+        // N predecessor checkpoints. For N > 1 the total is 11 * N + 6.
         (
             lines * line_bytes_for(&once) + plain_pass,
-            1 + decode_work(lines, lines, 0) + 1 + decode_work(lines, lines, lines) + final_pass,
+            1 + decode_work(lines, lines, 0) + 1 + decode_work(lines, lines, 1) + final_pass,
         )
     };
     Ok(Fixture {
@@ -575,7 +576,7 @@ fn nested_needle(before: usize, after: usize) -> Result<Fixture, Box<dyn Error>>
     let decoded_bytes = (1..=5)
         .map(|pass| input.len() - needle.len() + chain[5 - pass].len())
         .sum();
-    // Pass 0 has no predecessors, passes 1 to 4 each compare against one
+    // Pass 0 has no predecessors, passes 1 to 4 each overlap one
     // segment, and pass 5 charges its keyword, rule and candidate.
     let work_units = (1 + decode_work(1, 1, 0)) + 4 * (1 + decode_work(1, 1, 1)) + (1 + 1 + 1 + 1);
     Ok(Fixture {
@@ -824,15 +825,16 @@ mod tests {
     fn depth_two_work_matches_a_hand_counted_case() {
         // Four lines. Pass 0: start 1; decode 1 dispatch + 4 matches +
         // 4 shadow + 4 candidates + 4 assembly = 17. Pass 1: start 1; decode
-        // 17 + 16 predecessor checkpoints = 33. Pass 2: start 1 + 4 keyword
-        // hits + 1 rule + 4 candidates. Sum: 1 + 17 + 1 + 33 + 1 + 4 + 1 + 4.
+        // 17 + 4 predecessor checkpoints, one overlap per candidate = 21.
+        // Pass 2: start 1 + 4 keyword hits + 1 rule + 4 candidates.
+        // Sum: 1 + 17 + 1 + 21 + 1 + 4 + 1 + 4.
         let fixture = many_base64(4, 2).unwrap();
-        assert_eq!(fixture.work_units, 62);
-        assert_eq!(fixture.work_units, 4 * 4 + 10 * 4 + 6);
+        assert_eq!(fixture.work_units, 50);
+        assert_eq!(fixture.work_units, 11 * 4 + 6);
         assert_eq!(fixture.expected_findings, 4);
         assert_controls_pass(&fixture);
         let outcome = scan(&fixture, &fixture.control());
-        assert_eq!(outcome.usage().work_units(), 62);
+        assert_eq!(outcome.usage().work_units(), 50);
         assert!(outcome.findings().iter().all(|finding| {
             finding
                 .tags()

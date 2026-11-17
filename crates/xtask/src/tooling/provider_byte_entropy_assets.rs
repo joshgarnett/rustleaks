@@ -477,7 +477,7 @@ pub(super) fn validate(
     let expected = reviewed["rules"]
         .as_array()
         .ok_or("reviewed byte providers missing")?;
-    if expected.len() != 6 || native_rules.len() != 300 || origins.len() != 300 {
+    if expected.len() != 6 || native_rules.len() != 303 || origins.len() != 303 {
         return Err("native byte-entropy provider inventory differs".into());
     }
     for ((native, origin), expected) in native_rules[30..36]

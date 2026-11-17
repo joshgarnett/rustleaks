@@ -85,7 +85,7 @@ fn validate_provider_provenance(root: &Path) -> Result<(), String> {
         "rustleaks.togetherai-api-key",
         "rustleaks.gcp-gemini-api",
     ];
-    if rules.len() != reviewed_ids.len() + 285 || native_rules.len() != rules.len() {
+    if rules.len() != reviewed_ids.len() + 288 || native_rules.len() != rules.len() {
         return Err("provider pack rule inventory differs".into());
     }
     super::provider_followup_assets::validate(root, &provenance, native_rules)?;

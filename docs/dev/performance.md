@@ -100,12 +100,13 @@ their timings are not cold-disk results.
 
 ## Development fixtures
 
-`just perf-fixtures` builds synthetic inputs and their answers without
-running a scanner. It has five families: source and encoding boundaries,
-density, many decoded secrets in one carrier, connection strings, and reader
-partitions. The dense and decoded-carrier cases adapt ideas from Kingfisher
-revision `01e7b817376fbf2272be8f162bd32309bf97ee1f`. No upstream code or
-fixture bytes are copied.
+`just perf-fixtures` builds synthetic inputs and their answers. It has five
+families: source and encoding boundaries, density, many decoded secrets in one
+carrier, connection strings, and reader partitions. Generation and `--verify`
+do not run a scanner. Only `--check` does. The dense and decoded-carrier
+cases adapt ideas from Kingfisher revision
+`01e7b817376fbf2272be8f162bd32309bf97ee1f`. No upstream code or fixture bytes
+are copied.
 
 Use a new absolute folder outside the checkout:
 
@@ -127,6 +128,69 @@ positions, geometry, reader schedules and policy fields.
 - Negative controls for GitHub tokens apply only to that credential family.
 - A fixture that generates and verifies is correct as a fixture. It says
   nothing about scanner coverage or speed.
+
+### Checking large fixtures against their answers
+
+`--check` verifies a generated bundle, scans its largest cases with the CLI,
+and compares each report with the answers. It is a manual check. No test,
+`just ci` or qualify run starts it.
+
+```sh
+bazelisk build -c opt //crates/rustleaks-cli:rustleaks
+cp "$(bazelisk cquery -c opt --output=files //crates/rustleaks-cli:rustleaks)" /private/tmp/rustleaks-opt
+just perf-fixtures --family density --output /private/tmp/fx-density
+just perf-fixtures --check /private/tmp/fx-density --cli /private/tmp/rustleaks-opt
+```
+
+Paths must be absolute and must not contain symbolic links, so use
+`/private/tmp` on macOS. `--cli PATH` picks the CLI binary. Without it, the
+check uses `bazel-bin/crates/rustleaks-cli/rustleaks`. `bazel-bin` follows the
+last build, and `just perf-fixtures` builds xtask without `-c opt`, so pass
+`--cli` to measure an optimized build. The first output line names the CLI
+path and its SHA-256, and the summary line repeats the SHA-256.
+
+`--profile PATH` picks another profile. The default is the example profile in
+[Complete scanning](../user/complete-scanning.md#the-profile-file), kept byte
+for byte in `ORIGINAL_LIMITS`. It is for diagnosis, not a default.
+
+| Family | Scan unit | Units |
+| --- | --- | ---: |
+| `boundaries` | One kind and anchor: 132 raw or 186 Base64 cases, copied as `<id>.txt` into a private folder | 12 |
+| `density` | Each 524,288 or 2,097,152 byte case, as `inputs/<id>/` | 24 |
+| `decoded-carrier` | Each 4,096 record case, as `inputs/<id>/` | 8 |
+
+Other families fail with "no check subset for this family". Each unit runs
+one CLI process with a cleared environment, all three native packs,
+`--max-decode-depth 5`, `--max-archive-depth 0`, `--base64-mode compatible`,
+an empty ignore file and `--timeout 600`. Each case's answers must expect
+`github-pat`.
+
+Reports and logs stay in a private scratch folder named
+`rustleaks-private-fuzz-<id>` in the system temporary folder (`TMPDIR`). The
+check refuses a scratch folder inside the checkout. The folder is removed when
+no unit fails. Otherwise it is kept, and the check prints the error and the
+folder path to standard error. Each unit has a `unit-<n>` folder with its
+report and standard error.
+
+The check compares `(case, value, start line, decode depth)` as multisets for
+the `github-pat` rule. Columns are not compared. Findings from other rules are
+counted, not judged. Each unit has one outcome:
+
+| Outcome | Condition |
+| --- | --- |
+| `exact` | Exit 0 or 1, `status=complete`, and the planted and reported tokens match. |
+| `stopped` | Exit 2, `reason=resource_exhaustion`, a `resource` other than `none` or `unknown`, and every reported token matches a planted token's value, line and decode depth. |
+| `failed` | Anything else. |
+
+A `stopped` unit is incomplete coverage, not a pass. A unit whose standard
+error or report cannot be read fails with a `problem` text. The command exits
+nonzero when a unit fails. Output lines hold names and counts, never a token.
+
+The measured outcomes are in [Resource
+limits](../user/resource-limits.md#large-inputs-under-the-example-profile).
+The 20,000-line Base64 row there comes from a separate scan of a synthetic
+input, run by hand with the same options. No fixture family generates it, so
+`--check` does not cover it.
 
 ## Representative measurements
 
@@ -370,6 +434,9 @@ These costs follow from current behavior:
   UTF-8 input use the unanchored search and get none of that speedup.
 - With a cancellation signal, bulk work charges poll the signal once per work
   unit. The faster single bulk charge applies only to scans without a signal.
+  Decoder predecessor charges and native line coordinates are linear in the
+  input, so this polling is too. See [Engine
+  internals](engine-internals.md#cancellation).
 - Hostile input or large Unicode classes can make the lazy DFA cache thrash or
   give up. The search then falls back to PikeVM. One search stays linear in
   input length for a fixed pattern, but the speedup is lost.

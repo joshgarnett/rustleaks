@@ -153,7 +153,7 @@ In a few error cases, Rustleaks stops or fails where Gitleaks does not:
 
 ## Features that Gitleaks does not have
 
-- [Native rule packs](native-rule-packs.md): 317 extra rules, including helper
+- [Native rule packs](native-rule-packs.md): 320 extra rules, including helper
   rules, for service provider tokens, connection strings and other secrets.
 - [Complete scanning](complete-scanning.md): a scan that fails with exit code 2
   unless it scanned all of its input within the limits you set.

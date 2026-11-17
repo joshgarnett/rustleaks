@@ -415,11 +415,21 @@ fn double_encoded_lines(lines: usize) -> Fragment {
     Fragment::new(input)
 }
 
-/// Work from the documented decoder checkpoints for depth two with `lines`
-/// lines and more than one match per pass: `lines * lines` predecessor visits
-/// plus `10 * lines + 6` units for matches, candidates, segments, and passes.
+/// Work from the documented checkpoints for depth two with `lines` lines and
+/// more than one match per pass:
+///
+/// - 6 fixed units: three pass starts (depths 0, 1 and 2), two decode-pass
+///   starts, and one for the `token` rule on the depth-two pass;
+/// - per line, 4 units in the first decode pass (match, shadow-filter visit,
+///   candidate, assembly) and 5 in the second, where each candidate overlaps
+///   exactly one depth-one segment and visits only that predecessor;
+/// - per line, 1 unit for the `token` keyword hit and 1 for its match on the
+///   depth-two pass.
+///
+/// Every term is linear in `lines`; no candidate is charged for the
+/// predecessors it does not overlap.
 const fn double_encoded_work(lines: usize) -> usize {
-    lines * lines + 10 * lines + 6
+    11 * lines + 6
 }
 
 #[test]
@@ -470,6 +480,27 @@ fn predecessor_charging_matches_a_per_unit_signal_at_every_budget() {
 }
 
 #[test]
+fn double_encoded_work_grows_linearly_with_lines() {
+    let engine = double_encoded_token_engine();
+    let options = ScanOptions::builder().max_decode_depth(2).build();
+    let never = || false;
+    let mut totals = Vec::new();
+    for lines in [64, 128] {
+        let fragment = double_encoded_lines(lines);
+        for control in [ScanControl::unlimited(), ScanControl::cancellable(&never)] {
+            let outcome = engine.scan_fragment_controlled(&fragment, &options, &control);
+            assert!(outcome.is_complete());
+            assert_eq!(outcome.findings().len(), lines);
+            assert_eq!(outcome.usage().work_units(), double_encoded_work(lines));
+        }
+        totals.push(double_encoded_work(lines));
+    }
+    // 710 and 1,414 units: doubling the lines doubles the per-line work.
+    assert_eq!(totals, [710, 1414]);
+    assert_eq!(totals[1] - 6, 2 * (totals[0] - 6));
+}
+
+#[test]
 fn predecessor_visits_poll_cancellation_once_per_work_unit() {
     let engine = double_encoded_token_engine();
     let options = ScanOptions::builder().max_decode_depth(2).build();
@@ -486,11 +517,12 @@ fn predecessor_visits_poll_cancellation_once_per_work_unit() {
         );
         assert!(outcome.is_complete());
         // Polls beyond one per work unit: the initial check, two post-decode
-        // checks, two decoded-byte charges, and per finding one record charge
-        // and one final-filter check.
+        // checks, two decoded-byte charges, and per finding one record charge,
+        // one final-filter classification and one final-filter check. No
+        // finding is generic, so the filter builds no bucket.
         assert_eq!(
             polls.load(Ordering::SeqCst),
-            double_encoded_work(lines) + 5 + 2 * lines,
+            double_encoded_work(lines) + 5 + 3 * lines,
             "{lines} lines"
         );
     }
