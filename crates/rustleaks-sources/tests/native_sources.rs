@@ -862,6 +862,25 @@ fn git_metadata_never_opens_a_fifo_in_hooks() {
     assert!(issues.is_empty(), "{issues:?}");
 }
 
+#[cfg(unix)]
+#[test]
+fn followed_symlinks_to_fifos_and_devices_are_skipped_without_opening() {
+    let tree = TempTree::new("symlink-non-regular");
+    let outside = TempTree::new("symlink-non-regular-targets");
+    write_tree_file(tree.path(), "plain.txt", b"plain");
+    create_file_symlink(Path::new("/dev/zero"), &tree.path().join("zero-link"));
+    let fifo = outside.path().join("pipe");
+    if make_fifo(&fifo) {
+        create_file_symlink(&fifo, &tree.path().join("pipe-link"));
+    }
+    let root = tree.path().to_path_buf();
+    let (paths, issues) = finishes_promptly(move || {
+        emitted_paths(DirectoryOptions::default().follow_symlinks(true), &root)
+    });
+    assert_eq!(paths, ["plain.txt"]);
+    assert!(issues.is_empty(), "{issues:?}");
+}
+
 #[test]
 fn git_metadata_does_not_change_a_case_variant_git_folder() {
     let tree = TempTree::new("git-metadata-case");

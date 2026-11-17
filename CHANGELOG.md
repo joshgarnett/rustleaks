@@ -97,6 +97,10 @@
   limits and symlink rules still apply to each file. Without the flag, `dir`
   skips `.git` folders that a path allowlist matches, as before. The default
   configuration matches folders named exactly `.git` below the scan path.
+- Fix `dir --follow-symlinks` so a symbolic link to a FIFO, socket or device,
+  such as `/dev/zero`, is skipped instead of opened. Before, such a link could
+  block the scan or make it read without end. Links to regular files are
+  scanned as before.
 
 The pinned default configuration and default detection behavior are unchanged.
 

@@ -335,7 +335,8 @@ impl DirectorySource {
                 return Ok(SourceControl::Continue);
             }
             match self.followed_target(path) {
-                Ok(target) => (target, Some(path.to_path_buf())),
+                Ok(Some(target)) => (target, Some(path.to_path_buf())),
+                Ok(None) => return Ok(SourceControl::Continue),
                 Err(issue) => return emit_issue(issue, emit),
             }
         } else {
@@ -476,7 +477,12 @@ impl DirectorySource {
     }
 
     /// Resolves a followed file symlink to the target that is scanned.
-    fn followed_target(&self, path: &Path) -> Result<PathBuf, SourceIssue> {
+    ///
+    /// Returns `None` for a target that is not a regular file, such as a
+    /// FIFO, socket or device. Such a target is skipped without an issue, as
+    /// a non-regular file found directly is, so a scan never blocks on it
+    /// or reads it without end.
+    fn followed_target(&self, path: &Path) -> Result<Option<PathBuf>, SourceIssue> {
         let target = resolve_symlink(path, self.options.max_symlink_hops.get())?;
         let target_metadata = fs::metadata(&target).map_err(|error| {
             SourceIssue::new(
@@ -495,7 +501,7 @@ impl DirectorySource {
             )
             .excluded());
         }
-        Ok(target)
+        Ok(target_metadata.is_file().then_some(target))
     }
 
     fn path_allowed(&self, path: &Path) -> bool {
