@@ -50,7 +50,7 @@ crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
 crates/rustleaks-core/tests/native_policy.rs:generic-api-key:948
 crates/rustleaks-sources/tests/complete_sources.rs:github-pat:392
 crates/rustleaks-sources/tests/complete_sources.rs:github-pat:393
-crates/xtask/src/main.rs:generic-api-key:736
+crates/xtask/src/main.rs:generic-api-key:731
 
 # Commit-qualified synthetic fixtures from the initial compatibility import.
 4e1cf3fb09e60301d930564467bf2749c071c7ea:README.md:aws-access-token:48
