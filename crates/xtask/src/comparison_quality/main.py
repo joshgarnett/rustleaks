@@ -47,8 +47,9 @@ def command_credata(arguments):
                            CREDDATA_STEPS.format(commit=CREDDATA_COMMIT).replace('CACHE', str(cache)))
     target, summary = write_creddata(cache, checkout, arguments.max_problems, arguments.force)
     print(f'wrote {summary["labels"]["total"]} CredData labels ({summary["labels"]["secret"]} secret) to {target}')
-    if summary['problems']:
-        print(f'{len(summary["problems"])} rows were skipped; see {target / "summary.json"}')
+    if summary['problems'] or summary['conflicts']:
+        print(f'{len(summary["problems"])} rows were skipped and {len(summary["conflicts"])} conflicting spans '
+              f'were left out; see {target / "summary.json"}')
 
 
 def self_test_creddata(root):
@@ -59,13 +60,15 @@ def self_test_creddata(root):
     data.mkdir(parents=True)
     # Synthetic CredData-shaped files. Values are drawn at run time. A line
     # holds a two-byte character before its value, so character and byte
-    # offsets differ.
+    # offsets differ. The file mixes `\r\n`, `\r` and `\n` line breaks.
     rng = Drbg('self-test', 'credata')
     first_value, second_value = rng.chars(ALNUM, 24), rng.chars(ALNUM, 21)
     lines = ['# café settings', 'api_key = "' + first_value + '"', 'password = getPass()',
              '-----BEGIN SYNTHETIC BLOCK-----', 'QUJDREVGR0hJSktMTU5PUA==', '-----END SYNTHETIC BLOCK-----',
              'note = "ünicode" value="' + second_value + '"']
-    (data / 'f0000001.py').write_bytes('\n'.join(lines).encode('utf-8'))
+    breaks = ['\r\n', '\n', '\r', '\r\n', '\r\n', '\n']
+    text = ''.join(line + separator for line, separator in zip(lines, breaks + ['']))
+    (data / 'f0000001.py').write_bytes(text.encode('utf-8'))
     header = ','.join(CREDDATA_META_FIELDS)
     path = 'data/abcd1234/src/f0000001.py'
     first_at = lines[1].index(first_value)
@@ -86,7 +89,7 @@ def self_test_creddata(root):
     expected = [
         ('secret', 'credata-key', first_value, 2),
         ('not-secret', 'credata-password', 'password = getPass()', 3),
-        ('secret', 'credata-pem-private-key', '\n'.join(lines[3:6]), 4),
+        ('secret', 'credata-pem-private-key', '\r\n'.join(lines[3:6]), 4),
         ('not-secret', 'credata-secret-token', second_value, 7),
     ]
     if spans != expected:
@@ -97,19 +100,24 @@ def self_test_creddata(root):
     workload = manifest['workloads'][0]
     if workload['path'] != 'credata/CredData/data' or workload['labels'] != 'credata/labels.jsonl':
         raise QualityError('CredData manifest paths are wrong')
-    # A row past the end of its file is a problem, not a silent label.
-    (meta / 'abcd1234.csv').write_text(header + '\n' + rows[0] + '\n' +
-                                       f'5,f0000001,GitHub,abcd1234,{path},99,99,T,0,4,,,Key\n',
-                                       encoding='utf-8')
+    # Rows past the end of a line or the file are problems, not silent
+    # labels, and a span labeled both ways is left out and reported.
+    bad_rows = [
+        rows[0],
+        f'5,f0000001,GitHub,abcd1234,{path},2,2,F,{first_at},{first_at + 24},,,Key',
+        f'6,f0000001,GitHub,abcd1234,{path},4,6,T,0,{len(lines[5]) + 1},,,PEM Private Key',
+        f'7,f0000001,GitHub,abcd1234,{path},99,99,T,0,4,,,Key',
+    ]
+    (meta / 'abcd1234.csv').write_text(header + '\n' + '\n'.join(bad_rows) + '\n', encoding='utf-8')
     try:
         write_creddata(cache, checkout, 0, True)
     except QualityError:
         pass
     else:
-        raise QualityError('CredData conversion accepted a row past the end of the file')
-    labels, problems = convert_creddata(checkout, 1)
-    if len(labels) != 1 or len(problems) != 1:
-        raise QualityError('CredData conversion did not report the bad row')
+        raise QualityError('CredData conversion accepted rows past the end of a line or file')
+    labels, problems, conflicts = convert_creddata(checkout, 2)
+    if labels or len(problems) != 2 or len(conflicts) != 1:
+        raise QualityError(f'CredData conversion did not report bad rows and conflicts: {problems!r} {conflicts!r}')
 
 
 def self_test_generator(root, source_root):
@@ -179,6 +187,11 @@ def self_test_generator(root, source_root):
     token = github_classic(Drbg('self-test', 'github'), 'ghp_')
     if len(token) != 40 or base62_fixed(crc32(token[4:34].encode('ascii')), 6) != token[34:]:
         raise QualityError('the token checksum layout is wrong')
+    routable = gitlab_routable(Drbg('self-test', 'gitlab'))
+    body, length = routable[len('glpat-'):].split('.01.')
+    if (int(length[:2], 36) != len(body) or
+            int(routable[-7:], 36) != crc32(routable[:-7].encode('ascii'))):
+        raise QualityError('the routable token layout is wrong')
     if crc24(b'') != 0xB704CE:
         raise QualityError('the armor checksum is wrong')
 

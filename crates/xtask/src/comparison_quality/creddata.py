@@ -36,52 +36,74 @@ def read_meta_rows(meta_directory):
     return rows
 
 
-def line_offsets(text):
-    offsets = [0]
-    for index, character in enumerate(text):
-        if character == '\n':
-            offsets.append(index + 1)
-    return offsets
+class CredDataFile:
+    """One data file, split into lines the way CredData's obfuscate_creds.py
+    reads it: `\r\n` and a lone `\r` are line breaks, like `\n`. Offsets
+    always point into the raw bytes, which are never changed."""
+
+    def __init__(self, raw):
+        self.raw = raw
+        self.text = raw.decode('utf-8')
+        self.char_lines = self.split(self.text, '\r\n', '\r', '\n')
+        self.byte_lines = self.split(raw, b'\r\n', b'\r', b'\n')
+
+    @staticmethod
+    def split(data, pair, carriage, feed):
+        """Return (start, end) of each line's content, without its line break."""
+        lines = []
+        start = 0
+        index = 0
+        size = len(data)
+        while index < size:
+            if data[index:index + 2] == pair:
+                lines.append((start, index))
+                index += 2
+                start = index
+            elif data[index:index + 1] in (carriage, feed):
+                lines.append((start, index))
+                index += 1
+                start = index
+            else:
+                index += 1
+        lines.append((start, size))
+        return lines
+
+    def offset(self, line, value, at_end):
+        """Byte offset of a character position on a one-based line. A negative
+        position means the start of the line, or its end when `at_end`."""
+        char_start, char_end = self.char_lines[line - 1]
+        byte_start, byte_end = self.byte_lines[line - 1]
+        if value < 0:
+            return byte_end if at_end else byte_start
+        if value > char_end - char_start:
+            raise ValueError(f'value position {value} is past the end of line {line}')
+        return byte_start + len(self.text[char_start:char_start + value].encode('utf-8'))
 
 
-def char_to_byte(text, index):
-    return len(text[:index].encode('utf-8'))
-
-
-def convert_row(row, text, offsets):
+def convert_row(row, document):
     """Return (start, end, line) byte offsets for one metadata row, or raise ValueError."""
     line_start = meta_integer(row['LineStart'])
     line_end = meta_integer(row['LineEnd'])
-    value_start = meta_integer(row['ValueStart'])
-    value_end = meta_integer(row['ValueEnd'])
-    lines = len(offsets)
-    if not 1 <= line_start <= line_end <= lines:
+    if not 1 <= line_start <= line_end <= len(document.char_lines):
         raise ValueError('line numbers are outside the file')
-    first = offsets[line_start - 1]
-    last_begin = offsets[line_end - 1]
-    last_end = offsets[line_end] - 1 if line_end < lines else len(text)
-    first_end = offsets[line_start] - 1 if line_start < lines else len(text)
-    start = first + value_start if value_start >= 0 else first
-    end = last_begin + value_end if value_end >= 0 else last_end
-    if line_start == line_end and value_start >= 0 and start > first_end:
-        raise ValueError('value start is past the end of the line')
-    if end > last_end or end <= start:
-        raise ValueError('value span is empty or past the end of the line')
+    start = document.offset(line_start, meta_integer(row['ValueStart']), False)
+    end = document.offset(line_end, meta_integer(row['ValueEnd']), True)
+    if end <= start:
+        raise ValueError('value span is empty')
     return start, end, line_start
 
 
 def convert_creddata(checkout, max_problems):
-    """Returns (labels, problems, counts)."""
+    """Returns (labels, problems, conflicts)."""
     meta = checkout / 'meta'
     data = checkout / 'data'
     if not meta.is_dir():
         raise QualityError(f'{meta} is missing; check out CredData at {CREDDATA_COMMIT}')
     if not data.is_dir():
         raise QualityError(f'{data} is missing; run CredData download_data.py first (see docs/dev/comparison-quality.md)')
-    texts = {}
-    labels = []
+    documents = {}
+    spans = {}
     problems = []
-    seen = set()
     for meta_name, row in read_meta_rows(meta):
         where = f'meta/{meta_name} Id {row["Id"]}'
         file_path = row['FilePath']
@@ -89,45 +111,46 @@ def convert_creddata(checkout, max_problems):
             problems.append(f'{where}: unexpected FilePath')
             continue
         relative = file_path[len('data/'):]
-        if relative not in texts:
+        if relative not in documents:
             try:
-                raw = (data / relative).read_bytes()
-                text = raw.decode('utf-8')
-                if '\r' in text:
-                    raise ValueError('carriage return in a normalized file')
-                texts[relative] = (raw, text, line_offsets(text))
+                documents[relative] = CredDataFile((data / relative).read_bytes())
             except (OSError, ValueError) as error:
-                texts[relative] = error
-        entry = texts[relative]
-        if isinstance(entry, Exception):
-            problems.append(f'{where}: cannot read {relative}: {entry}')
+                documents[relative] = error
+        document = documents[relative]
+        if isinstance(document, Exception):
+            problems.append(f'{where}: cannot read {relative}: {document}')
             continue
-        raw, text, offsets = entry
         label = CREDDATA_LABELS.get(row['GroundTruth'])
         if label is None:
             problems.append(f'{where}: unknown GroundTruth {row["GroundTruth"]!r}')
             continue
         try:
-            start_char, end_char, line = convert_row(row, text, offsets)
+            start, end, line = convert_row(row, document)
         except ValueError as error:
             problems.append(f'{where}: {error}')
             continue
-        start = char_to_byte(text, start_char)
-        end = char_to_byte(text, end_char)
-        key = (relative, start, end, label)
-        if key in seen:
+        found = spans.setdefault((relative, start, end), [])
+        found.append((label, line, creddata_category(row['Category']), where))
+    labels = []
+    conflicts = []
+    for (relative, start, end), found in spans.items():
+        if len({label for label, _, _, _ in found}) > 1:
+            # The same bytes are labeled both secret and not secret. Leave the
+            # span out rather than count it both ways.
+            conflicts.append(f'{relative} bytes {start}-{end}: ' +
+                             ', '.join(f'{where} {label}' for label, _, _, where in found))
             continue
-        seen.add(key)
+        label, line, category, _ = found[0]
         labels.append({
             'workload': CREDDATA_WORKLOAD, 'path': relative, 'commit': None, 'start': start, 'end': end,
-            'line': line, 'secret_sha256': sha256_hex(raw[start:end]),
-            'category': creddata_category(row['Category']), 'label': label, 'source': 'credData',
+            'line': line, 'secret_sha256': sha256_hex(documents[relative].raw[start:end]),
+            'category': category, 'label': label, 'source': 'credData',
         })
     labels.sort(key=lambda record: (record['path'], record['start'], record['end']))
     if len(problems) > max_problems:
         shown = '\n  '.join(problems[:20])
         raise QualityError(f'{len(problems)} CredData rows could not be converted (limit {max_problems}):\n  {shown}')
-    return labels, problems
+    return labels, problems, sorted(conflicts)
 
 
 def write_creddata(cache_root, checkout, max_problems, force):
@@ -135,7 +158,7 @@ def write_creddata(cache_root, checkout, max_problems, force):
         data_relative = (checkout / 'data').relative_to(cache_root).as_posix()
     except ValueError:
         raise QualityError(f'the CredData checkout {checkout} must be inside the cache folder {cache_root}')
-    labels, problems = convert_creddata(checkout, max_problems)
+    labels, problems, conflicts = convert_creddata(checkout, max_problems)
     target = cache_root / CREDDATA_WORKLOAD
     target.mkdir(parents=True, exist_ok=True)
     output = target / 'labels.jsonl'
@@ -167,6 +190,7 @@ def write_creddata(cache_root, checkout, max_problems, force):
                    'not-secret': sum(1 for record in labels if record['label'] == 'not-secret')},
         'categories': label_counts(labels),
         'problems': problems,
+        'conflicts': conflicts,
     }
     write_bytes(target / 'workload.json', json_bytes(manifest))
     write_bytes(target / 'summary.json', json_bytes(summary))

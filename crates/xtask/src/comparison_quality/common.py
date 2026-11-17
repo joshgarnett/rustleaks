@@ -171,6 +171,12 @@ def check_label_record(record, where):
         raise QualityError(f'{where}: path must be relative with forward slashes')
 
 
+def line_number(data, offset):
+    """One-based line of a byte offset. `\r\n`, `\r` and `\n` each end a line."""
+    before = data[:offset]
+    return before.count(b'\n') + before.count(b'\r') - before.count(b'\r\n') + 1
+
+
 def check_labels_against_tree(labels_path, tree_root):
     """Check every label against the bytes it points at. Returns the records."""
     records = []
@@ -189,7 +195,7 @@ def check_labels_against_tree(labels_path, tree_root):
             span = data[record['start']:record['end']]
             if sha256_hex(span) != record['secret_sha256']:
                 raise QualityError(f'{where}: secret_sha256 does not match the span')
-            if data.count(b'\n', 0, record['start']) + 1 != record['line']:
+            if line_number(data, record['start']) != record['line']:
                 raise QualityError(f'{where}: line does not match the start offset')
             records.append(record)
     return records

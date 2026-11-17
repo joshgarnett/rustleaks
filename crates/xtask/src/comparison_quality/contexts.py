@@ -6,7 +6,8 @@
 class Doc:
     """Accumulates file bytes and labeled spans with exact byte offsets."""
 
-    def __init__(self):
+    def __init__(self, newline='\n'):
+        self.newline = newline
         self.chunks = []
         self.size = 0
         self.spans = []  # (start, end, label, category)
@@ -17,7 +18,7 @@ class Doc:
         self.size += len(data)
 
     def line(self, text=''):
-        self.add(text + '\n')
+        self.add(text + self.newline)
 
     def fragment(self, fragment):
         base = self.size
@@ -125,6 +126,11 @@ FILLER = {
     'terraform': ('  region = "eu-west-1"', '  token_ttl = 3600', '  tags = { team = "platform" }'),
     'dockerfile': ('FROM debian:bookworm-slim', 'WORKDIR /app', 'COPY . .', 'RUN make build',
                    'EXPOSE 8080', 'USER app'),
+    'batch': ('@echo off', 'setlocal', 'set LOG_LEVEL=info', 'set TOKEN_TTL=3600',
+              'if "%PASSWORD%"=="" echo password is required & exit /b 1', 'call build.cmd'),
+    'powershell': ('$ErrorActionPreference = "Stop"', '$TokenTtl = 3600',
+                   'if (-not $env:DB_PASSWORD) { throw "password is required" }',
+                   'Write-Host "loading api key from vault"'),
     'log': ('INFO  server listening on :8080', 'DEBUG cache miss for key orders:42', 'WARN  token expires in 300s',
             'INFO  password policy check passed for user 1042', 'INFO  api key rotation scheduled',
             'ERROR upstream returned 401 Unauthorized, refreshing token'),
@@ -144,7 +150,7 @@ class LineContext:
     """A context where each entry is one assignment line."""
 
     def __init__(self, name, paths, style, singles, comment, family, header=(), footer=(), indent='',
-                 multiline=None, header_line=None, test_paths=None):
+                 multiline=None, header_line=None, test_paths=None, newline='\n'):
         self.name = name
         self.paths = paths
         self.style = style
@@ -157,9 +163,10 @@ class LineContext:
         self.multiline = multiline  # (mode, prefix, suffix) or None
         self.header_line = header_line  # (prefix, suffix) for HTTP header entries
         self.test_paths = test_paths or ('tests/fixtures/',)
+        self.newline = newline
 
     def render(self, rng, entries):
-        doc = Doc()
+        doc = Doc(self.newline)
         for line in self.header:
             doc.line(line)
         if self.comment is not None:
@@ -255,6 +262,11 @@ LINE_CONTEXTS = (
     LineContext('shell', ('scripts/{w}.sh', 'deploy/{w}.sh'), 'upper',
                 (('export {name}="', '"'), ('{name}=', '')), '# ', 'shell', header=('#!/usr/bin/env bash',),
                 header_line=('curl -sS -H "{name}: ', '" https://api.internal/v1/status')),
+    LineContext('batch', ('scripts/{w}.bat', 'tools/{w}.cmd'), 'upper', (('set {name}=', ''), ('set "{name}=', '"')),
+                'REM ', 'batch', newline='\r\n'),
+    LineContext('powershell', ('scripts/{w}.ps1', 'deploy/{w}.ps1'), 'upper', (('$env:{name} = "', '"'),
+                                                                             ("${name} = '", "'")),
+                '# ', 'powershell', newline='\r\n'),
     LineContext('terraform', ('infra/{w}.tf', 'infra/modules/{w}/main.tf'), 'snake', (('  {name} = "', '"'),), '  # ',
                 'terraform', header=('provider "service" {',), footer=('}',)),
     LineContext('dockerfile', ('Dockerfile', 'docker/{w}.Dockerfile'), 'upper', (('ENV {name}=', ''), ('ARG {name}=', '')),

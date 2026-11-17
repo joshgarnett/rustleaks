@@ -1,13 +1,14 @@
 //! Labeled quality inputs for the cross-scanner comparison.
 //!
 //! `cargo xtask compare-quality` runs an embedded Python 3.9 standard-library
-//! program with `python3 -I`. It writes a constructed labeled corpus, checks
+//! program with `python3 -I -`, passing the program on standard input. It writes a constructed labeled corpus, checks
 //! it against the committed digests, and converts Samsung `CredData` metadata
 //! into the shared labels format. Output goes to a cache folder outside the
 //! repository; nothing it writes is committed.
 
+use std::io::Write as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 
 use crate::tooling::sha256_bytes;
 
@@ -43,19 +44,45 @@ fn payload() -> String {
     script
 }
 
+/// Builds the interpreter command. The program arrives on standard input
+/// (`python3 -I -`), because it is larger than a command-line argument may be
+/// on Windows.
 fn python_command(root: &Path) -> Command {
     let mut command = Command::new("python3");
     command
-        .args(["-I", "-c", &payload(), "--source-root"])
-        .arg(root);
+        .args(["-I", "-", "--source-root"])
+        .arg(root)
+        .stdin(Stdio::piped());
     command
 }
 
-pub(crate) fn run(root: &Path, arguments: &[String]) -> Result<(), String> {
-    let status = python_command(root)
-        .args(arguments)
-        .status()
+/// Starts the command and writes the program to its standard input.
+fn spawn_with_payload(command: &mut Command) -> Result<Child, String> {
+    let mut child = command
+        .spawn()
         .map_err(|error| format!("cannot start python3 (Python 3.9 or later): {error}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "python3 standard input is not available".to_owned())?;
+    let written = stdin.write_all(payload().as_bytes());
+    drop(stdin);
+    if let Err(error) = written {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "cannot send the compare-quality program to python3: {error}"
+        ));
+    }
+    Ok(child)
+}
+
+pub(crate) fn run(root: &Path, arguments: &[String]) -> Result<(), String> {
+    let mut command = python_command(root);
+    command.args(arguments);
+    let status = spawn_with_payload(&mut command)?
+        .wait()
+        .map_err(|error| format!("cannot wait for python3: {error}"))?;
     if status.success() {
         Ok(())
     } else {
@@ -76,7 +103,11 @@ mod tests {
         if let Some(temporary) = std::env::var_os("TEST_TMPDIR") {
             command.env("TMPDIR", temporary);
         }
-        let output = command.output().expect("python3 must start");
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let output = spawn_with_payload(&mut command)
+            .expect("python3 must start")
+            .wait_with_output()
+            .expect("python3 must finish");
         assert!(
             output.status.success(),
             "compare-quality self-test failed: {}",

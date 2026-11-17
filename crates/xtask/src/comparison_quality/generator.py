@@ -92,7 +92,7 @@ def build_corpus(seed, scale):
         for start, end, label, category in doc.spans:
             labels.append({
                 'workload': CORPUS_ID, 'path': path, 'commit': None, 'start': start, 'end': end,
-                'line': data.count(b'\n', 0, start) + 1, 'secret_sha256': sha256_hex(data[start:end]),
+                'line': line_number(data, start), 'secret_sha256': sha256_hex(data[start:end]),
                 'category': category, 'label': label, 'source': 'constructed',
             })
     labels.sort(key=lambda record: (record['path'], record['start']))

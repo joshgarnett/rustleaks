@@ -19,8 +19,8 @@
       },
       "path": "quality/constructed-v1/tree",
       "size": {
-        "bytes": 820785,
-        "files": 730,
+        "bytes": 813851,
+        "files": 714,
         "commits": 0
       },
       "labels": "quality/constructed-v1/labels.jsonl",

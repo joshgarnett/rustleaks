@@ -1,20 +1,20 @@
 {
   "schema": "rustleaks-comparison-quality-expected-v1",
   "corpus": "constructed-v1",
-  "generator_sha256": "d01a3ffbbbc7adb9530ab09d07e5ebf3b3cab6dc309c736d2f88560cc5fdd376",
+  "generator_sha256": "63a5db13a7408c9816c9d872f5e36e428989255b59d3b9223cefcfdc71a8c670",
   "seed": "rustleaks-quality-constructed-v1",
   "scale": 2.0,
-  "tree_sha256": "f998fa39deff88cfd9d3429e6dc129e1af37d39002a9d8bcedebed553ade8543",
-  "labels_sha256": "71339d4b2dbb8f62319a1c1688067dec6c9cbea64ba8320fd08aee0774ba2dc3",
+  "tree_sha256": "dad7e9cf119b6542ae6a7a32ec9a31463cb8ff693ff829865346522c2d926322",
+  "labels_sha256": "25e3e94c0bfb45c5a061fae9d216142843e71f2d80a62f6497a13828197d8577",
   "size": {
-    "bytes": 820785,
-    "files": 730,
+    "bytes": 813851,
+    "files": 714,
     "commits": 0
   },
   "labels": {
-    "total": 1976,
-    "secret": 1100,
-    "not-secret": 876
+    "total": 2005,
+    "secret": 1099,
+    "not-secret": 906
   },
   "categories": {
     "chat-token": {
@@ -22,7 +22,7 @@
       "not-secret": 0
     },
     "cloud-key": {
-      "secret": 194,
+      "secret": 193,
       "not-secret": 0
     },
     "connection-string": {
@@ -59,7 +59,7 @@
     },
     "integrity": {
       "secret": 0,
-      "not-secret": 80
+      "not-secret": 110
     },
     "jwt": {
       "secret": 60,
@@ -109,6 +109,7 @@
   "kinds": {
     "aws-access-key": 80,
     "checksum-file": 30,
+    "config-integrity": 30,
     "connection-string": 60,
     "database-uri": 80,
     "discord-bot-token": 30,

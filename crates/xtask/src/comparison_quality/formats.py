@@ -52,7 +52,9 @@ SOURCES = {
                     'https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/',
     'github-fine-grained-token': 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/'
                                  'about-authentication-to-github#githubs-token-formats',
-    'gitlab-token': 'https://docs.gitlab.com/security/tokens/#token-prefixes',
+    'gitlab-token': 'https://docs.gitlab.com/security/tokens/#token-prefixes '
+                    'https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/cells/'
+                    'routable_tokens/',
     'slack-bot-token': 'https://docs.slack.dev/authentication/tokens/',
     'slack-user-token': 'https://docs.slack.dev/authentication/tokens/',
     'slack-webhook-url': 'https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/',
@@ -78,6 +80,7 @@ SOURCES = {
     'checksum-file': 'https://www.gnu.org/software/coreutils/manual/html_node/sha2-utilities.html',
     'uuid': 'https://www.rfc-editor.org/rfc/rfc9562',
     'subresource-integrity': 'https://www.w3.org/TR/SRI/',
+    'config-integrity': 'https://www.w3.org/TR/SRI/',
     'package-lock-integrity': 'https://docs.npmjs.com/cli/configuring-npm/package-lock-json',
     'vendor-example-key': 'the vendor pages above that publish each example value',
     'placeholder': 'none: placeholder and reference shapes',
@@ -129,18 +132,49 @@ def github_fine_grained(rng):
     return 'github_pat_' + rng.chars(ALNUM, 22) + '_' + rng.chars(ALNUM, 59)
 
 
+def base36_fixed(number, width):
+    digits = []
+    while number:
+        number, remainder = divmod(number, 36)
+        digits.append((DIGITS + LOWER)[remainder])
+    return ''.join(reversed(digits)).rjust(width, '0')
+
+
+def gitlab_legacy(rng):
+    # Prefix from the GitLab token prefix table; the 20-character body is
+    # taken from public examples, as GitLab does not publish it.
+    return rng.choice(('glpat-', 'gldt-')) + rng.chars(ALNUM + '-_', 20)
+
+
+def gitlab_routable(rng):
+    # GitLab routable token design document: <prefix><base64url payload>.
+    # <2-digit base36 version>.<2-digit base36 payload length><7-digit base36
+    # CRC32 of everything before it>. The payload is random bytes, a
+    # line-delimited routing payload and a one-byte routing payload length.
+    routing = 'o:' + base36_fixed(rng.between(1, 10 ** 6), 1)
+    if rng.chance(1, 2):
+        routing += '\nu:' + base36_fixed(rng.between(1, 10 ** 8), 1)
+    payload = b64url(rng.bytes(16) + routing.encode('ascii') + bytes([len(routing)]))
+    token = 'glpat-' + payload + '.01.' + base36_fixed(len(payload), 2)
+    return token + base36_fixed(crc32(token.encode('ascii')), 7)
+
+
 def gitlab_token(rng):
-    return rng.choice(('glpat-', 'glpat-', 'gldt-')) + rng.chars(ALNUM + '-_', 20)
+    return gitlab_routable(rng) if rng.chance(1, 2) else gitlab_legacy(rng)
+
+
+def slack_digits(rng):
+    # Slack documents no length for the numeric groups. Its own examples use
+    # three digits (xoxp-111-222-333-...), so lengths run from 3 to 14.
+    return rng.chars('123456789', 1) + rng.chars(DIGITS, rng.between(2, 13))
 
 
 def slack_bot(rng):
-    return 'xoxb-' + rng.chars(DIGITS, rng.between(10, 13)) + '-' + \
-        rng.chars(DIGITS, rng.between(10, 13)) + '-' + rng.chars(ALNUM, 24)
+    return 'xoxb-' + slack_digits(rng) + '-' + slack_digits(rng) + '-' + rng.chars(ALNUM, 24)
 
 
 def slack_user(rng):
-    return 'xoxp-' + '-'.join(rng.chars(DIGITS, rng.between(10, 13)) for _ in range(3)) + \
-        '-' + rng.chars(HEX, 32)
+    return 'xoxp-' + '-'.join(slack_digits(rng) for _ in range(3)) + '-' + rng.chars(HEX, 32)
 
 
 def slack_webhook(rng):
@@ -407,6 +441,10 @@ PASSWORD_NAMES = (
     ('redis', 'password'), ('ldap', 'bind', 'password'),
 )
 TOKEN_NAMES = (('token',), ('api', 'token'), ('secret',), ('api', 'key'), ('password',))
+# Near misses sit under names that do not claim a credential, so a random
+# value under a credential name is always a generic secret.
+NEUTRAL_NAMES = (('build', 'ref'), ('release', 'tag'), ('sample', 'value'), ('doc', 'reference'),
+                 ('legacy', 'id'), ('ticket', 'ref'), ('fixture', 'name'))
 
 
 class Kind:
@@ -422,7 +460,7 @@ class Kind:
 
 ASSIGN = ('env', 'yaml', 'json', 'properties', 'ini', 'toml', 'python', 'javascript', 'typescript',
           'go', 'java', 'ruby', 'php', 'csharp', 'rust', 'shell', 'terraform', 'dockerfile',
-          'markdown', 'log', 'compose', 'workflow')
+          'markdown', 'log', 'compose', 'workflow', 'batch', 'powershell')
 CODE = ('python', 'javascript', 'typescript', 'go', 'java', 'ruby', 'php', 'csharp', 'rust')
 CONFIG = ('env', 'yaml', 'json', 'properties', 'ini', 'toml', 'compose', 'workflow', 'terraform')
 MULTILINE = ('pem', 'env', 'json', 'yaml', 'python', 'go', 'javascript', 'java', 'rust')
@@ -536,8 +574,13 @@ def build_identifier(rng):
                                                    NOT_SECRET, 'identifier'))
     if shape == 1:
         account = rng.chars('123456789', 1) + rng.chars(DIGITS, 11)
-        return one(('role', 'arn'), inner('arn:aws:iam::' + account + ':role/', 'deploy-' + rng.chars(LOWER, 6), '',
-                                          NOT_SECRET, 'identifier'))
+        if rng.chance(1, 2):
+            arn = 'arn:aws:iam::' + account + ':role/deploy-' + rng.chars(LOWER, 6)
+            return one(('role', 'arn'), whole(arn, NOT_SECRET, 'identifier'))
+        arn = ('arn:aws:secretsmanager:eu-west-1:' + account + ':secret:db-password-' +
+               rng.chars(ALNUM, 6))
+        return one(rng.choice((('db', 'secret', 'arn'), ('api', 'key', 'secret', 'arn'))),
+                   whole(arn, NOT_SECRET, 'identifier'))
     if shape == 2:
         return one(('google', 'client', 'id'), whole(
             rng.chars(DIGITS, 12) + '-' + rng.chars(LOWER + DIGITS, 32) + '.apps.googleusercontent.com',
@@ -560,20 +603,24 @@ def build_high_entropy(rng):
 def build_hash(rng):
     shape = rng.below(4)
     if shape == 0:
-        return one(rng.choice((('commit',), ('git', 'sha'), ('revision',), ('source', 'version'))),
+        return one(rng.choice((('commit',), ('git', 'sha'), ('revision',), ('source', 'version'),
+                               ('secret', 'version'), ('token', 'commit'))),
                    whole(rng.chars(HEX, 40), NOT_SECRET, 'hash'))
     if shape == 1:
-        return one(rng.choice((('sha256',), ('checksum',), ('artifact', 'digest'), ('fingerprint',))),
+        return one(rng.choice((('sha256',), ('checksum',), ('artifact', 'digest'), ('fingerprint',),
+                               ('token', 'sha256'), ('api', 'key', 'fingerprint'), ('secret', 'digest'))),
                    whole(rng.chars(HEX, 64), NOT_SECRET, 'hash'))
     if shape == 2:
-        return one(rng.choice((('md5',), ('etag',), ('content', 'md5'))), whole(rng.chars(HEX, 32), NOT_SECRET, 'hash'))
+        return one(rng.choice((('md5',), ('etag',), ('content', 'md5'), ('key', 'checksum'), ('token', 'md5'))),
+                   whole(rng.chars(HEX, 32), NOT_SECRET, 'hash'))
     return one(('image',), inner('registry.internal/' + rng.choice(('api', 'worker', 'web')) + '@sha256:',
                                  rng.chars(HEX, 64), '', NOT_SECRET, 'hash'))
 
 
 def build_uuid(rng):
     return one(rng.choice((('request', 'id'), ('trace', 'id'), ('tenant', 'id'), ('correlation', 'id'),
-                           ('installation', 'id'), ('workspace', 'id'), ('id',))),
+                           ('installation', 'id'), ('workspace', 'id'), ('id',), ('client', 'id'),
+                           ('token', 'id'), ('api', 'key', 'id'), ('secret', 'version', 'id'))),
                whole(uuid4(rng), NOT_SECRET, 'uuid'))
 
 
@@ -583,7 +630,7 @@ def build_publishable(rng):
 
 
 def build_near_miss(rng):
-    return one(rng.choice(TOKEN_NAMES), whole(near_miss_value(rng), NOT_SECRET, 'near-miss'))
+    return one(rng.choice(NEUTRAL_NAMES), whole(near_miss_value(rng), NOT_SECRET, 'near-miss'))
 
 
 def build_go_sum(rng):
@@ -604,6 +651,14 @@ def build_sri(rng):
     size = rng.choice((32, 48, 64))
     algorithm = {32: 'sha256-', 48: 'sha384-', 64: 'sha512-'}[size]
     return one(('integrity',), whole(algorithm + b64(rng.bytes(size)), NOT_SECRET, 'integrity'))
+
+
+def build_config_integrity(rng):
+    size = rng.choice((32, 48, 64))
+    algorithm = {32: 'sha256-', 48: 'sha384-', 64: 'sha512-'}[size]
+    return one(rng.choice((('auth', 'sdk', 'integrity'), ('token', 'client', 'integrity'),
+                           ('secrets', 'loader', 'integrity'), ('api', 'key', 'widget', 'integrity'))),
+               whole(algorithm + b64(rng.bytes(size)), NOT_SECRET, 'integrity'))
 
 
 def build_lock_integrity(rng):
@@ -668,6 +723,8 @@ KINDS = (
     Kind('checksum-file', NOT_SECRET, 'hash', 15, ('sums',), build_checksum_line),
     Kind('uuid', NOT_SECRET, 'uuid', 40, ASSIGN, build_uuid),
     Kind('subresource-integrity', NOT_SECRET, 'integrity', 20, ('html',), build_sri),
+    Kind('config-integrity', NOT_SECRET, 'integrity', 15, ('json', 'yaml', 'javascript', 'typescript'),
+         build_config_integrity),
     Kind('package-lock-integrity', NOT_SECRET, 'integrity', 20, ('package-lock',), build_lock_integrity),
     Kind('vendor-example-key', NOT_SECRET, 'example-key', 35, CONFIG + CODE + ('markdown',), build_example),
     Kind('placeholder', NOT_SECRET, 'placeholder', 50, ASSIGN, build_placeholder),
