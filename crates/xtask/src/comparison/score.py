@@ -307,7 +307,7 @@ def score_outer_path(path):
     return path.split('!', 1)[0]
 
 
-def score_load_labels(path, workload_id, root, git=None, mode=None):
+def score_load_labels(path, workload_id, root, git=None, mode=None, home_tool=None):
     """Load labels for one workload. Unknown fields are ignored.
 
     Labels hold no secret text. The text is read from the input at the byte
@@ -382,7 +382,8 @@ def score_load_labels(path, workload_id, root, git=None, mode=None):
             scope.append('introduced by a merge')
         if row.get('in_binary'):
             scope.append('in a binary file')
-        home = row.get('home_tool') or (row['path'].split('/', 1)[0] if source == 'fixture' else 'not a fixture')
+        home = (row.get('home_tool') or home_tool
+                or (row['path'].split('/', 1)[0] if source == 'fixture' else 'not a fixture'))
         labels.append({'rule': category, 'path': row['path'], 'commit': commit,
                        'commits': {value for value in (row.get('commit'), introduced) if value} or {commit},
                        'start_line': line, 'end_line': line + body.count(b'\n'), 'secret': text,
@@ -762,7 +763,8 @@ def score_run(run_dir, seed):
                 print('compare: WARNING: ' + message, file=sys.stderr)
             else:
                 label_cache[key] = score_load_labels(workload['labels_path'], workload['id'],
-                                                     workload['target'], git, cell['mode'])
+                                                     workload['target'], git, cell['mode'],
+                                                     workload.get('home_tool'))
         if label_cache[key] is None or not label_cache[key][0]:
             continue
         labels, problems = label_cache[key]

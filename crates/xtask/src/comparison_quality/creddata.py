@@ -129,23 +129,29 @@ def convert_creddata(checkout, max_problems):
         except ValueError as error:
             problems.append(f'{where}: {error}')
             continue
+        # Rows without value positions mark whole lines; the scorer matches
+        # those by line, not by byte overlap.
+        whole_line = meta_integer(row['ValueStart']) < 0 and meta_integer(row['ValueEnd']) < 0
         found = spans.setdefault((relative, start, end), [])
-        found.append((label, line, creddata_category(row['Category']), where))
+        found.append((label, line, creddata_category(row['Category']), where, whole_line))
     labels = []
     conflicts = []
     for (relative, start, end), found in spans.items():
-        if len({label for label, _, _, _ in found}) > 1:
+        if len({label for label, _, _, _, _ in found}) > 1:
             # The same bytes are labeled both secret and not secret. Leave the
             # span out rather than count it both ways.
             conflicts.append(f'{relative} bytes {start}-{end}: ' +
-                             ', '.join(f'{where} {label}' for label, _, _, where in found))
+                             ', '.join(f'{where} {label}' for label, _, _, where, _ in found))
             continue
-        label, line, category, _ = found[0]
-        labels.append({
+        label, line, category, _, _ = found[0]
+        record = {
             'workload': CREDDATA_WORKLOAD, 'path': relative, 'commit': None, 'start': start, 'end': end,
             'line': line, 'secret_sha256': sha256_hex(documents[relative].raw[start:end]),
             'category': category, 'label': label, 'source': 'credData',
-        })
+        }
+        if all(entry[4] for entry in found):
+            record['span'] = 'line'
+        labels.append(record)
     labels.sort(key=lambda record: (record['path'], record['start'], record['end']))
     if len(problems) > max_problems:
         shown = '\n  '.join(problems[:20])

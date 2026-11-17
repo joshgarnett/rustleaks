@@ -79,6 +79,8 @@ def manifest_load_workloads(paths, cache_root):
             size = entry.get('size') if isinstance(entry.get('size'), dict) else {}
             workload['size'] = {key: size.get(key) for key in ('bytes', 'files', 'commits', 'git_bytes')}
             source = entry.get('source') if isinstance(entry.get('source'), dict) else {}
+            # A fixtures-matrix workload holds one tool's own rule examples.
+            workload['home_tool'] = source.get('tool') if isinstance(source.get('tool'), str) else None
             params = source.get('params') if isinstance(source.get('params'), dict) else {}
             git_range = {key: params[key] for key in ('git_base', 'git_head', 'git_log_options')
                          if isinstance(params.get(key), str) and params[key]}

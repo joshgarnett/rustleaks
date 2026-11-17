@@ -152,7 +152,8 @@ instead. A labels file named in a manifest but missing is reported as a
 warning and in the workloads table.
 
 The labeled corpora and the CredData adapter are described in
-`docs/dev/comparison-quality.md`.
+[Comparison quality inputs](comparison-quality.md), and the workload sets in
+[Comparison workloads](comparison-workloads.md).
 
 ## Running a comparison
 
