@@ -582,11 +582,15 @@ impl ArchiveState<'_> {
             Codec::Brotli => decode_brotli(input, limit, cancellation),
             Codec::Bzip2 => decode_reader(bzip2_rs::DecoderReader::new(input), limit, cancellation),
             Codec::Gzip => decode_gzip(input, limit, cancellation),
-            Codec::Lz4 => decode_reader(
-                lz4_flex::frame::FrameDecoder::new(input),
-                limit,
-                cancellation,
-            ),
+            Codec::Lz4 => check_lz4_frames(input)
+                .map_err(|message| DecodeFailure::Decode(message.to_owned()))
+                .and_then(|()| {
+                    decode_reader(
+                        lz4_flex::frame::FrameDecoder::new(input),
+                        limit,
+                        cancellation,
+                    )
+                }),
             Codec::Snappy => crate::snappy::decode_framed(input, limit, cancellation).map_err(
                 |error| match error {
                     crate::snappy::SnappyFailure::Cancelled => DecodeFailure::Cancelled,
@@ -1495,6 +1499,92 @@ fn decode_reader(
     }
 }
 
+const LZ4_FRAME_MAGIC: u32 = 0x184D_2204;
+const LZ4_LEGACY_MAGIC: u32 = 0x184C_2102;
+const LZ4_SKIPPABLE_MAGIC: std::ops::RangeInclusive<u32> = 0x184D_2A50..=0x184D_2A5F;
+
+/// Checks the frame structure of a complete LZ4 input before decoding.
+///
+/// The frame decoder treats the end of input at a frame start or at a block
+/// size word as a clean end, so a truncated stream would decode in part
+/// without an error. This walk follows the LZ4 frame format: a standard frame
+/// needs its descriptor, every block, its end mark and, when its descriptor
+/// says so, block and content checksums. A skippable frame needs its declared
+/// length. A legacy frame has no end mark and ends at a block boundary. Empty
+/// input is an empty stream. The decoder still verifies checksums and blocks.
+fn check_lz4_frames(input: &[u8]) -> Result<(), &'static str> {
+    let mut cursor = Lz4Cursor { input, position: 0 };
+    while !cursor.at_end() {
+        let magic = cursor.word()?;
+        if magic == LZ4_FRAME_MAGIC {
+            let flags = cursor.take(2)?[0];
+            if flags >> 6 != 0b01 {
+                return Err("unsupported LZ4 frame version");
+            }
+            let block_checksums = flags & 0x10 != 0;
+            let content_checksum = flags & 0x04 != 0;
+            // Optional content size and dictionary ID, then the header checksum.
+            let optional = usize::from(flags & 0x08 != 0) * 8 + usize::from(flags & 0x01 != 0) * 4;
+            cursor.take(optional + 1)?;
+            loop {
+                let size = cursor.word()?;
+                if size == 0 {
+                    break;
+                }
+                cursor.skip(size & 0x7FFF_FFFF)?;
+                if block_checksums {
+                    cursor.take(4)?;
+                }
+            }
+            if content_checksum {
+                cursor.take(4)?;
+            }
+        } else if LZ4_SKIPPABLE_MAGIC.contains(&magic) {
+            let size = cursor.word()?;
+            cursor.skip(size)?;
+        } else if magic == LZ4_LEGACY_MAGIC {
+            while !cursor.at_end() {
+                let size = cursor.word()?;
+                cursor.skip(size)?;
+            }
+        } else {
+            return Err("unknown LZ4 frame magic");
+        }
+    }
+    Ok(())
+}
+
+struct Lz4Cursor<'a> {
+    input: &'a [u8],
+    position: usize,
+}
+
+impl<'a> Lz4Cursor<'a> {
+    const fn at_end(&self) -> bool {
+        self.position == self.input.len()
+    }
+
+    fn take(&mut self, count: usize) -> Result<&'a [u8], &'static str> {
+        let start = self.position;
+        let end = start
+            .checked_add(count)
+            .filter(|end| *end <= self.input.len())
+            .ok_or("truncated LZ4 stream")?;
+        self.position = end;
+        Ok(&self.input[start..end])
+    }
+
+    fn word(&mut self) -> Result<u32, &'static str> {
+        let bytes = self.take(4)?;
+        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    fn skip(&mut self, count: u32) -> Result<(), &'static str> {
+        let count = usize::try_from(count).map_err(|_| "truncated LZ4 stream")?;
+        self.take(count).map(|_| ())
+    }
+}
+
 fn decode_brotli(
     input: &[u8],
     limit: usize,
@@ -2070,6 +2160,94 @@ fn emit_issue(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lz4_frame(payload: &[u8], info: lz4_flex::frame::FrameInfo) -> Vec<u8> {
+        use std::io::Write as _;
+        let mut encoder = lz4_flex::frame::FrameEncoder::with_frame_info(info, Vec::new());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn lz4_frames_need_their_end_mark_and_declared_checksums() {
+        use lz4_flex::frame::{BlockSize, FrameInfo};
+        let payload = b"portable safe lz4 payload\n".repeat(4_000);
+        let checked = |length: usize| {
+            FrameInfo::new()
+                .block_size(BlockSize::Max64KB)
+                .block_checksums(true)
+                .content_checksum(true)
+                .content_size(Some(u64::try_from(length).unwrap()))
+        };
+        let first = lz4_frame(&payload, FrameInfo::new());
+        let second = lz4_frame(b"second frame\n", checked(13));
+        let multi_block = lz4_frame(&payload, checked(payload.len()));
+        let mut skippable = 0x184D_2A5A_u32.to_le_bytes().to_vec();
+        skippable.extend_from_slice(&3_u32.to_le_bytes());
+        skippable.extend_from_slice(b"abc");
+        let concatenated = [first.clone(), skippable.clone(), second.clone()].concat();
+        // Whole streams, and streams that end exactly between frames, pass.
+        let boundaries = [
+            0,
+            first.len(),
+            first.len() + skippable.len(),
+            concatenated.len(),
+        ];
+        for stream in [&first, &second, &multi_block, &skippable] {
+            assert_eq!(check_lz4_frames(stream), Ok(()));
+            for cut in 1..stream.len() {
+                assert_eq!(
+                    check_lz4_frames(&stream[..cut]),
+                    Err("truncated LZ4 stream"),
+                    "cut {cut}"
+                );
+            }
+        }
+        for cut in 0..=concatenated.len() {
+            assert_eq!(
+                check_lz4_frames(&concatenated[..cut]).is_ok(),
+                boundaries.contains(&cut),
+                "cut {cut}"
+            );
+        }
+        let cancellation = crate::CancellationToken::new();
+        let decoded = decode_reader(
+            lz4_flex::frame::FrameDecoder::new(multi_block.as_slice()),
+            1 << 20,
+            &cancellation,
+        )
+        .ok()
+        .unwrap();
+        assert!(decoded == payload);
+    }
+
+    #[test]
+    fn lz4_legacy_frames_end_at_block_boundaries_and_unknown_magic_fails() {
+        let block = lz4_flex::block::compress(b"legacy lz4 block payload\n");
+        let mut legacy = 0x184C_2102_u32.to_le_bytes().to_vec();
+        for _ in 0..2 {
+            legacy.extend_from_slice(&u32::try_from(block.len()).unwrap().to_le_bytes());
+            legacy.extend_from_slice(&block);
+        }
+        let boundaries = [0, 4, 4 + 4 + block.len(), legacy.len()];
+        for cut in 0..=legacy.len() {
+            assert_eq!(
+                check_lz4_frames(&legacy[..cut]).is_ok(),
+                boundaries.contains(&cut),
+                "cut {cut}"
+            );
+        }
+        assert_eq!(
+            check_lz4_frames(b"not lz4 at all"),
+            Err("unknown LZ4 frame magic")
+        );
+        let mut version = 0x184D_2204_u32.to_le_bytes().to_vec();
+        version.extend_from_slice(&[0x00, 0x40, 0x00, 0, 0, 0, 0]);
+        assert_eq!(
+            check_lz4_frames(&version),
+            Err("unsupported LZ4 frame version")
+        );
+    }
 
     #[test]
     fn rejects_large_window_brotli_before_decoder_construction() {

@@ -6,8 +6,12 @@ use rustleaks_core::config::{ConfigLoader, RawConfig};
 use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
 use rustleaks_core::{Engine, ScanControl};
 
+#[allow(dead_code)] // `positives` serves the all-rules precedence test.
+#[path = "support/extra_rule_cases.rs"]
+mod extra_rule_cases;
+use extra_rule_cases::{KEY, MONGODB_URIS, azure_fields};
+
 const PACK: &str = rustleaks_core::native::EXTRA_RULES_V1;
-const KEY: &str = "B7p4K9x2N6v1Q8s3T5w0Y4z7A2c6D9f1G8h3J5k0L4M=";
 
 fn engine() -> Engine {
     Engine::builder(ConfigLoader::new().load_toml(PACK).unwrap())
@@ -42,24 +46,7 @@ fn assert_secret(finding: &Finding, input: &[u8], expected: &[u8], rule: &str) {
 #[test]
 fn azure_field_order_preserves_only_the_key_capture() {
     let engine = engine();
-    for (rule, fields) in [
-        (
-            "rustleaks.azure-servicebus-key",
-            [
-                "Endpoint=sb://synthetic.servicebus.windows.net/".to_owned(),
-                "SharedAccessKeyName=synthetic".to_owned(),
-                format!("SharedAccessKey={KEY}"),
-            ],
-        ),
-        (
-            "rustleaks.azure-app-configuration-key",
-            [
-                "Endpoint=https://synthetic.azconfig.io".to_owned(),
-                "Id=synthetic-id".to_owned(),
-                format!("Secret={KEY}"),
-            ],
-        ),
-    ] {
+    for (rule, fields) in azure_fields() {
         for order in [
             [0, 1, 2],
             [0, 2, 1],
@@ -87,17 +74,7 @@ fn azure_field_order_preserves_only_the_key_capture() {
 #[test]
 fn mongodb_extracts_password_without_user_or_host_and_retains_percent_bytes() {
     let engine = engine();
-    for (uri, password) in [
-        ("mongodb://synthetic:m7!@db.example.invalid/", "m7!"),
-        (
-            "mongodb+srv://synthetic:p8%40Q%3A9@cluster.example.invalid/",
-            "p8%40Q%3A9",
-        ),
-        (
-            "mongodb://synthetic:p8-Q9@one.example.invalid:27017,two.example.invalid:27018/",
-            "p8-Q9",
-        ),
-    ] {
+    for (uri, password) in MONGODB_URIS {
         let findings = scan(&engine, uri.as_bytes());
         assert_eq!(findings.len(), 1);
         assert_secret(
