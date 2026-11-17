@@ -1725,6 +1725,95 @@ skipReport = true
             }
         }
     }
+
+    /// `count` pairs. Pair `index` has its helper on line `2 * index` and its
+    /// primary on line `2 * index + 1`, counting from 0.
+    fn dense_pairs(count: usize) -> Vec<u8> {
+        (0..count)
+            .flat_map(|index| format!("id={index:06}\ntok={index:06}\n").into_bytes())
+            .collect()
+    }
+
+    fn scan_pairs(engine: &Engine, count: usize) -> (Vec<Finding>, [usize; 2]) {
+        let bytes = dense_pairs(count);
+        let outcome = engine.scan_fragment(&Fragment::new(bytes), &ScanOptions::default());
+        assert!(outcome.is_complete());
+        let usage = [
+            outcome.usage().work_units(),
+            outcome.usage().finding_records(),
+        ];
+        (outcome.findings().to_vec(), usage)
+    }
+
+    /// Usage for 64, 128 and 192 pairs grows by the same amount at each step.
+    /// A cost for each primary and helper combination would grow faster.
+    fn assert_linear(usage: &[[usize; 2]]) {
+        for field in 0..2 {
+            assert_eq!(
+                usage[2][field] - usage[1][field],
+                usage[1][field] - usage[0][field],
+                "{usage:?}"
+            );
+        }
+    }
+
+    fn helper_secrets(finding: &Finding) -> Vec<String> {
+        finding
+            .required_findings()
+            .iter()
+            .map(|required| required.secret().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn unlimited_windows_attach_every_helper_with_linear_work_and_records() {
+        let engine = selected(&window_pack("tok=([0-9]{6})", "id=([0-9]{6})", "0"));
+        let mut usage = Vec::new();
+        for count in [64, 128, 192] {
+            let (findings, used) = scan_pairs(&engine, count);
+            // Every helper in the buffer relates to every primary.
+            let all = (0..count)
+                .map(|index| format!("{index:06}"))
+                .collect::<Vec<_>>();
+            assert_eq!(findings.len(), count);
+            for finding in &findings {
+                assert_eq!(helper_secrets(finding), all);
+                // All primaries share one helper list instead of a copy each.
+                assert_eq!(
+                    finding.required_findings().as_ptr(),
+                    findings[0].required_findings().as_ptr()
+                );
+            }
+            // Each primary and each helper candidate is one record, and the
+            // shared list is projected once: one record per helper.
+            assert_eq!(used[1], 3 * count);
+            usage.push(used);
+        }
+        assert_linear(&usage);
+    }
+
+    #[test]
+    fn line_windows_visit_only_nearby_helpers_with_linear_work_and_records() {
+        // A 2L window admits helpers that start one line before the primary
+        // through one line after it: helpers `index` and `index + 1`.
+        let engine = selected(&window_pack("tok=([0-9]{6})", "id=([0-9]{6})", "2L"));
+        let mut usage = Vec::new();
+        for count in [64, 128, 192] {
+            let (findings, used) = scan_pairs(&engine, count);
+            assert_eq!(findings.len(), count);
+            for (index, finding) in findings.iter().enumerate() {
+                let expected = (index..count.min(index + 2))
+                    .map(|helper| format!("{helper:06}"))
+                    .collect::<Vec<_>>();
+                assert_eq!(helper_secrets(finding), expected, "primary {index}");
+            }
+            // Primaries, helper candidates, and 2 projections for every
+            // primary except the last, which has 1.
+            assert_eq!(used[1], count + count + 2 * count - 1);
+            usage.push(used);
+        }
+        assert_linear(&usage);
+    }
 }
 
 mod native_bytes {

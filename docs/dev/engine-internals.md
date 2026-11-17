@@ -252,6 +252,20 @@ line, and redaction can create separate lines.
 - A native candidate and each nested required projection use the normal
   finding-record and payload budgets. All buffers for one rule must finish
   before the rule publishes findings in a decode pass.
+- Relation checks do not compare every primary with every helper. When all
+  edges of a rule have window `0`, every helper in the buffer relates to every
+  primary. The helper list is then projected once, charged one work unit,
+  one record and its payload for each helper, and shared by all primaries.
+  Each primary charges one work unit for each edge. With a line window or
+  `same-candidate`, helpers arrive in match order, and a binary search finds
+  the helpers that can relate to a primary. Each primary charges one work
+  unit for each edge and for each helper in that run, and one record and its
+  payload for each projected helper, which is copied.
+- Work and memory in the engine grow with primaries plus helpers for window
+  `0`, and with primaries plus projected helpers for line windows. Each
+  finding still lists every related helper, so a caller that reads
+  `required_findings()` on every finding, such as verbose CLI output, reads
+  primaries times helpers entries for window `0`.
 - The Mapbox predicate rejects secrets above 926 bytes, accepts at most 308
   encoded and 231 decoded bytes, and uses 539 bytes of fixed buffers. It
   charges one work unit before decoding and one before matching. These checks

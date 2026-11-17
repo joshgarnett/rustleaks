@@ -664,7 +664,16 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   leave out these records. Explicit support serialization and the core
   accessor show the support bytes. Primary-only redaction keeps supports;
   `without_detected_secrets` removes their secrets too.
+- With window `0`, every helper occurrence in the buffer relates to every
+  parent, so a buffer with many parents and helpers lists every helper on
+  every parent. The engine builds that list once and shares it, so its work
+  and memory grow with parents plus helpers. A caller that reads the list of
+  every parent still reads parents times helpers entries.
 - The default AWS access token rule and other default rules stay visible.
+  Some parents report the same occurrence as a default rule. For example,
+  when a PlanetScale ID helper is in the buffer, `planetscale-api-token`
+  reports the same token as the default `planetscale-api-token` rule, under
+  its own ID. Nothing removes these duplicate findings.
 
 ### Private Packagist credential roles (2 rules)
 

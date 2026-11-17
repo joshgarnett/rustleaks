@@ -101,6 +101,12 @@
   such as `/dev/zero`, is skipped instead of opened. Before, such a link could
   block the scan or make it read without end. Links to regular files are
   scanned as before.
+- Fix quadratic time and memory for native pack association rules on input
+  with many credential pairs. A rule whose helpers have no line limit now
+  builds one helper list and shares it across all its findings, and a rule
+  with a line window looks up nearby helpers instead of checking all of
+  them. Findings and their required findings do not change. Work-unit and
+  finding-record counts for these rules are lower.
 - Document that report lines and columns describe the whole match, and that a
   match ending after the last line break of a file has `EndLine` equal to
   `StartLine` and `EndColumn` 0, as in Gitleaks. Document the location and
