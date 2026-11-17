@@ -35,6 +35,19 @@ mod source_scale_workloads;
 #[path = "worker_workloads.rs"]
 mod worker_workloads;
 
+#[path = "cli_matrix_workloads.rs"]
+mod cli_matrix_workloads;
+#[path = "dense_workloads.rs"]
+mod dense_workloads;
+#[path = "filter_workloads.rs"]
+mod filter_workloads;
+#[path = "git_shape_workloads.rs"]
+mod git_shape_workloads;
+#[path = "pack_workloads.rs"]
+mod pack_workloads;
+#[path = "suite_support.rs"]
+mod suite_support;
+
 #[path = "investigation.rs"]
 mod investigation;
 pub use investigation::main as investigate;
@@ -105,6 +118,11 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             .chain(default_rule_workloads::WORKLOADS)
             .chain(representative_io::WORKLOADS)
             .chain(source_scale_workloads::WORKLOADS)
+            .chain(pack_workloads::WORKLOADS)
+            .chain(cli_matrix_workloads::WORKLOADS)
+            .chain(dense_workloads::WORKLOADS)
+            .chain(git_shape_workloads::WORKLOADS)
+            .chain(filter_workloads::WORKLOADS)
         {
             println!("{id}");
         }
@@ -147,6 +165,16 @@ pub fn main(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         representative_io::run(workload, iterations)?
     } else if source_scale_workloads::WORKLOADS.contains(&workload) {
         source_scale_workloads::run(workload, iterations)?
+    } else if pack_workloads::WORKLOADS.contains(&workload) {
+        pack_workloads::run(workload, iterations)?
+    } else if cli_matrix_workloads::WORKLOADS.contains(&workload) {
+        cli_matrix_workloads::run(workload, iterations)?
+    } else if dense_workloads::WORKLOADS.contains(&workload) {
+        dense_workloads::run(workload, iterations)?
+    } else if git_shape_workloads::WORKLOADS.contains(&workload) {
+        git_shape_workloads::run(workload, iterations)?
+    } else if filter_workloads::WORKLOADS.contains(&workload) {
+        filter_workloads::run(workload, iterations)?
     } else {
         return Err(format!("unknown representative workload {workload}").into());
     };

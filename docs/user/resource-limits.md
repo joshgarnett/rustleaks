@@ -119,6 +119,13 @@ are not memory limits. Some cases use much more memory than the input size:
 
 - Each finding keeps a copy of its source line. Many findings on one long line
   can use a lot of memory, even for a small file.
+- Some native pack association rules, such as
+  `rustleaks.association.planetscale-api-token`, attach every helper in a
+  piece of the input to every finding of the rule in that piece. Rustleaks
+  stores that list once, and the `--complete-profile` limits count it once.
+  Verbose output (`--verbose`) prints one `Required` line for each helper of
+  each finding, so its size grows with findings times helpers. No limit
+  bounds it, also with `--complete-profile`.
 - Rustleaks may stop the process if memory runs out.
 
 For untrusted input, run Rustleaks with an operating system memory limit, or

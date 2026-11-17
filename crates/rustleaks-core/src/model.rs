@@ -1000,6 +1000,44 @@ impl RequiredFindingBuilder {
     }
 }
 
+/// Required findings of one finding.
+///
+/// The engine can give many primary findings the same helper list. A shared
+/// list is stored once and copied only when a caller changes it.
+#[derive(Clone)]
+enum RequiredList {
+    Owned(Vec<RequiredFinding>),
+    Shared(Arc<[RequiredFinding]>),
+}
+
+impl Default for RequiredList {
+    fn default() -> Self {
+        Self::Owned(Vec::new())
+    }
+}
+
+impl RequiredList {
+    fn as_slice(&self) -> &[RequiredFinding] {
+        match self {
+            Self::Owned(values) => values,
+            Self::Shared(values) => values,
+        }
+    }
+
+    fn into_vec(self) -> Vec<RequiredFinding> {
+        match self {
+            Self::Owned(values) => values,
+            Self::Shared(values) => values.to_vec(),
+        }
+    }
+}
+
+impl PartialEq for RequiredList {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
 /// A secret finding produced by the core engine.
 ///
 /// Text and metadata remain byte-preserving. Entropy is stored as `f32` so
@@ -1026,7 +1064,7 @@ pub struct Finding {
     tags: Vec<ByteText>,
     fingerprint: ByteText,
     fragment: Option<Fragment>,
-    required_findings: Vec<RequiredFinding>,
+    required_findings: RequiredList,
 }
 
 impl fmt::Debug for Finding {
@@ -1053,7 +1091,10 @@ impl fmt::Debug for Finding {
             .field("tag_count", &self.tags.len())
             .field("fingerprint_len", &self.fingerprint.len())
             .field("has_fragment", &self.fragment.is_some())
-            .field("required_finding_count", &self.required_findings.len())
+            .field(
+                "required_finding_count",
+                &self.required_findings.as_slice().len(),
+            )
             .finish()
     }
 }
@@ -1200,12 +1241,19 @@ impl Finding {
     /// Returns required findings in insertion order, including duplicates.
     #[must_use]
     pub fn required_findings(&self) -> &[RequiredFinding] {
-        &self.required_findings
+        self.required_findings.as_slice()
     }
 
     /// Appends required findings without sorting or deduplicating them.
     pub fn add_required_findings(&mut self, findings: impl IntoIterator<Item = RequiredFinding>) {
-        self.required_findings.extend(findings);
+        let mut values = std::mem::take(&mut self.required_findings).into_vec();
+        values.extend(findings);
+        self.required_findings = RequiredList::Owned(values);
+    }
+
+    /// Sets a required-finding list that other findings can share.
+    pub(crate) fn set_shared_required_findings(&mut self, findings: Arc<[RequiredFinding]>) {
+        self.required_findings = RequiredList::Shared(findings);
     }
 
     /// Returns a copy with its primary secret masked using Go's byte-oriented
@@ -1243,6 +1291,7 @@ impl Finding {
     pub fn without_detected_secrets(mut self) -> Self {
         let mut secrets = self
             .required_findings
+            .as_slice()
             .iter()
             .map(|finding| finding.secret.as_bytes().to_vec())
             .chain(std::iter::once(self.secret.as_bytes().to_vec()))
@@ -1272,9 +1321,11 @@ impl Finding {
         for tag in &mut self.tags {
             remove_detected_secrets(tag, &secrets);
         }
-        for finding in &mut self.required_findings {
+        let mut required = std::mem::take(&mut self.required_findings).into_vec();
+        for finding in &mut required {
             finding.remove_detected_secrets(&secrets);
         }
+        self.required_findings = RequiredList::Owned(required);
         self.secret = ByteText::default();
         self.fragment = None;
         self
@@ -1759,7 +1810,7 @@ impl FindingBuilder {
             tags: self.tags,
             fingerprint: self.fingerprint,
             fragment: self.fragment,
-            required_findings: self.required_findings,
+            required_findings: RequiredList::Owned(self.required_findings),
         })
     }
 }

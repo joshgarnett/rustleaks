@@ -1,0 +1,250 @@
+# Fetches pinned public repositories into the cache. Each repository gets
+# `repo/`, a Git repository whose only ref is `refs/heads/main` at the pinned
+# commit, and `tree/`, the exact blob bytes of that commit without `.git`.
+# `dir` mode fetches one commit (`--depth 1`); `git` mode fetches the full
+# history reachable from the pinned commit. Nothing else is fetched.
+
+
+def parse_tree_listing(listing):
+    entries = []
+    for record in listing.split(b'\0'):
+        if not record:
+            continue
+        header, _, raw_path = record.partition(b'\t')
+        mode, kind, oid, size = header.split()
+        entries.append({'mode': mode.decode('ascii'), 'type': kind.decode('ascii'),
+                        'oid': oid.decode('ascii'),
+                        'size': None if size == b'-' else int(size),
+                        'path': raw_path.decode('utf-8', 'surrogateescape')})
+    return entries
+
+
+class BlobReader:
+    def __init__(self, git, repository, environment):
+        self.process = subprocess.Popen([git] + GIT_FLAGS + ['-C', str(repository), 'cat-file', '--batch'],
+                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        env=environment)
+
+    def read(self, oid):
+        self.process.stdin.write(oid.encode('ascii') + b'\n')
+        self.process.stdin.flush()
+        header = self.process.stdout.readline().split()
+        if len(header) != 3 or header[0].decode('ascii') != oid:
+            fail('git cat-file returned an unexpected header for %s' % oid)
+        size = int(header[2])
+        data = self.process.stdout.read(size)
+        if len(data) != size or self.process.stdout.read(1) != b'\n':
+            fail('git cat-file returned a short object for %s' % oid)
+        return data
+
+    def close(self):
+        self.process.stdin.close()
+        self.process.stdout.close()
+        if self.process.wait() != 0:
+            fail('git cat-file failed')
+
+    def abort(self):
+        self.process.kill()
+        self.process.wait()
+
+
+def symlink_parent(tree, relative):
+    # True when a folder on the way to `relative` is a symlink. Only a
+    # case-insensitive collision can cause this; writing through it could
+    # leave the tree.
+    current = pathlib.Path(tree)
+    for part in relative.split('/')[:-1]:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def export_tree(git, repository, environment, commit, tree):
+    listing = git_run(git, repository, environment, ['ls-tree', '-r', '-z', '-l', '--full-tree', commit])
+    entries = parse_tree_listing(listing)
+    fresh_directory(tree)
+    reader = BlobReader(git, repository, environment)
+    skipped = []
+    totals = {'files': 0, 'symlinks': 0, 'submodules': 0, 'bytes': 0}
+    try:
+        for entry in entries:
+            target = pathlib.Path(tree) / entry['path']
+            if os.path.lexists(str(target)) or symlink_parent(tree, entry['path']):
+                # Only a case-insensitive file system can produce this.
+                skipped.append({'path': entry['path'], 'reason': 'path collides on this file system'})
+                continue
+            data = None if entry['type'] == 'commit' else reader.read(entry['oid'])
+            try:
+                target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+                if entry['type'] == 'commit':
+                    target.mkdir(mode=0o755)
+                elif entry['mode'] == '120000':
+                    os.symlink(data.decode('utf-8', 'surrogateescape'), str(target))
+                else:
+                    with open(target, 'xb') as stream:
+                        stream.write(data)
+                    target.chmod(0o755 if entry['mode'] == '100755' else 0o644)
+            except OSError as error:
+                # Case collisions and names this file system cannot hold.
+                skipped.append({'path': entry['path'], 'reason': 'cannot write: %s' % error.strerror})
+                continue
+            if entry['type'] == 'commit':
+                totals['submodules'] += 1
+            elif entry['mode'] == '120000':
+                totals['symlinks'] += 1
+            else:
+                totals['files'] += 1
+                totals['bytes'] += len(data)
+    except BaseException:
+        reader.abort()
+        raise
+    reader.close()
+    return {'listing_sha256': sha256_bytes(listing), 'entries': len(entries),
+            'skipped': skipped, **totals}
+
+
+def verify_tree(git, repository, environment, commit, tree, recorded):
+    listing = git_run(git, repository, environment, ['ls-tree', '-r', '-z', '-l', '--full-tree', commit])
+    if sha256_bytes(listing) != recorded['listing_sha256']:
+        fail('tree listing changed for %s' % commit)
+    skipped = {item['path'] for item in recorded['skipped']}
+    problems = []
+    expected = set()
+    for entry in parse_tree_listing(listing):
+        if entry['path'] in skipped:
+            continue
+        expected.add(entry['path'])
+        target = pathlib.Path(tree) / entry['path']
+        if entry['type'] == 'commit':
+            if not target.is_dir():
+                problems.append(entry['path'])
+            continue
+        if entry['mode'] == '120000':
+            if not target.is_symlink() or git_blob_sha1(
+                    os.readlink(str(target)).encode('utf-8', 'surrogateescape')) != entry['oid']:
+                problems.append(entry['path'])
+            continue
+        if target.is_symlink() or not target.is_file():
+            problems.append(entry['path'])
+            continue
+        if git_blob_sha1(target.read_bytes()) != entry['oid']:
+            problems.append(entry['path'])
+    present = 0
+    for directory, directories, files in os.walk(tree):
+        present += len(files) + sum(1 for name in directories if os.path.islink(os.path.join(directory, name)))
+        directories[:] = [name for name in directories if not os.path.islink(os.path.join(directory, name))]
+    expected_files = len(expected) - recorded['submodules']
+    if present != expected_files:
+        problems.append('tree has %d files, expected %d' % (present, expected_files))
+    if problems:
+        fail('tree differs from %s: %s' % (commit, ', '.join(problems[:10])))
+
+
+def fetch_repository(git, environment, url, ref, commit, destination, history):
+    destination = pathlib.Path(destination)
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    repository = destination / 'repo'
+    remove_tree(repository)
+    remove_tree(destination / 'fetch.json')
+    commands = []
+
+    def run(arguments, cwd=repository):
+        commands.append(['git'] + (['-C', 'repo'] if cwd else []) + arguments)
+        return git_run(git, cwd, environment, arguments)
+
+    run(['init', '--quiet', str(repository)], cwd=None)
+    commands[-1][-1] = 'repo'
+    fetch = ['fetch', '--no-tags', '--quiet']
+    if not history:
+        fetch += ['--depth', '1']
+    run(fetch + [url, ref])
+    fetched = git_text(git, repository, environment, ['rev-parse', 'FETCH_HEAD^{commit}'])
+    if fetched != commit:
+        fail('%s %s resolved to %s, expected %s' % (url, ref, fetched, commit))
+    run(['update-ref', 'refs/heads/main', commit])
+    run(['symbolic-ref', 'HEAD', 'refs/heads/main'])
+    (repository / '.git' / 'FETCH_HEAD').unlink()
+    tree = export_tree(git, repository, environment, commit, destination / 'tree')
+    record = {'schema': FETCH_SCHEMA, 'url': url, 'ref': ref, 'commit': commit,
+              'history': history, 'commands': commands,
+              'git_version': git_text(git, None, environment, ['--version']),
+              'refs': git_refs(git, repository, environment), 'tree': tree}
+    if history:
+        record['commit_count'] = int(git_text(git, repository, environment,
+                                              ['rev-list', '--count', 'refs/heads/main']))
+    write_json(destination / 'fetch.json', record)
+    return record
+
+
+def verify_repository(git, environment, commit, destination, deep=False, history=False):
+    destination = pathlib.Path(destination)
+    record_path = destination / 'fetch.json'
+    if not record_path.is_file():
+        fail('not fetched: %s' % destination)
+    record = read_json(record_path)
+    if record.get('schema') != FETCH_SCHEMA or record['commit'] != commit:
+        fail('fetch record does not match the pinned commit: %s' % record_path)
+    if history and not record['history']:
+        fail('%s holds one commit, but git mode needs the full history; fetch it with --mode git or '
+             'verify with --mode dir' % destination)
+    repository = destination / 'repo'
+    refs = git_refs(git, repository, environment)
+    if refs != ['%s refs/heads/main' % commit] or refs != record['refs']:
+        fail('unexpected refs in %s: %s' % (repository, refs))
+    if git_text(git, repository, environment, ['rev-parse', 'HEAD']) != commit:
+        fail('HEAD is not the pinned commit in %s' % repository)
+    if record['history']:
+        count = int(git_text(git, repository, environment, ['rev-list', '--count', 'refs/heads/main']))
+        if count != record['commit_count']:
+            fail('commit count changed in %s' % repository)
+        if deep:
+            git_run(git, repository, environment, ['fsck', '--no-dangling', '--connectivity-only'])
+    verify_tree(git, repository, environment, commit, destination / 'tree', record['tree'])
+    return record
+
+
+def repository_ref(source):
+    return source.get('ref') or source['commit']
+
+
+def workload_modes(workload, mode):
+    if mode == 'manifest':
+        return workload['modes']
+    return ['dir', 'git'] if mode == 'both' else [mode]
+
+
+def command_fetch(arguments, source_root):
+    require_posix('fetch')
+    cache = resolve_cache(arguments.cache, source_root)
+    manifest = load_manifest(source_root, arguments.set)
+    selected = select_workloads(manifest, arguments.only)
+    large = [workload['id'] for workload in selected if workload.get('class') == 'large']
+    if large and not arguments.allow_large:
+        print_line('skipping large repositories (pass --allow-large to fetch them): %s' % ', '.join(large))
+        selected = [workload for workload in selected if workload['id'] not in large]
+    git = find_git(arguments.git)
+    environment = git_environment(cache / '.home')
+    for workload in selected:
+        modes = workload_modes(workload, arguments.mode)
+        source = workload['source']
+        destination = cache / workload['path']
+        history = 'git' in modes
+        if not arguments.force and (destination / 'fetch.json').is_file():
+            try:
+                verify_repository(git, environment, source['commit'], destination, history=history)
+            except WorkloadError:
+                pass
+            else:
+                print_line('%s is already fetched and verified; pass --force to fetch it again' % workload['id'])
+                continue
+        print_line('fetching %s at %s (%s)' % (workload['id'], source['commit'],
+                                              'full history' if history else 'one commit'))
+        record = fetch_repository(git, environment, source['url'], repository_ref(source),
+                                  source['commit'], destination, history)
+        print_line('fetched %s: %d files, %d bytes%s' % (
+            workload['id'], record['tree']['files'], record['tree']['bytes'],
+            ', %d commits' % record['commit_count'] if history else ''))
+        if record['tree']['skipped']:
+            print_line('warning: %d paths collide on this file system; see %s' % (
+                len(record['tree']['skipped']), destination / 'fetch.json'))

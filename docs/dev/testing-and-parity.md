@@ -44,6 +44,7 @@ Run all commands from the repository root.
 | Frozen evidence check only | `cargo xtask frozen-evidence-check` |
 | Test files registered in Bazel | `cargo xtask build-system-check` |
 | Quality corpus report | `just quality-eval` |
+| Labeled inputs for scanner comparisons | `cargo xtask compare-quality generate --out CACHE`, see [Comparison quality inputs](comparison-quality.md) |
 | The full local gate | `just ci` |
 
 Run `just flake-check` after a change to timers, cancellation, subprocesses,

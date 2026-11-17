@@ -1,0 +1,76 @@
+{
+  "schema": "rustleaks-comparison-tools-v1",
+  "tools": [
+    {
+      "id": "rustleaks-0.1.0-alpha.9",
+      "family": "rustleaks",
+      "version": "0.1.0-alpha.9",
+      "binary": "/opt/scanners/rustleaks-0.1.0-alpha.9-aarch64-apple-darwin/rustleaks",
+      "sha256": "e7967563da6a7e19901799ec0c5f366d4cab130fb1de90ba7252c1ecc521a1a9",
+      "build": "release",
+      "regex_engine": "rust-regex",
+      "rule_count": 222,
+      "rule_source": "copied default configuration of the pinned Gitleaks revision",
+      "notes": "macOS arm64 release archive; no native packs or --complete-profile"
+    },
+    {
+      "id": "rustleaks-local",
+      "family": "rustleaks",
+      "version": "0.1.0-alpha.9+local",
+      "binary": "/opt/scanners/rustleaks-local/rustleaks",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "build": "local bazelisk build -c opt //crates/rustleaks-cli:rustleaks at a named commit",
+      "regex_engine": "rust-regex",
+      "rule_count": 222,
+      "rule_source": "default rules; 542 with all three native packs, 31 of them hidden helpers",
+      "notes": "replace the hash with the SHA-256 of the local build and record the commit here"
+    },
+    {
+      "id": "gitleaks-8.30.1",
+      "family": "gitleaks",
+      "version": "8.30.1",
+      "binary": "/opt/scanners/gitleaks-8.30.1/gitleaks",
+      "sha256": "ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f",
+      "build": "release",
+      "regex_engine": "go-re2",
+      "rule_count": 222,
+      "rule_source": "embedded default configuration",
+      "notes": "GitHub release binary for darwin arm64"
+    },
+    {
+      "id": "betterleaks-1.10.1",
+      "family": "betterleaks",
+      "version": "1.10.1",
+      "binary": "/opt/scanners/betterleaks-1.10.1/betterleaks",
+      "sha256": "13ac5109fa85a590c7ba6e7f130311e0c60a2bf582c3aac073176c93b46621a8",
+      "build": "release",
+      "regex_engine": "go-re2 (WebAssembly)",
+      "rule_source": "embedded default configuration",
+      "notes": "kept for continuity with earlier comparisons"
+    },
+    {
+      "id": "betterleaks-2.0.0-rc.8",
+      "family": "betterleaks",
+      "adapter": "betterleaks-v2",
+      "version": "2.0.0-rc.8",
+      "binary": "/opt/scanners/betterleaks-2.0.0-rc.8/betterleaks",
+      "sha256": "5253cd8409d5468c28c4f6b5aa88dd0d8dfcb6caab2faee7697fef66afb12d42",
+      "build": "release",
+      "regex_engine": "re2 (WebAssembly under wazero)",
+      "rule_source": "embedded default configuration; the harness also counts rule IDs",
+      "notes": "binary from betterleaks_2.0.0-rc.8_darwin_arm64.tar.gz, archive SHA-256 42dd8a93abc811beb2ed8f1bcc484d1966fe11210df994388653a48979f64ca6"
+    },
+    {
+      "id": "kingfisher-2.19.1",
+      "family": "kingfisher",
+      "version": "2.19.1",
+      "binary": "/opt/scanners/kingfisher-2.19.1/kingfisher",
+      "sha256": "831e2bafbb344644632490ada21c55e4843d8908ca794eb2bbe7b590ccb6bc2b",
+      "build": "release",
+      "regex_engine": "vectorscan",
+      "rule_count": 502,
+      "rule_source": "built-in catalog; 472 of 503 entries come from Betterleaks v2.0.0-rc.7; 502 applied at medium confidence",
+      "notes": "macOS arm64 release; hash matches the published CHECKSUM-darwin-arm64.txt"
+    }
+  ]
+}

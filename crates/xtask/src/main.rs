@@ -8,6 +8,9 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod comparison;
+mod comparison_quality;
+mod comparison_workloads;
 mod docs_check;
 mod fuzzing;
 mod performance;
@@ -88,6 +91,9 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "quality-check" => quality_check(),
         [command] if command == "miri-check" => miri_check(),
         [command] if command == "panic-abort-check" => panic_abort_check(),
+        [command, arguments @ ..] if command == "compare-quality" => {
+            comparison_quality::run(&workspace_root()?, arguments)
+        }
         [command, arguments @ ..] if command == "fuzz" => {
             fuzzing::run(&workspace_root()?, arguments)
         }
@@ -114,6 +120,12 @@ fn run(args: &[String]) -> Result<(), String> {
             if command == "perf" && subcommand == "representative" =>
         {
             performance::representative(arguments)
+        }
+        [command, arguments @ ..] if command == "compare" => {
+            comparison::run(&workspace_root()?, arguments)
+        }
+        [command, arguments @ ..] if command == "compare-workloads" => {
+            comparison_workloads::run(&workspace_root()?, arguments)
         }
         _ => Err(usage()),
     }
@@ -150,6 +162,9 @@ const XTASK_COMMANDS: &[&str] = &[
     "fuzz",
     "generate",
     "perf",
+    "compare",
+    "compare-quality",
+    "compare-workloads",
 ];
 
 /// Subcommands accepted after `perf`.
@@ -167,10 +182,15 @@ fn usage() -> String {
     let commands = XTASK_COMMANDS
         .iter()
         .map(|command| match *command {
-            "release-artifact" | "security-deep" | "fuzz" | "generate" => {
+            "release-artifact" | "security-deep" | "fuzz" | "generate" | "compare-quality"
+            | "compare-workloads" => {
                 format!("{command} [ARGS]")
             }
             "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),
+            "compare" => format!(
+                "compare <{}> [ARGS]",
+                comparison::COMPARE_SUBCOMMANDS.join("|")
+            ),
             _ => (*command).to_owned(),
         })
         .collect::<Vec<_>>();
@@ -728,7 +748,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(providers.identity().builtin_review_reference().is_some());
     let connections = NativePolicy::builder()
         .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?;
-    let connection_secret = "Q7m2Z9v4L1c8R5s0N6b3X";
+    let connection_secret = "Q7m2Z9v4L1c8R5s0N6b3X"; // gitleaks:allow
     let connection_input = format!("Server=localhost;PWD={connection_secret};");
     let connection_scan = connections.engine().scan_fragment(
         &Fragment::new(connection_input.as_bytes()), &ScanOptions::default(),

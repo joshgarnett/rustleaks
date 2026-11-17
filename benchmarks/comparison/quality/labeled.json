@@ -1,0 +1,30 @@
+{
+  "schema": "rustleaks-comparison-workloads-v1",
+  "set": "labeled",
+  "workloads": [
+    {
+      "id": "constructed-v1",
+      "family": "labeled",
+      "modes": [
+        "dir"
+      ],
+      "source": {
+        "kind": "generated",
+        "generator": "cargo xtask compare-quality generate",
+        "params": {
+          "corpus": "constructed-v1",
+          "scale": 2.0
+        },
+        "seed": "rustleaks-quality-constructed-v1"
+      },
+      "path": "quality/constructed-v1/tree",
+      "size": {
+        "bytes": 813851,
+        "files": 714,
+        "commits": 0
+      },
+      "labels": "quality/constructed-v1/labels.jsonl",
+      "tuned": false
+    }
+  ]
+}

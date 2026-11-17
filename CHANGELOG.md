@@ -106,6 +106,18 @@
   such as `/dev/zero`, is skipped instead of opened. Before, such a link could
   block the scan or make it read without end. Links to regular files are
   scanned as before.
+- Fix quadratic time and memory for native pack association rules on input
+  with many credential pairs. A rule whose helpers have no line limit now
+  builds one helper list per input buffer and shares it across its findings
+  in that buffer. A rule with a line window or a `same-candidate` relation
+  looks up the helpers that can relate to a finding instead of checking all
+  of them. Findings and their required findings do not change. Work-unit and
+  finding-record counts for these rules are lower.
+- Document that report lines and columns describe the whole match, and that a
+  match ending after the last line break of a file has `EndLine` equal to
+  `StartLine` and `EndColumn` 0, as in Gitleaks. Document the location and
+  decoded findings of the `rustleaks.kubernetes-secret-yaml-long-context`
+  rule. Detection and report values do not change.
 
 The pinned default configuration and default detection behavior are unchanged.
 

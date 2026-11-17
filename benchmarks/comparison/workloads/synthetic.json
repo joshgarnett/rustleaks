@@ -1,0 +1,2510 @@
+{
+ "generators": {
+  "cli-synthetic-v1": "crates/xtask/src/comparison_workloads/legacy.txt",
+  "rustleaks-synthetic-v2": "crates/xtask/src/comparison_workloads/synthetic.txt"
+ },
+ "regenerate": "cargo xtask compare-workloads generate --cache DIR --write-manifest",
+ "schema": "rustleaks-comparison-workloads-v1",
+ "set": "synthetic",
+ "smoke_digests": {
+  "files": "110657feec8e1845ce8fe55ae44fc574fe63b8c1bb09637769942c5d334ef865",
+  "git": "e1d6f1b4317765576ca6c15c0b514318d6c34cb20981f13936748a6ee8aa8a96"
+ },
+ "workloads": [
+  {
+   "description": "One fixed-size JSON Lines file",
+   "expected": {
+    "files_sha256": "9ec8d04cfc5081f015dc4930db15dc1dc9d4b032c315695d5ec73055591748bb",
+    "git_head": null,
+    "inventory_sha256": "b6152f261c825ea2f16e4b594598aa19ca3e76c38fe8242955435a68c9c828b5",
+    "labels_sha256": "3422263a2b0284f5938cfc18fdfcd71da7d1a0e604aa1aa4fb27dc8af71574c4"
+   },
+   "family": "synthetic",
+   "id": "json-4mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 4
+   },
+   "labels": "labels/synthetic/json-4mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/json-4mib",
+   "size": {
+    "bytes": 4194304,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "4 MiB JSON fragment converted to a file scan",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "One fixed-size JSON Lines file"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "One file of separately encoded synthetic tokens",
+   "expected": {
+    "files_sha256": "e27cff67defa24a3e100d0934488ad0e071efdaefa58acb08d5a061b62ac43fd",
+    "git_head": null,
+    "inventory_sha256": "c45bc71ff3c640cdf0e5a426708a84cb0263d2d2b728c9deb262c37d1579b192",
+    "labels_sha256": "3b3d7b5959e747267c7372be58ce0f07a0ac9696c62a7ea80898c5e9d9e9725c"
+   },
+   "family": "synthetic",
+   "id": "base64-20000",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 20000
+   },
+   "labels": "labels/synthetic/base64-20000.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/base64-20000",
+   "size": {
+    "bytes": 1140021,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "20,000 base64 lines at decode depth 1",
+     "archive_depth": 0,
+     "decode_depth": 1,
+     "description": "One file of separately encoded synthetic tokens"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Distinct files of exactly 64 bytes each",
+   "expected": {
+    "files_sha256": "28c78ae79e73c3d177c69381722e00b3c484fc92a50211ca65b6b8265b6a4527",
+    "git_head": null,
+    "inventory_sha256": "263dc0f8224e7ab5dd4d31fbb4cc6486952381c2ac68f0bde0644a83520754de",
+    "labels_sha256": "45c8b091cfbbc14052dbcbcf08589a3e71508b6d095138f9efae3a97ba61b41c"
+   },
+   "family": "synthetic",
+   "id": "files-100000",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 100
+   },
+   "labels": "labels/synthetic/files-100000.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/files-100000",
+   "size": {
+    "bytes": 6400000,
+    "commits": 0,
+    "files": 100000
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "100,000 small core fragments converted to files; no per-fragment Git metadata",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Distinct files of exactly 64 bytes each"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Scan distinct findings and emit a JSON report",
+   "expected": {
+    "files_sha256": "d28d49758a678f24acbf4e8410e8d634c465dc5d1d9cab3f9a728aca8560deb7",
+    "git_head": null,
+    "inventory_sha256": "212f14774699c5e78c2b9467db42ab4b7636b909ab82d2444e9a911450cda046",
+    "labels_sha256": "7919da1c3779997137c0eff9119f5841da00c2858ae022190bdd9ee74a52638a"
+   },
+   "family": "synthetic",
+   "id": "findings-10000",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 10000
+   },
+   "labels": "labels/synthetic/findings-10000.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/findings-10000",
+   "size": {
+    "bytes": 410021,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "10,000-finding serializer case converted to scanning plus reporting",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Scan distinct findings and emit a JSON report"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Raw-block Zstandard streams with 1 KiB expanded members",
+   "expected": {
+    "files_sha256": "5a893b1ec5de0fb157071da1a717e6324d689f2283d64ab7860e0e8efcc5be95",
+    "git_head": null,
+    "inventory_sha256": "2591a3e052a26aa1bf1bb7970d2caeb18d942e1892ae405a1452789ea1fc4182",
+    "labels_sha256": "9bdaa741dd682facc830b1af8c2b9bc5c82ef277de523dba48a850cff80ad371"
+   },
+   "family": "synthetic",
+   "id": "zstd-500",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 10
+   },
+   "labels": "labels/synthetic/zstd-500.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/zstd-500",
+   "size": {
+    "bytes": 516500,
+    "commits": 0,
+    "files": 500
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "500 small Zstandard streams; marker-bearing derivative of the historical zero-run fixture",
+     "archive_depth": 1,
+     "decode_depth": 0,
+     "description": "Raw-block Zstandard streams with 1 KiB expanded members"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Deterministic linear Git history; one replaced short file per commit",
+   "expected": {
+    "files_sha256": "94030d957b57947431040728e05d0eda7013b8e41440c41e2ab3132ede751ab2",
+    "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
+    "inventory_sha256": "f04999b77f293b743958f38232a1e40ee1e47a768f80dd9a99f30cc0133c8103",
+    "labels_sha256": "91e0f862f358bc2e464564b7c2afe63f636b64fb5c88f16fbd75b330ae6a3f6b"
+   },
+   "family": "synthetic",
+   "id": "git-20000",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 5
+   },
+   "labels": "labels/synthetic/git-20000.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-20000",
+   "size": {
+    "bytes": 38,
+    "commits": 20000,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "20,000-commit Git patch-history CLI analogue",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Deterministic linear Git history; one replaced short file per commit",
+     "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
+     "git_log_options": "--full-history 5f4cae1080e647e6eb3026db001154dba4427e45"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Fixed 16 KiB JSON files totaling 12 MiB",
+   "expected": {
+    "files_sha256": "66a8b66f20547d5d8c5408b12311955da8429d2723df8cf3bd26a132d0a2c10e",
+    "git_head": null,
+    "inventory_sha256": "bdbe7f04df26cb4e43a8cacc634d7b005c13b8b2445b52b37235d0f1425a1c3b",
+    "labels_sha256": "ad0ac1cb2655c363ac8f49d1a8b6a5557f09e90870316a8eea3335fec62b1a8b"
+   },
+   "family": "synthetic",
+   "id": "json-768-files",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 8
+   },
+   "labels": "labels/synthetic/json-768-files.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/json-768-files",
+   "size": {
+    "bytes": 12582912,
+    "commits": 0,
+    "files": 768
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "12 MiB JSON split into 768 filesystem inputs, not internal CLI chunks",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Fixed 16 KiB JSON files totaling 12 MiB"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Malformed UTF-8 with ASCII plants on both sides",
+   "expected": {
+    "files_sha256": "b54fdbc6a606284dc56678daa1bb5cb2d264599d1eafd44526625c490fe0d72d",
+    "git_head": null,
+    "inventory_sha256": "25724a9e3c1d72202ca973e53d1c6b28bed39788ac4736c6605844fbfc3ec3f1",
+    "labels_sha256": "280ba50975039d27b76394e43a5f7f5c77625b52b8874028cb88d1c60db86b2e"
+   },
+   "family": "synthetic",
+   "id": "invalid-utf8-4mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 2
+   },
+   "labels": "labels/synthetic/invalid-utf8-4mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/invalid-utf8-4mib",
+   "size": {
+    "bytes": 4194304,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "4 MiB invalid UTF-8 source without NUL or recognized binary magic",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Malformed UTF-8 with ASCII plants on both sides"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Synthetic mixed application tree with sparse provider-shaped plants",
+   "expected": {
+    "files_sha256": "daa4054bcbb2a0212faa90609b98bf3d0dbc2499ecf8638bf4ad6cfe30c755bf",
+    "git_head": null,
+    "inventory_sha256": "973b40bcf1237a578d3f78f3a048cdac83075630f0013e2bd215dcb4f6018dee",
+    "labels_sha256": "368246299d81b86a05ba61df9404ec9fa9132475626c5960b9af5a5d923bb432"
+   },
+   "family": "synthetic",
+   "id": "multilanguage-256kib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 4
+   },
+   "labels": "labels/synthetic/multilanguage-256kib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/multilanguage-256kib",
+   "size": {
+    "bytes": 262144,
+    "commits": 0,
+    "files": 32
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "256 KiB multi-language source converted to a directory of language-specific files",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Synthetic mixed application tree with sparse provider-shaped plants",
+     "heldout": false
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Empty standard input",
+   "expected": {
+    "files_sha256": "5e32d416db822763fa3a52b4956390d653ce9f9c4871c1285d8f3686ed3a268e",
+    "git_head": null,
+    "inventory_sha256": "4f5f4b84245d8ee1c3635ec04e7b058cbe988c8d4cb1f82e79c62083301f332a",
+    "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "family": "synthetic",
+   "id": "empty-stdin",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 0
+   },
+   "labels": "labels/synthetic/empty-stdin.jsonl",
+   "modes": [
+    "stdin"
+   ],
+   "path": "synthetic/empty-stdin/input.txt",
+   "size": {
+    "bytes": 0,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "fixed startup and configuration control",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Empty standard input"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "One tiny synthetic text file",
+   "expected": {
+    "files_sha256": "4b7ed35b139db71b7edaf52c30bc02bc5c43d6b4bc2ad04bd638a475071e9024",
+    "git_head": null,
+    "inventory_sha256": "829922dd8a4bfb8219f3d074e6fd7946b5628229277709aa9d166543f4756829",
+    "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "family": "synthetic",
+   "id": "tiny-clean-file",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 0
+   },
+   "labels": "labels/synthetic/tiny-clean-file.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/tiny-clean-file/record.txt",
+   "size": {
+    "bytes": 36,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "startup, configuration, and ordinary finding control",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "One tiny synthetic text file"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "One tiny synthetic text file",
+   "expected": {
+    "files_sha256": "0bab5a003d3ad3373878776558960cd5a410c72ab9ac936c0ff0bcbd2280ec7a",
+    "git_head": null,
+    "inventory_sha256": "956d49b302322d4a4811d378bbc9242d16fe715e420ecdf769cc85561bdb862e",
+    "labels_sha256": "d5734b8fe662ba401761e5add43432dd63da1ec8022566caa67d80958eae949c"
+   },
+   "family": "synthetic",
+   "id": "tiny-positive",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1
+   },
+   "labels": "labels/synthetic/tiny-positive.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/tiny-positive/record.txt",
+   "size": {
+    "bytes": 62,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "startup, configuration, and ordinary finding control",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "One tiny synthetic text file"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Synthetic mixed application tree with no prescribed credential positives",
+   "expected": {
+    "files_sha256": "13bb5e20f2eaca28c077df287adc5547688500cb3a3279554610572cb6ccdf3f",
+    "git_head": null,
+    "inventory_sha256": "3811bdfa1a9f3fea614d68e852c0cd87dd65483d55b1925158d34e92dac30a13",
+    "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "family": "synthetic",
+   "id": "tiny-clean-tree",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 0
+   },
+   "labels": "labels/synthetic/tiny-clean-tree.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/tiny-clean-tree",
+   "size": {
+    "bytes": 2048,
+    "commits": 0,
+    "files": 8
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "representative application source, configuration, lockfiles, documentation, and generated text",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Synthetic mixed application tree with no prescribed credential positives",
+     "heldout": false
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Synthetic mixed application tree with sparse provider-shaped plants",
+   "expected": {
+    "files_sha256": "c86e3ad2b6da43de69b47bfb5f8031dd50105d1585251b3de84d569d3cfffa66",
+    "git_head": null,
+    "inventory_sha256": "6c5d22ee7d4f0bd2fc51b13cc0ed3d2161f4b0cc1064f77e8a965c1cf3e591c4",
+    "labels_sha256": "6abe5b80bffc74e8f5e1c68e2e082a5c4d1452f7154c75c528c07f5d2b663f97"
+   },
+   "family": "synthetic",
+   "id": "mixed-app-16mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 30
+   },
+   "labels": "labels/synthetic/mixed-app-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/mixed-app-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 2000
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "representative application source, configuration, lockfiles, documentation, and generated text",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Synthetic mixed application tree with sparse provider-shaped plants",
+     "heldout": false
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Synthetic mixed application tree with no prescribed credential positives",
+   "expected": {
+    "files_sha256": "ecc3ae63f709d43088a83898f09152aa0ceb13cd2440bcb114ddd4997972e0a4",
+    "git_head": null,
+    "inventory_sha256": "ff1701e3f2875101ba64030342e878838f97ce1dfb2d84b1f18a5a5fb67696bc",
+    "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "family": "synthetic",
+   "id": "mixed-clean-4mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 0
+   },
+   "labels": "labels/synthetic/mixed-clean-4mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/mixed-clean-4mib",
+   "size": {
+    "bytes": 4194304,
+    "commits": 0,
+    "files": 500
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "representative application source, configuration, lockfiles, documentation, and generated text",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Synthetic mixed application tree with no prescribed credential positives",
+     "heldout": false
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Synthetic mixed application tree with sparse provider-shaped plants",
+   "expected": {
+    "files_sha256": "8580796fde0d702da4f07734c07a5463b82a08909c1ff2080a83537eac7185b3",
+    "git_head": null,
+    "inventory_sha256": "cbcf544f7b18b073527607722f1eb701912e75a6181c92698b94e65134d6ed1a",
+    "labels_sha256": "937cb58fe196a48e4b79150be4f1f46dee4314b7b444c18bc329188b95fdbf82"
+   },
+   "family": "synthetic",
+   "id": "heldout-mixed-8mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 27
+   },
+   "labels": "labels/synthetic/heldout-mixed-8mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/heldout-mixed-8mib",
+   "size": {
+    "bytes": 8388608,
+    "commits": 0,
+    "files": 1250
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "representative application source, configuration, lockfiles, documentation, and generated text",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Synthetic mixed application tree with sparse provider-shaped plants",
+     "heldout": true
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Last eight commits of the fixed linear Git history",
+   "expected": {
+    "files_sha256": "94030d957b57947431040728e05d0eda7013b8e41440c41e2ab3132ede751ab2",
+    "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
+    "inventory_sha256": "b8a69d106d9e5617522accfb3d4472e963471ef2e0a4082acb2ccb5d84f9a5fa",
+    "labels_sha256": "6a51f3b8ba18864415a9f8e9bf0c3b0dc103264d25392e7c33ecb5a3b0da4bbd"
+   },
+   "family": "synthetic",
+   "id": "git-bounded-control",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1
+   },
+   "labels": "labels/synthetic/git-bounded-control.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-20000",
+   "size": {
+    "bytes": 38,
+    "commits": 8,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "bounded history scope control",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Last eight commits of the fixed linear Git history",
+     "git_base": "14e6fe9a8a379698d074550e0725d042bf12ae8c",
+     "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
+     "git_log_options": "--full-history 14e6fe9a8a379698d074550e0725d042bf12ae8c..5f4cae1080e647e6eb3026db001154dba4427e45"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Clean current worktree of a repository with historical positives",
+   "expected": {
+    "files_sha256": "4b8d95b469db61bb91f514e1c62df02b3d9988974d27aa6231eb80aedbd5ef96",
+    "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
+    "inventory_sha256": "19915457a6a144f2c6378ecb4933f7fcd6b01ba3e67b41f160dfed3a32874fa0",
+    "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "family": "synthetic",
+   "id": "git-current-tree-control",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 0
+   },
+   "labels": "labels/synthetic/git-current-tree-control.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/git-20000/history",
+   "size": {
+    "bytes": 38,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "control distinguishes current files from selected Git patch history",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Clean current worktree of a repository with historical positives"
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Staged positive differs from HEAD and the clean unstaged file",
+   "expected": {
+    "files_sha256": "b3dac34a8379e2d25ee26264f0512b13d1f851b939a57cd91d0b53826063709f",
+    "git_head": "3cdc692c32238857085e90cc24f2d7dc334d7c13",
+    "inventory_sha256": "31ce1dcb7f54b1a003831f8ce07eaa3bb7b93598cad1a23445caf32fb4ad05f0",
+    "labels_sha256": "8f7693dcbddffbc08aaf1d94fee2d194752e2638d63796c96c1954fc9dcbc4fc"
+   },
+   "family": "synthetic",
+   "id": "git-staged-control",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1
+   },
+   "labels": "labels/synthetic/git-staged-control.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-staged-control",
+   "size": {
+    "bytes": 44,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "cli-synthetic-v1",
+    "kind": "generated",
+    "params": {
+     "analogy": "bounded staged/index scope control",
+     "archive_depth": 0,
+     "decode_depth": 0,
+     "description": "Staged positive differs from HEAD and the clean unstaged file",
+     "git_head": "3cdc692c32238857085e90cc24f2d7dc334d7c13",
+     "git_staged": true
+    },
+    "seed": "rustleaks-cli-comparison-2026-11-v1"
+   },
+   "tuned": true
+  },
+  {
+   "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
+   "expected": {
+    "files_sha256": "02c4594d70fef176bce121964eccd4c36823bfdb5495251fad41080baee22969",
+    "git_head": null,
+    "inventory_sha256": "1b33744052761efeee373bc6f028e3ba287ed90910820d70ac15814cc461dbaf",
+    "labels_sha256": "b4c75150307a96d896fe8170606b003cae338eec6b1463d84f27a24798a72a85"
+   },
+   "family": "synthetic",
+   "id": "keyword-dense-1mib",
+   "label_counts": {
+    "not-secret": 86,
+    "secret": 19
+   },
+   "labels": "labels/synthetic/keyword-dense-1mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/keyword-dense-1mib",
+   "size": {
+    "bytes": 1048576,
+    "commits": 0,
+    "files": 7
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1048576
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:keyword-dense-1mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
+   "expected": {
+    "files_sha256": "9b61a902d0b1f1f51cc3564012dd000a7064e6800844176aa43da98f1cb9afd9",
+    "git_head": null,
+    "inventory_sha256": "13e4e70c412d6924a9f01cfb90ca3592ae39da03210494b8908c4cacedd0b65e",
+    "labels_sha256": "f20ce4887cdead838523f2ebc66a61398830c8d155e6d0c262e69d216ed564a5"
+   },
+   "family": "synthetic",
+   "id": "keyword-dense-16mib",
+   "label_counts": {
+    "not-secret": 1371,
+    "secret": 340
+   },
+   "labels": "labels/synthetic/keyword-dense-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/keyword-dense-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 115
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 16777216
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:keyword-dense-16mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
+   "expected": {
+    "files_sha256": "0d1ff89a8c87dee36055af04d3dd8873f1e7e309c241ec0b252026f90b80ee70",
+    "git_head": null,
+    "inventory_sha256": "d499c1d16c6b684ed909534fe8819659aafe19a3c501e5afd54d5f38c9a48b6c",
+    "labels_sha256": "091821418973a9860117d420836b0c10a490162de66ad5fed8344073c1795a81"
+   },
+   "family": "synthetic",
+   "id": "keyword-dense-128mib",
+   "label_counts": {
+    "not-secret": 10908,
+    "secret": 2746
+   },
+   "labels": "labels/synthetic/keyword-dense-128mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/keyword-dense-128mib",
+   "size": {
+    "bytes": 134217728,
+    "commits": 0,
+    "files": 957
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 134217728
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:keyword-dense-128mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
+   "expected": {
+    "files_sha256": "afe7fcd98cac8d3db41e5cb5b9389aca42cd7d242754a49a21cb293213797948",
+    "git_head": null,
+    "inventory_sha256": "2a01e4acb248c28cc0523fd4508a8f99d23ffbd962382c7aaab43eb05f581c64",
+    "labels_sha256": "8487a164029e373b3b0533b8f7c26cdefe1972ce319ab65418133f9dd7a90c28"
+   },
+   "family": "synthetic",
+   "id": "keyword-dense-1024mib",
+   "label_counts": {
+    "not-secret": 87371,
+    "secret": 21847
+   },
+   "labels": "labels/synthetic/keyword-dense-1024mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/keyword-dense-1024mib",
+   "size": {
+    "bytes": 1073741824,
+    "commits": 0,
+    "files": 7690
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1073741824
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:keyword-dense-1024mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
+   "expected": {
+    "files_sha256": "352e7ea73d90fa6c26d9272ce960723c6b7120f7ec7a5e5ebd96fe3d92e47246",
+    "git_head": null,
+    "inventory_sha256": "205e378445375d67fa82d8db164ce4b1c8b2101a93b7a6ef75e569b2b024baf5",
+    "labels_sha256": "8d3ef19a50538e5b9ec83ea8ad97a0e2db9abc43efe54c399bcdff6db062c475"
+   },
+   "family": "synthetic",
+   "id": "entropy-negatives-1mib",
+   "label_counts": {
+    "not-secret": 128,
+    "secret": 4
+   },
+   "labels": "labels/synthetic/entropy-negatives-1mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/entropy-negatives-1mib",
+   "size": {
+    "bytes": 1048576,
+    "commits": 0,
+    "files": 2
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1048576
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:entropy-negatives-1mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
+   "expected": {
+    "files_sha256": "441d2f917f9eaeeec886c73ad8747c683f3365476fe6e78b3a51cef9e8e59b2c",
+    "git_head": null,
+    "inventory_sha256": "fb5c4bc5bb3a408e95f84ec8f7432475f15a69dd15226093eae426bc82e434e2",
+    "labels_sha256": "7e4e62e1411b3e767be6d180f77d5b8cdfad93a8eb51f1c2b3706782f62e6a61"
+   },
+   "family": "synthetic",
+   "id": "entropy-negatives-16mib",
+   "label_counts": {
+    "not-secret": 2045,
+    "secret": 60
+   },
+   "labels": "labels/synthetic/entropy-negatives-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/entropy-negatives-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 31
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 16777216
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:entropy-negatives-16mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
+   "expected": {
+    "files_sha256": "b90f3e44ebc5aca2f5b21aeacab24758e8b3ec96e99beae8eb0833e042235273",
+    "git_head": null,
+    "inventory_sha256": "7e6f280991cee12efee86f04e879e6a1f7bd01a762338a2892f4766265e9134d",
+    "labels_sha256": "4ef5f645e1f99a639c7baede41ced77f6209b56158011da611a514e7559d8042"
+   },
+   "family": "synthetic",
+   "id": "entropy-negatives-128mib",
+   "label_counts": {
+    "not-secret": 16387,
+    "secret": 522
+   },
+   "labels": "labels/synthetic/entropy-negatives-128mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/entropy-negatives-128mib",
+   "size": {
+    "bytes": 134217728,
+    "commits": 0,
+    "files": 253
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 134217728
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:entropy-negatives-128mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
+   "expected": {
+    "files_sha256": "5885c4693ce71e11725c0cb52a6a00ef85c7a6d77a6ea43a13314049e7019862",
+    "git_head": null,
+    "inventory_sha256": "07585cd8f6dce5455957b346cd359bf2846490a81eb98a3079c8e5c6ba235878",
+    "labels_sha256": "58f0e18f2a0f1b799f2135f16343fb369f5c4763116117a36c4c873cf69eb90f"
+   },
+   "family": "synthetic",
+   "id": "entropy-negatives-1024mib",
+   "label_counts": {
+    "not-secret": 131078,
+    "secret": 4074
+   },
+   "labels": "labels/synthetic/entropy-negatives-1024mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/entropy-negatives-1024mib",
+   "size": {
+    "bytes": 1073741824,
+    "commits": 0,
+    "files": 1901
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1073741824
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:entropy-negatives-1024mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Source files in 12 languages with varied line lengths and keyword use in code",
+   "expected": {
+    "files_sha256": "4f6989b000d14efb7dbd8ba0ad238cdbf6f12ab684577472f1d3fcfbab7d6618",
+    "git_head": null,
+    "inventory_sha256": "23c9c930eb8626c5e62567dd895a2d1f9de28b3c6974d9fd3c097a72c58773ca",
+    "labels_sha256": "77c6bba5fd58c20cc634ab0cf21b0cec227d814b5753437a7ae71e826bcc4fe8"
+   },
+   "family": "synthetic",
+   "id": "mixed-source-1mib",
+   "label_counts": {
+    "not-secret": 62,
+    "secret": 14
+   },
+   "labels": "labels/synthetic/mixed-source-1mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/mixed-source-1mib",
+   "size": {
+    "bytes": 1048576,
+    "commits": 0,
+    "files": 42
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1048576
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:mixed-source-1mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Source files in 12 languages with varied line lengths and keyword use in code",
+   "expected": {
+    "files_sha256": "bf78e6420a6d4f65f2958621c14597f162b2d93d15bcc3afe637ad1ea4bb896c",
+    "git_head": null,
+    "inventory_sha256": "55818c85bf54af9edc1b61abb5f2cab86d2eabf1fb5d48672f9fdb47c011bae1",
+    "labels_sha256": "17f6c04a5268811751257a71992f6cbb83074854347e3b3164b00084c34ce9eb"
+   },
+   "family": "synthetic",
+   "id": "mixed-source-16mib",
+   "label_counts": {
+    "not-secret": 1021,
+    "secret": 249
+   },
+   "labels": "labels/synthetic/mixed-source-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/mixed-source-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 667
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 16777216
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:mixed-source-16mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Source files in 12 languages with varied line lengths and keyword use in code",
+   "expected": {
+    "files_sha256": "b709dcaeae05cde4bf70b6d34241024cf3aaf324eeca3b6a335b4ebce0e5545f",
+    "git_head": null,
+    "inventory_sha256": "f1ab3ed52a1eb0d571cf5d86799cdc4f975d2b74d376bc5c0ea7c6a7fecdd5ba",
+    "labels_sha256": "d929f60d9ebdc89d35896c8278d1816912a04bac6d15e52718b758f440a0f518"
+   },
+   "family": "synthetic",
+   "id": "mixed-source-128mib",
+   "label_counts": {
+    "not-secret": 8171,
+    "secret": 2045
+   },
+   "labels": "labels/synthetic/mixed-source-128mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/mixed-source-128mib",
+   "size": {
+    "bytes": 134217728,
+    "commits": 0,
+    "files": 5376
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 134217728
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:mixed-source-128mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Source files in 12 languages with varied line lengths and keyword use in code",
+   "expected": {
+    "files_sha256": "8ff0fcdbb2018a254e664738c4e308ca163cf125d2590f8d50cb64f940f684ab",
+    "git_head": null,
+    "inventory_sha256": "51c14d6799eaf3f30b45b469a81b78e7698d0cf75669dd7cd640234e1b6aa863",
+    "labels_sha256": "49347533bbc27d04b2acd1e512ae49c5404c1e7d3a6cecf9ac8f397f28ef1f70"
+   },
+   "family": "synthetic",
+   "id": "mixed-source-1024mib",
+   "label_counts": {
+    "not-secret": 65367,
+    "secret": 16258
+   },
+   "labels": "labels/synthetic/mixed-source-1024mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/mixed-source-1024mib",
+   "size": {
+    "bytes": 1073741824,
+    "commits": 0,
+    "files": 42880
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1073741824
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:mixed-source-1024mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
+   "expected": {
+    "files_sha256": "8270dbff116677e8f1e0c21ae1396d682d4cbcec1fcf1736568eb92e7f7f4150",
+    "git_head": null,
+    "inventory_sha256": "8a743f1b91843ab09e32182f8d9483475960fba430688e51fc941ed88faee47c",
+    "labels_sha256": "9ca3b5b118ab20dfba09565d822b88a5985ad7daa72147aa4e442eb29b88fb03"
+   },
+   "family": "synthetic",
+   "id": "minified-1mib",
+   "label_counts": {
+    "not-secret": 16,
+    "secret": 2
+   },
+   "labels": "labels/synthetic/minified-1mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/minified-1mib",
+   "size": {
+    "bytes": 1048576,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1048576
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:minified-1mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
+   "expected": {
+    "files_sha256": "8c7eaf1c532e8aaeb478a4e3f4dd4a86b49f6abac91d7d81ea75b9790a5f48c8",
+    "git_head": null,
+    "inventory_sha256": "976a813b595259fc37513025b5c5a92449064106c0a240b3a67d593372f1ed9a",
+    "labels_sha256": "a512740d536a7e6528c6a1d45f69c0b3d70096e9d7a5fe5c024b3f754641ff88"
+   },
+   "family": "synthetic",
+   "id": "minified-16mib",
+   "label_counts": {
+    "not-secret": 255,
+    "secret": 32
+   },
+   "labels": "labels/synthetic/minified-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/minified-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 18
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 16777216
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:minified-16mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
+   "expected": {
+    "files_sha256": "40f22f75c47ff7a16f377b4ac8b1ec10f3d78be0c6e86b090816293d5742d773",
+    "git_head": null,
+    "inventory_sha256": "2e53df19a529aa406d788dcb511c032742cc67c5d2797c58c5b98a8743bfd8fc",
+    "labels_sha256": "6900387073f8b8949a3e69eb3a18e7866ba9f53a7f062a61fd0e335d733295f4"
+   },
+   "family": "synthetic",
+   "id": "minified-128mib",
+   "label_counts": {
+    "not-secret": 2047,
+    "secret": 257
+   },
+   "labels": "labels/synthetic/minified-128mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/minified-128mib",
+   "size": {
+    "bytes": 134217728,
+    "commits": 0,
+    "files": 113
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 134217728
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:minified-128mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
+   "expected": {
+    "files_sha256": "c328d50b211783c63c52341a1a1638853cbe7d1db5c88408291458821ec0b6f9",
+    "git_head": null,
+    "inventory_sha256": "cbfed9a9e8fec49d0bb4f52d1b3e32283416248bdf08372c9e93e9ac545d1655",
+    "labels_sha256": "5e741d4cd3c2453a0e2399bbe8dc1cb950843eba1a289172eb10671506a153f4"
+   },
+   "family": "synthetic",
+   "id": "minified-1024mib",
+   "label_counts": {
+    "not-secret": 16386,
+    "secret": 2057
+   },
+   "labels": "labels/synthetic/minified-1024mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/minified-1024mib",
+   "size": {
+    "bytes": 1073741824,
+    "commits": 0,
+    "files": 989
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1073741824
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:minified-1024mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
+   "expected": {
+    "files_sha256": "17e12f76d556ff6a37e3a4c55833f4da163485cb120b16f87d3d58d3911050d1",
+    "git_head": null,
+    "inventory_sha256": "19bdbdce8b0cf9a94efafbe852ff8bd2ce6fda55458acbcee04d14de82656307",
+    "labels_sha256": "be79864e22630b540655541e0777ec6269875f4954e7a4ab932846246539b924"
+   },
+   "family": "synthetic",
+   "id": "binary-mix-1mib",
+   "label_counts": {
+    "not-secret": 2,
+    "secret": 0
+   },
+   "labels": "labels/synthetic/binary-mix-1mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/binary-mix-1mib",
+   "size": {
+    "bytes": 1048576,
+    "commits": 0,
+    "files": 3
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1048576
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:binary-mix-1mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
+   "expected": {
+    "files_sha256": "e8afd158cebf25398c273b6f0aae244e48f1162f9127a4bd69a33646587d104e",
+    "git_head": null,
+    "inventory_sha256": "93d9bdfc2cfaeabbc47302e1bb5ba497a124f0a6b8a1651209c7d387cbafc2e9",
+    "labels_sha256": "7152e1f2eb35a44803fe933b55a2ee01a2baaa509d3ab14665915431f8f24c00"
+   },
+   "family": "synthetic",
+   "id": "binary-mix-16mib",
+   "label_counts": {
+    "not-secret": 8,
+    "secret": 8
+   },
+   "labels": "labels/synthetic/binary-mix-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/binary-mix-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 22
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 16777216
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:binary-mix-16mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
+   "expected": {
+    "files_sha256": "664de9baffbbaa138ca6eebf0f6213c5a0cf7abdcadc101c01f70230e0f88a2c",
+    "git_head": null,
+    "inventory_sha256": "26bc214b72dcf83b58dedd840ecc1311680d1c3e4497976f173443d4a6158230",
+    "labels_sha256": "31472f8789c6ff002c3c50a2728773e01c74d77e485f00b8a6df37263c3198be"
+   },
+   "family": "synthetic",
+   "id": "binary-mix-128mib",
+   "label_counts": {
+    "not-secret": 107,
+    "secret": 62
+   },
+   "labels": "labels/synthetic/binary-mix-128mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/binary-mix-128mib",
+   "size": {
+    "bytes": 134217728,
+    "commits": 0,
+    "files": 181
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 134217728
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:binary-mix-128mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
+   "expected": {
+    "files_sha256": "d93d2eda7d1224e1fd3fe98cfd38bd9f03e0bd44bb4ebe40beff9223f49bcf55",
+    "git_head": null,
+    "inventory_sha256": "a540ac177d733ceabab71859baf10f32a1914549877f27d5527aa22a89954ec0",
+    "labels_sha256": "f25ba0614816939558a99a16070e56d8f3a1675280ea846d12d7b233da9b3451"
+   },
+   "family": "synthetic",
+   "id": "binary-mix-1024mib",
+   "label_counts": {
+    "not-secret": 1119,
+    "secret": 577
+   },
+   "labels": "labels/synthetic/binary-mix-1024mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/binary-mix-1024mib",
+   "size": {
+    "bytes": 1073741824,
+    "commits": 0,
+    "files": 1716
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 1073741824
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:binary-mix-1024mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One distinct GitHub token shape per line",
+   "expected": {
+    "files_sha256": "c6aadace3653ae5234d9b21c562e28745b2ae3817601aed5bd1ecc80ad091bc8",
+    "git_head": null,
+    "inventory_sha256": "0a5f918b380798d1748be1edae84f1acf5dd7e3b1791e0fe797eb2962e0b931c",
+    "labels_sha256": "9d007cdc18f96971523770705c769ceca7647d02a00331d76303a211f0d6871b"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-lines-25k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 609
+   },
+   "labels": "labels/synthetic/dense-github-pat-lines-25k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-lines-25k",
+   "size": {
+    "bytes": 25000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 25000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-lines-25k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One distinct GitHub token shape per line",
+   "expected": {
+    "files_sha256": "a08b231d99ac4d73de79b263097bb58ab57e94e5cfea63de1253632ba00192a3",
+    "git_head": null,
+    "inventory_sha256": "f18d0d1972d03f893f22f245ca74494bb4243ff00610bfa5bf12f61e621e6ac9",
+    "labels_sha256": "6af32db81f85a99a7e210299520aea0dcf7dbd1c4959cd8c5a2b5d5845068a1e"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-lines-50k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1219
+   },
+   "labels": "labels/synthetic/dense-github-pat-lines-50k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-lines-50k",
+   "size": {
+    "bytes": 50000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 50000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-lines-50k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One distinct GitHub token shape per line",
+   "expected": {
+    "files_sha256": "0a033f69815b92d97ddf3da6de4f33d641eb12365ffc4d0e100a17965c21539f",
+    "git_head": null,
+    "inventory_sha256": "421ccc4c1b593eaffd397a5eb6976dc84800dbfd95105c60923c36b16963d2f6",
+    "labels_sha256": "9a860ec6313302effb482bc0035f13d8bda1fc0a83a73b516c101f661bc4074e"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-lines-100k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 2439
+   },
+   "labels": "labels/synthetic/dense-github-pat-lines-100k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-lines-100k",
+   "size": {
+    "bytes": 100000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 100000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-lines-100k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One distinct GitHub token shape per line",
+   "expected": {
+    "files_sha256": "239348916d8c31333a2f3ba9c43054ff95c0d479e4d636872755f12784aa24da",
+    "git_head": null,
+    "inventory_sha256": "b268d80a636bfb481c63bc9e17dcdb526b0ca906e3f94768c5badf2af31528b3",
+    "labels_sha256": "0b510db53261b4bfcf6a850848f6c5e44a44f9e22f096243d14e8ae18bcd29b0"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-lines-200k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 4878
+   },
+   "labels": "labels/synthetic/dense-github-pat-lines-200k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-lines-200k",
+   "size": {
+    "bytes": 200000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 200000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-lines-200k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One distinct GitHub token shape per line",
+   "expected": {
+    "files_sha256": "496059c67461e4a6c292f7c6f181aaced5ccc058bb4de8673ed0d1b1807322a4",
+    "git_head": null,
+    "inventory_sha256": "cf6fa3a92201ad90a81de618826582c432fb76a6f92b60163cbff5334d403f3e",
+    "labels_sha256": "5debd4504b779bbcef76fe26ded388fe07542d710227886da886d82551fe1920"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-lines-400k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 9756
+   },
+   "labels": "labels/synthetic/dense-github-pat-lines-400k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-lines-400k",
+   "size": {
+    "bytes": 400000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 400000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-lines-400k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Distinct GitHub token shapes separated by spaces on one line",
+   "expected": {
+    "files_sha256": "7879c6be7934d11c9a8f7aa10b2743fb2ee549f194f0f72b0f31461a7555a97f",
+    "git_head": null,
+    "inventory_sha256": "fbb61fb6e6383efaf00bb016343fd361830e8756757f8cde58444e3ff1bc5dee",
+    "labels_sha256": "349e5be2d4f1954aabea08dd845ca309a089bc11da93941b2709a68ed246a971"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-single-line-25k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 609
+   },
+   "labels": "labels/synthetic/dense-github-pat-single-line-25k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-single-line-25k",
+   "size": {
+    "bytes": 25000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 25000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-single-line-25k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Distinct GitHub token shapes separated by spaces on one line",
+   "expected": {
+    "files_sha256": "2ff4d3d55410956776c4996459f082038b72d937caeb2098307fc359406be237",
+    "git_head": null,
+    "inventory_sha256": "d9f819823ce22e8e9291d5eac6ed36357834e7d45687e93f0c878b5aefc7f7f0",
+    "labels_sha256": "1d6763f4498d5891a42a50e0fc6268bf1447ddfc7d51e1fbbd888322d9c32bb2"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-single-line-50k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1219
+   },
+   "labels": "labels/synthetic/dense-github-pat-single-line-50k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-single-line-50k",
+   "size": {
+    "bytes": 50000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 50000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-single-line-50k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Distinct GitHub token shapes separated by spaces on one line",
+   "expected": {
+    "files_sha256": "1942083f3cacacaeb54de8ac25f9b06619d2f787e56058eaae8349c4fd1fc4b5",
+    "git_head": null,
+    "inventory_sha256": "075fac8b29f3b23868b962f85898d290e543ff5c0224240e45d2b99602c8b28a",
+    "labels_sha256": "66d6eff19696cbf9ca215ab26af7af576ab8cde663ba6695d753ce38b964482b"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-single-line-100k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 2439
+   },
+   "labels": "labels/synthetic/dense-github-pat-single-line-100k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-single-line-100k",
+   "size": {
+    "bytes": 100000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 100000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-single-line-100k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Distinct GitHub token shapes separated by spaces on one line",
+   "expected": {
+    "files_sha256": "b4336a3be415ac1db57b193285f8cb6e4f6be339e082a29ee526c9f61fdc188c",
+    "git_head": null,
+    "inventory_sha256": "ccf761e78ae08fdeb3223d61e5cf60ca4ac0404ac59908adb66a125de2c64eb9",
+    "labels_sha256": "9d1c36ed567b098ce26940c8aa8537c9e66b8484e53e4e608fb03f83195fcdc7"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-single-line-200k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 4878
+   },
+   "labels": "labels/synthetic/dense-github-pat-single-line-200k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-single-line-200k",
+   "size": {
+    "bytes": 200000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 200000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-single-line-200k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Distinct GitHub token shapes separated by spaces on one line",
+   "expected": {
+    "files_sha256": "4eaf927a288216fb1cf39421f6278f3a35844062b353ae4e85847b8508128685",
+    "git_head": null,
+    "inventory_sha256": "5617c98e281c5d1809774f85300268f3929f627e1ba8e9b34df4ae2f02bf5bd1",
+    "labels_sha256": "0efa286637e275a21fb2cc2e74b4e8e7a4a82e3c172920a5c6b5da397e231e70"
+   },
+   "family": "synthetic",
+   "id": "dense-github-pat-single-line-400k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 9756
+   },
+   "labels": "labels/synthetic/dense-github-pat-single-line-400k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-github-pat-single-line-400k",
+   "size": {
+    "bytes": 400000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 400000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-github-pat-single-line-400k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Generic api_key = '...' assignments repeated on one line",
+   "expected": {
+    "files_sha256": "1c3dfed6bb1dc0ee4047fae1491337f69283a4fde9c3b9390e7e57c9432e65c3",
+    "git_head": null,
+    "inventory_sha256": "4d56bdafd1a92ff568b09f881e3fa322ec20b9c6a0e43d55e69b1e60313f3fe4",
+    "labels_sha256": "ee578f9919aa911edc72ec14f74acd97b65751702f538b2a526c4728d31e0115"
+   },
+   "family": "synthetic",
+   "id": "dense-generic-single-line-25k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 471
+   },
+   "labels": "labels/synthetic/dense-generic-single-line-25k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-generic-single-line-25k",
+   "size": {
+    "bytes": 25000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 25000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-generic-single-line-25k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Generic api_key = '...' assignments repeated on one line",
+   "expected": {
+    "files_sha256": "1dd8567237f86196416286029914cc31d18052c20342551eb97772b794871b25",
+    "git_head": null,
+    "inventory_sha256": "447f564f56362a75fcaba63f52f6acf2b8be46d12f7ffaf58e8146aeebdc21a0",
+    "labels_sha256": "24cf0dc326ac929428456d3f6827bc32bbb0a1adc5cfba27b259e674c0b43645"
+   },
+   "family": "synthetic",
+   "id": "dense-generic-single-line-50k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 943
+   },
+   "labels": "labels/synthetic/dense-generic-single-line-50k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-generic-single-line-50k",
+   "size": {
+    "bytes": 50000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 50000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-generic-single-line-50k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Generic api_key = '...' assignments repeated on one line",
+   "expected": {
+    "files_sha256": "064b1a3efa7f53d22063a082080d8ed58a9d0b32049f37e9ac55c9f70925b4d9",
+    "git_head": null,
+    "inventory_sha256": "930d49d7683f6dfaa9a0483c4ef58be707a2a8aa6f98910b6a2149589ba3ed27",
+    "labels_sha256": "c7a34cd2606276668a78afa55eb270924bbe87e1f49047f0a8f96be28a487625"
+   },
+   "family": "synthetic",
+   "id": "dense-generic-single-line-100k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1886
+   },
+   "labels": "labels/synthetic/dense-generic-single-line-100k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-generic-single-line-100k",
+   "size": {
+    "bytes": 100000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 100000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-generic-single-line-100k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Generic api_key = '...' assignments repeated on one line",
+   "expected": {
+    "files_sha256": "ab616001ca5f788d1870045e33aa1f90ad298646690278a528fecf2a5c43c0ec",
+    "git_head": null,
+    "inventory_sha256": "1a54dab64f233652432fb50defe5a8ef114c670ba970520fcc0beaafac05e23f",
+    "labels_sha256": "eccfba06b511c3acf14e76fbc17acb5e809e83964e451c0fff5d90d37b18a006"
+   },
+   "family": "synthetic",
+   "id": "dense-generic-single-line-200k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 3773
+   },
+   "labels": "labels/synthetic/dense-generic-single-line-200k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-generic-single-line-200k",
+   "size": {
+    "bytes": 200000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 200000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-generic-single-line-200k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Generic api_key = '...' assignments repeated on one line",
+   "expected": {
+    "files_sha256": "711c81d9f473d41a1ab4c3c3db0e23786c475b49aefbfbaf2f1bbf6d2e13f06e",
+    "git_head": null,
+    "inventory_sha256": "37a4803ec475bc6b2405709b19d3cbdd50583481af8bbd880abdcd20b7b32b93",
+    "labels_sha256": "d8f6cd4d6abfd3c537b20924c2f771c88cfb4e01ac558383be602546777ef7a7"
+   },
+   "family": "synthetic",
+   "id": "dense-generic-single-line-400k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 7547
+   },
+   "labels": "labels/synthetic/dense-generic-single-line-400k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-generic-single-line-400k",
+   "size": {
+    "bytes": 400000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 400000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-generic-single-line-400k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "PlanetScale database ID and token line pairs",
+   "expected": {
+    "files_sha256": "8d356b057b4128b079639b4548c4993e927cffcce807310762889f7f0e269c19",
+    "git_head": null,
+    "inventory_sha256": "47fd22b95e1e9b913c02014a167c19e76efdfb2dd1e1081218da5a9612b083df",
+    "labels_sha256": "97b0c922266de303a75e33007530922cd82e9ee54ecae7e7cfbe7962d02430c1"
+   },
+   "family": "synthetic",
+   "id": "dense-planetscale-pairs-25k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 252
+   },
+   "labels": "labels/synthetic/dense-planetscale-pairs-25k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-planetscale-pairs-25k",
+   "size": {
+    "bytes": 25000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 25000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-planetscale-pairs-25k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "PlanetScale database ID and token line pairs",
+   "expected": {
+    "files_sha256": "c8242431ceb00646383a9930111b772cb130c9e9c96369cf896a0f8f8f1fae80",
+    "git_head": null,
+    "inventory_sha256": "2e14feae14208754a8175b42d7bdfe339460798a548283d19b9400a9ae36d080",
+    "labels_sha256": "ecd60c6e523d525f27c310c2f9f009e7631049459ab9b5567beb02d4898cf596"
+   },
+   "family": "synthetic",
+   "id": "dense-planetscale-pairs-50k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 505
+   },
+   "labels": "labels/synthetic/dense-planetscale-pairs-50k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-planetscale-pairs-50k",
+   "size": {
+    "bytes": 50000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 50000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-planetscale-pairs-50k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "PlanetScale database ID and token line pairs",
+   "expected": {
+    "files_sha256": "2ec471afc61edd4cbb460fd1b6ddeb294869e55b8e401eae82149e3fd1b7ee8a",
+    "git_head": null,
+    "inventory_sha256": "4553aa1c8976c7e794a591a4e439152aaf48f1a1e3725abbb656cc67c772a51c",
+    "labels_sha256": "2143a3e8e32f6f35707b991da0d9d64c3d5ffe33a0313108bf8bd36fd3ae777a"
+   },
+   "family": "synthetic",
+   "id": "dense-planetscale-pairs-100k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1010
+   },
+   "labels": "labels/synthetic/dense-planetscale-pairs-100k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-planetscale-pairs-100k",
+   "size": {
+    "bytes": 100000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 100000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-planetscale-pairs-100k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "PlanetScale database ID and token line pairs",
+   "expected": {
+    "files_sha256": "d13b8895f2a4c906837a89593afbd824c8589bc6a57d168451474fbfe7565f52",
+    "git_head": null,
+    "inventory_sha256": "a1ff3422ea6c8540026119b79a1bcc4e980e7b68fed66137c5756d2b844f332d",
+    "labels_sha256": "036968c75cb57db669339bdc6fc79144a2eba2f5dce7a2d4c8832aa3efa3735d"
+   },
+   "family": "synthetic",
+   "id": "dense-planetscale-pairs-200k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 2020
+   },
+   "labels": "labels/synthetic/dense-planetscale-pairs-200k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-planetscale-pairs-200k",
+   "size": {
+    "bytes": 200000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 200000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-planetscale-pairs-200k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "PlanetScale database ID and token line pairs",
+   "expected": {
+    "files_sha256": "a95c505feefc03c14363fc8f9eb5d06f96b5ee0166ffddeead1674f0f3bcd2eb",
+    "git_head": null,
+    "inventory_sha256": "b744ffd2937b48a54422a0a654dd7808cb6c68bb460eb9605cc75c4199496c20",
+    "labels_sha256": "30f20d920b9a6683647c0ca8f0c96ff5bae644f26b6b1009c39342cd52a0450f"
+   },
+   "family": "synthetic",
+   "id": "dense-planetscale-pairs-400k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 4040
+   },
+   "labels": "labels/synthetic/dense-planetscale-pairs-400k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-planetscale-pairs-400k",
+   "size": {
+    "bytes": 400000,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 400000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-planetscale-pairs-400k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Database URIs with passwords, Base64 encoded as one line",
+   "expected": {
+    "files_sha256": "591e851981b0cb324ed46d3802679cfccffa9cccb01707823e6d6129cefa9655",
+    "git_head": null,
+    "inventory_sha256": "a42414123fdee0e362ba4790f214f9412b231514558bc5e597752ab24d174b95",
+    "labels_sha256": "c5eec6065e5fdf175cf8997dd3172a514820ade5083ba5d3f85121f9c259c1af"
+   },
+   "family": "synthetic",
+   "id": "dense-base64-uris-25k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 348
+   },
+   "labels": "labels/synthetic/dense-base64-uris-25k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-base64-uris-25k",
+   "size": {
+    "bytes": 25057,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 25000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-base64-uris-25k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Database URIs with passwords, Base64 encoded as one line",
+   "expected": {
+    "files_sha256": "855cb019cf184604188bcfb492f13185c688c977cdafe8c2e44f6cac1068808b",
+    "git_head": null,
+    "inventory_sha256": "64aafd06040d1dd3910e9521bfbedc450018866271049714a236d2e3e6460f96",
+    "labels_sha256": "fde0547018ac8c72a11bf8241086785f551d277dfb297f435192b730ca620ad4"
+   },
+   "family": "synthetic",
+   "id": "dense-base64-uris-50k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 695
+   },
+   "labels": "labels/synthetic/dense-base64-uris-50k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-base64-uris-50k",
+   "size": {
+    "bytes": 50041,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 50000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-base64-uris-50k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Database URIs with passwords, Base64 encoded as one line",
+   "expected": {
+    "files_sha256": "f8cf1360d291b7feee21b00d002793909e25f32c635e89f23d4452c00dfef677",
+    "git_head": null,
+    "inventory_sha256": "55b3f86c3a365fb9c3e6a5db7a9de9e7686e23d4031c474107b3b8d8b63f2861",
+    "labels_sha256": "e2d63f93787b1055e1a009c12db80f129bf23da0112f33d9ccc2792dae781327"
+   },
+   "family": "synthetic",
+   "id": "dense-base64-uris-100k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 1389
+   },
+   "labels": "labels/synthetic/dense-base64-uris-100k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-base64-uris-100k",
+   "size": {
+    "bytes": 100009,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 100000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-base64-uris-100k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Database URIs with passwords, Base64 encoded as one line",
+   "expected": {
+    "files_sha256": "85c6ee78fc7f923dee1b03e32d09ad57e8fae71abf233b72ee0e95fbcc38ac88",
+    "git_head": null,
+    "inventory_sha256": "436ca705ce1c1b377c072e5d2933ffb145edebf45e3a9dfef875ff2826771395",
+    "labels_sha256": "cdd2bd9438d303f1ec58899704b7d06776e67e39b4933459d31fd3da5323276d"
+   },
+   "family": "synthetic",
+   "id": "dense-base64-uris-200k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 2778
+   },
+   "labels": "labels/synthetic/dense-base64-uris-200k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-base64-uris-200k",
+   "size": {
+    "bytes": 200017,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 200000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-base64-uris-200k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Database URIs with passwords, Base64 encoded as one line",
+   "expected": {
+    "files_sha256": "4909ed32ebc8507f513ace0d45b7c5eb62248c1a5e133298e67de39ff70d14dc",
+    "git_head": null,
+    "inventory_sha256": "56561fe9fd515ed9915966cdfa3952ae411f3075c21329c5119f5726e0fa7eb2",
+    "labels_sha256": "c546a16a0a23284c2c60f6bfaf5fbf0cc0e85ed15e476087c73482e7a0b11837"
+   },
+   "family": "synthetic",
+   "id": "dense-base64-uris-400k",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 5556
+   },
+   "labels": "labels/synthetic/dense-base64-uris-400k.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/dense-base64-uris-400k",
+   "size": {
+    "bytes": 400033,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 400000
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:dense-base64-uris-400k"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One minified line of 16 MiB with eight planted values",
+   "expected": {
+    "files_sha256": "ad5034479aaa6c66e64c6516e26b75a0d2b722c22ae51e33ff80f01eb36f8c31",
+    "git_head": null,
+    "inventory_sha256": "036b44ce3c22a43bb10953838275c688bdc01a8c846dd1ca00e977e95413c75f",
+    "labels_sha256": "a8067abf42727b52859dcf2783d822e53a57138ffb93bdea3b55dfb22d669ed0"
+   },
+   "family": "synthetic",
+   "id": "long-line-16mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 8
+   },
+   "labels": "labels/synthetic/long-line-16mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/long-line-16mib",
+   "size": {
+    "bytes": 16777216,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 16777216
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:long-line-16mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Database URIs with passwords, Base64 encoded as one line",
+   "expected": {
+    "files_sha256": "84ea54ab39a48b3dd0842722faf710f12c5ff084b0212d103eb124cdba036a39",
+    "git_head": null,
+    "inventory_sha256": "5772cbfe4dc3d04382f19afc1c20d11e73aca90875efadeb91a8a0d9167cadb5",
+    "labels_sha256": "f2442381983ce3a45285a8b1b6c7e75a77d275f9ecb79aeab9071f2f997ccb41"
+   },
+   "family": "synthetic",
+   "id": "base64-uris-4mib",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 58255
+   },
+   "labels": "labels/synthetic/base64-uris-4mib.jsonl",
+   "modes": [
+    "dir"
+   ],
+   "path": "synthetic/base64-uris-4mib",
+   "size": {
+    "bytes": 4194361,
+    "commits": 0,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "bytes": 4194304
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:base64-uris-4mib"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Trunk of 50 commits and 1,000 branches with two commits each",
+   "expected": {
+    "files_sha256": "bb38b5995533fbfe964c1f6601cfeae597a36e42de16858a24057bb4ba969939",
+    "git_head": "65b8ba68b37a01beca4cbe1669958a0bba9f1734",
+    "inventory_sha256": "929417612959127cb6b10b34a8327459b4ac8e4663b0960e6ea3f941d9c98b3d",
+    "labels_sha256": "37865281b1b128be74913e5f354bca8205634c33eb3998bc23c3599c777fda15"
+   },
+   "family": "synthetic",
+   "id": "git-many-branches",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 25
+   },
+   "labels": "labels/synthetic/git-many-branches.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-many-branches",
+   "size": {
+    "bytes": 202,
+    "commits": 2050,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "branches": 1001,
+     "commits": 2050,
+     "head_reaches_all_commits": false
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:git-many-branches"
+   },
+   "tuned": false
+  },
+  {
+   "description": "200 topic branches merged with merge commits; 10 merges add content of their own",
+   "expected": {
+    "files_sha256": "f80afd2770607f5c4af48b5ccbdb4a63b96ee59b74dedc168535b599a4300d77",
+    "git_head": "b8b9b2ff4c6baf910ae54635164972cc68a962a4",
+    "inventory_sha256": "6b907d54bf5a5529c1774c0e1c1b66fd3eda47196956a46b8dcbfac9f369f4f9",
+    "labels_sha256": "78ee5fcd7cb4e15bd907c99176bf03198db19fb4aaed9de5b42f9e520f5faa10"
+   },
+   "family": "synthetic",
+   "id": "git-merges",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 20
+   },
+   "labels": "labels/synthetic/git-merges.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-merges",
+   "size": {
+    "bytes": 37517,
+    "commits": 601,
+    "files": 211
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "commits": 601,
+     "head_reaches_all_commits": true,
+     "merges": 200
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:git-merges"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One commit replaces all 32,768 lines of a file",
+   "expected": {
+    "files_sha256": "6970cb7c43e79f7effefb516a1be6548c9b85a9c9da376640c03dcf56a2b2291",
+    "git_head": "ab9f4d0bfb352e11c6b737a38559467283604a4a",
+    "inventory_sha256": "af658df99ad2ed40d29a75550eda3bca110017416e04fe5e722bc8ccbeba248e",
+    "labels_sha256": "796fdd73f7154847814b8767ac8156b330d686ec772bd55a00f011951bc2ea08"
+   },
+   "family": "synthetic",
+   "id": "git-huge-hunk",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 8
+   },
+   "labels": "labels/synthetic/git-huge-hunk.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-huge-hunk",
+   "size": {
+    "bytes": 1468221,
+    "commits": 2,
+    "files": 1
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "commits": 2,
+     "head_reaches_all_commits": true,
+     "hunk_lines_added": 32768,
+     "hunk_lines_removed": 32768
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:git-huge-hunk"
+   },
+   "tuned": false
+  },
+  {
+   "description": "One commit changes one line in each of 10,000 files",
+   "expected": {
+    "files_sha256": "dc4e8422fae78d7dc6eb105a550cdceca25bd0e853e4ae0732d43af1c01a1592",
+    "git_head": "a794bd376ff357c6aff210b57ff7047ef343518f",
+    "inventory_sha256": "eb93a52fe1c393d89c0c3ecc19f94d3343ea0f7cc95a92e50f1a5cb73a03ffd6",
+    "labels_sha256": "f890adade22ece1e422b64bf4bb958549d6385b913ab86596df742260bb12bc4"
+   },
+   "family": "synthetic",
+   "id": "git-many-small-files",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 20
+   },
+   "labels": "labels/synthetic/git-many-small-files.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-many-small-files",
+   "size": {
+    "bytes": 893502,
+    "commits": 2,
+    "files": 10000
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "changed_files": 10000,
+     "commits": 2,
+     "head_reaches_all_commits": true
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:git-many-small-files"
+   },
+   "tuned": false
+  },
+  {
+   "description": "Pure renames, renames with edits, and one rename among 1,000 modifications",
+   "expected": {
+    "files_sha256": "fceb099371bd8876e90a82a40170dd51cb0a6816c59868c3ed39dfc255e8c489",
+    "git_head": "95c72bf1109399a3ca11ab38b236bf9cb43a465a",
+    "inventory_sha256": "5b41135450b6f77939e5b5f35e2d3c481eca04ed65c10592e9e0dd34c6d8529f",
+    "labels_sha256": "0c970e6fd70589d24b033ad8524e2adb09b672b3872f32186a0684d5dd01d3f2"
+   },
+   "family": "synthetic",
+   "id": "git-renames",
+   "label_counts": {
+    "not-secret": 0,
+    "secret": 15
+   },
+   "labels": "labels/synthetic/git-renames.jsonl",
+   "modes": [
+    "git"
+   ],
+   "path": "synthetic/git-renames",
+   "size": {
+    "bytes": 106493,
+    "commits": 4,
+    "files": 1100
+   },
+   "source": {
+    "generator": "rustleaks-synthetic-v2",
+    "kind": "generated",
+    "params": {
+     "commits": 4,
+     "head_reaches_all_commits": true,
+     "modified_files": 1000,
+     "renamed_files": 100
+    },
+    "seed": "rustleaks-comparison-workloads-2026-11-17:git-renames"
+   },
+   "tuned": false
+  }
+ ]
+}
