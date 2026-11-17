@@ -83,6 +83,11 @@ def selftest_check(condition, message):
 
 
 def selftest_units():
+    split = {'target': '/cache/repos/x', 'targets': {'dir': '/cache/repos/x/tree', 'git': '/cache/repos/x/repo'}}
+    selftest_check(workload_target(split, 'dir') == '/cache/repos/x/tree'
+                   and workload_target(split, 'git') == '/cache/repos/x/repo', 'per-mode paths pick the mode target')
+    selftest_check(workload_target({'target': '/cache/y', 'targets': {}}, 'git') == '/cache/y',
+                   'a workload without per-mode paths uses its path')
     selftest_check(stats_median([3, 1, 2]) == 2 and stats_median([1, 2, 3, 4]) == 2.5, 'median')
     selftest_check(stats_mad([1, 2, 3, 4, 100]) == 1, 'MAD')
     selftest_check(stats_bimodal([10] * 6 + [20] * 6)['flag'], 'two groups are flagged')

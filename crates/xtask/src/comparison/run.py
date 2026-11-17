@@ -32,8 +32,10 @@ class RunContext(object):
         return {'shared_rules': self.shared_rules, 'profile': self.profile}
 
     def public(self, text, tool, workload):
-        replacements = [(tool['binary'], '<binary>'), (workload['target'], '<target>'),
-                        (self.inputs_dir + '/', '<inputs>/'), (self.output + '/', '<run>/')]
+        replacements = [(tool['binary'], '<binary>')]
+        replacements += [(target, '<target>') for target in sorted(
+            set(workload.get('targets', {}).values()) | {workload['target']}, key=len, reverse=True)]
+        replacements += [(self.inputs_dir + '/', '<inputs>/'), (self.output + '/', '<run>/')]
         for old, new in replacements:
             text = text.replace(old, new)
         return text
@@ -66,7 +68,8 @@ def run_sample(ctx, cell, phase, repetition):
         bin_dir = os.path.join(ctx.output, 'instrument', sample_id)
         child_log = os.path.join(ctx.output, 'instrument', sample_id + '.jsonl')
         measure_git_shim(bin_dir, ctx.git['path'], child_log)
-    invocation = adapter_invocation(tool, cell['mode'], workload['target'], report, cell['settings'], ctx.inputs())
+    invocation = adapter_invocation(tool, cell['mode'], workload_target(workload, cell['mode']), report,
+                                    cell['settings'], ctx.inputs())
     env = measure_environment(home, tmp, bin_dir, invocation['env'])
     if phase == 'measured' and repetition == 0:
         cell['thermal_before'] = thermal_state()
@@ -93,7 +96,8 @@ def run_sample(ctx, cell, phase, repetition):
                 status = 'unexpected-exit-code'
         else:
             try:
-                findings, meta = adapter_parse(tool['adapter'], report, workload['target'], cell['mode'])
+                findings, meta = adapter_parse(tool['adapter'], report, workload_target(workload, cell['mode']),
+                                               cell['mode'])
                 cell['parsed_once'] = True
                 record['tool_meta'] = {key: value for key, value in meta.items()
                                        if key in ('state', 'rules_applied', 'tool_bytes_scanned', 'validations',
@@ -251,7 +255,7 @@ def run_command(options):
     ctx = RunContext(options, output, tools, workloads, git)
     for workload in workloads:
         workload['input_bytes'], workload['input_bytes_source'] = manifest_input_bytes(workload) \
-            if os.path.exists(workload['target']) else (workload['size'].get('bytes'), 'manifest')
+            if os.path.exists(workload_target(workload, 'dir')) else (workload['size'].get('bytes'), 'manifest')
         workload['git_bytes'] = manifest_git_bytes(workload)
         workload['target_config_files'] = manifest_target_config(workload)
         if workload['labels_missing']:
@@ -280,7 +284,7 @@ def run_command(options):
                 cell['reason'] = ('the scan root holds %s, which this tool loads by itself; '
                                   'use --target-config run to run it anyway' % ', '.join(loaded))
                 continue
-        invocation = adapter_invocation(tool, cell['mode'], workload['target'],
+        invocation = adapter_invocation(tool, cell['mode'], workload_target(workload, cell['mode']),
                                         os.path.join(output, 'reports', '<report>.json'), cell['settings'], ctx.inputs())
         if invocation['unsupported']:
             cell['status'], cell['reason'] = 'skipped', invocation['unsupported']

@@ -727,7 +727,7 @@ def score_run(run_dir, seed):
     for cell in cells:
         try:
             findings, _ = adapter_parse(cell['adapter'], os.path.join(run_dir, cell['kept_report']),
-                                        workloads[cell['workload']]['target'], cell['mode'])
+                                        workload_target(workloads[cell['workload']], cell['mode']), cell['mode'])
             loaded[cell['cell_id']] = findings
         except (OSError, ValueError) as error:
             loaded[cell['cell_id']] = None
@@ -763,7 +763,7 @@ def score_run(run_dir, seed):
                 print('compare: WARNING: ' + message, file=sys.stderr)
             else:
                 label_cache[key] = score_load_labels(workload['labels_path'], workload['id'],
-                                                     workload['target'], git, cell['mode'],
+                                                     workload_target(workload, cell['mode']), git, cell['mode'],
                                                      workload.get('home_tool'))
         if label_cache[key] is None or not label_cache[key][0]:
             continue

@@ -75,6 +75,14 @@ def manifest_load_workloads(paths, cache_root):
             workload['set'] = data.get('set')
             workload['manifest'] = os.path.abspath(path)
             workload['target'] = os.path.join(cache_root, relative)
+            # Workload sets may give each mode its own path, for example a
+            # tree for dir mode and a repository for git mode.
+            workload['targets'] = {}
+            per_mode = entry.get('paths') if isinstance(entry.get('paths'), dict) else {}
+            for mode, value in per_mode.items():
+                if mode in MODES and isinstance(value, str) and value and not os.path.isabs(value) \
+                        and '..' not in value.split('/'):
+                    workload['targets'][mode] = os.path.join(cache_root, value)
             workload['tuned'] = bool(entry.get('tuned', False))
             size = entry.get('size') if isinstance(entry.get('size'), dict) else {}
             workload['size'] = {key: size.get(key) for key in ('bytes', 'files', 'commits', 'git_bytes')}
@@ -101,13 +109,18 @@ def manifest_load_workloads(paths, cache_root):
     return workloads, sources
 
 
+def workload_target(workload, mode):
+    """The scan target for one mode: the per-mode path when the set gives one."""
+    return workload.get('targets', {}).get(mode) or workload['target']
+
+
 def manifest_input_bytes(workload):
     """Input bytes come from the workload manifest, never from a tool."""
     declared = workload['size'].get('bytes')
     if isinstance(declared, int) and declared > 0:
         return declared, 'manifest'
     total = 0
-    for directory, names, files in os.walk(workload['target']):
+    for directory, names, files in os.walk(workload_target(workload, 'dir')):
         names[:] = [name for name in names if name != '.git']
         for name in files:
             try:
@@ -127,14 +140,15 @@ def manifest_git_bytes(workload):
 
 def manifest_target_config(workload):
     """Configuration and ignore files at the scan root that tools may load."""
-    target = workload['target']
-    if not os.path.isdir(target):
-        return []
-    return [name for name in TARGET_CONFIG_FILES if os.path.lexists(os.path.join(target, name))]
+    found = set()
+    for target in {workload_target(workload, mode) for mode in workload.get('modes', ['dir'])}:
+        if os.path.isdir(target):
+            found.update(name for name in TARGET_CONFIG_FILES if os.path.lexists(os.path.join(target, name)))
+    return sorted(found)
 
 
 def manifest_check_target(workload, mode):
-    target = workload['target']
+    target = workload_target(workload, mode)
     if not os.path.isdir(target) and not os.path.isfile(target):
         return 'input path does not exist under the cache root'
     if mode == 'git' and not os.path.exists(os.path.join(target, '.git')):
