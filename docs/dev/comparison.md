@@ -76,36 +76,80 @@ the repository, never committed.
 
 Input bytes for throughput come from the manifest. When the manifest gives
 none, the harness counts the regular files outside `.git` itself. It never
-uses a byte count printed by a tool.
+uses a byte count printed by a tool. Git mode has throughput only when
+`size.git_bytes` is set, because the tools read different Git data.
+
+A workload can set a Git scan range in `source.params`: `git_base`,
+`git_head` and `git_log_options`. Gitleaks, Betterleaks 1 and Rustleaks get
+`--log-opts` (the options, or `BASE..HEAD`). Betterleaks 2 gets `--revision`
+and Kingfisher gets `--branch` and `--since-commit`. A range given only as
+log options cannot be passed to Betterleaks 2 or Kingfisher, so those cells
+are skipped.
+
+Rustleaks and Gitleaks load `.gitleaks.toml` and `.gitleaksignore` (and the
+`.rustleaks` names) from the scan root by themselves, and Betterleaks 1
+loads ignore files. The harness lists such files for each workload. Cells
+whose tool would load one are skipped, because the tool would not run with
+its shipped defaults. Pass `--target-config run` to run them anyway; the
+report then lists them as flagged cells.
 
 ### Labels
 
 A labels file is JSON Lines. Each line has the workload, the path, a commit
 or `null`, the byte offsets `start` and `end`, the line, the SHA-256 of the
-labeled text, a category, a label and a source, such as `constructed` or
-`credData`. The label is `secret` or `not-secret`. Any other value, such as
-`ambiguous`, leaves the item out of precision and recall: the label is not
-counted as a secret or a non-secret, and a finding on it is counted as
-excluded. The scorer reads the text at those
-offsets from the input, checks its SHA-256, and reports labels that do not
-check. Labels without a commit are used for `dir` mode, and labels with a
-commit for `git` mode.
+labeled text, a category, a label and a source, such as `constructed`,
+`credData` or `fixture`. Labels hold no secret text. The scorer reads the
+text at the offsets from the input, checks its SHA-256, and reports labels
+that do not check. Unknown fields are ignored.
 
-A label is line-level when it has `"span": "line"`, or when its byte range
-starts at the start of a line and ends at the end of a line. It can cover
-several lines. A finding matches a line-level label when their line ranges
-intersect, whatever the finding's text.
+The label is `secret` or `not-secret`. Any other value, such as `ambiguous`,
+leaves the item out of precision and recall: the label is not counted as a
+secret or a non-secret, and a finding on it is counted as excluded.
+
+Kinds of label:
+
+| Fields | Matches |
+| --- | --- |
+| none of the below | A finding on intersecting lines with matching text |
+| `"span": "line"` | Any finding whose line range intersects the label's lines |
+| `"span": "case"` | Any finding in the same file; the SHA-256 is of the whole case |
+| `"encoding": "base64"` or `"zstd"` | A finding in the same file, or in the archive at that path, whose secret has the label's SHA-256, at any position |
+
+A label without `"span": "line"` is a value label, even when it covers a
+whole line.
+
+`expected` changes how findings on a label count:
+
+- `exactly_one`: one finding matches; more are over-reporting.
+- `count`: `expected_count` findings match; more are over-reporting.
+- `none`: every finding on the label is a false positive.
 
 Labels with the same path and commit whose byte ranges overlap form one
 group, such as a whole-line label and a value label on the same line. A
 finding that matches any member satisfies the whole group, so the second
 label is not counted as a missed secret. A group is a secret when any member
 is a secret. Its category and source come from its narrowest secret member.
+Encoded labels are never grouped.
+
+Git labels:
+
+- A label belongs to `git` mode when it has a commit, an `introduced_by`
+  commit, or `"staged": true` (read from the Git index). Other labels belong
+  to `dir` mode.
+- A finding whose secret has the SHA-256 of a secret label at another
+  commit or path, such as after a rename or in a merge diff, is a duplicate,
+  not a false positive.
+- Labels with `"reachable_from_head": false`, `"introduced_by": "merge"` or
+  `"in_binary": true` are scope differences. They have their own rows and
+  are left out of the overall recall.
 
 Set `"labels_complete": false` on a workload when its labels do not cover
 every secret, as with CredData. A finding that matches no label then counts
-as unknown, not as a false positive. Labels are complete by default. For
-`compare score` with report files, pass `--labels-partial` instead.
+as unknown, not as a false positive. Labels are complete by default, as in
+the synthetic corpora, where any finding outside a secret label is a false
+positive. For `compare score` with report files, pass `--labels-partial`
+instead. A labels file named in a manifest but missing is reported as a
+warning and in the workloads table.
 
 The labeled corpora and the CredData adapter are described in
 `docs/dev/comparison-quality.md`.
@@ -152,11 +196,13 @@ Only the `defaults` lane gets cold cells unless `--cold-lanes` adds more.
 
 Each tool sets threads in its own way, and the ways are not the same:
 
-- Rustleaks scans with 1 worker by default. The only way to set more workers
-  is a `--complete-profile` file, which also makes Rustleaks read each file
-  whole. The harness generates a profile with high limits and the requested
-  `workers` value. A binary without `--complete-profile` runs only the
-  1-thread cells, and the other cells are listed as skipped.
+- Rustleaks scans with 1 worker by default. Its 1-thread cells use no
+  profile, for every build. The only way to set more workers is a
+  `--complete-profile` file, which also makes Rustleaks read each file
+  whole. For more than 1 thread, the harness generates a profile with high
+  limits and the requested `workers` value. A binary without
+  `--complete-profile` runs only the 1-thread cells, and the other cells are
+  listed as skipped.
 - Gitleaks and Betterleaks get `GOMAXPROCS`. Gitleaks keeps a fixed 40
   detection goroutines. Betterleaks 2 starts 4 times `GOMAXPROCS` workers.
 - Kingfisher gets `--jobs`.
@@ -183,7 +229,11 @@ The harness sets these in every lane:
 | Betterleaks 2 | `-s --no-banner --no-color -o FILE --validate=false --analyze=false` | Same as above. `-v` means `--validate` in Betterleaks 2, so the harness never passes it. |
 | Kingfisher | `--no-validate --no-update-check --format json -o FILE` | Validation and update checks make network requests |
 | Kingfisher, `dir` mode | `--git-history none` | Scan the working tree only |
-| Kingfisher, `git` mode | the target is `PATH/.git` | A checkout path makes Kingfisher scan the working tree and the history. The `.git` path limits it to history, like the other tools. |
+| Kingfisher, `git` mode | the target is `PATH/.git` | A checkout path makes Kingfisher scan the working tree and the history. The `.git` path is meant to limit it to history, like the other tools. The harness counts git-mode findings without a commit and flags the cell, so this is checked on every run. |
+
+A cell fails when Kingfisher or Betterleaks 2 reports a validation status,
+or when Kingfisher applies a different number of rules than the shared rules
+lane loads.
 
 Every tool runs with an allowlisted environment: `PATH`, a private `HOME`
 and `TMPDIR`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, `LC_ALL=C`, `TZ=UTC` and
@@ -208,7 +258,11 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 - Not measured: the combined RSS of processes that run at the same time,
   helper processes other than `git`, I/O wait and disk bytes read.
 - Findings are counted from the parsed report, every record, with no
-  deduplication by the harness.
+  deduplication by the harness. Reports over 64 MiB are parsed once per
+  cell; later runs check only the exit code. A report over 256 MiB stops the
+  run.
+- Thermal state is recorded before the first and after the last measured
+  run of each cell.
 
 ## Runs and statistics
 
@@ -223,9 +277,10 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 - Each cell reports the median, the median absolute deviation (MAD), the
   minimum and the maximum, and keeps every sample.
 - Ratios compare each cell with the baseline cell of its group: the
-  `--baseline` tool, or else the first Rustleaks tool. The interval is a
-  percentile bootstrap 95 percent interval of the ratio of medians, with
-  2,000 resamples and a fixed seed.
+  `--baseline` tool, or else the first Rustleaks tool. The report also gives
+  every pair of cells in a group. The interval is a percentile bootstrap 95
+  percent interval of the ratio of medians, with 2,000 resamples and a fixed
+  seed.
 - A cell with 8 or more samples is split at the largest gap between sorted
   samples. It is flagged as bimodal when the gap is at least 3 times the
   larger MAD of the two sides and at least 5 percent of the median. The
@@ -235,9 +290,16 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 ## Scoring
 
 Two items match when they have the same path and commit, their line ranges
-intersect, and their secret texts overlap: one contains the other, or a
-common substring covers at least half of the shorter text. Matching is
-greedy by the largest overlap, and each item is used at most once.
+intersect, and their secret texts match. Texts match when they are equal,
+or when they share at least 4 characters, as a containment or a common
+substring, and the shared part covers at least half of the shorter text.
+The pairing is a maximum one-to-one matching, so no other pairing matches
+more items. Among maximum pairings, larger overlaps are preferred.
+
+In `git` mode, Kingfisher reads blobs and the other tools read patches, so
+the same value can belong to different commits. For `git` mode the scorer
+also gives a commit-agnostic result that matches on path and secret text
+only. The report shows both.
 
 The scorer reports both directions and lists every unmatched item by path,
 lines, rule, secret SHA-256 and length. It never writes the secret text.
@@ -246,22 +308,32 @@ Each unmatched item gets a hint:
 | Hint | Meaning |
 | --- | --- |
 | `duplicate` | The same side already matched this value under another rule. |
-| `span-difference` | The other side has an overlapping value within 3 lines, but it fails the line or overlap test. |
+| `span-difference` | The other side has a matching value within 3 lines, but the lines do not intersect or the text does not match. |
 | `same-lines-other-value` | The other side reports a different value on the same lines. |
 | `nearby-other-value` | The other side reports a different value within 3 lines. |
-| `no-counterpart` | Nothing from the other side is near it in the file. |
+| `no-counterpart` | Nothing from the other side is within 3 lines. |
+
+Hints look only at items within 3 lines or with the same text, so scoring
+stays fast on large files.
 
 Against labels, the scorer reports true positives, false negatives,
 findings on `not-secret` labels, true negatives, unlabeled findings, unknown
-findings, excluded findings and duplicates. A duplicate is a finding whose label group already
-matched another finding. Strict precision counts unlabeled findings and
-duplicates as false positives. Labeled-only precision counts only findings on
-`not-secret` labels. Unknown and excluded findings count in neither.
+findings, excluded findings, duplicates and over-reporting, plus scope
+differences found and missed. Strict precision counts unlabeled findings,
+duplicates and over-reporting as false positives. Labeled-only precision
+counts only findings on `not-secret` labels. Unknown and excluded findings
+count in neither.
 
-Results are split three ways: by category, by label source, and by path
-scope. Test paths are paths with a folder named `test`, `tests`, `spec`,
-`fixtures` or `examples`. A finding with no label has no category or source,
-so it appears only in the overall and path scope rows.
+Results are split by category, label source, path scope, reachability from
+HEAD, file kind, home tool and scope difference. Test paths are paths with
+a folder named `test`, `tests`, `spec`, `fixtures` or `examples`. The home
+tool is the label's `home_tool` field, or the first folder of the path for
+fixture labels. A finding with no label has no category or source, so strict
+precision is given only overall and by path scope.
+
+`score.json` and `score.md` carry the SHA-256 of every secret. A SHA-256 of
+a short or guessable secret can be recovered by brute force, so review them
+before you share them.
 
 To compare two reports without a run folder:
 
@@ -296,6 +368,11 @@ local paths.
   heavy work before a run.
 - The same rule text does not guarantee the same regex meaning in every
   engine.
+- The Rustleaks native packs are ported from rule sources that Kingfisher
+  also bundles, most of them derived from Betterleaks. Pack results and
+  Kingfisher results are therefore not independent.
+- Some differences are rule policy, not misses. For example, the
+  Betterleaks 1 AWS rule reports a key ID only with a nearby secret key.
 - Scope differs by tool even with matched flags. The report lists the known
   differences, such as `.git` contents in `dir` mode, patches versus blobs in
   `git` mode, and pieces versus whole files.

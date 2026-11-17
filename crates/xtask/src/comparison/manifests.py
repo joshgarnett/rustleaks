@@ -77,9 +77,15 @@ def manifest_load_workloads(paths, cache_root):
             workload['target'] = os.path.join(cache_root, relative)
             workload['tuned'] = bool(entry.get('tuned', False))
             size = entry.get('size') if isinstance(entry.get('size'), dict) else {}
-            workload['size'] = {key: size.get(key) for key in ('bytes', 'files', 'commits')}
+            workload['size'] = {key: size.get(key) for key in ('bytes', 'files', 'commits', 'git_bytes')}
+            source = entry.get('source') if isinstance(entry.get('source'), dict) else {}
+            params = source.get('params') if isinstance(source.get('params'), dict) else {}
+            git_range = {key: params[key] for key in ('git_base', 'git_head', 'git_log_options')
+                         if isinstance(params.get(key), str) and params[key]}
+            workload['git_range'] = git_range or None
             labels = entry.get('labels')
             workload['labels_path'] = None
+            workload['labels_missing'] = False
             if isinstance(labels, str) and labels:
                 for base in (cache_root, os.path.dirname(os.path.abspath(path))):
                     candidate = labels if os.path.isabs(labels) else os.path.join(base, labels)
@@ -88,6 +94,7 @@ def manifest_load_workloads(paths, cache_root):
                         break
                 else:
                     workload['labels_path'] = os.path.join(cache_root, labels)
+                    workload['labels_missing'] = True
             workloads.append(workload)
     return workloads, sources
 
@@ -108,6 +115,20 @@ def manifest_input_bytes(workload):
             if stat.S_ISREG(metadata.st_mode):
                 total += metadata.st_size
     return total, 'harness walk of regular files, excluding .git'
+
+
+def manifest_git_bytes(workload):
+    """Bytes for git-mode throughput, only when the manifest gives them."""
+    value = workload['size'].get('git_bytes')
+    return value if isinstance(value, int) and value > 0 else None
+
+
+def manifest_target_config(workload):
+    """Configuration and ignore files at the scan root that tools may load."""
+    target = workload['target']
+    if not os.path.isdir(target):
+        return []
+    return [name for name in TARGET_CONFIG_FILES if os.path.lexists(os.path.join(target, name))]
 
 
 def manifest_check_target(workload, mode):

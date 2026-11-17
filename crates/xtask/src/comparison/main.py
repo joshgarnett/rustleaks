@@ -35,6 +35,9 @@ def main_parser():
     run.add_argument('--no-child-instrumentation', action='store_true', help='skip the instrumented git run')
     run.add_argument('--no-score', action='store_true', help='do not score kept reports at the end')
     run.add_argument('--dry-run', action='store_true', help='plan cells and write run.json without running tools')
+    run.add_argument('--target-config', choices=('skip', 'run'), default='skip',
+                     help='cells whose tool would load a configuration or ignore file from the scan root: '
+                          'skip them (default) or run them and record it')
     score = commands.add_parser('score', help='match findings one to one')
     score.add_argument('--run', help='score every kept report of a run folder')
     score.add_argument('--left', help='ADAPTER=REPORT for an ad hoc comparison')

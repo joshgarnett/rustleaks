@@ -16,6 +16,9 @@ REPORT_LIMITS = [
     'Cold cells start each sample with an empty HOME, TMPDIR and tool cache folders. The operating system page cache is not purged, because that needs root; cold cells are cold for tool caches only.',
     'Warm cells share one HOME per tool across all lanes of the run, so tool caches (such as compiled rule caches) are filled by the warmups.',
     'Results apply only to this host, these tool builds and these inputs.',
+    'Thermal state is recorded before the first and after the last measured run of each cell, and for each workload block.',
+    'Rustleaks and Gitleaks load .gitleaks.toml, .gitleaksignore (and the Rustleaks names) from the scan root by themselves, and Betterleaks 1 loads ignore files. Cells where that would happen are skipped unless the run used --target-config run; the workloads table lists such files.',
+    'Throughput in git mode is given only when the workload manifest gives Git bytes, because the tools read different Git data.',
     'Each tool uses its own mechanism for threads (Rustleaks workers through a generated --complete-profile, GOMAXPROCS for Go tools, --jobs for Kingfisher). These are not identical mechanisms: Gitleaks keeps 40 goroutines, Betterleaks v2 starts 4 x GOMAXPROCS workers, and the Rustleaks profile also switches to whole-file reading.',
     'The same rule text in the shared rules lane does not guarantee the same regex semantics in every engine. Identity agreement shows whether the tools found the same items.',
 ]
@@ -52,7 +55,8 @@ def report_summary(run_dir, seed):
         summary = {key: cell.get(key) for key in ('cell_id', 'lane', 'variant', 'sub', 'tool', 'family', 'adapter',
                                                   'workload', 'mode', 'cache', 'group', 'status', 'reason',
                                                   'runs_planned', 'runs_reason', 'warmups', 'children',
-                                                  'baseline_key', 'settings')}
+                                                  'baseline_key', 'settings', 'thermal_before', 'thermal_after',
+                                                  'non_history_findings', 'target_config_loaded')}
         summary['measured'] = len(measured)
         summary['failed_samples'] = len(measured) - len(good)
         summary['statuses'] = dict(collections.Counter(row['status'] for row in rows))
@@ -67,7 +71,9 @@ def report_summary(run_dir, seed):
         summary['tool_meta'] = next((row.get('tool_meta') for row in good if row.get('tool_meta')), None)
         workload = workloads.get(cell['workload'], {})
         wall = summary['metrics']['wall_ns']
-        size = workload.get('input_bytes')
+        # Throughput needs bytes for the same scope: the input tree in dir
+        # mode, and only manifest-given Git bytes in git mode.
+        size = workload.get('input_bytes') if cell['mode'] == 'dir' else workload.get('git_bytes')
         summary['input_bytes'] = size
         summary['throughput_mib_s'] = (size / 1048576.0) / (wall['median'] / 1e9) if size and wall and wall['median'] else None
         cells.append(summary)
@@ -82,6 +88,23 @@ def report_summary(run_dir, seed):
         base = by_id[base_id]
         for offset, metric in enumerate(('wall_ns', 'cpu_total_ns', 'peak_rss_bytes')):
             cell['ratios'][metric] = stats_ratio_interval(cell['samples'][metric], base['samples'][metric], seed + offset)
+    pairwise = []
+    grouped = collections.defaultdict(list)
+    for cell in cells:
+        if cell['status'] in ('ok', 'partial') and cell['samples']['wall_ns']:
+            grouped[(cell['group'], cell['cache'])].append(cell)
+    for (group, cache), members in sorted(grouped.items()):
+        members.sort(key=lambda cell: cell['cell_id'])
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                left, right = members[a], members[b]
+                pairwise.append({'group': group, 'cache': cache, 'numerator': left['cell_id'],
+                                 'denominator': right['cell_id'],
+                                 'ratios': {metric: stats_ratio_interval(left['samples'][metric],
+                                                                         right['samples'][metric], seed + offset)
+                                            for offset, metric in enumerate(('wall_ns', 'cpu_total_ns',
+                                                                             'peak_rss_bytes'))}})
+    run['pairwise'] = pairwise
     score = None
     score_path = os.path.join(run_dir, 'score.json')
     if os.path.exists(score_path):
@@ -109,6 +132,7 @@ def report_write(run_dir, seed):
                               if key not in ('target', 'manifest', 'labels_path')} for workload in run['workloads']],
                'cells': cells,
                'flags': report_flags(run), 'protocol_deviations': run.get('protocol_deviations', []),
+               'pairwise_ratios': run.get('pairwise', []),
                'measured': REPORT_MEASURED, 'limits': REPORT_LIMITS,
                'score': None if score is None else {
                    'comparisons': [{key: row[key] for key in ('left', 'right', 'group', 'cache', 'matched',
@@ -188,9 +212,10 @@ def report_markdown(run, cells, score, summary):
     rows = [[workload['id'], workload.get('set') or '-', workload.get('family') or '-', ', '.join(workload['modes']),
              workload.get('input_bytes'), workload.get('input_bytes_source'), workload['size'].get('files') or '-',
              workload['size'].get('commits') or '-', 'yes' if workload.get('tuned') else 'no',
-             'yes' if workload.get('labels_path') else 'no'] for workload in run['workloads']]
+             'MISSING' if workload.get('labels_missing') else 'yes' if workload.get('labels_path') else 'no',
+             ', '.join(workload.get('target_config_files') or []) or '-'] for workload in run['workloads']]
     lines += report_table(['Workload', 'Set', 'Family', 'Modes', 'Input bytes', 'Bytes source', 'Files', 'Commits',
-                           'Tuned', 'Labels'], rows)
+                           'Tuned', 'Labels', 'Config or ignore files at the scan root'], rows)
     tuned = [workload['id'] for workload in run['workloads'] if workload.get('tuned')]
     lines += ['', 'Tuned inputs (used during Rustleaks development): %s.' % (', '.join(tuned) if tuned else 'none'), '']
     for lane in LANES:
@@ -229,7 +254,28 @@ def report_markdown(run, cells, score, summary):
             lines += ['Git child processes from the instrumented run:', '']
             lines += report_table(['Cell', 'git processes', 'User CPU ms (sum)', 'System CPU ms (sum)', 'Peak RSS MiB (largest)'], rows)
             lines.append('')
-    lines += ['## Failed, dropped and skipped cells', '']
+    pairs = run.get('pairwise') or []
+    if pairs:
+        lines += ['## Pairwise ratios', '',
+                  'Every pair of cells in the same group and cache state: ratio of medians (first over second) with '
+                  'its bootstrap 95 percent interval.', '']
+        lines += report_table(['First', 'Second', 'Wall', 'CPU', 'Peak RSS'],
+                              [[row['numerator'], row['denominator'], report_ratio(row['ratios']['wall_ns']),
+                                report_ratio(row['ratios']['cpu_total_ns']), report_ratio(row['ratios']['peak_rss_bytes'])]
+                               for row in pairs])
+        lines.append('')
+    flagged = [cell for cell in cells if cell.get('non_history_findings') or cell.get('target_config_loaded')
+               or not cell['findings_stable']]
+    lines += ['## Flagged cells', '']
+    if flagged:
+        lines += report_table(['Cell', 'Findings without a commit in git mode', 'Root files the tool loaded',
+                               'Same findings every run'],
+                              [[cell['cell_id'], cell.get('non_history_findings') or 0,
+                                ', '.join(cell.get('target_config_loaded') or []) or '-',
+                                'yes' if cell['findings_stable'] else 'NO'] for cell in flagged])
+    else:
+        lines.append('None.')
+    lines += ['', '## Failed, dropped and skipped cells', '']
     bad = [cell for cell in cells if cell['status'] not in ('ok', 'planned')]
     if bad:
         lines += report_table(['Cell', 'Status', 'Reason', 'Failed samples'],

@@ -68,11 +68,15 @@ def run_sample(ctx, cell, phase, repetition):
         measure_git_shim(bin_dir, ctx.git['path'], child_log)
     invocation = adapter_invocation(tool, cell['mode'], workload['target'], report, cell['settings'], ctx.inputs())
     env = measure_environment(home, tmp, bin_dir, invocation['env'])
+    if phase == 'measured' and repetition == 0:
+        cell['thermal_before'] = thermal_state()
     record = {'schema': SCHEMA_SAMPLE, 'sample': sample_id, 'cell_id': cell['cell_id'], 'phase': phase,
               'repetition': repetition, 'started_at': utc_now(), 'load_before': load_average()}
     result = measure_execute(invocation['argv'], env, ctx.cwd, stdout_path, stderr_path,
                              ctx.options.timeout, watch_paths=[report])
     record['load_after'] = load_average()
+    if phase == 'measured' and repetition + 1 >= cell.get('runs_planned', 0):
+        cell['thermal_after'] = thermal_state()
     record.update(result)
     status = result['status']
     findings = None
@@ -80,11 +84,20 @@ def run_sample(ctx, cell, phase, repetition):
         status = 'ok'
         if not os.path.exists(report):
             status = 'no-report'
+        elif os.path.getsize(report) > RUN_PARSE_LIMIT and cell.get('parsed_once') and phase != 'instrumented':
+            # Large reports are parsed once per cell; later samples keep only
+            # the exit code check.
+            record['report_bytes'] = os.path.getsize(report)
+            record['findings_checked'] = False
+            if result['exit_code'] not in (0, adapter_leak_exit_code(tool)):
+                status = 'unexpected-exit-code'
         else:
             try:
                 findings, meta = adapter_parse(tool['adapter'], report, workload['target'], cell['mode'])
+                cell['parsed_once'] = True
                 record['tool_meta'] = {key: value for key, value in meta.items()
-                                       if key in ('state', 'rules_applied', 'tool_bytes_scanned', 'validations', 'terminal_findings')}
+                                       if key in ('state', 'rules_applied', 'tool_bytes_scanned', 'validations',
+                                                  'terminal_findings', 'non_history_findings')}
             except (OSError, ValueError) as error:
                 status = 'invalid-report'
                 record['error'] = str(error)[:200]
@@ -102,8 +115,16 @@ def run_sample(ctx, cell, phase, repetition):
                     key: line.get(key) for key in ('status', 'reason', 'findings', 'original_bytes', 'fragments')}
                 if line is None or line.get('status') != 'complete':
                     status = 'incomplete-scan'
-            if tool['adapter'] == 'kingfisher' and record.get('tool_meta', {}).get('validations'):
+            meta = record.get('tool_meta', {})
+            if tool['adapter'] in ('kingfisher', 'betterleaks-v2') and meta.get('validations'):
                 status = 'validation-ran'
+            if (tool['adapter'] == 'kingfisher' and cell['settings'].get('rules') == 'shared'
+                    and meta.get('rules_applied') != len(SHARED_RULES)):
+                status = 'rules-mismatch'
+                record['error'] = 'Kingfisher applied %s rules, not the %d shared rules' % (
+                    meta.get('rules_applied'), len(SHARED_RULES))
+            if meta.get('non_history_findings'):
+                cell['non_history_findings'] = max(cell.get('non_history_findings', 0), meta['non_history_findings'])
             if tool['adapter'] == 'betterleaks-v2' and record.get('tool_meta', {}).get('state') not in (None, 'complete'):
                 status = 'incomplete-scan'
     record['status'] = status
@@ -127,6 +148,9 @@ def run_sample(ctx, cell, phase, repetition):
         shutil.rmtree(home, ignore_errors=True)
     append_jsonl(ctx.samples_path, record)
     return record
+
+
+RUN_PARSE_LIMIT = 64 << 20
 
 
 def run_count(options, warm_median):
@@ -228,6 +252,11 @@ def run_command(options):
     for workload in workloads:
         workload['input_bytes'], workload['input_bytes_source'] = manifest_input_bytes(workload) \
             if os.path.exists(workload['target']) else (workload['size'].get('bytes'), 'manifest')
+        workload['git_bytes'] = manifest_git_bytes(workload)
+        workload['target_config_files'] = manifest_target_config(workload)
+        if workload['labels_missing']:
+            print('compare: WARNING: labels file for workload %s is missing; quality will not be scored'
+                  % workload['id'], file=sys.stderr)
     cells = lanes_plan(tools, workloads, options)
     for cell in cells:
         cell['status'] = 'planned'
@@ -240,6 +269,17 @@ def run_command(options):
         if cell['mode'] == 'git' and tool['adapter'] in ('rustleaks', 'gitleaks', 'betterleaks-v1') and not git:
             cell['status'], cell['reason'] = 'skipped', 'git mode needs a git executable on this host'
             continue
+        if cell['mode'] == 'git' and workload.get('git_range'):
+            cell['settings'] = dict(cell['settings'], git_range=workload['git_range'])
+        loaded = adapter_auto_loaded(tool['adapter'], workload['target_config_files'],
+                                     cell['settings'].get('rules') == 'shared')
+        if loaded:
+            cell['target_config_loaded'] = loaded
+            if options.target_config == 'skip':
+                cell['status'] = 'skipped'
+                cell['reason'] = ('the scan root holds %s, which this tool loads by itself; '
+                                  'use --target-config run to run it anyway' % ', '.join(loaded))
+                continue
         invocation = adapter_invocation(tool, cell['mode'], workload['target'],
                                         os.path.join(output, 'reports', '<report>.json'), cell['settings'], ctx.inputs())
         if invocation['unsupported']:
@@ -249,6 +289,8 @@ def run_command(options):
         cell['flags'] = [dict(item, flag=ctx.public(item['flag'], tool, workload)) for item in invocation['flags']]
         cell['env'] = invocation['env']
     deviations = []
+    if any(cell.get('target_config_loaded') and cell['status'] == 'planned' for cell in cells):
+        deviations.append('some cells run with configuration or ignore files from the scan root (--target-config run)')
     if options.runs:
         deviations.append('--runs %d overrides the protocol run counts' % options.runs)
     if options.warmups < 3:
@@ -293,6 +335,7 @@ def run_command(options):
         tool['sha256_verified'] = after[tool['id']] == tool['sha256']
     if git:
         git['sha256_after'] = sha256_file(git['path'])
+        git['sha256_verified'] = git['sha256_after'] == git['sha256']
     run.update({'finished_at': utc_now(), 'thermal_after': thermal_state(), 'load_after': load_average(),
                 'background_builds_after': background_builds()})
     shutil.rmtree(os.path.join(output, 'homes'), ignore_errors=True)
@@ -304,6 +347,8 @@ def run_command(options):
     report_write(output, options.seed)
     print('wrote %s' % os.path.join(output, 'report.md'), file=sys.stderr)
     bad = [tool['id'] for tool in tools if not tool['sha256_verified']]
+    if git and not git['sha256_verified']:
+        bad.append('git')
     if bad:
         raise HarnessError('binary changed during the run: %s' % ', '.join(bad))
     return 0

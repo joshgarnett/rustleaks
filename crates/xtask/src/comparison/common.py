@@ -4,6 +4,7 @@
 # `python3 -I`. Only the Python 3.9 standard library is used. The modules share
 # one global namespace, so names carry a module prefix where they could clash.
 import argparse
+import bisect
 import collections
 import contextlib
 import datetime

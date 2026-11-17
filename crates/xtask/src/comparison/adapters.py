@@ -44,6 +44,8 @@ ADAPTER_FACTS = {
             'git mode runs the system git log -p and scans added lines of each patch.',
             'Files are read in pieces of about 100,000 bytes unless --complete-profile is set; with a profile each file is read whole.',
             'Native rule packs and --complete-profile exist only in builds after 0.1.0-alpha.9.',
+            'The native packs are ported from rule sources that Kingfisher also bundles, most of them Betterleaks-derived, so pack results and Kingfisher results are not independent.',
+            'Threads: cells with 1 thread run the default runner with no profile, for every build. Cells with more threads use a generated profile.',
         ]},
     'gitleaks': {
         'defaults': {'threads': 'fixed 40 detection goroutines; Go uses GOMAXPROCS OS threads',
@@ -61,6 +63,7 @@ ADAPTER_FACTS = {
             'Gitleaks-derived; dir mode skips .git folders.',
             'git mode runs the system git log -p.',
             'Archive depth 8 by default, where Gitleaks and Rustleaks use 0.',
+            'Its AWS access key rule reports a key ID only with a nearby secret key. A lone key ID is not reported by design, so it is a policy difference, not a miss.',
         ]},
     'betterleaks-v2': {
         'defaults': {'threads': '-j 0 = 4 x GOMAXPROCS detection workers',
@@ -69,6 +72,7 @@ ADAPTER_FACTS = {
             'fs mode scans .git contents and binary files (no MIME skip).',
             'git mode reads history in process (go-git and own readers), HEAD and all non-note refs, without merge patches; blobs over 64 MiB are skipped.',
             'All confidence levels are reported by default.',
+            'The harness fails a cell when a report shows a validation status other than none.',
             '-v means --validate in v2, so the harness never passes it; validation and analysis are set to false explicitly.',
         ]},
     'kingfisher': {
@@ -82,8 +86,32 @@ ADAPTER_FACTS = {
             'Archive extraction (depth 2) also covers SQLite, Python bytecode and PDF text.',
             'Reports medium confidence and above by default; findings are deduplicated by default.',
             'Compiled Vectorscan rules are cached under HOME; cold cells start without that cache.',
+            'Its built-in catalog takes 472 of 503 rules from Betterleaks v2.0.0-rc.7.',
+            'The harness counts git-mode findings without a commit and flags the cell, and fails a shared-rules cell when the number of rules applied is not the number of shared rules.',
         ]},
 }
+
+
+TARGET_CONFIG_FILES = ('.gitleaks.toml', '.gitleaksignore', '.rustleaks.toml', '.rustleaksignore',
+                       '.betterleaks.toml', '.betterleaksignore')
+
+# Files at the scan root that each tool loads by itself: (configuration, ignore).
+AUTO_LOADED = {
+    'rustleaks': (('.rustleaks.toml', '.gitleaks.toml'), ('.rustleaksignore', '.gitleaksignore')),
+    'gitleaks': (('.gitleaks.toml',), ('.gitleaksignore',)),
+    'betterleaks-v1': ((), ('.betterleaksignore', '.gitleaksignore')),
+    'betterleaks-v2': ((), ()),
+    'kingfisher': ((), ()),
+}
+
+
+def adapter_auto_loaded(adapter, present, shared_rules):
+    """Files present at the scan root that this tool would load itself.
+
+    An explicit --config in the shared rules lane replaces a configuration
+    file, but ignore files are still loaded."""
+    configs, ignores = AUTO_LOADED.get(adapter, ((), ()))
+    return sorted(name for name in present if name in ignores or (name in configs and not shared_rules))
 
 
 def adapter_name(tool):
@@ -166,6 +194,10 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
     if name in ('rustleaks', 'gitleaks', 'betterleaks-v1'):
         argv += [mode, target]
         flags.append({'flag': mode + ' <target>', 'reason': path_reason, 'kind': 'input'})
+        git_range = settings.get('git_range') if mode == 'git' else None
+        if git_range:
+            options = git_range.get('git_log_options') or adapter_range_text(git_range)
+            flag(['--log-opts=' + options], 'workload scan range', 'input')
         flag(['--no-banner'], 'keep the banner out of logs', 'output')
         flag(['--no-color'], 'plain logs', 'output')
         flag(['--report-format', 'json', '--report-path', report], 'write a JSON report to a private file', 'output')
@@ -187,14 +219,13 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
             workers = None
             if settings.get('profile'):
                 workers = threads or 1
+            elif threads == 1:
+                flags.append({'flag': '(none)', 'kind': 'lane',
+                              'reason': 'threads=1: the default runner uses 1 worker, so no profile is used for any build'})
             elif threads is not None:
-                if 'complete-profile' in capabilities:
-                    workers = threads
-                elif threads != 1:
+                if 'complete-profile' not in capabilities:
                     return {'unsupported': 'binary has no --complete-profile option, the only way to set more than 1 worker'}
-                else:
-                    flags.append({'flag': '(none)', 'kind': 'lane',
-                                  'reason': 'threads=1: the default runner already uses 1 worker and this binary has no worker setting'})
+                workers = threads
             if workers is not None:
                 if 'complete-profile' not in capabilities:
                     return {'unsupported': 'binary has no --complete-profile option'}
@@ -211,6 +242,11 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
     elif name == 'betterleaks-v2':
         argv += ['fs' if mode == 'dir' else 'git', target]
         flags.append({'flag': ('fs' if mode == 'dir' else 'git') + ' <target>', 'reason': path_reason, 'kind': 'input'})
+        git_range = settings.get('git_range') if mode == 'git' else None
+        if git_range:
+            if not git_range.get('git_head'):
+                return {'unsupported': 'the workload scan range is given only as git log options'}
+            flag(['--revision', adapter_range_text(git_range)], 'workload scan range', 'input')
         flag(['-s'], 'do not print findings to the terminal', 'output')
         flag(['--no-banner'], 'keep the banner out of logs', 'output')
         flag(['--no-color'], 'plain logs', 'output')
@@ -239,6 +275,13 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
         flag(['--format', 'json', '-o', report], 'write a JSON report to a private file', 'output')
         if mode == 'dir':
             flag(['--git-history', 'none'], 'dir mode: scan the working tree only, not Git history', 'input')
+        git_range = settings.get('git_range') if mode == 'git' else None
+        if git_range:
+            if not git_range.get('git_head'):
+                return {'unsupported': 'the workload scan range is given only as git log options'}
+            flag(['--branch', git_range['git_head']], 'workload scan range', 'input')
+            if git_range.get('git_base'):
+                flag(['--since-commit', git_range['git_base']], 'workload scan range', 'input')
         if shared:
             flag(['--rules-path', inputs['shared_rules'], '--load-builtins=false'],
                  'shared rules lane: load only the common synthetic rules (Betterleaks TOML)', 'lane')
@@ -260,6 +303,11 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
     else:
         return {'unsupported': 'no adapter for %s' % name}
     return {'unsupported': None, 'argv': argv, 'env': env, 'flags': flags}
+
+
+def adapter_range_text(git_range):
+    head = git_range.get('git_head') or 'HEAD'
+    return '%s..%s' % (git_range['git_base'], head) if git_range.get('git_base') else head
 
 
 def adapter_leak_exit_code(tool):
@@ -337,10 +385,17 @@ def adapter_parse(adapter, report, target, mode):
                 scan = document['scan']
                 meta['state'] = scan.get('state')
                 meta['tool_bytes_scanned'] = scan.get('bytes_scanned')
+                counts = scan.get('status_counts') or {}
+                meta['validations'] = meta.get('validations', 0) + sum(
+                    value for key, value in counts.items() if key != 'none' and isinstance(value, int))
             for value in rows:
                 location = value.get('location') or {}
                 match = value.get('match') or {}
                 attributes = value.get('attributes') or {}
+                validation = value.get('validation') or value.get('status')
+                status = validation.get('status') if isinstance(validation, dict) else validation
+                if status not in (None, '', 'none'):
+                    meta['validations'] = meta.get('validations', 0) + 1
                 findings.append(adapter_finding(
                     value.get('rule_id'), adapter_strip(location.get('path'), target), attributes.get('git.sha'),
                     location.get('start_line'), location.get('end_line'), match.get('value'),
@@ -370,6 +425,8 @@ def adapter_parse(adapter, report, target, mode):
                     path = (git.get('file') or {}).get('path') or path
                 snippet = finding.get('snippet')
                 line = finding.get('line')
+                if mode == 'git' and not commit:
+                    meta['non_history_findings'] = meta.get('non_history_findings', 0) + 1
                 findings.append(adapter_finding(
                     rule, adapter_strip(path, target), commit, line, None, snippet,
                     finding.get('encoding') not in (None, ''),

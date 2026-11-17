@@ -40,12 +40,14 @@ for directory, names, files in os.walk(target):
                 for match in PATTERN.finditer(line):
                     found.append((path, number, match.start(), match.group(0)))
 if FAMILY == 'kingfisher':
+    rules_path = value_after(('--rules-path',))
+    applied = open(rules_path).read().count('[[rules]]') if rules_path else 3
     rows = [{'rule': {'id': 'kingfisher.synth'}, 'finding': {'snippet': secret, 'line': line,
              'column_start': column, 'column_end': column + len(secret) - 1, 'path': path}}
             for path, line, column, secret in found]
     with open(report, 'w') as handle:
-        handle.write(json.dumps({'findings': rows, 'metadata': {'summary': {'rules_applied': 3}}}) + '\n')
-        handle.write(json.dumps({'findings': len(rows), 'rules_applied': 3, 'bytes_scanned': 1,
+        handle.write(json.dumps({'findings': rows, 'metadata': {'summary': {'rules_applied': applied}}}) + '\n')
+        handle.write(json.dumps({'findings': len(rows), 'rules_applied': applied, 'bytes_scanned': 1,
                                  'successful_validations': 0, 'failed_validations': 0}) + '\n')
     sys.exit(200 if rows else 0)
 if FAMILY == 'betterleaks-v2':
@@ -168,9 +170,9 @@ def selftest_units():
 
 
 def selftest_partial_and_line_labels(directory, root, secret):
-    """Overlapping labels form one group, line-level labels match by line,
-    partial labels make unmatched findings unknown, and results split by
-    source and by test paths."""
+    """Overlapping labels form one group, line labels match by line only
+    when marked, partial labels make unmatched findings unknown, ambiguous
+    labels are excluded, and results split by source and by test paths."""
     os.makedirs(os.path.join(root, 'tests'))
     other = b'alpha line\nbeta line\ngamma\n'
     write_private(os.path.join(root, 'tests', 'g.txt'), other)
@@ -179,24 +181,22 @@ def selftest_partial_and_line_labels(directory, root, secret):
     line_end = data.index(b'\n', line_start)
     value_start = data.index(secret)
 
-    def label(path, start, end, blob, source, category):
-        return json_bytes({'workload': 'w', 'path': path, 'commit': None, 'start': start, 'end': end,
-                           'line': None, 'secret_sha256': sha256_bytes(blob[start:end]), 'category': category,
-                           'label': 'secret', 'source': source}) + b'\n'
-
-    def ambiguous(path, start, end, blob):
-        row = json.loads(label(path, start, end, blob, 'credData', 'credata-maybe'))
-        row['label'] = 'ambiguous'
+    def label(path, start, end, blob, source, category, **extra):
+        row = {'workload': 'w', 'path': path, 'commit': None, 'start': start, 'end': end, 'line': None,
+               'secret_sha256': sha256_bytes(blob[start:end]), 'category': category, 'label': 'secret',
+               'source': source, 'unknown_field': 1}
+        row.update(extra)
         return json_bytes(row) + b'\n'
 
     path = os.path.join(directory, 'groups.jsonl')
-    write_private(path, label('f.txt', line_start, line_end, data, 'credData', 'credata-token')
-                  + ambiguous('tests/g.txt', other.index(b'gamma'), len(other) - 1, other)
+    write_private(path, label('f.txt', line_start, line_end, data, 'credData', 'credata-token', span='line')
+                  + label('tests/g.txt', other.index(b'gamma'), len(other) - 1, other, 'credData', 'credata-maybe',
+                          label='ambiguous', span='line')
                   + label('f.txt', value_start, value_start + len(secret), data, 'credData', 'credata-token')
-                  + label('tests/g.txt', 0, other.index(b'gamma'), other, 'constructed', 'multi-line'))
+                  + label('tests/g.txt', 0, other.index(b'gamma'), other, 'constructed', 'multi-line', span='line'))
     labels, problems = score_load_labels(path, 'w', root)
-    selftest_check(len(labels) == 4 and not problems, 'whole-line, multi-line and ambiguous labels load')
-    selftest_check(sum(1 for row in labels if row['line_level']) == 3, 'whole-line spans are line-level labels')
+    selftest_check(len(labels) == 4 and not problems, 'line, multi-line and ambiguous labels load: %s' % problems)
+    selftest_check(sum(1 for row in labels if row['kind'] == 'line') == 3, 'span line makes a line-level label')
     selftest_check(len(score_label_groups([row for row in labels if row['label'] == 'secret'])) == 2,
                    'a line label and a value label on it form one group')
     findings = [adapter_finding('r', 'f.txt', '', 2, 2, secret.decode()),
@@ -215,10 +215,126 @@ def selftest_partial_and_line_labels(directory, root, secret):
                        'an ambiguous label and its finding are left out of precision and recall')
         selftest_check(quality['by_scope']['test paths']['true_positive'] == 1
                        and quality['by_source']['credData']['true_positive'] == 1
-                       and quality['by_source']['constructed']['true_positive'] == 1,
-                       'results split by test paths and by label source')
+                       and quality['by_source']['constructed']['true_positive'] == 1
+                       and quality['by_category']['credata-token']['precision_strict'] is None,
+                       'results split by test paths and by label source; category rows have no strict precision')
     selftest_check(score_test_scope('a/fixtures/b.txt') and not score_test_scope('src/test.py'),
                    'test scope looks at folders, not file names')
+    whole = os.path.join(directory, 'whole.jsonl')
+    write_private(whole, label('f.txt', line_start, line_end, data, 'constructed', 'value'))
+    labels, _ = score_load_labels(whole, 'w', root)
+    selftest_check(labels[0]['kind'] == 'text', 'a whole-line label without span line stays a value label')
+    quality = score_quality([adapter_finding('r', 'f.txt', '', 2, 2, 'other-text-here')], labels)
+    selftest_check(quality['overall']['true_positive'] == 0, 'a value label needs matching text')
+    selftest_fixture_labels(directory, root)
+
+
+def selftest_fixture_labels(directory, root):
+    """Case, encoded, expected and scope-difference labels from fixture sets."""
+    case = b'token: one\ntoken: two\n'
+    write_private(os.path.join(root, 'case.txt'), case)
+    write_private(os.path.join(root, 'none.txt'), case)
+    write_private(os.path.join(root, 'count.txt'), case)
+    write_private(os.path.join(root, 'scope.txt'), case)
+    encoded = b'blob: QUJDREVGR0hJSktMTU5PUA==\n'
+    write_private(os.path.join(root, 'enc.txt'), encoded)
+    decoded = 'ABCDEFGHIJKLMNOP'
+
+    def row(path, blob, **extra):
+        value = {'workload': 'w', 'path': path, 'commit': None, 'start': 0, 'end': len(blob), 'line': 1,
+                 'secret_sha256': sha256_bytes(blob), 'category': 'gitleaks:rule', 'label': 'secret',
+                 'source': 'fixture', 'home_tool': 'gitleaks', 'span': 'case'}
+        value.update(extra)
+        return json_bytes(value) + b'\n'
+
+    path = os.path.join(directory, 'fixtures.jsonl')
+    write_private(path, row('case.txt', case, expected='exactly_one') + row('none.txt', case, expected='none')
+                  + row('count.txt', case, expected='count', expected_count=2)
+                  + row('enc.txt', encoded, span=None, encoding='base64', secret_sha256=sha256_text(decoded),
+                        start=6, end=len(encoded) - 1)
+                  + row('scope.txt', case, span=None, start=0, end=10, secret_sha256=sha256_bytes(case[:10]),
+                        reachable_from_head=False, in_binary=True))
+    labels, problems = score_load_labels(path, 'w', root)
+    selftest_check(len(labels) == 5, 'fixture labels load: %s' % problems)
+    findings = [adapter_finding('r', 'case.txt', '', 1, 1, 'one'), adapter_finding('r', 'scope.txt', '', 1, 1, 'token: one'),
+                adapter_finding('r', 'none.txt', '', 1, 1, 'one'), adapter_finding('r', 'none.txt', '', 2, 2, 'two'),
+                adapter_finding('r', 'count.txt', '', 1, 1, 'one'), adapter_finding('r', 'count.txt', '', 2, 2, 'two'),
+                adapter_finding('r', 'enc.txt', '', 1, 1, decoded), adapter_finding('r', 'other.txt', '', 1, 1, decoded)]
+    quality = score_quality(findings, labels)
+    overall = quality['overall']
+    selftest_check(overall['false_positive_on_negative'] == 2, 'every finding in an expected-none case is a false positive')
+    selftest_check(overall['over_reported_findings'] == 0 and overall['true_positive'] == 4,
+                   'case and count labels take their expected findings and the base64 label matches by hash: %s' % overall)
+    selftest_check(overall['scope_difference_found'] == 1 and overall['false_negative'] == 0,
+                   'a scope-difference label is its own row, not a miss')
+    selftest_check(overall['duplicate_findings'] == 1, 'a labeled secret found at another path is a duplicate')
+    selftest_check(quality['by_home_tool']['gitleaks']['true_positive'] >= 4, 'results split by home tool')
+    extra = findings + [adapter_finding('r', 'case.txt', '', 2, 2, 'three')]
+    selftest_check(score_quality(extra, labels)['overall']['over_reported_findings'] == 1,
+                   'an extra finding in an exactly-one case is over-reporting')
+
+
+def selftest_adapters():
+    """Scan ranges, thread rules, root configuration files and report checks."""
+    inputs = {'shared_rules': '/r.toml', 'profile': lambda workers: '/p%d' % workers}
+    git_range = {'git_base': 'a' * 40, 'git_head': 'b' * 40}
+    for adapter, expected in (('gitleaks', '--log-opts=' + 'a' * 40 + '..' + 'b' * 40),
+                              ('betterleaks-v2', 'a' * 40 + '..' + 'b' * 40), ('kingfisher', '--since-commit')):
+        tool = {'adapter': adapter, 'binary': '/bin/x', 'probe': {}}
+        argv = adapter_invocation(tool, 'git', '/t', '/r.json', {'git_range': git_range}, inputs)['argv']
+        selftest_check(expected in argv, adapter + ' uses the workload scan range')
+    only_options = adapter_invocation({'adapter': 'kingfisher', 'binary': '/bin/x', 'probe': {}}, 'git', '/t', '/r.json',
+                                      {'git_range': {'git_log_options': '--all'}}, inputs)
+    selftest_check(only_options['unsupported'], 'a range given only as git log options is unsupported for Kingfisher')
+    rustleaks = {'adapter': 'rustleaks', 'binary': '/bin/x', 'probe': {'capabilities': ['complete-profile']}}
+    one = adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {'threads': 1}, inputs)['argv']
+    four = adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {'threads': 4}, inputs)['argv']
+    selftest_check('--complete-profile' not in one and '/p4' in four, 'Rustleaks uses a profile only above 1 thread')
+    selftest_check(adapter_auto_loaded('gitleaks', ['.gitleaks.toml', '.gitleaksignore'], True) == ['.gitleaksignore']
+                   and adapter_auto_loaded('betterleaks-v2', ['.gitleaks.toml'], False) == [],
+                   'root configuration files are matched to the tools that load them')
+    directory = tempfile.mkdtemp(prefix='compare-adapters-')
+    try:
+        path = os.path.join(directory, 'v2.json')
+        write_private(path, json_bytes({'findings': [], 'scan': {'state': 'complete',
+                                                                 'status_counts': {'valid': 1, 'none': 0}}}))
+        selftest_check(adapter_parse('betterleaks-v2', path, '/t', 'dir')[1]['validations'] == 1,
+                       'a Betterleaks v2 validation status is detected')
+        path = os.path.join(directory, 'kf.json')
+        write_private(path, json_bytes({'findings': [{'rule': {'id': 'k'}, 'finding': {
+            'snippet': 'abcdef', 'line': 1, 'path': '/t/a.txt'}}]}))
+        selftest_check(adapter_parse('kingfisher', path, '/t', 'git')[1]['non_history_findings'] == 1,
+                       'Kingfisher git findings without a commit are counted')
+        workload = {'target': directory}
+        write_private(os.path.join(directory, '.gitleaksignore'), b'')
+        selftest_check(manifest_target_config(workload) == ['.gitleaksignore'], 'root ignore files are found')
+    finally:
+        shutil.rmtree(directory)
+
+
+def selftest_matching():
+    """Maximum matching, the minimum shared length, and commit-agnostic matching."""
+
+    def item(path, line, secret, commit=''):
+        return adapter_finding('r', path, commit, line, line, secret)
+
+    # Greedy by overlap would pair the long left value with the long right
+    # value and leave one item unmatched on each side; the maximum matching
+    # pairs both.
+    left = [item('a', 1, 'ABCDEFGHIJKLMNOP'), item('a', 1, 'ABCDEFGH')]
+    right = [item('a', 1, 'ABCDEFGHIJKLMNOPQRST'), item('a', 1, 'ZZZZABCDEFGHIJKLMNOP')]
+    selftest_check(score_compare(left, right, 'l', 'r')['matched'] == 2, 'matching is maximum, not greedy')
+    left = [item('a', 1, 'ABCDEFGHIJKL'), item('a', 1, 'ABCDEFGHIJKL')]
+    right = [item('a', 1, 'ABCDEFGHIJKL'), item('a', 1, 'zABCz')]
+    selftest_check(score_compare(left, right, 'l', 'r')['matched'] == 1, 'a short shared part does not match')
+    selftest_check(not score_texts_match('AB', 'xxxxABxxxxxxxxxx', score_overlap('AB', 'xxxxABxxxxxxxxxx')),
+                   'a 2-character text inside a 16-character text does not match')
+    selftest_check(score_texts_match('9', '9', 1), 'equal short texts match')
+    patch = [item('a', 3, 'SECRETVALUE1234', 'c' * 40)]
+    blob = [item('a', 7, 'SECRETVALUE1234', 'd' * 40)]
+    selftest_check(score_compare(patch, blob, 'l', 'r')['matched'] == 0
+                   and score_commit_agnostic(patch, blob)['matched'] == 1,
+                   'commit-agnostic matching pairs a value found at different commits')
 
 
 def selftest_tool(directory, family, adapter, version):
@@ -334,6 +450,17 @@ def selftest_end_to_end():
         selftest_check(plan.getvalue().count('planned ') == 10, 'dry run prints the plan')
         selftest_check(code == 0 and not os.path.exists(os.path.join(dry, 'samples.jsonl')),
                        'dry run plans without running tools')
+        write_private(os.path.join(tree, '.gitleaksignore'), b'')
+        dry = os.path.join(directory, 'run-dry-ignore')
+        options = selftest_options(base, output=dry, lanes='defaults', modes='dir', cache='warm')
+        options.dry_run = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_command(options)
+        statuses = {cell['adapter']: cell['status'] for cell in read_json(os.path.join(dry, 'run.json'))['cells']}
+        selftest_check(statuses == {'rustleaks': 'skipped', 'gitleaks': 'skipped', 'betterleaks-v1': 'skipped',
+                                    'betterleaks-v2': 'planned', 'kingfisher': 'planned'},
+                       'cells whose tool loads a root ignore file are skipped: %s' % statuses)
+        os.remove(os.path.join(tree, '.gitleaksignore'))
         tools[0]['sha256'] = '0' * 64
         write_json(base['tools'], {'schema': SCHEMA_TOOLS, 'tools': tools}, exclusive=False)
         try:
@@ -347,6 +474,8 @@ def selftest_end_to_end():
 
 def selftest_main():
     selftest_units()
+    selftest_matching()
+    selftest_adapters()
     selftest_end_to_end()
     print('comparison self-test passed')
     return 0

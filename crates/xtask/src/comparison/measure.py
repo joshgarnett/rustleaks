@@ -10,7 +10,7 @@
 # Child processes are measured on their own only in an extra instrumented run
 # that puts a git shim on PATH (see measure_git_shim).
 
-MEASURE_REPORT_LIMIT = 4 << 30
+MEASURE_REPORT_LIMIT = 256 << 20
 MEASURE_LOG_LIMIT = 64 << 20
 
 
