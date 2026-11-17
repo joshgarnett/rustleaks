@@ -17,6 +17,7 @@ filegroup(
         "*.md",
         "benchmarks/**",
         "*.toml",
+        "benchmarks/**",
         "docs/**",
         "release/**",
     ]) + [

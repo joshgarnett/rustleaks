@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod comparison;
 mod comparison_quality;
 mod comparison_workloads;
 mod docs_check;
@@ -120,6 +121,9 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
+        [command, arguments @ ..] if command == "compare" => {
+            comparison::run(&workspace_root()?, arguments)
+        }
         [command, arguments @ ..] if command == "compare-workloads" => {
             comparison_workloads::run(&workspace_root()?, arguments)
         }
@@ -158,6 +162,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "fuzz",
     "generate",
     "perf",
+    "compare",
     "compare-quality",
     "compare-workloads",
 ];
@@ -186,6 +191,10 @@ fn usage() -> String {
                 format!("{command} [ARGS]")
             }
             "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),
+            "compare" => format!(
+                "compare <{}> [ARGS]",
+                comparison::COMPARE_SUBCOMMANDS.join("|")
+            ),
             _ => (*command).to_owned(),
         })
         .collect::<Vec<_>>();

@@ -9,6 +9,7 @@ rust_binary(
     name = "xtask",
     aliases = aliases(),
     compile_data = glob([
+        "src/**/*.py",
         "src/**/*.txt",
         "src/comparison_quality/*.py",
         "src/tooling/native_coverage/*.json",
