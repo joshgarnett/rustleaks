@@ -733,7 +733,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(providers.identity().builtin_review_reference().is_some());
     let connections = NativePolicy::builder()
         .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?;
-    let connection_secret = "Q7m2Z9v4L1c8R5s0N6b3X";
+    let connection_secret = "Q7m2Z9v4L1c8R5s0N6b3X"; // gitleaks:allow
     let connection_input = format!("Server=localhost;PWD={connection_secret};");
     let connection_scan = connections.engine().scan_fragment(
         &Fragment::new(connection_input.as_bytes()), &ScanOptions::default(),
