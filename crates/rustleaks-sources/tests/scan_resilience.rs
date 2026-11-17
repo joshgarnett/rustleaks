@@ -99,11 +99,12 @@ fn visit_archive(format: u8, payload: &[u8]) -> (bool, usize) {
     )
 }
 
-/// Formats whose end carries a trailer, a last-block flag or a central
-/// index, so that every proper prefix of a valid input is detectably
+/// Formats whose end carries a trailer, an end mark, a last-block flag or a
+/// central index, so that every proper prefix of a valid input is detectably
 /// incomplete. TAR (block-aligned prefixes are valid), RAR (the end block is
-/// optional), Snappy and `MinLZ` framing (no end marker) and LZ4 are excluded.
+/// optional) and Snappy and `MinLZ` framing (no end marker) are excluded.
 const INTEGRITY_FORMATS: &[&str] = &[
+    "input.lz4",
     "input.zip",
     "input.7z",
     "input.tar.gz",

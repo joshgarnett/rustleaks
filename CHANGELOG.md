@@ -31,6 +31,11 @@
   number of fields gives the field count, file and line in plain text instead
   of Rust debug output. The warning for a line of 64 KiB or longer also gives
   the file and line.
+- Fix truncated `.lz4` files that were scanned in part without a warning,
+  and that a complete scan counted as complete. An LZ4 stream that ends
+  after its header, inside a block size, before its end mark or before a
+  checksum that its header declares now gives a decode warning, like other
+  damaged compressed files, and makes a complete scan incomplete.
 - Remove quadratic work in decoding, native rule line numbers and the
   cancellable generic finding filter. Decoding now charges work only for the
   earlier decoded segments that a candidate overlaps. Native rules count line
