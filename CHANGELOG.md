@@ -39,6 +39,13 @@
   Findings and reports do not change. The `work_units` value in the
   `--complete-profile` status line is lower for such inputs, so more input
   fits a given work budget.
+- Speed up scans with native rule packs. One keyword search over each
+  buffer now answers the keyword checks of every native rule, instead of one
+  search for each rule keyword. Findings and reports do not change. The
+  `work_units` value in the `--complete-profile` status line is lower for
+  such scans, so more input fits a given work budget.
+- Start faster with native rule packs. Allowlist patterns that many rules
+  repeat are now validated and compiled once for each configuration.
 - Add three forms to the opt-in `rustleaks-providers-v1` pack. They are
   Alibaba Cloud AccessKey IDs with 17 to 21 byte bodies, Slack configuration
   access tokens with 1 to 10 digit segments, and xAI API keys with 70 to 120
