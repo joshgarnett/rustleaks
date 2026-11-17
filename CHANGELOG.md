@@ -45,7 +45,10 @@
   `work_units` value in the `--complete-profile` status line is lower for
   such scans, so more input fits a given work budget.
 - Start faster with native rule packs. Allowlist patterns that many rules
-  repeat are now validated and compiled once for each configuration.
+  repeat are now validated and compiled once for each configuration. Each
+  rule's regular expression is still checked when the configuration loads,
+  but its matcher is built when a scan first uses it, so rules whose
+  keywords never appear do not pay that cost.
 - Add three forms to the opt-in `rustleaks-providers-v1` pack. They are
   Alibaba Cloud AccessKey IDs with 17 to 21 byte bodies, Slack configuration
   access tokens with 1 to 10 digit segments, and xAI API keys with 70 to 120

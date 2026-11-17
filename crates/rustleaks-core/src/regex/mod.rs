@@ -19,7 +19,7 @@ mod validation_tests;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Write as _};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use regex_automata::{
     Input, MatchKind,
@@ -286,12 +286,57 @@ impl fmt::Display for GoRegexError {
 
 impl Error for GoRegexError {}
 
+/// A meta matcher that is built on first use.
+///
+/// The expression has already passed preflight, which parses it and builds
+/// the same forward NFA under the same limits, so every acceptance decision is
+/// made at compile time. Building the meta matcher later only moves its cost
+/// to the first search, so rules whose keywords never match never pay it.
+/// Clones share one build.
+#[derive(Clone)]
+struct LazyBackend(Arc<LazyBackendState>);
+
+struct LazyBackendState {
+    hir: Mutex<Option<regex_syntax::hir::Hir>>,
+    built: OnceLock<Regex>,
+}
+
+impl LazyBackend {
+    fn built(regex: Regex) -> Self {
+        Self(Arc::new(LazyBackendState {
+            hir: Mutex::new(None),
+            built: OnceLock::from(regex),
+        }))
+    }
+
+    fn deferred(hir: regex_syntax::hir::Hir) -> Self {
+        Self(Arc::new(LazyBackendState {
+            hir: Mutex::new(Some(hir)),
+            built: OnceLock::new(),
+        }))
+    }
+
+    fn get(&self) -> &Regex {
+        self.0.built.get_or_init(|| {
+            let hir = self
+                .0
+                .hir
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+                .expect("a deferred matcher keeps its expression until it is built");
+            GoRegex::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)
+                .expect("an expression that passed preflight builds its meta matcher")
+        })
+    }
+}
+
 /// Immutable compiled expression with Go-style metadata and byte-offset APIs.
 #[derive(Clone)]
 pub(crate) struct GoRegex {
     source: Box<str>,
     whole_input: bool,
-    backend: Regex,
+    backend: LazyBackend,
     capture_names: Vec<Option<Box<str>>>,
     literal_anchor: Option<Arc<LiteralAnchorShape>>,
 }
@@ -430,12 +475,22 @@ impl GoRegex {
 
     fn compile_mode(source: &str, whole_input: bool) -> Result<Self, GoRegexError> {
         let translated = Self::translate(source)?;
-        let build = if whole_input {
-            Self::build_whole_backend
+        let (backend, literal_anchor) = if Self::needs_compile_stack(&translated.pattern) {
+            // Deeply nested expressions build at once on the large compile
+            // stack; a later build could run on a smaller worker stack.
+            let build = if whole_input {
+                Self::build_whole_backend
+            } else {
+                Self::build_backend
+            };
+            let (regex, literal_anchor) = Self::on_compile_stack(&translated.pattern, build)?;
+            (LazyBackend::built(regex), literal_anchor)
         } else {
-            Self::build_backend
+            let hir =
+                Self::preflight_mode(&translated.pattern, COMPILED_SIZE_LIMIT, true, whole_input)?;
+            let literal_anchor = LiteralAnchorShape::analyze(&hir);
+            (LazyBackend::deferred(hir), literal_anchor)
         };
-        let (backend, literal_anchor) = Self::on_compile_stack(&translated.pattern, build)?;
 
         Ok(Self {
             source: source.into(),
@@ -467,11 +522,15 @@ impl GoRegex {
         Translator::new(source).translate()
     }
 
+    fn needs_compile_stack(pattern: &str) -> bool {
+        pattern.bytes().filter(|byte| *byte == b'(').count() > DEEP_COMPILE_THRESHOLD
+    }
+
     fn on_compile_stack<T: Send + 'static>(
         pattern: &str,
         build: fn(&str) -> Result<T, GoRegexError>,
     ) -> Result<T, GoRegexError> {
-        if pattern.bytes().filter(|byte| *byte == b'(').count() > DEEP_COMPILE_THRESHOLD {
+        if Self::needs_compile_stack(pattern) {
             let pattern = pattern.to_owned();
             std::thread::Builder::new()
                 .name("rustleaks-regex-compile".into())
@@ -638,7 +697,7 @@ impl GoRegex {
     }
 
     pub(crate) fn is_match_normalized(&self, normalized: &NormalizedHaystack<'_>) -> bool {
-        self.backend.is_match(normalized.bytes())
+        self.backend.get().is_match(normalized.bytes())
     }
 
     /// Eagerly returns whole-match spans without computing capture groups.
@@ -669,7 +728,11 @@ impl GoRegex {
         let mut results = Vec::new();
         let mut original_cursor = 0;
         while position <= end {
-            let Some(whole) = self.backend.search(&Input::new(bytes).span(position..end)) else {
+            let Some(whole) = self
+                .backend
+                .get()
+                .search(&Input::new(bytes).span(position..end))
+            else {
                 break;
             };
             let mut accept = true;
@@ -716,7 +779,7 @@ impl GoRegex {
     /// Creates storage for [`Self::captures_into`] on this expression.
     pub(crate) fn capture_scratch(&self) -> CaptureScratch {
         CaptureScratch {
-            captures: self.backend.create_captures(),
+            captures: self.backend.get().create_captures(),
             spans: Vec::with_capacity(self.capture_names.len()),
         }
     }
@@ -739,6 +802,7 @@ impl GoRegex {
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         self.backend
+            .get()
             .search_captures(&Input::new(normalized.bytes()), &mut scratch.captures);
         scratch.captures.get_group(0)?;
         scratch.spans.clear();
@@ -762,7 +826,7 @@ impl GoRegex {
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         let start = normalized.normalized_offset(whole.start)?;
-        self.backend.search_captures(
+        self.backend.get().search_captures(
             &Input::new(normalized.bytes()).span(start..normalized.bytes().len()),
             &mut scratch.captures,
         );
@@ -790,10 +854,11 @@ impl GoRegex {
         let mut position = 0;
         let mut previous_match_end = None;
         let mut results = Vec::new();
-        let mut captures = self.backend.create_captures();
+        let mut captures = self.backend.get().create_captures();
 
         while position <= end {
             self.backend
+                .get()
                 .search_captures(&Input::new(bytes).span(position..end), &mut captures);
             let Some(whole) = captures.get_group(0) else {
                 break;
@@ -3070,8 +3135,8 @@ mod tests {
     // Frozen allocation-per-call search, retained only as differential evidence.
     fn frozen_captures(regex: &GoRegex, haystack: &[u8]) -> Option<Vec<Option<ByteSpan>>> {
         let normalized = NormalizedHaystack::new(haystack);
-        let mut captures = regex.backend.create_captures();
-        regex.backend.search_captures(
+        let mut captures = regex.backend.get().create_captures();
+        regex.backend.get().search_captures(
             &regex_automata::Input::new(normalized.bytes()),
             &mut captures,
         );
@@ -3434,5 +3499,40 @@ mod native_byte_tests {
         });
         assert!(result.is_err());
         assert_eq!(admitted, 2);
+    }
+}
+
+#[cfg(test)]
+mod lazy_backend_tests {
+    use super::*;
+
+    #[test]
+    fn deferred_matcher_builds_once_and_matches_like_an_eager_build() {
+        let lazy = GoRegex::compile(r"(?i)key=([a-z0-9]{4})").unwrap();
+        assert!(lazy.backend.0.built.get().is_none());
+        let clone = lazy.clone();
+        let haystack = b"x KEY=ab12 key=zz99";
+        let spans = clone.find_all(haystack);
+        assert_eq!(
+            spans,
+            [
+                ByteSpan { start: 2, end: 10 },
+                ByteSpan { start: 11, end: 19 }
+            ]
+        );
+        // The clone built the matcher that the original now shares.
+        assert!(lazy.backend.0.built.get().is_some());
+        assert!(
+            lazy.backend
+                .0
+                .hir
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_none()
+        );
+        assert_eq!(lazy.find_all(haystack), spans);
+        let whole = GoRegex::compile_whole("a+").unwrap();
+        assert!(whole.is_match(b"aaa"));
+        assert!(!whole.is_match(b"aab"));
     }
 }
