@@ -274,6 +274,7 @@ path inside it, for example `bundle.zip!config/app.env`.
 | --- | --- |
 | `--max-target-megabytes N` | Skip files larger than N megabytes (N times 1,000,000 bytes). `0`, the default, means no limit. |
 | `--follow-symlinks` | `dir` only. Scan files that symbolic links point to. |
+| `--scan-git-metadata` | `dir` only. Also scan the text metadata files in `.git` folders, such as `config`, `hooks` and `logs`. See [Git metadata](cli-reference.md#git-metadata). Not in 0.1.0-alpha.9. |
 | `--timeout N` | Stop the scan after N seconds. The scan then fails with exit code 1. `0`, the default, means no timeout. |
 | `--native-pack ID` | Add an optional rule pack. See [Native rule packs](native-rule-packs.md). Not in 0.1.0-alpha.9. |
 
