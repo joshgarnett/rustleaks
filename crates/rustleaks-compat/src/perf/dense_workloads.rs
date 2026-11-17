@@ -55,17 +55,16 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
         return Err("dense iterations are outside representative bounds".into());
     }
     match id {
-        "dense-github-lines" | "dense-github-one-line" | "dense-filter-one-line" => {
+        "dense-github-lines"
+        | "dense-github-one-line"
+        | "dense-filter-one-line"
+        | "dense-long-line-sparse" => {
             let config = ConfigLoader::new().load_default()?;
             series(id, iterations, config, b"default".to_vec(), 0)
         }
         "dense-base64-uris" => {
             let (config, _, identity) = pack_config(&["rustleaks-connections-v1"])?;
             series(id, iterations, config, identity, 1)
-        }
-        "dense-long-line-sparse" => {
-            let config = ConfigLoader::new().load_default()?;
-            series(id, iterations, config, b"default".to_vec(), 0)
         }
         "memory-many-findings-scan" | "memory-many-findings-json" => many_findings(id, iterations),
         _ => Err(format!("unknown dense workload {id}").into()),
@@ -183,6 +182,14 @@ fn long_line_sparse(config: &CompiledConfig, size: usize) -> Result<Shape> {
     Ok(finish(bytes, expected))
 }
 
+#[allow(
+    clippy::naive_bytecount,
+    reason = "bounded fixture count outside timers"
+)]
+fn line_count(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|byte| **byte == b'\n').count()
+}
+
 fn finish(bytes: Vec<u8>, mut expected: Vec<FindingKey>) -> Shape {
     let records = expected.len();
     expected.sort();
@@ -281,7 +288,7 @@ fn series(
             result.outcome_fnv1a64 = outcome_signature(&outcome);
             result.counts = json!({
                 "workers": 1, "decode_depth": depth, "records": shape.records,
-                "lines": shape.bytes.iter().filter(|byte| **byte == b'\n').count().max(1),
+                "lines": line_count(&shape.bytes).max(1),
                 "work_units": outcome.usage().work_units(),
                 "decoded_bytes": outcome.usage().decoded_bytes(),
                 "finding_payload_bytes": outcome.usage().finding_payload_bytes(),
