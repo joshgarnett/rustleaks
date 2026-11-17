@@ -7,7 +7,9 @@ use std::sync::OnceLock;
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, RawConfig};
-use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
+use rustleaks_core::model::{
+    ByteRange, ByteText, Finding, FindingRange, Fragment, Location, ScanOptions,
+};
 use rustleaks_core::native::{
     CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
 };
@@ -1392,4 +1394,78 @@ fn yaml_source_and_inherited_paths_are_independent_of_its_required_suffix() {
             "path neighbor",
         );
     }
+}
+
+#[test]
+fn kubernetes_long_context_location_is_the_whole_match_and_decoding_adds_a_finding() {
+    // The provider pack documents the secret as the data item, while report
+    // lines and columns describe the whole match (docs/user/reports.md). The
+    // match starts at `kind`, so it starts on line 0 at column 1, not on the
+    // line of the data item. A fragment without a start line counts from 0.
+    let id = "rustleaks.kubernetes-secret-yaml-long-context";
+    let engine = Engine::builder(config().select_rules([id]).unwrap())
+        .build()
+        .unwrap();
+    let value = b"U3ludGhldGljVmFsdWUyMDI2"; // Base64 of "SyntheticValue2026".
+    let mut body = b"kind: Secret\n#".to_vec();
+    body.extend([b'x'; 230]);
+    body.extend(b"\ndata:\n  opaque: ");
+    body.extend(value);
+    // LF bytes are at 12, 244 and 250; the data item is at 253..285.
+    assert_eq!(body.len(), 285);
+    let secret = b"opaque: U3ludGhldGljVmFsdWUyMDI2";
+
+    // With a final LF, the match ends on line 3. Its last byte is at position
+    // 34 of that line, and a later line adds 1 to the column.
+    let mut terminated = body.clone();
+    terminated.push(b'\n');
+    // Without a final LF, the match ends after the last line break. The pinned
+    // location helper then keeps the start line as the end line and leaves
+    // the end column at 0.
+    for (name, input, end) in [
+        ("final LF", &terminated, [3, 35]),
+        ("no final LF", &body, [0, 0]),
+    ] {
+        let findings = scan(&engine, input, "deploy/secret.yaml");
+        assert_eq!(findings.len(), 1, "{name}");
+        let finding = &findings[0];
+        assert_eq!(finding.secret().as_bytes(), secret, "{name}");
+        assert_eq!(finding.match_text().as_bytes(), &body[..], "{name}");
+        assert_eq!(finding.secret_range(), range(Some([253, 285])), "{name}");
+        assert_eq!(finding.match_range(), range(Some([0, 285])), "{name}");
+        assert_eq!(
+            coordinates(finding.location()),
+            [0, end[0], 1, end[1]],
+            "{name}"
+        );
+        assert!(finding.tags().is_empty(), "{name}");
+    }
+
+    // Decoding also scans the decoded value, as for the default rules. The
+    // decoded finding is reported next to the raw one, and its columns cover
+    // the encoded text in the input.
+    let fragment = Fragment::builder(terminated.as_slice())
+        .file_path("deploy/secret.yaml")
+        .build();
+    let options = ScanOptions::builder().max_decode_depth(1).build();
+    let outcome = engine.scan_fragment(&fragment, &options);
+    assert!(outcome.is_complete());
+    let (raw, decoded): (Vec<&Finding>, Vec<&Finding>) = outcome
+        .findings()
+        .iter()
+        .partition(|finding| finding.tags().is_empty());
+    assert_eq!(raw.len(), 1);
+    assert_eq!(raw[0].secret().as_bytes(), secret);
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(
+        decoded[0].secret().as_bytes(),
+        b"opaque: SyntheticValue2026"
+    );
+    let tags = decoded[0]
+        .tags()
+        .iter()
+        .map(ByteText::as_bytes)
+        .collect::<Vec<_>>();
+    assert_eq!(tags, [&b"decoded:base64"[..], b"decode-depth:1"]);
+    assert_eq!(coordinates(decoded[0].location()), [0, 3, 1, 35]);
 }

@@ -5,6 +5,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -1540,13 +1541,30 @@ impl Engine {
             };
             helpers.push(candidates);
         }
+        if required
+            .edges
+            .iter()
+            .all(|edge| edge.relation == NativeRelation::FullMatchWindow(None))
+        {
+            return attach_shared_helpers(primary, required, &helpers, pass, completed, context);
+        }
+        // Helpers arrive in ascending, non-overlapping match order (see
+        // `native_candidates`), so each relation selects one contiguous run
+        // that a binary search finds.
+        debug_assert!(helpers.iter().all(|helpers| {
+            helpers.windows(2).all(|pair| {
+                pair[0].whole.start <= pair[1].whole.start
+                    && pair[0].start_line <= pair[1].start_line
+            })
+        }));
         for mut candidate in primary {
             let mut projected = Vec::new();
             let mut has_all = true;
             for (edge, helpers) in required.edges.iter().zip(&helpers) {
                 context.work()?;
                 let before = projected.len();
-                for helper in helpers {
+                let run = native_relation_run(&candidate, helpers, edge.relation);
+                for helper in &helpers[run] {
                     context.work()?;
                     if native_relation_matches(&candidate, helper, edge.relation) {
                         let finding = &helper.finding;
@@ -2464,6 +2482,97 @@ fn native_relation_matches(
                     && helper.start_line <= primary.end_line.saturating_add(expansion)
             }
         }
+}
+
+/// Attaches helpers through edges that all have no line limit.
+///
+/// Every helper in the input then relates to every primary, so all
+/// primaries get the same list. It is projected and admitted once, when
+/// the first primary needs it, and shared. Each primary still charges one
+/// work unit for each edge. Work and memory grow with primaries plus
+/// helpers, not with their product.
+fn attach_shared_helpers(
+    primary: Vec<NativeCandidate>,
+    required: &NativeRequired,
+    helpers: &[Vec<NativeCandidate>],
+    pass: RulePass<'_>,
+    completed: &mut Vec<Finding>,
+    context: &mut ScanContext<'_>,
+) -> Result<(), ScanTermination> {
+    let has_all = helpers.iter().all(|helpers| !helpers.is_empty());
+    let mut shared: Option<Arc<[RequiredFinding]>> = None;
+    for mut candidate in primary {
+        context.work_many(required.edges.len())?;
+        let projected = if has_all {
+            if let Some(projected) = &shared {
+                Some(Arc::clone(projected))
+            } else {
+                let mut projected = Vec::new();
+                for helper in helpers.iter().flatten() {
+                    context.work()?;
+                    debug_assert!(native_relation_matches(
+                        &candidate,
+                        helper,
+                        NativeRelation::FullMatchWindow(None)
+                    ));
+                    let finding = &helper.finding;
+                    context.admit_finding([
+                        finding.rule_id().as_bytes().len(),
+                        finding.line().as_bytes().len(),
+                        finding.match_text().as_bytes().len(),
+                        finding.secret().as_bytes().len(),
+                    ])?;
+                    projected.push(RequiredFinding::from_finding(finding));
+                }
+                let projected = Arc::<[RequiredFinding]>::from(projected);
+                shared = Some(Arc::clone(&projected));
+                Some(projected)
+            }
+        } else {
+            None
+        };
+        context.explanations.record(
+            Some(pass.rule_ordinal),
+            pass.decoded_pass,
+            None,
+            if has_all {
+                ExplanationReason::RequiredRulesMatched
+            } else {
+                ExplanationReason::RequiredRulesMissing
+            },
+        );
+        if let Some(projected) = projected {
+            candidate.finding.set_shared_required_findings(projected);
+            completed.push(candidate.finding);
+        }
+    }
+    Ok(())
+}
+
+/// Returns the run of ordered helpers that can relate to `primary`.
+///
+/// `helpers` must be in ascending match start and start line order. Every
+/// helper outside the run fails [`native_relation_matches`].
+fn native_relation_run(
+    primary: &NativeCandidate,
+    helpers: &[NativeCandidate],
+    relation: NativeRelation,
+) -> Range<usize> {
+    match relation {
+        NativeRelation::SameCandidate => {
+            let start = helpers.partition_point(|helper| helper.whole.start < primary.whole.start);
+            let end = helpers.partition_point(|helper| helper.whole.start <= primary.whole.start);
+            start..end
+        }
+        NativeRelation::FullMatchWindow(None) => 0..helpers.len(),
+        NativeRelation::FullMatchWindow(Some(expansion)) => {
+            let low = primary.start_line.saturating_sub(expansion);
+            let high = primary.end_line.saturating_add(expansion);
+            let start = helpers.partition_point(|helper| helper.start_line < low);
+            let end = helpers.partition_point(|helper| helper.start_line <= high);
+            start..end.max(start)
+        }
+    }
 }
 
 fn within_proximity(
