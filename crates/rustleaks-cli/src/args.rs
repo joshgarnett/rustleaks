@@ -60,6 +60,7 @@ pub(crate) struct Options {
     pub pre_commit: bool,
     pub git_log_args: Option<String>,
     pub follow_symlinks: bool,
+    pub scan_git_metadata: bool,
 }
 
 impl Default for Options {
@@ -91,6 +92,7 @@ impl Default for Options {
             pre_commit: false,
             git_log_args: None,
             follow_symlinks: false,
+            scan_git_metadata: false,
         }
     }
 }
@@ -473,6 +475,10 @@ fn parse_long(
             require_command(command, CommandKind::Directory, name)?;
             options.follow_symlinks = boolean(name, attached)?;
         }
+        "scan-git-metadata" => {
+            require_command(command, CommandKind::Directory, name)?;
+            options.scan_git_metadata = boolean(name, attached)?;
+        }
         _ => return Err(ParseError::unknown_long(name)),
     }
     Ok(())
@@ -837,6 +843,7 @@ mod tests {
         ("--pre-commit", &["git"]),
         ("--log-opts=x", &["git"]),
         ("--follow-symlinks", &["dir", "file", "directory"]),
+        ("--scan-git-metadata", &["dir", "file", "directory"]),
         ("--no-descriptions", &["completion"]),
     ];
     const SCAN: &[&str] = &["git", "dir", "file", "directory", "stdin"];

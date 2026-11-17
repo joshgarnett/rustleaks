@@ -153,6 +153,7 @@ pub(crate) fn build<R: Read + Send + 'static>(
             let mut options = DirectoryOptions::default()
                 .file_options(file_options)
                 .follow_symlinks(invocation.options.follow_symlinks)
+                .scan_git_metadata(invocation.options.scan_git_metadata)
                 .max_file_size(source_maximum(invocation)?)
                 .emit_limit_issues(true);
             if profile.is_some() {

@@ -567,6 +567,384 @@ fn directory_symlink_is_never_traversed() {
     assert_eq!(issues, [SourceIssueKind::DirectorySymlink]);
 }
 
+/// The global `.git` folder path allowlist of the packaged default
+/// configuration, plus an optional extra path pattern.
+fn git_folder_config(extra_path: Option<&str>) -> Arc<rustleaks_core::config::CompiledConfig> {
+    let extra = extra_path.map_or_else(String::new, |path| format!(", '''{path}'''"));
+    let source = format!(
+        "[[rules]]\nid = \"unused\"\nregex = '''never-match'''\n\n[allowlist]\npaths = ['''(?:^|/)\\.git$'''{extra}]\n"
+    );
+    Arc::new(
+        ConfigLoader::new()
+            .load_toml(&source)
+            .expect("compile config"),
+    )
+}
+
+/// Writes `bytes` to `relative` below `root`, creating parent folders.
+fn write_tree_file(root: &Path, relative: &str, bytes: &[u8]) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().expect("file has a parent")).expect("create parents");
+    fs::write(path, bytes).expect("write tree file");
+}
+
+/// Emitted file paths, relative to the logical root ".".
+fn emitted_paths(options: DirectoryOptions, root: &Path) -> (Vec<String>, Vec<SourceIssueKind>) {
+    let mut source = DirectorySource::with_options(root, options.logical_root("."));
+    let (fragments, issues) = collect(&mut source);
+    let mut paths = fragments
+        .iter()
+        .map(|fragment| {
+            fragment
+                .file_path()
+                .as_str()
+                .expect("UTF-8 path")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    (paths, issues)
+}
+
+/// A checkout with every kind of `.git` entry that selection must keep or
+/// skip. Every file holds the same bytes, so only names decide.
+fn git_metadata_tree(label: &str) -> TempTree {
+    let tree = TempTree::new(label);
+    for relative in [
+        "keep.txt",
+        ".git/config",
+        ".git/config.worktree",
+        ".git/HEAD",
+        ".git/FETCH_HEAD",
+        ".git/ORIG_HEAD",
+        ".git/description",
+        ".git/packed-refs",
+        ".git/.git-credentials",
+        ".git/credentials",
+        ".git/hooks/pre-commit",
+        ".git/hooks/pre-push.sample",
+        ".git/info/exclude",
+        ".git/logs/HEAD",
+        ".git/logs/refs/heads/main",
+        ".git/modules/lib/config",
+        ".git/modules/lib/nested/config",
+        // Never selected:
+        ".git/index",
+        ".git/config.lock",
+        ".git/COMMIT_EDITMSG",
+        ".git/hooks/pre-commit.lock",
+        ".git/hooks/pre-push.LOCK",
+        ".git/logs/HEAD.lock",
+        ".git/objects/ab/cdef0123456789",
+        ".git/objects/pack/pack-0123.pack",
+        ".git/objects/pack/pack-0123.idx",
+        ".git/objects/info/config",
+        ".git/refs/heads/main",
+        ".git/lfs/objects/aa/bb",
+        ".git/worktrees/side/HEAD",
+        ".git/modules/lib/HEAD",
+        ".git/modules/lib/index",
+        ".git/modules/lib/objects/config",
+        ".git/modules/lib/config.lock",
+        ".git/modules/lib/hooks/pre-commit",
+        ".git/modules/other/Objects/config",
+        "nested/.git/config",
+        "nested/.git/objects/cd/ef",
+        // A gitlink file, as in a submodule or linked worktree checkout.
+        "gitlink/.git",
+    ] {
+        write_tree_file(tree.path(), relative, b"token=AB12\n");
+    }
+    tree
+}
+
+/// Written from the selection rules, not from scanner output.
+const SELECTED_GIT_METADATA: &[&str] = &[
+    ".git/.git-credentials",
+    ".git/FETCH_HEAD",
+    ".git/HEAD",
+    ".git/ORIG_HEAD",
+    ".git/config",
+    ".git/config.worktree",
+    ".git/credentials",
+    ".git/description",
+    ".git/hooks/pre-commit",
+    ".git/hooks/pre-push.sample",
+    ".git/info/exclude",
+    ".git/logs/HEAD",
+    ".git/logs/refs/heads/main",
+    ".git/modules/lib/config",
+    ".git/modules/lib/nested/config",
+    ".git/packed-refs",
+    "keep.txt",
+    "nested/.git/config",
+];
+
+#[test]
+fn git_metadata_is_skipped_by_default_and_selected_by_name_when_enabled() {
+    let tree = git_metadata_tree("git-metadata");
+    let base = DirectoryOptions::default().path_config(git_folder_config(None));
+
+    let (default_paths, default_issues) = emitted_paths(base.clone(), tree.path());
+    assert_eq!(default_paths, ["keep.txt"]);
+    assert!(default_issues.is_empty());
+    assert!(!base.scans_git_metadata());
+
+    let enabled = base.scan_git_metadata(true);
+    assert!(enabled.scans_git_metadata());
+    let (paths, issues) = emitted_paths(enabled, tree.path());
+    assert_eq!(paths, SELECTED_GIT_METADATA);
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn git_metadata_never_removes_input_when_no_allowlist_skips_git_folders() {
+    let tree = git_metadata_tree("git-metadata-unlisted");
+    let config = Arc::new(
+        ConfigLoader::new()
+            .load_toml("[[rules]]\nid = \"unused\"\nregex = '''never-match'''\n")
+            .expect("compile config"),
+    );
+    let base = DirectoryOptions::default().path_config(config);
+    let (full, _) = emitted_paths(base.clone(), tree.path());
+    let (enabled, _) = emitted_paths(base.scan_git_metadata(true), tree.path());
+    assert_eq!(enabled, full);
+    assert!(full.contains(&".git/objects/ab/cdef0123456789".to_owned()));
+    assert!(full.contains(&".git/index".to_owned()));
+}
+
+#[test]
+fn git_metadata_files_still_pass_path_allowlists() {
+    let tree = git_metadata_tree("git-metadata-allowlist");
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(Some("(?:^|/)\\.git/(?:logs|hooks)/")))
+        .scan_git_metadata(true);
+    let (paths, issues) = emitted_paths(options, tree.path());
+    let expected = SELECTED_GIT_METADATA
+        .iter()
+        .copied()
+        .filter(|path| !path.starts_with(".git/logs/") && !path.starts_with(".git/hooks/"))
+        .collect::<Vec<_>>();
+    assert_eq!(paths, expected);
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn git_metadata_respects_the_size_limit() {
+    let tree = TempTree::new("git-metadata-size");
+    write_tree_file(tree.path(), ".git/config", b"0123456789");
+    write_tree_file(tree.path(), ".git/HEAD", b"0123");
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(None))
+        .scan_git_metadata(true)
+        .max_file_size(Some(4))
+        .emit_limit_issues(true);
+    let (paths, issues) = emitted_paths(options, tree.path());
+    assert_eq!(paths, [".git/HEAD"]);
+    assert_eq!(issues, [SourceIssueKind::Limit]);
+}
+
+#[cfg(unix)]
+#[test]
+fn git_metadata_never_lists_or_opens_objects_or_the_index() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tree = git_metadata_tree("git-metadata-unreadable");
+    let locked = [
+        tree.path().join(".git/objects"),
+        tree.path().join(".git/modules/lib/objects"),
+        tree.path().join(".git/index"),
+        tree.path().join(".git/modules/lib/index"),
+    ];
+    for path in &locked {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).expect("lock path");
+    }
+    // A process that ignores permissions cannot show that nothing is read.
+    let enforced = fs::read_dir(&locked[0]).is_err();
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(None))
+        .scan_git_metadata(true);
+    let (paths, issues) = emitted_paths(options, tree.path());
+    for path in &locked {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("unlock path");
+    }
+    assert_eq!(paths, SELECTED_GIT_METADATA);
+    if enforced {
+        assert!(issues.is_empty(), "{issues:?}");
+    }
+}
+
+/// A folder that can be read but not searched lists its names, but every
+/// metadata call on an entry in it fails. Any such call then shows up as a
+/// source issue, so these folders prove that lock, index and object names
+/// are rejected by name alone.
+#[cfg(unix)]
+#[test]
+fn git_metadata_never_inspects_lock_index_or_object_names() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tree = TempTree::new("git-metadata-no-lstat");
+    write_tree_file(tree.path(), ".git/config", b"config");
+    for relative in [
+        ".git/hooks/unsearchable/pre-commit.lock",
+        ".git/logs/unsearchable/HEAD.LOCK",
+        ".git/info/unsearchable/exclude.lock",
+        ".git/modules/unsearchable/index",
+        ".git/modules/unsearchable/config.lock",
+        ".git/modules/unsearchable/objects/ab/cd",
+    ] {
+        write_tree_file(tree.path(), relative, b"unselected");
+    }
+    let unsearchable = [
+        tree.path().join(".git/hooks/unsearchable"),
+        tree.path().join(".git/logs/unsearchable"),
+        tree.path().join(".git/info/unsearchable"),
+        tree.path().join(".git/modules/unsearchable"),
+    ];
+    for path in &unsearchable {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o444)).expect("lock folder");
+    }
+    let enforced =
+        fs::symlink_metadata(tree.path().join(".git/modules/unsearchable/index")).is_err();
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(None))
+        .scan_git_metadata(true);
+    let (paths, issues) = emitted_paths(options, tree.path());
+    for path in &unsearchable {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("unlock folder");
+    }
+    assert_eq!(paths, [".git/config"]);
+    if enforced {
+        assert!(issues.is_empty(), "{issues:?}");
+    }
+}
+
+/// Runs `scan` on another thread and fails if it does not finish quickly,
+/// so a blocking open fails the test instead of hanging it.
+#[cfg(unix)]
+fn finishes_promptly<T: Send + 'static>(scan: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(scan());
+    });
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("scan finished without blocking")
+}
+
+/// Creates a FIFO with the system `mkfifo` tool. Returns false when the tool
+/// is not available.
+#[cfg(unix)]
+fn make_fifo(path: &Path) -> bool {
+    std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(unix)]
+#[test]
+fn git_metadata_never_opens_a_fifo_in_hooks() {
+    let tree = TempTree::new("git-metadata-fifo");
+    write_tree_file(tree.path(), ".git/hooks/pre-commit", b"#!/bin/sh\n");
+    if !make_fifo(&tree.path().join(".git/hooks/post-merge")) {
+        return;
+    }
+    let root = tree.path().to_path_buf();
+    let (paths, issues) = finishes_promptly(move || {
+        let options = DirectoryOptions::default()
+            .path_config(git_folder_config(None))
+            .scan_git_metadata(true);
+        emitted_paths(options, &root)
+    });
+    assert_eq!(paths, [".git/hooks/pre-commit"]);
+    assert!(issues.is_empty(), "{issues:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn followed_symlinks_to_fifos_and_devices_are_skipped_without_opening() {
+    let tree = TempTree::new("symlink-non-regular");
+    let outside = TempTree::new("symlink-non-regular-targets");
+    write_tree_file(tree.path(), "plain.txt", b"plain");
+    create_file_symlink(Path::new("/dev/zero"), &tree.path().join("zero-link"));
+    let fifo = outside.path().join("pipe");
+    if make_fifo(&fifo) {
+        create_file_symlink(&fifo, &tree.path().join("pipe-link"));
+    }
+    let root = tree.path().to_path_buf();
+    let (paths, issues) = finishes_promptly(move || {
+        emitted_paths(DirectoryOptions::default().follow_symlinks(true), &root)
+    });
+    assert_eq!(paths, ["plain.txt"]);
+    assert!(issues.is_empty(), "{issues:?}");
+}
+
+#[test]
+fn git_metadata_does_not_change_a_case_variant_git_folder() {
+    let tree = TempTree::new("git-metadata-case");
+    write_tree_file(tree.path(), ".GIT/config", b"config");
+    write_tree_file(tree.path(), ".GIT/objects/ab/cd", b"object");
+    let base = DirectoryOptions::default().path_config(git_folder_config(None));
+    // The default path rule is case-sensitive, so `.GIT` is not skipped and
+    // is scanned in full, with or without the option.
+    let (paths, issues) = emitted_paths(base.clone(), tree.path());
+    assert_eq!(paths, [".GIT/config", ".GIT/objects/ab/cd"]);
+    assert!(issues.is_empty());
+    assert_eq!(
+        emitted_paths(base.scan_git_metadata(true), tree.path()),
+        (paths, issues)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn git_metadata_keeps_the_symlink_rules() {
+    let tree = TempTree::new("git-metadata-symlinks");
+    let outside = TempTree::new("git-metadata-symlink-targets");
+    write_tree_file(outside.path(), "config", b"linked config");
+    write_tree_file(outside.path(), "logs/HEAD", b"linked log");
+    fs::create_dir(tree.path().join(".git")).expect("create .git");
+    create_file_symlink(
+        &outside.path().join("config"),
+        &tree.path().join(".git/config"),
+    );
+    create_directory_symlink(&outside.path().join("logs"), &tree.path().join(".git/logs"));
+
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(None))
+        .scan_git_metadata(true);
+    let (paths, issues) = emitted_paths(options.clone(), tree.path());
+    assert!(paths.is_empty());
+    assert!(issues.is_empty());
+
+    let (followed, followed_issues) = emitted_paths(options.follow_symlinks(true), tree.path());
+    assert_eq!(
+        followed,
+        [resolved_expected(&outside.path().join("config"))
+            .to_string_lossy()
+            .into_owned()]
+    );
+    // The `logs` folder symlink is not a selected file, so it is skipped
+    // before resolution and never traversed.
+    assert!(followed_issues.is_empty());
+
+    // A `.git` folder that is itself a symlink is never entered. The option
+    // does not change how such a symlink is reported.
+    let linked = TempTree::new("git-metadata-linked-folder");
+    create_directory_symlink(&tree.path().join(".git"), &linked.path().join(".git"));
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(None))
+        .follow_symlinks(true);
+    let (paths, issues) = emitted_paths(options.clone(), linked.path());
+    assert!(paths.is_empty());
+    assert_eq!(
+        emitted_paths(options.scan_git_metadata(true), linked.path()),
+        (paths, issues)
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn zero_length_symlink_metadata_is_filtered_before_resolution() {
