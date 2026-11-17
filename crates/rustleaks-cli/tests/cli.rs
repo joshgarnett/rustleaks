@@ -3887,7 +3887,11 @@ mod git_metadata {
             .filter(|line| line.contains("exceeds maximum file size"))
             .collect::<Vec<_>>();
         assert_eq!(skipped.len(), 1, "{stderr}");
-        assert!(skipped[0].contains("repo/.git/config"), "{stderr}");
+        // Windows reports the path with backslashes.
+        assert!(
+            skipped[0].replace('\\', "/").contains("repo/.git/config"),
+            "{stderr}"
+        );
     }
 
     #[test]
