@@ -746,6 +746,7 @@ fn compile_rule(
         allowlists,
         required: rule.required,
         skip_report: rule.skip_report,
+        native_pack: false,
     })
 }
 

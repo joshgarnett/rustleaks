@@ -2189,21 +2189,19 @@ skipReport=true
             assert_eq!(outcome.findings().len(), lines);
             // With 10 bytes per line and the match at bytes 2..9 of each:
             // 1 pass start, 1 prefilter hit per line, 1 rule entry, 1 for the
-            // one keyword check, 10 per line for the shared native keyword
-            // pass plus 1 for the one occurrence it visits before every
-            // keyword is seen, 2 per candidate, and line coordinates counted
-            // once up to the last match end, 10 * lines - 1 bytes. Recounting
-            // each prefix would instead add the sum of every match end,
-            // 5 * lines * lines + 4 * lines.
+            // one keyword plus 10 per line for its search, 2 per candidate,
+            // and line coordinates counted once up to the last match end,
+            // 10 * lines - 1 bytes. Recounting each prefix would instead add
+            // the sum of every match end, 5 * lines * lines + 4 * lines.
             assert_eq!(
                 outcome.usage().work_units(),
-                23 * lines + 3,
+                23 * lines + 2,
                 "{lines} lines"
             );
             totals.push(outcome.usage().work_units());
         }
-        assert_eq!(totals, [1475, 2947]);
-        assert_eq!(totals[1] - 3, 2 * (totals[0] - 3));
+        assert_eq!(totals, [1474, 2946]);
+        assert_eq!(totals[1] - 2, 2 * (totals[0] - 2));
     }
 
     #[test]

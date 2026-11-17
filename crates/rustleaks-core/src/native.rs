@@ -263,6 +263,7 @@ impl NativePolicy {
         let mut native_predicates = BTreeMap::new();
         let mut native_required = BTreeMap::new();
         let mut native_bytes = BTreeSet::new();
+        let mut pack_rules = BTreeSet::new();
         let builtin_review_reference = builtin_pack_reference(&self.packs).map(|packs| Arc::<str>::from(format!(
             "{NATIVE_POLICY_VERSION}|core:{}|upstream:{UPSTREAM_REVISION}|default-sha256:{DEFAULT_CONFIG_SHA256}|{packs}|github-classic-pat-v1:{}",
             env!("CARGO_PKG_VERSION"), self.github_classic,
@@ -294,6 +295,7 @@ impl NativePolicy {
                 if !ids.insert(rule.id.clone()) {
                     return Err(NativePolicyError::RuleCollision);
                 }
+                pack_rules.insert(rule.id.clone());
             }
             frame(&mut identity, id.as_bytes());
             frame(&mut identity, contents.as_bytes());
@@ -327,6 +329,11 @@ impl NativePolicy {
         for (id, keywords) in native_keywords {
             if let Some(rule) = config.rules.get_mut(&id) {
                 rule.native_keywords = Some(keywords);
+            }
+        }
+        for id in &pack_rules {
+            if let Some(rule) = config.rules.get_mut(id) {
+                rule.native_pack = true;
             }
         }
         for (id, predicate) in native_entropy {

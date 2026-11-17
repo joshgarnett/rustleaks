@@ -13,6 +13,7 @@
 #[cfg(test)]
 mod differential;
 mod literal_anchor;
+mod required_literals;
 #[cfg(test)]
 mod validation_tests;
 
@@ -339,6 +340,7 @@ pub(crate) struct GoRegex {
     backend: LazyBackend,
     capture_names: Vec<Option<Box<str>>>,
     literal_anchor: Option<Arc<LiteralAnchorShape>>,
+    required_literals: Option<Arc<[Box<[u8]>]>>,
 }
 
 impl PartialEq for GoRegex {
@@ -368,6 +370,7 @@ impl fmt::Debug for GoRegex {
 pub(crate) struct NativeByteRegex {
     source: Box<str>,
     backend: Regex,
+    required_literals: Option<Arc<[Box<[u8]>]>>,
 }
 
 impl PartialEq for NativeByteRegex {
@@ -393,14 +396,22 @@ impl NativeByteRegex {
                 limit: PATTERN_SIZE_LIMIT,
             });
         }
-        let backend = GoRegex::on_compile_stack(source, |pattern| {
+        let (backend, required_literals) = GoRegex::on_compile_stack(source, |pattern| {
             let hir = GoRegex::preflight_dialect(pattern, COMPILED_SIZE_LIMIT, false)?;
-            GoRegex::build_meta_backend_dialect(&hir, COMPILED_SIZE_LIMIT, false)
+            let backend = GoRegex::build_meta_backend_dialect(&hir, COMPILED_SIZE_LIMIT, false)?;
+            Ok((backend, required_literals::required_literals(&hir)))
         })?;
         Ok(Self {
             source: source.into(),
             backend,
+            required_literals: required_literals.map(Arc::from),
         })
+    }
+
+    /// Folded ASCII literals of which every match contains one, ignoring
+    /// ASCII case, when such a set is known.
+    pub(crate) fn required_literals(&self) -> Option<&[Box<[u8]>]> {
+        self.required_literals.as_deref()
     }
 
     pub(crate) fn capture_count(&self) -> usize {
@@ -475,7 +486,8 @@ impl GoRegex {
 
     fn compile_mode(source: &str, whole_input: bool) -> Result<Self, GoRegexError> {
         let translated = Self::translate(source)?;
-        let (backend, literal_anchor) = if Self::needs_compile_stack(&translated.pattern) {
+        let (backend, literal_anchor, required) = if Self::needs_compile_stack(&translated.pattern)
+        {
             // Deeply nested expressions build at once on the large compile
             // stack; a later build could run on a smaller worker stack.
             let build = if whole_input {
@@ -484,12 +496,13 @@ impl GoRegex {
                 Self::build_backend
             };
             let (regex, literal_anchor) = Self::on_compile_stack(&translated.pattern, build)?;
-            (LazyBackend::built(regex), literal_anchor)
+            (LazyBackend::built(regex), literal_anchor, None)
         } else {
             let hir =
                 Self::preflight_mode(&translated.pattern, COMPILED_SIZE_LIMIT, true, whole_input)?;
             let literal_anchor = LiteralAnchorShape::analyze(&hir);
-            (LazyBackend::deferred(hir), literal_anchor)
+            let required = required_literals::required_literals(&hir);
+            (LazyBackend::deferred(hir), literal_anchor, required)
         };
 
         Ok(Self {
@@ -498,7 +511,14 @@ impl GoRegex {
             backend,
             capture_names: translated.capture_names,
             literal_anchor: literal_anchor.map(Arc::new),
+            required_literals: required.map(Arc::from),
         })
+    }
+
+    /// Folded ASCII literals of which every match contains one, ignoring
+    /// ASCII case, when such a set is known.
+    pub(crate) fn required_literals(&self) -> Option<&[Box<[u8]>]> {
+        self.required_literals.as_deref()
     }
 
     /// Validates a discarded expression and returns its Go capture count.

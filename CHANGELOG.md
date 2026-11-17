@@ -41,9 +41,11 @@
   fits a given work budget.
 - Speed up scans with native rule packs. One keyword search over each
   buffer now answers the keyword checks of every native rule, instead of one
-  search for each rule keyword. Findings and reports do not change. The
-  `work_units` value in the `--complete-profile` status line is lower for
-  such scans, so more input fits a given work budget.
+  search for each rule keyword. Pack rules without keywords now skip their
+  expression on a buffer that lacks every literal the expression requires.
+  Findings and reports do not change. The `work_units` value in the
+  `--complete-profile` status line is lower for such scans, so more input
+  fits a given work budget.
 - Start faster with native rule packs. Allowlist patterns that many rules
   repeat are now validated and compiled once for each configuration. Each
   rule's regular expression is still checked when the configuration loads,
