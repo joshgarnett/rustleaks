@@ -11,6 +11,8 @@ use super::{
     sha256_bytes, sha256_file, workspace_root,
 };
 
+#[path = "performance_groups.rs"]
+mod groups;
 #[path = "performance_source_scale.rs"]
 mod source_scale;
 
@@ -203,7 +205,7 @@ impl Tools {
         let needs_cli = workloads.iter().any(|id| id.starts_with("cli-"));
         let needs_git = workloads
             .iter()
-            .any(|id| id.starts_with("git-") || id == "cli-git");
+            .any(|id| id.starts_with("git-") || id == "cli-git" || id.starts_with("cli-matrix-"));
         let needs_archives = workloads.iter().any(|id| {
             id == "archives-all-formats" || id.starts_with("archive-") || id == "git-archive-blobs"
         });
@@ -364,6 +366,11 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
     if available.len() != available.iter().collect::<BTreeSet<_>>().len() || available.is_empty() {
         return Err("representative workload list is empty or duplicated".into());
     }
+    let grouped = request
+        .workload
+        .as_deref()
+        .and_then(|id| groups::workloads(id, &available))
+        .transpose()?;
     let workloads = match request.workload {
         Some(ref id) if id == "fragments" => available
             .into_iter()
@@ -382,6 +389,7 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             .filter(|id| DECODE_REPORT_WORKLOADS.contains(&id.as_str()))
             .collect(),
         Some(ref id) if id == source_scale::GROUP => source_scale::workloads(&available)?,
+        Some(_) if grouped.is_some() => grouped.unwrap_or_default(),
         Some(ref id) if id == "default-rules" => available
             .into_iter()
             .filter(|id| {
@@ -559,6 +567,9 @@ pub(super) fn fragment_budget_check(
 
 pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, String> {
     if let Some(phases) = source_scale::required_phases(workload) {
+        return Ok(phases);
+    }
+    if let Some(phases) = groups::required_phases(workload) {
         return Ok(phases);
     }
     if workload.starts_with("core-workers-") {

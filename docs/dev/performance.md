@@ -244,6 +244,11 @@ commands. Select them by ID, for example `core-mixed-16-kib`.
 | `source-scale` | 26 workloads for traversal, chunking, Git history shape, archive limits and CLI behavior |
 | `default-rules` | Default rules at decode depth 0 on keyword, near-miss, Unicode, minified, realistic and contention inputs |
 | `fragments` | JSON, log and invalid UTF-8 records in fragments from 16 KiB to 12 MiB |
+| `packs` | Native rule packs at library level: startup, keyword admission, mixed input and workers |
+| `cli-matrix` | Fresh CLI processes in `dir` and `git` modes on one generated repository |
+| `dense` | Dense findings from 25,000 to 400,000 bytes, long lines and many findings |
+| `git-shapes` | Git reader shapes: one huge hunk, many files, many branches, merges and renames |
+| `filters` | Allowlist, stopword, capture group, composite rule and finding construction costs |
 
 Expected findings, work counts, decoded bytes and limit issues come from the
 fixture generators and the documented limits, never from scanner output. Small
@@ -264,6 +269,128 @@ Notes for some groups:
 - The `fragments` workloads end each fragment with one reviewed private-key
   sample. Every fragment must finish with one finding, no decoded bytes and
   no termination.
+
+### Packs, CLI, dense, Git and filter groups
+
+These five groups cover native rule packs, the complete profile, the CLI in
+both scan modes, dense findings and Git reader shapes. No workload in them has
+a budget. Unit tests run every one of them at a smaller size and check the
+exact outcome, so `just test` covers them; timing stays manual. Shared
+generators are in `crates/rustleaks-compat/src/perf/suite_support.rs`.
+
+Planted values are synthetic GitHub tokens (`github-pat`), database URIs for
+the connections pack rule
+`rustleaks.connection-string.password.database-uri`, and fixed literals for
+custom rules. Filler text comes from a fixed word list. Before a run, a check
+fails if the filler holds any keyword of the selected configuration, so only
+plants can produce findings. Lines and columns follow the rules in
+[Reports](../user/reports.md#line-and-column-numbers).
+
+#### `packs`
+
+Library scans with the default configuration plus native packs, compiled
+through `NativePolicy` as `--native-pack` does. Each workload reports
+configuration compile, engine construction, first scan and steady scans. The
+compiled rule count must equal 222 plus the `[[rules]]` tables in the pack
+files. These workloads guard the shared native keyword pass, the allowlist
+compile cache, matcher construction on first use and the required-literal
+skip for pack rules without keywords.
+
+| Workload | What it measures |
+| --- | --- |
+| `packs-startup-none`, `-extra`, `-providers`, `-connections`, `-all` | Compile, construction and a first scan of a three-line input with one GitHub token and one database URI, for no pack, each pack and all packs. The URI is a finding only with the connections pack. |
+| `packs-keywords-none`, `packs-keywords-all` | 256 KiB of every keyword that holds no shorter keyword, each followed by a NUL byte. Every such keyword occurs and no finding is expected. |
+| `packs-mixed-none`, `packs-mixed-all` | 1 MiB of filler lines with a GitHub token and a database URI every 64 lines. |
+| `packs-workers-all-1`, `-4`, `-8` | 64 copies of a 64 KiB mixed fragment on 1, 4 or 8 persistent threads that share one engine with all packs. The timer covers dispatch, scans and result collection. |
+
+#### `cli-matrix`
+
+Each phase starts a fresh CLI process per iteration and checks its exit
+status, JSON report, `scanned ~N bytes` line, commit count and, with a
+profile, the complete-profile status line. The repository has 256 files of
+16 KiB with one GitHub token each, one database URI, eight Base64 values
+encoded once, four encoded six times, and a TAR file holding a TAR file that
+holds one more token. It is written as a working tree and imported as three
+commits, so `dir repo` and `git repo` scan the same files. A plant is
+expected when its decode depth, archive depth and pack fit the flags: values
+encoded six times need decode depth 6 or more, and the TAR leaf needs archive
+depth 2 or more.
+
+| Workload | Phases |
+| --- | --- |
+| `cli-matrix-startup-packs` | Empty standard input with no pack, each pack and all packs. |
+| `cli-matrix-dir-decode-depth`, `cli-matrix-git-decode-depth` | `--max-decode-depth` 0, 5 and 8. |
+| `cli-matrix-dir-archive-depth`, `cli-matrix-git-archive-depth` | `--max-archive-depth` 0 and 8. |
+| `cli-matrix-dir-report`, `cli-matrix-git-report` | No report, and a JSON report written to a file, at decode depth 5. |
+| `cli-matrix-dir-packs-profile`, `cli-matrix-git-packs-profile` | All packs on or off, crossed with `--complete-profile` on (one worker) or off. |
+| `cli-matrix-dir-workers`, `cli-matrix-git-workers` | All packs with a complete profile of 1, 4 or 8 workers. |
+| `cli-matrix-dir-size-series` | Folders of 0, 1, 16 and 128 MiB in 64 KiB files with one token each. The empty folder gives the fixed cost of a process; the others give the cost per byte. |
+| `cli-matrix-dir-ignore-baseline` | No suppression, an ignore file, and a baseline. The ignore file and the baseline each hold 10,000 unrelated entries and one entry for a planted finding, which must then be missing from the report (Betterleaks specification 15). |
+
+The complete profile is the example from [Complete
+scanning](../user/complete-scanning.md#the-profile-file) with `workers` set
+to 1, 4 or 8 and `queue_capacity=8`. Git runs use
+`--log-opts "--all --full-history --no-ext-diff --no-textconv --no-renames"`
+and the declared Git tool. The size series writes 128 MiB to the system
+temporary folder.
+
+#### `dense`
+
+Library scans after a warm scan outside the timers. The dense shapes adapt
+the Kingfisher dense findings script (`scripts/benchmarks/dense_findings.py`
+at v2.19.1). Each runs at 25,000, 50,000, 100,000, 200,000 and 400,000
+nominal bytes and fills whole records up to the size. The time ratio between
+neighbouring sizes is near 2 for linear growth.
+
+| Workload | Shape |
+| --- | --- |
+| `dense-github-lines` | One GitHub token per line, default rules. |
+| `dense-github-one-line` | GitHub tokens separated by spaces on one line, default rules. |
+| `dense-filter-one-line` | `cloudflare = '<value>'` records on one line. Each value has entropy 1.0, below the `cloudflare-api-key` threshold of 2, except the last, which is the one expected finding. |
+| `dense-base64-uris` | MySQL URIs repeated to three quarters of the size, then encoded as one Base64 string, with the connections pack at decode depth 1. Every password is a finding at line 1, column 1, because decoded findings report the columns of the encoded text. |
+| `dense-long-line-sparse` | One line of 1, 4 or 16 MiB of filler words with eight GitHub tokens spread evenly. |
+| `memory-many-findings-scan` | One fragment of 300,000 lines that each hold one finding of a custom rule. |
+| `memory-many-findings-json` | The same scan, then a JSON report of all findings written through a buffered file writer. A streaming check reads the file back after the timer. |
+
+The two `memory-many-findings-` workloads differ only by the report. Compare
+their peak RSS to see the memory the JSON writer adds; peak RSS covers the
+whole process, including the retained findings.
+
+#### `git-shapes`
+
+Each workload reports a phase for the Git reader alone and one for the reader
+with detection, like `git-many-tiny-commits`. The shapes adapt Betterleaks
+reader benchmark specifications. Expected fragments are the added lines of
+each hunk that `git log -p -U0` prints for the given log options.
+
+| Workload | Shape |
+| --- | --- |
+| `git-one-huge-hunk` | One file of 32,768 lines, then a commit that replaces every line, so one hunk removes and adds 32,768 lines. |
+| `git-many-small-files` | 1,000 three-line files, then one commit that changes the middle line of each. |
+| `git-many-branches` | 1,000 branches from one root commit, each adding one file. |
+| `git-merges` | 500 feature commits, each merged into the main line. With merge diffs off, `git log` prints no merge diff. With `--diff-merges=first-parent`, each merge prints its added file again, so every plant is found twice. |
+| `git-renames` | 500 files moved to a new folder with one line edited. With `--no-renames` each moved file is a new file; with `-M` only the edited line is printed. |
+
+The Git reader runs `git log`, so the reader phase covers the history walk
+and patch parsing together. No phase walks history without patches.
+
+#### `filters`
+
+Library scans of generated `token=<value>` lines and similar records. Values
+never contain `q` or `z`, so a generated stopword (`qz0000` and up) or
+allowlist pattern (`zq0000` and up) occurs only where it is planted.
+
+| Workload | Phases |
+| --- | --- |
+| `filters-allowlist-build` | Configuration load and engine construction with 10, 100 and 1,000 allowlist regexes or stopwords, and with 100 rules that share one 20-entry allowlist. A probe after each phase checks that the last entry rejects a value. |
+| `filters-match` | 1,000 values against 1,000 stopwords, 100 allowlist regexes and 100 global path patterns, each with an input where every value is rejected and one where none is. |
+| `filters-capture-groups` | 1,000 lines of `token=secret-NNNNNN account=user-NNNNNN` with rules of 0, 1, 2 named and 6 named capture groups (Betterleaks specification 12). |
+| `filters-composite-proximity` | 1, 10 or 40 primary and component pairs, padded with lines of 999 dots to at least 100,000 bytes. Every primary is reported with every component (specification 13). |
+| `filters-finding-construction` | 1,000 records of `token=`, six digits and 88 dots, one per line or all on one line. Rules accept every record, allowlist all but the last, or require a component that only the last record has (specification 14). |
+
+Betterleaks specification 11 (component combinations) has no Rustleaks
+counterpart: a composite finding keeps every component within range and does
+not build combinations.
 
 ## Profiling and calibration
 
