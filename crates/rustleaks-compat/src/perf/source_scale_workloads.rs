@@ -61,10 +61,10 @@ pub const WORKLOADS: &[&str] = &[
     "cli-enable-rule-startup",
 ];
 
-const KIB: usize = 1024;
+pub(super) const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
 /// Unit tests run the same generators over a smaller fixture.
-const SCALE: usize = if cfg!(test) { 64 } else { 1 };
+pub(super) const SCALE: usize = if cfg!(test) { 64 } else { 1 };
 
 /// Applies a minimum through a runtime value so both scale settings compile alike.
 fn at_least(value: usize, minimum: usize) -> usize {
@@ -73,13 +73,13 @@ fn at_least(value: usize, minimum: usize) -> usize {
 const QUEUE_CAPACITY: usize = 8;
 const FILLER: &[u8] = b"pad the fixture body with ordinary words and spaces here\n";
 const SIMPLE_CONFIG: &str = "[[rules]]\nid = 'perf-token'\ndescription = 'synthetic token'\nregex = 'A{16}'\nkeywords = ['AAAA']\n";
-const TOKEN: &[u8; 16] = b"AAAAAAAAAAAAAAAA";
+pub(super) const TOKEN: &[u8; 16] = b"AAAAAAAAAAAAAAAA";
 const TOKEN_RULE: &str = "perf-token";
-const GITHUB_RULE: &str = "github-pat";
+pub(super) const GITHUB_RULE: &str = "github-pat";
 const GIT_AUTHOR: &str = "Performance Fixture";
 const GIT_EMAIL: &str = "perf@example.invalid";
 const GIT_BASE_TIME: u64 = 946_684_800; // 2000-01-01T00:00:00Z
-const GIT_LOG_NO_RENAMES: [&str; 5] = [
+pub(super) const GIT_LOG_NO_RENAMES: [&str; 5] = [
     "--all",
     "--full-history",
     "--no-ext-diff",
@@ -139,10 +139,10 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
 
 // Shared scratch, engine, and comparison helpers.
 
-struct Scratch(PathBuf);
+pub(super) struct Scratch(pub(super) PathBuf);
 
 impl Scratch {
-    fn new() -> Result<Self> {
+    pub(super) fn new() -> Result<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
             "rustleaks-perf-scale-{}-{}",
@@ -172,16 +172,16 @@ fn default_config() -> Result<CompiledConfig> {
 
 /// One expected finding, keyed by fields the generator computes independently.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-struct FindingKey {
-    rule: Vec<u8>,
-    file: Vec<u8>,
-    commit: Vec<u8>,
-    line: usize,
-    column: usize,
-    secret: Vec<u8>,
+pub(super) struct FindingKey {
+    pub(super) rule: Vec<u8>,
+    pub(super) file: Vec<u8>,
+    pub(super) commit: Vec<u8>,
+    pub(super) line: usize,
+    pub(super) column: usize,
+    pub(super) secret: Vec<u8>,
 }
 
-fn key(
+pub(super) fn key(
     rule: &str,
     file: &str,
     commit: &str,
@@ -215,7 +215,7 @@ fn finding_keys(findings: &[Finding]) -> Vec<FindingKey> {
     keys
 }
 
-fn verify_findings(actual: &[Finding], expected: &[FindingKey]) -> Result<Vec<u8>> {
+pub(super) fn verify_findings(actual: &[Finding], expected: &[FindingKey]) -> Result<Vec<u8>> {
     let keys = finding_keys(actual);
     if keys != expected {
         let mismatch = keys
@@ -347,20 +347,20 @@ impl Source for Replay<'_> {
     }
 }
 
-struct Row<'a> {
-    phase: &'a str,
-    iterations: usize,
-    elapsed: Duration,
-    unit: &'a str,
-    units: u64,
-    input_fingerprint: &'a str,
-    config: &'a [u8],
-    outcome: &'a [u8],
-    findings: usize,
-    counts: Value,
+pub(super) struct Row<'a> {
+    pub(super) phase: &'a str,
+    pub(super) iterations: usize,
+    pub(super) elapsed: Duration,
+    pub(super) unit: &'a str,
+    pub(super) units: u64,
+    pub(super) input_fingerprint: &'a str,
+    pub(super) config: &'a [u8],
+    pub(super) outcome: &'a [u8],
+    pub(super) findings: usize,
+    pub(super) counts: Value,
 }
 
-fn row(row: Row<'_>) -> Result<Phase> {
+pub(super) fn row(row: Row<'_>) -> Result<Phase> {
     Ok(Phase {
         phase: row.phase.into(),
         iterations: row.iterations,
@@ -596,7 +596,7 @@ fn finish_directory_fixture(
     })
 }
 
-fn github_token(index: usize) -> Vec<u8> {
+pub(super) fn github_token(index: usize) -> Vec<u8> {
     const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     let mut state = 0x9e37_79b9_u32.wrapping_mul(u32::try_from(index).unwrap_or(0).wrapping_add(1));
     let mut token = b"ghp_".to_vec();
@@ -608,7 +608,7 @@ fn github_token(index: usize) -> Vec<u8> {
 }
 
 /// Pads a token line to one filler-sized row so plants never move boundaries.
-fn token_row(token: &[u8]) -> Vec<u8> {
+pub(super) fn token_row(token: &[u8]) -> Vec<u8> {
     let mut row = token.to_vec();
     row.resize(FILLER.len() - 1, b' ');
     row.push(b'\n');
@@ -1031,35 +1031,35 @@ fn directory_workload(
 
 // Git fixtures.
 
-struct GitFile {
-    path: String,
-    start_line: usize,
-    added: Vec<u8>,
+pub(super) struct GitFile {
+    pub(super) path: String,
+    pub(super) start_line: usize,
+    pub(super) added: Vec<u8>,
 }
 
-struct GitCommit {
-    time_offset: u64,
-    parents: Vec<usize>,
-    reference: &'static str,
-    message: Vec<u8>,
-    commands: Vec<u8>,
-    files: Vec<GitFile>,
+pub(super) struct GitCommit {
+    pub(super) time_offset: u64,
+    pub(super) parents: Vec<usize>,
+    pub(super) reference: String,
+    pub(super) message: Vec<u8>,
+    pub(super) commands: Vec<u8>,
+    pub(super) files: Vec<GitFile>,
 }
 
-struct GitPlan {
-    commits: Vec<GitCommit>,
-    log_arguments: &'static [&'static str],
-    scope_notes: &'static str,
+pub(super) struct GitPlan {
+    pub(super) commits: Vec<GitCommit>,
+    pub(super) log_arguments: &'static [&'static str],
+    pub(super) scope_notes: &'static str,
 }
 
-fn push_inline_modify(commands: &mut Vec<u8>, path: &str, content: &[u8]) {
+pub(super) fn push_inline_modify(commands: &mut Vec<u8>, path: &str, content: &[u8]) {
     commands
         .extend_from_slice(format!("M 100644 inline {path}\ndata {}\n", content.len()).as_bytes());
     commands.extend_from_slice(content);
     commands.push(b'\n');
 }
 
-fn push_delete(commands: &mut Vec<u8>, path: &str) {
+pub(super) fn push_delete(commands: &mut Vec<u8>, path: &str) {
     commands.extend_from_slice(format!("D {path}\n").as_bytes());
 }
 
@@ -1078,7 +1078,7 @@ fn many_tiny_commits_plan() -> GitPlan {
         commits.push(GitCommit {
             time_offset: index as u64,
             parents: if index == 0 { vec![] } else { vec![index - 1] },
-            reference: "refs/heads/main",
+            reference: "refs/heads/main".into(),
             message: b"tiny".to_vec(),
             commands,
             files: vec![GitFile {
@@ -1118,7 +1118,7 @@ fn wide_commit_plan() -> GitPlan {
         commits: vec![GitCommit {
             time_offset: 0,
             parents: vec![],
-            reference: "refs/heads/main",
+            reference: "refs/heads/main".into(),
             message: vec![b'm'; 16 * KIB],
             commands,
             files,
@@ -1176,7 +1176,7 @@ fn merge_and_rename_plan() -> GitPlan {
     commits.push(GitCommit {
         time_offset: 0,
         parents: vec![],
-        reference: "refs/heads/main",
+        reference: "refs/heads/main".into(),
         message: b"add base tree".to_vec(),
         commands: base_commands,
         files: base_expected,
@@ -1202,7 +1202,7 @@ fn merge_and_rename_plan() -> GitPlan {
     commits.push(GitCommit {
         time_offset: 1,
         parents: vec![0],
-        reference: "refs/heads/main",
+        reference: "refs/heads/main".into(),
         message: b"rename with edits".to_vec(),
         commands: rename_commands,
         files: rename_expected,
@@ -1226,7 +1226,7 @@ fn merge_and_rename_plan() -> GitPlan {
     commits.push(GitCommit {
         time_offset: 2,
         parents: vec![1],
-        reference: "refs/heads/main",
+        reference: "refs/heads/main".into(),
         message: b"copy with edits".to_vec(),
         commands: copy_commands,
         files: copy_expected,
@@ -1251,7 +1251,7 @@ fn merge_and_rename_plan() -> GitPlan {
     commits.push(GitCommit {
         time_offset: 3,
         parents: vec![1],
-        reference: "refs/heads/feature",
+        reference: "refs/heads/feature".into(),
         message: b"feature work".to_vec(),
         commands: side_commands,
         files: side_expected,
@@ -1270,7 +1270,7 @@ fn merge_and_rename_plan() -> GitPlan {
     commits.push(GitCommit {
         time_offset: 4,
         parents: vec![2, 3],
-        reference: "refs/heads/main",
+        reference: "refs/heads/main".into(),
         message: b"merge feature".to_vec(),
         commands: merge_commands,
         files: Vec::new(),
@@ -1317,7 +1317,7 @@ fn fast_import_stream(plan: &GitPlan) -> Vec<u8> {
     stream
 }
 
-struct GitFixture {
+pub(super) struct GitFixture {
     scratch: Scratch,
     fragments: Vec<Fragment>,
     findings: Vec<FindingKey>,
@@ -1331,11 +1331,9 @@ struct GitFixture {
     scope_notes: &'static str,
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "one fast-import stream and its generated oracle stay together"
-)]
-fn import_plan(plan: &GitPlan) -> Result<GitFixture> {
+/// Imports a plan into `repo` under a new scratch folder and returns the folder,
+/// the commit IDs in plan order and the fast-import stream.
+pub(super) fn import_commits(plan: &GitPlan) -> Result<(Scratch, Vec<String>, Vec<u8>)> {
     let executable = representative_io::executable("RUSTLEAKS_PERF_GIT")?;
     let scratch = Scratch::new()?;
     let repository = scratch.0.join("repo");
@@ -1378,6 +1376,14 @@ fn import_plan(plan: &GitPlan) -> Result<GitFixture> {
         let mark: usize = mark.parse()?;
         sha.clone_into(&mut shas[mark - 1]);
     }
+    if shas.iter().any(String::is_empty) {
+        return Err("synthetic Git marks omit a commit".into());
+    }
+    Ok((scratch, shas, stream))
+}
+
+pub(super) fn import_plan(plan: &GitPlan) -> Result<GitFixture> {
+    let (scratch, shas, stream) = import_commits(plan)?;
     let mut fragments = Vec::new();
     let mut findings = Vec::new();
     let mut files = 0_usize;
@@ -1459,18 +1465,31 @@ fn git_source(fixture: &GitFixture) -> Result<GitSource> {
 
 fn git_workload(plan: &GitPlan, iterations: usize) -> Result<Vec<Phase>> {
     let fixture = import_plan(plan)?;
+    git_phases(
+        &fixture,
+        iterations,
+        ["git-history-and-parse", "git-history-and-detection"],
+    )
+}
+
+/// Times the Git reader alone, then the reader with detection, on one fixture.
+pub(super) fn git_phases(
+    fixture: &GitFixture,
+    iterations: usize,
+    names: [&str; 2],
+) -> Result<Vec<Phase>> {
     let engine = simple_engine()?;
     let counts = json!({"commits": fixture.commits, "commits_with_fragments": fixture.unique_commits, "files": fixture.files, "hunks": fixture.hunks, "workers": 1, "queue_capacity": QUEUE_CAPACITY, "input_bytes": fixture.bytes, "scope": fixture.scope_notes, "filesystem_state": "setup-written-cache-uncontrolled", "git_limits": "source-default-v1"});
     let mut elapsed = Duration::ZERO;
     for _ in 0..iterations {
-        let mut source = git_source(&fixture)?;
+        let mut source = git_source(fixture)?;
         let start = Instant::now();
         let fragments = black_box(collect_fragments(&mut source));
         elapsed += start.elapsed();
         verify_fragments(fragments?, &fixture.fragments, true)?;
     }
     let mut phases = vec![row(Row {
-        phase: "git-history-and-parse",
+        phase: names[0],
         iterations,
         elapsed,
         unit: "input-bytes",
@@ -1487,7 +1506,7 @@ fn git_workload(plan: &GitPlan, iterations: usize) -> Result<Vec<Phase>> {
     let mut elapsed = Duration::ZERO;
     let mut outcome_bytes = Vec::new();
     for _ in 0..iterations {
-        let mut source = git_source(&fixture)?;
+        let mut source = git_source(fixture)?;
         let start = Instant::now();
         let outcome = black_box(runner.run(
             &mut source,
@@ -1505,7 +1524,7 @@ fn git_workload(plan: &GitPlan, iterations: usize) -> Result<Vec<Phase>> {
         )?;
     }
     phases.push(row(Row {
-        phase: "git-history-and-detection",
+        phase: names[1],
         iterations,
         elapsed,
         unit: "input-bytes",
