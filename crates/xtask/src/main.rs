@@ -9,6 +9,7 @@ use std::time::Duration;
 
 mod build_system;
 mod comparison_quality;
+mod comparison_workloads;
 mod docs_check;
 mod fuzzing;
 mod performance;
@@ -119,6 +120,9 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
+        [command, arguments @ ..] if command == "compare-workloads" => {
+            comparison_workloads::run(&workspace_root()?, arguments)
+        }
         _ => Err(usage()),
     }
 }
@@ -155,6 +159,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "generate",
     "perf",
     "compare-quality",
+    "compare-workloads",
 ];
 
 /// Subcommands accepted after `perf`.
@@ -172,7 +177,12 @@ fn usage() -> String {
     let commands = XTASK_COMMANDS
         .iter()
         .map(|command| match *command {
-            "release-artifact" | "security-deep" | "fuzz" | "generate" | "compare-quality" => {
+            "release-artifact"
+            | "security-deep"
+            | "fuzz"
+            | "generate"
+            | "compare-quality"
+            | "compare-workloads" => {
                 format!("{command} [ARGS]")
             }
             "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),

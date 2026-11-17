@@ -1,0 +1,861 @@
+# Symmetric home-fixtures matrix. Each tool's own rule examples are read at
+# run time from pinned upstream sources (or, for Rustleaks and the frozen
+# Gitleaks generator samples, from this repository) and written as one case
+# folder per example. Nothing read here is committed.
+#
+# A case keeps its original path inside its case folder. Cases whose path has
+# a `.git` component go to a separate `-dotgit` workload, so reports show them
+# as their own row.
+
+GITLEAKS_SAMPLES = 'compat/generator-corpus/samples-v1.jsonl'
+RUSTLEAKS_FIXTURES = ('additional_coverage', 'association_coverage', 'format_coverage',
+                      'remaining_verified_rules', 'special_coverage')
+DEFAULT_CASE_PATH = 'input.txt'
+
+
+class Unresolved:
+    def __init__(self, reason):
+        self.reason = reason
+
+
+# Go literals. This reads the subset that Betterleaks rule files use for
+# tests: string literals joined with `+`, package constants, composite
+# literals, and the rulebuilder test helpers.
+
+GO_ESCAPES = {'a': 7, 'b': 8, 'f': 12, 'n': 10, 'r': 13, 't': 9, 'v': 11, '\\': 92, "'": 39, '"': 34}
+
+
+def go_interpreted(text, index):
+    out = bytearray()
+    while True:
+        character = text[index]
+        if character == '"':
+            return bytes(out), index + 1
+        if character == '\n':
+            fail('unterminated Go string literal')
+        if character != '\\':
+            out += character.encode('utf-8')
+            index += 1
+            continue
+        code = text[index + 1]
+        if code in GO_ESCAPES:
+            out.append(GO_ESCAPES[code])
+            index += 2
+        elif code == 'x':
+            out.append(int(text[index + 2:index + 4], 16))
+            index += 4
+        elif code in '01234567':
+            out.append(int(text[index + 1:index + 4], 8))
+            index += 4
+        elif code in 'uU':
+            width = 4 if code == 'u' else 8
+            out += chr(int(text[index + 2:index + 2 + width], 16)).encode('utf-8')
+            index += 2 + width
+        else:
+            fail('unknown Go escape \\%s' % code)
+
+
+def go_tokens(text):
+    tokens = []
+    index = 0
+    size = len(text)
+    word = re.compile(r'[^\W\d]\w*', re.UNICODE)
+    number = re.compile(r'[0-9][0-9a-zA-Z_.]*')
+    while index < size:
+        character = text[index]
+        if character in ' \t\r\n':
+            index += 1
+        elif text.startswith('//', index):
+            end = text.find('\n', index)
+            index = size if end < 0 else end
+        elif text.startswith('/*', index):
+            index = text.index('*/', index + 2) + 2
+        elif character == '`':
+            end = text.index('`', index + 1)
+            tokens.append(('str', text[index + 1:end].replace('\r', '').encode('utf-8')))
+            index = end + 1
+        elif character == '"':
+            value, index = go_interpreted(text, index + 1)
+            tokens.append(('str', value))
+        elif character == "'":
+            end = index + 1
+            while text[end] != "'":
+                end += 2 if text[end] == '\\' else 1
+            tokens.append(('rune', text[index:end + 1]))
+            index = end + 1
+        else:
+            match = word.match(text, index) or number.match(text, index)
+            if match:
+                kind = 'num' if character.isdigit() else 'ident'
+                tokens.append((kind, match.group(0)))
+                index = match.end()
+            else:
+                tokens.append(('punct', character))
+                index += 1
+    tokens.append(('eof', None))
+    return tokens
+
+
+class GoReader:
+    def __init__(self, tokens, constants):
+        self.tokens = tokens
+        self.constants = constants
+        self.index = 0
+
+    def peek(self, offset=0):
+        return self.tokens[min(self.index + offset, len(self.tokens) - 1)]
+
+    def take(self, kind=None, value=None):
+        token = self.tokens[self.index]
+        if (kind and token[0] != kind) or (value is not None and token[1] != value):
+            fail('unexpected Go token %r, expected %s %s' % (token, kind, value))
+        self.index += 1
+        return token
+
+    def is_punct(self, value, offset=0):
+        token = self.peek(offset)
+        return token[0] == 'punct' and token[1] == value
+
+    def skip_balanced(self):
+        opening = self.take('punct')[1]
+        closing = {'(': ')', '[': ']', '{': '}'}[opening]
+        depth = 1
+        while depth:
+            token = self.take()
+            if token[0] == 'eof':
+                fail('unbalanced Go source')
+            if token[0] == 'punct' and token[1] == opening:
+                depth += 1
+            elif token[0] == 'punct' and token[1] == closing:
+                depth -= 1
+
+    def qualified(self):
+        name = self.take('ident')[1]
+        while self.is_punct('.') and self.peek(1)[0] == 'ident':
+            self.index += 1
+            name += '.' + self.take('ident')[1]
+        return name
+
+    def type_name(self):
+        if self.is_punct('['):
+            self.skip_balanced()
+            return '[]' + self.type_name()
+        if self.is_punct('*'):
+            self.index += 1
+            return '*' + self.type_name()
+        if self.peek() == ('ident', 'map'):
+            self.index += 1
+            self.skip_balanced()
+            return 'map:' + self.type_name()
+        if self.peek() == ('ident', 'func'):
+            self.index += 1
+            self.skip_balanced()
+            if not self.is_punct('{'):
+                self.type_name() if self.peek()[0] == 'ident' or self.is_punct('(') else None
+            return 'func'
+        if self.is_punct('('):
+            self.skip_balanced()
+            return 'tuple'
+        return self.qualified()
+
+    OPERATORS = '+-*/%|&^<>=!'
+
+    def expression(self):
+        value = self.term()
+        while self.peek()[0] == 'punct' and self.peek()[1] in self.OPERATORS:
+            operator = ''
+            while self.peek()[0] == 'punct' and self.peek()[1] in self.OPERATORS:
+                operator += self.take()[1]
+            right = self.term()
+            if operator == '+' and isinstance(value, bytes) and isinstance(right, bytes):
+                value = value + right
+            else:
+                value = value if isinstance(value, Unresolved) else Unresolved('operator %s' % operator)
+        return value
+
+    def term(self):
+        token = self.peek()
+        if token[0] == 'str':
+            self.index += 1
+            return token[1]
+        if token[0] in ('num', 'rune'):
+            self.index += 1
+            return int(token[1]) if token[1].isdigit() else Unresolved('literal')
+        if token[0] == 'punct':
+            if token[1] == '{':
+                return self.composite('')
+            if token[1] in '&-!':
+                self.index += 1
+                return self.term()
+            if token[1] == '(':
+                self.index += 1
+                value = self.expression()
+                self.take('punct', ')')
+                return value
+            if token[1] in '[*':
+                name = self.type_name()
+                return self.composite(name) if self.is_punct('{') else Unresolved('type')
+        if token == ('ident', 'func'):
+            self.type_name()
+            if self.is_punct('{'):
+                self.skip_balanced()
+            return Unresolved('function literal')
+        if token == ('ident', 'map'):
+            name = self.type_name()
+            return self.composite(name)
+        if token[0] == 'ident':
+            name = self.qualified()
+            if self.is_punct('('):
+                value = self.call(name)
+            elif self.is_punct('{') and (name[:1].isupper() or '.' in name):
+                value = self.composite(name)
+            elif self.is_punct('['):
+                self.skip_balanced()
+                value = Unresolved('index expression')
+            else:
+                value = self.constant(name)
+            # Method calls or selectors on a result are not evaluated.
+            while self.is_punct('.') or self.is_punct('('):
+                if self.is_punct('('):
+                    self.skip_balanced()
+                else:
+                    self.index += 1
+                    self.take('ident')
+                value = Unresolved('selector or method call')
+            return value
+        fail('unsupported Go expression at %r' % (token,))
+
+    def constant(self, name):
+        if name in ('true', 'false'):
+            return name == 'true'
+        if name == 'nil':
+            return None
+        start = self.constants.get(name)
+        if start is None:
+            return Unresolved('unknown identifier %s' % name)
+        reader = GoReader(self.tokens, {})
+        reader.constants = {key: value for key, value in self.constants.items() if key != name}
+        reader.index = start
+        try:
+            return reader.expression()
+        except WorkloadError as error:
+            return Unresolved(str(error))
+
+    def arguments(self):
+        self.take('punct', '(')
+        values = []
+        while not self.is_punct(')'):
+            values.append(self.expression())
+            if self.is_punct(','):
+                self.index += 1
+        self.take('punct', ')')
+        return values
+
+    def call(self, name):
+        arguments = self.arguments()
+        short = name.split('.')[-1]
+        if name.startswith('rulebuilder.') and short in ('Match', 'NoMatch', 'MatchComponent', 'NoMatchComponent'):
+            test = {'Name': arguments[0], 'Input': arguments[1],
+                    'Expect': [{'_type': 'config.ExpectedFinding', '_fields': {'Secret': arguments[2]}, '_items': []}]
+                    if short in ('Match', 'MatchComponent') else []}
+            if short.endswith('Component'):
+                test['Mode'] = b'match'
+            return {'_type': 'config.RuleTest', '_fields': test}
+        if name == 'strings.Repeat' and isinstance(arguments[0], bytes) and isinstance(arguments[1], int):
+            return arguments[0] * arguments[1]
+        return {'_type': 'call', '_name': name, '_fields': {}, '_items': arguments}
+
+    def composite(self, type_name):
+        self.take('punct', '{')
+        fields = {}
+        items = []
+        while not self.is_punct('}'):
+            if self.peek()[0] in ('ident', 'str') and self.is_punct(':', 1):
+                key = self.take()[1]
+                self.take('punct', ':')
+                fields[key.decode('utf-8', 'replace') if isinstance(key, bytes) else key] = self.expression()
+            else:
+                items.append(self.expression())
+            if self.is_punct(','):
+                self.index += 1
+        self.take('punct', '}')
+        return {'_type': type_name, '_fields': fields, '_items': items}
+
+
+def go_constants(tokens):
+    # Index of the value expression for package-level `const` and `var`
+    # names, including grouped declarations.
+    constants = {}
+    depth = 0
+    index = 0
+    while index < len(tokens) - 1:
+        kind, value = tokens[index]
+        if kind == 'punct' and value in '({[':
+            depth += 1
+        elif kind == 'punct' and value in ')}]':
+            depth -= 1
+        elif kind == 'ident' and value in ('const', 'var') and depth == 0:
+            if tokens[index + 1] == ('punct', '('):
+                inner = index + 2
+                level = 0
+                while not (level == 0 and tokens[inner] == ('punct', ')')):
+                    token = tokens[inner]
+                    if token[0] == 'punct' and token[1] in '({[':
+                        level += 1
+                    elif token[0] == 'punct' and token[1] in ')}]':
+                        level -= 1
+                    elif level == 0 and token[0] == 'ident' and tokens[inner + 1] == ('punct', '='):
+                        constants[token[1]] = inner + 2
+                    inner += 1
+            elif tokens[index + 1][0] == 'ident':
+                probe = index + 2
+                while tokens[probe][0] == 'ident' or tokens[probe] == ('punct', '.'):
+                    probe += 1
+                if tokens[probe] == ('punct', '='):
+                    constants[tokens[index + 1][1]] = probe + 1
+        index += 1
+    return constants
+
+
+def go_functions(tokens):
+    # Maps each token index inside a top-level function body to the function
+    # name, and returns local `name :=` definitions per function.
+    owner = {}
+    local = {}
+    index = 0
+    depth = 0
+    while index < len(tokens) - 2:
+        token = tokens[index]
+        if token[0] == 'punct' and token[1] in '({[':
+            depth += 1
+        elif token[0] == 'punct' and token[1] in ')}]':
+            depth -= 1
+        elif depth == 0 and token == ('ident', 'func') and tokens[index + 1][0] == 'ident':
+            name = tokens[index + 1][1]
+            body = index + 2
+            while tokens[body] != ('punct', '{'):
+                body += 1
+            level = 0
+            end = body
+            while True:
+                kind, value = tokens[end]
+                if kind == 'punct' and value in '({[':
+                    level += 1
+                elif kind == 'punct' and value in ')}]':
+                    level -= 1
+                    if level == 0:
+                        break
+                end += 1
+            definitions = {}
+            for position in range(body, end):
+                if tokens[position][0] == 'ident' and tokens[position + 1] == ('punct', ':') and \
+                        tokens[position + 2] == ('punct', '=') and tokens[position - 1] != ('punct', '.'):
+                    definitions.setdefault(tokens[position][1], position + 3)
+                owner[position] = name
+            local[name] = definitions
+            index = end + 1
+            continue
+        index += 1
+    return owner, local
+
+
+def registered_functions(files):
+    names = set()
+    for tokens in files.values():
+        for index in range(len(tokens) - 5):
+            if tokens[index] == ('ident', 'rulebuilder') and tokens[index + 2] == ('ident', 'Add') and \
+                    tokens[index + 3] == ('punct', '(') and tokens[index + 4][0] == 'ident' and \
+                    tokens[index + 5] == ('punct', '('):
+                names.add(tokens[index + 4][1])
+    return names
+
+
+def preceding_rule_id(tokens, index, owner):
+    function = owner.get(index)
+    position = index
+    while position > 2:
+        position -= 1
+        if owner.get(position) != function:
+            break
+        if tokens[position - 2] == ('ident', 'ID') and tokens[position - 1] == ('punct', ':') and \
+                tokens[position][0] == 'str':
+            return tokens[position][1].decode('utf-8')
+    return None
+
+
+def tally(table, reason, amount=1):
+    table[reason] = table.get(reason, 0) + amount
+
+
+def betterleaks_cases(source):
+    # Rule tests appear as `[]config.RuleTest{...}` literals, either in a
+    # `rulebuilder.Add(config.Rule{...})` literal or in a function that builds
+    # the rule, and as test arguments to a registered helper function.
+    cases = []
+    skipped = {}
+    files = {}
+    for path in sorted(pathlib.Path(source).glob('rules/**/*.go')):
+        if not path.name.endswith('_test.go'):
+            files[path.relative_to(source).as_posix()] = go_tokens(path.read_text(encoding='utf-8'))
+    registered = registered_functions(files)
+    pattern = [('punct', '['), ('punct', ']'), ('ident', 'config'), ('punct', '.'), ('ident', 'RuleTest'),
+               ('punct', '{')]
+    for relative, tokens in files.items():
+        constants = go_constants(tokens)
+        owner, local = go_functions(tokens)
+        for index in range(len(tokens) - len(pattern)):
+            if tokens[index:index + len(pattern)] != pattern:
+                continue
+            function = owner.get(index)
+            reader = GoReader(tokens, dict(constants, **local.get(function, {})))
+            reader.index = index
+            try:
+                literal = reader.term()
+            except WorkloadError as error:
+                tally(skipped, 'unreadable test list in %s: %s' % (relative, error))
+                continue
+            if function is not None and function not in registered:
+                tally(skipped, 'rule function %s is not registered' % function, len(literal['_items']))
+                continue
+            rule_id = preceding_rule_id(tokens, index, owner)
+            if rule_id is None:
+                tally(skipped, 'test list without a literal rule ID', len(literal['_items']))
+                continue
+            for ordinal, test in enumerate(literal['_items']):
+                reason = betterleaks_case(cases, rule_id, ordinal, test, relative)
+                if reason:
+                    tally(skipped, reason)
+        for index in range(len(tokens) - 5):
+            if not (tokens[index] == ('ident', 'rulebuilder') and tokens[index + 2] == ('ident', 'Add')
+                    and tokens[index + 4][0] == 'ident' and tokens[index + 5] == ('punct', '(')):
+                continue
+            reader = GoReader(tokens, constants)
+            reader.index = index + 4
+            try:
+                call = reader.term()
+            except WorkloadError as error:
+                tally(skipped, 'unreadable rule call in %s: %s' % (relative, error))
+                continue
+            if not (isinstance(call, dict) and call.get('_type') == 'call'):
+                continue
+            tests = [item for item in call['_items'] if isinstance(item, dict)
+                     and item.get('_type') == 'config.RuleTest']
+            if tests and isinstance(call['_items'][0], bytes):
+                rule_id = call['_items'][0].decode('utf-8')
+                for ordinal, test in enumerate(tests):
+                    reason = betterleaks_case(cases, rule_id, ordinal, test, relative)
+                    if reason:
+                        tally(skipped, reason)
+    return cases, skipped
+
+
+def betterleaks_case(cases, rule_id, ordinal, test, relative):
+    if not isinstance(test, dict):
+        return 'test is not a literal'
+    fields = test['_fields']
+    if fields.get('Mode') == b'match':
+        return 'component-only test (never reported on its own)'
+    data = fields.get('Input')
+    if not isinstance(data, bytes):
+        return 'input is not a literal string'
+    name = fields.get('Name')
+    name = name.decode('utf-8', 'replace') if isinstance(name, bytes) else 'test-%d' % ordinal
+    attributes = fields.get('Attributes')
+    path = DEFAULT_CASE_PATH
+    if isinstance(attributes, dict):
+        for key, value in attributes['_fields'].items():
+            if key == 'path' and isinstance(value, bytes):
+                path = value.decode('utf-8')
+    expect = fields.get('Expect')
+    secrets = []
+    if isinstance(expect, list):
+        expect_items = expect
+    elif isinstance(expect, dict):
+        expect_items = expect['_items']
+    else:
+        return 'expectations are not literal'
+    for item in expect_items:
+        item_fields = item['_fields'] if isinstance(item, dict) else {}
+        secret = item_fields.get('Secret', item_fields.get('secret'))
+        if not isinstance(secret, bytes):
+            return 'expected secret is not a literal'
+        secrets.append(secret)
+    cases.append({'rule': rule_id, 'name': name, 'path': path, 'data': data, 'secrets': secrets,
+                  'expected': 'exact' if secrets else 'none', 'origin': '%s:%s' % (relative, rule_id)})
+    return None
+
+
+# Restricted YAML reading for Kingfisher rule files: `id:` values and the
+# `examples` and `negative_examples` lists, with plain, quoted and block
+# scalars.
+
+YAML_ESCAPES = {'0': '\0', 'a': '\a', 'b': '\b', 't': '\t', '\t': '\t', 'n': '\n', 'v': '\v', 'f': '\f',
+                'r': '\r', 'e': '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', 'N': '\x85',
+                '_': '\xa0', 'L': ' ', 'P': ' '}
+
+
+def yaml_double(text):
+    out = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character != '\\':
+            out.append(character)
+            index += 1
+            continue
+        code = text[index + 1]
+        if code in YAML_ESCAPES:
+            out.append(YAML_ESCAPES[code])
+            index += 2
+        elif code in 'xuU':
+            width = {'x': 2, 'u': 4, 'U': 8}[code]
+            out.append(chr(int(text[index + 2:index + 2 + width], 16)))
+            index += 2 + width
+        elif code == '\n':
+            index += 2
+            while index < len(text) and text[index] in ' \t':
+                index += 1
+        else:
+            fail('unknown YAML escape \\%s' % code)
+    return ''.join(out)
+
+
+def yaml_fold(lines):
+    # Flow scalar folding: a single line break becomes a space, and each
+    # empty line becomes a line break.
+    out = lines[0].rstrip(' \t') if len(lines) > 1 else lines[0]
+    blanks = 0
+    for line in lines[1:]:
+        stripped = line.strip(' \t')
+        if not stripped:
+            blanks += 1
+            continue
+        out += ('\n' * blanks) if blanks else ' '
+        blanks = 0
+        out += stripped
+    return out
+
+
+def yaml_scalar(lines, index, item_indent, rest):
+    if rest[:1] in '|>':
+        header = rest.split('#', 1)[0].strip()
+        literal = header[0] == '|'
+        chomp = '+' if '+' in header else '-' if '-' in header else ''
+        explicit = [character for character in header if character.isdigit()]
+        body = []
+        index += 1
+        while index < len(lines):
+            line = lines[index]
+            if line.strip() and len(line) - len(line.lstrip(' ')) <= item_indent:
+                break
+            body.append(line)
+            index += 1
+        while body and not body[-1].strip() and chomp != '+':
+            body.pop()
+        content = [line for line in body if line.strip()]
+        indent = item_indent + int(explicit[0]) if explicit else (
+            min(len(line) - len(line.lstrip(' ')) for line in content) if content else 0)
+        stripped = [line[indent:] for line in body]
+        if literal:
+            text = '\n'.join(stripped)
+        else:
+            text = ''
+            for position, line in enumerate(stripped):
+                if position and line and stripped[position - 1] and not line.startswith(' '):
+                    text += ' '
+                elif position:
+                    text += '\n'
+                text += line
+        if chomp == '-':
+            return text, index
+        return (text + '\n') if body else text, index
+    quote = rest[:1]
+    if quote in ('"', "'"):
+        collected = [rest[1:]]
+        while True:
+            joined = '\n'.join(collected)
+            if quote == '"':
+                position = 0
+                while True:
+                    position = joined.find('"', position)
+                    if position < 0:
+                        break
+                    backslashes = len(joined[:position]) - len(joined[:position].rstrip('\\'))
+                    if backslashes % 2 == 0:
+                        break
+                    position += 1
+            else:
+                position = 0
+                while True:
+                    position = joined.find("'", position)
+                    if position < 0 or joined[position + 1:position + 2] != "'":
+                        break
+                    position += 2
+            if position >= 0:
+                raw = joined[:position]
+                break
+            index += 1
+            if index >= len(lines):
+                fail('unterminated YAML quoted scalar')
+            collected.append(lines[index])
+        parts = raw.split('\n')
+        if quote == '"':
+            # Escaped line ends join without a space.
+            folded = parts[0]
+            for line in parts[1:]:
+                if folded.endswith('\\') and (len(folded) - len(folded.rstrip('\\'))) % 2 == 1:
+                    folded = folded[:-1] + line.lstrip(' \t')
+                else:
+                    folded = yaml_fold([folded, line])
+            return yaml_double(folded), index + 1
+        return yaml_fold(parts).replace("''", "'"), index + 1
+    value = re.split(r'\s+#', rest, 1)[0].rstrip()
+    parts = [value]
+    index += 1
+    while index < len(lines):
+        line = lines[index]
+        indent = len(line) - len(line.lstrip(' '))
+        if not line.strip() or indent <= item_indent or line.lstrip().startswith(('- ', '#')):
+            break
+        parts.append(line.strip())
+        index += 1
+    return ' '.join(parts), index
+
+
+def yaml_unquote(text):
+    text = re.split(r'\s+#', text, 1)[0].strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in '"\'':
+        return yaml_double(text[1:-1]) if text[0] == '"' else text[1:-1].replace("''", "'")
+    return text
+
+
+def yaml_examples(text):
+    lines = text.replace('\r\n', '\n').split('\n')
+    results = []
+    rule_id = None
+    index = 0
+    identifier = re.compile(r'^(\s*)(?:-\s+)?id:\s*(\S.*)$')
+    header = re.compile(r'^(\s*)(?:-\s+)?(examples|negative_examples):\s*(#.*)?$')
+    while index < len(lines):
+        line = lines[index]
+        match = identifier.match(line)
+        if match:
+            rule_id = yaml_unquote(match.group(2))
+        match = header.match(line)
+        if not match:
+            index += 1
+            continue
+        key_indent = len(match.group(1))
+        polarity = match.group(2)
+        index += 1
+        while index < len(lines):
+            line = lines[index]
+            stripped = line.lstrip(' ')
+            indent = len(line) - len(stripped)
+            if not stripped or stripped.startswith('#'):
+                index += 1
+                continue
+            if indent < key_indent or not (stripped.startswith('- ') or stripped == '-'):
+                break
+            value, index = yaml_scalar(lines, index, indent, stripped[1:].lstrip(' '))
+            results.append((rule_id, polarity, value))
+    return results
+
+
+def kingfisher_cases(source, directory):
+    cases = []
+    for path in sorted(pathlib.Path(source, directory).glob('*.yml')):
+        relative = path.relative_to(source).as_posix()
+        for ordinal, (rule_id, polarity, value) in enumerate(yaml_examples(path.read_text(encoding='utf-8'))):
+            data = value.encode('utf-8')
+            positive = polarity == 'examples'
+            cases.append({'rule': rule_id or 'unknown', 'name': '%s-%d' % (polarity, ordinal),
+                          'path': DEFAULT_CASE_PATH, 'data': data, 'secrets': [],
+                          'expected': 'at_least_one' if positive else 'none',
+                          'origin': '%s:%s' % (relative, rule_id)})
+    return cases, {}
+
+
+def gitleaks_cases(source_root, upstream):
+    path = pathlib.Path(source_root) / GITLEAKS_SAMPLES
+    digest = sha256_file(path)
+    manifest = (pathlib.Path(source_root) / 'compat' / 'test-manifest.toml').read_text(encoding='utf-8')
+    match = re.search(r'^generator_samples_sha256 = "([0-9a-f]{64})"$', manifest, re.M)
+    if not match or match.group(1) != digest:
+        fail('the frozen Gitleaks generator samples do not match compat/test-manifest.toml')
+    cases = []
+    missing = set()
+    with open(path, 'rb') as stream:
+        for line in stream:
+            row = json.loads(line)
+            if upstream is not None and not (pathlib.Path(upstream) / row['source_file']).is_file():
+                missing.add(row['source_file'])
+            data = base64.b64decode(row['input_base64'])
+            case_path = (base64.b64decode(row['path_base64']).decode('utf-8', 'surrogateescape')
+                         if row['path_present'] else DEFAULT_CASE_PATH)
+            expected = {'at_least_one': 'at_least_one', 'exactly_one': 'exactly_one', 'zero': 'none'}[row['contract']]
+            cases.append({'rule': row['rule_id'], 'name': row['case_id'], 'path': case_path, 'data': data,
+                          'secrets': [], 'expected': expected,
+                          'origin': '%s:%d' % (row['source_file'], row['helper_line'])})
+    if missing:
+        fail('Gitleaks samples name rule sources missing at the pin: %s' % ', '.join(sorted(missing)[:5]))
+    return cases, {}
+
+
+def rustleaks_cases(source_root):
+    cases = []
+    skipped = {}
+    for name in RUSTLEAKS_FIXTURES:
+        relative = 'crates/rustleaks-core/tests/support/%s.json' % name
+        document = read_json(pathlib.Path(source_root) / relative)
+        for case in document['cases']:
+            data = base64.b64decode(case['input_base64'])
+            secrets = []
+            ranges = []
+            expected = 'exact'
+            if 'expected' in case:
+                for item in case['expected']:
+                    value = item['secret'].encode('utf-8') if 'secret' in item else base64.b64decode(item['secret_base64'])
+                    secrets.append(value)
+                    ranges.append(tuple(item['secret_range']) if item.get('secret_range') else None)
+                count = len(case['expected'])
+            else:
+                count = case['count']
+                if 'secret_ranges' in case:
+                    ranges = [tuple(item) for item in case['secret_ranges']]
+                    secrets = [data[start:end] for start, end in ranges]
+                elif 'secret_range' in case:
+                    ranges = [tuple(case['secret_range'])]
+                    secrets = [case['secret'].encode('utf-8')]
+                elif count:
+                    expected = 'count'
+            if count == 0:
+                expected = 'none'
+            cases.append({'rule': case['rule'], 'name': case['name'], 'path': case['path'], 'data': data,
+                          'secrets': secrets, 'ranges': ranges, 'expected': expected, 'count': count,
+                          'decode_depth': case.get('decode_depth', 0), 'origin': '%s:%s' % (relative, case['name'])})
+    return cases, skipped
+
+
+def is_dotgit(path):
+    return '.git' in path.split('/')
+
+
+def slug(text, limit=40):
+    value = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+    return (value or 'case')[:limit].strip('-')
+
+
+def write_cases(cache, tool, cases):
+    # Returns {workload id: labels}. Each case gets its own folder.
+    outputs = {}
+    roots = {}
+    for ordinal, case in enumerate(cases):
+        path = safe_relative(case['path'])
+        workload = 'fixtures-%s%s' % (tool, '-dotgit' if is_dotgit(path) else '')
+        if workload not in roots:
+            roots[workload] = fresh_directory(cache / 'fixtures-matrix' / workload)
+            outputs[workload] = []
+        case_dir = '%05d-%s' % (ordinal, slug(case['rule']))
+        relative = case_dir + '/' + path
+        write_file(roots[workload], relative, case['data'], 0o644)
+        common = {'fixture_tool': tool, 'fixture_rule': case['rule'], 'fixture_case': case['name'],
+                  'fixture_origin': case['origin'], 'expected': case['expected']}
+        if case.get('decode_depth'):
+            common['decode_depth'] = case['decode_depth']
+        if case['expected'] == 'count':
+            common['expected_count'] = case['count']
+        labels = outputs[workload]
+        data = case['data']
+        if case['expected'] == 'none':
+            labels.append(make_label(workload, relative, data, 0, len(data), case['rule'], 'not-secret',
+                                     source='fixture', span='case', **common))
+            continue
+        placed = 0
+        search = 0
+        for position, secret in enumerate(case['secrets']):
+            known = case.get('ranges', [None] * len(case['secrets']))[position]
+            if known is not None and data[known[0]:known[1]] == secret:
+                start = known[0]
+            else:
+                start = data.find(secret, search)
+                if start < 0:
+                    start = data.find(secret)
+            if start < 0:
+                continue
+            labels.append(make_label(workload, relative, data, start, start + len(secret), case['rule'], 'secret',
+                                     source='fixture', span='secret', **common))
+            search = start + len(secret)
+            placed += 1
+        if placed < len(case['secrets']) or not case['secrets']:
+            # The exact secret is not in the input (decoded or unstated), so
+            # the whole case is the labeled span.
+            labels.append(make_label(workload, relative, data, 0, len(data), case['rule'], 'secret',
+                                     source='fixture', span='case', **common))
+    return outputs
+
+
+def matrix_tools(manifest):
+    return [source['tool'] for source in manifest['sources']]
+
+
+def command_matrix(arguments, source_root):
+    require_posix('matrix')
+    cache = resolve_cache(arguments.cache, source_root)
+    manifest = load_manifest(source_root, 'fixtures-matrix')
+    wanted = [item for item in (arguments.tools or ','.join(matrix_tools(manifest))).split(',') if item]
+    sources = {source['tool']: source for source in manifest['sources']}
+    unknown = [tool for tool in wanted if tool not in sources]
+    if unknown:
+        fail('unknown fixture tools: %s' % ', '.join(unknown))
+    git = None
+    environment = None
+    summary = {}
+    for tool in wanted:
+        source = sources[tool]
+        upstream = None
+        if source['kind'] == 'git':
+            git = git or find_git(arguments.git)
+            environment = environment or git_environment(cache / '.home')
+            destination = cache / 'upstream' / tool
+            if arguments.offline:
+                verify_repository(git, environment, source['commit'], destination)
+            else:
+                print_line('fetching %s at %s' % (tool, source['commit']))
+                fetch_repository(git, environment, source['url'], source.get('ref') or source['commit'],
+                                 source['commit'], destination, False)
+            upstream = destination / 'tree'
+            license_path = upstream / source['license_file']
+            license_text = license_path.read_text(encoding='utf-8', errors='replace')
+            if source['license_marker'] not in license_text:
+                fail('%s license at the pin does not contain %r' % (tool, source['license_marker']))
+        reader = source['reader']
+        if reader == 'gitleaks-generator-samples':
+            cases, skipped = gitleaks_cases(source_root, upstream)
+        elif reader == 'betterleaks-rule-tests':
+            cases, skipped = betterleaks_cases(upstream)
+        elif reader == 'kingfisher-rule-examples':
+            cases, skipped = kingfisher_cases(upstream, source['rules_directory'])
+        elif reader == 'rustleaks-pack-fixtures':
+            cases, skipped = rustleaks_cases(source_root)
+        else:
+            fail('unknown fixture reader %s' % reader)
+        outputs = write_cases(cache, tool, cases)
+        for workload, labels in sorted(outputs.items()):
+            labels_path = cache / 'labels' / 'fixtures-matrix' / (workload + '.jsonl')
+            write_labels(labels_path, labels)
+            inventory = file_inventory(cache / 'fixtures-matrix' / workload, skip_git=False)
+            record = {'schema': INVENTORY_SCHEMA, 'set': 'fixtures-matrix', 'workload': workload,
+                      'source': {key: source.get(key) for key in ('tool', 'url', 'commit', 'ref', 'reader')},
+                      'cases': sum(1 for case in cases if (('fixtures-%s-dotgit' % tool) == workload)
+                                   == is_dotgit(safe_relative(case['path']))),
+                      'labels': len(labels), 'labels_sha256': sha256_file(labels_path),
+                      'skipped': skipped, 'files_sha256': inventory['files_sha256'],
+                      'file_count': inventory['file_count'], 'bytes': inventory['bytes']}
+            write_json(cache / 'inventory' / 'fixtures-matrix' / (workload + '.json'), dict(record, files=inventory['files']))
+            summary[workload] = {key: record[key] for key in ('cases', 'labels', 'file_count', 'bytes')}
+            print_line('%s: %d cases, %d labels, %d skipped tests' % (
+                workload, record['cases'], len(labels), sum(skipped.values())))
+            for reason, count in sorted(skipped.items()):
+                print_line('  skipped %d: %s' % (count, reason))
+    return summary

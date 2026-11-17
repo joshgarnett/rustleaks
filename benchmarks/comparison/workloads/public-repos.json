@@ -1,0 +1,805 @@
+{
+ "schema": "rustleaks-comparison-workloads-v1",
+ "set": "public-repos",
+ "classes": {
+  "small": "packed history under about 50 MB",
+  "medium": "packed history from about 50 MB to 1 GB",
+  "large": "packed history above 1 GB"
+ },
+ "fetch_procedure": [
+  "git init --quiet repo",
+  "git -C repo fetch --no-tags --quiet [--depth 1 when only dir mode is fetched] URL REF",
+  "check that FETCH_HEAD^{commit} is the pinned commit",
+  "git -C repo update-ref refs/heads/main COMMIT",
+  "git -C repo symbolic-ref HEAD refs/heads/main",
+  "write tree/ from git ls-tree -r -z -l --full-tree COMMIT and git cat-file --batch"
+ ],
+ "fetch_command": "cargo xtask compare-workloads fetch --cache DIR [--only ID,...] [--mode dir|git|both] [--allow-large]",
+ "notes": "Repositories are used for speed only. They carry no labels, and real findings in them are not recorded in this repository. The git path holds only history reachable from the pinned commit, with one ref and no worktree checkout. The dir path holds the exact blob bytes of that commit.",
+ "workloads": [
+  {
+   "id": "croc",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "small",
+   "languages": [
+    "Go"
+   ],
+   "license": "MIT",
+   "description": "Kingfisher K1 repository; small Go tool with go.sum, a web package-lock.json and images",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/schollz/croc",
+    "ref": "refs/tags/v11.6.5",
+    "tag": "v11.6.5",
+    "commit": "b97d50e03ed0afd54226052365fe9f5d4f96f5ad",
+    "commit_date": "2026-11-07T22:32:01Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/croc",
+   "paths": {
+    "dir": "repos/croc/tree",
+    "git": "repos/croc/repo"
+   },
+   "size": {
+    "bytes": 13327360,
+    "tree_bytes": 6851043,
+    "files": 513,
+    "commits": 2577,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 2,
+    "minified": 0,
+    "binaries": 42
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/schollz/croc refs/tags/v11.6.5"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/schollz/croc refs/tags/v11.6.5"
+    ]
+   }
+  },
+  {
+   "id": "flask",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "small",
+   "languages": [
+    "Python"
+   ],
+   "license": "BSD-3-Clause",
+   "description": "Small Python library with uv.lock, requirements files and documentation images",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/pallets/flask",
+    "ref": "refs/tags/3.1.3",
+    "tag": "3.1.3",
+    "commit": "22d924701a6ae2e4cd01e9a15bbaf3946094af65",
+    "commit_date": "2026-02-19T03:41:55Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/flask",
+   "paths": {
+    "dir": "repos/flask/tree",
+    "git": "repos/flask/repo"
+   },
+   "size": {
+    "bytes": 12520448,
+    "tree_bytes": 1892083,
+    "files": 235,
+    "commits": 5463,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 2,
+    "minified": 0,
+    "binaries": 5
+   },
+   "kingfisher_k1": false,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/pallets/flask refs/tags/3.1.3"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/pallets/flask refs/tags/3.1.3"
+    ]
+   }
+  },
+  {
+   "id": "jq",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "small",
+   "languages": [
+    "C",
+    "Shell"
+   ],
+   "license": "MIT",
+   "description": "Small C project with a Pipfile.lock, a vendored PDF and test data",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/jqlang/jq",
+    "ref": "refs/tags/jq-1.8.2",
+    "tag": "jq-1.8.2",
+    "commit": "34f7186b86743a083a589741b6cea95293524108",
+    "commit_date": "2026-06-20T11:58:06Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/jq",
+   "paths": {
+    "dir": "repos/jq/tree",
+    "git": "repos/jq/repo"
+   },
+   "size": {
+    "bytes": 8318976,
+    "tree_bytes": 4733273,
+    "files": 399,
+    "commits": 1925,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 1,
+    "minified": 0,
+    "binaries": 2
+   },
+   "kingfisher_k1": false,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/jqlang/jq refs/tags/jq-1.8.2"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/jqlang/jq refs/tags/jq-1.8.2"
+    ]
+   }
+  },
+  {
+   "id": "select2",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "small",
+   "languages": [
+    "JavaScript",
+    "CSS"
+   ],
+   "license": "MIT",
+   "description": "Small JavaScript project with committed minified dist files, package-lock.json and many images",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/select2/select2",
+    "ref": "refs/tags/4.1.0",
+    "tag": "4.1.0",
+    "commit": "13bad6eb9b212e8566dc467fb8b20c6d72f4bfa3",
+    "commit_date": "2026-05-26T20:03:12Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/select2",
+   "paths": {
+    "dir": "repos/select2/tree",
+    "git": "repos/select2/repo"
+   },
+   "size": {
+    "bytes": 14783488,
+    "tree_bytes": 5442945,
+    "files": 708,
+    "commits": 2694,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 1,
+    "minified": 11,
+    "binaries": 81
+   },
+   "kingfisher_k1": false,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/select2/select2 refs/tags/4.1.0"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/select2/select2 refs/tags/4.1.0"
+    ]
+   }
+  },
+  {
+   "id": "rails",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "medium",
+   "languages": [
+    "Ruby",
+    "JavaScript"
+   ],
+   "license": "MIT",
+   "description": "Kingfisher K1 repository; Gemfile.lock, yarn.lock and test images",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/rails/rails",
+    "ref": "refs/tags/v8.1.4.1",
+    "tag": "v8.1.4.1",
+    "commit": "3f290b759c8e2ffe7c257951b1255740751355e4",
+    "commit_date": "2026-11-04T02:44:59Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/rails",
+   "paths": {
+    "dir": "repos/rails/tree",
+    "git": "repos/rails/repo"
+   },
+   "size": {
+    "bytes": 303460352,
+    "tree_bytes": 32299260,
+    "files": 4870,
+    "commits": 96716,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 3,
+    "minified": 0,
+    "binaries": 75
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/rails/rails refs/tags/v8.1.4.1"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/rails/rails refs/tags/v8.1.4.1"
+    ]
+   }
+  },
+  {
+   "id": "django",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "medium",
+   "languages": [
+    "Python",
+    "JavaScript"
+   ],
+   "license": "BSD-3-Clause",
+   "description": "Kingfisher K1 repository; vendored minified jQuery and Select2, requirements files and images",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/django/django",
+    "ref": "refs/tags/6.1.3",
+    "tag": "6.1.3",
+    "commit": "f16e25dcb9fe55734ba4ea2b00ac34405b7df74a",
+    "commit_date": "2026-11-03T13:21:51Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/django",
+   "paths": {
+    "dir": "repos/django/tree",
+    "git": "repos/django/repo"
+   },
+   "size": {
+    "bytes": 291421184,
+    "tree_bytes": 46828007,
+    "files": 7085,
+    "commits": 34869,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 2,
+    "minified": 5,
+    "binaries": 81
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/django/django refs/tags/6.1.3"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/django/django refs/tags/6.1.3"
+    ]
+   }
+  },
+  {
+   "id": "ruby",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "medium",
+   "languages": [
+    "C",
+    "Ruby"
+   ],
+   "license": "Ruby OR BSD-2-Clause",
+   "description": "Kingfisher K1 repository; Cargo.lock and Gemfile.lock files, binary samples",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/ruby/ruby",
+    "ref": "refs/tags/v4.0.9",
+    "tag": "v4.0.9",
+    "commit": "3e93b23afcec3433f6aecc34b5d832799d754238",
+    "commit_date": "2026-10-23T02:36:04Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/ruby",
+   "paths": {
+    "dir": "repos/ruby/tree",
+    "git": "repos/ruby/repo"
+   },
+   "size": {
+    "bytes": 430483456,
+    "tree_bytes": 74437512,
+    "files": 11365,
+    "commits": 96659,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 13,
+    "minified": 0,
+    "binaries": 10
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/ruby/ruby refs/tags/v4.0.9"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/ruby/ruby refs/tags/v4.0.9"
+    ]
+   }
+  },
+  {
+   "id": "lucene",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "medium",
+   "languages": [
+    "Java"
+   ],
+   "license": "Apache-2.0",
+   "description": "Kingfisher K1 repository; many binary test archives and data files",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/apache/lucene",
+    "ref": "refs/tags/releases/lucene/10.6.0",
+    "tag": "releases/lucene/10.6.0",
+    "commit": "4ae946e5a9b99d1e22c23865c99e561b8dcc9d71",
+    "commit_date": "2026-10-26T18:59:20Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/lucene",
+   "paths": {
+    "dir": "repos/lucene/tree",
+    "git": "repos/lucene/repo"
+   },
+   "size": {
+    "bytes": 555708416,
+    "tree_bytes": 137976493,
+    "files": 7632,
+    "commits": 38783,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 2,
+    "minified": 0,
+    "binaries": 498
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/apache/lucene refs/tags/releases/lucene/10.6.0"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/apache/lucene refs/tags/releases/lucene/10.6.0"
+    ]
+   }
+  },
+  {
+   "id": "bootstrap",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "medium",
+   "languages": [
+    "JavaScript",
+    "SCSS",
+    "HTML"
+   ],
+   "license": "MIT",
+   "description": "Minified dist assets, package-lock.json, fonts and images in a long JavaScript history",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/twbs/bootstrap",
+    "ref": "refs/tags/v5.3.9",
+    "tag": "v5.3.9",
+    "commit": "349bdb50b8ab6782248c1b296443087cd7222ead",
+    "commit_date": "2026-11-11T17:41:09Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/bootstrap",
+   "paths": {
+    "dir": "repos/bootstrap/tree",
+    "git": "repos/bootstrap/repo"
+   },
+   "size": {
+    "bytes": 335593472,
+    "tree_bytes": 18870105,
+    "files": 796,
+    "commits": 23360,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 1,
+    "minified": 11,
+    "binaries": 115
+   },
+   "kingfisher_k1": false,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/twbs/bootstrap refs/tags/v5.3.9"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/twbs/bootstrap refs/tags/v5.3.9"
+    ]
+   }
+  },
+  {
+   "id": "prometheus",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "medium",
+   "languages": [
+    "Go",
+    "TypeScript"
+   ],
+   "license": "Apache-2.0",
+   "description": "Go service with several go.sum files, web UI package-lock.json files and large generated files",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/prometheus/prometheus",
+    "ref": "refs/tags/v3.16.0",
+    "tag": "v3.16.0",
+    "commit": "e2e28adeee2c5883d000fc82aca6008cfbf7e96d",
+    "commit_date": "2026-11-05T15:06:51Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/prometheus",
+   "paths": {
+    "dir": "repos/prometheus/tree",
+    "git": "repos/prometheus/repo"
+   },
+   "size": {
+    "bytes": 303894528,
+    "tree_bytes": 30766261,
+    "files": 1714,
+    "commits": 19070,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17."
+   },
+   "features": {
+    "lockfiles": 7,
+    "minified": 0,
+    "binaries": 5
+   },
+   "kingfisher_k1": false,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/prometheus/prometheus refs/tags/v3.16.0"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/prometheus/prometheus refs/tags/v3.16.0"
+    ]
+   }
+  },
+  {
+   "id": "gitlab",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "large",
+   "languages": [
+    "Ruby",
+    "JavaScript",
+    "Vue"
+   ],
+   "license": "MIT (CE code) with proprietary EE directories",
+   "description": "Kingfisher K1 repository; Gemfile.lock, yarn.lock, vendored JavaScript and many images",
+   "source": {
+    "kind": "git",
+    "url": "https://gitlab.com/gitlab-org/gitlab.git",
+    "ref": "refs/tags/v19.5.6-ee",
+    "tag": "v19.5.6-ee",
+    "commit": "c21b8167ccfd5e3b9af01cbeddcd812cac9d3275",
+    "commit_date": "2026-11-16T15:34:18Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/gitlab",
+   "paths": {
+    "dir": "repos/gitlab/tree",
+    "git": "repos/gitlab/repo"
+   },
+   "size": {
+    "bytes": null,
+    "tree_bytes": null,
+    "files": null,
+    "commits": null,
+    "approximate": true,
+    "basis": "The GitLab API gives no size without sign-in. `fetch` records exact counts. Kingfisher issue 241 reports about 1.75 million blobs in the full history."
+   },
+   "features": {
+    "lockfiles": "present (Gemfile.lock, yarn.lock)",
+    "minified": "not counted",
+    "binaries": "present (images under app/assets/images)"
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://gitlab.com/gitlab-org/gitlab.git refs/tags/v19.5.6-ee"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://gitlab.com/gitlab-org/gitlab.git refs/tags/v19.5.6-ee"
+    ]
+   }
+  },
+  {
+   "id": "mongo",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "large",
+   "languages": [
+    "C++",
+    "JavaScript",
+    "Python"
+   ],
+   "license": "SSPL-1.0 and others",
+   "description": "Kingfisher K1 repository; MODULE.bazel.lock, poetry.lock and vendored third-party code",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/mongodb/mongo",
+    "ref": "refs/tags/r9.0.8",
+    "tag": "r9.0.8",
+    "commit": "ace0d09a96a9186dbcdc4570a66fc702666aae65",
+    "commit_date": "2026-11-11T01:03:28Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/mongo",
+   "paths": {
+    "dir": "repos/mongo/tree",
+    "git": "repos/mongo/repo"
+   },
+   "size": {
+    "bytes": 1486227456,
+    "tree_bytes": 652123062,
+    "files": 54756,
+    "commits": 102062,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17; the tree listing was truncated, so files and tree bytes are lower bounds."
+   },
+   "features": {
+    "lockfiles": 15,
+    "minified": 0,
+    "binaries": 137
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/mongodb/mongo refs/tags/r9.0.8"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/mongodb/mongo refs/tags/r9.0.8"
+    ]
+   }
+  },
+  {
+   "id": "typescript",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "large",
+   "languages": [
+    "TypeScript",
+    "Go"
+   ],
+   "license": "Apache-2.0",
+   "description": "Kingfisher K1 repository; very large test baselines and package-lock.json",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/microsoft/TypeScript",
+    "ref": "refs/tags/v7.0.2",
+    "tag": "v7.0.2",
+    "commit": "1e4744d68260a7cb91b62b12edc3f6a2187faaf1",
+    "commit_date": "2026-07-08T04:22:40Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/typescript",
+   "paths": {
+    "dir": "repos/typescript/tree",
+    "git": "repos/typescript/repo"
+   },
+   "size": {
+    "bytes": 2998462464,
+    "tree_bytes": 268561246,
+    "files": 53309,
+    "commits": 39124,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17; the tree listing was truncated, so files and tree bytes are lower bounds."
+   },
+   "features": {
+    "lockfiles": 1,
+    "minified": 0,
+    "binaries": 0
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/microsoft/TypeScript refs/tags/v7.0.2"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/microsoft/TypeScript refs/tags/v7.0.2"
+    ]
+   }
+  },
+  {
+   "id": "linux",
+   "family": "real-repo",
+   "modes": [
+    "dir",
+    "git"
+   ],
+   "class": "large",
+   "languages": [
+    "C",
+    "Assembly"
+   ],
+   "license": "GPL-2.0 WITH Linux-syscall-note",
+   "description": "Kingfisher K1 repository; the largest history, 1.4 million commits",
+   "source": {
+    "kind": "git",
+    "url": "https://github.com/torvalds/linux",
+    "ref": "refs/tags/v7.3",
+    "tag": "v7.3",
+    "commit": "c03c1a14507dfaf8b856c2608f9ac216021fc222",
+    "commit_date": "2026-10-18T23:14:58Z",
+    "refs": "refs/heads/main at the pinned commit",
+    "pinned_on": "2026-11-17"
+   },
+   "path": "repos/linux",
+   "paths": {
+    "dir": "repos/linux/tree",
+    "git": "repos/linux/repo"
+   },
+   "size": {
+    "bytes": 6626309120,
+    "tree_bytes": 1317984449,
+    "files": 67498,
+    "commits": 1485420,
+    "approximate": true,
+    "basis": "Packed size from the GitHub repository API; files, tree bytes and commits at the pinned commit from the GitHub commits and trees APIs on 2026-11-17; the tree listing was truncated, so files and tree bytes are lower bounds."
+   },
+   "features": {
+    "lockfiles": 1,
+    "minified": 0,
+    "binaries": 1
+   },
+   "kingfisher_k1": true,
+   "labels": null,
+   "tuned": false,
+   "fetch": {
+    "git": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet https://github.com/torvalds/linux refs/tags/v7.3"
+    ],
+    "dir": [
+     "git init --quiet repo",
+     "git -C repo fetch --no-tags --quiet --depth 1 https://github.com/torvalds/linux refs/tags/v7.3"
+    ]
+   }
+  }
+ ]
+}

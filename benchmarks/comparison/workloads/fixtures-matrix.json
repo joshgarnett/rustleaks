@@ -1,0 +1,247 @@
+{
+ "schema": "rustleaks-comparison-workloads-v1",
+ "set": "fixtures-matrix",
+ "build": "cargo xtask compare-workloads matrix --cache DIR",
+ "sources": [
+  {
+   "tool": "gitleaks",
+   "kind": "git",
+   "url": "https://github.com/gitleaks/gitleaks",
+   "ref": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+   "commit": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+   "license": "MIT",
+   "license_file": "LICENSE",
+   "license_marker": "MIT License",
+   "reader": "gitleaks-generator-samples",
+   "notes": "Rule generator true and false positives at the pinned commit. Upstream draws true positives at random, so the cases come from the frozen run in compat/generator-corpus/samples-v1.jsonl; the fetched source checks that every sample's rule file exists at the pin."
+  },
+  {
+   "tool": "betterleaks",
+   "kind": "git",
+   "url": "https://github.com/betterleaks/betterleaks",
+   "ref": "refs/tags/v2.0.0-rc.8",
+   "commit": "b4b1c4455987636400ce693bd9d8a8e2cf375ed9",
+   "license": "MIT",
+   "license_file": "LICENSE",
+   "license_marker": "MIT License",
+   "reader": "betterleaks-rule-tests",
+   "notes": "Match and NoMatch rule tests from rules/**/*.go, read as Go literals. Component-only tests are skipped because a component is never reported on its own."
+  },
+  {
+   "tool": "kingfisher",
+   "kind": "git",
+   "url": "https://github.com/mongodb/kingfisher",
+   "ref": "refs/tags/v2.19.1",
+   "commit": "0b57b8122e10050db3cefffde1a555a061e0b280",
+   "license": "Apache-2.0",
+   "license_file": "LICENSE",
+   "license_marker": "Apache License",
+   "reader": "kingfisher-rule-examples",
+   "rules_directory": "crates/kingfisher-rules/generated/rules",
+   "notes": "examples and negative_examples of the first-party rules. Imported rules carry no examples in this release."
+  },
+  {
+   "tool": "kingfisher-v1",
+   "kind": "git",
+   "url": "https://github.com/mongodb/kingfisher",
+   "ref": "refs/tags/v1.113.0",
+   "commit": "82d050530cdef9af070b8f9a75701c9c27a948c3",
+   "license": "Apache-2.0",
+   "license_file": "LICENSE",
+   "license_marker": "Apache License",
+   "reader": "kingfisher-rule-examples",
+   "rules_directory": "crates/kingfisher-rules/data/rules",
+   "notes": "examples and negative_examples of the last 1.x catalog. Optional: these rules are not the rules of Kingfisher 2.x."
+  },
+  {
+   "tool": "rustleaks",
+   "kind": "repository",
+   "path": "crates/rustleaks-core/tests/support",
+   "license": "MIT",
+   "reader": "rustleaks-pack-fixtures",
+   "notes": "Positive and negative cases of the rule pack tests in this repository."
+  }
+ ],
+ "workloads": [
+  {
+   "id": "fixtures-gitleaks",
+   "family": "fixtures-matrix",
+   "modes": [
+    "dir"
+   ],
+   "description": "gitleaks rule examples",
+   "source": {
+    "kind": "git",
+    "tool": "gitleaks",
+    "reader": "gitleaks-generator-samples",
+    "url": "https://github.com/gitleaks/gitleaks",
+    "commit": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+    "ref": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b"
+   },
+   "path": "fixtures-matrix/fixtures-gitleaks",
+   "size": {
+    "bytes": 584678,
+    "files": 6770,
+    "commits": 0
+   },
+   "labels": "labels/fixtures-matrix/fixtures-gitleaks.jsonl",
+   "expected": {
+    "cases": 6770,
+    "labels": 6770,
+    "skipped": {}
+   },
+   "tuned": true,
+   "tuned_note": "Rustleaks replays these samples in its compatibility tests."
+  },
+  {
+   "id": "fixtures-betterleaks",
+   "family": "fixtures-matrix",
+   "modes": [
+    "dir"
+   ],
+   "description": "betterleaks rule examples",
+   "source": {
+    "kind": "git",
+    "tool": "betterleaks",
+    "reader": "betterleaks-rule-tests",
+    "url": "https://github.com/betterleaks/betterleaks",
+    "commit": "b4b1c4455987636400ce693bd9d8a8e2cf375ed9",
+    "ref": "refs/tags/v2.0.0-rc.8"
+   },
+   "path": "fixtures-matrix/fixtures-betterleaks",
+   "size": {
+    "bytes": 199025,
+    "files": 2005,
+    "commits": 0
+   },
+   "labels": "labels/fixtures-matrix/fixtures-betterleaks.jsonl",
+   "expected": {
+    "cases": 2005,
+    "labels": 2006,
+    "skipped": {
+     "component-only test (never reported on its own)": 155,
+     "rule function CfxreServerKey is not registered": 2,
+     "rule function NeonConnectionURI is not registered": 3,
+     "rule function SquareSecret is not registered": 1,
+     "rule function TrelloAccessToken is not registered": 1
+    }
+   },
+   "tuned": false,
+   "tuned_note": "Not used in Rustleaks development. Rustleaks pack rules and Betterleaks rules share upstream rule sources."
+  },
+  {
+   "id": "fixtures-kingfisher",
+   "family": "fixtures-matrix",
+   "modes": [
+    "dir"
+   ],
+   "description": "kingfisher rule examples",
+   "source": {
+    "kind": "git",
+    "tool": "kingfisher",
+    "reader": "kingfisher-rule-examples",
+    "url": "https://github.com/mongodb/kingfisher",
+    "commit": "0b57b8122e10050db3cefffde1a555a061e0b280",
+    "ref": "refs/tags/v2.19.1"
+   },
+   "path": "fixtures-matrix/fixtures-kingfisher",
+   "size": {
+    "bytes": 2082,
+    "files": 41,
+    "commits": 0
+   },
+   "labels": "labels/fixtures-matrix/fixtures-kingfisher.jsonl",
+   "expected": {
+    "cases": 41,
+    "labels": 41,
+    "skipped": {}
+   },
+   "tuned": false,
+   "tuned_note": "Not used in Rustleaks development."
+  },
+  {
+   "id": "fixtures-kingfisher-v1",
+   "family": "fixtures-matrix",
+   "modes": [
+    "dir"
+   ],
+   "description": "kingfisher-v1 rule examples",
+   "source": {
+    "kind": "git",
+    "tool": "kingfisher-v1",
+    "reader": "kingfisher-rule-examples",
+    "url": "https://github.com/mongodb/kingfisher",
+    "commit": "82d050530cdef9af070b8f9a75701c9c27a948c3",
+    "ref": "refs/tags/v1.113.0"
+   },
+   "path": "fixtures-matrix/fixtures-kingfisher-v1",
+   "size": {
+    "bytes": 179380,
+    "files": 2146,
+    "commits": 0
+   },
+   "labels": "labels/fixtures-matrix/fixtures-kingfisher-v1.jsonl",
+   "expected": {
+    "cases": 2146,
+    "labels": 2146,
+    "skipped": {}
+   },
+   "tuned": false,
+   "tuned_note": "Not used in Rustleaks development."
+  },
+  {
+   "id": "fixtures-rustleaks",
+   "family": "fixtures-matrix",
+   "modes": [
+    "dir"
+   ],
+   "description": "rustleaks rule examples",
+   "source": {
+    "kind": "repository",
+    "tool": "rustleaks",
+    "reader": "rustleaks-pack-fixtures"
+   },
+   "path": "fixtures-matrix/fixtures-rustleaks",
+   "size": {
+    "bytes": 425437,
+    "files": 3826,
+    "commits": 0
+   },
+   "labels": "labels/fixtures-matrix/fixtures-rustleaks.jsonl",
+   "expected": {
+    "cases": 3826,
+    "labels": 3934,
+    "skipped": {}
+   },
+   "tuned": true,
+   "tuned_note": "Rustleaks pack tests; written for Rustleaks rules."
+  },
+  {
+   "id": "fixtures-rustleaks-dotgit",
+   "family": "fixtures-matrix",
+   "modes": [
+    "dir"
+   ],
+   "description": "rustleaks rule examples whose path has a .git component",
+   "source": {
+    "kind": "repository",
+    "tool": "rustleaks",
+    "reader": "rustleaks-pack-fixtures"
+   },
+   "path": "fixtures-matrix/fixtures-rustleaks-dotgit",
+   "size": {
+    "bytes": 4272,
+    "files": 57,
+    "commits": 0
+   },
+   "labels": "labels/fixtures-matrix/fixtures-rustleaks-dotgit.jsonl",
+   "expected": {
+    "cases": 57,
+    "labels": 57,
+    "skipped": {}
+   },
+   "tuned": true,
+   "tuned_note": "Rustleaks pack tests; written for Rustleaks rules."
+  }
+ ]
+}
