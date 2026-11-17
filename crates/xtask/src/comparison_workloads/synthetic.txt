@@ -60,7 +60,9 @@ def pem_block(stream):
 
 
 # Positive kinds: (category, assignment name, value maker). The value maker
-# returns (text, secret_start, secret_end) within the text.
+# returns (text, secret_start, secret_end) within the text. The source of
+# each shape, and where it coincides with a Gitleaks rule's bounds, is listed
+# in docs/dev/comparison-workloads.md.
 def _token(prefix, alphabet, length, classes=(LOWER, UPPER, DIGITS)):
     def make(stream):
         value = prefix + random_value(stream, alphabet, length, classes)

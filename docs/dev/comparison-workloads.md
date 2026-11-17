@@ -147,8 +147,8 @@ own license; the manifest names it for reference.
 `synthetic.json` lists 71 generated workloads. Every value comes from a fixed
 seed, so a fresh `generate` gives the same bytes and the same Git commit IDs
 on every host. `verify` compares each workload with the hashes in the
-manifest. The full set is about 6.6 GB and takes about two minutes to
-generate.
+manifest. The full set is about 6.6 GB. Generating it took about two
+minutes on the development host.
 
 ### Tuned workloads
 
@@ -200,6 +200,34 @@ Planted values:
 - In binary-mix, some shared objects hold a GitHub token shape between NUL
   bytes. These labels have `in_binary: true`, because tools differ in
   whether they read binary files.
+
+### Where the token shapes come from
+
+Each shape follows a provider's published prefix and format. Where the
+provider does not state a length or alphabet, the generator uses a value
+inside the documented format, and the table says where that choice
+coincides with a Gitleaks rule's bounds. A shape that coincides with one
+tool's rule favors no tool by itself, but reports should keep it in mind.
+
+| Shape | Source | Coincides with a tool rule |
+| --- | --- | --- |
+| `ghp_` and 36 letters or digits | GitHub, [Behind GitHub's new authentication token formats](https://github.blog/security/application-security/behind-githubs-new-authentication-token-formats/) | Same as Gitleaks `github-pat`. The last 6 characters are not a valid checksum, so a tool that checks the checksum rejects them. |
+| `glpat-` and 20 characters | GitLab, [Personal access tokens API](https://docs.gitlab.com/api/personal_access_tokens/) | Length 20 is the Gitleaks `gitlab-pat` length. Newer GitLab tokens can be longer. |
+| `AKIA` and 16 characters from A to Z and 2 to 7, 20 in all | AWS, [Manage access keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) for the prefix and the 20-character example | AWS does not state the alphabet; the Base32 alphabet is the Gitleaks `aws-access-token` alphabet. |
+| `xoxb-`, two 12-digit groups and 24 characters | Slack, [Token types](https://api.slack.com/authentication/token-types) for the prefix | The group lengths come from the earlier harness and fall inside the Gitleaks `slack-bot-token` bounds. |
+| `sk_live_` and 24 characters | Stripe, [Authentication](https://stripe.com/docs/api/authentication) | Inside the Gitleaks `stripe-access-token` length range. Current Stripe keys can be longer. |
+| `npm_` and 36 lower-case letters or digits | npm, [About access tokens](https://docs.npmjs.com/about-access-tokens) | Same as the Gitleaks `npm-access-token` class. Real tokens also use upper case. |
+| `pypi-AgEIcHlwaS5vcmc` and 70 characters | PyPI, [API tokens](https://pypi.org/help/#apitoken); the fixed part encodes `pypi.org` | Inside the Gitleaks `pypi-upload-token` length range. |
+| `SG.`, 22 characters, `.`, 43 characters | SendGrid, [API keys](https://docs.sendgrid.com/ui/account-and-settings/api-keys) | Same total length as the Gitleaks `sendgrid-api-token` rule. |
+| `shpat_` and 32 hex digits | Shopify, [Admin API authentication](https://shopify.dev/docs/api/admin-rest#authentication) | Same as the Gitleaks `shopify-access-token` rule. |
+| `pscale_tkn_` and 32 characters (dense case) | PlanetScale, [API](https://planetscale.com/docs/api) | 32 is the lower bound of the Gitleaks `planetscale-api-token` rule. |
+| RSA private key block | RFC 7468 label `RSA PRIVATE KEY` | Random Base64 body, not a valid key. |
+| Database URI with a password | RFC 3986 user information | No Gitleaks default rule. |
+| `api_key = '...'` with 40 characters | Generic assignment | Targets generic rules in every tool. |
+
+Hard negatives follow public formats: UUID version 4 (RFC 9562),
+Subresource Integrity `sha512-` strings (W3C), Go module `h1:` checksums,
+and the `EXAMPLE` suffix of the AWS documentation key.
 
 ### Dense findings and long lines
 
