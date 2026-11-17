@@ -7,7 +7,9 @@ use std::sync::OnceLock;
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, RawConfig};
-use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
+use rustleaks_core::model::{
+    ByteRange, ByteText, Finding, FindingRange, Fragment, Location, ScanOptions,
+};
 use rustleaks_core::native::{
     CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
 };
@@ -1462,7 +1464,7 @@ fn kubernetes_long_context_location_is_the_whole_match_and_decoding_adds_a_findi
     let tags = decoded[0]
         .tags()
         .iter()
-        .map(|tag| tag.as_bytes())
+        .map(ByteText::as_bytes)
         .collect::<Vec<_>>();
     assert_eq!(tags, [&b"decoded:base64"[..], b"decode-depth:1"]);
     assert_eq!(coordinates(decoded[0].location()), [0, 3, 1, 35]);
