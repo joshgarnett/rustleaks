@@ -184,6 +184,8 @@ pub struct CompiledRule {
     pub(crate) allowlists: Vec<CompiledAllowlist>,
     pub(crate) required: Vec<RequiredRuleSpec>,
     pub(crate) skip_report: bool,
+    /// Whether the rule comes from a native rule pack.
+    pub(crate) native_pack: bool,
 }
 
 impl CompiledRule {

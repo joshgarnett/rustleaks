@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use aho_corasick::{AhoCorasickBuilder, MatchKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use semver::{BuildMetadata, Version};
 use thiserror::Error;
 
@@ -620,9 +620,10 @@ impl ConfigLoader {
         let mut rules = BTreeMap::new();
         let mut keywords = BTreeSet::new();
         let mut ordered_rule_ids = Vec::with_capacity(raw.rules.len());
+        let mut cache = AllowlistCache::default();
         for rule in raw.rules {
             let bytes = byte_rules.is_some_and(|rules| rules.contains(&rule.id));
-            let compiled = compile_rule(rule, bytes)?;
+            let compiled = compile_rule(rule, bytes, &mut cache)?;
             keywords.extend(compiled.keywords.iter().cloned());
             ordered_rule_ids.push(compiled.id.clone());
             rules.insert(compiled.id.clone(), compiled);
@@ -632,7 +633,12 @@ impl ConfigLoader {
         let mut allowlists = Vec::new();
         let mut targeted_allowlists = Vec::new();
         for raw_allowlist in raw.allowlists {
-            compile_global_allowlist(raw_allowlist, &mut allowlists, &mut targeted_allowlists)?;
+            compile_global_allowlist(
+                raw_allowlist,
+                &mut allowlists,
+                &mut targeted_allowlists,
+                &mut cache,
+            )?;
         }
 
         let config = CompiledConfig {
@@ -652,7 +658,25 @@ impl ConfigLoader {
     }
 }
 
-fn compile_rule(mut rule: RuleSpec, bytes: bool) -> Result<CompiledRule, ConfigError> {
+/// Reuses compiled allowlist parts within one configuration compile.
+///
+/// Rule packs repeat the same allowlist patterns across many rules. A pattern
+/// that already validated, and a joined pattern or stopword set that already
+/// compiled, are reused instead of being built again. Compilation still runs
+/// in configuration order, so an invalid pattern fails at its first
+/// occurrence with that occurrence's scope, as before.
+#[derive(Default)]
+struct AllowlistCache {
+    validated: BTreeSet<String>,
+    joined: BTreeMap<String, GoRegex>,
+    stop_words: BTreeMap<Vec<String>, AhoCorasick>,
+}
+
+fn compile_rule(
+    mut rule: RuleSpec,
+    bytes: bool,
+    cache: &mut AllowlistCache,
+) -> Result<CompiledRule, ConfigError> {
     if rule.allowlist.is_some() && !rule.allowlists.is_empty() {
         return Err(ConfigError::RuleAllowlistConflict {
             rule_id: rule.id.clone(),
@@ -665,7 +689,7 @@ fn compile_rule(mut rule: RuleSpec, bytes: bool) -> Result<CompiledRule, ConfigE
     let mut allowlists = Vec::with_capacity(rule.allowlists.len());
     for allowlist in rule.allowlists {
         let scope = format!("{}: [[rules.allowlists]]", rule.id);
-        allowlists.push(compile_allowlist(allowlist, &scope)?);
+        allowlists.push(compile_allowlist(allowlist, &scope, cache)?);
     }
 
     for required in &rule.required {
@@ -722,6 +746,7 @@ fn compile_rule(mut rule: RuleSpec, bytes: bool) -> Result<CompiledRule, ConfigE
         allowlists,
         required: rule.required,
         skip_report: rule.skip_report,
+        native_pack: false,
     })
 }
 
@@ -729,8 +754,9 @@ fn compile_global_allowlist(
     raw: RawGlobalAllowlist,
     global: &mut Vec<CompiledAllowlist>,
     targeted: &mut Vec<(Vec<String>, CompiledAllowlist)>,
+    cache: &mut AllowlistCache,
 ) -> Result<(), ConfigError> {
-    let allowlist = compile_allowlist(raw.allowlist, "[[allowlists]]")?;
+    let allowlist = compile_allowlist(raw.allowlist, "[[allowlists]]", cache)?;
     if raw.target_rules.is_empty() {
         global.push(allowlist);
     } else {
@@ -739,7 +765,11 @@ fn compile_global_allowlist(
     Ok(())
 }
 
-fn compile_allowlist(raw: AllowlistSpec, scope: &str) -> Result<CompiledAllowlist, ConfigError> {
+fn compile_allowlist(
+    raw: AllowlistSpec,
+    scope: &str,
+    cache: &mut AllowlistCache,
+) -> Result<CompiledAllowlist, ConfigError> {
     let condition = match raw.condition {
         Condition::Unknown(value) => {
             return Err(ConfigError::InvalidAllowlistCondition {
@@ -767,24 +797,22 @@ fn compile_allowlist(raw: AllowlistSpec, scope: &str) -> Result<CompiledAllowlis
             scope: scope.to_owned(),
         });
     }
-    for pattern in &raw.paths {
-        validate_pattern(pattern).map_err(|message| ConfigError::InvalidPattern {
-            scope: scope.to_owned(),
-            field: "path",
-            pattern: pattern.clone(),
-            message,
-        })?;
+    for (patterns, field) in [(&raw.paths, "path"), (&raw.regexes, "regex")] {
+        for pattern in patterns {
+            if cache.validated.contains(pattern) {
+                continue;
+            }
+            validate_pattern(pattern).map_err(|message| ConfigError::InvalidPattern {
+                scope: scope.to_owned(),
+                field,
+                pattern: pattern.clone(),
+                message,
+            })?;
+            cache.validated.insert(pattern.clone());
+        }
     }
-    for pattern in &raw.regexes {
-        validate_pattern(pattern).map_err(|message| ConfigError::InvalidPattern {
-            scope: scope.to_owned(),
-            field: "regex",
-            pattern: pattern.clone(),
-            message,
-        })?;
-    }
-    let path_matcher = compile_joined_allowlist_patterns(&raw.paths, scope, "path")?;
-    let regex_matcher = compile_joined_allowlist_patterns(&raw.regexes, scope, "regex")?;
+    let path_matcher = compile_joined_allowlist_patterns(&raw.paths, scope, "path", cache)?;
+    let regex_matcher = compile_joined_allowlist_patterns(&raw.regexes, scope, "regex", cache)?;
     let normalized_stop_words = raw
         .stop_words
         .into_iter()
@@ -798,8 +826,14 @@ fn compile_allowlist(raw: AllowlistSpec, scope: &str) -> Result<CompiledAllowlis
     let stopword_matcher = if nonempty_stop_words.is_empty() {
         None
     } else {
-        Some(
-            AhoCorasickBuilder::new()
+        let key = nonempty_stop_words
+            .iter()
+            .map(|word| (*word).to_owned())
+            .collect::<Vec<_>>();
+        if let Some(matcher) = cache.stop_words.get(&key) {
+            Some(matcher.clone())
+        } else {
+            let matcher = AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
                 .build(nonempty_stop_words)
                 .map_err(|error| ConfigError::InvalidPattern {
@@ -807,8 +841,10 @@ fn compile_allowlist(raw: AllowlistSpec, scope: &str) -> Result<CompiledAllowlis
                     field: "stopword",
                     pattern: "<normalized stopwords>".to_owned(),
                     message: error.to_string(),
-                })?,
-        )
+                })?;
+            cache.stop_words.insert(key, matcher.clone());
+            Some(matcher)
+        }
     };
     Ok(CompiledAllowlist {
         description: raw.description,
@@ -832,6 +868,7 @@ fn compile_joined_allowlist_patterns(
     patterns: &[String],
     scope: &str,
     field: &'static str,
+    cache: &mut AllowlistCache,
 ) -> Result<Option<GoRegex>, ConfigError> {
     if patterns.is_empty() {
         return Ok(None);
@@ -844,14 +881,17 @@ fn compile_joined_allowlist_patterns(
         joined.push_str(pattern);
     }
     joined.push(')');
-    GoRegex::compile(&joined)
-        .map(Some)
-        .map_err(|error| ConfigError::InvalidPattern {
-            scope: scope.to_owned(),
-            field,
-            pattern: joined,
-            message: error.to_string(),
-        })
+    if let Some(regex) = cache.joined.get(&joined) {
+        return Ok(Some(regex.clone()));
+    }
+    let regex = GoRegex::compile(&joined).map_err(|error| ConfigError::InvalidPattern {
+        scope: scope.to_owned(),
+        field,
+        pattern: joined.clone(),
+        message: error.to_string(),
+    })?;
+    cache.joined.insert(joined, regex.clone());
+    Ok(Some(regex))
 }
 
 fn nonempty_pattern(

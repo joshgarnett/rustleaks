@@ -228,10 +228,23 @@ line, and redaction can create separate lines.
 - Native keyword metadata is kept only for `buffer-v1` roots and helpers and
   for `bytes-v1` rules. It counts toward the selected-rule source limit.
 - The per-target byte limit applies to each native input buffer on its own.
-- Native keyword checks have a work checkpoint each. ASCII searches borrow
-  raw bytes and charge the input length before each search. Unicode searches
-  share one lowercase string per buffer; building it charges two input
-  lengths, and each search charges the folded length.
+- Native keyword checks have a work checkpoint each. One ASCII
+  case-insensitive automaton covers the ASCII keywords of every native rule.
+  It runs at most once per native input buffer on the raw bytes, stops once
+  every keyword has been seen, and is indivisible like one regex search. The
+  first keyword check on a buffer charges the input length, and every rule's
+  ASCII keyword check then reads the shared result. Unicode searches share
+  one lowercase string per buffer; building it charges two input lengths, and
+  each search charges the folded length.
+- A rule pack rule without keywords would run its expression on every buffer.
+  When the engine is built, the expression is analyzed for a small set of
+  ASCII literals of which every match contains one, ignoring ASCII case. The
+  same automaton looks for them, and a buffer that has none of them skips the
+  expression, which could not match there. Only ASCII literals and ASCII
+  classes count, because Unicode case folding can add non-ASCII forms such as
+  the Kelvin sign. Invalid UTF-8 normalization keeps ASCII bytes, so the raw
+  bytes give the same answer as the normalized ones. The check charges no
+  work, so usage matches a scan without it.
 - Native line coordinates count newlines from the end of the previous
   admitted candidate in the same input, one work unit per byte counted, with
   no newline index. When matches arrive in order, which they do, one rule's

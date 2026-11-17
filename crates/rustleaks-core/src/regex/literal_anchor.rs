@@ -636,7 +636,7 @@ impl GoRegex {
                 return None;
             }
             let input = Input::new(bytes).span(start..end).anchored(Anchored::Yes);
-            if let Some(found) = self.backend.search(&input) {
+            if let Some(found) = self.backend.get().search(&input) {
                 debug_assert_eq!(found.start(), start);
                 debug_assert!(found.end() > found.start());
                 collect_span();
