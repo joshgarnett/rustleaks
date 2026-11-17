@@ -218,6 +218,11 @@ def report_markdown(run, cells, score, summary):
                            'Tuned', 'Labels', 'Config or ignore files at the scan root'], rows)
     tuned = [workload['id'] for workload in run['workloads'] if workload.get('tuned')]
     lines += ['', 'Tuned inputs (used during Rustleaks development): %s.' % (', '.join(tuned) if tuned else 'none'), '']
+    skipped = [item for source in run.get('workload_manifests') or [] for item in source.get('skipped_workloads') or []]
+    if skipped:
+        lines += ['Workloads in the manifests that this harness does not run:', '']
+        lines += ['- %s: %s' % (item['id'], item['reason']) for item in skipped]
+        lines += ['']
     for lane in LANES:
         lane_cells = [cell for cell in cells if cell['lane'] == lane]
         if not lane_cells:

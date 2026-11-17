@@ -83,6 +83,16 @@ def selftest_check(condition, message):
 
 
 def selftest_units():
+    with tempfile.TemporaryDirectory() as folder:
+        manifest = os.path.join(folder, 'w.json')
+        with open(manifest, 'w') as handle:
+            json.dump({'schema': SCHEMA_WORKLOADS, 'set': 's', 'workloads': [
+                {'id': 'a', 'family': 'synthetic', 'modes': ['stdin'], 'path': 'a'},
+                {'id': 'b', 'family': 'synthetic', 'modes': ['dir', 'stdin'], 'path': 'b'}]}, handle)
+        loaded, sources = manifest_load_workloads([manifest], folder)
+        selftest_check([workload['id'] for workload in loaded] == ['b'] and loaded[0]['modes'] == ['dir']
+                       and [item['id'] for item in sources[0]['skipped_workloads']] == ['a', 'b'],
+                       'unsupported modes are dropped and listed')
     split = {'target': '/cache/repos/x', 'targets': {'dir': '/cache/repos/x/tree', 'git': '/cache/repos/x/repo'}}
     selftest_check(workload_target(split, 'dir') == '/cache/repos/x/tree'
                    and workload_target(split, 'git') == '/cache/repos/x/repo', 'per-mode paths pick the mode target')
