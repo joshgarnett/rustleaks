@@ -28,10 +28,10 @@ crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1793
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1798
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1814
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1818
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1976
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1981
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1997
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2001
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1988
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1993
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2009
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2013
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
 crates/rustleaks-core/tests/engine.rs:generic-api-key:353

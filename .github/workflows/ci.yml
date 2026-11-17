@@ -41,6 +41,11 @@ jobs:
       - name: Run the authoritative acceptance gate
         working-directory: rustleaks
         run: just ci
+      - name: Scan the worktree with redacted output
+        working-directory: rustleaks
+        run: |
+          bazelisk build //crates/rustleaks-cli:rustleaks
+          bazel-bin/crates/rustleaks-cli/rustleaks dir . --redact --no-banner --timeout=300
       - name: Verify Cargo and Bazel dependency drift
         working-directory: rustleaks
         run: |

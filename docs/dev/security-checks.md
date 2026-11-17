@@ -387,7 +387,8 @@ Before the first publication, the snapshot is the only baseline.
 
 ## Repository self-scan
 
-Scan the worktree and Git history with Rustleaks before a release.
+Scan the worktree and Git history with Rustleaks before a release. Pull
+requests run the worktree scan, and the nightly workflow runs both scans.
 
 - The root `.rustleaks.toml` extends the default rules and skips only
   generated compatibility corpora, the two generated API traceability
@@ -398,7 +399,8 @@ Scan the worktree and Git history with Rustleaks before a release.
   skips every file that matches an allowlist path, so only the Git history
   scan applies these line rules.
 - The root `.rustleaksignore` lists reviewed fingerprints of synthetic
-  examples and generated hashes.
+  examples and generated hashes. A worktree fingerprint includes the line
+  number, so update it when an edit moves the reviewed line.
 - GitHub secret scanning skips only the generated corpora, copied fixtures and
   the pinned default configuration listed in `.github/secret_scanning.yml`.
   Repository checks require that exact list. Generator source, examples and
@@ -426,7 +428,7 @@ Untrusted pull request code never runs from `pull_request_target`,
 
 | When | Work |
 | --- | --- |
-| Pull request | `just ci`, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the native platform lanes. RustSec runs in a separate job with network access and no secrets |
+| Pull request | `just ci`, the worktree self-scan, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the native platform lanes. RustSec runs in a separate job with network access and no secrets |
 | Nightly | Longer fuzz campaigns, more property cases, frozen evidence and Rust replay, fresh RustSec, newest allowed dependency resolution in a checkout that is not committed, and the repository self-scan |
 | Weekly | Pinned Miri, unsafe inventory, cargo-vet, RustSec and all native target lanes. The weekly fuzz job raises run and time budgets but keeps the smoke input limits; it does not run the deep profile. A Bazel coverage review measures ordinary tests, not fuzz coverage. CodeQL and OpenSSF Scorecard run on their own schedules |
 | Release candidate | A manual dry run without secrets for the exact `main` commit and version. See [Releasing](releasing.md) |
