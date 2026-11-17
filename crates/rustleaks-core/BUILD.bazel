@@ -44,6 +44,7 @@ rustleaks_library(
         "decoded_locations",
         "detect_corpus",
         "engine",
+        "language_fixtures",
         "model",
         "location_lookup",
         "scan_semantics",
@@ -93,6 +94,27 @@ rustleaks_integration_test(
     deps = [":rustleaks_core"],
 )
 
+rustleaks_integration_test(
+    name = "default_rule_cases_test",
+    src = "tests/default_rule_cases.rs",
+    data = ["//compat:all"],
+    deps = [":rustleaks_core"],
+)
+
+rustleaks_integration_test(
+    name = "rule_precedence_test",
+    src = "tests/rule_precedence.rs",
+    compile_data = [
+        "tests/support/additional_coverage.json",
+        "tests/support/association_coverage.json",
+        "tests/support/format_coverage.json",
+        "tests/support/remaining_verified_rules.json",
+        "tests/support/special_coverage.json",
+    ],
+    data = ["//compat:all"],
+    deps = [":rustleaks_core"],
+)
+
 test_suite(
     name = "parity_tests",
     tests = [
@@ -125,6 +147,8 @@ test_suite(
         ":triage_test",
 
         ":security_stress_test",
+        ":default_rule_cases_test",
+        ":rule_precedence_test",
         ":allowlist_test",
         ":composite_corpus_test",
         ":config_test",
@@ -133,6 +157,7 @@ test_suite(
         ":decoded_locations_test",
         ":detect_corpus_test",
         ":engine_test",
+        ":language_fixtures_test",
         ":model_test",
         ":location_lookup_test",
         ":rustleaks_core_doc_test",
