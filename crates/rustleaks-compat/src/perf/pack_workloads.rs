@@ -17,8 +17,8 @@ use serde_json::json;
 
 use super::source_scale_workloads::{FindingKey, GITHUB_RULE, key, token_row, verify_findings};
 use super::suite_support::{
-    DATABASE_URI_RULE, Lcg, PACKS, Result, checked_github_token, database_uri, keyword_census,
-    pack_config, prose_line,
+    DATABASE_URI_RULE, Lcg, PACKS, PackSelection, Result, check_rule_count, checked_github_token,
+    compile_packs, database_uri, keyword_census, pack_selection, prose_line,
 };
 use super::worker_workloads::with_team;
 use super::{Phase, elapsed, fingerprint, outcome_signature, phase};
@@ -140,7 +140,9 @@ fn startup_input(config: &CompiledConfig, connections: bool) -> Result<Input> {
 
 /// Every keyword of the selected configuration that contains no other keyword,
 /// each followed by a NUL byte and repeated. A bare keyword between NUL bytes
-/// is too short for every rule pattern, so the input must produce no finding.
+/// is too short for every rule pattern, so the keywords produce no finding. A
+/// GitHub token row after the keywords is the one expected finding, so a scan
+/// that skips the input cannot pass.
 fn keyword_input(config: &CompiledConfig, size: usize) -> Result<Input> {
     let independent = config
         .keywords()
@@ -153,18 +155,30 @@ fn keyword_input(config: &CompiledConfig, size: usize) -> Result<Input> {
                     .any(|other| other != *keyword && keyword.contains(other.as_str()))
         })
         .collect::<Vec<_>>();
-    let bytes = super::super::keyword_input(config, independent.len(), size)?;
+    let mut bytes = super::super::keyword_input(config, independent.len(), size)?;
     if !independent
         .iter()
         .all(|keyword| super::super::contains_bytes(&bytes, keyword.as_bytes()))
     {
         return Err("keyword input omits an independent keyword".into());
     }
+    let token = checked_github_token(9)?;
+    bytes.push(b'\n');
+    let line = line_count(&bytes) + 1;
+    bytes.extend_from_slice(&token_row(&token));
     Ok(Input {
         bytes,
-        expected: Vec::new(),
-        plants: independent.len(),
+        expected: vec![key(GITHUB_RULE, "", "", line, 2, &token)],
+        plants: independent.len() + 1,
     })
+}
+
+#[allow(
+    clippy::naive_bytecount,
+    reason = "bounded fixture count outside timers"
+)]
+fn line_count(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|byte| **byte == b'\n').count()
 }
 
 fn validate(outcome: &ScanOutcome, expected: &[FindingKey]) -> Result<()> {
@@ -187,9 +201,16 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     }
     let packs = selected_packs(id)?;
     let connections = packs.contains(&"rustleaks-connections-v1");
+    // Pack text, its declared rule count and the identity bytes are prepared
+    // before the timer, which covers only the native policy compile.
+    let selection = pack_selection(&packs)?;
     let start = Instant::now();
-    let (config, rules, identity) = pack_config(&packs)?;
+    let config = black_box(compile_packs(&selection)?);
     let compile_ns = elapsed(start)?;
+    check_rule_count(&config, &selection)?;
+    let PackSelection {
+        rules, identity, ..
+    } = selection;
     let input = if id.starts_with("packs-startup-") {
         startup_input(&config, connections)?
     } else if id.starts_with("packs-keywords-") {

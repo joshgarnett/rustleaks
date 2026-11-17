@@ -205,7 +205,7 @@ impl Tools {
         let needs_cli = workloads.iter().any(|id| id.starts_with("cli-"));
         let needs_git = workloads
             .iter()
-            .any(|id| id.starts_with("git-") || id == "cli-git" || id.starts_with("cli-matrix-"));
+            .any(|id| id.starts_with("git-") || id == "cli-git" || groups::needs_git(id));
         let needs_archives = workloads.iter().any(|id| {
             id == "archives-all-formats" || id.starts_with("archive-") || id == "git-archive-blobs"
         });

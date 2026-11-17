@@ -144,6 +144,16 @@ const GROUPS: &[(&str, Members)] = &[
             ("dense-filter-one-line", DENSE),
             ("dense-base64-uris", DENSE),
             ("dense-long-line-sparse", LONG_LINE),
+            ("dense-planetscale-ids", DENSE),
+            ("dense-planetscale-loose-ids", DENSE),
+            ("dense-planetscale-pairs", DENSE),
+            ("dense-jfrog-hosts", DENSE),
+            ("dense-clickhouse-ids", DENSE),
+            ("dense-cloudinary-names", DENSE),
+            ("dense-salesforce-hosts", DENSE),
+            ("dense-tableau-hosts", DENSE),
+            ("dense-auth0-domains", DENSE),
+            ("dense-ebay-client-ids", DENSE),
             ("memory-many-findings-scan", &["scan"]),
             ("memory-many-findings-json", &["scan", "report-json-file"]),
         ],
@@ -241,6 +251,16 @@ pub(super) fn workloads(group: &str, available: &[String]) -> Option<Result<Vec<
     )
 }
 
+/// CLI matrix workloads that build the generated repository with Git. Startup
+/// and the size series do not use Git.
+pub(super) fn needs_git(workload: &str) -> bool {
+    workload.starts_with("cli-matrix-")
+        && !matches!(
+            workload,
+            "cli-matrix-startup-packs" | "cli-matrix-dir-size-series"
+        )
+}
+
 /// Returns the required phase names for one of these workloads.
 pub(super) fn required_phases(workload: &str) -> Option<Vec<&'static str>> {
     GROUPS
@@ -269,7 +289,11 @@ mod tests {
                 available.push((*id).to_owned());
             }
         }
-        assert_eq!(seen.len(), 42);
+        assert_eq!(seen.len(), 52);
+        assert!(needs_git("cli-matrix-dir-report"));
+        assert!(!needs_git("cli-matrix-startup-packs"));
+        assert!(!needs_git("cli-matrix-dir-size-series"));
+        assert!(!needs_git("packs-mixed-all"));
         for (group, members) in GROUPS {
             assert_eq!(
                 workloads(group, &available).unwrap().unwrap().len(),

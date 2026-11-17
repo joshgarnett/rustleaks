@@ -1,11 +1,16 @@
 //! Dense findings, long lines and many findings at library level.
 //!
-//! The dense shapes adapt the Kingfisher dense findings script (case names
-//! `visible-catalog`, `single-line-visible`, `single-line-filter` and
-//! `base64-uris`) to Rustleaks rules. Each shape runs at sizes that double
-//! from 25,000 to 400,000 bytes, so the time ratio between neighbouring
-//! sizes shows growth that is worse than linear. No upstream code or bytes are
-//! copied. Expected findings come from the plants and their byte offsets.
+//! The dense shapes adapt the cases of the Kingfisher dense findings script
+//! (`scripts/benchmarks/dense_findings.py` at v2.19.1) to Rustleaks rules.
+//! Each shape runs at sizes that double from 25,000 to 400,000 bytes, so the
+//! time ratio between neighboring sizes shows growth that is worse than
+//! linear. Sizes are interleaved within each iteration, so drift on the host
+//! affects every size alike. No upstream code or bytes are copied. Expected
+//! findings come from the plants and their byte offsets.
+//!
+//! Shapes built from provider pack support rules (`skipReport = true`) produce
+//! many candidates and no reported finding. Each ends with one GitHub token
+//! line as the control finding, so a scan that skips the input cannot pass.
 
 use std::fmt;
 use std::fs::File;
@@ -14,7 +19,7 @@ use std::io::{BufReader, BufWriter, Write as _};
 use std::time::Instant;
 
 use rustleaks_core::config::{CompiledConfig, ConfigLoader};
-use rustleaks_core::model::{Finding, Fragment, ScanOptions};
+use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanControl, ScanOutcome};
 use rustleaks_report::{JsonReporter, Reporter};
 use serde::Deserialize;
@@ -24,6 +29,7 @@ use serde_json::json;
 use super::source_scale_workloads::{FindingKey, GITHUB_RULE, Scratch, key, verify_findings};
 use super::suite_support::{
     DATABASE_URI_RULE, Lcg, Result, checked_github_token, keyword_census, pack_config,
+    shannon_entropy,
 };
 use super::{Phase, elapsed, fingerprint, outcome_signature, phase};
 
@@ -33,6 +39,16 @@ pub(super) const WORKLOADS: &[&str] = &[
     "dense-filter-one-line",
     "dense-base64-uris",
     "dense-long-line-sparse",
+    "dense-planetscale-ids",
+    "dense-planetscale-loose-ids",
+    "dense-planetscale-pairs",
+    "dense-jfrog-hosts",
+    "dense-clickhouse-ids",
+    "dense-cloudinary-names",
+    "dense-salesforce-hosts",
+    "dense-tableau-hosts",
+    "dense-auth0-domains",
+    "dense-ebay-client-ids",
     "memory-many-findings-scan",
     "memory-many-findings-json",
 ];
@@ -49,6 +65,12 @@ const LONG_LINE_TOKENS: usize = 8;
 const MANY_FINDINGS: usize = 300_000 / SCALE;
 const MANY_CONFIG: &str = "[[rules]]\nid = 'perf-many'\ndescription = 'many findings'\nregex = 'tok_[0-9]{12}'\nkeywords = ['tok_']\n";
 const CLOUDFLARE_RULE: &str = "cloudflare-api-key";
+const PLANETSCALE_RULE: &str = "planetscale-api-token";
+const PLANETSCALE_ASSOCIATION_RULE: &str = "rustleaks.association.planetscale-api-token";
+const LOWER_ALNUM: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+const HEX: &[u8] = b"0123456789abcdef";
+const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     if !(1..=super::MAX_ITERATIONS).contains(&iterations) {
@@ -66,10 +88,27 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
             let (config, _, identity) = pack_config(&["rustleaks-connections-v1"])?;
             series(id, iterations, config, identity, 1)
         }
+        _ if HELPER_SHAPES.contains(&id) || id == "dense-planetscale-pairs" => {
+            let (config, _, identity) = pack_config(&["rustleaks-providers-v1"])?;
+            series(id, iterations, config, identity, 0)
+        }
         "memory-many-findings-scan" | "memory-many-findings-json" => many_findings(id, iterations),
         _ => Err(format!("unknown dense workload {id}").into()),
     }
 }
+
+/// Shapes that match only provider pack support rules.
+const HELPER_SHAPES: &[&str] = &[
+    "dense-planetscale-ids",
+    "dense-planetscale-loose-ids",
+    "dense-jfrog-hosts",
+    "dense-clickhouse-ids",
+    "dense-cloudinary-names",
+    "dense-salesforce-hosts",
+    "dense-tableau-hosts",
+    "dense-auth0-domains",
+    "dense-ebay-client-ids",
+];
 
 /// One generated input and its exact findings.
 struct Shape {
@@ -182,6 +221,142 @@ fn long_line_sparse(config: &CompiledConfig, size: usize) -> Result<Shape> {
     Ok(finish(bytes, expected))
 }
 
+/// One record line for a support-rule shape, without its newline.
+fn helper_line(id: &str, rng: &mut Lcg) -> Vec<u8> {
+    let mut text = |alphabet: &[u8], minimum: usize, maximum: usize| {
+        let length = minimum + rng.next(maximum - minimum + 1);
+        rng.string(alphabet, length)
+    };
+    let mut line = Vec::new();
+    match id {
+        // `planetscale`: keyword, the word ID and a 12-byte lowercase ID.
+        "dense-planetscale-ids" => {
+            line.extend_from_slice(b"pscale ID ");
+            line.extend_from_slice(&text(LOWER_ALNUM, 12, 12));
+        }
+        // `issue-537`: up to 15 separator bytes around the word ID.
+        "dense-planetscale-loose-ids" => {
+            line.extend_from_slice(b"pscale");
+            line.extend_from_slice(&text(b" .:-_", 0, 15));
+            line.extend_from_slice(b"ID");
+            line.extend_from_slice(&text(b" .:-_", 0, 15));
+            line.extend_from_slice(&text(LOWER_ALNUM, 12, 12));
+        }
+        "dense-jfrog-hosts" => {
+            line.extend_from_slice(&text(LOWER, 3, 12));
+            line.extend_from_slice(b".jfrog.io");
+        }
+        "dense-clickhouse-ids" => {
+            line.extend_from_slice(b"clickhouse ID ");
+            line.extend_from_slice(&text(LOWER_ALNUM, 20, 20));
+        }
+        "dense-cloudinary-names" => {
+            line.extend_from_slice(b"cloudinary CLOUD NAME ");
+            line.extend_from_slice(&text(LOWER_ALNUM, 12, 12));
+        }
+        "dense-salesforce-hosts" => {
+            line.extend_from_slice(&text(LOWER, 3, 12));
+            line.extend_from_slice(b".my.salesforce.com");
+        }
+        "dense-tableau-hosts" => {
+            line.extend_from_slice(&text(LOWER, 3, 12));
+            line.extend_from_slice(b".online.tableau.com");
+        }
+        "dense-auth0-domains" => {
+            let labels = 1 + rng.next(3);
+            for _ in 0..labels {
+                let length = 3 + rng.next(10);
+                line.extend_from_slice(&rng.string(LOWER, length));
+                line.push(b'.');
+            }
+            line.extend_from_slice(b"auth0.com");
+        }
+        _ => {
+            // `ebay-client-id`: two names, PRD and two hexadecimal parts.
+            line.extend_from_slice(&text(ALNUM, 4, 12));
+            line.push(b'-');
+            line.extend_from_slice(&text(ALNUM, 4, 12));
+            line.extend_from_slice(b"-PRD-");
+            line.extend_from_slice(&text(HEX, 8, 12));
+            line.push(b'-');
+            line.extend_from_slice(&text(HEX, 8, 12));
+        }
+    }
+    line
+}
+
+/// Appends the control GitHub token on its own line and expects it.
+fn control_line(bytes: &mut Vec<u8>, expected: &mut Vec<FindingKey>) -> Result<()> {
+    let token = checked_github_token(77)?;
+    let line = line_count(bytes) + 1;
+    expected.push(key(
+        GITHUB_RULE,
+        "",
+        "",
+        line,
+        if line == 1 { 1 } else { 2 },
+        &token,
+    ));
+    bytes.extend_from_slice(&token);
+    bytes.push(b'\n');
+    Ok(())
+}
+
+/// Lines that only provider pack support rules match, then the control line.
+fn helper_shape(id: &str, size: usize) -> Result<Shape> {
+    let mut rng = Lcg::new(0x6b32_0000 ^ size as u64);
+    let mut bytes = Vec::with_capacity(size + 64);
+    let mut records = 0;
+    loop {
+        let line = helper_line(id, &mut rng);
+        if bytes.len() + line.len() + 1 + 41 > size {
+            break;
+        }
+        bytes.extend_from_slice(&line);
+        bytes.push(b'\n');
+        records += 1;
+    }
+    let mut expected = Vec::new();
+    control_line(&mut bytes, &mut expected)?;
+    let mut shape = finish(bytes, expected);
+    shape.records = records;
+    Ok(shape)
+}
+
+/// `components`: a `PlanetScale` ID line, then a `pscale_tkn_` token line. The
+/// default `planetscale-api-token` rule reports each token. The provider pack
+/// rule `rustleaks.association.planetscale-api-token` also reports each token,
+/// because it needs a `PlanetScale` ID support match anywhere in the same
+/// buffer (window `0`), and every ID line is one.
+fn planetscale_pairs(size: usize) -> Result<Shape> {
+    const TOKEN_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz0123456789";
+    let mut rng = Lcg::new(0x7061_6972);
+    let mut bytes = Vec::with_capacity(size + 64);
+    let mut expected = Vec::new();
+    let mut line = 1;
+    while bytes.len() + 24 + 44 + 41 <= size {
+        bytes.extend_from_slice(b"pscale ID ");
+        bytes.extend_from_slice(&rng.string(LOWER_ALNUM, 12));
+        bytes.push(b'\n');
+        let mut token = b"pscale_tkn_".to_vec();
+        token.extend_from_slice(&rng.string(TOKEN_ALPHABET, 32));
+        if shannon_entropy(&token) < 3.5 {
+            return Err("synthetic PlanetScale token has too little entropy".into());
+        }
+        for rule in [PLANETSCALE_RULE, PLANETSCALE_ASSOCIATION_RULE] {
+            expected.push(key(rule, "", "", line + 1, 2, &token));
+        }
+        bytes.extend_from_slice(&token);
+        bytes.push(b'\n');
+        line += 2;
+    }
+    let records = expected.len() / 2;
+    control_line(&mut bytes, &mut expected)?;
+    let mut shape = finish(bytes, expected);
+    shape.records = records;
+    Ok(shape)
+}
+
 #[allow(
     clippy::naive_bytecount,
     reason = "bounded fixture count outside timers"
@@ -238,7 +413,9 @@ fn series(
             "dense-github-one-line" => github_one_line(*size)?,
             "dense-filter-one-line" => filter_one_line(*size),
             "dense-base64-uris" => base64_uris(*size),
-            _ => long_line_sparse(&config, *size)?,
+            "dense-long-line-sparse" => long_line_sparse(&config, *size)?,
+            "dense-planetscale-pairs" => planetscale_pairs(*size)?,
+            _ => helper_shape(id, *size)?,
         });
     }
     let engine = Engine::builder(config).build()?;
@@ -252,7 +429,6 @@ fn series(
         &shapes[0],
         depth > 0,
     )?;
-    let mut phases = Vec::with_capacity(shapes.len());
     let names = if long_line {
         LONG_LINE_MIB
             .iter()
@@ -264,21 +440,31 @@ fn series(
             .map(|size| format!("scan-{size}-bytes"))
             .collect::<Vec<_>>()
     };
-    for (shape, name) in shapes.iter().zip(names) {
-        let fragment = Fragment::builder(shape.bytes.clone()).start_line(1).build();
-        let mut result = phase(
-            &name,
-            iterations,
-            0,
-            shape.bytes.len() as u64,
-            "input-bytes",
-            &shape.bytes,
-            &identity,
-        );
-        for _ in 0..iterations {
+    let fragments = shapes
+        .iter()
+        .map(|shape| Fragment::builder(shape.bytes.clone()).start_line(1).build())
+        .collect::<Vec<_>>();
+    let mut phases = shapes
+        .iter()
+        .zip(names)
+        .map(|(shape, name)| {
+            phase(
+                &name,
+                iterations,
+                0,
+                shape.bytes.len() as u64,
+                "input-bytes",
+                &shape.bytes,
+                &identity,
+            )
+        })
+        .collect::<Vec<_>>();
+    // Each iteration scans every size once, smallest first.
+    for _ in 0..iterations {
+        for ((shape, fragment), result) in shapes.iter().zip(&fragments).zip(&mut phases) {
             let start = Instant::now();
             let outcome = black_box(engine.scan_fragment_controlled(
-                black_box(&fragment),
+                black_box(fragment),
                 &options,
                 &ScanControl::unlimited(),
             ));
@@ -286,16 +472,16 @@ fn series(
             // Validation and outcome destruction stay outside the timer.
             validate(&outcome, shape, depth > 0)?;
             result.outcome_fnv1a64 = outcome_signature(&outcome);
+            result.findings = shape.expected.len() as u64;
             result.counts = json!({
                 "workers": 1, "decode_depth": depth, "records": shape.records,
                 "lines": line_count(&shape.bytes).max(1),
                 "work_units": outcome.usage().work_units(),
                 "decoded_bytes": outcome.usage().decoded_bytes(),
                 "finding_payload_bytes": outcome.usage().finding_payload_bytes(),
+                "order": "sizes interleaved within each iteration",
             });
         }
-        result.findings = shape.expected.len() as u64;
-        phases.push(result);
     }
     Ok(phases)
 }
@@ -317,19 +503,56 @@ fn validate_many(outcome: &ScanOutcome) -> Result<()> {
         )
         .into());
     }
-    let mut sorted = outcome.findings().iter().collect::<Vec<&Finding>>();
-    sorted.sort_by_key(|finding| finding.location().start_line());
-    for (index, finding) in sorted.into_iter().enumerate() {
-        let line = index + 1;
+    let mut seen = LineSet::new(MANY_FINDINGS);
+    for finding in outcome.findings() {
+        let line = finding.location().start_line();
         if finding.rule_id().as_bytes() != b"perf-many"
-            || finding.location().start_line() != line
             || finding.location().start_column() != if line == 1 { 1 } else { 2 }
             || finding.secret().as_bytes() != many_token(line).as_bytes()
+            || !seen.insert(line)
         {
             return Err(format!("many-findings finding for line {line} differs").into());
         }
     }
+    if !seen.complete() {
+        return Err("many-findings scan omitted a line".into());
+    }
     Ok(())
+}
+
+/// One bit per planted line, so a check needs 1 bit per finding.
+struct LineSet {
+    bits: Vec<u64>,
+    lines: usize,
+    count: usize,
+}
+
+impl LineSet {
+    fn new(lines: usize) -> Self {
+        Self {
+            bits: vec![0; lines.div_ceil(64)],
+            lines,
+            count: 0,
+        }
+    }
+
+    /// Records a line from 1; false when out of range or already seen.
+    fn insert(&mut self, line: usize) -> bool {
+        if line == 0 || line > self.lines {
+            return false;
+        }
+        let (word, bit) = ((line - 1) / 64, (line - 1) % 64);
+        if self.bits[word] & (1 << bit) != 0 {
+            return false;
+        }
+        self.bits[word] |= 1 << bit;
+        self.count += 1;
+        true
+    }
+
+    const fn complete(&self) -> bool {
+        self.count == self.lines
+    }
 }
 
 /// The report fields that identify one planted finding.
@@ -344,7 +567,7 @@ struct ReportRow {
 }
 
 /// Streams a JSON report array from the file. The check holds one element and
-/// one line number per element, never the report text.
+/// one bit per planted line, never the report text.
 struct ReportCheck;
 
 impl<'de> Visitor<'de> for ReportCheck {
@@ -355,22 +578,21 @@ impl<'de> Visitor<'de> for ReportCheck {
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> std::result::Result<usize, A::Error> {
-        let mut rows = Vec::new();
+        let mut seen = LineSet::new(MANY_FINDINGS);
         while let Some(row) = sequence.next_element::<ReportRow>()? {
-            rows.push((
-                row.line,
-                row.rule == "perf-many" && row.secret == many_token(row.line),
-            ));
-        }
-        rows.sort_unstable();
-        for (index, (line, matches)) in rows.iter().enumerate() {
-            if *line != index + 1 || !matches {
+            if row.rule != "perf-many"
+                || row.secret != many_token(row.line)
+                || !seen.insert(row.line)
+            {
                 return Err(serde::de::Error::custom(
                     "report row differs from the plant",
                 ));
             }
         }
-        Ok(rows.len())
+        if !seen.complete() {
+            return Err(serde::de::Error::custom("report omits a planted line"));
+        }
+        Ok(seen.count)
     }
 }
 

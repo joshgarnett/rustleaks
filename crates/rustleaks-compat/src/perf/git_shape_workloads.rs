@@ -1,8 +1,6 @@
 //! Git reader shapes: one huge hunk, many small files, many branches, merge
 //! diffs on and off, and renames on and off.
 //!
-//! The shapes adapt Betterleaks reader benchmark specifications (specs 7, 18,
-//! 20, 21, 23 and 27 in the benchmark survey) to the Git subprocess reader.
 //! Each plan lists the added lines of every hunk that `git log -p -U0` prints
 //! for its log options, and the expected fragments and findings come from that
 //! list. Variants of one shape import identical commits into separate

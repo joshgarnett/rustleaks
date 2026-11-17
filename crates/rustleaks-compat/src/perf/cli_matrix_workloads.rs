@@ -473,7 +473,12 @@ fn invocation(run: &Run<'_>, flags: Flags, extra: &[&str]) -> Command {
             command.args(["--report-format", "json", "--report-path", "-"]);
         }
         Report::File => {
-            command.args(["--report-format", "json", "--report-path", "report.json"]);
+            command.args([
+                "--report-format",
+                "json",
+                "--report-path",
+                &report_file(flags),
+            ]);
         }
         Report::None => {}
     }
@@ -502,7 +507,7 @@ fn verify(
     }
     let report = match flags.report {
         Report::Stdout => output.stdout.clone(),
-        Report::File => fs::read(run.root.join("report.json"))?,
+        Report::File => fs::read(run.root.join(report_file(flags)))?,
         Report::None => {
             if !output.stdout.is_empty() {
                 return Err("CLI wrote a report without a report path".into());
@@ -561,6 +566,12 @@ fn verify(
     Ok(outcome)
 }
 
+/// One report file per mode, so workloads that share a repository never share
+/// a report path.
+fn report_file(flags: Flags) -> String {
+    format!("report-{}.json", flags.mode.name())
+}
+
 fn phase_name(flags: Flags, label: &str) -> String {
     format!("cold-{}-{label}", flags.mode.name())
 }
@@ -584,7 +595,7 @@ fn measure(
     let mut outcome = Vec::new();
     for _ in 0..iterations {
         if flags.report == Report::File {
-            let _ = fs::remove_file(run.root.join("report.json"));
+            let _ = fs::remove_file(run.root.join(report_file(flags)));
         }
         let command = invocation(run, flags, extra);
         let start = Instant::now();
@@ -626,6 +637,32 @@ fn measure(
 }
 
 pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
+    match id {
+        "cli-matrix-startup-packs" | "cli-matrix-dir-size-series" => run_on(id, iterations, None),
+        _ if WORKLOADS.contains(&id) => run_on(id, iterations, Some(&prepared_repository()?)),
+        _ => Err(format!("unknown CLI matrix workload {id}").into()),
+    }
+}
+
+/// The generated repository with the complete-profile files beside it.
+fn prepared_repository() -> Result<Repository> {
+    representative_io::reject_ambient_git_state()?;
+    let repository = repository()?;
+    for workers in [1, 4, 8] {
+        fs::write(
+            repository
+                .scratch
+                .0
+                .join(format!("profile-w{workers}.limits")),
+            PROFILE.replace("WORKERS", &workers.to_string()),
+        )?;
+    }
+    Ok(repository)
+}
+
+/// Runs one workload. Every workload except startup and the size series needs
+/// the prepared repository.
+fn run_on(id: &str, iterations: usize, repository: Option<&Repository>) -> Result<Vec<Phase>> {
     if !(1..=1_000).contains(&iterations) {
         return Err("CLI matrix iterations outside 1..=1000".into());
     }
@@ -634,25 +671,15 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
         "cli-matrix-startup-packs" => startup(&cli, iterations),
         "cli-matrix-dir-size-series" => size_series(&cli, iterations),
         _ if WORKLOADS.contains(&id) => {
+            let repository = repository.ok_or("CLI matrix workload needs the repository")?;
             let git = representative_io::executable("RUSTLEAKS_PERF_GIT")?;
-            representative_io::reject_ambient_git_state()?;
-            let repository = repository()?;
-            for workers in [1, 4, 8] {
-                fs::write(
-                    repository
-                        .scratch
-                        .0
-                        .join(format!("profile-w{workers}.limits")),
-                    PROFILE.replace("WORKERS", &workers.to_string()),
-                )?;
-            }
             let run = Run {
                 cli: &cli,
                 git: &git,
                 root: &repository.scratch.0,
                 target: "repo",
             };
-            matrix(id, iterations, &run, &repository)
+            matrix(id, iterations, &run, repository)
         }
         _ => Err(format!("unknown CLI matrix workload {id}").into()),
     }
@@ -804,7 +831,12 @@ fn size_series(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
         let folder = format!("series-{mib}-mib");
         let root = scratch.0.join(&folder);
         fs::create_dir(&root)?;
-        let files = mib * 1024 * KIB / (64 * KIB);
+        // 16 files per MiB at full size; unit tests write fewer, smaller files.
+        let files = if *mib == 0 {
+            0
+        } else {
+            (mib * 16 / SCALE).max(1)
+        };
         let mut expected = Vec::with_capacity(files);
         let mut filler = Vec::new();
         for index in 0..files {
@@ -973,18 +1005,97 @@ fn ignore_baseline(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::OnceLock;
+
+    /// One repository for every test in this module. It is never dropped, so
+    /// its folder stays in the test temporary folder after the run.
+    fn shared() -> &'static Repository {
+        static REPOSITORY: OnceLock<Repository> = OnceLock::new();
+        REPOSITORY.get_or_init(|| prepared_repository().expect("CLI matrix repository"))
+    }
+
+    fn check(id: &str) {
+        let repository = match id {
+            "cli-matrix-startup-packs" | "cli-matrix-dir-size-series" => None,
+            _ => Some(shared()),
+        };
+        let phases = run_on(id, 1, repository).unwrap_or_else(|error| panic!("{id}: {error}"));
+        assert!(!phases.is_empty(), "{id}");
+    }
 
     #[test]
-    fn cli_matrix_workloads_have_exact_outcomes_at_test_scale() {
-        for id in WORKLOADS {
-            let phases = run(id, 1).unwrap_or_else(|error| panic!("{id}: {error}"));
-            assert!(!phases.is_empty(), "{id}");
-        }
+    fn startup_packs_has_exact_outcomes() {
+        check("cli-matrix-startup-packs");
+    }
+
+    #[test]
+    fn dir_decode_depth_has_exact_outcomes() {
+        check("cli-matrix-dir-decode-depth");
+    }
+
+    #[test]
+    fn git_decode_depth_has_exact_outcomes() {
+        check("cli-matrix-git-decode-depth");
+    }
+
+    #[test]
+    fn dir_archive_depth_has_exact_outcomes() {
+        check("cli-matrix-dir-archive-depth");
+    }
+
+    #[test]
+    fn git_archive_depth_has_exact_outcomes() {
+        check("cli-matrix-git-archive-depth");
+    }
+
+    #[test]
+    fn dir_report_has_exact_outcomes() {
+        check("cli-matrix-dir-report");
+    }
+
+    #[test]
+    fn git_report_has_exact_outcomes() {
+        check("cli-matrix-git-report");
+    }
+
+    #[test]
+    fn dir_packs_profile_has_exact_outcomes() {
+        check("cli-matrix-dir-packs-profile");
+    }
+
+    #[test]
+    fn git_packs_profile_has_exact_outcomes() {
+        check("cli-matrix-git-packs-profile");
+    }
+
+    #[test]
+    fn dir_workers_has_exact_outcomes() {
+        check("cli-matrix-dir-workers");
+    }
+
+    #[test]
+    fn git_workers_has_exact_outcomes() {
+        check("cli-matrix-git-workers");
+    }
+
+    #[test]
+    fn dir_size_series_has_exact_outcomes() {
+        check("cli-matrix-dir-size-series");
+    }
+
+    #[test]
+    fn dir_ignore_baseline_has_exact_outcomes() {
+        check("cli-matrix-dir-ignore-baseline");
+    }
+
+    #[test]
+    fn every_workload_has_a_test() {
+        assert_eq!(WORKLOADS.len(), 13);
     }
 
     #[test]
     fn plants_follow_depth_archive_and_pack_flags() {
-        let repository = repository().unwrap();
+        let repository = shared();
         let count = |flags| repository.expected(flags).len();
         let base = Flags::new(Mode::Dir);
         let raw = SOURCE_FILES;

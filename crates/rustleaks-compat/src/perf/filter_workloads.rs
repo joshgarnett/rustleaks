@@ -2,12 +2,12 @@
 //! costs at library level.
 //!
 //! These extend the eight ported Gitleaks allowlist benchmarks with larger
-//! allowlists and stopword lists, hit and miss inputs, and adapt Betterleaks
-//! benchmark specifications 12 to 14 (capture extraction by group count,
-//! component proximity, finding construction and rejection). Every input is
-//! generated so the expected findings follow from its construction: a value
-//! that contains a stopword or matches an allowlist entry is not reported, and
-//! one control value in each rejection case is reported.
+//! allowlists and stopword lists and hit and miss inputs, and add capture
+//! extraction by group count, composite rule proximity, and finding
+//! construction and rejection. Every input is generated so the expected
+//! findings follow from its construction: a value that contains a stopword or
+//! matches an allowlist entry is not reported, and one control value in each
+//! rejection case is reported.
 
 use std::fmt::Write as _;
 use std::hint::black_box;
@@ -121,13 +121,19 @@ fn value(rng: &mut Lcg, marker: Option<&str>) -> Vec<u8> {
     value
 }
 
-/// Lines of `token=<value>`; each value holds `marker(line)` when given.
-fn token_lines(marker: Option<&dyn Fn(usize) -> String>) -> (Vec<u8>, Vec<FindingKey>) {
+/// Lines of `token=<value>`. With a marker, every value but the last holds
+/// `marker(index)`, so the last value is the control that must be reported.
+/// Returns the input, the findings of every line and the last line's finding.
+fn token_lines(
+    marker: Option<&dyn Fn(usize) -> String>,
+) -> (Vec<u8>, Vec<FindingKey>, Vec<FindingKey>) {
     let mut rng = Lcg::new(0x6669_6c74);
     let mut input = Vec::with_capacity(RECORDS * 31);
     let mut findings = Vec::with_capacity(RECORDS);
     for index in 0..RECORDS {
-        let text = marker.map(|marker| marker(index));
+        let text = marker
+            .filter(|_| index + 1 < RECORDS)
+            .map(|marker| marker(index));
         let value = value(&mut rng, text.as_deref());
         let line = index + 1;
         findings.push(key(
@@ -142,8 +148,9 @@ fn token_lines(marker: Option<&dyn Fn(usize) -> String>) -> (Vec<u8>, Vec<Findin
         input.extend_from_slice(&value);
         input.push(b'\n');
     }
+    let last = findings.last().cloned().into_iter().collect();
     findings.sort();
-    (input, findings)
+    (input, findings, last)
 }
 
 fn validate(outcome: &ScanOutcome, expected: &[FindingKey]) -> Result<()> {
@@ -163,13 +170,27 @@ fn scan_phase(
     expected: &[FindingKey],
     config: &str,
 ) -> Result<Phase> {
+    scan_phase_with_control(name, iterations, engine, (fragment, expected), None, config)
+}
+
+/// Like [`scan_phase`], and also scans a small control fragment inside the
+/// timer when the measured fragment is expected to be skipped as a whole.
+fn scan_phase_with_control(
+    name: &str,
+    iterations: usize,
+    engine: &Engine,
+    (fragment, expected): (&Fragment, &[FindingKey]),
+    control: Option<(&Fragment, &[FindingKey])>,
+    config: &str,
+) -> Result<Phase> {
     let input = fragment.content().as_bytes();
+    let control_bytes = control.map_or(0, |(fragment, _)| fragment.content().as_bytes().len());
     let options = ScanOptions::builder().max_decode_depth(0).build();
     let mut result = phase(
         name,
         iterations,
         0,
-        input.len() as u64,
+        (input.len() + control_bytes) as u64,
         "input-bytes",
         input,
         config.as_bytes(),
@@ -181,9 +202,19 @@ fn scan_phase(
             &options,
             &ScanControl::unlimited(),
         ));
+        let checked = control.map(|(fragment, _)| {
+            black_box(engine.scan_fragment_controlled(
+                black_box(fragment),
+                &options,
+                &ScanControl::unlimited(),
+            ))
+        });
         result.elapsed_ns += elapsed(start)?;
         // Validation and outcome destruction stay outside the timer.
         validate(&outcome, expected)?;
+        if let (Some(checked), Some((_, control_expected))) = (&checked, control) {
+            validate(checked, control_expected)?;
+        }
         result.outcome_fnv1a64 = outcome_signature(&outcome);
         result.counts = json!({
             "workers": 1, "decode_depth": 0,
@@ -191,7 +222,7 @@ fn scan_phase(
             "finding_records": outcome.usage().finding_records(),
         });
     }
-    result.findings = expected.len() as u64;
+    result.findings = (expected.len() + control.map_or(0, |(_, rows)| rows.len())) as u64;
     Ok(result)
 }
 
@@ -286,9 +317,9 @@ fn filter_match(iterations: usize) -> Result<Vec<Phase>> {
     let paths = global_paths(100);
     let stop_marker = |index: usize| stopword(index % 1_000);
     let regex_marker = |index: usize| allow_pattern(index % 100);
-    let (stop_hit, _) = token_lines(Some(&stop_marker));
-    let (regex_hit, _) = token_lines(Some(&regex_marker));
-    let (plain, plain_findings) = token_lines(None);
+    let (stop_hit, _, stop_control) = token_lines(Some(&stop_marker));
+    let (regex_hit, _, regex_control) = token_lines(Some(&regex_marker));
+    let (plain, plain_findings, _) = token_lines(None);
     let mut phases = Vec::new();
     let stop_engine = engine(&stopwords)?;
     phases.push(scan_phase(
@@ -296,7 +327,7 @@ fn filter_match(iterations: usize) -> Result<Vec<Phase>> {
         iterations,
         &stop_engine,
         &fragment(stop_hit, None),
-        &[],
+        &stop_control,
         &stopwords,
     )?);
     phases.push(scan_phase(
@@ -313,7 +344,7 @@ fn filter_match(iterations: usize) -> Result<Vec<Phase>> {
         iterations,
         &regex_engine,
         &fragment(regex_hit, None),
-        &[],
+        &regex_control,
         &regexes,
     )?);
     phases.push(scan_phase(
@@ -325,12 +356,27 @@ fn filter_match(iterations: usize) -> Result<Vec<Phase>> {
         &regexes,
     )?);
     let path_engine = engine(&paths)?;
-    phases.push(scan_phase(
+    // The allowlisted path skips the whole fragment, so a one-line fragment
+    // outside `vendor/` is scanned in the same timer as the control.
+    let first_line = plain.iter().position(|byte| *byte == b'\n').unwrap_or(0);
+    let mut control_finding = plain_findings
+        .iter()
+        .find(|row| row.line == 1)
+        .cloned()
+        .ok_or("path control line missing")?;
+    control_finding.file = b"src/control.txt".to_vec();
+    phases.push(scan_phase_with_control(
         "path-allowlist-100-hit",
         iterations,
         &path_engine,
-        &fragment(plain.clone(), Some("vendor/pkg0099/data.txt")),
-        &[],
+        (
+            &fragment(plain.clone(), Some("vendor/pkg0099/data.txt")),
+            &[],
+        ),
+        Some((
+            &fragment(plain[..=first_line].to_vec(), Some("src/control.txt")),
+            std::slice::from_ref(&control_finding),
+        )),
         &paths,
     )?);
     let miss_findings = plain_findings
@@ -353,7 +399,7 @@ fn filter_match(iterations: usize) -> Result<Vec<Phase>> {
 }
 
 /// `token=secret-NNNNNN account=user-NNNNNN` lines with rules of 0, 1, 2 named
-/// and 6 named capture groups (Betterleaks specification 12).
+/// and 6 named capture groups.
 fn capture_groups(iterations: usize) -> Result<Vec<Phase>> {
     let mut input = Vec::with_capacity(RECORDS * 40);
     for index in 0..RECORDS {
@@ -419,7 +465,6 @@ fn capture_groups(iterations: usize) -> Result<Vec<Phase>> {
 /// 1, 10 or 40 primary and component pairs followed by lines of 999 dots up to
 /// at least 100,000 bytes. Each primary requires the component rule within
 /// 100,000 lines, so every primary is reported with every component
-/// (Betterleaks specification 13).
 fn composite_proximity(iterations: usize) -> Result<Vec<Phase>> {
     const CONFIG: &str = "[[rules]]\nid = 'perf-primary'\ndescription = 'primary'\nregex = '''PRIMARY[0-9]{4}'''\nkeywords = ['primary']\n[[rules.required]]\nid = 'perf-component'\nwithinLines = 100000\n\n[[rules]]\nid = 'perf-component'\ndescription = 'component'\nregex = '''COMPONENT[0-9]{4}'''\nkeywords = ['component']\nskipReport = true\n";
     let engine = engine(CONFIG)?;
@@ -468,7 +513,7 @@ fn composite_proximity(iterations: usize) -> Result<Vec<Phase>> {
 }
 
 /// 1,000 records of `token=` with six digits and 88 dots, one per line or all
-/// on one line (Betterleaks specification 14). Every rule finds the 1,000
+/// on one line. Every rule finds the 1,000
 /// candidates. The accepting rule reports all of them. The filtering rule
 /// allowlists values that start with 0, so only the last value, 999999, is
 /// reported. The composite rule needs `COMPMARK` on the same line within 50

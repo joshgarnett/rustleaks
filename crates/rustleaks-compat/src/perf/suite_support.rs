@@ -165,34 +165,66 @@ pub(super) fn declared_rules(toml: &str) -> usize {
         .count()
 }
 
-/// Compiles the default configuration plus the named packs through the native
-/// policy, as `--native-pack` does. Returns the configuration, the expected
-/// rule count from the pack text, and a byte identity for fingerprints.
-pub(super) fn pack_config(ids: &[&str]) -> Result<(CompiledConfig, usize, Vec<u8>)> {
-    let mut policy = NativePolicy::builder();
+/// The named packs with their text, the rule count that text declares, and a
+/// byte identity for fingerprints. Nothing here compiles a rule.
+pub(super) struct PackSelection {
+    pub(super) packs: Vec<(&'static str, &'static str)>,
+    pub(super) rules: usize,
+    pub(super) identity: Vec<u8>,
+}
+
+pub(super) fn pack_selection(ids: &[&str]) -> Result<PackSelection> {
+    let mut packs = Vec::with_capacity(ids.len());
     let mut rules = DEFAULT_RULES;
     let mut identity = b"default".to_vec();
     for id in ids {
-        let (_, contents) = PACKS
+        let (name, contents) = *PACKS
             .iter()
             .find(|(name, _)| name == id)
             .ok_or("unknown native pack")?;
-        policy = policy.with_pack(id, contents)?;
+        packs.push((name, contents));
         rules += declared_rules(contents);
         identity.push(0);
-        identity.extend_from_slice(id.as_bytes());
+        identity.extend_from_slice(name.as_bytes());
         identity.push(0);
         identity.extend_from_slice(contents.as_bytes());
     }
-    let (config, _) = policy.compile()?;
-    if config.rules().len() != rules {
+    Ok(PackSelection {
+        packs,
+        rules,
+        identity,
+    })
+}
+
+/// Compiles the default configuration plus the selected packs through the
+/// native policy, as `--native-pack` does.
+pub(super) fn compile_packs(selection: &PackSelection) -> Result<CompiledConfig> {
+    let mut policy = NativePolicy::builder();
+    for (id, contents) in &selection.packs {
+        policy = policy.with_pack(id, contents)?;
+    }
+    Ok(policy.compile()?.0)
+}
+
+/// Fails unless the compiled rule count equals the count the pack text declares.
+pub(super) fn check_rule_count(config: &CompiledConfig, selection: &PackSelection) -> Result<()> {
+    if config.rules().len() != selection.rules {
         return Err(format!(
-            "native policy compiled {} rules, pack text declares {rules}",
-            config.rules().len()
+            "native policy compiled {} rules, pack text declares {}",
+            config.rules().len(),
+            selection.rules
         )
         .into());
     }
-    Ok((config, rules, identity))
+    Ok(())
+}
+
+/// Selects, compiles and checks the named packs in one step.
+pub(super) fn pack_config(ids: &[&str]) -> Result<(CompiledConfig, usize, Vec<u8>)> {
+    let selection = pack_selection(ids)?;
+    let config = compile_packs(&selection)?;
+    check_rule_count(&config, &selection)?;
+    Ok((config, selection.rules, selection.identity))
 }
 
 /// Writes a POSIX ustar archive with one regular file per entry.

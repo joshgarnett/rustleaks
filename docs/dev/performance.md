@@ -299,7 +299,7 @@ skip for pack rules without keywords.
 | Workload | What it measures |
 | --- | --- |
 | `packs-startup-none`, `-extra`, `-providers`, `-connections`, `-all` | Compile, construction and a first scan of a three-line input with one GitHub token and one database URI, for no pack, each pack and all packs. The URI is a finding only with the connections pack. |
-| `packs-keywords-none`, `packs-keywords-all` | 256 KiB of every keyword that holds no shorter keyword, each followed by a NUL byte. Every such keyword occurs and no finding is expected. |
+| `packs-keywords-none`, `packs-keywords-all` | 256 KiB of every keyword that holds no shorter keyword, each followed by a NUL byte, then one GitHub token line. Every such keyword occurs and the token is the only expected finding. |
 | `packs-mixed-none`, `packs-mixed-all` | 1 MiB of filler lines with a GitHub token and a database URI every 64 lines. |
 | `packs-workers-all-1`, `-4`, `-8` | 64 copies of a 64 KiB mixed fragment on 1, 4 or 8 persistent threads that share one engine with all packs. The timer covers dispatch, scans and result collection. |
 
@@ -325,7 +325,7 @@ depth 2 or more.
 | `cli-matrix-dir-packs-profile`, `cli-matrix-git-packs-profile` | All packs on or off, crossed with `--complete-profile` on (one worker) or off. |
 | `cli-matrix-dir-workers`, `cli-matrix-git-workers` | All packs with a complete profile of 1, 4 or 8 workers. |
 | `cli-matrix-dir-size-series` | Folders of 0, 1, 16 and 128 MiB in 64 KiB files with one token each. The empty folder gives the fixed cost of a process; the others give the cost per byte. |
-| `cli-matrix-dir-ignore-baseline` | No suppression, an ignore file, and a baseline. The ignore file and the baseline each hold 10,000 unrelated entries and one entry for a planted finding, which must then be missing from the report (Betterleaks specification 15). |
+| `cli-matrix-dir-ignore-baseline` | No suppression, an ignore file, and a baseline. The ignore file and the baseline each hold 10,000 unrelated entries and one entry for a planted finding, which must then be missing from the report. |
 
 The complete profile is the example from [Complete
 scanning](../user/complete-scanning.md#the-profile-file) with `workers` set
@@ -339,8 +339,15 @@ temporary folder.
 Library scans after a warm scan outside the timers. The dense shapes adapt
 the Kingfisher dense findings script (`scripts/benchmarks/dense_findings.py`
 at v2.19.1). Each runs at 25,000, 50,000, 100,000, 200,000 and 400,000
-nominal bytes and fills whole records up to the size. The time ratio between
-neighbouring sizes is near 2 for linear growth.
+nominal bytes and fills whole records up to the size. Each iteration scans
+every size once, smallest first, so drift on the host affects all sizes
+alike. The time ratio between neighboring sizes is near 2 for linear growth.
+
+The shapes from `dense-planetscale-ids` to `dense-ebay-client-ids` use the
+default rules plus the providers pack. Except for `dense-planetscale-pairs`,
+their records match only pack support rules, which have `skipReport = true`,
+so they give many candidates and no reported finding. Each of them ends with
+one GitHub token line, the only expected finding.
 
 | Workload | Shape |
 | --- | --- |
@@ -349,8 +356,18 @@ neighbouring sizes is near 2 for linear growth.
 | `dense-filter-one-line` | `cloudflare = '<value>'` records on one line. Each value has entropy 1.0, below the `cloudflare-api-key` threshold of 2, except the last, which is the one expected finding. |
 | `dense-base64-uris` | MySQL URIs repeated to three quarters of the size, then encoded as one Base64 string, with the connections pack at decode depth 1. Every password is a finding at line 1, column 1, because decoded findings report the columns of the encoded text. |
 | `dense-long-line-sparse` | One line of 1, 4 or 16 MiB of filler words with eight GitHub tokens spread evenly. |
+| `dense-planetscale-ids` | `pscale ID` and a 12-byte lowercase ID per line. |
+| `dense-planetscale-loose-ids` | `pscale`, 0 to 15 separator bytes, `ID`, 0 to 15 separator bytes and a 12-byte ID per line. |
+| `dense-planetscale-pairs` | A PlanetScale ID line, then a `pscale_tkn_` token line. Each token is reported twice: by the default `planetscale-api-token` rule and by the pack rule `rustleaks.association.planetscale-api-token`, which needs an ID support match anywhere in the same buffer. |
+| `dense-jfrog-hosts` | One `<name>.jfrog.io` host per line. |
+| `dense-clickhouse-ids` | `clickhouse ID` and a 20-byte lowercase ID per line. |
+| `dense-cloudinary-names` | `cloudinary CLOUD NAME` and a 12-byte lowercase name per line. No rule has these keywords. |
+| `dense-salesforce-hosts` | One `<name>.my.salesforce.com` host per line. |
+| `dense-tableau-hosts` | One `<name>.online.tableau.com` host per line. |
+| `dense-auth0-domains` | One to three random labels and `auth0.com` per line. |
+| `dense-ebay-client-ids` | One client ID per line: two names, `PRD` and two hexadecimal parts. |
 | `memory-many-findings-scan` | One fragment of 300,000 lines that each hold one finding of a custom rule. |
-| `memory-many-findings-json` | The same scan, then a JSON report of all findings written through a buffered file writer. A streaming check reads the file back after the timer. |
+| `memory-many-findings-json` | The same scan, then a JSON report of all findings written through a buffered file writer. A streaming check reads the file back after the timer and keeps one bit per finding. |
 
 The two `memory-many-findings-` workloads differ only by the report. Compare
 their peak RSS to see the memory the JSON writer adds; peak RSS covers the
@@ -359,9 +376,8 @@ whole process, including the retained findings.
 #### `git-shapes`
 
 Each workload reports a phase for the Git reader alone and one for the reader
-with detection, like `git-many-tiny-commits`. The shapes adapt Betterleaks
-reader benchmark specifications. Expected fragments are the added lines of
-each hunk that `git log -p -U0` prints for the given log options.
+with detection, like `git-many-tiny-commits`. Expected fragments are the
+added lines of each hunk that `git log -p -U0` prints for the given log options.
 
 | Workload | Shape |
 | --- | --- |
@@ -383,14 +399,13 @@ allowlist pattern (`zq0000` and up) occurs only where it is planted.
 | Workload | Phases |
 | --- | --- |
 | `filters-allowlist-build` | Configuration load and engine construction with 10, 100 and 1,000 allowlist regexes or stopwords, and with 100 rules that share one 20-entry allowlist. A probe after each phase checks that the last entry rejects a value. |
-| `filters-match` | 1,000 values against 1,000 stopwords, 100 allowlist regexes and 100 global path patterns, each with an input where every value is rejected and one where none is. |
-| `filters-capture-groups` | 1,000 lines of `token=secret-NNNNNN account=user-NNNNNN` with rules of 0, 1, 2 named and 6 named capture groups (Betterleaks specification 12). |
-| `filters-composite-proximity` | 1, 10 or 40 primary and component pairs, padded with lines of 999 dots to at least 100,000 bytes. Every primary is reported with every component (specification 13). |
-| `filters-finding-construction` | 1,000 records of `token=`, six digits and 88 dots, one per line or all on one line. Rules accept every record, allowlist all but the last, or require a component that only the last record has (specification 14). |
+| `filters-match` | 1,000 values against 1,000 stopwords, 100 allowlist regexes and 100 global path patterns, each with an input where every value but the last is rejected and one where none is. The allowlisted path skips its whole fragment, so that phase also scans a one-line fragment outside `vendor/` as the control. |
+| `filters-capture-groups` | 1,000 lines of `token=secret-NNNNNN account=user-NNNNNN` with rules of 0, 1, 2 named and 6 named capture groups. |
+| `filters-composite-proximity` | 1, 10 or 40 primary and component pairs, padded with lines of 999 dots to at least 100,000 bytes. Every primary is reported with every component. |
+| `filters-finding-construction` | 1,000 records of `token=`, six digits and 88 dots, one per line or all on one line. Rules accept every record, allowlist all but the last, or require a component that only the last record has. |
 
-Betterleaks specification 11 (component combinations) has no Rustleaks
-counterpart: a composite finding keeps every component within range and does
-not build combinations.
+A composite finding keeps every component within range and does not build
+combinations of components, so no workload measures combination counts.
 
 ## Profiling and calibration
 
