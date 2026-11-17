@@ -484,13 +484,29 @@ const COMPLETION_FLAGS: &[Flag] = &[flag(
     &["Accepted for Gitleaks compatibility; ignored."],
 )];
 
-const DIR_FLAGS: &[Flag] = &[flag(
-    "follow-symlinks",
-    None,
-    Value::Switch,
-    Group::Configuration,
-    &["Scan files that are symbolic links to other files."],
-)];
+const DIR_FLAGS: &[Flag] = &[
+    flag(
+        "follow-symlinks",
+        None,
+        Value::Switch,
+        Group::Configuration,
+        &["Scan files that are symbolic links to other files."],
+    ),
+    flag(
+        "scan-git-metadata",
+        None,
+        Value::Switch,
+        Group::Configuration,
+        &[
+            "Also scan the text metadata files in .git folders.",
+            "These are config, config.worktree, HEAD, FETCH_HEAD,",
+            "ORIG_HEAD, description, packed-refs, credential files,",
+            "the files in hooks, info and logs, and submodule config",
+            "files. Objects, the index, packs and lock files are",
+            "never read. Without this flag, .git folders are skipped.",
+        ],
+    ),
+];
 
 /// Every command in the order that root help lists them.
 pub(crate) const COMMANDS: &[Command] = &[

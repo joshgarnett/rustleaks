@@ -87,6 +87,15 @@
   `rustleaks-connections-v1`, which now has 14 rule definitions.
 - Add archive regression tests for verified TAR members before truncation,
   corrupt gzip input, and archive-depth exclusions.
+- Add the opt-in `--scan-git-metadata` flag for `dir` and
+  `DirectoryOptions::scan_git_metadata`. A `.git` folder that a path
+  allowlist would skip is entered, and only its text metadata files are
+  scanned: `config`, `config.worktree`, `HEAD`, `FETCH_HEAD`, `ORIG_HEAD`,
+  `description`, `packed-refs`, `.git-credentials`, `credentials`, the files
+  in `hooks`, `info` and `logs`, and submodule `config` files. Objects, the
+  index, pack files and lock files are never read. Path allowlists, size
+  limits and symlink rules still apply to each file. Without the flag, `dir`
+  skips `.git` folders as before.
 
 The pinned default configuration and default detection behavior are unchanged.
 

@@ -87,9 +87,51 @@ Scans a folder and everything below it, or a single file. `file` and
 | Flag | Value | Effect |
 | --- | --- | --- |
 | `--follow-symlinks` | None | Scan files that symbolic links point to. Without this flag, links are skipped. |
+| `--scan-git-metadata` | None | Also scan the text metadata files in `.git` folders. See [Git metadata](#git-metadata). Not in 0.1.0-alpha.9. |
 
 The `File` field of a finding depends on the path you give. See [Ignore
 files](configuration.md#ignore-files).
+
+#### Git metadata
+
+The default configuration has a global path allowlist entry,
+`(?:^|/)\.git$`, so `dir` skips every `.git` folder, as Gitleaks does. Text
+files in a `.git` folder can still hold secrets. A remote URL in `config` can
+contain a token, and `FETCH_HEAD` and the files in `logs` can repeat that URL.
+Such folders often end up in backups, container images and CI caches.
+
+`--scan-git-metadata` enters a `.git` folder that a path allowlist would
+skip and scans only these files:
+
+- `config`, `config.worktree`, `HEAD`, `FETCH_HEAD`, `ORIG_HEAD`,
+  `description`, `packed-refs`, `.git-credentials` and `credentials`, directly
+  in the `.git` folder;
+- every file in `hooks`, `info` and `logs` and their subfolders, except names
+  that end in `.lock`; and
+- every file named `config` in `modules` and its subfolders, which holds the
+  configuration of submodules.
+
+Rustleaks never lists or reads `objects`, the `index` file, pack files or lock
+files. Commit history is compressed in `objects`. Use `rustleaks git` to scan
+it.
+
+Other rules still apply to each selected file:
+
+- Path allowlists apply to each file path, such as `repo/.git/config`. The
+  default `(?:^|/)\.git$` entry matches only the folder, so it does not skip
+  these files. To skip some of them, add a path allowlist such as
+  `(?:^|/)\.git/logs/`.
+- `--max-target-megabytes`, `--follow-symlinks`, `--max-archive-depth` and
+  `--complete-profile` work as for any other file. Rustleaks never enters a
+  `.git` folder that is a symbolic link.
+- If no path allowlist matches a `.git` folder, for example with a custom
+  configuration, Rustleaks scans the whole folder with or without this flag.
+
+With `--native-pack rustleaks-connections-v1`, the Git credential URL rules
+for `.git/config` and `.git-credentials` paths can then report findings.
+
+The flag works only with `dir`. Gitleaks does not scan these files, so a scan
+with this flag can report findings that Gitleaks does not.
 
 ### stdin
 

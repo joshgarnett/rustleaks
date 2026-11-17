@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use rustleaks_core::config::CompiledConfig;
@@ -16,6 +17,28 @@ use crate::{
 
 const DEFAULT_MAX_SYMLINK_HOPS: usize = 64;
 
+/// The folder name whose plain-text metadata `scan_git_metadata` selects.
+const GIT_FOLDER: &str = ".git";
+/// Files directly inside a `.git` folder that hold plain-text metadata.
+const GIT_METADATA_FILES: &[&str] = &[
+    "config",
+    "config.worktree",
+    "HEAD",
+    "FETCH_HEAD",
+    "ORIG_HEAD",
+    "description",
+    "packed-refs",
+    ".git-credentials",
+    "credentials",
+];
+/// Folders directly inside a `.git` folder whose files are all selected,
+/// except lock files.
+const GIT_METADATA_TREES: &[&str] = &["hooks", "info", "logs"];
+/// Folder of submodule Git folders. Only their `config` files are selected.
+const GIT_MODULES: &str = "modules";
+/// Object store folder of a submodule Git folder. It is never listed.
+const GIT_OBJECTS: &str = "objects";
+
 /// Validated recursive filesystem-source options.
 #[derive(Clone, Debug)]
 pub struct DirectoryOptions {
@@ -26,6 +49,7 @@ pub struct DirectoryOptions {
     excluded_paths: Vec<ByteText>,
     logical_root: Option<PathBuf>,
     emit_limit_issues: bool,
+    scan_git_metadata: bool,
     max_symlink_hops: NonZeroUsize,
     #[cfg(feature = "archives")]
     archive_options: Option<crate::ArchiveOptions>,
@@ -78,6 +102,33 @@ impl DirectoryOptions {
     pub const fn emit_limit_issues(mut self, enabled: bool) -> Self {
         self.emit_limit_issues = enabled;
         self
+    }
+
+    /// Scans plain-text metadata files in `.git` folders that path
+    /// allowlists would otherwise skip.
+    ///
+    /// The default is off, which keeps the pinned traversal: a `.git` folder
+    /// that matches a path allowlist is skipped as a whole. When enabled, such
+    /// a folder is entered, but only these entries are visited: `config`,
+    /// `config.worktree`, `HEAD`, `FETCH_HEAD`, `ORIG_HEAD`, `description`,
+    /// `packed-refs`, `.git-credentials` and `credentials` directly inside it;
+    /// every file below `hooks`, `info` and `logs` except names ending in
+    /// `.lock`; and every file named `config` below `modules`, outside any
+    /// `objects` folder. The object store, the index, pack files and lock
+    /// files are never listed or opened. Each selected entry still passes the
+    /// path allowlists, the size limit and the symlink rules. A `.git` folder
+    /// that no path allowlist matches is walked in full, as before, so the
+    /// option never removes input.
+    #[must_use]
+    pub const fn scan_git_metadata(mut self, enabled: bool) -> Self {
+        self.scan_git_metadata = enabled;
+        self
+    }
+
+    /// Returns whether plain-text `.git` metadata is scanned.
+    #[must_use]
+    pub const fn scans_git_metadata(&self) -> bool {
+        self.scan_git_metadata
     }
 
     /// Installs immutable compiled configuration for early global path pruning.
@@ -151,6 +202,7 @@ impl Default for DirectoryOptions {
             excluded_paths: Vec::new(),
             logical_root: None,
             emit_limit_issues: false,
+            scan_git_metadata: false,
             max_symlink_hops: NonZeroUsize::new(DEFAULT_MAX_SYMLINK_HOPS)
                 .expect("the default symlink hop ceiling is positive"),
             #[cfg(feature = "archives")]
@@ -198,6 +250,7 @@ impl DirectorySource {
     fn walk(
         &self,
         path: &Path,
+        git_root: Option<&Path>,
         nominal: &mut Vec<u8>,
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
@@ -206,10 +259,21 @@ impl DirectorySource {
             return Err(SourceError::Cancelled);
         }
 
+        // Inside an entered `.git` folder, names alone decide what is
+        // visited, so the object store and the index are never inspected.
+        let git_entry =
+            git_root.map(|root| git_metadata_entry(path.strip_prefix(root).unwrap_or(path)));
+        if git_entry.is_some_and(|entry| !entry.file && !entry.directory) {
+            return Ok(SourceControl::Continue);
+        }
+
         // Complete coverage applies only to the selected path domain. The
         // discovered spelling is known before metadata or symlink resolution.
         // Preserve the historical gate order for legacy fragment callers.
-        if self.options.file_options.complete_target_bytes().is_some() && self.path_allowed(path) {
+        if self.options.file_options.complete_target_bytes().is_some()
+            && self.path_allowed(path)
+            && !self.enters_git_folder(path, git_root)
+        {
             return Ok(SourceControl::Continue);
         }
 
@@ -221,7 +285,13 @@ impl DirectorySource {
         };
 
         if metadata.is_dir() {
-            return self.walk_directory(path, nominal, cancellation, emit);
+            if git_entry.is_some_and(|entry| !entry.directory) {
+                return Ok(SourceControl::Continue);
+            }
+            return self.walk_directory(path, git_root, nominal, cancellation, emit);
+        }
+        if git_entry.is_some_and(|entry| !entry.file) {
+            return Ok(SourceControl::Continue);
         }
 
         // Upstream applies these gates to symlink metadata before resolution.
@@ -342,12 +412,19 @@ impl DirectorySource {
     fn walk_directory(
         &self,
         path: &Path,
+        git_root: Option<&Path>,
         nominal: &mut Vec<u8>,
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        let mut git_root = git_root;
         if self.path_allowed(path) {
-            return Ok(SourceControl::Continue);
+            // An allowlisted `.git` folder is entered only for its selected
+            // metadata. Any other allowlisted folder is skipped as before.
+            if !self.enters_git_folder(path, git_root) {
+                return Ok(SourceControl::Continue);
+            }
+            git_root = Some(path);
         }
         let entries = match fs::read_dir(path) {
             Ok(entries) => entries,
@@ -392,14 +469,22 @@ impl DirectorySource {
         children.sort_by_key(fs::DirEntry::file_name);
         for child in children {
             #[cfg(not(windows))]
-            let control = self.walk(&path.join(child), nominal, cancellation, emit)?;
+            let control = self.walk(&path.join(child), git_root, nominal, cancellation, emit)?;
             #[cfg(windows)]
-            let control = self.walk(&child.path(), nominal, cancellation, emit)?;
+            let control = self.walk(&child.path(), git_root, nominal, cancellation, emit)?;
             if control == SourceControl::Stop {
                 return Ok(control);
             }
         }
         Ok(SourceControl::Continue)
+    }
+
+    /// Whether `path` names a `.git` folder that metadata scanning enters.
+    fn enters_git_folder(&self, path: &Path, git_root: Option<&Path>) -> bool {
+        self.options.scan_git_metadata
+            && git_root.is_none()
+            && path.file_name() == Some(OsStr::new(GIT_FOLDER))
+            && fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
     }
 
     fn path_allowed(&self, path: &Path) -> bool {
@@ -512,9 +597,9 @@ impl DirectorySource {
     ) -> Result<SourceControl, SourceError> {
         let mut nominal = Vec::new();
         let Some((physical, logical)) = self.path_translation() else {
-            return self.walk(&self.root, &mut nominal, cancellation, emit);
+            return self.walk(&self.root, None, &mut nominal, cancellation, emit);
         };
-        self.walk(&self.root, &mut nominal, cancellation, &mut |event| {
+        self.walk(&self.root, None, &mut nominal, cancellation, &mut |event| {
             emit(translate_event(event, &physical, &logical)?)
         })
     }
@@ -601,6 +686,50 @@ fn translate_path(
     translated.extend_from_slice(head);
     translated.extend_from_slice(tail);
     Ok(ByteText::new(translated))
+}
+
+/// What an entry inside an entered `.git` folder may be.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GitMetadataEntry {
+    file: bool,
+    directory: bool,
+}
+
+/// Classifies a path relative to an entered `.git` folder by name only.
+fn git_metadata_entry(relative: &Path) -> GitMetadataEntry {
+    const NONE: GitMetadataEntry = GitMetadataEntry {
+        file: false,
+        directory: false,
+    };
+    let named = |names: &[&str], value: &OsStr| names.iter().any(|name| value == OsStr::new(name));
+    let mut components = relative.components();
+    let (Some(Component::Normal(first)), Some(name)) = (components.next(), relative.file_name())
+    else {
+        return NONE;
+    };
+    if components.next().is_none() {
+        return GitMetadataEntry {
+            file: named(GIT_METADATA_FILES, first),
+            directory: first == OsStr::new(GIT_MODULES) || named(GIT_METADATA_TREES, first),
+        };
+    }
+    if named(GIT_METADATA_TREES, first) {
+        return GitMetadataEntry {
+            file: !name.as_encoded_bytes().ends_with(b".lock"),
+            directory: true,
+        };
+    }
+    if first == OsStr::new(GIT_MODULES)
+        && !relative
+            .components()
+            .any(|component| component.as_os_str() == OsStr::new(GIT_OBJECTS))
+    {
+        return GitMetadataEntry {
+            file: name == OsStr::new("config"),
+            directory: true,
+        };
+    }
+    NONE
 }
 
 fn emit_issue(
