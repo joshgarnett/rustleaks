@@ -1548,29 +1548,22 @@ impl Engine {
         {
             return attach_shared_helpers(primary, required, &helpers, pass, completed, context);
         }
-        // Helpers arrive in ascending, non-overlapping match order, so each
-        // relation selects one contiguous run that a binary search finds. An
-        // unexpected order falls back to visiting every helper.
-        let ordered = helpers
-            .iter()
-            .map(|helpers| {
-                helpers.windows(2).all(|pair| {
-                    pair[0].whole.start <= pair[1].whole.start
-                        && pair[0].start_line <= pair[1].start_line
-                })
+        // Helpers arrive in ascending, non-overlapping match order (see
+        // `native_candidates`), so each relation selects one contiguous run
+        // that a binary search finds.
+        debug_assert!(helpers.iter().all(|helpers| {
+            helpers.windows(2).all(|pair| {
+                pair[0].whole.start <= pair[1].whole.start
+                    && pair[0].start_line <= pair[1].start_line
             })
-            .collect::<Vec<_>>();
+        }));
         for mut candidate in primary {
             let mut projected = Vec::new();
             let mut has_all = true;
-            for ((edge, helpers), ordered) in required.edges.iter().zip(&helpers).zip(&ordered) {
+            for (edge, helpers) in required.edges.iter().zip(&helpers) {
                 context.work()?;
                 let before = projected.len();
-                let run = if *ordered {
-                    native_relation_run(&candidate, helpers, edge.relation)
-                } else {
-                    0..helpers.len()
-                };
+                let run = native_relation_run(&candidate, helpers, edge.relation);
                 for helper in &helpers[run] {
                     context.work()?;
                     if native_relation_matches(&candidate, helper, edge.relation) {

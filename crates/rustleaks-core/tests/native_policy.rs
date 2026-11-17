@@ -1814,6 +1814,89 @@ skipReport = true
         }
         assert_linear(&usage);
     }
+
+    #[test]
+    fn two_unlimited_edges_list_helpers_by_edge_then_occurrence() {
+        // The pack contract orders required findings by edge and occurrence,
+        // also when the helpers of the two edges alternate in the input.
+        let engine = selected(
+            r#"
+[[rules]]
+id = "rustleaks.parent"
+regex = '''tok=([0-9]{6})'''
+[rules.required]
+contract = "buffer-v1"
+edges = [
+  { id = "rustleaks.first", relation = "full-match-window", window = "0" },
+  { id = "rustleaks.second", relation = "full-match-window", window = "0" },
+]
+[[rules]]
+id = "rustleaks.first"
+regex = '''a=([0-9]{6})'''
+skipReport = true
+[[rules]]
+id = "rustleaks.second"
+regex = '''b=([0-9]{6})'''
+skipReport = true
+"#,
+        );
+        let input = b"a=000001\nb=000002\ntok=111111\na=000003\nb=000004\ntok=222222\n";
+        let findings = scan(&engine, input, 0);
+        assert_eq!(findings.len(), 2);
+        for finding in &findings {
+            assert_eq!(
+                helper_secrets(finding),
+                ["000001", "000003", "000002", "000004"]
+            );
+            let ids = finding
+                .required_findings()
+                .iter()
+                .map(|required| required.rule_id().to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                ids,
+                [
+                    "rustleaks.first",
+                    "rustleaks.first",
+                    "rustleaks.second",
+                    "rustleaks.second"
+                ]
+            );
+        }
+        // Without any helper of the second edge, no primary qualifies.
+        assert!(scan(&engine, b"a=000001\ntok=111111\n", 0).is_empty());
+    }
+
+    #[test]
+    fn same_candidate_needs_the_same_start_and_end() {
+        // A same-candidate helper must have the same whole match. One that
+        // starts at the same byte but ends earlier does not relate.
+        let pack = |helper: &str| {
+            format!(
+                r#"
+[[rules]]
+id = "rustleaks.parent"
+regex = '''pair=([A-Z]{{4}}):([A-Z]{{4}})'''
+secretGroup = 2
+[rules.required]
+contract = "buffer-v1"
+edges = [{{ id = "rustleaks.helper", relation = "same-candidate" }}]
+[[rules]]
+id = "rustleaks.helper"
+regex = '''{helper}'''
+skipReport = true
+"#
+            )
+        };
+        let input = b"pair=GOOD:ABCD pair=FINE:WXYZ";
+        let shorter = selected(&pack("pair=([A-Z]{4})"));
+        assert!(scan(&shorter, input, 0).is_empty());
+        let same = selected(&pack("pair=([A-Z]{4}):[A-Z]{4}"));
+        let findings = scan(&same, input, 0);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(helper_secrets(&findings[0]), ["GOOD"]);
+        assert_eq!(helper_secrets(&findings[1]), ["FINE"]);
+    }
 }
 
 mod native_bytes {
