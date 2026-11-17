@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -581,7 +581,7 @@ struct NativeCandidate {
     end_line: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct NativeInputId {
     pass: usize,
     segment: Option<usize>,
@@ -591,7 +591,7 @@ struct NativeInputId {
 ///
 /// The address and length guard against a decoded pass buffer that a later
 /// pass could reuse; pass and segment numbers alone are already unique.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct NativeHitKey {
     input: NativeInputId,
     address: usize,
@@ -637,12 +637,18 @@ struct ScanContext<'a> {
     control: ScanControl<'a>,
     usage: ScanUsage,
     explanations: ExplanationCollector,
-    /// Native keyword patterns found in each native input of this fragment.
-    native_keyword_hits: HashMap<NativeHitKey, NativeKeywordHits>,
+    /// Native patterns found in each native input of the current decode
+    /// pass, by slot: 0 for the whole pass and `segment + 1` for a decoded
+    /// segment. Rules run pass by pass, so a new pass clears the slots.
+    native_keyword_hits: Vec<Option<NativeKeywordHits>>,
+    /// Decode pass that `native_keyword_hits` belongs to.
+    native_keyword_pass: usize,
 }
 
 /// Native patterns found in one native input.
 struct NativeKeywordHits {
+    /// The input these results belong to.
+    key: NativeHitKey,
     /// Bit set indexed by pattern ID.
     words: Box<[u64]>,
     /// Whether a keyword check already charged this input's length.
@@ -681,7 +687,8 @@ impl<'a> ScanContext<'a> {
                 normalization_bytes: 0,
             },
             explanations: ExplanationCollector::new(ExplanationOptions::disabled(), false),
-            native_keyword_hits: HashMap::new(),
+            native_keyword_hits: Vec::new(),
+            native_keyword_pass: 0,
         }
     }
 
@@ -701,21 +708,32 @@ impl<'a> ScanContext<'a> {
         pattern: u32,
         charge_input: bool,
     ) -> Result<bool, ScanTermination> {
-        if charge_input
-            && !self
-                .native_keyword_hits
-                .get(&key)
-                .is_some_and(|hits| hits.input_charged)
-        {
+        if key.input.pass != self.native_keyword_pass {
+            self.native_keyword_hits.clear();
+            self.native_keyword_pass = key.input.pass;
+        }
+        let slot = key
+            .input
+            .segment
+            .map_or(0, |segment| segment.saturating_add(1));
+        if self.native_keyword_hits.len() <= slot {
+            self.native_keyword_hits.resize_with(slot + 1, || None);
+        }
+        let charged = self.native_keyword_hits[slot]
+            .as_ref()
+            .is_some_and(|hits| hits.key == key && hits.input_charged);
+        if charge_input && !charged {
             self.work_many(bytes.len())?;
         }
-        let hits = self
-            .native_keyword_hits
-            .entry(key)
-            .or_insert_with(|| NativeKeywordHits {
+        let entry = &mut self.native_keyword_hits[slot];
+        if entry.as_ref().is_none_or(|hits| hits.key != key) {
+            *entry = Some(NativeKeywordHits {
+                key,
                 words: native_keyword_words(matcher, bytes),
                 input_charged: false,
             });
+        }
+        let hits = entry.as_mut().expect("the slot holds this input's results");
         hits.input_charged |= charge_input;
         let index = usize::try_from(pattern).unwrap_or(usize::MAX);
         Ok(hits
