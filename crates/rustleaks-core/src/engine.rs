@@ -3240,14 +3240,13 @@ fn native_keyword_gate(
                     let shared = lookup
                         .patterns
                         .and_then(|patterns| patterns.get(position).copied().flatten());
-                    match (lookup.matcher, lookup.input, shared) {
-                        (Some(matcher), Some(key), Some(pattern)) => {
-                            context.native_keyword_hit(key, matcher, bytes, pattern, true)?
-                        }
-                        _ => {
-                            context.work_many(bytes.len())?;
-                            contains_ascii_ignore_case(bytes, keyword.as_bytes())
-                        }
+                    if let (Some(matcher), Some(key), Some(pattern)) =
+                        (lookup.matcher, lookup.input, shared)
+                    {
+                        context.native_keyword_hit(key, matcher, bytes, pattern, true)?
+                    } else {
+                        context.work_many(bytes.len())?;
+                        contains_ascii_ignore_case(bytes, keyword.as_bytes())
                     }
                 }
                 NativeKeyword::UnicodeLower(keyword) => {
