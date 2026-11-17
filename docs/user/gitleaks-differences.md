@@ -115,6 +115,8 @@ These flags are not in 0.1.0-alpha.9.
   [Decoding](configuration.md#decoding).
 - `--complete-profile`, which fails a scan that did not cover all of its
   input. See [Complete scanning](complete-scanning.md).
+- `--scan-git-metadata` for `dir`, which also scans the text metadata files
+  in `.git` folders. See [Git metadata](cli-reference.md#git-metadata).
 
 ### Version
 
@@ -146,6 +148,9 @@ In a few error cases, Rustleaks stops or fails where Gitleaks does not:
 - `--base64-mode compatible`, the default, decodes Base64 the same way as
   Gitleaks. `--base64-mode extended` can find secrets that Gitleaks misses,
   so its findings can differ.
+- `dir` skips `.git` folders by default, as Gitleaks does.
+  `--scan-git-metadata` also scans their text metadata files, so its findings
+  can differ.
 - Rustleaks uses newer Unicode tables than the Go version that Gitleaks used
   (Unicode 15). For characters added to Unicode after version 15, case
   folding and Unicode character classes in rules can give different results.
@@ -157,5 +162,8 @@ In a few error cases, Rustleaks stops or fails where Gitleaks does not:
   rules, for service provider tokens, connection strings and other secrets.
 - [Complete scanning](complete-scanning.md): a scan that fails with exit code 2
   unless it scanned all of its input within the limits you set.
+- [Git metadata](cli-reference.md#git-metadata): an opt-in `dir` scan of the
+  text files in `.git` folders, such as `config`, `hooks` and `logs`, without
+  the object store.
 - [The rustleaks-core library](library.md): the detection engine as a Rust
   crate, with budgets, cancellation, sessions and review records.

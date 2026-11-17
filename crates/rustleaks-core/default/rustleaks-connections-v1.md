@@ -186,7 +186,8 @@ check that a client would accept them.
 - A direct core scan of `repo/.git/config` can match. The default global path
   allowlist matches a path ending in `.git`, not files under it. A directory
   source can still skip the `.git` folder. Source traversal rules and core
-  fragment detection are separate.
+  fragment detection are separate. The CLI `dir` command skips `.git` folders
+  unless `--scan-git-metadata` is given.
 
 ## Shared boundaries
 

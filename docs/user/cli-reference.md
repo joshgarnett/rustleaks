@@ -87,9 +87,66 @@ Scans a folder and everything below it, or a single file. `file` and
 | Flag | Value | Effect |
 | --- | --- | --- |
 | `--follow-symlinks` | None | Scan files that symbolic links point to. Without this flag, links are skipped. |
+| `--scan-git-metadata` | None | Also scan the text metadata files in `.git` folders. See [Git metadata](#git-metadata). Not in 0.1.0-alpha.9. |
 
 The `File` field of a finding depends on the path you give. See [Ignore
 files](configuration.md#ignore-files).
+
+#### Git metadata
+
+The default configuration has a global path allowlist entry,
+`(?:^|/)\.git$`, so `dir` skips every `.git` folder below the scan path, as
+Gitleaks does. Text
+files in a `.git` folder can still hold secrets. A remote URL in `config` can
+contain a token, a hook script can contain a credential, and older Git
+versions or other tools can write a URL with a token to other metadata
+files.
+
+`--scan-git-metadata` enters a `.git` folder that a path allowlist would
+skip and scans only these files:
+
+- `config`, `config.worktree`, `HEAD`, `FETCH_HEAD`, `ORIG_HEAD`,
+  `description`, `packed-refs`, `.git-credentials` and `credentials`, directly
+  in the `.git` folder;
+- every file in `hooks`, `info` and `logs` and their subfolders, except names
+  that end in `.lock`; and
+- every file named `config` in `modules` and its subfolders, which holds the
+  configuration of submodules.
+
+Rustleaks decides by name alone, so it never lists, inspects or reads
+`objects`, `index` files, pack files or lock files. Commit history is
+compressed in `objects`. Use `rustleaks git` to scan it.
+
+Name matching has these limits:
+
+- The `.git` name must match exactly, like the default path allowlist entry.
+  A folder named `.GIT` is not skipped by that entry, so Rustleaks scans it in
+  full with or without this flag.
+- The `objects` and `.lock` checks ignore case. A submodule named `objects`
+  or `index`, or one whose name ends in `.lock`, is not covered.
+- A `.git` file, as in a submodule or linked worktree checkout, only points to
+  the real Git folder. It is skipped as before.
+- A `.git` folder given as the scan path, as in `rustleaks dir repo/.git`, is
+  not matched by the default entry. Rustleaks scans all of it, with or
+  without this flag.
+
+Other rules still apply to each selected file:
+
+- Path allowlists apply to each file path, such as `repo/.git/config`. The
+  default `(?:^|/)\.git$` entry matches only the folder, so it does not skip
+  these files. To skip some of them, add a path allowlist such as
+  `(?:^|/)\.git/logs/`.
+- `--max-target-megabytes`, `--follow-symlinks`, `--max-archive-depth` and
+  `--complete-profile` work as for any other file. Rustleaks never enters a
+  `.git` folder that is a symbolic link.
+- If no path allowlist matches a `.git` folder, for example with a custom
+  configuration, Rustleaks scans the whole folder with or without this flag.
+
+With `--native-pack rustleaks-connections-v1`, the Git credential URL rules
+for `.git/config` and `.git-credentials` paths can then report findings.
+
+The flag works only with `dir`. Gitleaks does not scan these files, so a scan
+with this flag can report findings that Gitleaks does not.
 
 ### stdin
 
