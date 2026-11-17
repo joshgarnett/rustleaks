@@ -95,7 +95,8 @@
   in `hooks`, `info` and `logs`, and submodule `config` files. Objects, the
   index, pack files and lock files are never read. Path allowlists, size
   limits and symlink rules still apply to each file. Without the flag, `dir`
-  skips `.git` folders as before.
+  skips `.git` folders that a path allowlist matches, as before. The default
+  configuration matches folders named exactly `.git` below the scan path.
 
 The pinned default configuration and default detection behavior are unchanged.
 

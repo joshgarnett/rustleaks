@@ -95,10 +95,12 @@ files](configuration.md#ignore-files).
 #### Git metadata
 
 The default configuration has a global path allowlist entry,
-`(?:^|/)\.git$`, so `dir` skips every `.git` folder, as Gitleaks does. Text
+`(?:^|/)\.git$`, so `dir` skips every `.git` folder below the scan path, as
+Gitleaks does. Text
 files in a `.git` folder can still hold secrets. A remote URL in `config` can
-contain a token, and `FETCH_HEAD` and the files in `logs` can repeat that URL.
-Such folders often end up in backups, container images and CI caches.
+contain a token, a hook script can contain a credential, and older Git
+versions or other tools can write a URL with a token to other metadata
+files.
 
 `--scan-git-metadata` enters a `.git` folder that a path allowlist would
 skip and scans only these files:
@@ -111,9 +113,22 @@ skip and scans only these files:
 - every file named `config` in `modules` and its subfolders, which holds the
   configuration of submodules.
 
-Rustleaks never lists or reads `objects`, the `index` file, pack files or lock
-files. Commit history is compressed in `objects`. Use `rustleaks git` to scan
-it.
+Rustleaks decides by name alone, so it never lists, inspects or reads
+`objects`, `index` files, pack files or lock files. Commit history is
+compressed in `objects`. Use `rustleaks git` to scan it.
+
+Name matching has these limits:
+
+- The `.git` name must match exactly, like the default path allowlist entry.
+  A folder named `.GIT` is not skipped by that entry, so Rustleaks scans it in
+  full with or without this flag.
+- The `objects` and `.lock` checks ignore case. A submodule named `objects`
+  or `index`, or one whose name ends in `.lock`, is not covered.
+- A `.git` file, as in a submodule or linked worktree checkout, only points to
+  the real Git folder. It is skipped as before.
+- A `.git` folder given as the scan path, as in `rustleaks dir repo/.git`, is
+  not matched by the default entry. Rustleaks scans all of it, with or
+  without this flag.
 
 Other rules still apply to each selected file:
 

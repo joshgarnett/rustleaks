@@ -503,7 +503,8 @@ const DIR_FLAGS: &[Flag] = &[
             "ORIG_HEAD, description, packed-refs, credential files,",
             "the files in hooks, info and logs, and submodule config",
             "files. Objects, the index, packs and lock files are",
-            "never read. Without this flag, .git folders are skipped.",
+            "never read. Without this flag, .git folders that a path",
+            "allowlist matches are skipped, as in the default rules.",
         ],
     ),
 ];

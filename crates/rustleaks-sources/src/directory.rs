@@ -36,8 +36,13 @@ const GIT_METADATA_FILES: &[&str] = &[
 const GIT_METADATA_TREES: &[&str] = &["hooks", "info", "logs"];
 /// Folder of submodule Git folders. Only their `config` files are selected.
 const GIT_MODULES: &str = "modules";
-/// Object store folder of a submodule Git folder. It is never listed.
+/// Object store folder of a submodule Git folder, in any ASCII case. It is
+/// never inspected.
 const GIT_OBJECTS: &str = "objects";
+/// Index file of a submodule Git folder. It is never inspected.
+const GIT_INDEX: &str = "index";
+/// Suffix of Git lock files, in any ASCII case. They are never inspected.
+const GIT_LOCK_SUFFIX: &str = ".lock";
 
 /// Validated recursive filesystem-source options.
 #[derive(Clone, Debug)]
@@ -114,11 +119,17 @@ impl DirectoryOptions {
     /// `packed-refs`, `.git-credentials` and `credentials` directly inside it;
     /// every file below `hooks`, `info` and `logs` except names ending in
     /// `.lock`; and every file named `config` below `modules`, outside any
-    /// `objects` folder. The object store, the index, pack files and lock
-    /// files are never listed or opened. Each selected entry still passes the
-    /// path allowlists, the size limit and the symlink rules. A `.git` folder
-    /// that no path allowlist matches is walked in full, as before, so the
-    /// option never removes input.
+    /// `objects` folder. Names alone decide, before any metadata call, so the
+    /// object store, index files, pack files and lock files are never listed,
+    /// inspected or opened. The `objects` and `.lock` checks ignore ASCII
+    /// case, so a submodule named `objects` or `index`, or one whose name ends
+    /// in `.lock`, is not covered. The `.git` name match is exact, like the
+    /// default path allowlist, so a folder named `.GIT` is not entered by
+    /// this option. Each selected entry still passes the path allowlists, the
+    /// size limit and the symlink rules, and a `.git` folder that is a
+    /// symlink is never entered. A `.git` folder that no path allowlist
+    /// matches is walked in full, as before, so the option never removes
+    /// input.
     #[must_use]
     pub const fn scan_git_metadata(mut self, enabled: bool) -> Self {
         self.scan_git_metadata = enabled;
@@ -269,11 +280,12 @@ impl DirectorySource {
 
         // Complete coverage applies only to the selected path domain. The
         // discovered spelling is known before metadata or symlink resolution.
-        // Preserve the historical gate order for legacy fragment callers.
-        if self.options.file_options.complete_target_bytes().is_some()
-            && self.path_allowed(path)
-            && !self.enters_git_folder(path, git_root)
-        {
+        // Preserve the historical gate order for legacy fragment callers. A
+        // `.git` name that metadata scanning may enter waits for metadata,
+        // and stays pruned unless it is a folder.
+        let complete_pruned =
+            self.options.file_options.complete_target_bytes().is_some() && self.path_allowed(path);
+        if complete_pruned && !self.names_git_folder(path, git_root) {
             return Ok(SourceControl::Continue);
         }
 
@@ -290,7 +302,7 @@ impl DirectorySource {
             }
             return self.walk_directory(path, git_root, nominal, cancellation, emit);
         }
-        if git_entry.is_some_and(|entry| !entry.file) {
+        if complete_pruned || git_entry.is_some_and(|entry| !entry.file) {
             return Ok(SourceControl::Continue);
         }
 
@@ -318,37 +330,12 @@ impl DirectorySource {
             );
         }
 
-        let is_symlink = metadata.file_type().is_symlink();
-        let (target, alias) = if is_symlink {
+        let (target, alias) = if metadata.file_type().is_symlink() {
             if !self.options.follow_symlinks {
                 return Ok(SourceControl::Continue);
             }
-            match resolve_symlink(path, self.options.max_symlink_hops.get()) {
-                Ok(target) => {
-                    let target_metadata = match fs::metadata(&target) {
-                        Ok(metadata) => metadata,
-                        Err(error) => {
-                            let issue = SourceIssue::new(
-                                SourceStage::Symlink,
-                                SourceIssueKind::DanglingSymlink,
-                                Some(path.to_path_buf()),
-                                error.to_string(),
-                            );
-                            return emit_issue(issue, emit);
-                        }
-                    };
-                    if target_metadata.is_dir() {
-                        let issue = SourceIssue::new(
-                            SourceStage::Symlink,
-                            SourceIssueKind::DirectorySymlink,
-                            Some(path.to_path_buf()),
-                            "followed symlink target is a directory",
-                        )
-                        .excluded();
-                        return emit_issue(issue, emit);
-                    }
-                    (target, Some(path.to_path_buf()))
-                }
+            match self.followed_target(path) {
+                Ok(target) => (target, Some(path.to_path_buf())),
                 Err(issue) => return emit_issue(issue, emit),
             }
         } else {
@@ -421,7 +408,7 @@ impl DirectorySource {
         if self.path_allowed(path) {
             // An allowlisted `.git` folder is entered only for its selected
             // metadata. Any other allowlisted folder is skipped as before.
-            if !self.enters_git_folder(path, git_root) {
+            if !self.names_git_folder(path, git_root) {
                 return Ok(SourceControl::Continue);
             }
             git_root = Some(path);
@@ -479,12 +466,36 @@ impl DirectorySource {
         Ok(SourceControl::Continue)
     }
 
-    /// Whether `path` names a `.git` folder that metadata scanning enters.
-    fn enters_git_folder(&self, path: &Path, git_root: Option<&Path>) -> bool {
+    /// Whether metadata scanning may enter `path`, judged by name only. The
+    /// name comparison is exact, as in the default `.git` path allowlist.
+    /// Callers enter only a path whose symlink metadata is a folder.
+    fn names_git_folder(&self, path: &Path, git_root: Option<&Path>) -> bool {
         self.options.scan_git_metadata
             && git_root.is_none()
             && path.file_name() == Some(OsStr::new(GIT_FOLDER))
-            && fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
+    }
+
+    /// Resolves a followed file symlink to the target that is scanned.
+    fn followed_target(&self, path: &Path) -> Result<PathBuf, SourceIssue> {
+        let target = resolve_symlink(path, self.options.max_symlink_hops.get())?;
+        let target_metadata = fs::metadata(&target).map_err(|error| {
+            SourceIssue::new(
+                SourceStage::Symlink,
+                SourceIssueKind::DanglingSymlink,
+                Some(path.to_path_buf()),
+                error.to_string(),
+            )
+        })?;
+        if target_metadata.is_dir() {
+            return Err(SourceIssue::new(
+                SourceStage::Symlink,
+                SourceIssueKind::DirectorySymlink,
+                Some(path.to_path_buf()),
+                "followed symlink target is a directory",
+            )
+            .excluded());
+        }
+        Ok(target)
     }
 
     fn path_allowed(&self, path: &Path) -> bool {
@@ -713,16 +724,27 @@ fn git_metadata_entry(relative: &Path) -> GitMetadataEntry {
             directory: first == OsStr::new(GIT_MODULES) || named(GIT_METADATA_TREES, first),
         };
     }
+    // Lock files are never inspected, not even as possible folders.
+    if is_lock_name(name) {
+        return NONE;
+    }
     if named(GIT_METADATA_TREES, first) {
         return GitMetadataEntry {
-            file: !name.as_encoded_bytes().ends_with(b".lock"),
+            file: true,
             directory: true,
         };
     }
+    // Below `modules`, only `config` files are selected. Folders are listed
+    // because submodule names can contain `/`. The object store and the
+    // index of a submodule Git folder are never inspected.
     if first == OsStr::new(GIT_MODULES)
-        && !relative
-            .components()
-            .any(|component| component.as_os_str() == OsStr::new(GIT_OBJECTS))
+        && name != OsStr::new(GIT_INDEX)
+        && !relative.components().any(|component| {
+            component
+                .as_os_str()
+                .as_encoded_bytes()
+                .eq_ignore_ascii_case(GIT_OBJECTS.as_bytes())
+        })
     {
         return GitMetadataEntry {
             file: name == OsStr::new("config"),
@@ -730,6 +752,14 @@ fn git_metadata_entry(relative: &Path) -> GitMetadataEntry {
         };
     }
     NONE
+}
+
+/// Whether `name` ends in `.lock`, in any ASCII case.
+fn is_lock_name(name: &OsStr) -> bool {
+    let bytes = name.as_encoded_bytes();
+    bytes.len() >= GIT_LOCK_SUFFIX.len()
+        && bytes[bytes.len() - GIT_LOCK_SUFFIX.len()..]
+            .eq_ignore_ascii_case(GIT_LOCK_SUFFIX.as_bytes())
 }
 
 fn emit_issue(

@@ -3870,15 +3870,67 @@ mod git_metadata {
         fixture.write("repo/.git/config", &large);
         let result = scan(
             &fixture,
-            &["--scan-git-metadata", "--max-target-megabytes", "1"],
+            &[
+                "--scan-git-metadata",
+                "--max-target-megabytes",
+                "1",
+                "--log-level",
+                "warn",
+            ],
         );
-        assert_eq!(
-            result.status.code(),
-            Some(0),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert_eq!(result.status.code(), Some(0), "{stderr}");
         assert!(report_rows(&result).is_empty());
+        // The file was reached and then skipped by the size limit.
+        let skipped = stderr
+            .lines()
+            .filter(|line| line.contains("exceeds maximum file size"))
+            .collect::<Vec<_>>();
+        assert_eq!(skipped.len(), 1, "{stderr}");
+        assert!(skipped[0].contains("repo/.git/config"), "{stderr}");
+    }
+
+    #[test]
+    fn a_git_folder_given_as_the_scan_path_is_scanned_in_full() {
+        let fixture = checkout();
+        let scan_root = |extra: &[&str]| {
+            command(&fixture.0)
+                .args([
+                    "dir",
+                    "repo/.git",
+                    "--native-pack",
+                    "rustleaks-connections-v1",
+                    "--no-banner",
+                    "--log-level",
+                    "fatal",
+                    "--report-path",
+                    "-",
+                    "--report-format",
+                    "json",
+                ])
+                .args(extra)
+                .output()
+                .unwrap()
+        };
+        // The scan path itself is not matched by the default `.git` folder
+        // entry, so the folder is scanned in full either way. The pack rule's
+        // path condition keeps the finding to `config`.
+        let expected = [(
+            "rustleaks.bitbucket-git-credentials".to_owned(),
+            "repo/.git/config".to_owned(),
+            2,
+            CREDENTIAL_URL.to_owned(),
+            String::new(),
+        )];
+        for result in [scan_root(&[]), scan_root(&["--scan-git-metadata"])] {
+            assert_eq!(
+                result.status.code(),
+                Some(1),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert_eq!(report_rows(&result), expected);
+        }
     }
 
     #[test]

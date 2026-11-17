@@ -634,6 +634,7 @@ fn git_metadata_tree(label: &str) -> TempTree {
         ".git/config.lock",
         ".git/COMMIT_EDITMSG",
         ".git/hooks/pre-commit.lock",
+        ".git/hooks/pre-push.LOCK",
         ".git/logs/HEAD.lock",
         ".git/objects/ab/cdef0123456789",
         ".git/objects/pack/pack-0123.pack",
@@ -645,9 +646,13 @@ fn git_metadata_tree(label: &str) -> TempTree {
         ".git/modules/lib/HEAD",
         ".git/modules/lib/index",
         ".git/modules/lib/objects/config",
+        ".git/modules/lib/config.lock",
         ".git/modules/lib/hooks/pre-commit",
+        ".git/modules/other/Objects/config",
         "nested/.git/config",
         "nested/.git/objects/cd/ef",
+        // A gitlink file, as in a submodule or linked worktree checkout.
+        "gitlink/.git",
     ] {
         write_tree_file(tree.path(), relative, b"token=AB12\n");
     }
@@ -750,6 +755,7 @@ fn git_metadata_never_lists_or_opens_objects_or_the_index() {
         tree.path().join(".git/objects"),
         tree.path().join(".git/modules/lib/objects"),
         tree.path().join(".git/index"),
+        tree.path().join(".git/modules/lib/index"),
     ];
     for path in &locked {
         fs::set_permissions(path, fs::Permissions::from_mode(0o000)).expect("lock path");
@@ -767,6 +773,110 @@ fn git_metadata_never_lists_or_opens_objects_or_the_index() {
     if enforced {
         assert!(issues.is_empty(), "{issues:?}");
     }
+}
+
+/// A folder that can be read but not searched lists its names, but every
+/// metadata call on an entry in it fails. Any such call then shows up as a
+/// source issue, so these folders prove that lock, index and object names
+/// are rejected by name alone.
+#[cfg(unix)]
+#[test]
+fn git_metadata_never_inspects_lock_index_or_object_names() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tree = TempTree::new("git-metadata-no-lstat");
+    write_tree_file(tree.path(), ".git/config", b"config");
+    for relative in [
+        ".git/hooks/unsearchable/pre-commit.lock",
+        ".git/logs/unsearchable/HEAD.LOCK",
+        ".git/info/unsearchable/exclude.lock",
+        ".git/modules/unsearchable/index",
+        ".git/modules/unsearchable/config.lock",
+        ".git/modules/unsearchable/objects/ab/cd",
+    ] {
+        write_tree_file(tree.path(), relative, b"unselected");
+    }
+    let unsearchable = [
+        tree.path().join(".git/hooks/unsearchable"),
+        tree.path().join(".git/logs/unsearchable"),
+        tree.path().join(".git/info/unsearchable"),
+        tree.path().join(".git/modules/unsearchable"),
+    ];
+    for path in &unsearchable {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o444)).expect("lock folder");
+    }
+    let enforced =
+        fs::symlink_metadata(tree.path().join(".git/modules/unsearchable/index")).is_err();
+    let options = DirectoryOptions::default()
+        .path_config(git_folder_config(None))
+        .scan_git_metadata(true);
+    let (paths, issues) = emitted_paths(options, tree.path());
+    for path in &unsearchable {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("unlock folder");
+    }
+    assert_eq!(paths, [".git/config"]);
+    if enforced {
+        assert!(issues.is_empty(), "{issues:?}");
+    }
+}
+
+/// Runs `scan` on another thread and fails if it does not finish quickly,
+/// so a blocking open fails the test instead of hanging it.
+#[cfg(unix)]
+fn finishes_promptly<T: Send + 'static>(scan: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(scan());
+    });
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("scan finished without blocking")
+}
+
+/// Creates a FIFO with the system `mkfifo` tool. Returns false when the tool
+/// is not available.
+#[cfg(unix)]
+fn make_fifo(path: &Path) -> bool {
+    std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(unix)]
+#[test]
+fn git_metadata_never_opens_a_fifo_in_hooks() {
+    let tree = TempTree::new("git-metadata-fifo");
+    write_tree_file(tree.path(), ".git/hooks/pre-commit", b"#!/bin/sh\n");
+    if !make_fifo(&tree.path().join(".git/hooks/post-merge")) {
+        return;
+    }
+    let root = tree.path().to_path_buf();
+    let (paths, issues) = finishes_promptly(move || {
+        let options = DirectoryOptions::default()
+            .path_config(git_folder_config(None))
+            .scan_git_metadata(true);
+        emitted_paths(options, &root)
+    });
+    assert_eq!(paths, [".git/hooks/pre-commit"]);
+    assert!(issues.is_empty(), "{issues:?}");
+}
+
+#[test]
+fn git_metadata_does_not_change_a_case_variant_git_folder() {
+    let tree = TempTree::new("git-metadata-case");
+    write_tree_file(tree.path(), ".GIT/config", b"config");
+    write_tree_file(tree.path(), ".GIT/objects/ab/cd", b"object");
+    let base = DirectoryOptions::default().path_config(git_folder_config(None));
+    // The default path rule is case-sensitive, so `.GIT` is not skipped and
+    // is scanned in full, with or without the option.
+    let (paths, issues) = emitted_paths(base.clone(), tree.path());
+    assert_eq!(paths, [".GIT/config", ".GIT/objects/ab/cd"]);
+    assert!(issues.is_empty());
+    assert_eq!(
+        emitted_paths(base.scan_git_metadata(true), tree.path()),
+        (paths, issues)
+    );
 }
 
 #[cfg(unix)]
