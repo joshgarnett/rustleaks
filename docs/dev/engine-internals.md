@@ -207,6 +207,12 @@ For admitted payload P and R records:
 These formulas leave out source buffers, configuration, regex and decoder
 scratch, and links to findings. Callers that add more data must bound it.
 
+A native rule whose edges all have window `0` shares one helper list across
+its findings in a buffer. That list counts once in P and R, not once for each
+finding. `Finding::add_required_findings` and
+`Finding::without_detected_secrets` copy a shared list into the finding they
+change. Those copies are outside these bounds.
+
 Each finding charges its complete physical line. Dense findings on one long
 line can use the payload allowance quickly, even for a small input. After
 admission, findings on the same original line of at least 4 KiB share one
@@ -261,11 +267,19 @@ line, and redaction can create separate lines.
   the helpers that can relate to a primary. Each primary charges one work
   unit for each edge and for each helper in that run, and one record and its
   payload for each projected helper, which is copied.
-- Work and memory in the engine grow with primaries plus helpers for window
-  `0`, and with primaries plus projected helpers for line windows. Each
-  finding still lists every related helper, so a caller that reads
-  `required_findings()` on every finding, such as verbose CLI output, reads
-  primaries times helpers entries for window `0`.
+- On the shared path, a primary charges the work units for all its edges
+  together, before the shared list is built. The list then holds and charges
+  helpers in edge order: all helpers of the first edge, then all helpers of
+  the next. Before this change, a primary charged one edge unit before that
+  edge's helpers. Near a budget limit, the order decides only which budget
+  kind the termination reports. A rule that stops early publishes no findings
+  either way.
+- Work and memory in the engine grow with primaries plus helpers when all
+  edges have window `0`, and with primaries plus projected helpers for line
+  windows and `same-candidate`. Each finding still lists every related
+  helper, so a caller that reads `required_findings()` on every finding, such
+  as verbose CLI output, reads primaries times helpers entries when all edges
+  have window `0`.
 - The Mapbox predicate rejects secrets above 926 bytes, accepts at most 308
   encoded and 231 decoded bytes, and uses 539 bytes of fixed buffers. It
   charges one work unit before decoding and one before matching. These checks

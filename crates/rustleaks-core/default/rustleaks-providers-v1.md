@@ -671,9 +671,9 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   every parent still reads parents times helpers entries.
 - The default AWS access token rule and other default rules stay visible.
   Some parents report the same occurrence as a default rule. For example,
-  when a PlanetScale ID helper is in the buffer, `planetscale-api-token`
-  reports the same token as the default `planetscale-api-token` rule, under
-  its own ID. Nothing removes these duplicate findings.
+  when a PlanetScale ID helper is in the buffer,
+  `rustleaks.association.planetscale-api-token` reports the same token as
+  the default `planetscale-api-token` rule, under its own ID. Nothing removes these duplicate findings.
 
 ### Private Packagist credential roles (2 rules)
 

@@ -108,10 +108,10 @@ Line 1 is the first line of the file, so its columns are the positions. Lines
 2 and 3 are later lines, so their columns are 1 higher. To get the position on
 a later line, subtract 1 from the column.
 
-A match that starts on one line and ends after the last line break of its
-piece is an exception. This happens when a file or piece does not end with a
-line break. `EndLine` is then the same as `StartLine`, and `EndColumn` is 0.
-Gitleaks reports the same values.
+A match that starts before the last line break of its piece and ends after
+it is an exception, for example one that includes that line break or runs to
+the end of a file without one. `EndLine` is then the same as `StartLine`, and
+`EndColumn` is 0. Gitleaks reports the same values.
 
 The lines and columns always describe the whole match, also when the secret is
 only part of it. For a rule whose match starts before the secret, `StartLine`
