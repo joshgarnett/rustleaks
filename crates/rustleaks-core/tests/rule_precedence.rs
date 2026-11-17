@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -15,6 +15,24 @@ use rustleaks_core::native::{
     CONNECTION_RULES_V1, EXTRA_RULES_V1, NativeEngine, NativePolicy, PROVIDER_RULES_V1,
 };
 use serde_json::Value;
+
+// The hand-written pack tests share their authored cases through these
+// modules; only `positives` is used here.
+#[allow(dead_code)]
+#[path = "support/connection_cases.rs"]
+mod connection_cases;
+#[allow(dead_code)]
+#[path = "support/contextual_delta_cases.rs"]
+mod contextual_delta_cases;
+#[allow(dead_code)]
+#[path = "support/extra_rule_cases.rs"]
+mod extra_rule_cases;
+#[allow(dead_code)]
+#[path = "support/provider_rule_cases.rs"]
+mod provider_rule_cases;
+#[allow(dead_code)]
+#[path = "support/shared_delta_cases.rs"]
+mod shared_delta_cases;
 
 struct Expected {
     rule: String,
@@ -196,6 +214,20 @@ fn pack_positives() -> Vec<Positive> {
             .iter()
             .map(record_positive),
     );
+    // Packagist roles have their own section; keep the cases that report and
+    // use neither a custom allowlist nor finite budgets.
+    positives.extend(
+        association["packagist"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| {
+                !case["expected"].as_array().unwrap().is_empty()
+                    && case["custom_allowlist"] == false
+                    && case["finite_budgets"] == false
+            })
+            .map(record_positive),
+    );
     let remaining = fixture(include_str!("support/remaining_verified_rules.json"));
     let names = remaining["primary_names"]
         .as_array()
@@ -212,6 +244,31 @@ fn pack_positives() -> Vec<Positive> {
             .map(record_positive),
     );
     positives
+}
+
+/// Positives authored in the hand-written pack tests, read from the support
+/// modules those tests share.
+fn authored_pack_positives() -> Vec<Positive> {
+    provider_rule_cases::positives()
+        .into_iter()
+        .chain(shared_delta_cases::positives())
+        .chain(contextual_delta_cases::positives())
+        .chain(connection_cases::positives())
+        .chain(extra_rule_cases::positives())
+        .map(|(name, rule, input, path, secret, start)| Positive {
+            name,
+            input: input.into_bytes(),
+            path: (!path.is_empty()).then(|| path.as_bytes().to_vec()),
+            decode_depth: 0,
+            expected: vec![Expected {
+                rule: rule.clone(),
+                secret_range: Some([start, start + secret.len()]),
+                secret: secret.into_bytes(),
+                matched: None,
+            }],
+            rule,
+        })
+        .collect()
 }
 
 fn exact(range: [usize; 2]) -> FindingRange {
@@ -338,6 +395,16 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
         "slack-config-refresh-token",
         "the default rule matches a prefix of the longer body",
     ),
+    (
+        "rustleaks.slack-config-access-token-166",
+        "slack-config-access-token",
+        "the default rule accepts the same token",
+    ),
+    (
+        "rustleaks.xai-api-key-80",
+        "rustleaks.xai-api-key-delimiter",
+        "both pack rules accept an 80-byte body before `;` at the same span",
+    ),
 ];
 
 /// Reviewed cases where another rule's finding replaces the owner's finding.
@@ -345,6 +412,106 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
 /// finding of a non-generic rule starts on the same line and its secret
 /// contains the generic secret.
 const INTENDED_OVERRIDES: &[(&str, &str)] = &[("generic-api-key", "clojars-api-token")];
+
+// Reasons a generic finding sits next to the owner's finding. Upstream drops
+// a generic finding only when a specific finding starts on the same line and
+// its secret contains the generic secret.
+/// Upstream XML sample `<nameToken>`, LF, indented secret, LF, closing tag:
+/// the generic match starts on the tag line, the owner's match on the next.
+const XML: &str = "XML sample: generic starts on the tag line";
+/// A curl sample: the owner's match starts on the `curl` line, the generic
+/// match on the header line below it.
+const CURL: &str = "curl sample: owner starts on the curl line";
+/// A Kubernetes secret: the owner's match starts at an earlier key, the
+/// generic match at the `password` or `key` value.
+const YAML: &str = "Kubernetes sample: owner starts at an earlier key";
+/// An association sample with a second credential-like value that the owner
+/// does not report.
+const SECOND: &str = "association sample: a second value";
+
+/// Reviewed owners whose cases may also hold one `generic-api-key` finding.
+const GENERIC_COFINDINGS: &[(&str, &str)] = &[
+    ("1password-secret-key", XML),
+    ("airtable-personnal-access-token", XML),
+    ("authress-service-client-access-key", XML),
+    ("aws-access-token", XML),
+    ("aws-amazon-bedrock-api-key-short-lived", XML),
+    ("clickhouse-cloud-api-secret-key", XML),
+    ("clojars-api-token", XML),
+    ("curl-auth-header", CURL),
+    ("databricks-api-token", XML),
+    ("digitalocean-access-token", XML),
+    ("digitalocean-pat", XML),
+    ("digitalocean-refresh-token", XML),
+    ("doppler-api-token", XML),
+    ("duffel-api-token", XML),
+    ("dynatrace-api-token", XML),
+    ("easypost-api-token", XML),
+    ("easypost-test-api-token", XML),
+    ("flyio-access-token", XML),
+    ("frameio-api-token", XML),
+    ("gcp-api-key", XML),
+    ("github-app-token", XML),
+    ("github-oauth", XML),
+    ("github-pat", XML),
+    ("github-refresh-token", XML),
+    ("gitlab-cicd-job-token", XML),
+    ("gitlab-feature-flag-client-token", XML),
+    ("gitlab-feed-token", XML),
+    ("gitlab-incoming-mail-token", XML),
+    ("gitlab-oauth-app-secret", XML),
+    ("gitlab-pat", XML),
+    ("gitlab-pat-routable", XML),
+    ("gitlab-ptt", XML),
+    ("gitlab-rrt", XML),
+    ("gitlab-runner-authentication-token", XML),
+    ("gitlab-runner-authentication-token-routable", XML),
+    ("gitlab-scim-token", XML),
+    ("grafana-api-key", XML),
+    ("grafana-cloud-api-token", XML),
+    ("grafana-service-account-token", XML),
+    ("harness-api-key", XML),
+    ("hashicorp-tf-api-token", XML),
+    ("heroku-api-key-v2", XML),
+    ("infracost-api-token", XML),
+    ("jwt", XML),
+    ("kubernetes-secret-yaml", YAML),
+    ("linear-api-key", XML),
+    ("maxmind-license-key", XML),
+    ("npm-access-token", XML),
+    ("openai-api-key", XML),
+    ("perplexity-api-key", XML),
+    ("planetscale-api-token", XML),
+    ("planetscale-password", XML),
+    ("postman-api-token", XML),
+    ("prefect-api-token", XML),
+    ("pulumi-api-token", XML),
+    ("pypi-upload-token", XML),
+    ("readme-api-token", XML),
+    ("rubygems-api-token", XML),
+    ("rustleaks.association.mux-access-token-secret-v1", SECOND),
+    ("rustleaks.association.polymarket-api-key", SECOND),
+    ("scalingo-api-token", XML),
+    ("sendgrid-api-token", XML),
+    ("sendinblue-api-token", XML),
+    ("sentry-user-token", XML),
+    ("settlemint-application-access-token", XML),
+    ("settlemint-personal-access-token", XML),
+    ("settlemint-service-access-token", XML),
+    ("shippo-api-token", XML),
+    ("shopify-access-token", XML),
+    ("shopify-custom-access-token", XML),
+    ("shopify-private-app-access-token", XML),
+    ("shopify-shared-secret", XML),
+    ("slack-bot-token", XML),
+    ("slack-legacy-bot-token", XML),
+    ("slack-legacy-token", XML),
+    ("slack-user-token", XML),
+    ("square-access-token", XML),
+    ("stripe-access-token", XML),
+    ("twilio-api-key", XML),
+    ("vault-batch-token", XML),
+];
 
 fn is_generic(rule: &[u8]) -> bool {
     rule.to_ascii_lowercase()
@@ -371,85 +538,155 @@ fn rule_text(finding: &Finding) -> String {
     String::from_utf8_lossy(finding.rule_id().as_bytes()).into_owned()
 }
 
+/// The rule IDs of every packaged pack rule that reports findings. Rules
+/// with `skipReport` only feed composite rules and never report alone.
+fn reporting_pack_rules() -> BTreeSet<String> {
+    let config = all_rules().engine().config();
+    config
+        .rules()
+        .iter()
+        .filter(|(id, rule)| id.starts_with("rustleaks.") && !rule.skip_report())
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+/// Checks one case and records which reviewed entries it used.
+fn check_case(
+    positive: &Positive,
+    seen_overlaps: &mut BTreeSet<(String, String)>,
+    seen_generic: &mut BTreeSet<String>,
+    seen_overrides: &mut BTreeSet<String>,
+    failures: &mut Vec<String>,
+) {
+    let findings = scan(positive);
+    let mut claimed = vec![false; findings.len()];
+    for expected in &positive.expected {
+        if let Some(index) = (0..findings.len())
+            .find(|index| !claimed[*index] && satisfies(&findings[*index], expected))
+        {
+            claimed[index] = true;
+            continue;
+        }
+        // The owner's finding is absent. Accept only a reviewed override
+        // whose replacement reports the same secret.
+        let replacement = findings.iter().position(|finding| {
+            INTENDED_OVERRIDES.contains(&(expected.rule.as_str(), rule_text(finding).as_str()))
+                && finding.secret().as_bytes() == expected.secret.as_slice()
+        });
+        match replacement {
+            Some(index) if is_generic(expected.rule.as_bytes()) => {
+                claimed[index] = true;
+                seen_overrides.insert(expected.rule.clone());
+            }
+            _ => failures.push(format!(
+                "{}: {} finding is missing",
+                positive.name, expected.rule
+            )),
+        }
+    }
+    let mut others = BTreeMap::<String, usize>::new();
+    for (index, finding) in findings.iter().enumerate() {
+        let rule = rule_text(finding);
+        // A generic rule reports beside specific rules unless the upstream
+        // suppression applies, which must have removed the finding.
+        if is_generic(rule.as_bytes())
+            && findings.iter().any(|other| {
+                suppresses(
+                    other,
+                    &rule,
+                    finding.secret().as_bytes(),
+                    finding.location().start_line(),
+                )
+            })
+        {
+            failures.push(format!(
+                "{}: {rule} finding was not suppressed",
+                positive.name
+            ));
+        }
+        if !claimed[index] {
+            *others.entry(rule).or_default() += 1;
+        }
+    }
+    for (rule, count) in others {
+        let reviewed = if is_generic(rule.as_bytes()) {
+            GENERIC_COFINDINGS
+                .iter()
+                .any(|(owner, _)| *owner == positive.rule)
+                .then(|| seen_generic.insert(positive.rule.clone()))
+                .is_some()
+        } else {
+            INTENDED_OVERLAPS
+                .iter()
+                .any(|(owner, other, _)| *owner == positive.rule && *other == rule)
+                .then(|| seen_overlaps.insert((positive.rule.clone(), rule.clone())))
+                .is_some()
+        };
+        if !reviewed {
+            failures.push(format!("{}: unreviewed {rule} finding", positive.name));
+        } else if count != 1 {
+            failures.push(format!(
+                "{}: {count} {rule} findings, expected one",
+                positive.name
+            ));
+        }
+    }
+}
+
 #[test]
 fn every_positive_case_keeps_its_exact_finding_with_all_rules_active() {
     let defaults = default_positives();
     let packs = pack_positives();
+    let authored = authored_pack_positives();
     assert_eq!(defaults.len(), 6_396);
-    assert_eq!(packs.len(), 179);
+    assert_eq!(packs.len(), 179 + 54);
     assert_eq!(
         all_rules().engine().config().rules().len(),
         222 + 303 + 14 + 3
     );
+    assert_eq!(
+        INTENDED_OVERLAPS
+            .iter()
+            .map(|(owner, other, _)| (*owner, *other))
+            .collect::<BTreeSet<_>>()
+            .len(),
+        INTENDED_OVERLAPS.len()
+    );
 
-    let overlaps = INTENDED_OVERLAPS
+    // Every reporting pack rule owns at least one case.
+    let owners = packs
         .iter()
-        .map(|(owner, other, _)| (*owner, *other))
+        .chain(&authored)
+        .flat_map(|positive| {
+            positive
+                .expected
+                .iter()
+                .map(|expected| expected.rule.clone())
+        })
         .collect::<BTreeSet<_>>();
-    assert_eq!(overlaps.len(), INTENDED_OVERLAPS.len());
+    let uncovered = reporting_pack_rules()
+        .into_iter()
+        .filter(|rule| !owners.contains(rule))
+        .collect::<Vec<_>>();
+    assert!(uncovered.is_empty(), "{uncovered:#?}");
+
     let mut seen_overlaps = BTreeSet::new();
+    let mut seen_generic = BTreeSet::new();
     let mut seen_overrides = BTreeSet::new();
     let mut failures = Vec::new();
-    for positive in defaults.iter().chain(&packs) {
+    for positive in defaults.iter().chain(&packs).chain(&authored) {
         assert!(!positive.expected.is_empty(), "{}", positive.name);
-        let findings = scan(positive);
-        let mut claimed = vec![false; findings.len()];
-        for expected in &positive.expected {
-            if let Some(index) = (0..findings.len())
-                .find(|index| !claimed[*index] && satisfies(&findings[*index], expected))
-            {
-                claimed[index] = true;
-                continue;
-            }
-            // The owner's finding is absent. Accept only a reviewed override
-            // whose replacement reports the same secret.
-            let replacement = findings.iter().position(|finding| {
-                INTENDED_OVERRIDES.contains(&(expected.rule.as_str(), rule_text(finding).as_str()))
-                    && finding.secret().as_bytes() == expected.secret.as_slice()
-            });
-            match replacement {
-                Some(index) if is_generic(expected.rule.as_bytes()) => {
-                    claimed[index] = true;
-                    seen_overrides.insert(expected.rule.clone());
-                }
-                _ => failures.push(format!(
-                    "{}: {} finding is missing",
-                    positive.name, expected.rule
-                )),
-            }
-        }
-        for (index, finding) in findings.iter().enumerate() {
-            let rule = rule_text(finding);
-            if is_generic(rule.as_bytes()) {
-                // A generic rule reports beside specific rules unless the
-                // upstream suppression applies, which must have removed it.
-                if findings.iter().any(|other| {
-                    suppresses(
-                        other,
-                        &rule,
-                        finding.secret().as_bytes(),
-                        finding.location().start_line(),
-                    )
-                }) {
-                    failures.push(format!(
-                        "{}: {rule} finding was not suppressed",
-                        positive.name
-                    ));
-                }
-                continue;
-            }
-            if claimed[index] {
-                continue;
-            }
-            if overlaps.contains(&(positive.rule.as_str(), rule.as_str())) {
-                seen_overlaps.insert((positive.rule.clone(), rule));
-            } else {
-                failures.push(format!("{}: unreviewed {rule} finding", positive.name));
-            }
-        }
+        check_case(
+            positive,
+            &mut seen_overlaps,
+            &mut seen_generic,
+            &mut seen_overrides,
+            &mut failures,
+        );
     }
     assert!(failures.is_empty(), "{failures:#?}");
     // Every reviewed entry is still needed.
-    assert_eq!(seen_overlaps.len(), overlaps.len());
+    assert_eq!(seen_overlaps.len(), INTENDED_OVERLAPS.len());
+    assert_eq!(seen_generic.len(), GENERIC_COFINDINGS.len());
     assert_eq!(seen_overrides.len(), INTENDED_OVERRIDES.len());
 }

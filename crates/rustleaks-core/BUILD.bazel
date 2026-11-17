@@ -9,6 +9,17 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "pack_case_support",
+    srcs = [
+        "tests/support/connection_cases.rs",
+        "tests/support/contextual_delta_cases.rs",
+        "tests/support/extra_rule_cases.rs",
+        "tests/support/provider_rule_cases.rs",
+        "tests/support/shared_delta_cases.rs",
+    ],
+)
+
 rustleaks_library(
     name = "rustleaks_core",
     compile_data = glob(["default/**", "data/**"]) + ["//compat:parity_corpora"],
@@ -25,6 +36,7 @@ rustleaks_library(
         src = "tests/" + test + ".rs",
         data = ["//compat:all"],
         deps = [":rustleaks_core"],
+        srcs = [":pack_case_support"],
     )
     for test in [
         "native_policy",
@@ -44,6 +56,7 @@ rustleaks_library(
         "decoded_locations",
         "detect_corpus",
         "engine",
+        "generic_recall",
         "language_fixtures",
         "model",
         "location_lookup",
@@ -113,6 +126,7 @@ rustleaks_integration_test(
     ],
     data = ["//compat:all"],
     deps = [":rustleaks_core"],
+    srcs = [":pack_case_support"],
 )
 
 test_suite(
@@ -157,6 +171,7 @@ test_suite(
         ":decoded_locations_test",
         ":detect_corpus_test",
         ":engine_test",
+        ":generic_recall_test",
         ":language_fixtures_test",
         ":model_test",
         ":location_lookup_test",

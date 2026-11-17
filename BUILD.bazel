@@ -189,6 +189,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:location_lookup_test",
     "//crates/rustleaks-core:detect_corpus_test",
     "//crates/rustleaks-core:engine_test",
+    "//crates/rustleaks-core:generic_recall_test",
     "//crates/rustleaks-core:language_fixtures_test",
     "//crates/rustleaks-core:model_test",
     "//crates/rustleaks-core:rustleaks_core",

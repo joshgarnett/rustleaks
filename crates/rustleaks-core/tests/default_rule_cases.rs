@@ -261,9 +261,11 @@ impl Encoding {
     /// candidate of this kind and restores the original bytes, from the
     /// candidate patterns and the per-kind output filters:
     /// percent, hex and Base64 keep a result only when every byte is in
-    /// 0x09..=0x7e; hex needs at least 32 digits; Base64 needs 16 characters,
-    /// one of `0-9+/-_`, and loses to the hex and unicode patterns when those
-    /// match at the same start; unicode escapes restore only ASCII bytes.
+    /// 0x09..=0x7e; hex needs at least 32 digits; Base64 needs 16 characters
+    /// and one of `0-9+/-_`, and loses to the hex pattern when 32 hex digits
+    /// start the text; unicode escapes restore only ASCII bytes. The unicode
+    /// pattern `(?:U\+[a-fA-F0-9]{4}(?:\s|$))+` cannot take Base64 text of 16
+    /// or more characters: it needs whitespace or the end after six bytes.
     fn restores(self, value: &[u8], encoded: &[u8]) -> bool {
         let printable = value.iter().all(|byte| (0x09..=0x7e).contains(byte));
         match self {
@@ -277,7 +279,6 @@ impl Encoding {
                         .iter()
                         .any(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'))
                     && !(encoded.len() >= 32 && encoded[..32].iter().all(u8::is_ascii_hexdigit))
-                    && !encoded.starts_with(b"U+")
             }
         }
     }
@@ -369,8 +370,10 @@ fn assert_encoded_samples(chain: &[Encoding]) -> (usize, usize) {
 }
 
 // Each expected pair is (restored, not restored), counted from the frozen
-// inputs with the rule in `Encoding::restores`. One sample holds a byte above
-// 0x7e. Two samples encode twice to Base64 text without a digit or `+/-_`.
+// inputs with the rule in `Encoding::restores`. `GEN/JWT/ordinary_true/0052`
+// holds UTF-8 bytes above 0x7e, so no encoding restores it. Encoded twice,
+// `GEN/AWS/ordinary_true/0031` and `GEN/AWS/ordinary_true/0046` become Base64
+// text without a digit or `+/-_`, which the decoder does not decode.
 #[test]
 fn every_positive_sample_is_found_inside_base64_at_depth_one() {
     assert_eq!(assert_encoded_samples(&[Encoding::Base64]), (6_367, 1));
