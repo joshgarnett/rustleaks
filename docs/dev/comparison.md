@@ -22,8 +22,10 @@ their SHA-256 hashes. It checks each hash before and after a run.
 
 The harness is Python 3.9 standard-library code in
 `crates/xtask/src/comparison/`. The xtask binary embeds it and runs it with
-`python3 -I`, so no Python package is needed and Python environment variables
-are ignored. It needs a Unix host for `wait4` and process groups.
+`python3 -I -`, so no Python package is needed and Python environment
+variables are ignored. The program goes to Python on standard input, because
+it is too large for one command-line argument on some platforms. The harness
+needs a Unix host for `wait4` and process groups.
 
 ## Commands
 
@@ -80,8 +82,11 @@ uses a byte count printed by a tool.
 
 A labels file is JSON Lines. Each line has the workload, the path, a commit
 or `null`, the byte offsets `start` and `end`, the line, the SHA-256 of the
-labeled text, a category, a label (`secret` or `not-secret`) and a source,
-such as `constructed` or `credData`. The scorer reads the text at those
+labeled text, a category, a label and a source, such as `constructed` or
+`credData`. The label is `secret` or `not-secret`. Any other value, such as
+`ambiguous`, leaves the item out of precision and recall: the label is not
+counted as a secret or a non-secret, and a finding on it is counted as
+excluded. The scorer reads the text at those
 offsets from the input, checks its SHA-256, and reports labels that do not
 check. Labels without a commit are used for `dir` mode, and labels with a
 commit for `git` mode.
@@ -248,10 +253,10 @@ Each unmatched item gets a hint:
 
 Against labels, the scorer reports true positives, false negatives,
 findings on `not-secret` labels, true negatives, unlabeled findings, unknown
-findings and duplicates. A duplicate is a finding whose label group already
+findings, excluded findings and duplicates. A duplicate is a finding whose label group already
 matched another finding. Strict precision counts unlabeled findings and
 duplicates as false positives. Labeled-only precision counts only findings on
-`not-secret` labels. Unknown findings count in neither.
+`not-secret` labels. Unknown and excluded findings count in neither.
 
 Results are split three ways: by category, by label source, and by path
 scope. Test paths are paths with a folder named `test`, `tests`, `spec`,

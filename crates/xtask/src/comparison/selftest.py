@@ -184,17 +184,25 @@ def selftest_partial_and_line_labels(directory, root, secret):
                            'line': None, 'secret_sha256': sha256_bytes(blob[start:end]), 'category': category,
                            'label': 'secret', 'source': source}) + b'\n'
 
+    def ambiguous(path, start, end, blob):
+        row = json.loads(label(path, start, end, blob, 'credData', 'credata-maybe'))
+        row['label'] = 'ambiguous'
+        return json_bytes(row) + b'\n'
+
     path = os.path.join(directory, 'groups.jsonl')
     write_private(path, label('f.txt', line_start, line_end, data, 'credData', 'credata-token')
+                  + ambiguous('tests/g.txt', other.index(b'gamma'), len(other) - 1, other)
                   + label('f.txt', value_start, value_start + len(secret), data, 'credData', 'credata-token')
                   + label('tests/g.txt', 0, other.index(b'gamma'), other, 'constructed', 'multi-line'))
     labels, problems = score_load_labels(path, 'w', root)
-    selftest_check(len(labels) == 3 and not problems, 'whole-line and multi-line labels load')
-    selftest_check(sum(1 for row in labels if row['line_level']) == 2, 'whole-line spans are line-level labels')
-    selftest_check(len(score_label_groups(labels)) == 2, 'a line label and a value label on it form one group')
+    selftest_check(len(labels) == 4 and not problems, 'whole-line, multi-line and ambiguous labels load')
+    selftest_check(sum(1 for row in labels if row['line_level']) == 3, 'whole-line spans are line-level labels')
+    selftest_check(len(score_label_groups([row for row in labels if row['label'] == 'secret'])) == 2,
+                   'a line label and a value label on it form one group')
     findings = [adapter_finding('r', 'f.txt', '', 2, 2, secret.decode()),
                 adapter_finding('r', 'tests/g.txt', '', 2, 2, 'some-other-value'),
-                adapter_finding('r', 'f.txt', '', 1, 1, 'line one')]
+                adapter_finding('r', 'f.txt', '', 1, 1, 'line one'),
+                adapter_finding('r', 'tests/g.txt', '', 3, 3, 'gamma')]
     for complete in (True, False):
         quality = score_quality(findings, labels, complete)
         overall = quality['overall']
@@ -202,6 +210,9 @@ def selftest_partial_and_line_labels(directory, root, secret):
                        'one finding satisfies a label group and a line label matches by line')
         selftest_check((overall['unlabeled_findings'], overall['unknown_findings']) == ((1, 0) if complete else (0, 1)),
                        'partial labels count unmatched findings as unknown')
+        selftest_check(overall['excluded_labels'] == 1 and overall['excluded_findings'] == 1
+                       and overall['precision_strict'] == (2 / 3 if complete else 1.0),
+                       'an ambiguous label and its finding are left out of precision and recall')
         selftest_check(quality['by_scope']['test paths']['true_positive'] == 1
                        and quality['by_source']['credData']['true_positive'] == 1
                        and quality['by_source']['constructed']['true_positive'] == 1,

@@ -186,7 +186,10 @@ def score_load_labels(path, workload_id, root, git=None, mode=None):
 
     A label is line-level when it has "span": "line", or when its byte range
     starts at the start of a line and ends at the end of a line. A line-level
-    label matches any finding whose line range intersects its lines."""
+    label matches any finding whose line range intersects its lines.
+
+    A label value other than secret and not-secret, such as ambiguous, is
+    kept: scoring excludes it from precision and recall and counts it."""
     labels, problems = [], collections.Counter()
     cache = {}
     for row in read_jsonl(path):
@@ -194,8 +197,8 @@ def score_load_labels(path, workload_id, root, git=None, mode=None):
             continue
         if mode is not None and bool(row.get('commit')) != (mode == 'git'):
             continue
-        if row.get('label') not in ('secret', 'not-secret'):
-            problems['unknown label value'] += 1
+        if not isinstance(row.get('label'), str) or not row['label']:
+            problems['label value missing'] += 1
             continue
         key = (row.get('commit') or '', row.get('path'))
         try:
@@ -286,7 +289,10 @@ def score_quality(findings, labels, labels_complete=True):
 
     With complete labels, a finding that matches no label is a false
     positive. With partial labels it is counted as unknown instead."""
-    groups = score_label_groups(labels)
+    excluded_labels = [label for label in labels if label['label'] not in ('secret', 'not-secret')]
+    groups = score_label_groups([label for label in labels if label['label'] in ('secret', 'not-secret')])
+    excluded_groups = score_label_groups(excluded_labels)
+    excluded_index = score_index(excluded_groups)
     index = score_index(groups)
     candidates = []
     for j, finding in enumerate(findings):
@@ -305,7 +311,7 @@ def score_quality(findings, labels, labels_complete=True):
 
     def bucket():
         return {'true_positive': 0, 'false_negative': 0, 'false_positive_on_negative': 0, 'true_negative': 0,
-                'unlabeled_findings': 0, 'unknown_findings': 0, 'duplicate_findings': 0}
+                'unlabeled_findings': 0, 'unknown_findings': 0, 'duplicate_findings': 0, 'excluded_findings': 0}
 
     dimensions = {'category': collections.defaultdict(bucket), 'source': collections.defaultdict(bucket),
                   'scope': collections.defaultdict(bucket)}
@@ -346,10 +352,17 @@ def score_quality(findings, labels, labels_complete=True):
         row = score_public(finding)
         twin = next((groups[g] for g in index.get((finding['path'], finding['commit'] or ''), ())
                      if g in used_groups and score_group_overlap(finding, groups[g]) is not None), None)
+        excluded = next((group for group in (excluded_groups[g] for g in
+                                             excluded_index.get((finding['path'], finding['commit'] or ''), ()))
+                         if score_group_overlap(finding, group) is not None), None)
         if twin is not None:
             key = 'duplicate_findings'
             row.update({'hint': 'duplicate', 'detail': 'its label group already matched another finding',
                         'counterpart': score_public(twin['primary'])})
+        elif excluded is not None:
+            key = 'excluded_findings'
+            row.update({'hint': 'excluded', 'detail': 'matches a label with the value ' + excluded['primary']['label'],
+                        'counterpart': score_public(excluded['primary'])})
         else:
             key = 'unlabeled_findings' if labels_complete else 'unknown_findings'
             members = [member for g in index.get((finding['path'], finding['commit'] or ''), ())
@@ -379,6 +392,8 @@ def score_quality(findings, labels, labels_complete=True):
 
     overall = rates(total)
     overall.update({'findings': len(findings), 'labels': len(labels), 'label_groups': len(groups),
+                    'excluded_labels': len(excluded_labels),
+                    'excluded_label_values': dict(collections.Counter(label['label'] for label in excluded_labels)),
                     'labels_complete': bool(labels_complete)})
     return {'overall': overall, 'labels_complete': bool(labels_complete),
             'by_category': {name: rates(counts) for name, counts in sorted(dimensions['category'].items())},
@@ -481,13 +496,14 @@ def score_run(run_dir, seed):
 
 
 def score_rate_table(title, rows):
-    lines = ['| %s | TP | FN | FP on negatives | TN | Unlabeled | Unknown | Duplicates | Precision (strict) | '
-             'Precision (labeled only) | Recall | F1 (strict) |' % title,
-             '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
+    lines = ['| %s | TP | FN | FP on negatives | TN | Unlabeled | Unknown | Duplicates | Excluded | '
+             'Precision (strict) | Precision (labeled only) | Recall | F1 (strict) |' % title,
+             '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
     for name, row in rows.items():
-        lines.append('| %s | %d | %d | %d | %d | %d | %d | %d | %s | %s | %s | %s |' % (
+        lines.append('| %s | %d | %d | %d | %d | %d | %d | %d | %d | %s | %s | %s | %s |' % (
             name, row['true_positive'], row['false_negative'], row['false_positive_on_negative'],
             row['true_negative'], row['unlabeled_findings'], row['unknown_findings'], row['duplicate_findings'],
+            row['excluded_findings'],
             report_rate(row['precision_strict']), report_rate(row['precision_labeled_only']),
             report_rate(row['recall']), report_rate(row['f1_strict'])))
     return lines + ['']
@@ -526,8 +542,9 @@ def score_markdown(result):
     for quality in result['quality']:
         overall = quality['overall']
         lines += ['## Quality: %s' % quality['name'], '',
-                  'Labels used: %d in %d groups (%s). Label problems: %s.' % (
-                      quality['labels'], overall['label_groups'],
+                  'Labels used: %d in %d groups, plus %d excluded labels (%s) (%s). Label problems: %s.' % (
+                      quality['labels'] - overall['excluded_labels'], overall['label_groups'], overall['excluded_labels'],
+                      ', '.join('%s %d' % item for item in sorted(overall['excluded_label_values'].items())) or 'none',
                       'complete labels: findings with no label are false positives' if quality['labels_complete']
                       else 'partial labels: findings with no label are unknown',
                       ', '.join('%s %d' % item for item in sorted(quality['label_problems'].items())) or 'none'), '']

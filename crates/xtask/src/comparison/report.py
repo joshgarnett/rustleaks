@@ -255,11 +255,12 @@ def report_markdown(run, cells, score, summary):
             rows = [[row['name'], 'complete' if row.get('labels_complete', True) else 'partial',
                      row['overall']['findings'], row['overall']['true_positive'], row['overall']['false_negative'],
                      row['overall']['false_positive_on_negative'], row['overall']['unlabeled_findings'],
-                     row['overall'].get('unknown_findings', 0), report_rate(row['overall']['precision_strict']),
+                     row['overall'].get('unknown_findings', 0), row['overall'].get('excluded_findings', 0),
+                     report_rate(row['overall']['precision_strict']),
                      report_rate(row['overall']['recall']), report_rate(row['overall']['f1_strict'])]
                     for row in score['quality']]
             lines += report_table(['Cell', 'Labels', 'Findings', 'TP', 'FN', 'FP on negatives', 'Unlabeled', 'Unknown',
-                                   'Precision (strict)', 'Recall', 'F1 (strict)'], rows)
+                                   'Excluded', 'Precision (strict)', 'Recall', 'F1 (strict)'], rows)
             lines += ['', 'Results by category, label source and test or other paths are in `score.md`.']
             lines.append('')
     lines += ['## Disclosure', '', '### What is measured', '']

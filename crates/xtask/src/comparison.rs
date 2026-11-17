@@ -1,13 +1,16 @@
 //! Cross-scanner comparison harness.
 //!
 //! The harness is Python 3.9 standard-library code under `comparison/`. It is
-//! embedded here and run with `python3 -I`, so it needs no installed package
-//! and ignores Python environment variables. It never downloads or builds a
-//! scanner. See `docs/dev/comparison.md`.
+//! embedded here and run with `python3 -I -`, so it needs no installed
+//! package and ignores Python environment variables. The program is written
+//! to standard input, not passed as an argument, because it is larger than
+//! some platforms allow for one command-line argument. It never downloads or
+//! builds a scanner. See `docs/dev/comparison.md`.
 
 use std::env;
+use std::io::Write as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -44,7 +47,7 @@ fn harness_sha256() -> String {
     sha256_bytes(&joined)
 }
 
-/// Builds the `python3 -I -c` program that loads every module with its own
+/// Builds the `python3 -I -` program that loads every module with its own
 /// file name, so tracebacks name the module and line.
 fn bootstrap() -> String {
     let sources = serde_json::to_string(MODULES).expect("module table serializes");
@@ -64,8 +67,9 @@ fn bootstrap() -> String {
 fn python_command(root: &Path) -> Command {
     let mut command = Command::new("python3");
     command
-        .args(["-I", "-c", &bootstrap()])
-        .env("RUSTLEAKS_COMPARISON_SOURCE_ROOT", root);
+        .args(["-I", "-"])
+        .env("RUSTLEAKS_COMPARISON_SOURCE_ROOT", root)
+        .stdin(Stdio::piped());
     // Under `bazelisk run`, relative paths are relative to where the user ran
     // the command, not to the runfiles tree.
     if let Some(directory) =
@@ -74,6 +78,31 @@ fn python_command(root: &Path) -> Command {
         command.current_dir(directory);
     }
     command
+}
+
+/// Runs the harness with `arguments`, writing the program to its standard
+/// input. Python reads the whole program before it starts, so closing the
+/// pipe after the write cannot block. Output is captured only when asked.
+fn run_python(root: &Path, arguments: &[String], capture: bool) -> Result<Output, String> {
+    let mut command = python_command(root);
+    command.args(arguments);
+    if capture {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("cannot start python3 (3.9 or newer): {error}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("python3 standard input is not available")?;
+    let written = stdin.write_all(bootstrap().as_bytes());
+    drop(stdin);
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("cannot wait for python3: {error}"))?;
+    written.map_err(|error| format!("cannot write the harness to python3: {error}"))?;
+    Ok(output)
 }
 
 /// Runs `cargo xtask compare ARGS`.
@@ -90,11 +119,7 @@ pub(crate) fn run(root: &Path, arguments: &[String]) -> Result<(), String> {
             ));
         }
     }
-    let status = python_command(root)
-        .args(arguments)
-        .status()
-        .map_err(|error| format!("cannot start python3 (3.9 or newer): {error}"))?;
-    if status.success() {
+    if run_python(root, arguments, false)?.status.success() {
         Ok(())
     } else {
         Err(format!("compare {} failed", arguments[0]))
@@ -108,10 +133,8 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn comparison_self_test_passes_on_synthetic_tools() {
-        let output = python_command(Path::new("."))
-            .arg("self-test")
-            .output()
-            .expect("python3 starts");
+        let output =
+            run_python(Path::new("."), &["self-test".to_owned()], true).expect("python3 runs");
         assert!(
             output.status.success(),
             "comparison self-test failed:\n{}{}",
@@ -160,5 +183,14 @@ mod tests {
         sorted.dedup();
         assert_eq!(sorted.len(), names.len());
         assert!(bootstrap().contains(&harness_sha256()));
+        let arguments = python_command(Path::new("."))
+            .get_args()
+            .map(std::ffi::OsStr::len)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            [2, 1],
+            "the program is not a command-line argument"
+        );
     }
 }
