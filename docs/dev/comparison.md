@@ -80,10 +80,30 @@ uses a byte count printed by a tool.
 
 A labels file is JSON Lines. Each line has the workload, the path, a commit
 or `null`, the byte offsets `start` and `end`, the line, the SHA-256 of the
-labeled text, a category, a label (`secret` or `not-secret`) and a source.
-The scorer reads the text at those offsets from the input, checks its
-SHA-256, and reports labels that do not check. Labels without a commit are
-used for `dir` mode, and labels with a commit for `git` mode.
+labeled text, a category, a label (`secret` or `not-secret`) and a source,
+such as `constructed` or `credData`. The scorer reads the text at those
+offsets from the input, checks its SHA-256, and reports labels that do not
+check. Labels without a commit are used for `dir` mode, and labels with a
+commit for `git` mode.
+
+A label is line-level when it has `"span": "line"`, or when its byte range
+starts at the start of a line and ends at the end of a line. It can cover
+several lines. A finding matches a line-level label when their line ranges
+intersect, whatever the finding's text.
+
+Labels with the same path and commit whose byte ranges overlap form one
+group, such as a whole-line label and a value label on the same line. A
+finding that matches any member satisfies the whole group, so the second
+label is not counted as a missed secret. A group is a secret when any member
+is a secret. Its category and source come from its narrowest secret member.
+
+Set `"labels_complete": false` on a workload when its labels do not cover
+every secret, as with CredData. A finding that matches no label then counts
+as unknown, not as a false positive. Labels are complete by default. For
+`compare score` with report files, pass `--labels-partial` instead.
+
+The labeled corpora and the CredData adapter are described in
+`docs/dev/comparison-quality.md`.
 
 ## Running a comparison
 
@@ -226,11 +246,17 @@ Each unmatched item gets a hint:
 | `nearby-other-value` | The other side reports a different value within 3 lines. |
 | `no-counterpart` | Nothing from the other side is near it in the file. |
 
-Against labels, the scorer reports true positives, false negatives, findings
-on `not-secret` labels, unlabeled findings and duplicates, by category.
-Strict precision counts unlabeled findings and duplicates as false
-positives. Labeled-only precision counts only findings on `not-secret`
-labels.
+Against labels, the scorer reports true positives, false negatives,
+findings on `not-secret` labels, true negatives, unlabeled findings, unknown
+findings and duplicates. A duplicate is a finding whose label group already
+matched another finding. Strict precision counts unlabeled findings and
+duplicates as false positives. Labeled-only precision counts only findings on
+`not-secret` labels. Unknown findings count in neither.
+
+Results are split three ways: by category, by label source, and by path
+scope. Test paths are paths with a folder named `test`, `tests`, `spec`,
+`fixtures` or `examples`. A finding with no label has no category or source,
+so it appears only in the overall and path scope rows.
 
 To compare two reports without a run folder:
 

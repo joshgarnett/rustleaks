@@ -116,7 +116,8 @@ def report_write(run_dir, seed):
                                                               'only_left_by_hint', 'only_right_by_hint') if key in row}
                                    for row in score.get('comparisons', [])],
                    'quality': [{key: row[key] for key in ('name', 'workload', 'lane', 'tool', 'overall', 'by_category',
-                                                          'labels', 'label_problems') if key in row}
+                                                          'by_source', 'by_scope', 'labels', 'labels_complete',
+                                                          'label_problems') if key in row}
                                for row in score.get('quality', [])]}}
     path = os.path.join(run_dir, 'summary.json')
     write_json(path, summary, exclusive=False)
@@ -251,12 +252,15 @@ def report_markdown(run, cells, score, summary):
         lines.append('')
         if score.get('quality'):
             lines += ['## Quality against labels', '']
-            rows = [[row['name'], row['overall']['findings'], row['overall']['true_positive'], row['overall']['false_negative'],
+            rows = [[row['name'], 'complete' if row.get('labels_complete', True) else 'partial',
+                     row['overall']['findings'], row['overall']['true_positive'], row['overall']['false_negative'],
                      row['overall']['false_positive_on_negative'], row['overall']['unlabeled_findings'],
-                     report_rate(row['overall']['precision_strict']), report_rate(row['overall']['recall']),
-                     report_rate(row['overall']['f1_strict'])] for row in score['quality']]
-            lines += report_table(['Cell', 'Findings', 'TP', 'FN', 'FP on negatives', 'Unlabeled', 'Precision (strict)',
-                                   'Recall', 'F1 (strict)'], rows)
+                     row['overall'].get('unknown_findings', 0), report_rate(row['overall']['precision_strict']),
+                     report_rate(row['overall']['recall']), report_rate(row['overall']['f1_strict'])]
+                    for row in score['quality']]
+            lines += report_table(['Cell', 'Labels', 'Findings', 'TP', 'FN', 'FP on negatives', 'Unlabeled', 'Unknown',
+                                   'Precision (strict)', 'Recall', 'F1 (strict)'], rows)
+            lines += ['', 'Results by category, label source and test or other paths are in `score.md`.']
             lines.append('')
     lines += ['## Disclosure', '', '### What is measured', '']
     lines += ['- ' + item for item in REPORT_MEASURED]

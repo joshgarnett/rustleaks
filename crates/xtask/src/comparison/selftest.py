@@ -158,12 +158,56 @@ def selftest_units():
         quality = score_quality([item('f.txt', 2, secret.decode())], [negative])
         selftest_check(len(quality['findings_on_negatives']) == 1
                        and quality['overall']['false_positive_on_negative'] == 1, 'a finding on a not-secret label is listed')
+        selftest_partial_and_line_labels(directory, labels_root, secret)
     finally:
         shutil.rmtree(directory)
     profile = adapter_profile_text(4)
     selftest_check(len([line for line in profile.splitlines() if '=' in line]) == 33 and 'workers=4' in profile,
                    'generated profile has all 33 keys')
     selftest_check(adapter_shared_rules_toml().count('[[rules]]') == len(SHARED_RULES), 'shared rules file')
+
+
+def selftest_partial_and_line_labels(directory, root, secret):
+    """Overlapping labels form one group, line-level labels match by line,
+    partial labels make unmatched findings unknown, and results split by
+    source and by test paths."""
+    os.makedirs(os.path.join(root, 'tests'))
+    other = b'alpha line\nbeta line\ngamma\n'
+    write_private(os.path.join(root, 'tests', 'g.txt'), other)
+    data = open(os.path.join(root, 'f.txt'), 'rb').read()
+    line_start = data.index(b'key =')
+    line_end = data.index(b'\n', line_start)
+    value_start = data.index(secret)
+
+    def label(path, start, end, blob, source, category):
+        return json_bytes({'workload': 'w', 'path': path, 'commit': None, 'start': start, 'end': end,
+                           'line': None, 'secret_sha256': sha256_bytes(blob[start:end]), 'category': category,
+                           'label': 'secret', 'source': source}) + b'\n'
+
+    path = os.path.join(directory, 'groups.jsonl')
+    write_private(path, label('f.txt', line_start, line_end, data, 'credData', 'credata-token')
+                  + label('f.txt', value_start, value_start + len(secret), data, 'credData', 'credata-token')
+                  + label('tests/g.txt', 0, other.index(b'gamma'), other, 'constructed', 'multi-line'))
+    labels, problems = score_load_labels(path, 'w', root)
+    selftest_check(len(labels) == 3 and not problems, 'whole-line and multi-line labels load')
+    selftest_check(sum(1 for row in labels if row['line_level']) == 2, 'whole-line spans are line-level labels')
+    selftest_check(len(score_label_groups(labels)) == 2, 'a line label and a value label on it form one group')
+    findings = [adapter_finding('r', 'f.txt', '', 2, 2, secret.decode()),
+                adapter_finding('r', 'tests/g.txt', '', 2, 2, 'some-other-value'),
+                adapter_finding('r', 'f.txt', '', 1, 1, 'line one')]
+    for complete in (True, False):
+        quality = score_quality(findings, labels, complete)
+        overall = quality['overall']
+        selftest_check(overall['true_positive'] == 2 and overall['false_negative'] == 0,
+                       'one finding satisfies a label group and a line label matches by line')
+        selftest_check((overall['unlabeled_findings'], overall['unknown_findings']) == ((1, 0) if complete else (0, 1)),
+                       'partial labels count unmatched findings as unknown')
+        selftest_check(quality['by_scope']['test paths']['true_positive'] == 1
+                       and quality['by_source']['credData']['true_positive'] == 1
+                       and quality['by_source']['constructed']['true_positive'] == 1,
+                       'results split by test paths and by label source')
+    selftest_check(score_test_scope('a/fixtures/b.txt') and not score_test_scope('src/test.py'),
+                   'test scope looks at folders, not file names')
 
 
 def selftest_tool(directory, family, adapter, version):

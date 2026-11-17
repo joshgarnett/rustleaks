@@ -169,11 +169,24 @@ def score_read_blob(root, commit, path, git):
     return completed.stdout
 
 
+SCORE_TEST_FOLDERS = frozenset(('test', 'tests', 'spec', 'fixtures', 'examples'))
+
+
+def score_test_scope(path):
+    """True when a folder in the path is test, tests, spec, fixtures or examples."""
+    folders = path.replace('\\', '/').split('/')[:-1]
+    return any(folder.lower() in SCORE_TEST_FOLDERS for folder in folders)
+
+
 def score_load_labels(path, workload_id, root, git=None, mode=None):
     """Load labels for one workload. Each label's text is read from the input
     and checked against its SHA-256; a label that does not check is reported
     and left out. Labels without a commit apply to dir mode, labels with a
-    commit to git mode."""
+    commit to git mode.
+
+    A label is line-level when it has "span": "line", or when its byte range
+    starts at the start of a line and ends at the end of a line. A line-level
+    label matches any finding whose line range intersects its lines."""
     labels, problems = [], collections.Counter()
     cache = {}
     for row in read_jsonl(path):
@@ -203,65 +216,177 @@ def score_load_labels(path, workload_id, root, git=None, mode=None):
         line = data.count(b'\n', 0, start) + 1
         if row.get('line') not in (None, line):
             problems['line differs from byte offset (offset used)'] += 1
+        body = segment[:-1] if segment.endswith(b'\n') else segment
+        whole_lines = ((start == 0 or data[start - 1:start] == b'\n')
+                       and (end == len(data) or data[end:end + 1] in (b'\n', b'\r') or segment.endswith(b'\n')))
+        line_level = row.get('span') == 'line' or (row.get('span') is None and whole_lines)
         text = segment.decode('utf-8', 'replace')
-        labels.append({'rule': row.get('category') or 'uncategorized', 'path': row['path'],
-                       'commit': row.get('commit') or '', 'start_line': line,
-                       'end_line': line + segment.count(b'\n'), 'secret': text,
+        category = row.get('category') or 'uncategorized'
+        labels.append({'rule': category, 'path': row['path'], 'commit': row.get('commit') or '',
+                       'start_line': line, 'end_line': line + body.count(b'\n'), 'secret': text,
                        'secret_sha256': row['secret_sha256'], 'secret_length': len(text),
-                       'label': row['label'], 'category': row.get('category') or 'uncategorized',
-                       'source': row.get('source')})
+                       'label': row['label'], 'category': category, 'source': row.get('source') or 'unknown',
+                       'start': start, 'end': end, 'line_level': line_level})
     return labels, dict(problems)
 
 
-def score_quality(findings, labels):
-    """Precision, recall and F1 by category from one-to-one matching."""
-    pairs, unmatched_labels, unmatched_findings = score_match(labels, findings)
-    categories = collections.defaultdict(lambda: {'true_positive': 0, 'false_negative': 0,
-                                                  'false_positive_on_negative': 0, 'true_negative': 0})
-    for i, _, _ in pairs:
-        label = labels[i]
-        bucket = categories[label['category']]
-        bucket['true_positive' if label['label'] == 'secret' else 'false_positive_on_negative'] += 1
-    for i in unmatched_labels:
-        label = labels[i]
-        bucket = categories[label['category']]
-        bucket['false_negative' if label['label'] == 'secret' else 'true_negative'] += 1
-    comparison = score_compare(labels, findings, 'labels', 'findings')
-    unlabeled = [row for row in comparison['only_right'] if row['hint'] != 'duplicate']
-    duplicates = [row for row in comparison['only_right'] if row['hint'] == 'duplicate']
+def score_label_groups(labels):
+    """Merge labels with the same path and commit whose byte spans overlap.
 
-    def rates(tp, fp, fn):
-        precision = tp / (tp + fp) if tp + fp else None
-        recall = tp / (tp + fn) if tp + fn else None
-        f1 = (2 * precision * recall / (precision + recall)) if precision and recall else (0.0 if precision == 0 or recall == 0 else None)
-        return {'precision': precision, 'recall': recall, 'f1': f1}
+    A group is one unit for scoring: a finding that matches any member
+    satisfies the group. The group is a secret when any member is one; its
+    category and source come from its narrowest secret member (or narrowest
+    member when none is a secret)."""
+    ordered = sorted(labels, key=lambda label: (label['path'], label['commit'], label['start'], label['end']))
+    groups = []
+    for label in ordered:
+        last = groups[-1] if groups else None
+        if (last is not None and last['path'] == label['path'] and last['commit'] == label['commit']
+                and label['start'] < last['end']):
+            last['members'].append(label)
+            last['end'] = max(last['end'], label['end'])
+            last['start_line'] = min(last['start_line'], label['start_line'])
+            last['end_line'] = max(last['end_line'], label['end_line'])
+        else:
+            groups.append({'path': label['path'], 'commit': label['commit'], 'start': label['start'],
+                           'end': label['end'], 'start_line': label['start_line'],
+                           'end_line': label['end_line'], 'members': [label]})
+    for group in groups:
+        secrets = [member for member in group['members'] if member['label'] == 'secret']
+        pool = secrets or group['members']
+        primary = min(pool, key=lambda member: (member['end'] - member['start'], member['start']))
+        group.update({'label': 'secret' if secrets else 'not-secret', 'primary': primary,
+                      'category': primary['category'], 'source': primary['source']})
+    return groups
 
-    by_category = {}
-    for name, bucket in sorted(categories.items()):
-        row = dict(bucket)
-        row.update(rates(bucket['true_positive'], bucket['false_positive_on_negative'], bucket['false_negative']))
-        by_category[name] = row
-    tp = sum(bucket['true_positive'] for bucket in categories.values())
-    fp_negative = sum(bucket['false_positive_on_negative'] for bucket in categories.values())
-    fn = sum(bucket['false_negative'] for bucket in categories.values())
-    overall = {'true_positive': tp, 'false_negative': fn, 'false_positive_on_negative': fp_negative,
-               'true_negative': sum(bucket['true_negative'] for bucket in categories.values()),
-               'unlabeled_findings': len(unlabeled), 'duplicate_findings': len(duplicates),
-               'findings': len(findings)}
-    strict = rates(tp, fp_negative + len(unlabeled) + len(duplicates), fn)
-    labeled = rates(tp, fp_negative, fn)
-    overall.update({'precision_strict': strict['precision'], 'recall': strict['recall'], 'f1_strict': strict['f1'],
-                    'precision_labeled_only': labeled['precision'], 'f1_labeled_only': labeled['f1']})
+
+def score_group_overlap(finding, group):
+    """Return a match score for a finding and a label group, or None.
+
+    Text matches score by the shared length. A line-level match scores 0, so
+    a value-span match is always preferred."""
+    best = None
+    for member in group['members']:
+        if not score_lines_intersect(member, finding):
+            continue
+        if member['line_level']:
+            score = 0
+        else:
+            overlap = score_overlap(member['secret'], finding['secret'])
+            if not score_texts_match(member['secret'], finding['secret'], overlap):
+                continue
+            score = overlap
+        best = score if best is None else max(best, score)
+    return best
+
+
+def score_quality(findings, labels, labels_complete=True):
+    """Precision, recall and F1 from one-to-one matching of label groups and
+    findings, by category, by label source and by test or other paths.
+
+    With complete labels, a finding that matches no label is a false
+    positive. With partial labels it is counted as unknown instead."""
+    groups = score_label_groups(labels)
+    index = score_index(groups)
+    candidates = []
+    for j, finding in enumerate(findings):
+        for g in index.get((finding['path'], finding['commit'] or ''), ()):
+            score = score_group_overlap(finding, groups[g])
+            if score is not None:
+                candidates.append((-score, abs(groups[g]['start_line'] - finding['start_line']), g, j))
+    candidates.sort()
+    used_groups, used_findings, pairs = set(), set(), []
+    for _, _, g, j in candidates:
+        if g in used_groups or j in used_findings:
+            continue
+        used_groups.add(g)
+        used_findings.add(j)
+        pairs.append((g, j))
+
+    def bucket():
+        return {'true_positive': 0, 'false_negative': 0, 'false_positive_on_negative': 0, 'true_negative': 0,
+                'unlabeled_findings': 0, 'unknown_findings': 0, 'duplicate_findings': 0}
+
+    dimensions = {'category': collections.defaultdict(bucket), 'source': collections.defaultdict(bucket),
+                  'scope': collections.defaultdict(bucket)}
+    total = bucket()
+
+    def add(group_or_path, key, source=None, category=None):
+        scope = 'test paths' if score_test_scope(group_or_path) else 'other paths'
+        for dimension, name in (('category', category), ('source', source), ('scope', scope)):
+            if name is not None:
+                dimensions[dimension][name][key] += 1
+        total[key] += 1
+
     on_negatives = []
-    for i, j, _ in pairs:
-        if labels[i]['label'] != 'secret':
+    for g, j in pairs:
+        group = groups[g]
+        key = 'true_positive' if group['label'] == 'secret' else 'false_positive_on_negative'
+        add(group['path'], key, group['source'], group['category'])
+        if key == 'false_positive_on_negative':
             row = score_public(findings[j])
-            row.update({'hint': 'finding on a not-secret label', 'detail': 'category ' + labels[i]['category'],
-                        'counterpart': score_public(labels[i])})
+            row.update({'hint': 'finding on a not-secret label', 'detail': 'category ' + group['category'],
+                        'counterpart': score_public(group['primary'])})
             on_negatives.append(row)
-    return {'overall': overall, 'by_category': by_category,
-            'missed_labels': [row for row in comparison['only_left'] if row.get('label') == 'secret'],
-            'findings_on_negatives': on_negatives, 'unmatched_findings': comparison['only_right']}
+    missed = []
+    for g, group in enumerate(groups):
+        if g in used_groups:
+            continue
+        key = 'false_negative' if group['label'] == 'secret' else 'true_negative'
+        add(group['path'], key, group['source'], group['category'])
+        if key == 'false_negative':
+            row = score_public(group['primary'])
+            row.update(score_hint(0, [group['primary']], [], findings))
+            row['group_members'] = len(group['members'])
+            missed.append(row)
+    unmatched = []
+    for j, finding in enumerate(findings):
+        if j in used_findings:
+            continue
+        row = score_public(finding)
+        twin = next((groups[g] for g in index.get((finding['path'], finding['commit'] or ''), ())
+                     if g in used_groups and score_group_overlap(finding, groups[g]) is not None), None)
+        if twin is not None:
+            key = 'duplicate_findings'
+            row.update({'hint': 'duplicate', 'detail': 'its label group already matched another finding',
+                        'counterpart': score_public(twin['primary'])})
+        else:
+            key = 'unlabeled_findings' if labels_complete else 'unknown_findings'
+            members = [member for g in index.get((finding['path'], finding['commit'] or ''), ())
+                       for member in groups[g]['members']]
+            row.update(score_hint(0, [finding], [], members))
+            row['hint'] = ('unlabeled: ' if labels_complete else 'unknown: ') + row['hint']
+        add(finding['path'], key)
+        unmatched.append(row)
+
+    def rates(counts):
+        tp, fn = counts['true_positive'], counts['false_negative']
+        labeled_fp = counts['false_positive_on_negative']
+        strict_fp = labeled_fp + counts['unlabeled_findings'] + counts['duplicate_findings']
+
+        def f1(precision, recall):
+            if precision is None or recall is None:
+                return None
+            return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+
+        precision = tp / (tp + strict_fp) if tp + strict_fp else None
+        labeled = tp / (tp + labeled_fp) if tp + labeled_fp else None
+        recall = tp / (tp + fn) if tp + fn else None
+        result = dict(counts)
+        result.update({'precision_strict': precision, 'precision_labeled_only': labeled, 'recall': recall,
+                       'f1_strict': f1(precision, recall), 'f1_labeled_only': f1(labeled, recall)})
+        return result
+
+    overall = rates(total)
+    overall.update({'findings': len(findings), 'labels': len(labels), 'label_groups': len(groups),
+                    'labels_complete': bool(labels_complete)})
+    return {'overall': overall, 'labels_complete': bool(labels_complete),
+            'by_category': {name: rates(counts) for name, counts in sorted(dimensions['category'].items())},
+            'by_source': {name: rates(counts) for name, counts in sorted(dimensions['source'].items())},
+            'by_scope': {name: rates(counts) for name, counts in sorted(dimensions['scope'].items())},
+            'missed_labels': sorted(missed, key=lambda row: (row['path'], row['start_line'])),
+            'findings_on_negatives': on_negatives,
+            'unmatched_findings': sorted(unmatched, key=lambda row: (row['path'], row['start_line'], row['rule']))}
 
 
 def score_spec(text):
@@ -292,7 +417,7 @@ def score_adhoc(args):
         git = resolve_git(args.git)
         labels, problems = score_load_labels(args.labels, args.workload, target, git and git['path'], args.mode)
         for name, findings, _ in sides:
-            quality = score_quality(findings, labels)
+            quality = score_quality(findings, labels, not args.labels_partial)
             quality.update({'name': name, 'label_problems': problems, 'labels': len(labels)})
             result['quality'].append(quality)
     return result
@@ -345,7 +470,7 @@ def score_run(run_dir, seed):
         if label_cache[key] is None or not label_cache[key][0]:
             continue
         labels, problems = label_cache[key]
-        result = score_quality(loaded[cell['cell_id']], labels)
+        result = score_quality(loaded[cell['cell_id']], labels, workload.get('labels_complete', True) is not False)
         result.update({'name': cell['cell_id'], 'label_problems': problems, 'labels': len(labels),
                        'workload': workload['id'], 'lane': cell['lane'], 'tool': cell['tool']})
         quality.append(result)
@@ -353,6 +478,19 @@ def score_run(run_dir, seed):
             'quality': quality,
             'score_errors': [{'cell': cell['cell_id'], 'error': cell['score_error']}
                              for cell in cells if cell.get('score_error')]}
+
+
+def score_rate_table(title, rows):
+    lines = ['| %s | TP | FN | FP on negatives | TN | Unlabeled | Unknown | Duplicates | Precision (strict) | '
+             'Precision (labeled only) | Recall | F1 (strict) |' % title,
+             '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
+    for name, row in rows.items():
+        lines.append('| %s | %d | %d | %d | %d | %d | %d | %d | %s | %s | %s | %s |' % (
+            name, row['true_positive'], row['false_negative'], row['false_positive_on_negative'],
+            row['true_negative'], row['unlabeled_findings'], row['unknown_findings'], row['duplicate_findings'],
+            report_rate(row['precision_strict']), report_rate(row['precision_labeled_only']),
+            report_rate(row['recall']), report_rate(row['f1_strict'])))
+    return lines + ['']
 
 
 def score_markdown(result):
@@ -388,26 +526,17 @@ def score_markdown(result):
     for quality in result['quality']:
         overall = quality['overall']
         lines += ['## Quality: %s' % quality['name'], '',
-                  'Labels used: %d. Label problems: %s.' % (
-                      quality['labels'], ', '.join('%s %d' % item for item in sorted(quality['label_problems'].items())) or 'none'), '',
-                  '| Findings | TP | FN | FP on negatives | Unlabeled | Duplicates | Precision (strict) | Precision (labeled only) | Recall | F1 (strict) |',
-                  '| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
-                  '| %d | %d | %d | %d | %d | %d | %s | %s | %s | %s |' % (
-                      overall['findings'], overall['true_positive'], overall['false_negative'],
-                      overall['false_positive_on_negative'], overall['unlabeled_findings'],
-                      overall['duplicate_findings'], report_rate(overall['precision_strict']),
-                      report_rate(overall['precision_labeled_only']), report_rate(overall['recall']),
-                      report_rate(overall['f1_strict'])), '',
-                  '| Category | TP | FN | FP on negatives | TN | Precision | Recall | F1 |',
-                  '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
-        for name, row in quality['by_category'].items():
-            lines.append('| %s | %d | %d | %d | %d | %s | %s | %s |' % (
-                name, row['true_positive'], row['false_negative'], row['false_positive_on_negative'],
-                row['true_negative'], report_rate(row['precision']), report_rate(row['recall']), report_rate(row['f1'])))
-        lines.append('')
+                  'Labels used: %d in %d groups (%s). Label problems: %s.' % (
+                      quality['labels'], overall['label_groups'],
+                      'complete labels: findings with no label are false positives' if quality['labels_complete']
+                      else 'partial labels: findings with no label are unknown',
+                      ', '.join('%s %d' % item for item in sorted(quality['label_problems'].items())) or 'none'), '']
+        lines += score_rate_table('Overall', {'all': overall})
+        for title, key in (('Category', 'by_category'), ('Label source', 'by_source'), ('Path scope', 'by_scope')):
+            lines += score_rate_table(title, quality[key])
         for title, rows in (('Missed secret labels', quality['missed_labels']),
                             ('Findings on not-secret labels', quality.get('findings_on_negatives', [])),
-                            ('Findings with no label', quality['unmatched_findings'])):
+                            ('Findings with no label of their own', quality['unmatched_findings'])):
             if not rows:
                 continue
             lines += [title + ':', '', '| Path | Lines | Rule or category | Secret SHA-256 | Length | Hint |',

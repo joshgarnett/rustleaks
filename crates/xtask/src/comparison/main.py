@@ -43,6 +43,8 @@ def main_parser():
     score.add_argument('--mode', default='dir', choices=MODES)
     score.add_argument('--labels', help='labels JSONL for quality scoring')
     score.add_argument('--workload', help='workload id to select labels (default: every label)')
+    score.add_argument('--labels-partial', action='store_true',
+                       help='labels are incomplete: count findings with no label as unknown, not false positives')
     score.add_argument('--git', help='git executable for labels with a commit')
     score.add_argument('--output', help='folder for score.json and score.md (default: the run folder)')
     score.add_argument('--seed', type=int, default=DEFAULT_SEED)
@@ -96,9 +98,10 @@ def main_score(options):
             comparison['only_left_by_hint'], len(comparison['only_right']), comparison['only_right_by_hint']))
     for quality in result['quality']:
         overall = quality['overall']
-        print('%s: TP %d FN %d FP-neg %d unlabeled %d recall %s precision %s' % (
+        print('%s: TP %d FN %d FP-neg %d unlabeled %d unknown %d recall %s precision %s' % (
             quality['name'], overall['true_positive'], overall['false_negative'], overall['false_positive_on_negative'],
-            overall['unlabeled_findings'], report_rate(overall['recall']), report_rate(overall['precision_strict'])))
+            overall['unlabeled_findings'], overall['unknown_findings'], report_rate(overall['recall']),
+            report_rate(overall['precision_strict'])))
     print('wrote %s' % os.path.join(output, 'score.md'), file=sys.stderr)
     return 0
 
