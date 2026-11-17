@@ -160,21 +160,23 @@ fn generic_rule_reports_exactly_the_probes_its_filters_allow() {
                     engine.scan_fragment(&Fragment::new(line.as_bytes()), &ScanOptions::default());
                 assert!(outcome.is_complete());
                 let findings = outcome.findings();
+                // Messages name the case, never the synthetic secret.
+                let case = format!("{name} {word:?} at {offset}");
                 let actual = match findings {
                     [] => false,
                     [finding] => {
-                        assert_eq!(finding.secret().as_bytes(), secret.as_bytes(), "{line}");
-                        assert_eq!(
-                            finding.secret_range(),
-                            FindingRange::Exact(ByteRange::new(start, start + 40).unwrap()),
-                            "{line}"
+                        assert!(finding.secret().as_bytes() == secret.as_bytes(), "{case}");
+                        assert!(
+                            finding.secret_range()
+                                == FindingRange::Exact(ByteRange::new(start, start + 40).unwrap()),
+                            "{case}"
                         );
                         true
                     }
-                    _ => panic!("{line}: {} findings", findings.len()),
+                    _ => panic!("{case}: {} findings", findings.len()),
                 };
                 if actual != expected {
-                    failures.push(format!("{name} {word:?} at {offset}: expected {expected}"));
+                    failures.push(format!("{case}: expected {expected}"));
                 }
                 total += 1;
                 kept += usize::from(expected);
