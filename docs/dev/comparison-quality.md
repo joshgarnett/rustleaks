@@ -36,7 +36,7 @@ cargo xtask compare-quality self-test
 
 The program is Python 3.9 standard library code in
 `crates/xtask/src/comparison_quality/`. xtask embeds it with `include_str!`
-and runs it with `python3 -I`.
+and runs it with `python3 -I -`, which reads the program from standard input.
 
 ## Labels format
 
@@ -49,7 +49,7 @@ order:
 | `path` | File path relative to the workload root, with forward slashes. |
 | `commit` | Always `null`. Both sources are directory inputs. |
 | `start`, `end` | Byte offsets of the labeled text in the file. `end` is exclusive. |
-| `line` | One-based line of `start`. |
+| `line` | One-based line of `start`. `\r\n`, `\r` and `\n` each end a line. |
 | `secret_sha256` | SHA-256 of the labeled bytes. The text itself is never stored. |
 | `category` | Category name, listed below. |
 | `label` | `secret` or `not-secret`. |
@@ -88,7 +88,18 @@ Limits to disclose with any result:
   There is no category of tokens with a wrong checksum, because a tool that
   checks the checksum differently would be marked wrong unfairly.
 - Lengths that vendors do not publish are taken from published examples,
-  and the source table says so.
+  and the source table says so. Where no example exists, the table states
+  where the shape comes from and whether it falls inside Gitleaks rule
+  bounds. A shape that a vendor document allows is generated even when it
+  falls outside those bounds, such as GitLab routable tokens and Slack
+  tokens with short numeric groups.
+- A random value under a credential name (`token`, `api_key`, `password`)
+  is always labeled `secret`. Near misses sit under names that do not claim
+  a credential, such as `build_ref` or `release_tag`, so the two labels never
+  disagree about the same kind of text.
+- Hard negatives also appear under credential words, for example
+  `token_sha256`, `api_key_fingerprint`, `secret_version`, `client_id` and
+  `auth_sdk_integrity`. A tool cannot avoid them by keyword alone.
 - Context text is dense with words such as `key`, `token`, `secret` and
   `password` in lines that hold no credential, so generic rules run.
 
@@ -110,13 +121,13 @@ and `summary.json` over the committed files, and run `verify`.
 ### Contents
 
 The default corpus uses seed `rustleaks-quality-constructed-v1` and scale 2.
-It has 730 files, 820,785 bytes and 1,976 labels: 1,100 secrets and 876 hard
+It has 714 files, 813,851 bytes and 2,005 labels: 1,099 secrets and 906 hard
 negatives.
 
 | Category | Secret | Not secret | What it holds |
 | --- | ---: | ---: | --- |
 | `chat-token` | 150 | 0 | Slack bot and user tokens, Slack webhook URLs, Discord and Telegram bot tokens |
-| `cloud-key` | 194 | 0 | AWS access key IDs, AWS secret access keys next to them, Google API keys |
+| `cloud-key` | 193 | 0 | AWS access key IDs, AWS secret access keys next to them, Google API keys |
 | `connection-string` | 60 | 0 | Password or key inside SQL Server, Azure Storage, Azure Service Bus and JDBC strings |
 | `database-uri` | 80 | 0 | Password inside PostgreSQL, MySQL, MongoDB, Redis and AMQP URIs |
 | `generic-api-key` | 120 | 0 | Random values assigned to names such as `api_key` or `client_secret` |
@@ -125,24 +136,25 @@ negatives.
 | `password` | 100 | 0 | Random passwords and passphrases assigned to password names |
 | `payment-key` | 50 | 0 | Stripe live secret and restricted keys |
 | `private-key` | 76 | 0 | RSA, PKCS #8, EC, OpenSSH and OpenPGP private key blocks, including Google service account key files |
-| `vcs-token` | 160 | 0 | GitHub classic and fine-grained tokens, GitLab tokens |
+| `vcs-token` | 160 | 0 | GitHub classic and fine-grained tokens, GitLab legacy and routable tokens |
 | `example-key` | 0 | 70 | Example values published in vendor documentation |
 | `hash` | 0 | 170 | Git commit IDs, SHA-256 and MD5 digests, image digests, `go.sum` and checksum files |
 | `high-entropy` | 0 | 60 | `data:` URIs, asset fingerprints, nonces |
-| `identifier` | 0 | 86 | AWS account IDs and ARNs, OAuth client IDs, Twilio account SIDs, service account key IDs |
-| `integrity` | 0 | 80 | Subresource Integrity values in HTML and `package-lock.json` |
-| `near-miss` | 0 | 70 | Token shapes with a wrong length, alphabet or structure |
+| `identifier` | 0 | 86 | AWS account IDs, IAM role and Secrets Manager ARNs, OAuth client IDs, Twilio account SIDs, service account key IDs |
+| `integrity` | 0 | 110 | Subresource Integrity values in HTML, `package-lock.json` and configuration files |
+| `near-miss` | 0 | 70 | Token shapes with a wrong length, alphabet or structure, under names that do not claim a credential |
 | `placeholder` | 0 | 100 | `<YOUR_API_KEY>`, `${API_TOKEN}`, `changeme`, `xxxx` and prefix-only templates |
 | `public-key` | 0 | 60 | SSH public keys, PEM public keys and certificates |
 | `publishable-key` | 0 | 40 | Stripe live publishable keys, which Stripe documents as safe to expose |
 | `test-fixture` | 0 | 60 | Values marked fake, in test paths |
-| `uuid` | 0 | 80 | Random UUIDs under request, trace and tenant names |
+| `uuid` | 0 | 80 | Random UUIDs under request, trace, tenant, client, token and key ID names |
 
-Contexts: `.env` files, YAML, Docker Compose, GitHub Actions workflows,
-JSON, Java properties, INI, TOML, Python, JavaScript, TypeScript, Go, Java,
-Ruby, PHP, C#, Rust, shell, Terraform, Dockerfiles, logs, Markdown, HTML,
-`package-lock.json`, `go.sum`, checksum files, `authorized_keys` and key
-files. Multi-line keys are stored escaped in JSON and `.env` files, as YAML
+Configuration contexts: `.env` files, YAML, Docker Compose, GitHub Actions
+workflows, JSON, Java properties, INI, TOML, Terraform and Dockerfiles. Code
+contexts: Python, JavaScript, TypeScript, Go, Java, Ruby, PHP, C#, Rust,
+shell, and Windows batch and PowerShell scripts with `\r\n` line endings.
+Other contexts: logs, Markdown, HTML, `package-lock.json`, `go.sum`,
+checksum files, `authorized_keys` and key files. Multi-line keys are stored escaped in JSON and `.env` files, as YAML
 block scalars, and as raw strings in source code. About 15 percent of the
 positives of five kinds sit in test paths, because a real-looking credential
 in a test file is still a credential. Some comment lines hold non-ASCII
@@ -157,16 +169,16 @@ the end of the `END` line.
 
 | Kind | Label | Source |
 | --- | --- | --- |
-| AWS access key ID and secret access key | secret | [IAM identifier prefixes](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-prefixes) give `AKIA`. The [access keys page](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) example gives 20 and 40 characters. |
+| AWS access key ID and secret access key | secret | [IAM identifier prefixes](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-prefixes) give `AKIA`. The [access keys page](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) example gives 20 and 40 characters. AWS does not publish the key ID alphabet. The generator uses `A-Z` and `2-7`, the alphabet seen in issued keys. This coincides with the Gitleaks rule. |
 | Google API key | secret | Only the example on the [API keys page](https://docs.cloud.google.com/docs/authentication/api-keys): `AIza` and 39 characters. |
 | Google service account key file | secret | [Create and delete service account keys](https://docs.cloud.google.com/iam/docs/keys-create-delete) |
-| GitHub tokens | secret | [GitHub token formats](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github#githubs-token-formats) and the [token format post](https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/). The 40-character classic length and the fine-grained length are from public examples. |
-| GitLab tokens | secret | [Token prefixes](https://docs.gitlab.com/security/tokens/#token-prefixes). The 20-character body is from public examples. |
-| Slack tokens | secret | [Token types](https://docs.slack.dev/authentication/tokens/), including the `xoxp-` example layout |
+| GitHub tokens | secret | [GitHub token formats](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github#githubs-token-formats) and the [token format post](https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/). The 40-character classic length is from public examples. GitHub publishes no layout for fine-grained tokens. The generator uses 22 and 59 characters around an underscore, as seen in public examples. This coincides with the Gitleaks rule. |
+| GitLab tokens | secret | [Token prefixes](https://docs.gitlab.com/security/tokens/#token-prefixes). Half are legacy tokens with a 20-character body from public examples. Half are routable tokens built from the [routable token design](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/cells/routable_tokens/): a URL-safe Base64 payload of random bytes and routing fields, `.01.`, the payload length in two Base36 digits, and a seven-digit Base36 CRC32 of everything before it. The generator reproduces the CRC32 of the published example token. |
+| Slack tokens | secret | [Token types](https://docs.slack.dev/authentication/tokens/). Slack publishes no length for the numeric groups, and its examples use three digits (`xoxp-111-222-333-...`). The generator draws group lengths from 3 to 14 digits, which is wider than the Gitleaks bounds of 10 to 13. The 24-character bot secret and the 32-character user secret are from the published example and public examples. |
 | Slack webhook URL | secret | [Incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/), which says the URL contains a secret |
 | Discord bot token | secret | The example in [Discord authentication](https://docs.discord.com/developers/reference#authentication) |
 | Telegram bot token | secret | The example in [Authorizing your bot](https://core.telegram.org/bots/api#authorizing-your-bot) |
-| Stripe secret and restricted keys | secret | [API keys](https://docs.stripe.com/keys). Lengths are from public examples. |
+| Stripe secret and restricted keys | secret | [API keys](https://docs.stripe.com/keys) give the prefixes. Stripe publishes no length. The generator uses 24, 34 and 99 characters, as seen in public keys. The 99-character upper length coincides with the Gitleaks bound. |
 | Database URIs | secret | [PostgreSQL URIs](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS), [MongoDB connection strings](https://www.mongodb.com/docs/manual/reference/connection-string/), [RabbitMQ URI spec](https://www.rabbitmq.com/docs/uri-spec) |
 | Connection strings | secret | [Azure Storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string), [ADO.NET syntax](https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/connection-string-syntax), [Service Bus SAS](https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-sas), [PostgreSQL JDBC](https://jdbc.postgresql.org/documentation/use/) |
 | Private keys | secret | [RFC 7468](https://www.rfc-editor.org/rfc/rfc7468), [RFC 4880 section 6](https://www.rfc-editor.org/rfc/rfc4880#section-6) with its CRC-24, [OpenSSH key format](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.key). Key material is random bytes inside a DER-shaped outer structure. |
@@ -226,13 +238,16 @@ Reviewed at commit `01e3d135a90f46c9a7965683b24a05d12e136b33` of
   when more than one rule applies. There are 274 distinct values. The most
   common `T` categories are `Key` (3,822), `Password` (2,573), `UUID`
   (2,316), `Secret` (1,263) and `PEM Private Key` (1,161).
-- **Obfuscation.** Only `T` values are rewritten. Fixed-format values keep
-  their prefix and get random characters from the original character set
-  and length. Private key files are replaced by generated keys. Values in
-  the `AWS Multi`, `Google Multi`, `JWK`, `Alibaba Multi` and `Twilio Multi`
-  categories are not rewritten. `F` and `X` values keep their original text.
-  Directory and file names are replaced by hashes under
-  `data/<repo>/<scope>/`.
+- **Obfuscation.** Only `T` values are rewritten, by
+  [`obfuscate_creds.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/obfuscate_creds.py).
+  Fixed-format values keep their prefix and get random characters from the
+  original character set and length. Multi-line private keys keep their
+  `BEGIN` and `END` lines, header lines and the first 64 characters of the
+  first body line. Every other letter and digit is replaced by a random
+  letter or digit. Values in the `AWS Multi`, `Google Multi`, `JWK`,
+  `Alibaba Multi` and `Twilio Multi` categories are not rewritten. `F` and
+  `X` values keep their original text. Directory and file names are
+  replaced by hashes under `data/<repo>/<scope>/`.
 
 ### Effects on a comparison
 
@@ -246,15 +261,21 @@ Reviewed at commit `01e3d135a90f46c9a7965683b24a05d12e136b33` of
   categories. Report CredData results by category, not only in total.
 - **Unlabeled findings.** CredData labels only lines that its source tools
   reported. A finding on an unlabeled line is unknown, not a false positive.
-  CredData's own scorer prints it as `LOST` and leaves it out of the
-  totals. The harness should do the same for this workload.
+  CredData's own scorer,
+  [`benchmark/scanner/scanner.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/benchmark/scanner/scanner.py),
+  counts such a finding in `lost_cnt` and leaves it out of the true and
+  false positive totals. The harness should do the same for this workload.
 - **Rewritten values.** Rewritten values have the right shape but random
   content, so validation and checksum checks may reject them.
 - **Prior tuning.** Betterleaks release candidates changed generic filters
-  using CredData false positives (pull requests 485 and 487). Its CredData
-  score is not a held-out measurement. Rustleaks has not used CredData.
-- **Known label noise.** The Betterleaks author reported labels that look
-  wrong, worth about 0.05 of F1.
+  using CredData false positives
+  ([pull request 485](https://github.com/betterleaks/betterleaks/pull/485)
+  and [pull request 487](https://github.com/betterleaks/betterleaks/pull/487)).
+  Its CredData score is not a held-out measurement. Rustleaks has not used
+  CredData.
+- **Known label noise.** The Betterleaks author wrote in
+  [Rare Not Random](https://lookingatcomputer.substack.com/p/rare-not-random)
+  that some CredData labels look wrong.
 
 ### Prepare and convert
 
@@ -288,13 +309,18 @@ Conversion rules:
 - `category` is `credata-` followed by the `Category` text in lower case,
   with each run of other characters replaced by `-`. For example,
   `PEM Private Key` becomes `credata-pem-private-key`.
-- Character positions become byte offsets in the UTF-8 file. The download
-  script rewrites every labeled file with `\n` line endings, and the adapter
-  rejects a file that still holds `\r`.
-- A whole-line row covers the line without its newline. A multi-line row
-  runs from `ValueStart` on `LineStart` to `ValueEnd` on `LineEnd`.
-- Rows with the same path, span and label are written once. Labels may
-  overlap, because CredData marks some lines both as a whole and by value.
+- Character positions become byte offsets in the UTF-8 file. Lines are
+  split the way
+  [`obfuscate_creds.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/obfuscate_creds.py)
+  reads them: `\r\n` and a lone `\r` end a line, like `\n`. The adapter
+  does this in memory and maps every offset back to the unchanged bytes.
+- A whole-line row covers the line without its line break. A multi-line row
+  runs from `ValueStart` on `LineStart` to `ValueEnd` on `LineEnd`. A
+  position past the end of its line is a conversion problem.
+- Rows with the same path and span are written once. When the same span is
+  labeled both `T` and `F` or `X`, it is left out and listed under
+  `conflicts` in `summary.json`. Other labels may overlap, because CredData
+  marks some lines both as a whole and by value.
 - A row that cannot be converted, such as a missing file or a line past the
   end, stops the command. `--max-problems N` allows up to N such rows and
   lists them in `summary.json`.
