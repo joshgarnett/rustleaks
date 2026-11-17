@@ -7,16 +7,16 @@
  "schema": "rustleaks-comparison-workloads-v1",
  "set": "synthetic",
  "smoke_digests": {
-  "files": "a5ba780966e346fddb2ecc7ac41d9ea9ec6886657db22de92d8d77f906a203cc",
-  "git": "5ebcfc1d1b8fe0d31d731cca843387bf1acf25d4b27e079c7155a0cd15193d75"
+  "files": "110657feec8e1845ce8fe55ae44fc574fe63b8c1bb09637769942c5d334ef865",
+  "git": "e1d6f1b4317765576ca6c15c0b514318d6c34cb20981f13936748a6ee8aa8a96"
  },
  "workloads": [
   {
    "description": "One fixed-size JSON Lines file",
    "expected": {
-    "files_sha256": "e3a523a02668f9614eb77afa9e6d7d831a6da1bc9d9513d555afe86867bf97da",
+    "files_sha256": "9ec8d04cfc5081f015dc4930db15dc1dc9d4b032c315695d5ec73055591748bb",
     "git_head": null,
-    "inventory_sha256": "8473750ec32a3ec768e5469eb0ff9399be66c11b22d12d4d8f1de74c881b7692",
+    "inventory_sha256": "b6152f261c825ea2f16e4b594598aa19ca3e76c38fe8242955435a68c9c828b5",
     "labels_sha256": "3422263a2b0284f5938cfc18fdfcd71da7d1a0e604aa1aa4fb27dc8af71574c4"
    },
    "family": "synthetic",
@@ -51,10 +51,10 @@
   {
    "description": "One file of separately encoded synthetic tokens",
    "expected": {
-    "files_sha256": "089eefb5042d00c38c1e7e9ec4e34f35030fc188621b32169c123f4da282a0ec",
+    "files_sha256": "e27cff67defa24a3e100d0934488ad0e071efdaefa58acb08d5a061b62ac43fd",
     "git_head": null,
-    "inventory_sha256": "0a757a8faab108b0e78a6a6ac53486956da2238220ccb2970fe1fbac82a81dc6",
-    "labels_sha256": "74e9a6517a737ebff7e1835a82bf8fc0766954e842766283a3d3a17a7b09351f"
+    "inventory_sha256": "c45bc71ff3c640cdf0e5a426708a84cb0263d2d2b728c9deb262c37d1579b192",
+    "labels_sha256": "3b3d7b5959e747267c7372be58ce0f07a0ac9696c62a7ea80898c5e9d9e9725c"
    },
    "family": "synthetic",
    "id": "base64-20000",
@@ -88,9 +88,9 @@
   {
    "description": "Distinct files of exactly 64 bytes each",
    "expected": {
-    "files_sha256": "7ae63ae38c5a20e0fa5e6fe949fb67b49cddcd1c4ffc9d8928b68cda62175f9c",
+    "files_sha256": "28c78ae79e73c3d177c69381722e00b3c484fc92a50211ca65b6b8265b6a4527",
     "git_head": null,
-    "inventory_sha256": "f110bd58d3dad8c1f76b7267acbdac3d878f82332edd6c6602452fd29836be7d",
+    "inventory_sha256": "263dc0f8224e7ab5dd4d31fbb4cc6486952381c2ac68f0bde0644a83520754de",
     "labels_sha256": "45c8b091cfbbc14052dbcbcf08589a3e71508b6d095138f9efae3a97ba61b41c"
    },
    "family": "synthetic",
@@ -125,9 +125,9 @@
   {
    "description": "Scan distinct findings and emit a JSON report",
    "expected": {
-    "files_sha256": "d5d17129afb9402c19e1cc8e0c8689d791ca2a240d73838894ade6fde8e592a8",
+    "files_sha256": "d28d49758a678f24acbf4e8410e8d634c465dc5d1d9cab3f9a728aca8560deb7",
     "git_head": null,
-    "inventory_sha256": "c3517ef7d6f4f802b1d8a8109213c9ae33f8164ed73a912a6d868a926e3090df",
+    "inventory_sha256": "212f14774699c5e78c2b9467db42ab4b7636b909ab82d2444e9a911450cda046",
     "labels_sha256": "7919da1c3779997137c0eff9119f5841da00c2858ae022190bdd9ee74a52638a"
    },
    "family": "synthetic",
@@ -162,9 +162,9 @@
   {
    "description": "Raw-block Zstandard streams with 1 KiB expanded members",
    "expected": {
-    "files_sha256": "c49fc682fceb03e683fcf5771250752de9ad968f7fd7f3d44a940e8d527b70f2",
+    "files_sha256": "5a893b1ec5de0fb157071da1a717e6324d689f2283d64ab7860e0e8efcc5be95",
     "git_head": null,
-    "inventory_sha256": "0e901ef0aacc9ceecb6331e864e885897551e7f1fb272fa22214de9d3e9770dc",
+    "inventory_sha256": "2591a3e052a26aa1bf1bb7970d2caeb18d942e1892ae405a1452789ea1fc4182",
     "labels_sha256": "9bdaa741dd682facc830b1af8c2b9bc5c82ef277de523dba48a850cff80ad371"
    },
    "family": "synthetic",
@@ -199,9 +199,9 @@
   {
    "description": "Deterministic linear Git history; one replaced short file per commit",
    "expected": {
-    "files_sha256": "b7441965d787ae9a909ebcf4653d3cb7afb4ac8adedad4846bfb91bfc83bc64e",
+    "files_sha256": "94030d957b57947431040728e05d0eda7013b8e41440c41e2ab3132ede751ab2",
     "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
-    "inventory_sha256": "e15eb8ab24dd88c50ffbe78232d4a75a7f925a0f20be8b9f13c8f968b5b0dde0",
+    "inventory_sha256": "f04999b77f293b743958f38232a1e40ee1e47a768f80dd9a99f30cc0133c8103",
     "labels_sha256": "91e0f862f358bc2e464564b7c2afe63f636b64fb5c88f16fbd75b330ae6a3f6b"
    },
    "family": "synthetic",
@@ -238,9 +238,9 @@
   {
    "description": "Fixed 16 KiB JSON files totaling 12 MiB",
    "expected": {
-    "files_sha256": "656dfecfbae7f3c389bb8aa7cd18652c5a9598d583f242d28518deb30b42ef09",
+    "files_sha256": "66a8b66f20547d5d8c5408b12311955da8429d2723df8cf3bd26a132d0a2c10e",
     "git_head": null,
-    "inventory_sha256": "ed791c1d5833e74d29983524e50063d122ac82f4e7e15412a32dbb90f83f0f2d",
+    "inventory_sha256": "bdbe7f04df26cb4e43a8cacc634d7b005c13b8b2445b52b37235d0f1425a1c3b",
     "labels_sha256": "ad0ac1cb2655c363ac8f49d1a8b6a5557f09e90870316a8eea3335fec62b1a8b"
    },
    "family": "synthetic",
@@ -275,9 +275,9 @@
   {
    "description": "Malformed UTF-8 with ASCII plants on both sides",
    "expected": {
-    "files_sha256": "a33c16dfc0738483f98b8d0bcdc1036f542ec672d73823d888c816bfea6bbb5d",
+    "files_sha256": "b54fdbc6a606284dc56678daa1bb5cb2d264599d1eafd44526625c490fe0d72d",
     "git_head": null,
-    "inventory_sha256": "a3c15742109110a393aba0a6a415cb60391750762917d9b97b172f315588f743",
+    "inventory_sha256": "25724a9e3c1d72202ca973e53d1c6b28bed39788ac4736c6605844fbfc3ec3f1",
     "labels_sha256": "280ba50975039d27b76394e43a5f7f5c77625b52b8874028cb88d1c60db86b2e"
    },
    "family": "synthetic",
@@ -312,9 +312,9 @@
   {
    "description": "Synthetic mixed application tree with sparse provider-shaped plants",
    "expected": {
-    "files_sha256": "5a0071dfabac6ebfee18f7e75c6ba4a0f4212d8119c716e46d941d60ace43de1",
+    "files_sha256": "daa4054bcbb2a0212faa90609b98bf3d0dbc2499ecf8638bf4ad6cfe30c755bf",
     "git_head": null,
-    "inventory_sha256": "5947ec76c274204aff5e5366106c81e26f9351b3787a9a90134a4a5d3ac24d58",
+    "inventory_sha256": "973b40bcf1237a578d3f78f3a048cdac83075630f0013e2bd215dcb4f6018dee",
     "labels_sha256": "368246299d81b86a05ba61df9404ec9fa9132475626c5960b9af5a5d923bb432"
    },
    "family": "synthetic",
@@ -350,9 +350,9 @@
   {
    "description": "Empty standard input",
    "expected": {
-    "files_sha256": "c5fd4542746279767126e8e21167ecdcf4faaa248d89e9f2e0e923fa254646ec",
+    "files_sha256": "5e32d416db822763fa3a52b4956390d653ce9f9c4871c1285d8f3686ed3a268e",
     "git_head": null,
-    "inventory_sha256": "57f8e5c4b84fb6671e53f1b417df8a94f6f2febf3e24579542fbb44277969d4d",
+    "inventory_sha256": "4f5f4b84245d8ee1c3635ec04e7b058cbe988c8d4cb1f82e79c62083301f332a",
     "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
    },
    "family": "synthetic",
@@ -387,9 +387,9 @@
   {
    "description": "One tiny synthetic text file",
    "expected": {
-    "files_sha256": "376e18279d1414e86343c35e98a71830d4f023f8b59367ed36b863f24382f4ed",
+    "files_sha256": "4b7ed35b139db71b7edaf52c30bc02bc5c43d6b4bc2ad04bd638a475071e9024",
     "git_head": null,
-    "inventory_sha256": "12986972202c4d08fa6e2e66b902d29c107b8a899fd67afa117066ef6d76bd44",
+    "inventory_sha256": "829922dd8a4bfb8219f3d074e6fd7946b5628229277709aa9d166543f4756829",
     "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
    },
    "family": "synthetic",
@@ -424,9 +424,9 @@
   {
    "description": "One tiny synthetic text file",
    "expected": {
-    "files_sha256": "6d65c22d5e1b6a7785086ef515086ff0d23f21ac721719e8f48c39bbedd6df05",
+    "files_sha256": "0bab5a003d3ad3373878776558960cd5a410c72ab9ac936c0ff0bcbd2280ec7a",
     "git_head": null,
-    "inventory_sha256": "5a3e9c1831c9f88730f81a41d43b095e7f3c89386f43c9bade321cf1ad5ec9f1",
+    "inventory_sha256": "956d49b302322d4a4811d378bbc9242d16fe715e420ecdf769cc85561bdb862e",
     "labels_sha256": "d5734b8fe662ba401761e5add43432dd63da1ec8022566caa67d80958eae949c"
    },
    "family": "synthetic",
@@ -461,9 +461,9 @@
   {
    "description": "Synthetic mixed application tree with no prescribed credential positives",
    "expected": {
-    "files_sha256": "2ff4c040eec2a4792b681c2af3be5c2196ca92a6c82a1b149a04d9c7c6535371",
+    "files_sha256": "13bb5e20f2eaca28c077df287adc5547688500cb3a3279554610572cb6ccdf3f",
     "git_head": null,
-    "inventory_sha256": "090f3ff2a7c5feb4cf382be3b48a51e710bf8eaa192ea0d9b95a1c3957e618f1",
+    "inventory_sha256": "3811bdfa1a9f3fea614d68e852c0cd87dd65483d55b1925158d34e92dac30a13",
     "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
    },
    "family": "synthetic",
@@ -499,9 +499,9 @@
   {
    "description": "Synthetic mixed application tree with sparse provider-shaped plants",
    "expected": {
-    "files_sha256": "4f0dfb09729d99ad40b65145cf39cb2465500071824560d5f326837a70f6edf0",
+    "files_sha256": "c86e3ad2b6da43de69b47bfb5f8031dd50105d1585251b3de84d569d3cfffa66",
     "git_head": null,
-    "inventory_sha256": "ab4b797e731ee91bcefff1e4618c049eeb75b3f85c5a8e991f6a1d5cbe2c20f0",
+    "inventory_sha256": "6c5d22ee7d4f0bd2fc51b13cc0ed3d2161f4b0cc1064f77e8a965c1cf3e591c4",
     "labels_sha256": "6abe5b80bffc74e8f5e1c68e2e082a5c4d1452f7154c75c528c07f5d2b663f97"
    },
    "family": "synthetic",
@@ -537,9 +537,9 @@
   {
    "description": "Synthetic mixed application tree with no prescribed credential positives",
    "expected": {
-    "files_sha256": "fa5cd28983da47b46893e5d664dc46db51fd66984280f6bfb1e57f6543955cc5",
+    "files_sha256": "ecc3ae63f709d43088a83898f09152aa0ceb13cd2440bcb114ddd4997972e0a4",
     "git_head": null,
-    "inventory_sha256": "7c6f7f7fc86d336d2dbce6892a5e7e39aed860aaab081d5b76dcc28099cf8cd7",
+    "inventory_sha256": "ff1701e3f2875101ba64030342e878838f97ce1dfb2d84b1f18a5a5fb67696bc",
     "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
    },
    "family": "synthetic",
@@ -575,9 +575,9 @@
   {
    "description": "Synthetic mixed application tree with sparse provider-shaped plants",
    "expected": {
-    "files_sha256": "7fe8dd7ff424c46afa25feba9a43a57415086c4e902d03872cfe3129e34bfb5f",
+    "files_sha256": "8580796fde0d702da4f07734c07a5463b82a08909c1ff2080a83537eac7185b3",
     "git_head": null,
-    "inventory_sha256": "fb6d934e1b0c0db4b575c6c2512906127f576e0fa7aff4eda11d53ee291ce89f",
+    "inventory_sha256": "cbcf544f7b18b073527607722f1eb701912e75a6181c92698b94e65134d6ed1a",
     "labels_sha256": "937cb58fe196a48e4b79150be4f1f46dee4314b7b444c18bc329188b95fdbf82"
    },
    "family": "synthetic",
@@ -613,9 +613,9 @@
   {
    "description": "Last eight commits of the fixed linear Git history",
    "expected": {
-    "files_sha256": "b7441965d787ae9a909ebcf4653d3cb7afb4ac8adedad4846bfb91bfc83bc64e",
+    "files_sha256": "94030d957b57947431040728e05d0eda7013b8e41440c41e2ab3132ede751ab2",
     "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
-    "inventory_sha256": "6525f2857c3fdecf9f5bee8f962cf917ff33f90f456008ad1b5c92bf07fd330f",
+    "inventory_sha256": "b8a69d106d9e5617522accfb3d4472e963471ef2e0a4082acb2ccb5d84f9a5fa",
     "labels_sha256": "6a51f3b8ba18864415a9f8e9bf0c3b0dc103264d25392e7c33ecb5a3b0da4bbd"
    },
    "family": "synthetic",
@@ -653,9 +653,9 @@
   {
    "description": "Clean current worktree of a repository with historical positives",
    "expected": {
-    "files_sha256": "9b2cde31eae7457f092f07636403a03f059392e0a39a7da3ad75d81e84298cbe",
+    "files_sha256": "4b8d95b469db61bb91f514e1c62df02b3d9988974d27aa6231eb80aedbd5ef96",
     "git_head": "5f4cae1080e647e6eb3026db001154dba4427e45",
-    "inventory_sha256": "37f7fc8a18f5bf5303ff287abdff65931bdde063d67b40e1560981fb51db1a59",
+    "inventory_sha256": "19915457a6a144f2c6378ecb4933f7fcd6b01ba3e67b41f160dfed3a32874fa0",
     "labels_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
    },
    "family": "synthetic",
@@ -690,9 +690,9 @@
   {
    "description": "Staged positive differs from HEAD and the clean unstaged file",
    "expected": {
-    "files_sha256": "bbfcd914b63ed6eb7bec2ecb28b33632f26f1583d928a70d0851d2464f131f4c",
+    "files_sha256": "b3dac34a8379e2d25ee26264f0512b13d1f851b939a57cd91d0b53826063709f",
     "git_head": "3cdc692c32238857085e90cc24f2d7dc334d7c13",
-    "inventory_sha256": "cc419a376defa3f9035283477786fb1ca5102b82a404115b0c70ded2963edd59",
+    "inventory_sha256": "31ce1dcb7f54b1a003831f8ce07eaa3bb7b93598cad1a23445caf32fb4ad05f0",
     "labels_sha256": "8f7693dcbddffbc08aaf1d94fee2d194752e2638d63796c96c1954fc9dcbc4fc"
    },
    "family": "synthetic",
@@ -729,16 +729,16 @@
   {
    "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
    "expected": {
-    "files_sha256": "5b9d65a5bf852c15f6634223c64706b5d04b05d7549a1b92fc67978325ea1018",
+    "files_sha256": "02c4594d70fef176bce121964eccd4c36823bfdb5495251fad41080baee22969",
     "git_head": null,
-    "inventory_sha256": "48befe327683b6d7d2fa8c61babb3fb3578bdc7f4621756f0dfbfd0034d160c4",
-    "labels_sha256": "91c2f1f00d1e0ba81176d3c23fb4c6098679e95be00ed82f61da386bbe81e721"
+    "inventory_sha256": "1b33744052761efeee373bc6f028e3ba287ed90910820d70ac15814cc461dbaf",
+    "labels_sha256": "b4c75150307a96d896fe8170606b003cae338eec6b1463d84f27a24798a72a85"
    },
    "family": "synthetic",
    "id": "keyword-dense-1mib",
    "label_counts": {
-    "not-secret": 84,
-    "secret": 22
+    "not-secret": 86,
+    "secret": 19
    },
    "labels": "labels/synthetic/keyword-dense-1mib.jsonl",
    "modes": [
@@ -763,16 +763,16 @@
   {
    "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
    "expected": {
-    "files_sha256": "26ac2074196c874e58ae9f791ab6d03af83c8ccf1d845db27c2e6b2fa33b4ff3",
+    "files_sha256": "9b61a902d0b1f1f51cc3564012dd000a7064e6800844176aa43da98f1cb9afd9",
     "git_head": null,
-    "inventory_sha256": "deb93984825c09374c1d49380c97f65c20f7a0d4d290faaab6b75fe9f11c1d3f",
-    "labels_sha256": "810549480158d777e6fd37dc412b7578dd4e47b4643c264cfbb9dccf551e798c"
+    "inventory_sha256": "13e4e70c412d6924a9f01cfb90ca3592ae39da03210494b8908c4cacedd0b65e",
+    "labels_sha256": "f20ce4887cdead838523f2ebc66a61398830c8d155e6d0c262e69d216ed564a5"
    },
    "family": "synthetic",
    "id": "keyword-dense-16mib",
    "label_counts": {
-    "not-secret": 1372,
-    "secret": 337
+    "not-secret": 1371,
+    "secret": 340
    },
    "labels": "labels/synthetic/keyword-dense-16mib.jsonl",
    "modes": [
@@ -797,16 +797,16 @@
   {
    "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
    "expected": {
-    "files_sha256": "d3b9bb14a905eb58fb58248e7e0a03bbba016a1a4288b946b1b04286280cf0c9",
+    "files_sha256": "0d1ff89a8c87dee36055af04d3dd8873f1e7e309c241ec0b252026f90b80ee70",
     "git_head": null,
-    "inventory_sha256": "a6cef6433013a1f5b3ad34a38f544dc0be1d6ede916db237ce0884b8bc6365eb",
-    "labels_sha256": "422318577bf9737bba6cafda69ee7f7b055a376f1790cd5d141ddb629f7e7eb2"
+    "inventory_sha256": "d499c1d16c6b684ed909534fe8819659aafe19a3c501e5afd54d5f38c9a48b6c",
+    "labels_sha256": "091821418973a9860117d420836b0c10a490162de66ad5fed8344073c1795a81"
    },
    "family": "synthetic",
    "id": "keyword-dense-128mib",
    "label_counts": {
-    "not-secret": 10926,
-    "secret": 2731
+    "not-secret": 10908,
+    "secret": 2746
    },
    "labels": "labels/synthetic/keyword-dense-128mib.jsonl",
    "modes": [
@@ -831,16 +831,16 @@
   {
    "description": "Configuration and text files dense in key=, token: and password words with non-secret values",
    "expected": {
-    "files_sha256": "076e7de3462679571a5b81165bf12adb3dbc643c41dca8336a32ca56765f5ef2",
+    "files_sha256": "afe7fcd98cac8d3db41e5cb5b9389aca42cd7d242754a49a21cb293213797948",
     "git_head": null,
-    "inventory_sha256": "23f295a04d98ea17719da3f862910366ca7b579e12c147a615c4672461d237c1",
-    "labels_sha256": "98052d1452444d14accc43c4e9ac0809958521511955cccf9af6661a22125cac"
+    "inventory_sha256": "2a01e4acb248c28cc0523fd4508a8f99d23ffbd962382c7aaab43eb05f581c64",
+    "labels_sha256": "8487a164029e373b3b0533b8f7c26cdefe1972ce319ab65418133f9dd7a90c28"
    },
    "family": "synthetic",
    "id": "keyword-dense-1024mib",
    "label_counts": {
-    "not-secret": 87400,
-    "secret": 21859
+    "not-secret": 87371,
+    "secret": 21847
    },
    "labels": "labels/synthetic/keyword-dense-1024mib.jsonl",
    "modes": [
@@ -865,10 +865,10 @@
   {
    "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
    "expected": {
-    "files_sha256": "99a9b2b764ab7b9388bb899234f8235c9f2b9ef20fcd951307640c0ec449a824",
+    "files_sha256": "352e7ea73d90fa6c26d9272ce960723c6b7120f7ec7a5e5ebd96fe3d92e47246",
     "git_head": null,
-    "inventory_sha256": "6c2e570898d4055b42f1b10847beb262fda7138709f3b750d2ebf30cc70da7bd",
-    "labels_sha256": "756545becca128de29f4e3c7d236cb774b697b659e548c17e634bc103e77d5ba"
+    "inventory_sha256": "205e378445375d67fa82d8db164ce4b1c8b2101a93b7a6ef75e569b2b024baf5",
+    "labels_sha256": "8d3ef19a50538e5b9ec83ea8ad97a0e2db9abc43efe54c399bcdff6db062c475"
    },
    "family": "synthetic",
    "id": "entropy-negatives-1mib",
@@ -899,16 +899,16 @@
   {
    "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
    "expected": {
-    "files_sha256": "5a41a30afde7c798b183bef8b87df5d19d6aa70e97c9259f62d430eba1ccc9d8",
+    "files_sha256": "441d2f917f9eaeeec886c73ad8747c683f3365476fe6e78b3a51cef9e8e59b2c",
     "git_head": null,
-    "inventory_sha256": "a6f6d57a29584fe51cb0a43dd35b22a8bd21400067d7e37895761844fb85d561",
-    "labels_sha256": "370637820c6f3a7f784b2bef2608684c914cfd849a9b125e45d335cc79cd83f8"
+    "inventory_sha256": "fb5c4bc5bb3a408e95f84ec8f7432475f15a69dd15226093eae426bc82e434e2",
+    "labels_sha256": "7e4e62e1411b3e767be6d180f77d5b8cdfad93a8eb51f1c2b3706782f62e6a61"
    },
    "family": "synthetic",
    "id": "entropy-negatives-16mib",
    "label_counts": {
-    "not-secret": 2046,
-    "secret": 66
+    "not-secret": 2045,
+    "secret": 60
    },
    "labels": "labels/synthetic/entropy-negatives-16mib.jsonl",
    "modes": [
@@ -933,16 +933,16 @@
   {
    "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
    "expected": {
-    "files_sha256": "6bf370421846810e10d8c0de9f0cb2fd4631d721d81d2d273b226a23d09d8e77",
+    "files_sha256": "b90f3e44ebc5aca2f5b21aeacab24758e8b3ec96e99beae8eb0833e042235273",
     "git_head": null,
-    "inventory_sha256": "f9a62284610177b4ec453d3e627232050388acce4c9d40b883d476af0f31b13f",
-    "labels_sha256": "2d4cccb99ba606cee12277e3051d588986b407cf4b63a7b1e007b55a4906d4f6"
+    "inventory_sha256": "7e6f280991cee12efee86f04e879e6a1f7bd01a762338a2892f4766265e9134d",
+    "labels_sha256": "4ef5f645e1f99a639c7baede41ced77f6209b56158011da611a514e7559d8042"
    },
    "family": "synthetic",
    "id": "entropy-negatives-128mib",
    "label_counts": {
-    "not-secret": 16382,
-    "secret": 509
+    "not-secret": 16387,
+    "secret": 522
    },
    "labels": "labels/synthetic/entropy-negatives-128mib.jsonl",
    "modes": [
@@ -967,16 +967,16 @@
   {
    "description": "Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings",
    "expected": {
-    "files_sha256": "f48dc45a359f599db07e736608d90817a416aea9cb22d399cbd804abaa7f3bdc",
+    "files_sha256": "5885c4693ce71e11725c0cb52a6a00ef85c7a6d77a6ea43a13314049e7019862",
     "git_head": null,
-    "inventory_sha256": "53131723e2550d25e6c3334dc100c4a9c3cf0e1be48d17bae119fe6b17d71026",
-    "labels_sha256": "706077842dcdf31fc440c976f2a2d5f9579a125fe32960b071a5d37a029fba92"
+    "inventory_sha256": "07585cd8f6dce5455957b346cd359bf2846490a81eb98a3079c8e5c6ba235878",
+    "labels_sha256": "58f0e18f2a0f1b799f2135f16343fb369f5c4763116117a36c4c873cf69eb90f"
    },
    "family": "synthetic",
    "id": "entropy-negatives-1024mib",
    "label_counts": {
-    "not-secret": 131066,
-    "secret": 4088
+    "not-secret": 131078,
+    "secret": 4074
    },
    "labels": "labels/synthetic/entropy-negatives-1024mib.jsonl",
    "modes": [
@@ -1001,16 +1001,16 @@
   {
    "description": "Source files in 12 languages with varied line lengths and keyword use in code",
    "expected": {
-    "files_sha256": "cb0981d9298efff2149d5dc98128868366ac32b5a44497c853a3ecef2ce3f7d7",
+    "files_sha256": "4f6989b000d14efb7dbd8ba0ad238cdbf6f12ab684577472f1d3fcfbab7d6618",
     "git_head": null,
-    "inventory_sha256": "8caf38d21f31c3b2b889317ba11d4409471f5607188eb2647717ead30ee0c70e",
-    "labels_sha256": "cd5397cb0daad1e13dc4e57894d46641917574034a3c2ccc82100115915e6f24"
+    "inventory_sha256": "23c9c930eb8626c5e62567dd895a2d1f9de28b3c6974d9fd3c097a72c58773ca",
+    "labels_sha256": "77c6bba5fd58c20cc634ab0cf21b0cec227d814b5753437a7ae71e826bcc4fe8"
    },
    "family": "synthetic",
    "id": "mixed-source-1mib",
    "label_counts": {
-    "not-secret": 67,
-    "secret": 19
+    "not-secret": 62,
+    "secret": 14
    },
    "labels": "labels/synthetic/mixed-source-1mib.jsonl",
    "modes": [
@@ -1035,16 +1035,16 @@
   {
    "description": "Source files in 12 languages with varied line lengths and keyword use in code",
    "expected": {
-    "files_sha256": "48a0549832073054e18a32e998d25551db6235d22fff439217bacf77c248055f",
+    "files_sha256": "bf78e6420a6d4f65f2958621c14597f162b2d93d15bcc3afe637ad1ea4bb896c",
     "git_head": null,
-    "inventory_sha256": "1982adfe5a875c5ea04a04ad434a59640bc30fd934da7dec42b6573d335ec8b7",
-    "labels_sha256": "99c64d6990ec07f64bfcc69012fbce7e1b92a3056002eb4f2cdd2f3ee3517e48"
+    "inventory_sha256": "55818c85bf54af9edc1b61abb5f2cab86d2eabf1fb5d48672f9fdb47c011bae1",
+    "labels_sha256": "17f6c04a5268811751257a71992f6cbb83074854347e3b3164b00084c34ce9eb"
    },
    "family": "synthetic",
    "id": "mixed-source-16mib",
    "label_counts": {
-    "not-secret": 1035,
-    "secret": 253
+    "not-secret": 1021,
+    "secret": 249
    },
    "labels": "labels/synthetic/mixed-source-16mib.jsonl",
    "modes": [
@@ -1069,16 +1069,16 @@
   {
    "description": "Source files in 12 languages with varied line lengths and keyword use in code",
    "expected": {
-    "files_sha256": "a2db43bb48fb82a9abae35e5983a0fce2cc942e3f3657bc9f4b0252df45fa528",
+    "files_sha256": "b709dcaeae05cde4bf70b6d34241024cf3aaf324eeca3b6a335b4ebce0e5545f",
     "git_head": null,
-    "inventory_sha256": "1906bd1d65362cb01499ec0f4a0dc217f7dd12cc99da3c8b121a33933d143cb9",
-    "labels_sha256": "adbb012db1670460a114734956ae72b2d3483e9536adde0e8f716a5f5a4e4d7f"
+    "inventory_sha256": "f1ab3ed52a1eb0d571cf5d86799cdc4f975d2b74d376bc5c0ea7c6a7fecdd5ba",
+    "labels_sha256": "d929f60d9ebdc89d35896c8278d1816912a04bac6d15e52718b758f440a0f518"
    },
    "family": "synthetic",
    "id": "mixed-source-128mib",
    "label_counts": {
-    "not-secret": 8207,
-    "secret": 2031
+    "not-secret": 8171,
+    "secret": 2045
    },
    "labels": "labels/synthetic/mixed-source-128mib.jsonl",
    "modes": [
@@ -1103,16 +1103,16 @@
   {
    "description": "Source files in 12 languages with varied line lengths and keyword use in code",
    "expected": {
-    "files_sha256": "7c3b8f9c36d5174118c297697257449b9ceeda996aeb5db78eb2ce688e5d565c",
+    "files_sha256": "8ff0fcdbb2018a254e664738c4e308ca163cf125d2590f8d50cb64f940f684ab",
     "git_head": null,
-    "inventory_sha256": "4856cd9d5f8a3907e78d1a4e1c61dded807f17a6d19d4cf9ed350573e6d7c307",
-    "labels_sha256": "2c9c025b20f655c08271fd99cf006914ea8089b57b7b94e8b4b0ceb6f298d2b1"
+    "inventory_sha256": "51c14d6799eaf3f30b45b469a81b78e7698d0cf75669dd7cd640234e1b6aa863",
+    "labels_sha256": "49347533bbc27d04b2acd1e512ae49c5404c1e7d3a6cecf9ac8f397f28ef1f70"
    },
    "family": "synthetic",
    "id": "mixed-source-1024mib",
    "label_counts": {
-    "not-secret": 65568,
-    "secret": 16420
+    "not-secret": 65367,
+    "secret": 16258
    },
    "labels": "labels/synthetic/mixed-source-1024mib.jsonl",
    "modes": [
@@ -1137,9 +1137,9 @@
   {
    "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
    "expected": {
-    "files_sha256": "8497eadfccb4310c8fb7a7d81f6313983a2d18f09f1bf378a5f1d59ddc86ab32",
+    "files_sha256": "8270dbff116677e8f1e0c21ae1396d682d4cbcec1fcf1736568eb92e7f7f4150",
     "git_head": null,
-    "inventory_sha256": "f0a8d933cf00c7ca5dfe74e405821fa79ca86379aa1260687afccef51ea8ea0e",
+    "inventory_sha256": "8a743f1b91843ab09e32182f8d9483475960fba430688e51fc941ed88faee47c",
     "labels_sha256": "9ca3b5b118ab20dfba09565d822b88a5985ad7daa72147aa4e442eb29b88fb03"
    },
    "family": "synthetic",
@@ -1171,16 +1171,16 @@
   {
    "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
    "expected": {
-    "files_sha256": "ef6c84cbd26b5293ce73c56d2b517697177a5a4be94667c547a9e8b7edf6b2da",
+    "files_sha256": "8c7eaf1c532e8aaeb478a4e3f4dd4a86b49f6abac91d7d81ea75b9790a5f48c8",
     "git_head": null,
-    "inventory_sha256": "cd60d2a70d8c686afae0156a5173101511fd97b1ab5c1c21712e9ce5abc43227",
-    "labels_sha256": "1d3adaa1dc2df0d18680b4c957616b84955e0c2523bb6821f208405cd00da3c1"
+    "inventory_sha256": "976a813b595259fc37513025b5c5a92449064106c0a240b3a67d593372f1ed9a",
+    "labels_sha256": "a512740d536a7e6528c6a1d45f69c0b3d70096e9d7a5fe5c024b3f754641ff88"
    },
    "family": "synthetic",
    "id": "minified-16mib",
    "label_counts": {
-    "not-secret": 253,
-    "secret": 31
+    "not-secret": 255,
+    "secret": 32
    },
    "labels": "labels/synthetic/minified-16mib.jsonl",
    "modes": [
@@ -1205,16 +1205,16 @@
   {
    "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
    "expected": {
-    "files_sha256": "f8c6464fe1fba3c5c76e7d4c2b6741c672963f04d94e207f747604674c60351f",
+    "files_sha256": "40f22f75c47ff7a16f377b4ac8b1ec10f3d78be0c6e86b090816293d5742d773",
     "git_head": null,
-    "inventory_sha256": "72dc7a10db663cbbb72fba222f14791b49029e07b4cb2385c645b6e6f8cf371a",
-    "labels_sha256": "8b8898d6f75eadf9f025d9b7580ce66fc38cfdf28e48a887e622378255d85f3f"
+    "inventory_sha256": "2e53df19a529aa406d788dcb511c032742cc67c5d2797c58c5b98a8743bfd8fc",
+    "labels_sha256": "6900387073f8b8949a3e69eb3a18e7866ba9f53a7f062a61fd0e335d733295f4"
    },
    "family": "synthetic",
    "id": "minified-128mib",
    "label_counts": {
-    "not-secret": 2050,
-    "secret": 256
+    "not-secret": 2047,
+    "secret": 257
    },
    "labels": "labels/synthetic/minified-128mib.jsonl",
    "modes": [
@@ -1239,16 +1239,16 @@
   {
    "description": "Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs",
    "expected": {
-    "files_sha256": "508d98eb5864c78a6fa5abb055edc126f2a5445131d69710835277f10d34aa76",
+    "files_sha256": "c328d50b211783c63c52341a1a1638853cbe7d1db5c88408291458821ec0b6f9",
     "git_head": null,
-    "inventory_sha256": "b66d7b4c299565faf4b419d0941ab957bde9b1aacb985576b7b66a022238f374",
-    "labels_sha256": "062f3755172421b3086a6e322f4aaf6d8ffb0ce2b1f5c0b5a904a6d794c14d75"
+    "inventory_sha256": "cbfed9a9e8fec49d0bb4f52d1b3e32283416248bdf08372c9e93e9ac545d1655",
+    "labels_sha256": "5e741d4cd3c2453a0e2399bbe8dc1cb950843eba1a289172eb10671506a153f4"
    },
    "family": "synthetic",
    "id": "minified-1024mib",
    "label_counts": {
-    "not-secret": 16372,
-    "secret": 2042
+    "not-secret": 16386,
+    "secret": 2057
    },
    "labels": "labels/synthetic/minified-1024mib.jsonl",
    "modes": [
@@ -1273,9 +1273,9 @@
   {
    "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
    "expected": {
-    "files_sha256": "d83467fc46075a52efc01069a286c071bde51e03c1058e2b82f5c4d5d3210e46",
+    "files_sha256": "17e12f76d556ff6a37e3a4c55833f4da163485cb120b16f87d3d58d3911050d1",
     "git_head": null,
-    "inventory_sha256": "24f8fe81028c97de37a031d5c6b07ad4e499ab695cb88fdeaed42801ddadc07a",
+    "inventory_sha256": "19bdbdce8b0cf9a94efafbe852ff8bd2ce6fda55458acbcee04d14de82656307",
     "labels_sha256": "be79864e22630b540655541e0777ec6269875f4954e7a4ab932846246539b924"
    },
    "family": "synthetic",
@@ -1307,16 +1307,16 @@
   {
    "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
    "expected": {
-    "files_sha256": "3ac0f83883106b9ea814e892017a303fdd2b7a670593e3a57f603259d12e65e5",
+    "files_sha256": "e8afd158cebf25398c273b6f0aae244e48f1162f9127a4bd69a33646587d104e",
     "git_head": null,
-    "inventory_sha256": "4867569aecce007fdaee09da951d41cf84cbe2f00e91b82f09a5d5ee7f2b3aed",
-    "labels_sha256": "d955e6e611e78bea9fc61405243f84c6be8ce7bb964dd14915122d08a6681775"
+    "inventory_sha256": "93d9bdfc2cfaeabbc47302e1bb5ba497a124f0a6b8a1651209c7d387cbafc2e9",
+    "labels_sha256": "7152e1f2eb35a44803fe933b55a2ee01a2baaa509d3ab14665915431f8f24c00"
    },
    "family": "synthetic",
    "id": "binary-mix-16mib",
    "label_counts": {
-    "not-secret": 17,
-    "secret": 9
+    "not-secret": 8,
+    "secret": 8
    },
    "labels": "labels/synthetic/binary-mix-16mib.jsonl",
    "modes": [
@@ -1326,7 +1326,7 @@
    "size": {
     "bytes": 16777216,
     "commits": 0,
-    "files": 31
+    "files": 22
    },
    "source": {
     "generator": "rustleaks-synthetic-v2",
@@ -1341,16 +1341,16 @@
   {
    "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
    "expected": {
-    "files_sha256": "4f5c9bc404c350fdfe8815fd5d9a1fe08a1fa8f467c231009bdb339858526815",
+    "files_sha256": "664de9baffbbaa138ca6eebf0f6213c5a0cf7abdcadc101c01f70230e0f88a2c",
     "git_head": null,
-    "inventory_sha256": "2014287dbee6c8247326010ab14766a53ef30b82bd3d47a47bddf88c7ff79f52",
-    "labels_sha256": "a194cbe5ba0329600884ae9388d692c32524e000151c54fe7810a12f722e409a"
+    "inventory_sha256": "26bc214b72dcf83b58dedd840ecc1311680d1c3e4497976f173443d4a6158230",
+    "labels_sha256": "31472f8789c6ff002c3c50a2728773e01c74d77e485f00b8a6df37263c3198be"
    },
    "family": "synthetic",
    "id": "binary-mix-128mib",
    "label_counts": {
-    "not-secret": 178,
-    "secret": 84
+    "not-secret": 107,
+    "secret": 62
    },
    "labels": "labels/synthetic/binary-mix-128mib.jsonl",
    "modes": [
@@ -1360,7 +1360,7 @@
    "size": {
     "bytes": 134217728,
     "commits": 0,
-    "files": 234
+    "files": 181
    },
    "source": {
     "generator": "rustleaks-synthetic-v2",
@@ -1375,16 +1375,16 @@
   {
    "description": "Images, shared objects, stored jar archives and fonts mixed with source files",
    "expected": {
-    "files_sha256": "9e9430ae9f6204f59b4cc65101b123b16321cd54ef8877df5db4def377edb505",
+    "files_sha256": "d93d2eda7d1224e1fd3fe98cfd38bd9f03e0bd44bb4ebe40beff9223f49bcf55",
     "git_head": null,
-    "inventory_sha256": "529cb1674647e744a6abbf783aa2852f0face237dcf874ed5096f3d572559b82",
-    "labels_sha256": "ae9d604f7fbb5264891602dbc1fd8def536997e93e4c463d50b35daac828cf32"
+    "inventory_sha256": "a540ac177d733ceabab71859baf10f32a1914549877f27d5527aa22a89954ec0",
+    "labels_sha256": "f25ba0614816939558a99a16070e56d8f3a1675280ea846d12d7b233da9b3451"
    },
    "family": "synthetic",
    "id": "binary-mix-1024mib",
    "label_counts": {
-    "not-secret": 1128,
-    "secret": 558
+    "not-secret": 1119,
+    "secret": 577
    },
    "labels": "labels/synthetic/binary-mix-1024mib.jsonl",
    "modes": [
@@ -1394,7 +1394,7 @@
    "size": {
     "bytes": 1073741824,
     "commits": 0,
-    "files": 1703
+    "files": 1716
    },
    "source": {
     "generator": "rustleaks-synthetic-v2",
@@ -1409,10 +1409,10 @@
   {
    "description": "One distinct GitHub token shape per line",
    "expected": {
-    "files_sha256": "3fa467445bdae51a603c6b75e37ac37eca38af7f5ea98157e6bd7039a4d304e4",
+    "files_sha256": "c6aadace3653ae5234d9b21c562e28745b2ae3817601aed5bd1ecc80ad091bc8",
     "git_head": null,
-    "inventory_sha256": "2e2d4f6fa4f8495fdf1abb0730b7c7cf81d8a0583f016d320ee8185b1fa9955a",
-    "labels_sha256": "7cbaf4609b717e47b9ac9fa4e2395f667ab9f418c62109c838b2d5ef9139d291"
+    "inventory_sha256": "0a5f918b380798d1748be1edae84f1acf5dd7e3b1791e0fe797eb2962e0b931c",
+    "labels_sha256": "9d007cdc18f96971523770705c769ceca7647d02a00331d76303a211f0d6871b"
    },
    "family": "synthetic",
    "id": "dense-github-pat-lines-25k",
@@ -1443,10 +1443,10 @@
   {
    "description": "One distinct GitHub token shape per line",
    "expected": {
-    "files_sha256": "1a4333c0288f95a36b5f06c2689e62bc57adbe61a5d28b16395cd1b29eada485",
+    "files_sha256": "a08b231d99ac4d73de79b263097bb58ab57e94e5cfea63de1253632ba00192a3",
     "git_head": null,
-    "inventory_sha256": "66a7c6156f99ff9065c2cc256c774b4906d8781b26da17e2ca96530a58a6f0bd",
-    "labels_sha256": "4ac63461de1bdb55977c8e19752c806d790fe91bbb96fe5a2648cbe25a22af9e"
+    "inventory_sha256": "f18d0d1972d03f893f22f245ca74494bb4243ff00610bfa5bf12f61e621e6ac9",
+    "labels_sha256": "6af32db81f85a99a7e210299520aea0dcf7dbd1c4959cd8c5a2b5d5845068a1e"
    },
    "family": "synthetic",
    "id": "dense-github-pat-lines-50k",
@@ -1477,10 +1477,10 @@
   {
    "description": "One distinct GitHub token shape per line",
    "expected": {
-    "files_sha256": "9e500e102c4621717d4ab317620b95053e8b307a8617486bd0e2c43e64765384",
+    "files_sha256": "0a033f69815b92d97ddf3da6de4f33d641eb12365ffc4d0e100a17965c21539f",
     "git_head": null,
-    "inventory_sha256": "4d69d6f8272389496cb16349dbaa32ac12b2a6cdb99f09cc0746b66d0c1355dc",
-    "labels_sha256": "7effe1e1dd3e6e43950a5a247c34331bdd198ddb113b3504c88f8fb34b28906f"
+    "inventory_sha256": "421ccc4c1b593eaffd397a5eb6976dc84800dbfd95105c60923c36b16963d2f6",
+    "labels_sha256": "9a860ec6313302effb482bc0035f13d8bda1fc0a83a73b516c101f661bc4074e"
    },
    "family": "synthetic",
    "id": "dense-github-pat-lines-100k",
@@ -1511,10 +1511,10 @@
   {
    "description": "One distinct GitHub token shape per line",
    "expected": {
-    "files_sha256": "749c7c7e6934427844f35240ed791a2b93607b247ccaf4dbfb09d1b6ae7b1234",
+    "files_sha256": "239348916d8c31333a2f3ba9c43054ff95c0d479e4d636872755f12784aa24da",
     "git_head": null,
-    "inventory_sha256": "318100f7b275df8877db610c17f014d5ca71c01d1a0e6ff3abd7f1a99a2e5d5c",
-    "labels_sha256": "d5ddf987c907719ee4431e1c4bf88635c9c4c4ea738d48d3434332792fce0b94"
+    "inventory_sha256": "b268d80a636bfb481c63bc9e17dcdb526b0ca906e3f94768c5badf2af31528b3",
+    "labels_sha256": "0b510db53261b4bfcf6a850848f6c5e44a44f9e22f096243d14e8ae18bcd29b0"
    },
    "family": "synthetic",
    "id": "dense-github-pat-lines-200k",
@@ -1545,10 +1545,10 @@
   {
    "description": "One distinct GitHub token shape per line",
    "expected": {
-    "files_sha256": "ae9f05e77220719ac3553555e2277a559835d070bf0fc3954dc56f25ba06bdb6",
+    "files_sha256": "496059c67461e4a6c292f7c6f181aaced5ccc058bb4de8673ed0d1b1807322a4",
     "git_head": null,
-    "inventory_sha256": "2638405da3c33a4b493a6c42593f8523b23749e5ab9e11cf4c2462a1083ffe38",
-    "labels_sha256": "572e0087e65ec1e1dd2fc2e2ed8f9e58b1e7fc33d20f532e7ad66636cbc1c4f0"
+    "inventory_sha256": "cf6fa3a92201ad90a81de618826582c432fb76a6f92b60163cbff5334d403f3e",
+    "labels_sha256": "5debd4504b779bbcef76fe26ded388fe07542d710227886da886d82551fe1920"
    },
    "family": "synthetic",
    "id": "dense-github-pat-lines-400k",
@@ -1579,10 +1579,10 @@
   {
    "description": "Distinct GitHub token shapes separated by spaces on one line",
    "expected": {
-    "files_sha256": "258b6f2e7c6f72f1072d8e59ef926bc30ca0263f7bf776315eb14c96e64e5139",
+    "files_sha256": "7879c6be7934d11c9a8f7aa10b2743fb2ee549f194f0f72b0f31461a7555a97f",
     "git_head": null,
-    "inventory_sha256": "847b03339c8982eaf0c1b756e9afde2a24d6331dde6665b2888137648dd9abb6",
-    "labels_sha256": "ee1bf3bc9354de04b63adec8c19b6e06e0f69b978b4ac58b6410b13e6e7b40cc"
+    "inventory_sha256": "fbb61fb6e6383efaf00bb016343fd361830e8756757f8cde58444e3ff1bc5dee",
+    "labels_sha256": "349e5be2d4f1954aabea08dd845ca309a089bc11da93941b2709a68ed246a971"
    },
    "family": "synthetic",
    "id": "dense-github-pat-single-line-25k",
@@ -1613,10 +1613,10 @@
   {
    "description": "Distinct GitHub token shapes separated by spaces on one line",
    "expected": {
-    "files_sha256": "e929711e52d099be28edb4c2dad0575683f93043ed4b4c359077a16156c06e09",
+    "files_sha256": "2ff4d3d55410956776c4996459f082038b72d937caeb2098307fc359406be237",
     "git_head": null,
-    "inventory_sha256": "b58a59aede589807141adb5c301fd028f08867d3a0a80da157e46b2f4f92906f",
-    "labels_sha256": "1aeda0e37b2b5439e593aed95eba49ceaf6ad14963bf0221024c8b1bf466f4a0"
+    "inventory_sha256": "d9f819823ce22e8e9291d5eac6ed36357834e7d45687e93f0c878b5aefc7f7f0",
+    "labels_sha256": "1d6763f4498d5891a42a50e0fc6268bf1447ddfc7d51e1fbbd888322d9c32bb2"
    },
    "family": "synthetic",
    "id": "dense-github-pat-single-line-50k",
@@ -1647,10 +1647,10 @@
   {
    "description": "Distinct GitHub token shapes separated by spaces on one line",
    "expected": {
-    "files_sha256": "d8c656c3c5b1d07c6054761db2a4ffb797cbe757d35604decd5e8d32684d4db9",
+    "files_sha256": "1942083f3cacacaeb54de8ac25f9b06619d2f787e56058eaae8349c4fd1fc4b5",
     "git_head": null,
-    "inventory_sha256": "9a95fd8e28de22b1468e5fdb92aaf9da02782413c6a1e3800b20d568d2102162",
-    "labels_sha256": "aba4dcad0e7a5ee11637ec255ec615209cef78e4f801353d3b8bc97a7e488a8b"
+    "inventory_sha256": "075fac8b29f3b23868b962f85898d290e543ff5c0224240e45d2b99602c8b28a",
+    "labels_sha256": "66d6eff19696cbf9ca215ab26af7af576ab8cde663ba6695d753ce38b964482b"
    },
    "family": "synthetic",
    "id": "dense-github-pat-single-line-100k",
@@ -1681,10 +1681,10 @@
   {
    "description": "Distinct GitHub token shapes separated by spaces on one line",
    "expected": {
-    "files_sha256": "816454f80ae9d4e7b3ec6db2d5fab8f46a53d80d3efa4d3dcc52bda13ff78fb9",
+    "files_sha256": "b4336a3be415ac1db57b193285f8cb6e4f6be339e082a29ee526c9f61fdc188c",
     "git_head": null,
-    "inventory_sha256": "b14f9a3cf36e66ff833d6a033d5be269d784610d39b0213de10d1d82eb7b2f63",
-    "labels_sha256": "4975524467f0b2821c8e73d7d9ea9f1a6f31f74442ecfbdf7e034964ec51339f"
+    "inventory_sha256": "ccf761e78ae08fdeb3223d61e5cf60ca4ac0404ac59908adb66a125de2c64eb9",
+    "labels_sha256": "9d1c36ed567b098ce26940c8aa8537c9e66b8484e53e4e608fb03f83195fcdc7"
    },
    "family": "synthetic",
    "id": "dense-github-pat-single-line-200k",
@@ -1715,10 +1715,10 @@
   {
    "description": "Distinct GitHub token shapes separated by spaces on one line",
    "expected": {
-    "files_sha256": "f4cb356f0db4ed0d594c9c2838f786adedb00ae814e1bf989be8bd11e8b99414",
+    "files_sha256": "4eaf927a288216fb1cf39421f6278f3a35844062b353ae4e85847b8508128685",
     "git_head": null,
-    "inventory_sha256": "c2c1eca1fd0aad154650b36bcf8793be3c40acb9fa85959d25fa44a03c080326",
-    "labels_sha256": "19445f9ed9367e9df0026fe1d633984d2d1ecc3f9a670dff515ce3a1aac96471"
+    "inventory_sha256": "5617c98e281c5d1809774f85300268f3929f627e1ba8e9b34df4ae2f02bf5bd1",
+    "labels_sha256": "0efa286637e275a21fb2cc2e74b4e8e7a4a82e3c172920a5c6b5da397e231e70"
    },
    "family": "synthetic",
    "id": "dense-github-pat-single-line-400k",
@@ -1749,9 +1749,9 @@
   {
    "description": "Generic api_key = '...' assignments repeated on one line",
    "expected": {
-    "files_sha256": "13b3d6abc5736b6aa10474fec70bfedf2570252fd0b42141babc8030d345c30f",
+    "files_sha256": "1c3dfed6bb1dc0ee4047fae1491337f69283a4fde9c3b9390e7e57c9432e65c3",
     "git_head": null,
-    "inventory_sha256": "128e61059bbf84361ea932f78e963e204bd1627e76b94a62c5361b1de656c163",
+    "inventory_sha256": "4d56bdafd1a92ff568b09f881e3fa322ec20b9c6a0e43d55e69b1e60313f3fe4",
     "labels_sha256": "ee578f9919aa911edc72ec14f74acd97b65751702f538b2a526c4728d31e0115"
    },
    "family": "synthetic",
@@ -1783,9 +1783,9 @@
   {
    "description": "Generic api_key = '...' assignments repeated on one line",
    "expected": {
-    "files_sha256": "2d83cfe0ea16751c3ce99554c278e603cc49e6097a207d9f3437c3919b8b7098",
+    "files_sha256": "1dd8567237f86196416286029914cc31d18052c20342551eb97772b794871b25",
     "git_head": null,
-    "inventory_sha256": "597587083d1e11e56790e3e208e4b31362636f9572059a1f762d1c6682d1d5c7",
+    "inventory_sha256": "447f564f56362a75fcaba63f52f6acf2b8be46d12f7ffaf58e8146aeebdc21a0",
     "labels_sha256": "24cf0dc326ac929428456d3f6827bc32bbb0a1adc5cfba27b259e674c0b43645"
    },
    "family": "synthetic",
@@ -1817,9 +1817,9 @@
   {
    "description": "Generic api_key = '...' assignments repeated on one line",
    "expected": {
-    "files_sha256": "83d488471c5b812387836fddf9519e98fd579aefe162b2c8d4ed3eaee6a085f1",
+    "files_sha256": "064b1a3efa7f53d22063a082080d8ed58a9d0b32049f37e9ac55c9f70925b4d9",
     "git_head": null,
-    "inventory_sha256": "feb4eff14d25370696c81965973649aee1ea29d029dcd0e1bb7af4262e13accb",
+    "inventory_sha256": "930d49d7683f6dfaa9a0483c4ef58be707a2a8aa6f98910b6a2149589ba3ed27",
     "labels_sha256": "c7a34cd2606276668a78afa55eb270924bbe87e1f49047f0a8f96be28a487625"
    },
    "family": "synthetic",
@@ -1851,9 +1851,9 @@
   {
    "description": "Generic api_key = '...' assignments repeated on one line",
    "expected": {
-    "files_sha256": "0a6512feebca5cbb39683eaaa7b265b2a53694062f3fd712cad4cc5cf1688423",
+    "files_sha256": "ab616001ca5f788d1870045e33aa1f90ad298646690278a528fecf2a5c43c0ec",
     "git_head": null,
-    "inventory_sha256": "30e5e69fb71884c7217cfc7bbe719b858767f7ff74e5d75fb7faadda1ee10d85",
+    "inventory_sha256": "1a54dab64f233652432fb50defe5a8ef114c670ba970520fcc0beaafac05e23f",
     "labels_sha256": "eccfba06b511c3acf14e76fbc17acb5e809e83964e451c0fff5d90d37b18a006"
    },
    "family": "synthetic",
@@ -1885,9 +1885,9 @@
   {
    "description": "Generic api_key = '...' assignments repeated on one line",
    "expected": {
-    "files_sha256": "32bb854a4c249b1a8a0f52bf835987abc3fe30f3d12c0bcd9cc989c3d0146dea",
+    "files_sha256": "711c81d9f473d41a1ab4c3c3db0e23786c475b49aefbfbaf2f1bbf6d2e13f06e",
     "git_head": null,
-    "inventory_sha256": "fc35a47a9a80338bf322c87e75991fa76a5781a97c64881b802b2ac322dad748",
+    "inventory_sha256": "37a4803ec475bc6b2405709b19d3cbdd50583481af8bbd880abdcd20b7b32b93",
     "labels_sha256": "d8f6cd4d6abfd3c537b20924c2f771c88cfb4e01ac558383be602546777ef7a7"
    },
    "family": "synthetic",
@@ -1919,9 +1919,9 @@
   {
    "description": "PlanetScale database ID and token line pairs",
    "expected": {
-    "files_sha256": "faae7a20505b76cf1d2f78fd94909f470054f6904b609071be4d999bd8890b65",
+    "files_sha256": "8d356b057b4128b079639b4548c4993e927cffcce807310762889f7f0e269c19",
     "git_head": null,
-    "inventory_sha256": "20ef24509eb625a2f737d0357c6da97f4509111a5472d3b31d097af7f11da1bb",
+    "inventory_sha256": "47fd22b95e1e9b913c02014a167c19e76efdfb2dd1e1081218da5a9612b083df",
     "labels_sha256": "97b0c922266de303a75e33007530922cd82e9ee54ecae7e7cfbe7962d02430c1"
    },
    "family": "synthetic",
@@ -1953,9 +1953,9 @@
   {
    "description": "PlanetScale database ID and token line pairs",
    "expected": {
-    "files_sha256": "c9f3f2561fa1d76ed8c0faa3f68b350a006366c8d41b508674a876a5412ce55f",
+    "files_sha256": "c8242431ceb00646383a9930111b772cb130c9e9c96369cf896a0f8f8f1fae80",
     "git_head": null,
-    "inventory_sha256": "8ab3773b0a04d599eb3ad915ce22250664867f53d660a7ec409705d7d3b9f39f",
+    "inventory_sha256": "2e14feae14208754a8175b42d7bdfe339460798a548283d19b9400a9ae36d080",
     "labels_sha256": "ecd60c6e523d525f27c310c2f9f009e7631049459ab9b5567beb02d4898cf596"
    },
    "family": "synthetic",
@@ -1987,9 +1987,9 @@
   {
    "description": "PlanetScale database ID and token line pairs",
    "expected": {
-    "files_sha256": "3e40867458aad47b63b33def2f2285f6b6e73aa674e5eaabcf3dd43ade3985ee",
+    "files_sha256": "2ec471afc61edd4cbb460fd1b6ddeb294869e55b8e401eae82149e3fd1b7ee8a",
     "git_head": null,
-    "inventory_sha256": "0b6ea9bb2d24031e5bd6c865efc927474ec193b49145fd2f7531c6fb3494eb57",
+    "inventory_sha256": "4553aa1c8976c7e794a591a4e439152aaf48f1a1e3725abbb656cc67c772a51c",
     "labels_sha256": "2143a3e8e32f6f35707b991da0d9d64c3d5ffe33a0313108bf8bd36fd3ae777a"
    },
    "family": "synthetic",
@@ -2021,9 +2021,9 @@
   {
    "description": "PlanetScale database ID and token line pairs",
    "expected": {
-    "files_sha256": "d86418e3ebf6dd1967346c5e3fb93ac225c08c3f6a1111822984e2b744291019",
+    "files_sha256": "d13b8895f2a4c906837a89593afbd824c8589bc6a57d168451474fbfe7565f52",
     "git_head": null,
-    "inventory_sha256": "a7463fa7bbe46b5b2b701dbf727c0a037d754acf3e2c39c79188f61936ea845c",
+    "inventory_sha256": "a1ff3422ea6c8540026119b79a1bcc4e980e7b68fed66137c5756d2b844f332d",
     "labels_sha256": "036968c75cb57db669339bdc6fc79144a2eba2f5dce7a2d4c8832aa3efa3735d"
    },
    "family": "synthetic",
@@ -2055,9 +2055,9 @@
   {
    "description": "PlanetScale database ID and token line pairs",
    "expected": {
-    "files_sha256": "aeaec176b1a96339c83842d6007d4cf71a0e19f3a31884618c11418898c92b93",
+    "files_sha256": "a95c505feefc03c14363fc8f9eb5d06f96b5ee0166ffddeead1674f0f3bcd2eb",
     "git_head": null,
-    "inventory_sha256": "95b15a8c89ff5e3167bedce10477b647eac814bedf014769f78f814a3ab9d63b",
+    "inventory_sha256": "b744ffd2937b48a54422a0a654dd7808cb6c68bb460eb9605cc75c4199496c20",
     "labels_sha256": "30f20d920b9a6683647c0ca8f0c96ff5bae644f26b6b1009c39342cd52a0450f"
    },
    "family": "synthetic",
@@ -2089,9 +2089,9 @@
   {
    "description": "Database URIs with passwords, Base64 encoded as one line",
    "expected": {
-    "files_sha256": "1165a2aaa022fd3db4b8d3833713486be3daf6241ed96a39c158ab5ee33f2ff2",
+    "files_sha256": "591e851981b0cb324ed46d3802679cfccffa9cccb01707823e6d6129cefa9655",
     "git_head": null,
-    "inventory_sha256": "f83921be28f0182f7a40d7e958e4b69a1432b59551b44c0ddd9eb5799e1893d5",
+    "inventory_sha256": "a42414123fdee0e362ba4790f214f9412b231514558bc5e597752ab24d174b95",
     "labels_sha256": "c5eec6065e5fdf175cf8997dd3172a514820ade5083ba5d3f85121f9c259c1af"
    },
    "family": "synthetic",
@@ -2123,9 +2123,9 @@
   {
    "description": "Database URIs with passwords, Base64 encoded as one line",
    "expected": {
-    "files_sha256": "e82572acf8e011aada2234155924c2906ee2c09e5c73dd4811544cbd3ea2262e",
+    "files_sha256": "855cb019cf184604188bcfb492f13185c688c977cdafe8c2e44f6cac1068808b",
     "git_head": null,
-    "inventory_sha256": "c3bd8e3e806b2d0939d888467c9469564fa8dfe2a784cfbfcaa04cec4ae5f99e",
+    "inventory_sha256": "64aafd06040d1dd3910e9521bfbedc450018866271049714a236d2e3e6460f96",
     "labels_sha256": "fde0547018ac8c72a11bf8241086785f551d277dfb297f435192b730ca620ad4"
    },
    "family": "synthetic",
@@ -2157,9 +2157,9 @@
   {
    "description": "Database URIs with passwords, Base64 encoded as one line",
    "expected": {
-    "files_sha256": "5f2d4901324edc3370c073756ec2ac5ff98778f96cc114f6e9cea2e61db8b5e4",
+    "files_sha256": "f8cf1360d291b7feee21b00d002793909e25f32c635e89f23d4452c00dfef677",
     "git_head": null,
-    "inventory_sha256": "6469dfda6a254c2cfaa85f555e6cbebab7c896a10d85c13f767ee82cf1823501",
+    "inventory_sha256": "55b3f86c3a365fb9c3e6a5db7a9de9e7686e23d4031c474107b3b8d8b63f2861",
     "labels_sha256": "e2d63f93787b1055e1a009c12db80f129bf23da0112f33d9ccc2792dae781327"
    },
    "family": "synthetic",
@@ -2191,9 +2191,9 @@
   {
    "description": "Database URIs with passwords, Base64 encoded as one line",
    "expected": {
-    "files_sha256": "ed05db669f2ee3265c96cff4b81cde55ee5677b03bfdbb83439f3fbc9dcd9c79",
+    "files_sha256": "85c6ee78fc7f923dee1b03e32d09ad57e8fae71abf233b72ee0e95fbcc38ac88",
     "git_head": null,
-    "inventory_sha256": "05d87e79d77c56492b68d6d5ed135216c463dd52400fba9d0cb7fb7d1627ab62",
+    "inventory_sha256": "436ca705ce1c1b377c072e5d2933ffb145edebf45e3a9dfef875ff2826771395",
     "labels_sha256": "cdd2bd9438d303f1ec58899704b7d06776e67e39b4933459d31fd3da5323276d"
    },
    "family": "synthetic",
@@ -2225,9 +2225,9 @@
   {
    "description": "Database URIs with passwords, Base64 encoded as one line",
    "expected": {
-    "files_sha256": "a728f1f5e3323b7cbad96e6f5ae885da9506821f19c50b5d95b0cbf7e048e95f",
+    "files_sha256": "4909ed32ebc8507f513ace0d45b7c5eb62248c1a5e133298e67de39ff70d14dc",
     "git_head": null,
-    "inventory_sha256": "83769c797efc8de335941ae2385e4c4de149e470d78c7fd94607790f9988186d",
+    "inventory_sha256": "56561fe9fd515ed9915966cdfa3952ae411f3075c21329c5119f5726e0fa7eb2",
     "labels_sha256": "c546a16a0a23284c2c60f6bfaf5fbf0cc0e85ed15e476087c73482e7a0b11837"
    },
    "family": "synthetic",
@@ -2259,10 +2259,10 @@
   {
    "description": "One minified line of 16 MiB with eight planted values",
    "expected": {
-    "files_sha256": "a7b054ea745a4e8250623cacfcc900ecf3b6c0a35f1edb65bfba433a1b33d70b",
+    "files_sha256": "ad5034479aaa6c66e64c6516e26b75a0d2b722c22ae51e33ff80f01eb36f8c31",
     "git_head": null,
-    "inventory_sha256": "88b5f7795af70f46bc63f32a4305bf9ffe70236634fbf8490a0f3f49169423c3",
-    "labels_sha256": "67c2cc7ecf31b8cc3e6ee68fb4edd012f870abce58a74c3774a81d916821412d"
+    "inventory_sha256": "036b44ce3c22a43bb10953838275c688bdc01a8c846dd1ca00e977e95413c75f",
+    "labels_sha256": "a8067abf42727b52859dcf2783d822e53a57138ffb93bdea3b55dfb22d669ed0"
    },
    "family": "synthetic",
    "id": "long-line-16mib",
@@ -2293,9 +2293,9 @@
   {
    "description": "Database URIs with passwords, Base64 encoded as one line",
    "expected": {
-    "files_sha256": "9babce68f8de300999d59da9cccc60206074bfe15760a518825fba4225c48733",
+    "files_sha256": "84ea54ab39a48b3dd0842722faf710f12c5ff084b0212d103eb124cdba036a39",
     "git_head": null,
-    "inventory_sha256": "115c16ad551b261bb155730dd347bb88b4d533dcd9b3b4eaf005858e990fa21f",
+    "inventory_sha256": "5772cbfe4dc3d04382f19afc1c20d11e73aca90875efadeb91a8a0d9167cadb5",
     "labels_sha256": "f2442381983ce3a45285a8b1b6c7e75a77d275f9ecb79aeab9071f2f997ccb41"
    },
    "family": "synthetic",
@@ -2327,10 +2327,10 @@
   {
    "description": "Trunk of 50 commits and 1,000 branches with two commits each",
    "expected": {
-    "files_sha256": "8b971f4281276b2bd825187693f8514dbecf7f5623a5ad0779fbade1bf94d8eb",
-    "git_head": "28fd2d961fe029f17fffacc2e74b87fdaa8276fc",
-    "inventory_sha256": "fc23d7c964f66e5f1945a067b55bd1cf0259d17605037dbe6ffe2e5f8bfed1dd",
-    "labels_sha256": "5ec3e607090032afefa675d779d9e2520e2ba3dd219b36e7f2feed2cd353f55c"
+    "files_sha256": "bb38b5995533fbfe964c1f6601cfeae597a36e42de16858a24057bb4ba969939",
+    "git_head": "65b8ba68b37a01beca4cbe1669958a0bba9f1734",
+    "inventory_sha256": "929417612959127cb6b10b34a8327459b4ac8e4663b0960e6ea3f941d9c98b3d",
+    "labels_sha256": "37865281b1b128be74913e5f354bca8205634c33eb3998bc23c3599c777fda15"
    },
    "family": "synthetic",
    "id": "git-many-branches",
@@ -2363,10 +2363,10 @@
   {
    "description": "200 topic branches merged with merge commits; 10 merges add content of their own",
    "expected": {
-    "files_sha256": "fd0c69b140261631a41d0e0e31107c9b878758840a93117d42fa710ac89c6532",
-    "git_head": "410a6edfaba328f8b9e48840d2f7af6b1db294ab",
-    "inventory_sha256": "3cfee6e09d08fba02bfee742389b98746abcc933f13d2d880b702131484d8dda",
-    "labels_sha256": "bf70d63523680afdfcbbda343c638c12e982b27166ee113aef5b841fba63f8af"
+    "files_sha256": "f80afd2770607f5c4af48b5ccbdb4a63b96ee59b74dedc168535b599a4300d77",
+    "git_head": "b8b9b2ff4c6baf910ae54635164972cc68a962a4",
+    "inventory_sha256": "6b907d54bf5a5529c1774c0e1c1b66fd3eda47196956a46b8dcbfac9f369f4f9",
+    "labels_sha256": "78ee5fcd7cb4e15bd907c99176bf03198db19fb4aaed9de5b42f9e520f5faa10"
    },
    "family": "synthetic",
    "id": "git-merges",
@@ -2380,7 +2380,7 @@
    ],
    "path": "synthetic/git-merges",
    "size": {
-    "bytes": 37377,
+    "bytes": 37517,
     "commits": 601,
     "files": 211
    },
@@ -2399,10 +2399,10 @@
   {
    "description": "One commit replaces all 32,768 lines of a file",
    "expected": {
-    "files_sha256": "51bc8748fcfa814fea629b3f95fbdf8188220315755a70a1b502ddc4771edeb5",
-    "git_head": "f215a5f30e941acd9c7c9dd130dfe291fe44b1d9",
-    "inventory_sha256": "026204db7925943b4a59de40400b5e6b2a9bb4d66cd0ec2c60be96a9dec909d7",
-    "labels_sha256": "05027220fb30e3b4bf363523cd9bfcb0408577a74465e8cff3b35a384c449901"
+    "files_sha256": "6970cb7c43e79f7effefb516a1be6548c9b85a9c9da376640c03dcf56a2b2291",
+    "git_head": "ab9f4d0bfb352e11c6b737a38559467283604a4a",
+    "inventory_sha256": "af658df99ad2ed40d29a75550eda3bca110017416e04fe5e722bc8ccbeba248e",
+    "labels_sha256": "796fdd73f7154847814b8767ac8156b330d686ec772bd55a00f011951bc2ea08"
    },
    "family": "synthetic",
    "id": "git-huge-hunk",
@@ -2416,7 +2416,7 @@
    ],
    "path": "synthetic/git-huge-hunk",
    "size": {
-    "bytes": 1468229,
+    "bytes": 1468221,
     "commits": 2,
     "files": 1
    },
@@ -2436,10 +2436,10 @@
   {
    "description": "One commit changes one line in each of 10,000 files",
    "expected": {
-    "files_sha256": "ae8766f30b6574dd5853579b595b77598f4ef800f4371f5953f8c461ec1d8927",
-    "git_head": "d764a62b5e180dbcf5fb999996b5d26a93aaed0d",
-    "inventory_sha256": "9f4c5d5b5c9c51ea05fdcc5b01e092059387427cc23be96669fe9f63d6b25562",
-    "labels_sha256": "b37f45d40323b623ec52269a138e7f327e3a431f890541ba0d8926946a9a7447"
+    "files_sha256": "dc4e8422fae78d7dc6eb105a550cdceca25bd0e853e4ae0732d43af1c01a1592",
+    "git_head": "a794bd376ff357c6aff210b57ff7047ef343518f",
+    "inventory_sha256": "eb93a52fe1c393d89c0c3ecc19f94d3343ea0f7cc95a92e50f1a5cb73a03ffd6",
+    "labels_sha256": "f890adade22ece1e422b64bf4bb958549d6385b913ab86596df742260bb12bc4"
    },
    "family": "synthetic",
    "id": "git-many-small-files",
@@ -2453,7 +2453,7 @@
    ],
    "path": "synthetic/git-many-small-files",
    "size": {
-    "bytes": 892916,
+    "bytes": 893502,
     "commits": 2,
     "files": 10000
    },
@@ -2472,10 +2472,10 @@
   {
    "description": "Pure renames, renames with edits, and one rename among 1,000 modifications",
    "expected": {
-    "files_sha256": "49db8e8f97d6278379a8818214c0e114a455f3dc1c913f56550ab05434c8b391",
-    "git_head": "ba1cfbfc1046cfb2bd5339683c975198a57986f1",
-    "inventory_sha256": "6f343e68b939d9366570a22f8eaaa8baee01acd7e0cc796e144aba6f857b3bb2",
-    "labels_sha256": "9fc57c1b3053aa09705f821620e6dfe01de39254fa6d837abfe278941d6a19fe"
+    "files_sha256": "fceb099371bd8876e90a82a40170dd51cb0a6816c59868c3ed39dfc255e8c489",
+    "git_head": "95c72bf1109399a3ca11ab38b236bf9cb43a465a",
+    "inventory_sha256": "5b41135450b6f77939e5b5f35e2d3c481eca04ed65c10592e9e0dd34c6d8529f",
+    "labels_sha256": "0c970e6fd70589d24b033ad8524e2adb09b672b3872f32186a0684d5dd01d3f2"
    },
    "family": "synthetic",
    "id": "git-renames",
@@ -2489,7 +2489,7 @@
    ],
    "path": "synthetic/git-renames",
    "size": {
-    "bytes": 106582,
+    "bytes": 106493,
     "commits": 4,
     "files": 1100
    },

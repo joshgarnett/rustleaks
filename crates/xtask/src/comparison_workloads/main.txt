@@ -55,6 +55,7 @@ def label_counts(labels):
 
 
 def command_generate(arguments, source_root):
+    require_posix('generate')
     cache = resolve_cache(arguments.cache, source_root)
     catalog = synthetic_catalog()
     if arguments.only:
@@ -89,7 +90,8 @@ def command_generate(arguments, source_root):
             labels, extra = generate_entry(cache, git, entry, arguments.scale)
             shape = entry['shape']
             path = 'synthetic/' + identity
-            details = {'mode': 'git' if shape in GIT_SHAPES else 'dir',
+            executables = extra.pop('executable_paths', [])
+            details = {'mode': 'git' if shape in GIT_SHAPES else 'dir', 'executable_paths': executables,
                        'commit_count': extra.get('commits', 0), 'params': dict(entry['params'], **extra)}
         labels_path = cache / 'labels' / 'synthetic' / (identity + '.jsonl')
         write_labels(labels_path, labels)
@@ -216,6 +218,10 @@ def verify_matrix(cache, source_root, only):
             missing.append(workload['id'])
             continue
         record = read_json(path)
+        pinned = workload['source'].get('commit')
+        if pinned and record['source'].get('commit') != pinned:
+            fail('%s was built from %s, but the manifest pins %s' % (
+                workload['id'], record['source'].get('commit'), pinned))
         inventory = file_inventory(cache / workload['path'], skip_git=False)
         if inventory['files_sha256'] != record['files_sha256']:
             fail('%s files changed since the matrix was built' % workload['id'])
@@ -230,7 +236,7 @@ def verify_matrix(cache, source_root, only):
     return checked, missing
 
 
-def verify_repos(cache, source_root, only, git, environment, deep):
+def verify_repos(cache, source_root, only, git, environment, deep, mode):
     manifest = load_manifest(source_root, 'public-repos')
     checked = 0
     missing = []
@@ -241,7 +247,8 @@ def verify_repos(cache, source_root, only, git, environment, deep):
         if not (destination / 'fetch.json').is_file():
             missing.append(workload['id'])
             continue
-        record = verify_repository(git, environment, workload['source']['commit'], destination, deep)
+        history = 'git' in workload_modes(workload, mode)
+        record = verify_repository(git, environment, workload['source']['commit'], destination, deep, history)
         print_line('ok %s: %s, %d files%s' % (workload['id'], workload['source']['commit'][:12],
                                              record['tree']['files'],
                                              ', %d commits' % record['commit_count'] if record['history'] else ''))
@@ -259,7 +266,8 @@ def command_verify(arguments, source_root):
     absent = []
     for name in sets:
         if name == 'public-repos':
-            checked, missing = verify_repos(cache, source_root, only, git, environment, arguments.deep)
+            checked, missing = verify_repos(cache, source_root, only, git, environment, arguments.deep,
+                                            arguments.mode)
         elif name == 'synthetic':
             checked, missing = verify_synthetic(cache, source_root, only, git, environment)
         else:
@@ -283,6 +291,7 @@ def parser():
     fetch.add_argument('--only')
     fetch.add_argument('--mode', choices=('manifest', 'dir', 'git', 'both'), default='manifest')
     fetch.add_argument('--allow-large', action='store_true')
+    fetch.add_argument('--force', action='store_true', help='fetch again even when verification passes')
     fetch.add_argument('--git')
     generate = commands.add_parser('generate', help='generate synthetic workloads')
     generate.add_argument('--cache', required=True)
@@ -301,6 +310,8 @@ def parser():
     verify.add_argument('--set', choices=('all', 'public-repos', 'synthetic', 'fixtures-matrix'), default='all')
     verify.add_argument('--only')
     verify.add_argument('--deep', action='store_true', help='also run git fsck on full histories')
+    verify.add_argument('--mode', choices=('manifest', 'dir', 'git', 'both'), default='manifest',
+                        help='modes that fetched repositories must support')
     verify.add_argument('--git')
     commands.add_parser('self-test', help='run the offline self-test')
     return top
@@ -365,6 +376,13 @@ def self_test_stream():
                         'little') for i in range(0, 16, 4)])), 'stream does not follow SHAKE-256')
     value = random_value(Stream('value'), ALNUM, 36)
     check(len(value) == 36 and entropy(value) >= 3.5, 'random value is not plausible')
+    for kind, prefix in (('github-pat', 'ghp_'), ('npm-token', 'npm_')):
+        token = POSITIVE_KINDS[kind][2](Stream('checksum:' + kind))[0]
+        number = 0
+        for character in token[-6:]:
+            number = number * 62 + BASE62.index(character)
+        check(token.startswith(prefix) and len(token) == 40, '%s token shape' % kind)
+        check(number == zlib.crc32(token[4:34].encode('ascii')) & 0xffffffff, '%s checksum' % kind)
 
 
 def self_test_go():
@@ -550,7 +568,14 @@ def self_test_fetch(cache, git):
         record = fetch_repository(git, environment, url, 'refs/tags/v1', commit, destination, history)
         check(record['tree']['files'] == 3 and record['tree']['symlinks'] == 1, 'fetched tree counts %r' % record['tree'])
         check(record.get('commit_count', 2) == 2, 'history commit count')
-        verify_repository(git, environment, commit, destination, deep=history)
+        verify_repository(git, environment, commit, destination, deep=history, history=history)
+        if not history:
+            try:
+                verify_repository(git, environment, commit, destination, history=True)
+            except WorkloadError:
+                pass
+            else:
+                fail('self-test: a one-commit fetch passed verification for git mode')
         (destination / 'tree' / 'docs' / 'b.txt').write_bytes(b'changed\n')
         try:
             verify_repository(git, environment, commit, destination)
@@ -618,12 +643,17 @@ def self_test(source_root):
     root = pathlib.Path(tempfile.mkdtemp(prefix='rustleaks-workloads-self-test-'))
     try:
         cache = resolve_cache(str(root / 'cache'), source_root)
-        try:
-            resolve_cache(str(pathlib.Path(source_root) / 'cache'), source_root)
-        except WorkloadError:
-            pass
-        else:
-            fail('self-test: a cache inside the repository was accepted')
+        link = root / 'repository-link'
+        os.symlink(str(source_root), str(link))
+        for inside in (pathlib.Path(source_root) / 'cache', link / 'cache',
+                       pathlib.Path(str(source_root).swapcase()) / 'cache'):
+            if not inside.parent.exists():
+                continue
+            try:
+                resolve_cache(str(inside), source_root)
+            except WorkloadError:
+                continue
+            fail('self-test: a cache inside the repository was accepted: %s' % inside)
         self_test_stream()
         self_test_go()
         self_test_yaml()

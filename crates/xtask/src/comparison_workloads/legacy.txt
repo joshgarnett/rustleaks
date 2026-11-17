@@ -342,6 +342,8 @@ def legacy_labels(workload):
                   'source': 'constructed', 'kind': finding['rule_id']}
         if finding['decoded']:
             record['encoding'] = 'base64'
+            record['decoded_start'] = 0
+            record['decoded_end'] = len(base64.b64decode(data[start:end]))
         if workload['id'] == 'zstd-500':
             record['encoding'] = 'zstd'
         if workload.get('git_staged'):

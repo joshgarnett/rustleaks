@@ -70,6 +70,26 @@ def _token(prefix, alphabet, length, classes=(LOWER, UPPER, DIGITS)):
     return make
 
 
+BASE62 = DIGITS + UPPER + LOWER
+
+
+def checksum_token(prefix):
+    # GitHub and npm tokens end in 6 base62 characters of the CRC32 of the
+    # 30 random characters before them. The base62 alphabet is 0-9, A-Z,
+    # a-z, left padded with 0. Published examples in the Kingfisher 1.113.0
+    # rules (github.yml, npm.yml) reproduce with this reading.
+    def make(stream):
+        body = random_value(stream, ALNUM, 30)
+        value = zlib.crc32(body.encode('ascii')) & 0xffffffff
+        check = ''
+        while value:
+            value, digit = divmod(value, 62)
+            check = BASE62[digit] + check
+        token = prefix + body + check.rjust(6, '0')
+        return token, 0, len(token)
+    return make
+
+
 def _slack(stream):
     first = random_value(stream, DIGITS, 12, (DIGITS,), 0)
     second = random_value(stream, DIGITS, 12, (DIGITS,), 0)
@@ -100,12 +120,12 @@ def _uri(stream):
 
 
 POSITIVE_KINDS = {
-    'github-pat': ('vcs-token', 'GITHUB_TOKEN', _token('ghp_', ALNUM, 36)),
+    'github-pat': ('vcs-token', 'GITHUB_TOKEN', checksum_token('ghp_')),
     'gitlab-pat': ('vcs-token', 'GITLAB_TOKEN', _token('glpat-', ALNUM, 20)),
     'aws-access-key': ('cloud-key', 'AWS_ACCESS_KEY_ID', _token('AKIA', BASE32, 16, (UPPER, '234567'))),
     'slack-bot-token': ('chat-token', 'SLACK_BOT_TOKEN', _slack),
     'stripe-secret-key': ('payment-key', 'STRIPE_API_KEY', _token('sk_live_', ALNUM, 24)),
-    'npm-token': ('package-token', 'NPM_TOKEN', _token('npm_', LOWER + DIGITS, 36, (LOWER, DIGITS))),
+    'npm-token': ('package-token', 'NPM_TOKEN', checksum_token('npm_')),
     'pypi-token': ('package-token', 'PYPI_TOKEN', _token('pypi-AgEIcHlwaS5vcmc', ALNUM + '-_', 70)),
     'sendgrid-key': ('email-api-key', 'SENDGRID_API_KEY', _sendgrid),
     'shopify-token': ('commerce-token', 'SHOPIFY_ACCESS_TOKEN', _token('shpat_', HEX, 32, (DIGITS, 'abcdef'))),
@@ -465,9 +485,12 @@ class ShapeContext:
         self.labels = []
         self.files = 0
         self.bytes = 0
+        self.executables = []
 
     def write(self, relative, data, mode=0o644):
         write_file(self.root, relative, data, mode)
+        if mode & 0o100:
+            self.executables.append(relative)
         self.files += 1
         self.bytes += len(data)
 
@@ -577,7 +600,8 @@ def zip_bytes(stream, seed, size):
         if buffer.tell() + entry + central + 46 + len(name) > size:
             break
         info = zipfile.ZipInfo(name, date_time=(2000, 1, 1, 0, 0, 0))
-        info.external_attr = 0o644 << 16
+        info.create_system = 3
+        info.external_attr = 0o100644 << 16
         archive.writestr(info, b'\xca\xfe\xba\xbe' + hashlib.shake_256(
             ('%s:%d' % (seed, index)).encode('utf-8')).digest(length - 4))
         central += 46 + len(name)
@@ -943,7 +967,7 @@ def generate_entry(root, git, entry, scale):
     context = ShapeContext(target, identity, seed)
     if shape in SHAPES:
         SHAPES[shape](context, params['bytes'])
-        return context.labels, {}
+        return context.labels, {'executable_paths': sorted(context.executables)}
     if shape in DENSE_CASES:
         _, data, labels = dense_file(shape, params['bytes'], seed)
         for record in labels:

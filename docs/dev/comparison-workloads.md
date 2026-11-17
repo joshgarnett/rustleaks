@@ -25,7 +25,9 @@ Options:
 
 - `fetch`: `--only ID,...` selects repositories. `--mode dir|git|both`
   overrides the manifest modes. `dir` fetches one commit and `git` fetches
-  the full history. Large repositories also need `--allow-large`.
+  the full history. Large repositories are skipped unless you pass
+  `--allow-large`. A repository that already passes verification is not
+  fetched again unless you pass `--force`.
 - `generate`: `--only ID,...` selects workloads. `--sizes 1,16` limits the
   size series in MiB. `--scale smoke` makes tiny versions for testing.
   `--write-manifest` rewrites `synthetic.json` after a full run.
@@ -33,11 +35,17 @@ Options:
   `--offline` reuses sources that are already in the cache.
 - `verify`: `--set public-repos|synthetic|fixtures-matrix|all` and `--only`
   select workloads. `--deep` also runs `git fsck` on full histories.
+  `--mode dir|git|both` states which modes the fetched repositories must
+  support; by default the manifest modes apply, so a one-commit fetch fails
+  for a repository listed with `git` mode.
 - Every command accepts `--git PATH` to choose the Git executable.
 
-The cache folder must be outside the repository. The commands need Python 3.9
-or later and Git. Python runs with `python3 -I` and uses only the standard
-library.
+The cache folder must be outside the repository; the check compares file
+identities, so a link or a differently cased path to the repository is
+refused. The commands need Python 3.9 or later and Git. Python runs with
+`python3 -I`, reads the program from standard input, and uses only the
+standard library. `fetch`, `generate` and `matrix` are supported on macOS and
+Linux only.
 
 Example:
 
@@ -102,7 +110,10 @@ issue 241 reports about 1.75 million blobs in GitLab's full history.
 
 Kingfisher's K1 benchmark cloned each default branch without recording
 commits. These pins use release tags instead, so the trees are not the trees
-Kingfisher measured.
+Kingfisher measured. The manifest marks the K1 repositories with
+`kingfisher_k1: true`. Reports must show K1 and other repositories as
+separate groups, so that results on Kingfisher's own benchmark set can be
+told apart.
 
 ### How a repository is fetched
 
@@ -133,8 +144,9 @@ Notes:
   `tree/` for `dir` mode and `repo/` for `git` mode.
 - On a case-insensitive file system, paths that differ only in case collide.
   The linux tree has such paths. `fetch` keeps the first path, lists the
-  others in `fetch.json`, and prints a warning. Use a case-sensitive volume
-  for an exact tree.
+  others in `fetch.json`, and prints a warning. Paths the file system cannot
+  hold are listed the same way. Use a case-sensitive volume for an exact
+  tree.
 - The full histories of the large repositories need several GB each. Fetch
   them only when a run needs them.
 
@@ -147,8 +159,14 @@ own license; the manifest names it for reference.
 `synthetic.json` lists 71 generated workloads. Every value comes from a fixed
 seed, so a fresh `generate` gives the same bytes and the same Git commit IDs
 on every host. `verify` compares each workload with the hashes in the
-manifest. The full set is about 6.6 GB. Generating it took about two
-minutes on the development host.
+manifest. The manifest sizes add up to about 6.2 GB. Git workloads list only
+their checked-out files, so with Git storage and labels the cache holds
+about 6.6 GB. Generating the full set took about two minutes on the
+development host.
+
+File modes come from the generator, not from the file system: inventories
+hash file bytes only, and generated workloads record their executable paths
+separately. Stored archives are written as made on Unix.
 
 ### Tuned workloads
 
@@ -157,7 +175,8 @@ The first 19 entries are the workloads of the earlier cross-scanner harness
 these inputs, including `heldout-mixed-8mib`, so the manifest marks them
 `tuned: true` and reports must say so. They plant only three token shapes
 (GitHub, AWS and Slack) in repetitive filler, which favors designs that skip
-work when no keyword is present.
+work when no keyword is present. Their GitHub tokens do not carry a valid
+checksum.
 
 | ID | Shape |
 | --- | --- |
@@ -211,12 +230,12 @@ tool's rule favors no tool by itself, but reports should keep it in mind.
 
 | Shape | Source | Coincides with a tool rule |
 | --- | --- | --- |
-| `ghp_` and 36 letters or digits | GitHub, [Behind GitHub's new authentication token formats](https://github.blog/security/application-security/behind-githubs-new-authentication-token-formats/) | Same as Gitleaks `github-pat`. The last 6 characters are not a valid checksum, so a tool that checks the checksum rejects them. |
+| `ghp_`, 30 letters or digits, and a 6-character checksum | GitHub, [Behind GitHub's new authentication token formats](https://github.blog/security/application-security/behind-githubs-new-authentication-token-formats/), which describes the prefix and the CRC32 checksum | The total shape is the Gitleaks `github-pat` shape. The checksum is the CRC32 of the 30 characters in base62 (0 to 9, A to Z, a to z), padded to 6 characters; the published example in Kingfisher 1.113.0 `github.yml` reproduces with this reading. |
 | `glpat-` and 20 characters | GitLab, [Personal access tokens API](https://docs.gitlab.com/api/personal_access_tokens/) | Length 20 is the Gitleaks `gitlab-pat` length. Newer GitLab tokens can be longer. |
 | `AKIA` and 16 characters from A to Z and 2 to 7, 20 in all | AWS, [Manage access keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) for the prefix and the 20-character example | AWS does not state the alphabet; the Base32 alphabet is the Gitleaks `aws-access-token` alphabet. |
 | `xoxb-`, two 12-digit groups and 24 characters | Slack, [Token types](https://api.slack.com/authentication/token-types) for the prefix | The group lengths come from the earlier harness and fall inside the Gitleaks `slack-bot-token` bounds. |
 | `sk_live_` and 24 characters | Stripe, [Authentication](https://stripe.com/docs/api/authentication) | Inside the Gitleaks `stripe-access-token` length range. Current Stripe keys can be longer. |
-| `npm_` and 36 lower-case letters or digits | npm, [About access tokens](https://docs.npmjs.com/about-access-tokens) | Same as the Gitleaks `npm-access-token` class. Real tokens also use upper case. |
+| `npm_`, 30 letters or digits, and a 6-character checksum | npm, [About access tokens](https://docs.npmjs.com/about-access-tokens) for the prefix | Same checksum as GitHub tokens; the published example in Kingfisher 1.113.0 `npm.yml` reproduces with it. Gitleaks `npm-access-token` matches the shape without a checksum. |
 | `pypi-AgEIcHlwaS5vcmc` and 70 characters | PyPI, [API tokens](https://pypi.org/help/#apitoken); the fixed part encodes `pypi.org` | Inside the Gitleaks `pypi-upload-token` length range. |
 | `SG.`, 22 characters, `.`, 43 characters | SendGrid, [API keys](https://docs.sendgrid.com/ui/account-and-settings/api-keys) | Same total length as the Gitleaks `sendgrid-api-token` rule. |
 | `shpat_` and 32 hex digits | Shopify, [Admin API authentication](https://shopify.dev/docs/api/admin-rest#authentication) | Same as the Gitleaks `shopify-access-token` rule. |
@@ -319,7 +338,8 @@ Labels:
   Kingfisher examples are all of this kind.
 - A negative example gets a `not-secret` label on the whole case.
 - `expected` gives the home tool's contract: `exact`, `at_least_one`,
-  `exactly_one`, `count` or `none`.
+  `exactly_one`, `count` or `none`. For `count`, `expected_count` gives the
+  number of findings the home tool expects.
 - `fixture_tool`, `fixture_rule`, `fixture_case` and `fixture_origin` name
   the source.
 
@@ -340,17 +360,26 @@ Labels are JSON Lines, one object per labeled item, with these fields:
 | `workload` | Workload ID |
 | `path` | Path relative to the workload folder |
 | `commit` | Commit ID for Git workloads, otherwise null |
-| `start`, `end` | Byte offsets into the file at that commit |
+| `start`, `end` | Byte offsets into the file at that commit; see below for encoded and staged values |
 | `line`, `end_line` | 1-based lines of `start` and of the last labeled byte |
 | `secret_sha256` | SHA-256 of the secret value; for encoded text, of the decoded value |
 | `category` | Credential family, such as `vcs-token`, or the rule ID for fixtures |
 | `label` | `secret` or `not-secret` |
 | `source` | `constructed` for synthetic data, `fixture` for the matrix |
 
-Optional fields include `kind`, `encoding` (`base64` or `zstd`, with
-`decoded_start` and `decoded_end` for Base64), `staged`, `in_binary`,
-`reachable_from_head`, `introduced_by`, `span` and `expected`. Labels never
-hold secret text.
+Optional fields include `kind`, `encoding`, `decoded_start`,
+`decoded_end`, `staged`, `in_binary`, `reachable_from_head`,
+`introduced_by`, `span`, `expected` and `expected_count`. Labels never hold
+secret text.
+
+Offsets for special values:
+
+- `encoding: base64`: `start` and `end` cover the Base64 text in the file.
+  `decoded_start` and `decoded_end` locate the secret in the decoded bytes.
+- `encoding: zstd`: `start` and `end` index the decompressed member, not the
+  compressed file.
+- `staged: true`: the offsets index the staged blob in the Git index, not the
+  file in the worktree, and `commit` is null.
 
 Synthetic labels come from construction, never from scanner output. In a
 synthetic workload every byte outside a `secret` label is non-secret by
@@ -361,15 +390,17 @@ labels mark selected hard negatives so that reports can name them.
 
 `verify` checks a cache before a run:
 
-- Repositories: the only ref is `refs/heads/main` at the pinned commit, HEAD
-  matches, the commit count matches `fetch.json`, and every file in `tree/`
-  has the Git blob ID from the pinned tree with no extra files. `--deep` adds
+- Repositories: the only ref is `refs/heads/main` at the pinned commit and
+  HEAD matches. The full history is present when `git` mode is required, and
+  the commit count matches `fetch.json`. Every file in `tree/` has the Git
+  blob ID from the pinned tree, with no extra files. `--deep` adds
   `git fsck`.
 - Synthetic workloads: the file list, sizes, SHA-256 digests, label file and
   Git history (HEAD, refs and commit list) match the inventory written at
   generation, and full-scale workloads match `synthetic.json`.
-- Matrix workloads: files and labels match the inventory written by
-  `matrix`, and the case and label counts match `fixtures-matrix.json`.
+- Matrix workloads: the source commit matches the pin in
+  `fixtures-matrix.json`, files and labels match the inventory written by
+  `matrix`, and the case and label counts match the manifest.
 
 ## Changing the workloads
 

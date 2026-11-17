@@ -135,10 +135,12 @@ def resolve_cache(cache, source_root):
     path = pathlib.Path(os.path.abspath(str(path)))
     if path.is_symlink():
         fail('the cache folder must not be a symlink: %s' % path)
-    source = pathlib.Path(os.path.realpath(str(source_root)))
+    # Compare file identities, not path text: on a case-insensitive file
+    # system a differently cased path can name the repository.
     real = pathlib.Path(os.path.realpath(str(path)))
-    if real == source or source in real.parents:
-        fail('the cache folder must be outside the repository: %s' % path)
+    for candidate in [real] + list(real.parents):
+        if candidate.exists() and os.path.samefile(str(candidate), str(source_root)):
+            fail('the cache folder must be outside the repository: %s' % path)
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 
@@ -205,8 +207,7 @@ def file_inventory(root, skip_git=True):
                                 'sha256': sha256_bytes(target)})
             elif stat.S_ISREG(metadata.st_mode):
                 entries.append({'path': relative, 'type': 'file', 'bytes': metadata.st_size,
-                                'sha256': sha256_file(path),
-                                'executable': bool(metadata.st_mode & 0o100)})
+                                'sha256': sha256_file(path)})
                 total += metadata.st_size
             else:
                 fail('unexpected file type in workload: %s' % path)
@@ -248,6 +249,11 @@ def git_environment(home):
     return environment
 
 
+def require_posix(command):
+    if os.name != 'posix':
+        fail('%s is supported on macOS and Linux only' % command)
+
+
 def find_git(explicit=None):
     candidate = explicit or shutil.which('git')
     if not candidate:
@@ -256,8 +262,8 @@ def find_git(explicit=None):
 
 
 GIT_FLAGS = ['-c', 'core.logAllRefUpdates=false', '-c', 'gc.auto=0', '-c', 'core.autocrlf=false',
-             '-c', 'core.hooksPath=' + os.devnull, '-c', 'protocol.file.allow=always',
-             '-c', 'advice.detachedHead=false', '-c', 'init.defaultBranch=main']
+             '-c', 'core.hooksPath=' + os.devnull, '-c', 'advice.detachedHead=false',
+             '-c', 'init.defaultBranch=main']
 
 
 def git_run(git, repository, environment, arguments, stdin=None, timeout=86400, stdout=None):

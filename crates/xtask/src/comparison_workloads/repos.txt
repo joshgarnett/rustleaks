@@ -43,6 +43,10 @@ class BlobReader:
         if self.process.wait() != 0:
             fail('git cat-file failed')
 
+    def abort(self):
+        self.process.kill()
+        self.process.wait()
+
 
 def symlink_parent(tree, relative):
     # True when a folder on the way to `relative` is a symlink. Only a
@@ -70,23 +74,32 @@ def export_tree(git, repository, environment, commit, tree):
                 # Only a case-insensitive file system can produce this.
                 skipped.append({'path': entry['path'], 'reason': 'path collides on this file system'})
                 continue
-            target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+            data = None if entry['type'] == 'commit' else reader.read(entry['oid'])
+            try:
+                target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+                if entry['type'] == 'commit':
+                    target.mkdir(mode=0o755)
+                elif entry['mode'] == '120000':
+                    os.symlink(data.decode('utf-8', 'surrogateescape'), str(target))
+                else:
+                    with open(target, 'xb') as stream:
+                        stream.write(data)
+                    target.chmod(0o755 if entry['mode'] == '100755' else 0o644)
+            except OSError as error:
+                # Case collisions and names this file system cannot hold.
+                skipped.append({'path': entry['path'], 'reason': 'cannot write: %s' % error.strerror})
+                continue
             if entry['type'] == 'commit':
-                target.mkdir(mode=0o755)
                 totals['submodules'] += 1
-                continue
-            data = reader.read(entry['oid'])
-            if entry['mode'] == '120000':
-                os.symlink(data.decode('utf-8', 'surrogateescape'), str(target))
+            elif entry['mode'] == '120000':
                 totals['symlinks'] += 1
-                continue
-            with open(target, 'xb') as stream:
-                stream.write(data)
-            target.chmod(0o755 if entry['mode'] == '100755' else 0o644)
-            totals['files'] += 1
-            totals['bytes'] += len(data)
-    finally:
-        reader.close()
+            else:
+                totals['files'] += 1
+                totals['bytes'] += len(data)
+    except BaseException:
+        reader.abort()
+        raise
+    reader.close()
     return {'listing_sha256': sha256_bytes(listing), 'entries': len(entries),
             'skipped': skipped, **totals}
 
@@ -164,7 +177,7 @@ def fetch_repository(git, environment, url, ref, commit, destination, history):
     return record
 
 
-def verify_repository(git, environment, commit, destination, deep=False):
+def verify_repository(git, environment, commit, destination, deep=False, history=False):
     destination = pathlib.Path(destination)
     record_path = destination / 'fetch.json'
     if not record_path.is_file():
@@ -172,6 +185,9 @@ def verify_repository(git, environment, commit, destination, deep=False):
     record = read_json(record_path)
     if record.get('schema') != FETCH_SCHEMA or record['commit'] != commit:
         fail('fetch record does not match the pinned commit: %s' % record_path)
+    if history and not record['history']:
+        fail('%s holds one commit, but git mode needs the full history; fetch it with --mode git or '
+             'verify with --mode dir' % destination)
     repository = destination / 'repo'
     refs = git_refs(git, repository, environment)
     if refs != ['%s refs/heads/main' % commit] or refs != record['refs']:
@@ -192,20 +208,36 @@ def repository_ref(source):
     return source.get('ref') or source['commit']
 
 
+def workload_modes(workload, mode):
+    if mode == 'manifest':
+        return workload['modes']
+    return ['dir', 'git'] if mode == 'both' else [mode]
+
+
 def command_fetch(arguments, source_root):
+    require_posix('fetch')
     cache = resolve_cache(arguments.cache, source_root)
     manifest = load_manifest(source_root, arguments.set)
     selected = select_workloads(manifest, arguments.only)
+    large = [workload['id'] for workload in selected if workload.get('class') == 'large']
+    if large and not arguments.allow_large:
+        print_line('skipping large repositories (pass --allow-large to fetch them): %s' % ', '.join(large))
+        selected = [workload for workload in selected if workload['id'] not in large]
     git = find_git(arguments.git)
     environment = git_environment(cache / '.home')
     for workload in selected:
-        modes = workload['modes'] if arguments.mode == 'manifest' else (
-            ['dir', 'git'] if arguments.mode == 'both' else [arguments.mode])
-        if workload.get('class') == 'large' and not arguments.allow_large:
-            fail('%s is a large repository; pass --allow-large to fetch it' % workload['id'])
+        modes = workload_modes(workload, arguments.mode)
         source = workload['source']
         destination = cache / workload['path']
         history = 'git' in modes
+        if not arguments.force and (destination / 'fetch.json').is_file():
+            try:
+                verify_repository(git, environment, source['commit'], destination, history=history)
+            except WorkloadError:
+                pass
+            else:
+                print_line('%s is already fetched and verified; pass --force to fetch it again' % workload['id'])
+                continue
         print_line('fetching %s at %s (%s)' % (workload['id'], source['commit'],
                                               'full history' if history else 'one commit'))
         record = fetch_repository(git, environment, source['url'], repository_ref(source),

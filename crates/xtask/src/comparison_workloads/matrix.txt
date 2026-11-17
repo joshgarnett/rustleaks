@@ -763,6 +763,8 @@ def write_cases(cache, tool, cases):
                   'fixture_origin': case['origin'], 'expected': case['expected']}
         if case.get('decode_depth'):
             common['decode_depth'] = case['decode_depth']
+        if case['expected'] == 'count':
+            common['expected_count'] = case['count']
         labels = outputs[workload]
         data = case['data']
         if case['expected'] == 'none':
@@ -798,6 +800,7 @@ def matrix_tools(manifest):
 
 
 def command_matrix(arguments, source_root):
+    require_posix('matrix')
     cache = resolve_cache(arguments.cache, source_root)
     manifest = load_manifest(source_root, 'fixtures-matrix')
     wanted = [item for item in (arguments.tools or ','.join(matrix_tools(manifest))).split(',') if item]
