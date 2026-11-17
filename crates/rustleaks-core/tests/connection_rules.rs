@@ -13,7 +13,13 @@ use rustleaks_core::native::{
 };
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
-const PREFIX: &str = "rustleaks.connection-string.password.";
+#[allow(dead_code)] // `positives` serves the all-rules precedence test.
+#[path = "support/connection_cases.rs"]
+mod connection_cases;
+use connection_cases::{
+    DATABASE_URI_SCHEMES, DATABASE_URI_SECRETS, FIVE_FORMS, LIBPQ_FORMS, LIBPQ_SECRETS, PREFIX,
+};
+
 const FORMS: [(&str, &str, &str); 4] = [
     ("unquoted", "", ""),
     ("double-quoted", "\"", "\""),
@@ -84,31 +90,7 @@ fn assert_one(input: &str, secret: &str, suffix: &str) {
 
 #[test]
 fn all_five_forms_preserve_exact_secret_match_ranges_and_byte_locations() {
-    for (suffix, left, secret, right, match_start) in [
-        ("unquoted", "Host=db.invalid;Pwd=", "R7!q", ";", 3),
-        (
-            "double-quoted",
-            "Server=db.invalid;Password=\"",
-            "R7;!q",
-            "\";",
-            3,
-        ),
-        (
-            "single-quoted",
-            "Data Source=db.invalid;Pwd='",
-            "R7;!q",
-            "';",
-            3,
-        ),
-        ("odbc-braced", "DSN=synthetic;Pwd={", "R7}};!q", "};", 3),
-        (
-            "jdbc-query",
-            "jdbc:postgresql://db.invalid/app?password=",
-            "%52%37!q",
-            "&",
-            4,
-        ),
-    ] {
+    for (suffix, left, secret, right, match_start) in FIVE_FORMS {
         let input = format!("p\nx={left}{secret}{right}");
         let secret_start = 4 + left.len();
         let findings = scan(isolated(), input.as_bytes());
@@ -868,15 +850,8 @@ fn dense_matches_keep_finite_finding_and_work_budgets() {
 
 #[test]
 fn database_uri_preserves_raw_password_ranges_delimiters_and_locations() {
-    for scheme in ["postgres", "postgresql", "mysql", "mariadb", "POSTGRESQL"] {
-        for secret in [
-            "7",
-            "weak",
-            "R7!q:more",
-            "%52q7!",
-            "%ZZq7!",
-            "%24%7BPASSWORD%7D",
-        ] {
+    for scheme in DATABASE_URI_SCHEMES {
+        for secret in DATABASE_URI_SECRETS {
             for terminal in [
                 "", " ", "\t", "\r", "\n", "\u{b}", "'", "\"", "`", "#", "\\n", "\\R",
             ] {
@@ -1402,17 +1377,8 @@ fn libpq_engine() -> &'static Engine {
 #[test]
 fn libpq_passwords_preserve_literal_spelling_and_exact_ranges() {
     // Expected offsets follow the literal prefixes, not detector output.
-    for (suffix, prefix, ending, offset) in [
-        ("quoted", "host=db.invalid user=bench password='", "' ", 37),
-        ("unquoted", "host=db.invalid user=bench password=", " ", 36),
-    ] {
-        for secret in [
-            "Q7v9R2m8K4p6T1w3Z5s0N2h4",
-            "%517v9R2m8K4p6T1w3Z5s0N2h4",
-            r"Q7\'v9R2",
-            r"Q7\\v9R2",
-            r"Q7\ v9R2",
-        ] {
+    for (suffix, prefix, ending, offset) in LIBPQ_FORMS {
+        for secret in LIBPQ_SECRETS {
             let matched = format!("{prefix}{secret}{ending}");
             let input = format!("{matched}dbname=application");
             let findings = scan(libpq_engine(), input.as_bytes());

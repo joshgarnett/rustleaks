@@ -113,6 +113,15 @@ rustleaks_integration_test(
 )
 
 rustleaks_integration_test(
+    name = "scan_resilience_test",
+    src = "tests/scan_resilience.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    data = ["//compat:all"],
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+)
+
+rustleaks_integration_test(
     name = "source_fuzz_test",
     src = "tests/source_fuzz.rs",
     compile_data = [
@@ -146,6 +155,15 @@ rustleaks_integration_test(
     crate_features = _ARCHIVE_FEATURES,
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
     srcs = [":archive_fuzz_support"],
+)
+
+rustleaks_integration_test(
+    name = "chunk_boundaries_test",
+    src = "tests/chunk_boundaries.rs",
+    deps = [
+        ":rustleaks_sources",
+        "//crates/rustleaks-core:rustleaks_core",
+    ],
 )
 
 rustleaks_integration_test(
@@ -197,6 +215,7 @@ test_suite(
         ":archive_fuzz_test",
         ":archive_sources_test",
         ":archive_semantics_test",
+        ":chunk_boundaries_test",
         ":complete_sources_test",
         ":git_corpus_test",
         ":git_scm_test",
@@ -207,6 +226,7 @@ test_suite(
         ":rustleaks_sources_unit_test",
         ":rustleaks_sources_archives_doc_test",
         ":rustleaks_sources_archives_unit_test",
+        ":scan_resilience_test",
         ":source_corpus_test",
         ":source_fuzz_test",
     ],

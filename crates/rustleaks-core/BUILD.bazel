@@ -9,6 +9,17 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "pack_case_support",
+    srcs = [
+        "tests/support/connection_cases.rs",
+        "tests/support/contextual_delta_cases.rs",
+        "tests/support/extra_rule_cases.rs",
+        "tests/support/provider_rule_cases.rs",
+        "tests/support/shared_delta_cases.rs",
+    ],
+)
+
 rustleaks_library(
     name = "rustleaks_core",
     compile_data = glob(["default/**", "data/**"]) + ["//compat:parity_corpora"],
@@ -25,6 +36,7 @@ rustleaks_library(
         src = "tests/" + test + ".rs",
         data = ["//compat:all"],
         deps = [":rustleaks_core"],
+        srcs = [":pack_case_support"],
     )
     for test in [
         "native_policy",
@@ -44,6 +56,8 @@ rustleaks_library(
         "decoded_locations",
         "detect_corpus",
         "engine",
+        "generic_recall",
+        "language_fixtures",
         "model",
         "location_lookup",
         "scan_semantics",
@@ -93,6 +107,28 @@ rustleaks_integration_test(
     deps = [":rustleaks_core"],
 )
 
+rustleaks_integration_test(
+    name = "default_rule_cases_test",
+    src = "tests/default_rule_cases.rs",
+    data = ["//compat:all"],
+    deps = [":rustleaks_core"],
+)
+
+rustleaks_integration_test(
+    name = "rule_precedence_test",
+    src = "tests/rule_precedence.rs",
+    compile_data = [
+        "tests/support/additional_coverage.json",
+        "tests/support/association_coverage.json",
+        "tests/support/format_coverage.json",
+        "tests/support/remaining_verified_rules.json",
+        "tests/support/special_coverage.json",
+    ],
+    data = ["//compat:all"],
+    deps = [":rustleaks_core"],
+    srcs = [":pack_case_support"],
+)
+
 test_suite(
     name = "parity_tests",
     tests = [
@@ -125,6 +161,8 @@ test_suite(
         ":triage_test",
 
         ":security_stress_test",
+        ":default_rule_cases_test",
+        ":rule_precedence_test",
         ":allowlist_test",
         ":composite_corpus_test",
         ":config_test",
@@ -133,6 +171,8 @@ test_suite(
         ":decoded_locations_test",
         ":detect_corpus_test",
         ":engine_test",
+        ":generic_recall_test",
+        ":language_fixtures_test",
         ":model_test",
         ":location_lookup_test",
         ":rustleaks_core_doc_test",

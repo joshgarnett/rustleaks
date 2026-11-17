@@ -12,27 +12,14 @@ use rustleaks_core::native::{
 };
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 
-// These bounds are independently specified detector scopes, not read from the
-// configuration under test. All values are synthetic and are never validated.
-const CASES: [(&str, &str, usize); 5] = [
-    ("rustleaks.groq-api-key", "gsk_", 52),
-    ("rustleaks.cerebras-api-key", "csk-", 48),
-    ("rustleaks.replicate-api-token", "r8_", 37),
-    ("rustleaks.nvidia-api-key", "nvapi-", 60),
-    ("rustleaks.nvidia-api-key", "nvapi-", 70),
-];
-
-fn body(length: usize) -> String {
-    "Q7m2Z9v4L1c8R5s0N6b3X"
-        .chars()
-        .cycle()
-        .take(length)
-        .collect()
-}
-
-fn token(prefix: &str, length: usize) -> String {
-    format!("{prefix}{}", body(length))
-}
+#[allow(dead_code)] // `positives` serves the all-rules precedence test.
+#[path = "support/provider_rule_cases.rs"]
+mod provider_rule_cases;
+use provider_rule_cases::{
+    ALIBABA, BYTE_CASES, CASES, ESCAPED_CASES, FollowupCase, SLACK_ACCESS, STANDALONE_CASES, XAI,
+    alibaba_secret, body, companion_body, companion_samples, followup_cases, followup_text,
+    hex_body, openai, slack_access_secret, standalone_secret, token, xai_secret,
+};
 
 fn isolated() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -439,45 +426,6 @@ fn dense_provider_candidates_respect_existing_finding_and_work_budgets() {
     }
 }
 
-// These companion expectations are independently specified from the pinned
-// source grammars. Physical source coordinates are not Finding::location:
-// Fragment::new starts at line 0, and the frozen column origin includes LF.
-const ESCAPED_CASES: [(&str, &str, &str, usize, &str); 3] = [
-    (
-        "rustleaks.anthropic-api-key-escaped",
-        "anthropic-api-key",
-        "sk-ant-api03-",
-        93,
-        "AA",
-    ),
-    (
-        "rustleaks.anthropic-admin-api-key-escaped",
-        "anthropic-admin-api-key",
-        "sk-ant-admin01-",
-        93,
-        "AA",
-    ),
-    (
-        "rustleaks.digitalocean-refresh-token-escaped",
-        "digitalocean-refresh-token",
-        "dor_v1_",
-        64,
-        "",
-    ),
-];
-
-fn companion_body(prefix: &str, length: usize) -> String {
-    if prefix == "dor_v1_" {
-        "a7f2b9e4c1d80563".chars().cycle().take(length).collect()
-    } else {
-        body(length)
-    }
-}
-
-fn openai(role: &str, left: usize, right: usize) -> String {
-    format!("sk-{role}-{}T3BlbkFJ{}", body(left), body(right))
-}
-
 fn base() -> &'static NativeEngine {
     static ENGINE: OnceLock<NativeEngine> = OnceLock::new();
     ENGINE.get_or_init(|| NativePolicy::builder().build().unwrap())
@@ -743,26 +691,6 @@ fn flyv1_preserves_legacy_fly_forms_and_exact_new_capture() {
     }
 }
 
-fn companion_samples() -> Vec<(&'static str, String, &'static str)> {
-    let mut samples: Vec<_> = ESCAPED_CASES
-        .into_iter()
-        .map(|(id, _, prefix, length, tail)| {
-            (
-                id,
-                format!("{prefix}{}{tail}", companion_body(prefix, length)),
-                "\\\"",
-            )
-        })
-        .collect();
-    samples.push((
-        "rustleaks.openai-api-key-20-segment",
-        openai("proj", 20, 20),
-        ";",
-    ));
-    samples.push(("rustleaks.flyio-flyv1", format!("FlyV1 {}", body(100)), ";"));
-    samples
-}
-
 #[test]
 fn companion_bytes_case_repeats_and_locations_are_explicit() {
     for (id, secret, suffix) in companion_samples() {
@@ -923,32 +851,6 @@ fn companion_source_filters_and_multiline_capture_are_preserved() {
         format!("{secret};").as_bytes()
     );
     assert_eq!(findings[0].location(), Location::new(1, 2, 4, 102).unwrap());
-}
-
-// Distinct standalone provider forms selected from the pinned MIT source.
-// Lengths and expected roles are authored independently of the pack TOML.
-const STANDALONE_CASES: [(&str, &str, usize, usize, bool); 6] = [
-    ("rustleaks.cloudsmith-api-key", "csa_", 36, 36, false),
-    ("rustleaks.minimax-api-key", "sk-api-", 119, 119, true),
-    ("rustleaks.posthog-personal-api-key", "phx_", 41, 49, true),
-    (
-        "rustleaks.figma-personal-access-token",
-        "figd_",
-        38,
-        42,
-        true,
-    ),
-    ("rustleaks.togetherai-api-key", "tgp_v1_", 43, 43, true),
-    ("rustleaks.gcp-gemini-api", "AQ.Ab8RN6", 44, 44, false),
-];
-
-fn standalone_secret(prefix: &str, length: usize) -> String {
-    if prefix == "csa_" {
-        let hex: String = "a7f2b9e4c1d80563".chars().cycle().take(30).collect();
-        format!("{prefix}{hex}{}", body(length - 30))
-    } else {
-        token(prefix, length)
-    }
 }
 
 #[test]
@@ -1284,148 +1186,6 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
         assert!(!bounded.is_complete());
         assert_eq!(bounded.usage().finding_records(), 2);
         assert!(bounded.findings().is_empty());
-    }
-}
-
-// Expected syntax and role scopes authored from reviewed source definitions.
-// These cases deliberately distinguish source matches from provider validity.
-struct FollowupCase {
-    id: &'static str,
-    context: &'static str,
-    secret: String,
-    suffix: &'static str,
-    folded: bool,
-    contextual: bool,
-}
-
-fn hex_body(length: usize) -> String {
-    "a7f2b9e4c1d80563".chars().cycle().take(length).collect()
-}
-
-fn contextual_followup_cases() -> Vec<FollowupCase> {
-    let contexts = [
-        (
-            "checkout-secret-key",
-            "checkout",
-            format!(
-                "sk_{}-{}-{}-{}-{}",
-                hex_body(8),
-                hex_body(4),
-                hex_body(4),
-                hex_body(4),
-                hex_body(12)
-            ),
-        ),
-        ("crates-io-api-key", "crates.io", format!("cio{}", body(32))),
-        ("cursor-api-key", "cursor", format!("key_{}", hex_body(64))),
-        ("databento-api-key", "databento", format!("db-{}", body(29))),
-        (
-            "elevenlabs-api-key",
-            "elevenlabs",
-            format!("sk_{}", hex_body(48)),
-        ),
-        (
-            "figma-personal-access-header-token",
-            "x-figma-token",
-            format!(
-                "{}-{}-{}-{}-{}-{}",
-                hex_body(4),
-                hex_body(8),
-                hex_body(4),
-                hex_body(4),
-                hex_body(4),
-                hex_body(12)
-            ),
-        ),
-        (
-            "ollama-api-key",
-            "ollama",
-            format!("{}.{}", hex_body(32), body(24)),
-        ),
-        (
-            "polymarket-private-key",
-            "poly_private_key",
-            format!("0x{}", hex_body(64)),
-        ),
-        (
-            "stability-ai-api-key",
-            "stability",
-            format!("sk-{}", body(48)),
-        ),
-    ];
-    contexts
-        .into_iter()
-        .map(|(id, context, secret)| FollowupCase {
-            id: match id {
-                "checkout-secret-key" => "rustleaks.checkout-secret-key",
-                "crates-io-api-key" => "rustleaks.crates-io-api-key",
-                "cursor-api-key" => "rustleaks.cursor-api-key",
-                "databento-api-key" => "rustleaks.databento-api-key",
-                "elevenlabs-api-key" => "rustleaks.elevenlabs-api-key",
-                "figma-personal-access-header-token" => {
-                    "rustleaks.figma-personal-access-header-token"
-                }
-                "ollama-api-key" => "rustleaks.ollama-api-key",
-                "polymarket-private-key" => "rustleaks.polymarket-private-key",
-                "stability-ai-api-key" => "rustleaks.stability-ai-api-key",
-                _ => unreachable!(),
-            },
-            context,
-            secret,
-            suffix: ";",
-            folded: id != "polymarket-private-key",
-            contextual: true,
-        })
-        .collect()
-}
-
-fn followup_cases() -> Vec<FollowupCase> {
-    let mut cases = contextual_followup_cases();
-    for (id, secret, suffix) in [
-        (
-            "rustleaks.slack-session-cookie",
-            format!("xoxd-{}", body(100)),
-            "!",
-        ),
-        (
-            "rustleaks.slack-session-token",
-            format!("xoxc-174285963-963852741-582716349-{}", hex_body(64)),
-            "",
-        ),
-        (
-            "rustleaks.circleci-project-token",
-            format!("CCIPRJ_{}_{}", body(22), hex_body(40)),
-            "",
-        ),
-        (
-            "rustleaks.deno-organization-token",
-            format!("ddo_{}", body(36)),
-            "",
-        ),
-        ("rustleaks.xai-api-key-80", format!("xai-{}", body(80)), ""),
-        (
-            "rustleaks.postman-collection-token",
-            format!("PMAT-{}", body(26)),
-            "",
-        ),
-    ] {
-        cases.push(FollowupCase {
-            id,
-            context: "",
-            secret,
-            suffix,
-            folded: false,
-            contextual: false,
-        });
-    }
-    cases
-}
-
-fn followup_text(case: &FollowupCase) -> String {
-    if case.contextual {
-        format!("{}={}", case.context, case.secret)
-    } else {
-        case.secret.clone()
     }
 }
 
@@ -2279,25 +2039,6 @@ fn native_single_rule(rule: toml::Value) -> Engine {
         .unwrap()
 }
 
-const BYTE_CASES: [(&str, &str, usize, usize); 6] = [
-    (
-        "rustleaks.dockerhub-personal-access-token",
-        "dckr_pat_",
-        27,
-        27,
-    ),
-    (
-        "rustleaks.dockerhub-organization-access-token",
-        "dckr_oat_",
-        32,
-        32,
-    ),
-    ("rustleaks.neon-api-key", "napi_", 64, 64),
-    ("rustleaks.render-api-key", "rnd_", 28, 28),
-    ("rustleaks.deno-account-token", "ddp_", 36, 36),
-    ("rustleaks.apify-api-token", "apify_api_", 34, 38),
-];
-
 #[test]
 fn native_provider_pack_requires_native_loading_and_preserves_selected_metadata() {
     assert!(ConfigLoader::new().load_toml(PROVIDER_RULES_V1).is_err());
@@ -2776,9 +2517,6 @@ const WIDENED_IDS: [&str; 3] = [
     "rustleaks.slack-config-access-token-166",
     "rustleaks.xai-api-key-delimiter",
 ];
-const ALIBABA: &str = "rustleaks.alibaba-access-key-id-boundary";
-const SLACK_ACCESS: &str = "rustleaks.slack-config-access-token-166";
-const XAI: &str = "rustleaks.xai-api-key-delimiter";
 
 fn widened() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -2847,7 +2585,7 @@ fn assert_widened_none(input: &str) {
 #[test]
 fn alibaba_boundary_rule_accepts_17_to_21_bytes_between_word_boundaries() {
     for length in 17..=21 {
-        let secret = format!("LTAI{}", body(length));
+        let secret = alibaba_secret(length);
         // The source regex consumes no delimiter, so the match is the secret.
         for tail in ["\n", ",", ")", ""] {
             assert_widened(ALIBABA, &secret, tail, "");
@@ -2877,7 +2615,7 @@ fn alibaba_boundary_rule_accepts_17_to_21_bytes_between_word_boundaries() {
 #[test]
 fn slack_access_rule_accepts_one_to_ten_digits_and_a_166_byte_body() {
     for digits in ["1", "12", "1234567890"] {
-        let secret = format!("xoxe.xoxp-{digits}-{}", body(166));
+        let secret = slack_access_secret(digits);
         assert_widened(SLACK_ACCESS, &secret, "\n", "");
     }
     for input in [
@@ -2910,7 +2648,7 @@ fn slack_access_rule_accepts_one_to_ten_digits_and_a_166_byte_body() {
 #[test]
 fn xai_delimiter_rule_accepts_70_to_120_bytes_and_one_delimiter() {
     for length in [70, 80, 120] {
-        let secret = format!("xai-{}", body(length));
+        let secret = xai_secret(length);
         // A trailing LF is part of the regex match but public match text and
         // ranges trim surrounding newlines.
         for (tail, delimiter) in [
