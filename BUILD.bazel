@@ -16,6 +16,7 @@ filegroup(
         ".github/**",
         "*.md",
         "*.toml",
+        "benchmarks/**",
         "docs/**",
         "release/**",
     ]) + [

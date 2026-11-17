@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod comparison_quality;
 mod docs_check;
 mod fuzzing;
 mod performance;
@@ -88,6 +89,9 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "quality-check" => quality_check(),
         [command] if command == "miri-check" => miri_check(),
         [command] if command == "panic-abort-check" => panic_abort_check(),
+        [command, arguments @ ..] if command == "compare-quality" => {
+            comparison_quality::run(&workspace_root()?, arguments)
+        }
         [command, arguments @ ..] if command == "fuzz" => {
             fuzzing::run(&workspace_root()?, arguments)
         }
@@ -150,6 +154,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "fuzz",
     "generate",
     "perf",
+    "compare-quality",
 ];
 
 /// Subcommands accepted after `perf`.
@@ -167,7 +172,7 @@ fn usage() -> String {
     let commands = XTASK_COMMANDS
         .iter()
         .map(|command| match *command {
-            "release-artifact" | "security-deep" | "fuzz" | "generate" => {
+            "release-artifact" | "security-deep" | "fuzz" | "generate" | "compare-quality" => {
                 format!("{command} [ARGS]")
             }
             "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),
