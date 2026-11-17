@@ -182,11 +182,7 @@ fn usage() -> String {
     let commands = XTASK_COMMANDS
         .iter()
         .map(|command| match *command {
-            "release-artifact"
-            | "security-deep"
-            | "fuzz"
-            | "generate"
-            | "compare-quality"
+            "release-artifact" | "security-deep" | "fuzz" | "generate" | "compare-quality"
             | "compare-workloads" => {
                 format!("{command} [ARGS]")
             }
