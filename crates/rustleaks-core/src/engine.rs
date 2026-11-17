@@ -5515,7 +5515,16 @@ mod native_keyword_budget_tests {
             NativeKeyword::Ascii("absent".to_owned()),
         ]);
         let mut context = ScanContext::new(ScanControl::unlimited());
-        assert!(!native_keyword_gate(&rule, NativeKeywordLookup::UNSHARED, bytes, &lower, &mut context).unwrap());
+        assert!(
+            !native_keyword_gate(
+                &rule,
+                NativeKeywordLookup::UNSHARED,
+                bytes,
+                &lower,
+                &mut context
+            )
+            .unwrap()
+        );
         assert_eq!(context.usage.work_units(), 2 * (bytes.len() + 1));
         assert!(lower.get().is_none());
         rule.native_keywords = Some(vec![NativeKeyword::UnicodeLower("ø".to_owned())]);
@@ -5523,15 +5532,42 @@ mod native_keyword_budget_tests {
             ScanControl::unlimited()
                 .with_budget(ScanBudget::unlimited().max_work_units(2 * bytes.len())),
         );
-        assert!(native_keyword_gate(&rule, NativeKeywordLookup::UNSHARED, bytes, &lower, &mut context).is_err());
+        assert!(
+            native_keyword_gate(
+                &rule,
+                NativeKeywordLookup::UNSHARED,
+                bytes,
+                &lower,
+                &mut context
+            )
+            .is_err()
+        );
         assert!(lower.get().is_none());
         let mut context = ScanContext::new(ScanControl::unlimited());
-        assert!(!native_keyword_gate(&rule, NativeKeywordLookup::UNSHARED, bytes, &lower, &mut context).unwrap());
+        assert!(
+            !native_keyword_gate(
+                &rule,
+                NativeKeywordLookup::UNSHARED,
+                bytes,
+                &lower,
+                &mut context
+            )
+            .unwrap()
+        );
         // One lossy replacement for the incomplete two-byte suffix gives six
         // folded UTF-8 bytes. A later rule shares only this owning input's fold.
         assert_eq!(lower.get().unwrap(), "abc�");
         assert_eq!(context.usage.work_units(), 1 + 2 * bytes.len() + 6);
-        assert!(!native_keyword_gate(&rule, NativeKeywordLookup::UNSHARED, bytes, &lower, &mut context).unwrap());
+        assert!(
+            !native_keyword_gate(
+                &rule,
+                NativeKeywordLookup::UNSHARED,
+                bytes,
+                &lower,
+                &mut context
+            )
+            .unwrap()
+        );
         assert_eq!(context.usage.work_units(), 2 + 2 * bytes.len() + 12);
         assert_eq!(context.usage.normalization_bytes(), 0);
     }
