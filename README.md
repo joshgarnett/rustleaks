@@ -100,6 +100,7 @@ For people who work on Rustleaks:
 - [Rule pack authoring](docs/dev/rule-pack-authoring.md)
 - [Engine internals](docs/dev/engine-internals.md)
 - [Performance](docs/dev/performance.md)
+- [Scanner comparison](docs/dev/comparison.md)
 - [Dependencies](docs/dev/dependencies.md)
 - [Threat model](docs/dev/threat-model.md)
 - [Security checks](docs/dev/security-checks.md)

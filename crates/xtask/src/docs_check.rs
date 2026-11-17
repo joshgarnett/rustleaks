@@ -1190,6 +1190,7 @@ fn xtask_problems(prefix: &str, arguments: &[&str]) -> Vec<String> {
     let accepted = match command {
         "generate" => crate::tooling::GENERATE_TARGETS,
         "perf" => crate::PERF_SUBCOMMANDS,
+        "compare" => crate::comparison::COMPARE_SUBCOMMANDS,
         _ => return Vec::new(),
     };
     if accepted.contains(&argument) {

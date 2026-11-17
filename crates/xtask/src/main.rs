@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 mod build_system;
+mod comparison;
 mod docs_check;
 mod fuzzing;
 mod performance;
@@ -115,6 +116,9 @@ fn run(args: &[String]) -> Result<(), String> {
         {
             performance::representative(arguments)
         }
+        [command, arguments @ ..] if command == "compare" => {
+            comparison::run(&workspace_root()?, arguments)
+        }
         _ => Err(usage()),
     }
 }
@@ -150,6 +154,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "fuzz",
     "generate",
     "perf",
+    "compare",
 ];
 
 /// Subcommands accepted after `perf`.
@@ -171,6 +176,10 @@ fn usage() -> String {
                 format!("{command} [ARGS]")
             }
             "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),
+            "compare" => format!(
+                "compare <{}> [ARGS]",
+                comparison::COMPARE_SUBCOMMANDS.join("|")
+            ),
             _ => (*command).to_owned(),
         })
         .collect::<Vec<_>>();

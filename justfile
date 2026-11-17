@@ -83,6 +83,12 @@ perf-calibrate *arguments:
 perf-report *arguments:
     bazelisk run //crates/xtask:xtask -- perf report "$@"
 
+# Compare scanner binaries with the private cross-scanner comparison harness.
+[unix]
+[positional-arguments]
+compare *arguments:
+    bazelisk run //crates/xtask:xtask -- compare "$@"
+
 # Run formatting, lint, documentation, build, and eight-target compile gates.
 check: docs-check
     bazelisk test //:check
