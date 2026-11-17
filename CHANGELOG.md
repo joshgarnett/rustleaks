@@ -101,6 +101,11 @@
   such as `/dev/zero`, is skipped instead of opened. Before, such a link could
   block the scan or make it read without end. Links to regular files are
   scanned as before.
+- Document that report lines and columns describe the whole match, and that a
+  match ending after the last line break of a file has `EndLine` equal to
+  `StartLine` and `EndColumn` 0, as in Gitleaks. Document the location and
+  decoded findings of the `rustleaks.kubernetes-secret-yaml-long-context`
+  rule. Detection and report values do not change.
 
 The pinned default configuration and default detection behavior are unchanged.
 

@@ -586,6 +586,11 @@ pinned Apache-2.0 Veles detectors.
   marker lines, including indented marker-like lines, and rejects overlaps
   with a short-context default match. Mapping keys that start with
   `---suffix` or `...suffix` still match. It does not parse YAML.
+- The Kubernetes finding location is that of the whole match. It starts on
+  the `kind` or `data` line, not on the line of the data item. With decoding
+  on, a Base64 value whose decoded text also matches gives a second finding
+  with `decoded:base64` tags, as for the default `kubernetes-secret-yaml`
+  rule.
 - Cloudflare excludes the public `CF_ACCOUNT_ID`. Its forward ASCII context
   does not reproduce the Veles pair algorithm. It keeps the source terminal
   word boundary and adds no Betterleaks path or secret predicates.
