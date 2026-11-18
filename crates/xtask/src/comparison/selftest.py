@@ -358,6 +358,44 @@ def selftest_matching():
                    'commit-agnostic matching pairs a value found at different commits')
 
 
+def selftest_dense_matching():
+    """Many findings on one line stay fast and every finding reaches its
+    partner: by column for distinct values, by rank for values with no
+    usable column (decoded findings carry the column of the encoded run),
+    and the time limit stops scoring instead of running on."""
+
+    def value(index):
+        return 'TOKEN%08dabcdefghijkl' % index
+
+    count = 4000
+    left = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), columns=[40 * i + 1, 40 * i + 25])
+            for i in range(count)]
+    right = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), columns=[40 * i + 2, 40 * i + 25])
+             for i in reversed(range(count))]
+    started = time.monotonic()
+    result = score_compare(left, right, 'l', 'r')
+    selftest_check(result['matched'] == count, 'every finding on a crowded line is matched by column')
+    decoded_left = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), True, [1, 125000]) for i in range(count)]
+    decoded_right = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), True, [7, 9000])
+                     for i in reversed(range(count))]
+    selftest_check(score_compare(decoded_left, decoded_right, 'l', 'r')['matched'] == count,
+                   'decoded findings with one shared column are matched by text')
+    repeated = [adapter_finding('r', 'dense.txt', '', 1, 1, value(0), columns=[1, 2]) for _ in range(count)]
+    selftest_check(score_compare(repeated, list(repeated), 'l', 'r')['matched'] == count,
+                   'a value repeated on one line is matched one to one')
+    selftest_check(time.monotonic() - started < 120, 'dense matching finishes in bounded time')
+    score_limit_start(1e-9)
+    try:
+        time.sleep(0.01)
+        score_compare(left, right, 'l', 'r')
+        stopped = False
+    except ScoreTimeLimit:
+        stopped = True
+    finally:
+        SCORE_LIMIT.update({'deadline': None, 'hours': None})
+    selftest_check(stopped, 'the scoring time limit stops a comparison')
+
+
 def selftest_tool(directory, family, adapter, version):
     path = os.path.join(directory, 'fake-' + adapter)
     write_private(path, (FAKE_SCANNER % {'python': sys.executable, 'family': adapter}).encode())
@@ -496,6 +534,7 @@ def selftest_end_to_end():
 def selftest_main():
     selftest_units()
     selftest_matching()
+    selftest_dense_matching()
     selftest_adapters()
     selftest_end_to_end()
     selftest_guard_sample_timeout()

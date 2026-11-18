@@ -205,9 +205,19 @@ Every step of a run has a finite limit:
   `run time budget reached`, and their samples stay in `samples.jsonl`.
   `run.json` records the budget under `time_budget`, with whether it was
   reached, and the report lists it as a protocol deviation.
+- Scoring stops after `--score-hours` (default 12) on `compare run` and
+  `compare score`. Comparisons and quality rows not finished by then are
+  listed under "Not scored" in the report. Reading a labeled file from a
+  commit with `git show` stops after 10 minutes.
 
 At the end, the harness verifies the binary hashes, scores the kept reports
 and writes the report.
+
+Scoring work is bounded by input size. Each finding is compared with at most
+64 candidates: items with the same text, paired by rank in line and column
+order, and then the nearest items by line and column. Hints that explain
+unmatched items are computed for the first 5,000 per list, and `score.md`
+lists the first 1,000 rows of each list; `score.json` has every row.
 
 ## Lanes
 
