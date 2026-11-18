@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -23,6 +24,10 @@ use crate::args::{CommandKind, Invocation};
 /// description `v8.30.0-27-gb58d3f1`. A config `minVersion` above this
 /// version produces an advisory warning.
 const IMPLEMENTED_GITLEAKS_VERSION: &str = "8.30.0";
+
+/// Bytes in the longest ignore file line, without its line feed, that the
+/// core parser rejects. It matches the default Go scanner token limit.
+const IGNORE_LINE_LIMIT: u64 = 64 * 1024;
 
 pub(crate) struct ConfigAssembly {
     pub full: Arc<CompiledConfig>,
@@ -468,17 +473,31 @@ impl IgnoreLoader<'_> {
             .try_reserve(1)
             .map_err(|error| format!("could not retain ignore file path: {error}"))?;
         self.loaded.push(canonical);
-        let bytes = fs::read(&physical)
-            .map_err(|error| format!("could not read ignore file {}: {error}", shown.display()))?;
-        let display = clean_native_path(path).unwrap_or(shown);
+        let read_error =
+            |error: io::Error| format!("could not read ignore file {}: {error}", shown.display());
+        let mut reader = BufReader::new(fs::File::open(&physical).map_err(read_error)?);
+        let display = clean_native_path(path).unwrap_or_else(|_| shown.clone());
         let file = display.display();
-        // Feed one line at a time so each diagnostic can name its line. The
-        // parser splits on line feeds, so the installed entries are the same
-        // as for one call over the whole file.
-        for (index, line) in bytes.split_inclusive(|byte| *byte == b'\n').enumerate() {
+        // The scanned repository controls this file, so read one line at a
+        // time and never hold more than one line. Each diagnostic can then
+        // name its line. The parser splits on line feeds, so the installed
+        // entries are the same as for one call over the whole file.
+        let mut line = Vec::new();
+        for index in 0_usize.. {
+            line.clear();
+            // A line of IGNORE_LINE_LIMIT bytes or more is rejected by the
+            // parser whatever follows, so reading one more byte than the
+            // limit is enough to report it.
+            (&mut reader)
+                .take(IGNORE_LINE_LIMIT + 1)
+                .read_until(b'\n', &mut line)
+                .map_err(read_error)?;
+            if line.is_empty() {
+                break;
+            }
             let line_number = index.saturating_add(1);
             let mut stop = false;
-            for issue in self.ignores.extend_go_compatible(line) {
+            for issue in self.ignores.extend_go_compatible(&line) {
                 let warning = match issue {
                     IgnoreIssue::InvalidFieldCount { fields, .. } => {
                         let noun = if fields == 1 { "field" } else { "fields" };
@@ -725,6 +744,117 @@ mod tests {
             ]
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn load_ignore_file(name: &str, contents: &[u8]) -> (IgnoreSet, Vec<String>) {
+        let root = temporary_directory(name);
+        std::fs::write(root.join(".gitleaksignore"), contents).unwrap();
+        let mut ignores = IgnoreSet::default();
+        let mut warnings = Vec::new();
+        IgnoreLoader {
+            cwd: &root,
+            loaded: Vec::new(),
+            ignores: &mut ignores,
+            warnings: &mut warnings,
+        }
+        .append_if_file(Path::new(".gitleaksignore"))
+        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        (ignores, warnings)
+    }
+
+    fn entries(ignores: &IgnoreSet) -> Vec<&[u8]> {
+        ignores.iter().map(ByteText::as_bytes).collect()
+    }
+
+    #[test]
+    fn ignore_file_lines_keep_their_entries_and_line_numbers() {
+        let (ignores, warnings) = load_ignore_file(
+            "ignore-lines",
+            b"a.txt:rule:1\r\n# comment\n\n  dir\\b.txt:rule:2  \nabc:dir\\c.txt:rule:3\nbad\nlast:rule:4",
+        );
+        assert_eq!(
+            entries(&ignores),
+            [
+                b"a.txt:rule:1".as_slice(),
+                b"abc:dir/c.txt:rule:3",
+                b"bad",
+                b"dir/b.txt:rule:2",
+                b"last:rule:4",
+            ]
+        );
+        assert_eq!(
+            warnings,
+            ["ignore file entry has 1 field, expected 3 or 4 file=.gitleaksignore line=6"]
+        );
+    }
+
+    #[test]
+    fn ignore_file_line_limit_is_64_kib_without_the_line_feed() {
+        let limit = 64 * 1024;
+        let mut below = b"x:y:".to_vec();
+        below.resize(limit - 2, b'z');
+        below.extend_from_slice(b"\r\nnext:rule:1\n");
+        let (ignores, warnings) = load_ignore_file("ignore-below", &below);
+        assert_eq!(ignores.len(), 2);
+        assert!(ignores.contains(b"next:rule:1"));
+        assert!(warnings.is_empty());
+
+        let mut at = b"first:rule:1\n".to_vec();
+        at.resize(at.len() + limit, b'z');
+        at.extend_from_slice(b"\nnext:rule:2\n");
+        let (ignores, warnings) = load_ignore_file("ignore-at", &at);
+        assert_eq!(entries(&ignores), [b"first:rule:1".as_slice()]);
+        assert_eq!(
+            warnings,
+            [
+                "ignore file line is 64 KiB or longer, so it and later lines are skipped \
+              file=.gitleaksignore line=2"
+            ]
+        );
+    }
+
+    #[test]
+    fn ignore_file_stops_at_a_long_final_line_without_a_line_feed() {
+        let mut contents = b"first:rule:1\n".to_vec();
+        contents.resize(contents.len() + 4 * 1024 * 1024, b'z');
+        let (ignores, warnings) = load_ignore_file("ignore-long-final", &contents);
+        assert_eq!(entries(&ignores), [b"first:rule:1".as_slice()]);
+        assert_eq!(
+            warnings,
+            [
+                "ignore file line is 64 KiB or longer, so it and later lines are skipped \
+              file=.gitleaksignore line=2"
+            ]
+        );
+    }
+
+    #[test]
+    fn ignore_file_reading_matches_parsing_the_whole_file() {
+        let limit = 64 * 1024;
+        let mut cases: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            b"\n".to_vec(),
+            b"\r\n\r\n".to_vec(),
+            b"a:b:c".to_vec(),
+            b"a:b:c\n\n\nd:e:f:g\n".to_vec(),
+            b"one\ntwo:three\nfour:five:six:seven:eight\n".to_vec(),
+            b"\xef\xbb\xbfa:b:c\n\x85x:y:z\x85\n".to_vec(),
+        ];
+        for length in [limit - 1, limit, limit + 1] {
+            for suffix in [&b""[..], b"\n", b"\r\n", b"\nafter:rule:1\n"] {
+                let mut case = b"before:rule:1\n".to_vec();
+                case.resize(case.len() + length, b'q');
+                case.extend_from_slice(suffix);
+                cases.push(case);
+            }
+        }
+        for (index, case) in cases.iter().enumerate() {
+            let expected = IgnoreSet::parse_go_compatible(case);
+            let (ignores, warnings) = load_ignore_file(&format!("ignore-equal-{index}"), case);
+            assert_eq!(ignores, expected.ignores, "case {index}");
+            assert_eq!(warnings.len(), expected.issues.len(), "case {index}");
+        }
     }
 
     #[test]

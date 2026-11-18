@@ -20,6 +20,11 @@
   compatibility guarantees and can change. Findings, configuration meaning,
   report fields, exit codes, and supported Gitleaks commands, flags and
   environment variables stay compatible with the pinned Gitleaks revision.
+- Read `.gitleaksignore` and `.rustleaksignore` files one line at a time.
+  Rustleaks loads these files from the scanned folder, so the scanned
+  repository controls their size. Before, Rustleaks read the whole file into
+  memory before it checked the 64 KiB line limit. Entries, warnings and
+  errors do not change.
 - Add the `help [command]` command, which prints the same help as
   `<command> --help`, and the `completion <shell>` command, which prints a
   completion script for bash, zsh, fish or PowerShell. `completion` accepts
