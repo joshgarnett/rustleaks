@@ -28,7 +28,7 @@ Bazel servers stopped; load average and thermal state recorded by the harness.
 | ID | Version | Build | SHA-256 |
 | --- | --- | --- | --- |
 | rustleaks-0.1.0-alpha.9 | 0.1.0-alpha.9 | release archive | `e7967563da6a7e19901799ec0c5f366d4cab130fb1de90ba7252c1ecc521a1a9` |
-| rustleaks-main | main at `a83521cf5908b766af04df2186587203d02cac44` | `bazelisk build --config=release-macos-aarch64` | `e481014cb803c07e2f69557fe9dc49b253f14f242afc29dc7a6ce3eb51954402` |
+| rustleaks-main | main at FILL | `bazelisk build --config=release-macos-aarch64` | FILL |
 | gitleaks-8.30.1 | 8.30.1 | release archive (go-re2) | `ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f` |
 | betterleaks-1.10.1 | 1.10.1 | release archive | `13ac5109fa85a590c7ba6e7f130311e0c60a2bf582c3aac073176c93b46621a8` |
 | betterleaks-2.0.0-rc.8 | 2.0.0-rc.8 | release archive | `5253cd8409d5468c28c4f6b5aa88dd0d8dfcb6caab2faee7697fef66afb12d42` |
@@ -69,9 +69,9 @@ seed; random tool and workload order.
 | --- | --- | --- | --- | --- | --- |
 | R1 | public-repos, all 14 | dir | defaults (warm) | all 6 | headline throughput |
 | R2 | public-repos except linux and gitlab | git | defaults (warm) | all 6 | headline history |
-| R3 | linux, gitlab | git | defaults (warm) | rustleaks-main, gitleaks, betterleaks-2.0.0-rc.8, kingfisher | 1 run, no warmup: single observations, labeled as such, because one history scan takes many minutes |
+| R3 | linux, gitlab | git | defaults (warm) | rustleaks-main, gitleaks, betterleaks-2.0.0-rc.8, kingfisher | 1 run, no warmup, 8-hour sample timeout: single observations, labeled as such, because one history scan takes many minutes |
 | R4 | synthetic, 70 of 71 (`empty-stdin` is a stdin workload the harness does not run) | per workload | defaults (warm) | all 6 | tuned workloads reported apart |
-| R4c | tiny-positive, tiny-clean-file, tiny-clean-tree | dir | defaults (cold: fresh HOME) | all 6 | startup with empty tool caches |
+| R4c | tiny-positive, tiny-clean-file, tiny-clean-tree | dir | defaults (cold: fresh HOME, plus warm cells the harness requires) | all 6 | startup with empty tool caches |
 | R5 | rails, django, keyword-dense-16mib, mixed-source-16mib | dir, git | threads (1, 4, all), features, shared-rules, rustleaks-2x2 | all 6 | settings lanes |
 | R6 | held-out perf and git workloads | per workload | defaults, threads | all 6 | sealed inputs |
 | R7 | constructed-v1 and fixtures-matrix | dir | defaults | all 6 | quality only: 1 run, no warmup; timings not reported |
@@ -96,7 +96,7 @@ cargo xtask compare run --workloads W/public-repos.json --cache-root CACHE \
 # R3
 cargo xtask compare run --workloads W/public-repos.json --cache-root CACHE \
   --lanes defaults --cache warm --modes git --target-config run \
-  --workload linux --workload gitlab --warmups 0 --runs 1 \
+  --workload linux --workload gitlab --warmups 0 --runs 1 --timeout 28800 \
   --tool rustleaks-main --tool gitleaks-8.30.1 \
   --tool betterleaks-2.0.0-rc.8 --tool kingfisher-2.19.1
 # R4
@@ -104,7 +104,7 @@ cargo xtask compare run --workloads W/synthetic.json --cache-root CACHE \
   --lanes defaults --cache warm
 # R4c
 cargo xtask compare run --workloads W/synthetic.json --cache-root CACHE \
-  --lanes defaults --cache cold --workload tiny-positive \
+  --lanes defaults --cache warm,cold --workload tiny-positive \
   --workload tiny-clean-file --workload tiny-clean-tree
 # R5
 cargo xtask compare run --workloads W/public-repos.json \
@@ -147,6 +147,9 @@ the harness flags those cells.
   Scope differences (merges, unreachable commits, binaries) are reported as
   their own rows.
 - Every failed, skipped, timed-out or flagged cell is listed with its reason.
+- Scoring compares each finding with at most 64 candidates (same text first,
+  then nearest by line and column) and stops after `--score-hours`
+  (default 12). Unfinished scoring is listed as not scored.
 
 ## Disclosures
 
@@ -160,3 +163,14 @@ the harness flags those cells.
 - Inputs used during Rustleaks development: the 19 tuned synthetic
   workloads and the Rustleaks pack fixtures.
 - The page cache is not purged between runs; cold cells use a fresh HOME only.
+- Rustleaks scans with one detection worker unless `--complete-profile`
+  sets more. Lanes with more than one Rustleaks worker therefore use a
+  complete profile, which turns every coverage gap into exit code 2. An
+  input with a damaged archive (django has one in its tests) makes those
+  cells fail where other tools print a warning.
+- Rustleaks 0.1.0-alpha.9 has no `--complete-profile` or `--native-pack`, so
+  its thread, features, shared-rules and 2x2 cells are skipped.
+- Kingfisher reports each distinct value once by default and picks one of
+  its locations. Which location it picks can change between runs, so its
+  finding set can differ between samples while the count stays the same.
+  The features lane also runs it with `--no-dedup`.
