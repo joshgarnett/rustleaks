@@ -43,6 +43,12 @@
   `Baseline::from_go_json`, so the core engine no longer reads it.
   `Baseline::load_go_json` stays as a wrapper for library users. Baseline
   matches, warnings and errors do not change.
+- Keep at most 10,000 source warnings and errors, such as unreadable or
+  skipped files, in a scan without `--complete-profile`. Before, Rustleaks
+  kept every one in memory until the end of the scan. Later ones are
+  counted, and one log line, such as "15000 more source warnings and errors
+  were not shown", gives their number. The scan, its exit code and its
+  report do not change.
 - Add the `help [command]` command, which prints the same help as
   `<command> --help`, and the `completion <shell>` command, which prints a
   completion script for bash, zsh, fish or PowerShell. `completion` accepts

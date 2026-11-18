@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use rustleaks_core::Engine;
 use rustleaks_core::model::{ByteText, ScanOptions};
 use rustleaks_sources::{
-    CancellationToken, RemoteMetadata, ScmPlatform, SourceIssueKind, SourceRunner,
+    CancellationToken, RemoteMetadata, ScmPlatform, SourceIssue, SourceIssueKind, SourceRunner,
     SourceTermination,
 };
 
@@ -306,34 +306,12 @@ fn run_scan_inner<R: Read + Send + 'static>(
     finish_timer(timer.take());
     status.observe(&outcome);
 
-    for issue in outcome.issues() {
-        let path = issue
-            .path()
-            .map_or_else(String::new, |path| format!(" {}", path.display()));
-        if source_issue_is_error(issue.kind()) {
-            if log_level.shows_error() {
-                let _ = output::error(
-                    stderr,
-                    format_args!(
-                        "source {:?}/{:?}{path}: {}",
-                        issue.stage(),
-                        issue.kind(),
-                        issue.message()
-                    ),
-                );
-            }
-        } else if log_level.shows_warn() {
-            let _ = output::warn(
-                stderr,
-                format_args!(
-                    "source {:?}/{:?}{path}: {}",
-                    issue.stage(),
-                    issue.kind(),
-                    issue.message()
-                ),
-            );
-        }
-    }
+    log_source_issues(
+        stderr,
+        outcome.issues(),
+        outcome.omitted_issues(),
+        log_level,
+    );
     let partial = if profile.is_some() {
         !status.is_complete()
     } else {
@@ -433,6 +411,54 @@ fn run_scan_inner<R: Read + Send + 'static>(
         0
     } else {
         invocation.options.exit_code
+    }
+}
+
+/// Logs each retained source issue and, when the runner kept only the first
+/// issues, one line with the number it did not keep.
+fn log_source_issues(
+    stderr: &mut dyn Write,
+    issues: &[SourceIssue],
+    omitted: u64,
+    log_level: LogLevel,
+) {
+    for issue in issues {
+        let path = issue
+            .path()
+            .map_or_else(String::new, |path| format!(" {}", path.display()));
+        if source_issue_is_error(issue.kind()) {
+            if log_level.shows_error() {
+                let _ = output::error(
+                    stderr,
+                    format_args!(
+                        "source {:?}/{:?}{path}: {}",
+                        issue.stage(),
+                        issue.kind(),
+                        issue.message()
+                    ),
+                );
+            }
+        } else if log_level.shows_warn() {
+            let _ = output::warn(
+                stderr,
+                format_args!(
+                    "source {:?}/{:?}{path}: {}",
+                    issue.stage(),
+                    issue.kind(),
+                    issue.message()
+                ),
+            );
+        }
+    }
+    if omitted > 0 {
+        // The omitted issues can be warnings or errors, so show the line at
+        // the lowest level that the log level shows.
+        let message = format!("{omitted} more source warnings and errors were not shown");
+        if log_level.shows_warn() {
+            let _ = output::warn(stderr, &message);
+        } else if log_level.shows_error() {
+            let _ = output::error(stderr, &message);
+        }
     }
 }
 
@@ -764,6 +790,61 @@ mod tests {
             legacy_config_path: None,
             legacy_config_toml: None,
         }
+    }
+
+    #[test]
+    fn omitted_source_issues_are_summarized_in_one_line() {
+        let issues = [
+            SourceIssue::new(
+                rustleaks_sources::SourceStage::Traverse,
+                SourceIssueKind::Read,
+                Some(PathBuf::from("a.txt")),
+                "read failed",
+            ),
+            SourceIssue::new(
+                rustleaks_sources::SourceStage::Traverse,
+                SourceIssueKind::DanglingSymlink,
+                None,
+                "dangling",
+            ),
+        ];
+        let log = |omitted, level| {
+            let mut stderr = Vec::new();
+            log_source_issues(&mut stderr, &issues, omitted, level);
+            String::from_utf8(stderr)
+                .unwrap()
+                .lines()
+                .map(|line| line.split_once(' ').unwrap().1.to_owned())
+                .collect::<Vec<_>>()
+        };
+        let read = "source Traverse/Read a.txt: read failed";
+        let dangling = "source Traverse/DanglingSymlink: dangling";
+        assert_eq!(log(0, LogLevel::Info), [read, dangling]);
+        assert_eq!(
+            log(15_000, LogLevel::Warn),
+            [
+                read,
+                dangling,
+                "15000 more source warnings and errors were not shown"
+            ]
+        );
+        assert_eq!(
+            log(1, LogLevel::Error),
+            [dangling, "1 more source warnings and errors were not shown"]
+        );
+        assert!(log(1, LogLevel::Fatal).is_empty());
+
+        let mut stderr = Vec::new();
+        log_source_issues(&mut stderr, &issues[..1], 2, LogLevel::Warn);
+        let stderr = String::from_utf8(stderr).unwrap();
+        let prefixes = stderr
+            .lines()
+            .map(|line| line.split_once(' ').unwrap().0)
+            .collect::<Vec<_>>();
+        assert_eq!(prefixes, ["warn", "warn"]);
+        let mut stderr = Vec::new();
+        log_source_issues(&mut stderr, &[], 2, LogLevel::Error);
+        assert!(String::from_utf8(stderr).unwrap().starts_with("error "));
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub enum SourceTermination {
 pub struct SourceOutcome {
     findings: Vec<Finding>,
     issues: Vec<SourceIssue>,
+    omitted_issues: u64,
     termination: SourceTermination,
     scanned_bytes: u64,
     unique_commits: Vec<ByteText>,
@@ -60,6 +61,19 @@ struct SourceStatistics {
 // Far above the commit count of large public histories, such as about
 // 1.3 million in Linux. It bounds the retained commit identities.
 const MAX_UNIQUE_COMMITS: usize = 100_000_000;
+
+/// Source issues that a run without a budget keeps. Later source issues are
+/// only counted. A budget run keeps its own explicit issue limit instead.
+const MAX_RETAINED_ISSUES: usize = 10_000;
+
+/// Keeps the first [`MAX_RETAINED_ISSUES`] issues and counts the rest.
+fn retain_issue(issues: &mut Vec<SourceIssue>, omitted: &mut u64, issue: SourceIssue) {
+    if issues.len() < MAX_RETAINED_ISSUES {
+        issues.push(issue);
+    } else {
+        *omitted = omitted.saturating_add(1);
+    }
+}
 
 impl Default for SourceStatistics {
     fn default() -> Self {
@@ -133,10 +147,24 @@ impl SourceOutcome {
 
     /// Returns retained source issues in producer order, followed by runner
     /// issues. An explicit source budget can cap the collection; rejecting a
-    /// further source issue returns incomplete budget termination.
+    /// further source issue returns incomplete budget termination. Without a
+    /// budget, the first 10,000 source issues are retained and later ones are
+    /// counted by [`Self::omitted_issues`].
     #[must_use]
     pub fn issues(&self) -> &[SourceIssue] {
         &self.issues
+    }
+
+    const fn with_omitted_issues(mut self, omitted: u64) -> Self {
+        self.omitted_issues = omitted;
+        self
+    }
+
+    /// Returns the number of source issues that a run without a budget did not
+    /// retain because it already held 10,000. Budget runs return 0.
+    #[must_use]
+    pub const fn omitted_issues(&self) -> u64 {
+        self.omitted_issues
     }
 
     /// Returns how the run terminated after every worker was joined.
@@ -334,6 +362,7 @@ impl SourceRunner {
         let (sender, receiver) = mpsc::sync_channel::<Job>(self.queue_capacity());
         let receiver = Arc::new(Mutex::new(receiver));
         let mut issues = Vec::new();
+        let mut omitted_issues = 0_u64;
         let mut source_result = Ok(SourceControl::Continue);
         let mut worker_panicked = false;
         let mut batches = Vec::new();
@@ -382,12 +411,12 @@ impl SourceRunner {
                     )?;
                     let fragment = match event {
                         SourceEvent::Issue(issue) => {
-                            issues.push(issue);
+                            retain_issue(&mut issues, &mut omitted_issues, issue);
                             return Ok(SourceControl::Continue);
                         }
                         SourceEvent::Fragment { fragment, issue } => {
                             if let Some(issue) = issue {
-                                issues.push(issue);
+                                retain_issue(&mut issues, &mut omitted_issues, issue);
                                 // Pinned DetectSource treats any callback issue
                                 // as non-scannable even when the same read
                                 // returned bytes. The source event retains them
@@ -441,6 +470,7 @@ impl SourceRunner {
             cancellation.is_cancelled(),
             statistics,
         )
+        .with_omitted_issues(omitted_issues)
     }
 }
 
@@ -713,6 +743,7 @@ fn finish_run(
     SourceOutcome {
         findings: session.into_findings(),
         issues,
+        omitted_issues: 0,
         termination,
         scanned_bytes: statistics.scanned_bytes,
         unique_commits: statistics.unique_commits,
@@ -1505,5 +1536,83 @@ regex = '''B'''
             );
             assert_eq!(secrets(&outcome), expected, "{workers} workers");
         }
+    }
+
+    /// Emits `issues` source issues, alternating plain and fragment-coupled
+    /// issues, then one fragment with a token.
+    struct ManyIssues(usize);
+
+    impl Source for ManyIssues {
+        fn visit(
+            &mut self,
+            _: &dyn crate::Cancellation,
+            emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+        ) -> Result<SourceControl, SourceError> {
+            for index in 0..self.0 {
+                let issue = SourceIssue::new(
+                    SourceStage::Traverse,
+                    SourceIssueKind::Read,
+                    None,
+                    format!("issue {index}"),
+                );
+                let event = if index % 2 == 0 {
+                    SourceEvent::Issue(issue)
+                } else {
+                    SourceEvent::Fragment {
+                        fragment: Box::new(Fragment::new("token-0a")),
+                        issue: Some(issue),
+                    }
+                };
+                emit(event).map_err(SourceError::Callback)?;
+            }
+            emit(SourceEvent::fragment(Fragment::new("token-1a"))).map_err(SourceError::Callback)
+        }
+    }
+
+    #[test]
+    fn runs_without_a_budget_keep_the_first_10_000_source_issues() {
+        assert_eq!(MAX_RETAINED_ISSUES, 10_000);
+        let engine = token_engine();
+        for (issues, omitted) in [
+            (0, 0),
+            (9_999, 0),
+            (10_000, 0),
+            (10_001, 1),
+            (25_000, 15_000),
+        ] {
+            let outcome = SourceRunner::new(2, 2).unwrap().run(
+                &mut ManyIssues(issues),
+                &engine,
+                ScanOptions::default(),
+                &SessionPolicy::default(),
+                &CancellationToken::new(),
+            );
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert_eq!(outcome.issues().len(), issues.min(10_000), "{issues}");
+            assert_eq!(outcome.omitted_issues(), omitted, "{issues}");
+            for (index, issue) in outcome.issues().iter().enumerate() {
+                assert_eq!(issue.message(), format!("issue {index}"));
+            }
+            // Fragments coupled to an issue are not scanned, whether or not
+            // the issue was kept.
+            assert_eq!(secrets(&outcome), ["token-1a"], "{issues}");
+        }
+    }
+
+    #[test]
+    fn runner_issues_are_kept_after_the_source_issue_limit() {
+        let outcome = SourceRunner::new(1, 1).unwrap().run_with_worker(
+            &mut ManyIssues(10_001),
+            &SessionPolicy::default(),
+            &CancellationToken::new(),
+            |_| panic!("worker panic for the test"),
+        );
+        assert_eq!(outcome.termination(), &SourceTermination::WorkerPanic);
+        assert_eq!(outcome.issues().len(), 10_001);
+        assert_eq!(outcome.omitted_issues(), 1);
+        assert_eq!(
+            outcome.issues().last().unwrap().kind(),
+            SourceIssueKind::WorkerPanic
+        );
     }
 }

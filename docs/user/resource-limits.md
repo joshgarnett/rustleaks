@@ -33,6 +33,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | One path in Git output | 1 MiB | Profile key `git_path_bytes` | The scan stops with exit code 1. |
 | Changed files and diff hunks in one commit | 1,000,000 files, 2,000,000 hunks | Profile keys `git_files` and `git_hunks` | The scan stops with exit code 1. |
 | Distinct commits counted | 100,000,000 | Fixed | The scan stops with exit code 1. |
+| Source warnings and errors kept, such as unreadable or skipped files | 10,000 | Profile key `operation_issues` | Later ones are counted, not kept, and one log line gives their number. The scan goes on, and the exit code and report do not change. |
 | Time | No limit | `--timeout N` seconds | The scan stops with exit code 1 and reports what it found so far. |
 | Detection work and finding memory | No limit | Profile keys that start with `fragment_` and `operation_` | The scan stops and is incomplete (exit 2). |
 
