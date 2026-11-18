@@ -38,7 +38,7 @@ and fail when that boundary changes.
 | Decoders and locations | `rustleaks-core/src/decoder/`, `model.rs` | Caller decode depth, decoded bytes and work in budgets, checked offsets | Decoder, arbitrary bytes, locations, parity, `fragment_scan` fuzz |
 | Files and directories | `rustleaks-sources/src/file.rs`, `directory.rs`, `path.rs`, `runner.rs`, `runner/budget.rs` | Bounded chunks and queue, optional complete targets, symlink hop limit 64, path normalization, optional budgets, workers joined | File, directory, path, symlink escape, chunking, complete-target, cancellation, budget and panic cleanup tests |
 | Archives | `rustleaks-sources/src/archive.rs`, codec forks, selected decoders | No extraction to disk, no link following, checked coder graphs, depth 8, 10,000 entries, 64 MiB member, 256 MiB total, 64 MiB spool | Format fixtures, traversal, link, bomb and nesting tests, panic policy example, `archive` fuzz |
-| Git and links | `rustleaks-sources/src/git.rs`, `scm.rs` | No shell, option terminators, isolated Git config, hooks and prompts off, no credential helper, bounded output, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
+| Git and links | `rustleaks-sources/src/git.rs`, `scm.rs` | No shell, option terminators, isolated Git config, hooks and prompts off, no credential helper, streamed output with limits for each commit, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
 | Reports and CLI | `rustleaks-report/src/`, `rustleaks-cli/src/args.rs`, `output.rs`, `run.rs` | JSON and XML escaping, bounded templates, `--redact` before output, escaped terminal control characters, counts instead of values in diagnostics | Report and CLI corpora, invalid byte, terminal control and redaction tests, template properties and fuzz |
 | Dependencies | `Cargo.lock`, `deny.toml`, `supply-chain/`, `supply-chain-exceptions.toml` | Locked versions and sources, vet inventory, license, advisory, ban, build script, native code and unsafe policy | `just security`, cargo-deny, RustSec, cargo-vet, cargo-geiger, Miri |
 | Bazel and local tools | `MODULE.bazel`, lockfiles, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned toolchains and lockfiles, declared inputs, exact tool versions, private bounded output, verified process cleanup | `just ci`, build system checks, package consumers, target compile matrix |
@@ -134,7 +134,12 @@ See [Using rustleaks-core](../user/library.md#review-records).
 
 - Git is an external program. Behavior depends on the installed Git and the
   host file system.
-- Fuzzing covers the patch parser in process. It does not run Git.
+- Fuzzing covers the patch parser in process. It does not run Git. Each
+  input is also parsed in one-byte and varied chunks, which must give the
+  same result as the whole input.
+- Git output is parsed while Git runs. Memory follows the largest file record
+  of one commit. Commit identities that the runner keeps for its count grow
+  with the history, up to 100,000,000 commits.
 
 ### Reports and CLI
 

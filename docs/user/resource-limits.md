@@ -26,13 +26,13 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | File size | No limit | `--max-target-megabytes N` (N times 1,000,000 bytes) | Warning; the file is skipped. |
 | Size of one scanned piece of a file | About 100,000 bytes | Profile key `target_bytes`, which makes each file one piece | Larger files are scanned in several pieces. |
 | Symbolic link hops | 64 | Fixed | Warning; the link is skipped. |
-| `git log` or `git diff` output | 256 MiB and 2,000,000 lines | Profile keys `git_patch_bytes` and `git_patch_lines` | The scan stops with exit code 1. |
+| `git log` or `git diff` output for one commit | 1 GiB and 16,000,000 lines | Profile keys `git_patch_bytes` and `git_patch_lines` | The scan stops with exit code 1. |
 | Git error output kept | 1 MiB | Profile key `git_stderr_bytes` | The scan stops with exit code 1. |
 | One archive file read from Git | 256 MiB | Profile key `git_blob_bytes` | The scan stops with exit code 1. |
-| Commit metadata | 16 MiB | Profile key `git_metadata_bytes` | The scan stops with exit code 1. |
+| Metadata of one commit | 16 MiB | Profile key `git_metadata_bytes` | The scan stops with exit code 1. |
 | One path in Git output | 1 MiB | Profile key `git_path_bytes` | The scan stops with exit code 1. |
-| Changed files and diff hunks in Git output | 1,000,000 files, 2,000,000 hunks | Profile keys `git_files` and `git_hunks` | The scan stops with exit code 1. |
-| Distinct commits counted | 1,000,000 | Fixed | The scan stops with exit code 1. |
+| Changed files and diff hunks in one commit | 1,000,000 files, 2,000,000 hunks | Profile keys `git_files` and `git_hunks` | The scan stops with exit code 1. |
+| Distinct commits counted | 100,000,000 | Fixed | The scan stops with exit code 1. |
 | Time | No limit | `--timeout N` seconds | The scan stops with exit code 1 and reports what it found so far. |
 | Detection work and finding memory | No limit | Profile keys that start with `fragment_` and `operation_` | The scan stops and is incomplete (exit 2). |
 
@@ -50,6 +50,19 @@ between releases, so measure them again before you reuse work limits.
 `--timeout` is checked between steps. A single long step, such as one pattern
 search over a large input, finishes before the scan stops. The timeout is not
 a hard deadline.
+
+### Git history
+
+Rustleaks reads `git log` output while Git runs. It keeps one changed file of
+one commit in memory at a time, so the memory for Git output follows the
+largest change, not the length of the history. The Git limits above apply to
+each commit, from one `commit` line of the output to the next. No limit
+applies to the total size of the history. A `git diff`, used by `--staged`
+and `--pre-commit`, has no commits, so its whole output counts as one commit.
+
+When Git fails, or a later commit reaches a limit or cannot be read, the scan
+stops with exit code 1. The report can then hold findings from the commits
+before that point.
 
 ### Limits on input you give Rustleaks
 

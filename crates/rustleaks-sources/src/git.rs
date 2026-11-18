@@ -3,9 +3,11 @@ use std::fmt;
 use std::io::{self, Read};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
+#[cfg(any(test, feature = "archives"))]
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::thread;
 use std::time::Duration;
 
@@ -18,14 +20,20 @@ use crate::{
     SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
-const DEFAULT_MAX_PATCH_BYTES: usize = 256 * 1024 * 1024;
-const DEFAULT_MAX_PATCH_LINES: usize = 2_000_000;
+// Patch, line, file, hunk and metadata ceilings apply to one commit. History
+// output is parsed one file record at a time, so these values do not bound
+// the size of a whole history.
+const DEFAULT_MAX_PATCH_BYTES: usize = 1024 * 1024 * 1024;
+const DEFAULT_MAX_PATCH_LINES: usize = 16_000_000;
 const DEFAULT_MAX_STDERR_BYTES: usize = 1024 * 1024;
 const DEFAULT_MAX_BLOB_BYTES: usize = 256 * 1024 * 1024;
 const DEFAULT_MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_PATH_BYTES: usize = 1024 * 1024;
 const DEFAULT_MAX_FILES: usize = 1_000_000;
 const DEFAULT_MAX_HUNKS: usize = 2_000_000;
+const STDOUT_CHUNK_BYTES: usize = 64 * 1024;
+const STDOUT_QUEUE_CHUNKS: usize = 16;
+const COMMAND_POLL: Duration = Duration::from_millis(2);
 
 /// Git history or worktree/index selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,7 +59,12 @@ impl Default for GitMode {
     }
 }
 
-/// Checked memory ceilings for Git subprocess output and archive blobs.
+/// Checked ceilings for Git subprocess output and archive blobs.
+///
+/// Rustleaks reads `git log` and `git diff` output while Git runs. The patch
+/// byte, patch line, file, hunk and metadata ceilings apply to the output of
+/// one commit, from its `commit` line to the next one. A `git diff` has no
+/// commit lines, so its whole output is one commit for these ceilings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GitLimits {
     patch: NonZeroUsize,
@@ -93,7 +106,7 @@ impl GitLimits {
     }
 
     /// Replaces parser-state ceilings for one commit's metadata, one path,
-    /// total parsed files, and total parsed hunks.
+    /// the files of one commit, and the hunks of one commit.
     ///
     /// # Errors
     ///
@@ -116,13 +129,13 @@ impl GitLimits {
         Ok(self)
     }
 
-    /// Returns the retained patch-output ceiling.
+    /// Returns the patch-output ceiling for one commit.
     #[must_use]
     pub const fn patch_bytes(self) -> usize {
         self.patch.get()
     }
 
-    /// Returns the parsed patch line-count ceiling.
+    /// Returns the patch line-count ceiling for one commit.
     #[must_use]
     pub const fn patch_lines(self) -> usize {
         self.lines.get()
@@ -152,13 +165,13 @@ impl GitLimits {
         self.path.get()
     }
 
-    /// Returns the parsed file-count ceiling.
+    /// Returns the file-count ceiling for one commit.
     #[must_use]
     pub const fn files(self) -> usize {
         self.files.get()
     }
 
-    /// Returns the total parsed hunk-count ceiling.
+    /// Returns the hunk-count ceiling for one commit.
     #[must_use]
     pub const fn hunks(self) -> usize {
         self.hunks.get()
@@ -312,10 +325,6 @@ impl GitSource {
 }
 
 impl Source for GitSource {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the source lifecycle remains auditable in one flow"
-    )]
     fn visit(
         &mut self,
         cancellation: &dyn Cancellation,
@@ -324,33 +333,39 @@ impl Source for GitSource {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
-        let output = collect_command(
-            &self.executable,
-            &self.arguments(),
-            self.limits.patch_bytes(),
-            self.limits.stderr_bytes(),
-            &self.environment,
+        let this = &*self;
+        let mut stream = PatchStream::new(this.limits);
+        // Each file record is parsed and emitted once the next record starts,
+        // so memory follows the largest record instead of the whole history.
+        // The last record waits for Git to exit successfully.
+        let output = stream_command(
+            &this.executable,
+            &this.arguments(),
+            this.limits.stderr_bytes(),
+            &this.environment,
             cancellation,
             SourceStage::GitCommand,
+            &mut |chunk| {
+                stream
+                    .push(chunk)
+                    .map_err(|error| patch_error_to_source(error, &this.repository))?;
+                this.emit_ready_files(&mut stream, cancellation, emit)
+            },
         )?;
+        if output.stopped {
+            return Ok(SourceControl::Stop);
+        }
         if output.stderr_limited {
             return Err(terminal(
                 SourceStage::Limit,
-                Some(self.repository.clone()),
+                Some(this.repository.clone()),
                 "Git standard error exceeded its configured byte ceiling",
-            ));
-        }
-        if output.stdout_limited {
-            return Err(terminal(
-                SourceStage::Limit,
-                Some(self.repository.clone()),
-                "Git patch output exceeded its configured byte ceiling",
             ));
         }
         if !output.status.is_some_and(|status| status.success()) {
             return Err(terminal(
                 SourceStage::GitExit,
-                Some(self.repository.clone()),
+                Some(this.repository.clone()),
                 git_exit_message(output.status, &output.stderr),
             ));
         }
@@ -358,7 +373,7 @@ impl Source for GitSource {
             let control = emit(SourceEvent::Issue(SourceIssue::new(
                 SourceStage::GitCommand,
                 SourceIssueKind::GitStderr,
-                Some(self.repository.clone()),
+                Some(this.repository.clone()),
                 "stderr is not empty",
             )))
             .map_err(SourceError::Callback)?;
@@ -366,88 +381,91 @@ impl Source for GitSource {
                 return Ok(control);
             }
         }
-        let files = match parse_patch(&output.stdout, self.limits, cancellation) {
-            Ok(files) => files,
-            Err(PatchError::Cancelled) => return Err(SourceError::Cancelled),
-            Err(PatchError::Limit(message)) => {
-                return Err(terminal(
-                    SourceStage::Limit,
-                    Some(self.repository.clone()),
-                    message,
-                ));
+        stream.finish();
+        this.emit_ready_files(&mut stream, cancellation, emit)
+    }
+}
+
+impl GitSource {
+    fn emit_ready_files(
+        &self,
+        stream: &mut PatchStream,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        while let Some(file) = stream
+            .next_file(cancellation)
+            .map_err(|error| patch_error_to_source(error, &self.repository))?
+        {
+            if self.emit_file(file, cancellation, emit)? == SourceControl::Stop {
+                return Ok(SourceControl::Stop);
             }
-            Err(PatchError::Invalid(message)) => {
-                return Err(terminal(
-                    SourceStage::GitParse,
-                    Some(self.repository.clone()),
-                    message,
-                ));
+        }
+        Ok(SourceControl::Continue)
+    }
+
+    fn emit_file(
+        &self,
+        mut file: ParsedFile,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        if cancellation.is_cancelled() {
+            return Err(SourceError::Cancelled);
+        }
+        if file.deleted {
+            return Ok(SourceControl::Continue);
+        }
+        if file.binary {
+            #[cfg(feature = "archives")]
+            if let Some(options) = self.archives.clone()
+                && crate::archive::name_is_archive(
+                    &file.path,
+                    self.archive_file_options.complete_target_bytes().is_some(),
+                )
+            {
+                return self.visit_archive_blob(&file, options, cancellation, emit);
             }
-        };
-        // Parsed files own their bytes; raw command output is no longer needed.
-        drop(output);
-        for mut file in files {
-            if cancellation.is_cancelled() {
-                return Err(SourceError::Cancelled);
-            }
-            if file.deleted {
-                continue;
-            }
-            if file.binary {
-                #[cfg(feature = "archives")]
-                if let Some(options) = self.archives.clone()
-                    && crate::archive::name_is_archive(
-                        &file.path,
-                        self.archive_file_options.complete_target_bytes().is_some(),
-                    )
-                {
-                    let control = self.visit_archive_blob(&file, options, cancellation, emit)?;
-                    if control == SourceControl::Stop {
-                        return Ok(control);
-                    }
-                }
-                continue;
-            }
-            let mut hunks = file.hunks.into_iter().peekable();
-            while let Some(hunk) = hunks.next() {
-                let (path, commit, metadata) = if hunks.peek().is_none() {
-                    // Parsing already checked these limits. The final hunk can
-                    // consume the fields that earlier hunks still need to copy.
-                    (
-                        std::mem::take(&mut file.path),
-                        std::mem::take(&mut file.commit),
-                        file.metadata.take(),
-                    )
-                } else {
-                    let path =
-                        copy_limited(&file.path, self.limits.path_bytes(), "Git fragment path")
-                            .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                    let commit = copy_limited(
-                        &file.commit,
-                        self.limits.metadata_bytes(),
-                        "Git fragment commit SHA",
-                    )
+            return Ok(SourceControl::Continue);
+        }
+        let mut hunks = file.hunks.into_iter().peekable();
+        while let Some(hunk) = hunks.next() {
+            let (path, commit, metadata) = if hunks.peek().is_none() {
+                // Parsing already checked these limits. The final hunk can
+                // consume the fields that earlier hunks still need to copy.
+                (
+                    std::mem::take(&mut file.path),
+                    std::mem::take(&mut file.commit),
+                    file.metadata.take(),
+                )
+            } else {
+                let path = copy_limited(&file.path, self.limits.path_bytes(), "Git fragment path")
                     .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                    let metadata = file
-                        .metadata
-                        .as_ref()
-                        .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
-                        .transpose()
-                        .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                    (path, commit, metadata)
-                };
-                let mut builder = Fragment::builder(hunk.added)
-                    .file_path(path)
-                    .commit(commit)
-                    .start_line(hunk.new_position);
-                if let Some(metadata) = metadata {
-                    builder = builder.commit_metadata(metadata);
-                }
-                let control =
-                    emit(SourceEvent::fragment(builder.build())).map_err(SourceError::Callback)?;
-                if control == SourceControl::Stop {
-                    return Ok(control);
-                }
+                let commit = copy_limited(
+                    &file.commit,
+                    self.limits.metadata_bytes(),
+                    "Git fragment commit SHA",
+                )
+                .map_err(|error| patch_error_to_source(error, &self.repository))?;
+                let metadata = file
+                    .metadata
+                    .as_ref()
+                    .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
+                    .transpose()
+                    .map_err(|error| patch_error_to_source(error, &self.repository))?;
+                (path, commit, metadata)
+            };
+            let mut builder = Fragment::builder(hunk.added)
+                .file_path(path)
+                .commit(commit)
+                .start_line(hunk.new_position);
+            if let Some(metadata) = metadata {
+                builder = builder.commit_metadata(metadata);
+            }
+            let control =
+                emit(SourceEvent::fragment(builder.build())).map_err(SourceError::Callback)?;
+            if control == SourceControl::Stop {
+                return Ok(control);
             }
         }
         Ok(SourceControl::Continue)
@@ -603,6 +621,7 @@ fn overlay_commit(
     Ok(builder.build())
 }
 
+#[cfg(any(test, feature = "archives"))]
 struct CollectedOutput {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
@@ -611,21 +630,19 @@ struct CollectedOutput {
     status: Option<ExitStatus>,
 }
 
+#[cfg(any(test, feature = "archives"))]
 enum CollectionStop {
     Exited(ExitStatus),
     Cancelled,
     Limited,
 }
 
-fn collect_command(
+fn spawn_git(
     program: &OsStr,
     arguments: &[OsString],
-    stdout_limit: usize,
-    stderr_limit: usize,
     environment: &[(OsString, OsString)],
-    cancellation: &dyn Cancellation,
     stage: SourceStage,
-) -> Result<CollectedOutput, SourceError> {
+) -> Result<(Child, ChildStdout, ChildStderr), SourceError> {
     let mut child = Command::new(program)
         .args(arguments)
         .envs(environment.iter().cloned())
@@ -650,6 +667,20 @@ fn collect_command(
             "Git standard error pipe was unavailable",
         ));
     };
+    Ok((child, stdout, stderr))
+}
+
+#[cfg(any(test, feature = "archives"))]
+fn collect_command(
+    program: &OsStr,
+    arguments: &[OsString],
+    stdout_limit: usize,
+    stderr_limit: usize,
+    environment: &[(OsString, OsString)],
+    cancellation: &dyn Cancellation,
+    stage: SourceStage,
+) -> Result<CollectedOutput, SourceError> {
+    let (mut child, stdout, stderr) = spawn_git(program, arguments, environment, stage)?;
 
     thread::scope(|scope| {
         let stdout_exceeded = Arc::new(AtomicBool::new(false));
@@ -707,6 +738,169 @@ fn collect_command(
             status,
         })
     })
+}
+
+/// Output of a streamed Git command after its standard output closed.
+struct StreamedOutput {
+    stderr: Vec<u8>,
+    stderr_limited: bool,
+    /// The consumer stopped the stream; Git was stopped and reaped.
+    stopped: bool,
+    status: Option<ExitStatus>,
+}
+
+enum StreamEnd {
+    Exited(ExitStatus),
+    Stopped,
+    Cancelled,
+    StderrLimited,
+    Failed(SourceError),
+}
+
+/// Runs Git and passes its standard output to `on_chunk` while Git runs.
+///
+/// A reader thread fills a small bounded queue, so Git waits while the
+/// consumer is busy. Standard error keeps its own bounded reader. Every
+/// early end stops and reaps Git before the reader threads are joined.
+fn stream_command(
+    program: &OsStr,
+    arguments: &[OsString],
+    stderr_limit: usize,
+    environment: &[(OsString, OsString)],
+    cancellation: &dyn Cancellation,
+    stage: SourceStage,
+    on_chunk: &mut dyn FnMut(&[u8]) -> Result<SourceControl, SourceError>,
+) -> Result<StreamedOutput, SourceError> {
+    let (mut child, stdout, stderr) = spawn_git(program, arguments, environment, stage)?;
+    let stderr_exceeded = AtomicBool::new(false);
+    thread::scope(|scope| {
+        let (sender, receiver) = mpsc::sync_channel(STDOUT_QUEUE_CHUNKS);
+        let stdout_reader = scope.spawn(move || read_chunks(stdout, &sender));
+        let stderr_flag = &stderr_exceeded;
+        let stderr_reader =
+            scope.spawn(move || read_bounded_and_drain(stderr, stderr_limit, stderr_flag));
+        let end = drive_stream(
+            &mut child,
+            &receiver,
+            &stderr_exceeded,
+            cancellation,
+            stage,
+            on_chunk,
+        );
+        // Dropping the receiver wakes a reader that waits on a full queue.
+        drop(receiver);
+        match &end {
+            StreamEnd::Exited(_) => {}
+            StreamEnd::Cancelled => stop_and_reap(&mut child, stage, "after cancellation")?,
+            StreamEnd::StderrLimited => stop_and_reap(&mut child, stage, "after an output limit")?,
+            StreamEnd::Stopped => stop_and_reap(&mut child, stage, "after the consumer stopped")?,
+            StreamEnd::Failed(_) => stop_and_reap(&mut child, stage, "after a stream failure")?,
+        }
+        stdout_reader
+            .join()
+            .map_err(|_| terminal(stage, None, "Git stdout reader panicked"))?;
+        let (stderr, stderr_limited) = stderr_reader
+            .join()
+            .map_err(|_| terminal(stage, None, "Git stderr reader panicked"))?
+            .map_err(|error| {
+                terminal(stage, None, format!("could not read Git stderr: {error}"))
+            })?;
+        let (status, stopped) = match end {
+            StreamEnd::Exited(status) => (Some(status), false),
+            StreamEnd::Cancelled => return Err(SourceError::Cancelled),
+            StreamEnd::Failed(error) => return Err(error),
+            StreamEnd::StderrLimited => (None, false),
+            StreamEnd::Stopped => (None, true),
+        };
+        Ok(StreamedOutput {
+            stderr,
+            stderr_limited,
+            stopped,
+            status,
+        })
+    })
+}
+
+fn drive_stream(
+    child: &mut Child,
+    receiver: &mpsc::Receiver<io::Result<Vec<u8>>>,
+    stderr_exceeded: &AtomicBool,
+    cancellation: &dyn Cancellation,
+    stage: SourceStage,
+    on_chunk: &mut dyn FnMut(&[u8]) -> Result<SourceControl, SourceError>,
+) -> StreamEnd {
+    loop {
+        if cancellation.is_cancelled() {
+            return StreamEnd::Cancelled;
+        }
+        if stderr_exceeded.load(Ordering::Acquire) {
+            return StreamEnd::StderrLimited;
+        }
+        match receiver.recv_timeout(COMMAND_POLL) {
+            Ok(Ok(chunk)) => match on_chunk(&chunk) {
+                Ok(SourceControl::Continue) => {}
+                Ok(SourceControl::Stop) => return StreamEnd::Stopped,
+                Err(error) => return StreamEnd::Failed(error),
+            },
+            Ok(Err(error)) => {
+                return StreamEnd::Failed(terminal(
+                    stage,
+                    None,
+                    format!("could not read Git stdout: {error}"),
+                ));
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    loop {
+        if cancellation.is_cancelled() {
+            return StreamEnd::Cancelled;
+        }
+        if stderr_exceeded.load(Ordering::Acquire) {
+            return StreamEnd::StderrLimited;
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => return StreamEnd::Exited(status),
+            Ok(None) => thread::sleep(COMMAND_POLL),
+            Err(error) => {
+                return StreamEnd::Failed(terminal(
+                    stage,
+                    None,
+                    format!("could not wait for Git: {error}"),
+                ));
+            }
+        }
+    }
+}
+
+/// Sends standard output in chunks until end of file, a read error, or a
+/// closed receiver.
+fn read_chunks(mut reader: impl Read, sender: &SyncSender<io::Result<Vec<u8>>>) {
+    loop {
+        let mut chunk = Vec::new();
+        if let Err(error) = chunk.try_reserve_exact(STDOUT_CHUNK_BYTES) {
+            let _ = sender.send(Err(io::Error::other(format!(
+                "could not reserve command output: {error}"
+            ))));
+            return;
+        }
+        chunk.resize(STDOUT_CHUNK_BYTES, 0);
+        match reader.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(read) => {
+                chunk.truncate(read);
+                if sender.send(Ok(chunk)).is_err() {
+                    return;
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => {
+                let _ = sender.send(Err(error));
+                return;
+            }
+        }
+    }
 }
 
 fn stop_and_reap(
@@ -822,7 +1016,7 @@ fn first_non_ignored_stderr(stderr: &[u8]) -> Option<&[u8]> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 struct ParsedFile {
     path: Vec<u8>,
     commit: Vec<u8>,
@@ -830,15 +1024,18 @@ struct ParsedFile {
     deleted: bool,
     binary: bool,
     hunks: Vec<ParsedHunk>,
+    /// Count of `commit ` lines before this file, for per-commit checks.
+    #[cfg(any(test, feature = "fuzzing"))]
+    commit_index: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 struct ParsedHunk {
     new_position: usize,
     added: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum PatchError {
     Cancelled,
     Limit(String),
@@ -934,61 +1131,288 @@ fn zero_commit_metadata() -> CommitMetadata {
         .build()
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "the byte parser state machine is intentionally linear"
-)]
-fn parse_patch(
-    input: &[u8],
+/// How a line of Git output relates to parser units.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum LineStart {
+    /// A `commit ` line starts a commit and a unit.
+    Commit,
+    /// A `diff --git ` line starts a file record and a unit.
+    Diff,
+    /// Any other line continues the current unit.
+    Other,
+    /// An incomplete line that could still become a unit start.
+    Undecided,
+}
+
+fn classify_line(line: &[u8], complete: bool) -> LineStart {
+    const COMMIT: &[u8] = b"commit ";
+    const DIFF: &[u8] = b"diff --git ";
+    if line.starts_with(COMMIT) {
+        LineStart::Commit
+    } else if line.starts_with(DIFF) {
+        LineStart::Diff
+    } else if !complete && (COMMIT.starts_with(line) || DIFF.starts_with(line)) {
+        LineStart::Undecided
+    } else {
+        LineStart::Other
+    }
+}
+
+/// Incremental Git patch parser.
+///
+/// Output is split into units at every line that starts with `commit ` or
+/// `diff --git `. The whole-output parser treats each such line as the start
+/// of a commit or file record, or rejects it inside an incomplete hunk, so
+/// parsing each unit with the commit state carried forward gives the same
+/// files, in the same order, as parsing all output at once. A unit is parsed
+/// only when the next unit starts or the output ends, so the result does not
+/// depend on how the output was divided into chunks.
+///
+/// Patch bytes, patch lines, files and hunks are counted per commit, from one
+/// `commit ` line to the next. Output before the first `commit ` line, such as
+/// a `git diff`, counts as one commit.
+struct PatchStream {
     limits: GitLimits,
-    cancellation: &dyn Cancellation,
-) -> PatchResult<Vec<ParsedFile>> {
-    let lines = split_inclusive_lines(input, limits.patch_lines(), cancellation)?;
-    let mut files = Vec::new();
-    let mut index = 0;
-    let mut current_commit = Vec::new();
-    let mut current_metadata = Some(zero_commit_metadata());
-    let mut total_hunks = 0_usize;
-    while index < lines.len() {
-        poll_patch_cancellation(cancellation)?;
-        if let Some(value) = lines[index].strip_prefix(b"commit ") {
-            current_commit =
-                copy_limited(trim_line(value), limits.metadata_bytes(), "Git commit SHA")?;
+    buffer: Vec<u8>,
+    /// Start of the unit that is being collected.
+    unit_start: usize,
+    /// Start of the first line not yet assigned to a unit.
+    scan: usize,
+    /// Where the next newline search starts, at or after `scan`.
+    search: usize,
+    finished: bool,
+    /// Bytes of earlier units of the current commit.
+    commit_bytes: usize,
+    /// Lines of the current commit assigned so far.
+    commit_lines: usize,
+    parser: UnitParser,
+}
+
+impl PatchStream {
+    fn new(limits: GitLimits) -> Self {
+        Self {
+            limits,
+            buffer: Vec::new(),
+            unit_start: 0,
+            scan: 0,
+            search: 0,
+            finished: false,
+            commit_bytes: 0,
+            commit_lines: 0,
+            parser: UnitParser::new(limits),
+        }
+    }
+
+    /// Appends output. Call [`Self::next_file`] until it returns `None`
+    /// before the next push, so each push can release parsed units.
+    fn push(&mut self, chunk: &[u8]) -> PatchResult<()> {
+        if self.unit_start > 0 {
+            self.buffer.drain(..self.unit_start);
+            self.scan -= self.unit_start;
+            self.search -= self.unit_start;
+            self.unit_start = 0;
+            // Release the space of an earlier large record.
+            if self.buffer.capacity() > 8 * STDOUT_CHUNK_BYTES
+                && self.buffer.len() < self.buffer.capacity() / 4
+            {
+                self.buffer
+                    .shrink_to(self.buffer.len().max(2 * STDOUT_CHUNK_BYTES));
+            }
+        }
+        self.buffer
+            .try_reserve(chunk.len())
+            .map_err(|error| patch_allocation("Git patch output", error))?;
+        self.buffer.extend_from_slice(chunk);
+        Ok(())
+    }
+
+    /// Marks the end of output, so the final unit can be parsed.
+    fn finish(&mut self) {
+        self.finished = true;
+    }
+
+    /// Returns the next parsed file record whose unit is complete.
+    fn next_file(&mut self, cancellation: &dyn Cancellation) -> PatchResult<Option<ParsedFile>> {
+        while let Some((start, end, boundary_follows)) = self.next_unit(cancellation)? {
+            if let Some(file) =
+                self.parser
+                    .parse_unit(&self.buffer[start..end], boundary_follows, cancellation)?
+            {
+                return Ok(Some(file));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Assigns lines to the current unit and returns its range once the next
+    /// unit starts or output ends. The flag tells whether a unit start follows.
+    fn next_unit(
+        &mut self,
+        cancellation: &dyn Cancellation,
+    ) -> PatchResult<Option<(usize, usize, bool)>> {
+        let mut lines = 0_usize;
+        loop {
+            if lines.is_multiple_of(1024) {
+                poll_patch_cancellation(cancellation)?;
+            }
+            lines += 1;
+            if self.scan == self.buffer.len() {
+                if self.finished && self.scan > self.unit_start {
+                    let unit = (self.unit_start, self.scan, false);
+                    self.unit_start = self.scan;
+                    return Ok(Some(unit));
+                }
+                return Ok(None);
+            }
+            let newline = self.buffer[self.search..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map(|at| self.search + at + 1);
+            if newline.is_none() {
+                self.search = self.buffer.len();
+            }
+            let complete = newline.is_some() || self.finished;
+            let end = newline.unwrap_or(self.buffer.len());
+            let start = classify_line(&self.buffer[self.scan..end], complete);
+            match start {
+                LineStart::Undecided => return Ok(None),
+                LineStart::Commit | LineStart::Diff if self.scan > self.unit_start => {
+                    let unit = (self.unit_start, self.scan, true);
+                    if start == LineStart::Commit {
+                        self.commit_bytes = 0;
+                        self.commit_lines = 0;
+                    } else {
+                        self.commit_bytes = self
+                            .commit_bytes
+                            .checked_add(self.scan - self.unit_start)
+                            .ok_or_else(|| {
+                                PatchError::Limit("Git patch size overflowed usize".to_owned())
+                            })?;
+                    }
+                    self.unit_start = self.scan;
+                    return Ok(Some(unit));
+                }
+                _ => {}
+            }
+            let commit_bytes = self
+                .commit_bytes
+                .checked_add(end - self.unit_start)
+                .ok_or_else(|| PatchError::Limit("Git patch size overflowed usize".to_owned()))?;
+            if commit_bytes > self.limits.patch_bytes() {
+                return Err(PatchError::Limit(format!(
+                    "Git patch output for one commit exceeds the configured {}-byte ceiling",
+                    self.limits.patch_bytes()
+                )));
+            }
+            if !complete {
+                return Ok(None);
+            }
+            self.commit_lines += 1;
+            if self.commit_lines > self.limits.patch_lines() {
+                return Err(PatchError::Limit(format!(
+                    "Git patch output for one commit exceeds the configured {}-line ceiling",
+                    self.limits.patch_lines()
+                )));
+            }
+            self.scan = end;
+            self.search = end;
+        }
+    }
+}
+
+/// Parser state carried from one unit to the next.
+struct UnitParser {
+    limits: GitLimits,
+    commit: Vec<u8>,
+    metadata: Option<CommitMetadata>,
+    /// Files and hunks of the current commit.
+    files: usize,
+    hunks: usize,
+    /// Number of `commit ` lines seen, which identifies a file's commit.
+    #[cfg(any(test, feature = "fuzzing"))]
+    commits: usize,
+}
+
+impl UnitParser {
+    fn new(limits: GitLimits) -> Self {
+        Self {
+            limits,
+            commit: Vec::new(),
+            metadata: Some(zero_commit_metadata()),
+            files: 0,
+            hunks: 0,
+            #[cfg(any(test, feature = "fuzzing"))]
+            commits: 0,
+        }
+    }
+
+    /// Parses one unit. A unit holds at most one file record, because every
+    /// record line starts a new unit.
+    fn parse_unit(
+        &mut self,
+        unit: &[u8],
+        boundary_follows: bool,
+        cancellation: &dyn Cancellation,
+    ) -> PatchResult<Option<ParsedFile>> {
+        let lines = split_inclusive_lines(unit, self.limits.patch_lines(), cancellation)?;
+        let Some(first) = lines.first() else {
+            return Ok(None);
+        };
+        if let Some(value) = first.strip_prefix(b"commit ") {
+            self.files = 0;
+            self.hunks = 0;
+            #[cfg(any(test, feature = "fuzzing"))]
+            {
+                self.commits += 1;
+            }
+            self.commit = copy_limited(
+                trim_line(value),
+                self.limits.metadata_bytes(),
+                "Git commit SHA",
+            )?;
             let (metadata, next) = parse_commit_header(
                 &lines,
-                index,
-                &current_commit,
-                limits.metadata_bytes(),
+                0,
+                &self.commit,
+                self.limits.metadata_bytes(),
                 cancellation,
             )?;
-            current_metadata = Some(metadata);
-            index = next;
-            continue;
+            self.metadata = Some(metadata);
+            check_blank_lines(&lines[next..], cancellation)?;
+            return Ok(None);
         }
-        if !lines[index].starts_with(b"diff --git ") {
-            if !trim_line(lines[index]).is_empty() {
-                return Err(PatchError::Invalid(
-                    "Git patch contains an unrecognized nonempty preamble".to_owned(),
-                ));
-            }
-            index += 1;
-            continue;
+        if first.starts_with(b"diff --git ") {
+            return self.parse_record(&lines, boundary_follows, cancellation);
         }
+        check_blank_lines(&lines, cancellation)?;
+        Ok(None)
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the record state machine is intentionally linear"
+    )]
+    fn parse_record(
+        &mut self,
+        lines: &[&[u8]],
+        boundary_follows: bool,
+        cancellation: &dyn Cancellation,
+    ) -> PatchResult<Option<ParsedFile>> {
+        let limits = self.limits;
         let mut file = ParsedFile {
-            path: parse_diff_fallback(lines[index], limits.path_bytes(), cancellation)?
+            path: parse_diff_fallback(lines[0], limits.path_bytes(), cancellation)?
                 .unwrap_or_default(),
-            commit: copy_limited(
-                &current_commit,
-                limits.metadata_bytes(),
-                "Git file commit SHA",
-            )?,
-            metadata: current_metadata
+            commit: copy_limited(&self.commit, limits.metadata_bytes(), "Git file commit SHA")?,
+            metadata: self
+                .metadata
                 .as_ref()
                 .map(|metadata| fallible_clone_metadata(metadata, limits.metadata_bytes()))
                 .transpose()?,
             deleted: false,
             binary: false,
             hunks: Vec::new(),
+            #[cfg(any(test, feature = "fuzzing"))]
+            commit_index: self.commits,
         };
         let mut saw_old_path = false;
         let mut saw_new_path = false;
@@ -1000,11 +1424,8 @@ fn parse_patch(
         let mut saw_copy_to = false;
         let mut saw_file_lifecycle_mode = false;
         let mut binary_payload = false;
-        index += 1;
-        while index < lines.len()
-            && !lines[index].starts_with(b"diff --git ")
-            && !lines[index].starts_with(b"commit ")
-        {
+        let mut index = 1;
+        while index < lines.len() {
             poll_patch_cancellation(cancellation)?;
             let line = lines[index];
             if binary_payload {
@@ -1033,16 +1454,16 @@ fn parse_patch(
                 file.binary = true;
                 binary_payload = true;
             } else if line.starts_with(b"@@ -") {
-                total_hunks = total_hunks.checked_add(1).ok_or_else(|| {
+                self.hunks = self.hunks.checked_add(1).ok_or_else(|| {
                     PatchError::Limit("Git hunk count overflowed usize".to_owned())
                 })?;
-                if total_hunks > limits.hunks() {
+                if self.hunks > limits.hunks() {
                     return Err(PatchError::Limit(format!(
-                        "Git patch exceeds the configured {}-hunk ceiling",
+                        "Git patch for one commit exceeds the configured {}-hunk ceiling",
                         limits.hunks()
                     )));
                 }
-                let (hunk, next) = parse_hunk(&lines, index, cancellation)?;
+                let (hunk, next) = parse_hunk(lines, index, boundary_follows, cancellation)?;
                 file.hunks
                     .try_reserve(1)
                     .map_err(|error| patch_allocation("Git hunks", error))?;
@@ -1105,26 +1526,91 @@ fn parse_patch(
                 "Git diff record contains incomplete or unrecognized structure".to_owned(),
             ));
         }
-        if !file.path.is_empty() {
-            if files.len() >= limits.files() {
-                return Err(PatchError::Limit(format!(
-                    "Git patch exceeds the configured {}-file ceiling",
-                    limits.files()
-                )));
-            }
-            files
-                .try_reserve(1)
-                .map_err(|error| patch_allocation("parsed Git files", error))?;
-            files.push(file);
+        if file.path.is_empty() {
+            return Ok(None);
+        }
+        if self.files >= limits.files() {
+            return Err(PatchError::Limit(format!(
+                "Git patch for one commit exceeds the configured {}-file ceiling",
+                limits.files()
+            )));
+        }
+        self.files += 1;
+        Ok(Some(file))
+    }
+}
+
+fn check_blank_lines(lines: &[&[u8]], cancellation: &dyn Cancellation) -> PatchResult<()> {
+    for line in lines {
+        poll_patch_cancellation(cancellation)?;
+        if !trim_line(line).is_empty() {
+            return Err(PatchError::Invalid(
+                "Git patch contains an unrecognized nonempty preamble".to_owned(),
+            ));
         }
     }
-    Ok(files)
+    Ok(())
+}
+
+/// Parses output delivered in chunks of the given sizes. Returns the files
+/// that a streaming consumer would receive and the error that ended parsing.
+#[cfg(any(test, feature = "fuzzing"))]
+fn parse_patch_chunks(
+    input: &[u8],
+    mut chunk_size: impl FnMut() -> usize,
+    limits: GitLimits,
+    cancellation: &dyn Cancellation,
+) -> (Vec<ParsedFile>, Option<PatchError>) {
+    fn drain(
+        stream: &mut PatchStream,
+        files: &mut Vec<ParsedFile>,
+        cancellation: &dyn Cancellation,
+    ) -> Option<PatchError> {
+        loop {
+            match stream.next_file(cancellation) {
+                Ok(Some(file)) => files.push(file),
+                Ok(None) => return None,
+                Err(error) => return Some(error),
+            }
+        }
+    }
+    let mut stream = PatchStream::new(limits);
+    let mut files = Vec::new();
+    let mut rest = input;
+    while !rest.is_empty() {
+        let (chunk, tail) = rest.split_at(chunk_size().clamp(1, rest.len()));
+        rest = tail;
+        if let Err(error) = stream.push(chunk) {
+            return (files, Some(error));
+        }
+        if let Some(error) = drain(&mut stream, &mut files, cancellation) {
+            return (files, Some(error));
+        }
+    }
+    stream.finish();
+    let error = drain(&mut stream, &mut files, cancellation);
+    (files, error)
+}
+
+/// Parses complete output in one chunk.
+#[cfg(test)]
+fn parse_patch(
+    input: &[u8],
+    limits: GitLimits,
+    cancellation: &dyn Cancellation,
+) -> PatchResult<Vec<ParsedFile>> {
+    match parse_patch_chunks(input, || input.len(), limits, cancellation) {
+        (files, None) => Ok(files),
+        (_, Some(error)) => Err(error),
+    }
 }
 
 /// Exercises the in-process Git patch parser for the standalone fuzz target.
 ///
 /// This entry point is available only with the `fuzzing` feature and exposes
 /// no parser implementation types. Production users should use [`GitSource`].
+/// It also checks that one-byte and varied chunks give the same files and
+/// error as the whole input.
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub fn fuzz_parse_patch(
@@ -1132,25 +1618,64 @@ pub fn fuzz_parse_patch(
     limits: GitLimits,
     cancellation: &dyn Cancellation,
 ) -> Option<(usize, usize)> {
-    let files = parse_patch(input, limits, cancellation).ok()?;
+    let whole = parse_patch_chunks(input, || input.len(), limits, cancellation);
+    let mut state = input.iter().fold(0x9e37_79b9_u32, |state, byte| {
+        state.rotate_left(5) ^ u32::from(*byte)
+    }) | 1;
+    let varied = parse_patch_chunks(
+        input,
+        || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            usize::try_from(state % 97).unwrap_or(0) + 1
+        },
+        limits,
+        cancellation,
+    );
+    assert!(
+        varied == whole,
+        "varied Git patch chunks must parse like the whole output"
+    );
+    let single = parse_patch_chunks(input, || 1, limits, cancellation);
+    assert!(
+        single == whole,
+        "one-byte Git patch chunks must parse like the whole output"
+    );
+    let (files, error) = whole;
+    if error.is_some() {
+        return None;
+    }
     let mut hunks = 0_usize;
+    let mut commit_files = 0_usize;
+    let mut commit_hunks = 0_usize;
+    let mut commit = None;
     for file in &files {
         assert!(
             file.path.len() <= limits.path_bytes(),
             "successful Git patch path exceeded its parser limit"
         );
+        if commit != Some(file.commit_index) {
+            commit = Some(file.commit_index);
+            commit_files = 0;
+            commit_hunks = 0;
+        }
+        commit_files += 1;
+        commit_hunks = commit_hunks
+            .checked_add(file.hunks.len())
+            .expect("bounded Git patch hunk count must fit usize");
+        assert!(
+            commit_files <= limits.files(),
+            "successful Git commit file count exceeded its parser limit"
+        );
+        assert!(
+            commit_hunks <= limits.hunks(),
+            "successful Git commit hunk count exceeded its parser limit"
+        );
         hunks = hunks
             .checked_add(file.hunks.len())
             .expect("bounded Git patch hunk count must fit usize");
     }
-    assert!(
-        files.len() <= limits.files(),
-        "successful Git patch file count exceeded its parser limit"
-    );
-    assert!(
-        hunks <= limits.hunks(),
-        "successful Git patch hunk count exceeded its parser limit"
-    );
     Some((files.len(), hunks))
 }
 
@@ -1315,9 +1840,12 @@ fn parse_old_hunk_position(value: &[u8]) -> PatchResult<i64> {
         .ok_or_else(|| PatchError::Invalid("invalid Git old range position".to_owned()))
 }
 
+/// Parses one hunk. `boundary_follows` tells whether a commit or file record
+/// line follows these lines, which is an invalid hunk line, not truncation.
 fn parse_hunk(
     lines: &[&[u8]],
     start: usize,
+    boundary_follows: bool,
     cancellation: &dyn Cancellation,
 ) -> PatchResult<(ParsedHunk, usize)> {
     let header = trim_line(lines[start]);
@@ -1364,7 +1892,7 @@ fn parse_hunk(
         let line = lines
             .get(index)
             .copied()
-            .ok_or_else(|| PatchError::Invalid("truncated Git hunk".to_owned()))?;
+            .ok_or_else(|| missing_hunk_line(boundary_follows))?;
         match line.first().copied() {
             Some(b'+') => {
                 new_remaining = new_remaining.checked_sub(1).ok_or_else(|| {
@@ -1420,6 +1948,16 @@ fn parse_hunk(
         },
         index,
     ))
+}
+
+/// A hunk that ends at a commit or record line has an invalid line there;
+/// a hunk that ends with the output is truncated.
+fn missing_hunk_line(boundary_follows: bool) -> PatchError {
+    PatchError::Invalid(if boundary_follows {
+        "invalid Git hunk line operation".to_owned()
+    } else {
+        "truncated Git hunk".to_owned()
+    })
 }
 
 fn parse_diff_fallback(
@@ -2046,8 +2584,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn cancelled_git_child_is_not_left_waitable_or_zombie() {
-        let pid_path =
-            std::env::temp_dir().join(format!("rustleaks-git-child-pid-{}", std::process::id()));
+        for streamed in [false, true] {
+            assert_cancelled_child_is_reaped(streamed);
+        }
+    }
+
+    #[cfg(unix)]
+    fn assert_cancelled_child_is_reaped(streamed: bool) {
+        let pid_path = std::env::temp_dir().join(format!(
+            "rustleaks-git-child-pid-{}-{streamed}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&pid_path);
         let executable = std::env::current_exe().expect("current test executable");
         let arguments = [
@@ -2065,16 +2612,35 @@ mod tests {
                 pid_path.as_os_str().to_owned(),
             ),
         ];
-        let result = collect_command(
-            executable.as_os_str(),
-            &arguments,
-            64 * 1024,
-            64 * 1024,
-            &environment,
-            &CancelWhenFileContainsPid(pid_path.clone()),
-            SourceStage::GitCommand,
-        );
-        assert!(matches!(result, Err(SourceError::Cancelled)));
+        let cancellation = CancelWhenFileContainsPid(pid_path.clone());
+        let cancelled = if streamed {
+            matches!(
+                stream_command(
+                    executable.as_os_str(),
+                    &arguments,
+                    64 * 1024,
+                    &environment,
+                    &cancellation,
+                    SourceStage::GitCommand,
+                    &mut |_| Ok(SourceControl::Continue),
+                ),
+                Err(SourceError::Cancelled)
+            )
+        } else {
+            matches!(
+                collect_command(
+                    executable.as_os_str(),
+                    &arguments,
+                    64 * 1024,
+                    64 * 1024,
+                    &environment,
+                    &cancellation,
+                    SourceStage::GitCommand,
+                ),
+                Err(SourceError::Cancelled)
+            )
+        };
+        assert!(cancelled);
         let raw_pid = std::fs::read_to_string(&pid_path)
             .expect("read selected child PID")
             .parse()
@@ -2856,6 +3422,503 @@ mod tests {
             reserve_input(&mut Vec::new(), usize::MAX, "injected allocation"),
             Err(PatchError::Limit(_))
         ));
+    }
+
+    /// History output that crosses commit, file and hunk starts, with a
+    /// merge header, CRLF lines, a rename, a copy, binary markers, a binary
+    /// payload, quoted paths, a deletion, a mode change, and added lines that
+    /// look like record starts.
+    const STREAM_PATCH: &[u8] = b"\n\
+commit 1111111111111111111111111111111111111111\r\n\
+Merge: aaaaaaa bbbbbbb\n\
+Author: Synthetic One <one@example.invalid>\n\
+Date:   Tue Nov 2 18:37:53 2021 -0500\n\
+\n\
+\x20\x20\x20\x20merge title\n\
+\n\
+\x20\x20\x20\x20merge body\n\
+\n\
+commit 2222222222222222222222222222222222222222\n\
+Author: Synthetic Two <two@example.invalid>\n\
+Date:   Wed Nov 3 01:02:03 2021 +0100\n\
+\n\
+\x20\x20\x20\x20second\n\
+\n\
+diff --git a/plain.txt b/plain.txt\n\
+index 1111111..2222222 100644\n\
+--- a/plain.txt\n\
++++ b/plain.txt\n\
+@@ -1,2 +1,4 @@\n\
+-old line\n\
+\x20context\n\
++new line one\n\
++commit lookalike\n\
++diff --git lookalike\n\
+@@ -9 +10 @@\r\n\
+-crlf old\r\n\
++crlf new\r\n\
+diff --git a/old name.txt b/new name.txt\n\
+similarity index 90%\n\
+rename from old name.txt\n\
+rename to new name.txt\n\
+--- a/old name.txt\n\
++++ b/new name.txt\n\
+@@ -0,0 +1 @@\n\
++renamed added\n\
+\\ No newline at end of file\n\
+diff --git a/image.bin b/image.bin\n\
+new file mode 100644\n\
+index 0000000..3333333\n\
+Binary files /dev/null and b/image.bin differ\n\
+diff --git a/blob.dat b/blob.dat\n\
+index 3333333..4444444 100644\n\
+GIT binary patch\n\
+literal 12\n\
+zcmZ?wbhEHbG-qJ}0RR6000000\n\
+\n\
+literal 0\n\
+HcmV?d00001\n\
+\n\
+diff --git \"a/tab\\there.txt\" \"b/tab\\there.txt\"\n\
+new file mode 100644\n\
+--- /dev/null\n\
++++ \"b/tab\\there.txt\"\n\
+@@ -0,0 +1,2 @@\n\
++quoted one\n\
++quoted two\n\
+commit 3333333333333333333333333333333333333333\n\
+Author: Synthetic Three <three@example.invalid>\n\
+Date:   Thu Nov 4 12:00:00 2021 +0000\n\
+\n\
+\x20\x20\x20\x20third\n\
+\n\
+diff --git a/copy.txt b/copied.txt\n\
+similarity index 100%\n\
+copy from copy.txt\n\
+copy to copied.txt\n\
+diff --git a/gone.txt b/gone.txt\n\
+deleted file mode 100644\n\
+--- a/gone.txt\n\
++++ /dev/null\n\
+@@ -1 +0,0 @@\n\
+-gone\n\
+diff --git a/mode.sh b/mode.sh\n\
+old mode 100644\n\
+new mode 100755\n\
+commit 4444444444444444444444444444444444444444";
+
+    type FileSummary = (Vec<u8>, Vec<u8>, bool, bool, Vec<(usize, Vec<u8>)>);
+
+    fn summarize(files: &[ParsedFile]) -> Vec<FileSummary> {
+        files
+            .iter()
+            .map(|file| {
+                (
+                    file.path.clone(),
+                    file.commit.clone(),
+                    file.deleted,
+                    file.binary,
+                    file.hunks
+                        .iter()
+                        .map(|hunk| (hunk.new_position, hunk.added.clone()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// Parses `input` whole, in one-byte and other fixed-size chunks, and in
+    /// pseudo-random sizes, and requires the same files and the same error
+    /// from each.
+    fn assert_chunking_is_invisible(
+        input: &[u8],
+        limits: GitLimits,
+    ) -> (Vec<ParsedFile>, Option<PatchError>) {
+        let cancellation = crate::CancellationToken::new();
+        let whole = parse_patch_chunks(input, || usize::MAX, limits, &cancellation);
+        let mut schedules: Vec<Box<dyn FnMut() -> usize>> = Vec::new();
+        for size in [1, 2, 3, 5, 7, 11, 13, 64] {
+            schedules.push(Box::new(move || size));
+        }
+        for seed in [1_u32, 0x9e37_79b9, 0xdead_beef] {
+            let mut state = seed;
+            schedules.push(Box::new(move || {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                usize::try_from(state % 211).unwrap_or(0) + 1
+            }));
+        }
+        for (index, schedule) in schedules.into_iter().enumerate() {
+            let chunked = parse_patch_chunks(input, schedule, limits, &cancellation);
+            assert!(
+                chunked == whole,
+                "schedule {index} changed the parse: whole={:?}/{:?}, chunked={:?}/{:?}",
+                summarize(&whole.0),
+                whole.1,
+                summarize(&chunked.0),
+                chunked.1
+            );
+        }
+        whole
+    }
+
+    #[test]
+    fn streamed_history_matches_independent_expectations_in_any_chunking() {
+        let (files, error) = assert_chunking_is_invisible(STREAM_PATCH, GitLimits::default());
+        assert_eq!(error, None);
+        let second = b"2222222222222222222222222222222222222222".to_vec();
+        let third = b"3333333333333333333333333333333333333333".to_vec();
+        let expected: Vec<FileSummary> = vec![
+            (
+                b"plain.txt".to_vec(),
+                second.clone(),
+                false,
+                false,
+                vec![
+                    (
+                        1,
+                        b"new line one\ncommit lookalike\ndiff --git lookalike\n".to_vec(),
+                    ),
+                    (10, b"crlf new\r\n".to_vec()),
+                ],
+            ),
+            (
+                b"new name.txt".to_vec(),
+                second.clone(),
+                false,
+                false,
+                vec![(1, b"renamed added".to_vec())],
+            ),
+            (b"image.bin".to_vec(), second.clone(), false, true, vec![]),
+            (b"blob.dat".to_vec(), second.clone(), false, true, vec![]),
+            (
+                b"tab\there.txt".to_vec(),
+                second,
+                false,
+                false,
+                vec![(1, b"quoted one\nquoted two\n".to_vec())],
+            ),
+            (b"copied.txt".to_vec(), third.clone(), false, false, vec![]),
+            (
+                b"gone.txt".to_vec(),
+                third.clone(),
+                true,
+                false,
+                vec![(0, Vec::new())],
+            ),
+            (b"mode.sh".to_vec(), third, false, false, vec![]),
+        ];
+        assert_eq!(summarize(&files), expected);
+        let metadata = files[0].metadata.as_ref().expect("second commit metadata");
+        assert_eq!(metadata.author_name().as_bytes(), b"Synthetic Two");
+        assert_eq!(metadata.date().as_bytes(), b"2021-11-03T00:02:03Z");
+        assert_eq!(metadata.message().as_bytes(), b"second");
+        let metadata = files[5].metadata.as_ref().expect("third commit metadata");
+        assert_eq!(
+            metadata.sha().as_bytes(),
+            b"3333333333333333333333333333333333333333"
+        );
+        assert_eq!(metadata.message().as_bytes(), b"third");
+        assert_eq!(
+            files
+                .iter()
+                .map(|file| file.commit_index)
+                .collect::<Vec<_>>(),
+            [2, 2, 2, 2, 2, 3, 3, 3]
+        );
+    }
+
+    #[test]
+    fn truncated_and_damaged_history_parses_alike_in_any_chunking() {
+        // Every prefix ends inside a commit, file record, hunk or line.
+        for end in 0..=STREAM_PATCH.len() {
+            assert_chunking_is_invisible(&STREAM_PATCH[..end], GitLimits::default());
+        }
+        // A newline or a letter in place of any byte moves or breaks a record
+        // start, a hunk count or a path.
+        for position in (0..STREAM_PATCH.len()).step_by(3) {
+            for replacement in [b'\n', b'x'] {
+                let mut damaged = STREAM_PATCH.to_vec();
+                damaged[position] = replacement;
+                assert_chunking_is_invisible(&damaged, GitLimits::default());
+            }
+        }
+    }
+
+    #[test]
+    fn per_commit_limits_stop_alike_in_any_chunking() {
+        for bytes in [1, 40, 120, 300, 480, 700, 1024] {
+            for lines in [1, 6, 20, 40] {
+                for (files, hunks) in [(1, 1), (2, 2), (5, 3)] {
+                    let limits = GitLimits::new(bytes, lines, 64, 64)
+                        .and_then(|limits| limits.with_parser_limits(4096, 64, files, hunks))
+                        .expect("positive limits");
+                    let (_, error) = assert_chunking_is_invisible(STREAM_PATCH, limits);
+                    assert!(
+                        matches!(error, None | Some(PatchError::Limit(_))),
+                        "bytes={bytes}, lines={lines}, files={files}, hunks={hunks}: {error:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn patch_limits_apply_to_each_commit_not_to_the_whole_history() {
+        let commit = |name: &str, body: &str| {
+            format!(
+                "commit {name}\nAuthor: Synthetic <synthetic@example.invalid>\nDate:   Tue Nov 2 23:37:53 2021 +0000\n\n    {name}\n{body}\ndiff --git a/{name}.txt b/{name}.txt\nnew file mode 100644\n--- /dev/null\n+++ b/{name}.txt\n@@ -0,0 +1 @@\n+{name}\n"
+            )
+        };
+        // The second commit has more bytes and more lines than the first.
+        let first = commit("first", "");
+        let second = commit("second-commit", "\n    body one\n    body two\n");
+        let patch = format!("{first}{second}");
+        let largest = first.len().max(second.len());
+        let most_lines = first.lines().count().max(second.lines().count());
+        assert!(patch.len() > largest);
+        let cancellation = crate::CancellationToken::new();
+        let exact = GitLimits::new(largest, most_lines, 64, 64)
+            .and_then(|limits| limits.with_parser_limits(4096, 64, 1, 1))
+            .expect("exact per-commit limits");
+        let files = parse_patch(patch.as_bytes(), exact, &cancellation).expect("each commit fits");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path, b"first.txt");
+        assert_eq!(files[1].path, b"second-commit.txt");
+        assert_eq!(files[1].hunks[0].added, b"second-commit\n");
+
+        for below in [
+            GitLimits::new(largest - 1, most_lines, 64, 64),
+            GitLimits::new(largest, most_lines - 1, 64, 64),
+        ] {
+            let below = below
+                .and_then(|limits| limits.with_parser_limits(4096, 64, 1, 1))
+                .expect("short per-commit limits");
+            let (files, error) = parse_patch_chunks(patch.as_bytes(), || 7, below, &cancellation);
+            // The first commit is smaller, so it is published before the
+            // second commit reaches the limit.
+            assert_eq!(summarize(&files).len(), 1);
+            assert!(matches!(error, Some(PatchError::Limit(_))), "{error:?}");
+        }
+
+        // Two files or two hunks in one commit still exceed a limit of one.
+        let two_files = format!(
+            "{first}diff --git a/more.txt b/more.txt\nnew file mode 100644\n--- /dev/null\n+++ b/more.txt\n@@ -0,0 +1 @@\n+more\n"
+        );
+        let two_hunks = format!("{first}@@ -3,0 +4 @@\n+more\n");
+        for patch in [two_files, two_hunks] {
+            assert!(matches!(
+                parse_patch(patch.as_bytes(), exact, &cancellation),
+                Err(PatchError::Limit(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn records_before_a_later_error_are_published_first() {
+        let mut patch = STREAM_PATCH.to_vec();
+        patch.extend_from_slice(
+            b"\ncommit 5555555555555555555555555555555555555555\n\ndiff --git a/bad b/bad\n--- a/bad\n+++ b/bad\n@@ -0,0 +1,2 @@\n+only one\n",
+        );
+        let (files, error) = assert_chunking_is_invisible(&patch, GitLimits::default());
+        assert_eq!(files.len(), 8);
+        assert_eq!(
+            error,
+            Some(PatchError::Invalid("truncated Git hunk".to_owned()))
+        );
+        // A record start inside an incomplete hunk is an invalid hunk line.
+        patch.extend_from_slice(b"diff --git a/next b/next\nnew file mode 100644\n");
+        let (files, error) = assert_chunking_is_invisible(&patch, GitLimits::default());
+        assert_eq!(files.len(), 8);
+        assert_eq!(
+            error,
+            Some(PatchError::Invalid(
+                "invalid Git hunk line operation".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn stream_buffer_keeps_only_the_open_record() {
+        let record = b"diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -0,0 +1 @@\n+a\n";
+        let mut stream = PatchStream::new(GitLimits::default());
+        let cancellation = crate::CancellationToken::new();
+        let mut parsed = 0;
+        for _ in 0..10_000 {
+            stream.push(record).expect("push record");
+            while stream
+                .next_file(&cancellation)
+                .expect("parse record")
+                .is_some()
+            {
+                parsed += 1;
+            }
+            assert!(stream.buffer.len() <= 2 * record.len());
+        }
+        stream.finish();
+        while stream
+            .next_file(&cancellation)
+            .expect("parse final record")
+            .is_some()
+        {
+            parsed += 1;
+        }
+        assert_eq!(parsed, 10_000);
+    }
+
+    fn fixture_arguments() -> [OsString; 3] {
+        [
+            OsString::from("--exact"),
+            OsString::from("git::tests::subprocess_fixture_waits"),
+            OsString::from("--nocapture"),
+        ]
+    }
+
+    #[test]
+    fn streamed_command_delivers_output_status_and_bounded_stderr() {
+        let executable = std::env::current_exe().expect("current test executable");
+        let environment = [
+            (
+                OsString::from("RUSTLEAKS_GIT_CHILD_EXIT"),
+                OsString::from("5"),
+            ),
+            (
+                OsString::from("RUSTLEAKS_GIT_CHILD_STDERR"),
+                OsString::from("12345"),
+            ),
+            (
+                OsString::from("RUSTLEAKS_GIT_CHILD_STDOUT_BYTES"),
+                OsString::from("1000000"),
+            ),
+        ];
+        let mut received = 0;
+        let output = stream_command(
+            executable.as_os_str(),
+            &fixture_arguments(),
+            5,
+            &environment,
+            &crate::CancellationToken::new(),
+            SourceStage::GitCommand,
+            &mut |chunk| {
+                received += chunk.len();
+                Ok(SourceControl::Continue)
+            },
+        )
+        .expect("streamed command");
+        // The test harness can add its own lines around the fixture bytes.
+        assert!(received >= 1_000_000, "{received}");
+        assert!(received < 1_000_000 + 4096, "{received}");
+        assert!(!output.stopped);
+        assert!(!output.stderr_limited);
+        assert_eq!(output.status.and_then(|status| status.code()), Some(5));
+        assert_eq!(output.stderr, b"12345");
+
+        let limited = stream_command(
+            executable.as_os_str(),
+            &fixture_arguments(),
+            4,
+            &environment,
+            &crate::CancellationToken::new(),
+            SourceStage::GitCommand,
+            &mut |_| Ok(SourceControl::Continue),
+        )
+        .expect("stderr limit is reported, not raised");
+        assert!(limited.stderr_limited);
+    }
+
+    #[test]
+    fn streamed_command_stops_and_fails_when_the_consumer_does() {
+        let executable = std::env::current_exe().expect("current test executable");
+        let environment = [
+            (
+                OsString::from("RUSTLEAKS_GIT_CHILD_EXIT"),
+                OsString::from("0"),
+            ),
+            (
+                OsString::from("RUSTLEAKS_GIT_CHILD_STDOUT_BYTES"),
+                OsString::from("8000000"),
+            ),
+        ];
+        let mut chunks = 0;
+        let output = stream_command(
+            executable.as_os_str(),
+            &fixture_arguments(),
+            64,
+            &environment,
+            &crate::CancellationToken::new(),
+            SourceStage::GitCommand,
+            &mut |_| {
+                chunks += 1;
+                Ok(SourceControl::Stop)
+            },
+        )
+        .expect("consumer stop");
+        assert!(output.stopped);
+        assert_eq!(chunks, 1);
+        assert!(output.status.is_none());
+
+        let error = stream_command(
+            executable.as_os_str(),
+            &fixture_arguments(),
+            64,
+            &environment,
+            &crate::CancellationToken::new(),
+            SourceStage::GitCommand,
+            &mut |_| {
+                Err(terminal(
+                    SourceStage::GitParse,
+                    None,
+                    "injected parse failure",
+                ))
+            },
+        );
+        assert!(matches!(
+            error,
+            Err(SourceError::Terminal {
+                stage: SourceStage::GitParse,
+                ..
+            })
+        ));
+
+        let missing = stream_command(
+            OsStr::new("rustleaks-deliberately-missing-git-executable"),
+            &[],
+            1,
+            &[],
+            &crate::CancellationToken::new(),
+            SourceStage::GitCommand,
+            &mut |_| Ok(SourceControl::Continue),
+        );
+        assert!(matches!(
+            missing,
+            Err(SourceError::Terminal {
+                stage: SourceStage::GitCommand,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn streamed_command_cancellation_kills_a_silent_child() {
+        let executable = std::env::current_exe().expect("current test executable");
+        let environment = [(
+            OsString::from("RUSTLEAKS_GIT_CANCEL_CHILD"),
+            OsString::from("1"),
+        )];
+        let cancellation = CancelAfterPolls(std::sync::atomic::AtomicUsize::new(4));
+        let started = std::time::Instant::now();
+        let result = stream_command(
+            executable.as_os_str(),
+            &fixture_arguments(),
+            64,
+            &environment,
+            &cancellation,
+            SourceStage::GitCommand,
+            &mut |_| Ok(SourceControl::Continue),
+        );
+        assert!(matches!(result, Err(SourceError::Cancelled)));
+        assert!(started.elapsed() < Duration::from_secs(20));
     }
 
     #[test]

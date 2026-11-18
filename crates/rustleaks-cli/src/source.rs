@@ -22,7 +22,7 @@ pub(crate) struct BuiltSource {
     excluded_commits: CommitCounter,
 }
 
-const MAX_UNIQUE_EXCLUDED_COMMITS: usize = 1_000_000;
+const MAX_UNIQUE_EXCLUDED_COMMITS: usize = 100_000_000;
 
 struct CommitCounter {
     values: Vec<ByteText>,

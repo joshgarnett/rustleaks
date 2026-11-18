@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+- Fix `git` scans that stopped with exit code 1 on long histories, such as
+  those of Rails or Django, because the whole `git log` output had to fit in
+  256 MiB and 2,000,000 lines. Rustleaks now reads Git output while Git runs
+  and parses one changed file at a time, so memory follows the largest change
+  instead of the whole history. The patch byte, patch line, file, hunk and
+  metadata limits now apply to each commit. The `--complete-profile` keys
+  `git_patch_bytes`, `git_patch_lines`, `git_files`, `git_hunks` and
+  `git_metadata_bytes` have the same meaning. The default limits for one commit
+  are 1 GiB and 16,000,000 lines. The limit on distinct commits rises from
+  1,000,000 to 100,000,000. Findings do not change for histories that scanned
+  before. When Git fails, or a later commit reaches a limit or cannot be read,
+  the scan still exits with code 1. Its report can now hold findings from the
+  commits before that point, and a log line can come later than before.
 - Adopt a standalone compatibility policy. Help, usage and error wording, log
   and banner lines, and the order of JSON keys and CSV columns are no longer
   compatibility guarantees and can change. Findings, configuration meaning,

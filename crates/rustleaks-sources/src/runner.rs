@@ -57,7 +57,9 @@ struct SourceStatistics {
     maximum_unique_commits: usize,
 }
 
-const MAX_UNIQUE_COMMITS: usize = 1_000_000;
+// Far above the commit count of large public histories, such as about
+// 1.3 million in Linux. It bounds the retained commit identities.
+const MAX_UNIQUE_COMMITS: usize = 100_000_000;
 
 impl Default for SourceStatistics {
     fn default() -> Self {
