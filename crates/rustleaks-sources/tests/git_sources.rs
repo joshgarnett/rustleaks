@@ -487,7 +487,7 @@ fn matrix_f_diff_and_index_fragments_have_zero_metadata() {
     assert_eq!(fragments[0].start_line(), 6);
     assert_eq!(
         fragments[0].content().as_bytes(),
-        b"\taws_token := \"AKIALALEMEL33243OLIA\"  // fingerprint of that secret is added to .gitleaksignore\n\taws_token2 := \"AKIALALEMEL33243OLIA\" // this one is not\n\tfmt.Println(aws_token)\n\tfmt.Println(aws_token2)\n"
+        b"\taws_token := \"AKIALALEMEL33243OLIA\"  // fingerprint of that secret is added to .gitleaksignore\n\taws_token2 := \"AKIALALEMEL33243OLIA\" // this one is not\n\tfmt.Println(aws_token)\n\tfmt.Println(aws_token2)\n" // gitleaks:allow
     );
     assert!(fragments[0].commit().is_empty());
     let metadata = fragments[0].commit_metadata().expect("zero diff metadata");
@@ -561,7 +561,7 @@ fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
             .content()
             .as_bytes()
             .windows(20)
-            .any(|window| window == b"AKIALALEMEL33243OLIA")
+            .any(|window| window == b"AKIALALEMEL33243OLIA") // gitleaks:allow
     );
     assert_eq!(
         stream
