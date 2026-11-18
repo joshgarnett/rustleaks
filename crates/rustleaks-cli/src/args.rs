@@ -1,4 +1,5 @@
 use std::ffi::{OsStr, OsString};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use rustleaks_core::Base64Mode;
@@ -37,6 +38,9 @@ pub(crate) struct Options {
     pub config: Option<PathBuf>,
     pub native_packs: Vec<String>,
     pub complete_profile: Option<PathBuf>,
+    /// Detection threads from `--jobs`. `None` leaves the choice to the
+    /// complete profile or the number of CPUs that the process may use.
+    pub jobs: Option<NonZeroUsize>,
     pub exit_code: i32,
     pub report_path: Option<PathBuf>,
     pub report_format: Option<String>,
@@ -69,6 +73,7 @@ impl Default for Options {
             config: None,
             native_packs: Vec::new(),
             complete_profile: None,
+            jobs: None,
             exit_code: 1,
             report_path: None,
             report_format: None,
@@ -402,6 +407,7 @@ fn parse_long(
             }
             options.complete_profile = Some(path);
         }
+        "jobs" => options.jobs = Some(parse_jobs(value(name, attached, arguments, index)?)?),
         "exit-code" => {
             options.exit_code = parse_i32(name, value(name, attached, arguments, index)?)?;
         }
@@ -503,6 +509,7 @@ fn parse_short(
             options.baseline_path = nonempty_path(next_path("baseline-path", arguments, index)?);
         }
         "-l" => options.log_level = copy_text(next("log-level", arguments, index)?)?,
+        "-j" => options.jobs = Some(parse_jobs(next("jobs", arguments, index)?)?),
         "-i" => {
             options.ignore_path = next_path("rustleaks-ignore-path", arguments, index)?;
         }
@@ -592,6 +599,18 @@ fn parse_i32(name: &str, value: &str) -> Result<i32, ParseError> {
             i32::MAX
         ))
     })
+}
+/// Accepts only ASCII digits, so signs, spaces and zero are errors. There is
+/// no fixed maximum; the runner reports a thread that cannot be started.
+fn parse_jobs(value: &str) -> Result<NonZeroUsize, ParseError> {
+    let digits = value.bytes().all(|byte| byte.is_ascii_digit());
+    match value.parse::<NonZeroUsize>() {
+        Ok(jobs) if digits => Ok(jobs),
+        _ => Err(ParseError::other(format!(
+            "the --jobs argument {value:?} is not a whole number from 1 to {}",
+            usize::MAX
+        ))),
+    }
 }
 fn invalid_value(name: &str, value: &str) -> ParseError {
     ParseError::other(format!("invalid value {value:?} for --{name}"))
@@ -692,6 +711,57 @@ mod tests {
             assert_eq!(error.kind, ParseErrorKind::Other);
             assert!(error.message.contains("--base64-mode"));
         }
+    }
+
+    #[test]
+    fn jobs_takes_a_positive_whole_number_and_the_last_value_wins() {
+        let jobs = |arguments: &[&str]| {
+            let Action::Scan(invocation) = parsed(arguments).unwrap() else {
+                panic!("expected scan");
+            };
+            invocation.options.jobs.map(NonZeroUsize::get)
+        };
+        assert_eq!(jobs(&["stdin"]), None);
+        assert_eq!(jobs(&["stdin", "--jobs", "1"]), Some(1));
+        assert_eq!(jobs(&["dir", "--jobs=4"]), Some(4));
+        assert_eq!(jobs(&["git", "-j", "128"]), Some(128));
+        assert_eq!(jobs(&["dir", "--jobs", "007"]), Some(7));
+        assert_eq!(jobs(&["dir", "--jobs", "2", "-j", "3"]), Some(3));
+        for value in [
+            "0",
+            "00",
+            "-1",
+            "+2",
+            "",
+            " 2",
+            "2 ",
+            "1.5",
+            "x",
+            "18446744073709551616",
+        ] {
+            let error = parsed(&["dir", "--jobs", value]).unwrap_err();
+            assert_eq!(error.kind, ParseErrorKind::Other, "{value:?}");
+            assert_eq!(
+                error.message,
+                format!(
+                    "the --jobs argument {value:?} is not a whole number from 1 to {}",
+                    usize::MAX
+                )
+            );
+            assert_eq!(error.command, Some(Topic::Directory));
+            let short = parsed(&["stdin", "-j", value]).unwrap_err();
+            assert_eq!(short.message, error.message);
+        }
+        for arguments in [vec!["dir", "--jobs"], vec!["dir", "-j"]] {
+            assert_eq!(
+                parsed(&arguments).unwrap_err().message,
+                "flag --jobs requires a value"
+            );
+        }
+        assert_eq!(
+            parsed(&["version", "--jobs", "2"]).unwrap(),
+            Action::Version { qualified: false }
+        );
     }
 
     #[test]
@@ -812,6 +882,8 @@ mod tests {
         ("-c x", SCAN),
         ("--native-pack=rustleaks-extra-v1", SCAN),
         ("--complete-profile=x", SCAN),
+        ("--jobs=2", SCAN),
+        ("-j 2", SCAN),
         ("--exit-code=3", SCAN),
         ("--report-path=x", SCAN),
         ("-r x", SCAN),

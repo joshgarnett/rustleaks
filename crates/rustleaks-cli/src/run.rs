@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io::{Read, Write};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::mpsc;
@@ -287,8 +288,11 @@ fn run_scan_inner<R: Read + Send + 'static>(
         }
     };
     warn_quoted_log_options(invocation, stderr, log_level);
-    let runner = match profile.map_or_else(|| Ok(SourceRunner::default()), CompleteProfile::runner)
-    {
+    let jobs = invocation.options.jobs;
+    let runner = match profile.map_or_else(
+        || default_runner(jobs, thread::available_parallelism),
+        |profile| profile.runner(jobs),
+    ) {
         Ok(runner) => runner,
         Err(error) => {
             finish_timer(timer.take());
@@ -296,6 +300,12 @@ fn run_scan_inner<R: Read + Send + 'static>(
             return 1;
         }
     };
+    if log_level.shows_debug() {
+        let _ = output::info(
+            stderr,
+            format_args!("detection threads: {}", runner.workers()),
+        );
+    }
     let outcome = runner.run(
         &mut source,
         &engine,
@@ -608,6 +618,29 @@ fn outcome_termination(termination: &SourceTermination) -> String {
     }
 }
 
+/// The most fragments that wait for a detection thread without a profile.
+/// The channel allocates its slots up front, so this bounds that allocation
+/// for any `--jobs` value. The profile key `queue_capacity` has the same
+/// maximum.
+const MAX_DEFAULT_QUEUE_CAPACITY: usize = 1024;
+
+/// Builds the runner of a scan without `--complete-profile`. `--jobs` sets the
+/// detection threads; otherwise there is one for each CPU that the process
+/// may use, or one when that number is unknown. The queue holds one fragment
+/// for each thread, so memory for waiting fragments grows with the thread
+/// count and stays bounded.
+fn default_runner(
+    jobs: Option<NonZeroUsize>,
+    available: impl FnOnce() -> std::io::Result<NonZeroUsize>,
+) -> Result<SourceRunner, String> {
+    let workers = jobs.map_or_else(
+        || available().map_or(1, NonZeroUsize::get),
+        NonZeroUsize::get,
+    );
+    SourceRunner::new(workers, workers.min(MAX_DEFAULT_QUEUE_CAPACITY))
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Clone, Copy)]
 enum LogLevel {
     Trace,
@@ -789,6 +822,35 @@ mod tests {
             config_toml: None,
             legacy_config_path: None,
             legacy_config_toml: None,
+        }
+    }
+
+    #[test]
+    fn default_runner_prefers_jobs_then_available_cpus_then_one() {
+        let never = || -> std::io::Result<NonZeroUsize> { panic!("--jobs skips the CPU query") };
+        for (available, expected) in [
+            (Some(1), (1, 1)),
+            (Some(36), (36, 36)),
+            (Some(4096), (4096, 1024)),
+            (None, (1, 1)),
+        ] {
+            let runner = default_runner(None, || {
+                available
+                    .and_then(NonZeroUsize::new)
+                    .ok_or_else(|| std::io::Error::other("synthetic unknown CPU count"))
+            })
+            .unwrap();
+            assert_eq!((runner.workers(), runner.queue_capacity()), expected);
+            assert_eq!(runner.budget(), None);
+        }
+        for (jobs, expected) in [
+            (1, (1, 1)),
+            (8, (8, 8)),
+            (65, (65, 65)),
+            (5000, (5000, 1024)),
+        ] {
+            let runner = default_runner(NonZeroUsize::new(jobs), never).unwrap();
+            assert_eq!((runner.workers(), runner.queue_capacity()), expected);
         }
     }
 

@@ -121,6 +121,12 @@ See [Using rustleaks-core](../user/library.md#review-records).
 - Streaming input has no limit unless the caller sets one.
 - Budget reservations can reduce concurrency. Producer buffers and single
   metadata fields are not counted.
+- The CLI starts one detection thread for each available CPU unless `--jobs`
+  sets another number. `--jobs` has no fixed maximum. Memory for queued and
+  scanned fragments and for search caches grows with the thread count. The
+  queue without a profile holds at most 1,024 fragments. A thread that cannot
+  start ends the scan before the source is read, and started threads are
+  joined.
 - Intentional exclusions stay separate from coverage failures, and a failed
   complete target publishes no partial prefix.
 

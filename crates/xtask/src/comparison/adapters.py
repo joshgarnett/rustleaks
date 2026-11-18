@@ -37,7 +37,7 @@ PROFILE_LIMITS = [
 
 ADAPTER_FACTS = {
     'rustleaks': {
-        'defaults': {'threads': '1 detection worker (threads change only with --complete-profile)',
+        'defaults': {'threads': 'one detection thread per CPU the process may use; 1 worker in builds without --jobs',
                      'decode_depth': 5, 'archive_depth': 0, 'dedup': 'none'},
         'scope': [
             'dir mode skips .git folders, like Gitleaks.',
@@ -45,7 +45,7 @@ ADAPTER_FACTS = {
             'Files are read in pieces of about 100,000 bytes unless --complete-profile is set; with a profile each file is read whole.',
             'Native rule packs and --complete-profile exist only in builds after 0.1.0-alpha.9.',
             'The native packs are ported from rule sources that Kingfisher also bundles, most of them Betterleaks-derived, so pack results and Kingfisher results are not independent.',
-            'Threads: cells with 1 thread run the default runner with no profile, for every build. Cells with more threads use a generated profile.',
+            'Threads: builds with --jobs get --jobs N in every thread cell. In older builds, cells with 1 thread run the default runner with no profile, and cells with more threads use a generated profile.',
         ]},
     'gitleaks': {
         'defaults': {'threads': 'fixed 40 detection goroutines; Go uses GOMAXPROCS OS threads',
@@ -155,6 +155,8 @@ def adapter_probe(tool, env):
                 probe['capabilities'].append('native-packs')
             if '--complete-profile' in text:
                 probe['capabilities'].append('complete-profile')
+            if '--jobs' in text:
+                probe['capabilities'].append('jobs')
     elif name == 'betterleaks-v2':
         code, out, err = run_text([binary, 'version'], env=env)
         probe['version_text'] = (out or err).strip()[:200] if code == 0 else None
@@ -219,6 +221,8 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
             workers = None
             if settings.get('profile'):
                 workers = threads or 1
+            elif threads is not None and 'jobs' in capabilities:
+                flag(['--jobs', str(threads)], 'threads lane: detection threads', 'lane')
             elif threads == 1:
                 flags.append({'flag': '(none)', 'kind': 'lane',
                               'reason': 'threads=1: the default runner uses 1 worker, so no profile is used for any build'})

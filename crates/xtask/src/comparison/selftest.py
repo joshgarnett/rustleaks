@@ -295,6 +295,12 @@ def selftest_adapters():
     one = adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {'threads': 1}, inputs)['argv']
     four = adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {'threads': 4}, inputs)['argv']
     selftest_check('--complete-profile' not in one and '/p4' in four, 'Rustleaks uses a profile only above 1 thread')
+    rustleaks['probe']['capabilities'].append('jobs')
+    one = ' '.join(adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {'threads': 1}, inputs)['argv'])
+    four = ' '.join(adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {'threads': 4}, inputs)['argv'])
+    default = ' '.join(adapter_invocation(rustleaks, 'dir', '/t', '/r.json', {}, inputs)['argv'])
+    selftest_check('--jobs 1' in one and '--jobs 4' in four and '--complete-profile' not in four
+                   and '--jobs' not in default, 'Rustleaks builds with --jobs set threads with --jobs')
     selftest_check(adapter_auto_loaded('gitleaks', ['.gitleaks.toml', '.gitleaksignore'], True) == ['.gitleaksignore']
                    and adapter_auto_loaded('betterleaks-v2', ['.gitleaks.toml'], False) == [],
                    'root configuration files are matched to the tools that load them')
