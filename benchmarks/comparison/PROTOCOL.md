@@ -28,7 +28,7 @@ Bazel servers stopped; load average and thermal state recorded by the harness.
 | ID | Version | Build | SHA-256 |
 | --- | --- | --- | --- |
 | rustleaks-0.1.0-alpha.9 | 0.1.0-alpha.9 | release archive | `e7967563da6a7e19901799ec0c5f366d4cab130fb1de90ba7252c1ecc521a1a9` |
-| rustleaks-main | main at FILL | `bazelisk build --config=release-macos-aarch64` | FILL |
+| rustleaks-main | main at `64b75bf0f90379ad1e63b6eee86e23ed319c01be` | `bazelisk build --config=release-macos-aarch64` | `a8347b2ce5c3f37d4a474dd2740e9a421fa7c5866cc9bf6f81492d9e6df8f85b` |
 | gitleaks-8.30.1 | 8.30.1 | release archive (go-re2) | `ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f` |
 | betterleaks-1.10.1 | 1.10.1 | release archive | `13ac5109fa85a590c7ba6e7f130311e0c60a2bf582c3aac073176c93b46621a8` |
 | betterleaks-2.0.0-rc.8 | 2.0.0-rc.8 | release archive | `5253cd8409d5468c28c4f6b5aa88dd0d8dfcb6caab2faee7697fef66afb12d42` |
