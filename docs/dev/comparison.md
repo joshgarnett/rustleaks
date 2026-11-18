@@ -293,12 +293,19 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
   process. Rustleaks, Gitleaks and Betterleaks 1 run `git log -p`.
   Betterleaks 2 and Kingfisher read Git in process, so their Git work is part
   of the scanner figures.
+- The same instrumented run samples the resident size of the scanner process
+  alone every 10 ms (`proc_pid_rusage` on macOS, `VmHWM` on Linux). The peak
+  RSS of a `git` cell is often the peak of `git log -p`, not of the scanner;
+  this column shows the scanner's own share. A spike shorter than 10 ms can
+  be missed.
 - Not measured: the combined RSS of processes that run at the same time,
   helper processes other than `git`, I/O wait and disk bytes read.
 - Findings are counted from the parsed report, every record, with no
   deduplication by the harness. Reports over 64 MiB are parsed once per
-  cell; later runs check only the exit code. A report over 256 MiB stops the
-  run.
+  cell; later runs check only the exit code. A report over 4 GiB, or a log
+  over 64 MiB, stops the run. The report limit is set well above the largest
+  report seen so far (Betterleaks writes about 300 MB for the 1 GiB keyword
+  workload) so that it stops only runaway output.
 - Thermal state is recorded before the first and after the last measured
   run of each cell.
 

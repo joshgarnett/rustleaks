@@ -6,7 +6,7 @@ REPORT_MEASURED = [
     'Wall time: from spawn to the return of wait4 for the scanner process, measured by the harness. It includes process start, rule loading, scanning and writing the report file.',
     'User and system CPU time: from the wait4 rusage of the scanner. On macOS and Linux this includes every descendant the scanner waited for, such as git.',
     'Peak RSS: ru_maxrss from the same rusage. It is the largest single process among the scanner and its waited-for descendants, not the sum of processes that ran at the same time.',
-    'Child processes: in git mode, one extra untimed run per warm cell puts a git shim on PATH that records wall time, CPU time and peak RSS of each git process. Only git is shimmed. Tools that read Git in process (Kingfisher, Betterleaks v2) show no git children; their Git work is part of the scanner figures.',
+    'Child processes: in git mode, one extra untimed run per warm cell puts a git shim on PATH that records wall time, CPU time and peak RSS of each git process. Only git is shimmed. Tools that read Git in process (Kingfisher, Betterleaks v2) show no git children; their Git work is part of the scanner figures. The same run samples the resident size of the scanner process alone every 10 ms, because the peak RSS of a cell is the largest single process and can be a git child.',
     'Not measured: the combined RSS of processes that run at the same time, memory of helper processes other than git, GPU or I/O wait time, and disk bytes read.',
     'Input bytes come from the workload manifest (or a harness walk of regular files outside .git when the manifest has none), never from a tool. Throughput is input bytes divided by the median wall time.',
     'Findings are counted from the parsed report, every record, with no deduplication by the harness.',
@@ -256,10 +256,12 @@ def report_markdown(run, cells, score, summary):
         children = [cell for cell in lane_cells if cell.get('children')]
         if children:
             rows = [[cell['cell_id'], cell['children']['processes'], report_ms(cell['children']['cpu_user_ns']),
-                     report_ms(cell['children']['cpu_system_ns']), report_mib(cell['children']['peak_rss_bytes'])]
+                     report_ms(cell['children']['cpu_system_ns']), report_mib(cell['children']['peak_rss_bytes']),
+                     report_mib(cell['children'].get('scanner_peak_rss_bytes'))]
                     for cell in children]
-            lines += ['Git child processes from the instrumented run:', '']
-            lines += report_table(['Cell', 'git processes', 'User CPU ms (sum)', 'System CPU ms (sum)', 'Peak RSS MiB (largest)'], rows)
+            lines += ['Git child processes and the scanner process alone, from the instrumented run:', '']
+            lines += report_table(['Cell', 'git processes', 'User CPU ms (sum)', 'System CPU ms (sum)', 'git peak RSS MiB (largest)',
+                                   'Scanner process peak RSS MiB (sampled every 10 ms)'], rows)
             lines.append('')
     pairs = run.get('pairwise') or []
     if pairs:

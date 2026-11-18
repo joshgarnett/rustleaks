@@ -78,7 +78,7 @@ def run_sample(ctx, cell, phase, repetition):
     record = {'schema': SCHEMA_SAMPLE, 'sample': sample_id, 'cell_id': cell['cell_id'], 'phase': phase,
               'repetition': repetition, 'started_at': utc_now(), 'load_before': load_average()}
     result = measure_execute(invocation['argv'], env, ctx.cwd, stdout_path, stderr_path,
-                             ctx.options.timeout, watch_paths=[report])
+                             ctx.options.timeout, watch_paths=[report], track_rss=phase == 'instrumented')
     record['load_after'] = load_average()
     if phase == 'measured' and repetition + 1 >= cell.get('runs_planned', 0):
         cell['thermal_after'] = thermal_state()
@@ -136,6 +136,7 @@ def run_sample(ctx, cell, phase, repetition):
     record['status'] = status
     if child_log is not None:
         record['children'] = measure_child_summary(child_log)
+        record['children']['scanner_peak_rss_bytes'] = result.get('scanner_peak_rss_bytes')
     keep = status == 'ok' and phase == 'measured' and not cell.get('kept_report')
     if keep:
         kept = os.path.join('reports', '%s-%s.json' % (slug(cell['cell_id']), sha256_text(cell['cell_id'])[:8]))

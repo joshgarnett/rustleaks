@@ -500,6 +500,9 @@ def selftest_end_to_end():
         children = {cell['adapter']: cell.get('children') for cell in run['cells']}
         selftest_check(children['gitleaks']['processes'] == 1 and children['kingfisher']['processes'] == 0,
                        'the git shim counts git processes per tool: %s' % children)
+        if measure_rss_reader() is not None:
+            selftest_check(all((value or {}).get('scanner_peak_rss_bytes', 0) > 0 for value in children.values()),
+                           'the instrumented run samples the scanner process alone: %s' % children)
         dry = os.path.join(directory, 'run-dry')
         options = selftest_options(base, output=dry, lanes='threads', modes='dir', threads='1,2')
         options.dry_run = True
