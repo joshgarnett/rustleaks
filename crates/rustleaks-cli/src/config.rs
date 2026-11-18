@@ -13,7 +13,7 @@ use rustleaks_core::model::ByteText;
 use rustleaks_core::native::{
     CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, NativePolicyError, PROVIDER_RULES_V1,
 };
-use rustleaks_core::session::{Baseline, IgnoreIssue, IgnoreSet, SessionPolicy};
+use rustleaks_core::session::{Baseline, BaselineLoadError, IgnoreIssue, IgnoreSet, SessionPolicy};
 use rustleaks_sources::LogicalPath;
 
 use crate::args::{CommandKind, Invocation};
@@ -154,7 +154,7 @@ pub(crate) fn assemble(
     let mut excluded_paths = config_exclusions(invocation)?;
     if let Some(path) = &invocation.options.baseline_path {
         let physical = resolve(cwd, path);
-        match Baseline::load_go_json(&physical) {
+        match load_baseline(&physical) {
             Ok(baseline) => match baseline_exclusion(invocation, cwd, &physical) {
                 Ok(exclusion) => {
                     policy = policy.baseline(baseline);
@@ -557,6 +557,21 @@ impl IgnoreLoader<'_> {
     }
 }
 
+/// Reads a baseline report and parses it with the file-free core parser.
+///
+/// The errors are those of `Baseline::load_go_json`, so messages do not
+/// change.
+fn load_baseline(path: &Path) -> Result<Baseline, BaselineLoadError> {
+    let bytes = fs::read(path).map_err(|source| BaselineLoadError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Baseline::from_go_json(&bytes).map_err(|source| BaselineLoadError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 fn config_exclusions(invocation: &Invocation) -> Result<Vec<ByteText>, String> {
     if let Some(path) = &invocation.options.config {
         return Ok(vec![logical_native(path)]);
@@ -954,6 +969,42 @@ mod tests {
         std::fs::write(root.join("base.toml"), padded_config(limit)).unwrap();
         let assembly = assemble_directory(&root).ok().unwrap();
         assert!(assembly.full.rule("padded").is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn baseline_is_read_by_the_cli_with_unchanged_results_and_errors() {
+        let root = temporary_directory("baseline-read");
+        let report = br#"[{"RuleID":"fixture-token","Description":"fixture token",
+            "StartLine":1,"EndLine":1,"StartColumn":7,"EndColumn":16,
+            "Match":"token=AB12","Secret":"AB12","File":"secret.txt",
+            "Commit":"","Entropy":2,"Author":"","Email":"","Date":"",
+            "Message":"","Tags":[],"Fingerprint":"secret.txt:fixture-token:1"}]"#;
+        std::fs::write(root.join("baseline.json"), report).unwrap();
+        std::fs::write(root.join("null.json"), b"null").unwrap();
+        std::fs::write(root.join("bad.json"), b"{}").unwrap();
+
+        let baseline = load_baseline(&root.join("baseline.json")).unwrap();
+        assert_eq!(baseline, Baseline::from_go_json(report).unwrap());
+        assert_eq!(baseline.len(), 1);
+        let entry = &baseline.entries()[0];
+        assert_eq!(entry.rule_id().as_bytes(), b"fixture-token");
+        assert_eq!(entry.file().as_bytes(), b"secret.txt");
+        assert_eq!(entry.start_line(), 1);
+        assert_eq!(entry.secret().as_bytes(), b"AB12");
+        let null = load_baseline(&root.join("null.json")).unwrap();
+        assert!(null.is_empty() && null.was_null());
+
+        for name in ["bad.json", "missing.json"] {
+            let path = root.join(name);
+            let actual = load_baseline(&path).unwrap_err();
+            let expected = Baseline::load_go_json(&path).unwrap_err();
+            assert_eq!(actual.to_string(), expected.to_string(), "{name}");
+            assert_eq!(
+                matches!(actual, BaselineLoadError::Io { .. }),
+                name == "missing.json"
+            );
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 

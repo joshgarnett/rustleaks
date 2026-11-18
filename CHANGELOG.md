@@ -39,6 +39,10 @@
   size does not change memory use. The 1,000,000-action limit still bounds
   the work of rendering. `TemplateLimits::default()` in `rustleaks-report`
   now sets `max_output_bytes` to `TemplateLimits::NO_OUTPUT_LIMIT`.
+- Read the `--baseline-path` file in the CLI and parse it with
+  `Baseline::from_go_json`, so the core engine no longer reads it.
+  `Baseline::load_go_json` stays as a wrapper for library users. Baseline
+  matches, warnings and errors do not change.
 - Add the `help [command]` command, which prints the same help as
   `<command> --help`, and the `completion <shell>` command, which prints a
   completion script for bash, zsh, fish or PowerShell. `completion` accepts
