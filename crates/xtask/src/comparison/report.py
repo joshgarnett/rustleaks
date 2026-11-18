@@ -142,7 +142,9 @@ def report_write(run_dir, seed):
                    'quality': [{key: row[key] for key in ('name', 'workload', 'lane', 'tool', 'overall', 'by_category',
                                                           'by_source', 'by_scope', 'labels', 'labels_complete',
                                                           'label_problems') if key in row}
-                               for row in score.get('quality', [])]}}
+                               for row in score.get('quality', [])],
+                   'not_scored': score.get('not_scored', []), 'score_errors': score.get('score_errors', []),
+                   'score_hours': score.get('score_hours')}}
     path = os.path.join(run_dir, 'summary.json')
     write_json(path, summary, exclusive=False)
     write_private(os.path.join(run_dir, 'report.md'), report_markdown(run, cells, score, summary).encode(), exclusive=False)
@@ -288,6 +290,14 @@ def report_markdown(run, cells, score, summary):
                                for cell in bad])
     else:
         lines.append('None.')
+    if score and (score.get('not_scored') or score.get('score_errors')):
+        lines += ['', '## Not scored', '',
+                  'Scoring has a time limit (--score-hours, %s here). Work not finished by then, and reports that '
+                  'could not be read, are listed here and are missing from the agreement and quality tables.'
+                  % score.get('score_hours'), '']
+        rows = [[row['kind'], row['left'], row.get('right') or '-', row['reason']] for row in score.get('not_scored', [])]
+        rows += [['report', row['cell'], '-', row['error']] for row in score.get('score_errors', [])]
+        lines += report_table(['Kind', 'Cell', 'Other cell', 'Reason'], rows)
     lines += ['', '## Run counts', '']
     counts = collections.Counter((cell['runs_planned'], cell['runs_reason']) for cell in cells if cell.get('runs_planned'))
     lines += ['- %d cells: %s runs (%s)' % (count, runs, reason) for (runs, reason), count in sorted(counts.items())]

@@ -34,6 +34,8 @@ def main_parser():
     run.add_argument('--git', help='git executable for git mode (default: found on PATH)')
     run.add_argument('--no-child-instrumentation', action='store_true', help='skip the instrumented git run')
     run.add_argument('--no-score', action='store_true', help='do not score kept reports at the end')
+    run.add_argument('--score-hours', type=float, default=SCORE_DEFAULT_HOURS,
+                     help='hours before scoring stops; unfinished work is listed as not scored')
     run.add_argument('--dry-run', action='store_true', help='plan cells and write run.json without running tools')
     run.add_argument('--target-config', choices=('skip', 'run'), default='skip',
                      help='cells whose tool would load a configuration or ignore file from the scan root: '
@@ -50,6 +52,8 @@ def main_parser():
                        help='labels are incomplete: count findings with no label as unknown, not false positives')
     score.add_argument('--git', help='git executable for labels with a commit')
     score.add_argument('--output', help='folder for score.json and score.md (default: the run folder)')
+    score.add_argument('--score-hours', type=float, default=SCORE_DEFAULT_HOURS,
+                       help='hours before scoring stops; unfinished work is listed as not scored')
     score.add_argument('--seed', type=int, default=DEFAULT_SEED)
     report = commands.add_parser('report', help='write summary.json and report.md for a run folder')
     report.add_argument('--run', required=True)
@@ -81,7 +85,7 @@ def main_normalize(options):
 
 def main_score(options):
     if options.run:
-        result = score_run(os.path.abspath(options.run), options.seed)
+        result = score_run(os.path.abspath(options.run), options.seed, options.score_hours)
         output = os.path.abspath(options.output or options.run)
     else:
         if not options.left or not options.target:

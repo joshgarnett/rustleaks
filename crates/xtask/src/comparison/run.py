@@ -345,7 +345,7 @@ def run_command(options):
     shutil.rmtree(os.path.join(output, 'homes'), ignore_errors=True)
     write_json(os.path.join(output, 'run.json'), run)
     if not options.no_score:
-        result = score_run(output, options.seed)
+        result = score_run(output, options.seed, options.score_hours)
         write_json(os.path.join(output, 'score.json'), result)
         write_private(os.path.join(output, 'score.md'), score_markdown(result).encode())
     report_write(output, options.seed)
