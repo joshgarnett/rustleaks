@@ -21,27 +21,68 @@ const MAX_TEMPLATE_NESTING: usize = 128;
 pub struct TemplateLimits {
     /// Maximum number of template source bytes.
     pub max_source_bytes: usize,
-    /// Maximum number of evaluated actions and range iterations.
+    /// Base number of evaluated actions and range iterations.
+    ///
+    /// The limit for one render is this value plus
+    /// [`TemplateLimits::actions_per_finding`] for each finding. See
+    /// [`TemplateLimits::action_limit`].
     pub max_actions: usize,
+    /// Further actions and range iterations allowed for each rendered finding.
+    pub actions_per_finding: usize,
     /// Maximum number of bytes sent to the destination.
+    ///
+    /// [`TemplateLimits::NO_OUTPUT_LIMIT`], the default, sets no limit.
     pub max_output_bytes: usize,
 }
 
 impl TemplateLimits {
-    /// Creates an explicit set of resource ceilings.
+    /// A `max_output_bytes` value that sets no output limit.
+    pub const NO_OUTPUT_LIMIT: usize = usize::MAX;
+
+    /// Creates an explicit set of resource ceilings with a fixed action
+    /// limit. Use [`TemplateLimits::with_actions_per_finding`] to let the
+    /// action limit grow with the findings.
     #[must_use]
     pub const fn new(max_source_bytes: usize, max_actions: usize, max_output_bytes: usize) -> Self {
         Self {
             max_source_bytes,
             max_actions,
+            actions_per_finding: 0,
             max_output_bytes,
         }
+    }
+
+    /// Returns these limits with `actions` more allowed actions per finding.
+    #[must_use]
+    pub const fn with_actions_per_finding(mut self, actions: usize) -> Self {
+        self.actions_per_finding = actions;
+        self
+    }
+
+    /// Returns the action limit for rendering `findings` findings:
+    /// `max_actions + actions_per_finding * findings`, saturating at
+    /// `usize::MAX`.
+    #[must_use]
+    pub const fn action_limit(&self, findings: usize) -> usize {
+        self.max_actions
+            .saturating_add(self.actions_per_finding.saturating_mul(findings))
     }
 }
 
 impl Default for TemplateLimits {
+    /// 1 MiB of source, 1,000,000 actions plus 1,000 for each finding, and no
+    /// output limit.
+    ///
+    /// Rendering streams to the destination and buffers at most one quoted
+    /// value, so output size does not drive memory. The language has no
+    /// recursion, and `range` visits only findings or tags, with each
+    /// iteration and action counted against the action limit, so the action
+    /// limit bounds rendering work. The packaged example templates use fewer
+    /// than 100 actions for each finding, so the allowance per finding leaves
+    /// ample room, while a template whose work grows faster than the number
+    /// of findings, such as nested ranges over all findings, still stops.
     fn default() -> Self {
-        Self::new(1024 * 1024, 1_000_000, 64 * 1024 * 1024)
+        Self::new(1024 * 1024, 1_000_000, Self::NO_OUTPUT_LIMIT).with_actions_per_finding(1_000)
     }
 }
 
@@ -235,12 +276,13 @@ impl TemplateReporter {
         let mut output = CountingWriter {
             inner: writer,
             written: 0,
-            limit: self.limits.max_output_bytes,
+            limit: (self.limits.max_output_bytes != TemplateLimits::NO_OUTPUT_LIMIT)
+                .then_some(self.limits.max_output_bytes),
         };
         let mut state = RenderState {
             variables: Vec::new(),
             actions: 0,
-            action_limit: self.limits.max_actions,
+            action_limit: self.limits.action_limit(findings.len()),
             output_limit: self.limits.max_output_bytes,
         };
         state
@@ -1611,17 +1653,22 @@ fn append_limited(output: &mut Vec<u8>, bytes: &[u8], limit: usize) -> Result<()
 struct CountingWriter<'a> {
     inner: &'a mut dyn Write,
     written: usize,
-    limit: usize,
+    /// `None` sets no limit and skips counting, so the count cannot overflow.
+    limit: Option<usize>,
 }
 
 impl CountingWriter<'_> {
     fn emit(&mut self, bytes: &[u8]) -> Result<(), TemplateError> {
+        let Some(limit) = self.limit else {
+            self.inner.write_all(bytes)?;
+            return Ok(());
+        };
         let new_total = self
             .written
             .checked_add(bytes.len())
-            .ok_or(TemplateError::OutputLimit { limit: self.limit })?;
-        if new_total > self.limit {
-            return Err(TemplateError::OutputLimit { limit: self.limit });
+            .ok_or(TemplateError::OutputLimit { limit })?;
+        if new_total > limit {
+            return Err(TemplateError::OutputLimit { limit });
         }
         self.inner.write_all(bytes)?;
         self.written = new_total;

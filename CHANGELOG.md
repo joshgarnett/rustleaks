@@ -2,11 +2,78 @@
 
 ## [Unreleased]
 
+- Fix archive scans that skipped large archives. With `--max-archive-depth`,
+  a whole archive had to fit in 64 MiB and each member in 64 MiB, so a 200 MB
+  `release.tar.gz` or a 1 GB `backup.zip` was skipped. Rustleaks now reads
+  archives as streams and scans each member while it decompresses it. ZIP and
+  7z files found by `dir` are read in place. Other ZIP, 7z, Zstandard and LZ4
+  input, such as a ZIP inside a TAR or an archive from Git, is copied to
+  memory up to 1 MiB. Larger copies go to an anonymous temporary file that
+  only the owner can read and that is removed on every path. RAR members,
+  Snappy and MinLZ streams and some headers stay in memory, up to 64 MiB. The
+  new defaults for one archive are 1,000,000 entries, 4 GiB for one member,
+  16 GiB in total and 1 GiB of temporary storage. One archive file from Git
+  can have 1 GiB. Findings do not change for members that scanned before.
+  Members before a damaged part or a limit are now scanned before the
+  warning. This includes the bytes of a member whose CRC check fails at its
+  end. A compressed file over the member limit is scanned up to the limit.
+  An archive file from Git over its limit is skipped with a warning instead
+  of stopping the scan with exit code 1.
+- Fix `git` scans that stopped with exit code 1 on long histories, such as
+  those of Rails or Django, because the whole `git log` output had to fit in
+  256 MiB and 2,000,000 lines. Rustleaks now reads Git output while Git runs
+  and parses one changed file at a time, so memory follows the largest change
+  instead of the whole history. The patch byte, patch line, file, hunk and
+  metadata limits now apply to each commit. The `--complete-profile` keys
+  `git_patch_bytes`, `git_patch_lines`, `git_files`, `git_hunks` and
+  `git_metadata_bytes` have the same meaning. The default limits for one commit
+  are 1 GiB and 16,000,000 lines. The limit on distinct commits rises from
+  1,000,000 to 100,000,000. Findings do not change for histories that scanned
+  before. When Git fails, or a later commit reaches a limit or cannot be read,
+  the scan still exits with code 1. Its report can now hold findings from the
+  commits before that point, and a log line can come later than before.
 - Adopt a standalone compatibility policy. Help, usage and error wording, log
   and banner lines, and the order of JSON keys and CSV columns are no longer
   compatibility guarantees and can change. Findings, configuration meaning,
   report fields, exit codes, and supported Gitleaks commands, flags and
   environment variables stay compatible with the pinned Gitleaks revision.
+- Read `.gitleaksignore` and `.rustleaksignore` files one line at a time.
+  Rustleaks loads these files from the scanned folder, so the scanned
+  repository controls their size. Before, Rustleaks read the whole file into
+  memory before it checked the 64 KiB line limit. Entries, warnings and
+  errors do not change.
+- Limit each configuration file to 16 MiB. A configuration can come from
+  the scanned folder, and Rustleaks read it whole with no limit. A larger
+  file now fails to load before Rustleaks reads more than 16 MiB, and the
+  scan exits with 1. This applies to `--config`, the configuration
+  environment variables that name a file, `.gitleaks.toml` and
+  `.rustleaks.toml` in the scanned folder, `[extend]` files, and
+  `FileSystemResolver` in `rustleaks-core`, where the error is a
+  `ConfigError::Resolve`. The largest packaged configuration is under 1 MiB.
+- Remove the 64 MiB limit on template report output. A template report
+  larger than 64 MiB stopped the scan with exit code 1, and Gitleaks has no
+  such limit. Rustleaks writes the report while it renders, so the report
+  size does not change memory use. The 1,000,000-action limit still bounds
+  the work of rendering. `TemplateLimits::default()` in `rustleaks-report`
+  now sets `max_output_bytes` to `TemplateLimits::NO_OUTPUT_LIMIT`.
+- Let the template action limit grow with the number of findings. A
+  template report stopped with exit code 1 after 1,000,000 actions, so a
+  normal template that uses about 30 actions for each finding failed at
+  about 33,000 findings. Gitleaks has no such limit. The limit is now
+  1,000,000 actions plus 1,000 for each finding. A template whose work grows
+  faster than the number of findings still stops with exit code 1.
+  `TemplateLimits` in `rustleaks-report` has a new `actions_per_finding`
+  field, which `TemplateLimits::new` sets to 0.
+- Read the `--baseline-path` file in the CLI and parse it with
+  `Baseline::from_go_json`, so the core engine no longer reads it.
+  `Baseline::load_go_json` stays as a wrapper for library users. Baseline
+  matches, warnings and errors do not change.
+- Keep at most 10,000 source warnings and errors, such as unreadable or
+  skipped files, in a scan without `--complete-profile`. Before, Rustleaks
+  kept every one in memory until the end of the scan. Later ones are
+  counted, and one log line, such as "15000 more source warnings and errors
+  were not shown", gives their number. The scan, its exit code and its
+  report do not change.
 - Add the `help [command]` command, which prints the same help as
   `<command> --help`, and the `completion <shell>` command, which prints a
   completion script for bash, zsh, fish or PowerShell. `completion` accepts

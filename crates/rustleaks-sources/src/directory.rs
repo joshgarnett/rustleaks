@@ -379,12 +379,8 @@ impl DirectorySource {
             if let Some(config) = &self.options.path_config {
                 options = options.path_config(Arc::clone(config));
             }
-            let mut source = crate::ArchiveSource::with_options(
-                file,
-                target,
-                self.options.file_options,
-                options,
-            );
+            let mut source =
+                crate::ArchiveSource::from_file(file, target, self.options.file_options, options);
             if let Some(alias) = alias {
                 source = source.with_symlink_path(alias);
             }

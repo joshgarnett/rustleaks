@@ -264,14 +264,19 @@ fn hunk_emission_stops_on_callback_control_and_failure() {
 
 #[cfg(unix)]
 #[test]
-fn late_patch_and_command_errors_publish_no_fragments() {
+fn late_patch_and_command_errors_follow_the_records_before_them() {
+    // Git output is parsed while Git runs. A file record is published once
+    // the next record starts, so records before a failure are published.
+    // The final record waits until Git exits successfully.
     let mut truncated = SYNTHETIC_HUNK_PATCH.to_vec();
     truncated.extend_from_slice(
         b"diff --git a/broken b/broken\n--- a/broken\n+++ b/broken\n@@ -0,0 +1,2 @@\n+truncated\n",
     );
-    for (patch, exit_code, stage) in [
-        (truncated.as_slice(), 0, SourceStage::GitParse),
-        (SYNTHETIC_HUNK_PATCH, 7, SourceStage::GitExit),
+    // single.txt has one hunk and multi.txt three. The truncated record
+    // follows multi.txt; with exit code 7, multi.txt is the final record.
+    for (patch, exit_code, stage, published) in [
+        (truncated.as_slice(), 0, SourceStage::GitParse, 4),
+        (SYNTHETIC_HUNK_PATCH, 7, SourceStage::GitExit, 1),
     ] {
         for stderr in [false, true] {
             let (repository, mut source) = scripted_patch_source(patch, stderr, exit_code);
@@ -292,7 +297,7 @@ fn late_patch_and_command_errors_publish_no_fragments() {
                 "stage={stage:?}, stderr={stderr}, exit_code={exit_code}, repository={:?}, error={error:?}",
                 repository.path()
             );
-            assert_eq!(fragments, 0);
+            assert_eq!(fragments, published);
             if stderr && stage == SourceStage::GitParse {
                 assert_eq!(
                     issues,
@@ -302,6 +307,137 @@ fn late_patch_and_command_errors_publish_no_fragments() {
                 assert!(issues.is_empty());
             }
         }
+    }
+}
+
+/// Returns the commit count, and the most bytes and lines of one commit, in
+/// `git log` output, counting from each `commit ` line to the next.
+#[cfg(unix)]
+fn largest_commit(output: &[u8]) -> (usize, usize, usize) {
+    let mut sizes = Vec::new();
+    for line in output.split_inclusive(|byte| *byte == b'\n') {
+        if line.starts_with(b"commit ") {
+            sizes.push((0, 0));
+        }
+        let (bytes, lines) = sizes.last_mut().expect("output starts with a commit");
+        *bytes += line.len();
+        *lines += 1;
+    }
+    let largest = sizes.iter().map(|(bytes, _)| *bytes).max().unwrap();
+    let most_lines = sizes.iter().map(|(_, lines)| *lines).max().unwrap();
+    (sizes.len(), largest, most_lines)
+}
+
+#[cfg(unix)]
+#[test]
+fn history_larger_than_the_per_commit_limits_scans_completely() {
+    // Each commit adds one file. Every commit fits the patch limits below,
+    // but the whole history is several times larger. A total limit would
+    // stop this scan; a per-commit limit must not.
+    let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let repository = TempRepo(std::env::temp_dir().join(format!(
+        "rustleaks-git-per-commit-{}-{unique}",
+        std::process::id()
+    )));
+    fs::create_dir(repository.path()).expect("create synthetic repository");
+    let git = |arguments: &[&str]| {
+        let output = support::command()
+            .arg("-C")
+            .arg(repository.path())
+            .args([
+                "-c",
+                "user.name=Synthetic Test",
+                "-c",
+                "user.email=synthetic@example.invalid",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(arguments)
+            .env("GIT_AUTHOR_DATE", "2021-11-02T23:37:53Z")
+            .env("GIT_COMMITTER_DATE", "2021-11-02T23:37:53Z")
+            .output()
+            .expect("run isolated Git");
+        assert!(output.status.success(), "isolated Git {arguments:?} failed");
+        output.stdout
+    };
+    git(&["init", "--quiet"]);
+    let commits = 6;
+    let mut contents = Vec::new();
+    for index in 0..commits {
+        let name = format!("file-{index}.txt");
+        let content = format!("synthetic value {index}\n").repeat(20);
+        fs::write(repository.path().join(&name), &content).expect("write synthetic file");
+        git(&["add", "--", &name]);
+        git(&["commit", "--quiet", "-m", &format!("add {name}")]);
+        contents.push((name, content));
+    }
+
+    // Measure each commit in the same output that the source reads.
+    let output = git(&[
+        "log",
+        "-p",
+        "-U0",
+        "--full-history",
+        "--all",
+        "--diff-filter=tuxdb",
+    ]);
+    let (count, largest, most_lines) = largest_commit(&output);
+    assert_eq!(count, commits);
+    assert!(
+        output.len() > 3 * largest,
+        "the history must exceed one commit"
+    );
+
+    let limits = |bytes, lines| {
+        GitLimits::new(bytes, lines, 1 << 20, 1 << 20)
+            .and_then(|limits| limits.with_parser_limits(4096, 4096, 1, 1))
+            .expect("per-commit limits")
+    };
+    let mut source = support::git_source(repository.path()).limits(limits(largest, most_lines));
+    let (fragments, issues) = collect(&mut source);
+    assert!(issues.is_empty());
+    assert_eq!(fragments.len(), commits);
+    for (name, content) in &contents {
+        let fragment = fragments
+            .iter()
+            .find(|fragment| fragment.file_path().as_bytes() == name.as_bytes())
+            .expect("every commit is scanned");
+        assert_eq!(fragment.content().as_bytes(), content.as_bytes());
+        assert_eq!(fragment.start_line(), 1);
+        let metadata = fragment.commit_metadata().expect("commit metadata");
+        assert_eq!(
+            metadata.message().as_bytes(),
+            format!("add {name}").as_bytes()
+        );
+    }
+    let mut shas = fragments
+        .iter()
+        .map(|fragment| fragment.commit().as_bytes().to_vec())
+        .collect::<Vec<_>>();
+    shas.sort();
+    shas.dedup();
+    assert_eq!(shas.len(), commits);
+
+    // One byte or one line less than the largest commit still stops the scan.
+    for limits in [
+        limits(largest - 1, most_lines),
+        limits(largest, most_lines - 1),
+    ] {
+        let error = support::git_source(repository.path())
+            .limits(limits)
+            .visit(&CancellationToken::new(), &mut |_| {
+                Ok(SourceControl::Continue)
+            })
+            .expect_err("a commit above the limit must fail closed");
+        assert!(matches!(
+            error,
+            SourceError::Terminal {
+                stage: SourceStage::Limit,
+                ..
+            }
+        ));
     }
 }
 
@@ -351,7 +487,7 @@ fn matrix_f_diff_and_index_fragments_have_zero_metadata() {
     assert_eq!(fragments[0].start_line(), 6);
     assert_eq!(
         fragments[0].content().as_bytes(),
-        b"\taws_token := \"AKIALALEMEL33243OLIA\"  // fingerprint of that secret is added to .gitleaksignore\n\taws_token2 := \"AKIALALEMEL33243OLIA\" // this one is not\n\tfmt.Println(aws_token)\n\tfmt.Println(aws_token2)\n"
+        b"\taws_token := \"AKIALALEMEL33243OLIA\"  // fingerprint of that secret is added to .gitleaksignore\n\taws_token2 := \"AKIALALEMEL33243OLIA\" // this one is not\n\tfmt.Println(aws_token)\n\tfmt.Println(aws_token2)\n" // gitleaks:allow
     );
     assert!(fragments[0].commit().is_empty());
     let metadata = fragments[0].commit_metadata().expect("zero diff metadata");
@@ -425,7 +561,7 @@ fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
             .content()
             .as_bytes()
             .windows(20)
-            .any(|window| window == b"AKIALALEMEL33243OLIA")
+            .any(|window| window == b"AKIALALEMEL33243OLIA") // gitleaks:allow
     );
     assert_eq!(
         stream
@@ -465,21 +601,26 @@ fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
     assert!(!fragments.is_empty());
     assert!(issues.is_empty());
 
-    let error = support::git_source(repository.path())
+    // A blob over its limit is skipped with a limit issue, like other
+    // archive limits, and the history scan goes on.
+    let mut over_issues = Vec::new();
+    let control = support::git_source(repository.path())
         .mode(mode())
         .limits(limits(blob_size - 1))
         .archives(ArchiveOptions::default())
-        .visit(&CancellationToken::new(), &mut |_| {
+        .visit(&CancellationToken::new(), &mut |event| {
+            match event {
+                SourceEvent::Issue(issue) => over_issues.push((issue.stage(), issue.kind())),
+                SourceEvent::Fragment { fragment, .. } => {
+                    assert_ne!(fragment.file_path().as_bytes(), b"main.go.zst");
+                }
+                _ => unreachable!("future source event"),
+            }
             Ok(SourceControl::Continue)
         })
-        .expect_err("over-limit archive blob");
-    assert!(matches!(
-        error,
-        SourceError::Terminal {
-            stage: SourceStage::Limit,
-            ..
-        }
-    ));
+        .expect("over-limit archive blob is skipped");
+    assert_eq!(control, SourceControl::Continue);
+    assert_eq!(over_issues, [(SourceStage::Limit, SourceIssueKind::Limit)]);
 
     let mut callbacks = 0;
     let control = support::git_source(repository.path())

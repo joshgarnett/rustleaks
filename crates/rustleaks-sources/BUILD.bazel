@@ -158,6 +158,14 @@ rustleaks_integration_test(
 )
 
 rustleaks_integration_test(
+    name = "archive_streaming_test",
+    src = "tests/archive_streaming.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support"],
+)
+
+rustleaks_integration_test(
     name = "chunk_boundaries_test",
     src = "tests/chunk_boundaries.rs",
     deps = [
@@ -215,6 +223,7 @@ test_suite(
         ":archive_fuzz_test",
         ":archive_sources_test",
         ":archive_semantics_test",
+        ":archive_streaming_test",
         ":chunk_boundaries_test",
         ":complete_sources_test",
         ":git_corpus_test",

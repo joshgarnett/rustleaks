@@ -1201,6 +1201,29 @@ fn setup_diagnostic_cases_are_fatal_without_report_side_effects() {
 }
 
 #[test]
+fn oversized_source_local_config_is_fatal_before_the_scan() {
+    let fixture = Fixture::new();
+    let mut config = matching_config().as_bytes().to_vec();
+    config.push(b'\n');
+    config.resize(16 * 1024 * 1024 + 1, b'#');
+    fixture.write("repo/.gitleaks.toml", config);
+    fixture.write("repo/secret.txt", b"token=AB12\n");
+    let result = output(
+        &fixture.0,
+        &["dir", "repo", "--no-banner", "-r", "report.json"],
+    );
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.lines().any(|line| line.starts_with("fatal ")
+            && line.contains("configuration file is larger than the 16 MiB limit")),
+        "{stderr}"
+    );
+    assert!(!fixture.0.join("report.json").exists());
+}
+
+#[test]
 fn baseline_is_nonfatal_and_excludes_its_own_report_file() {
     let fixture = Fixture::new();
     fixture.write("config.toml", matching_config());
@@ -2712,6 +2735,8 @@ mod complete_profile {
             files: &["partial.tar!first.txt"],
             diagnostic: "truncated TAR member",
         },
+        // Archives stream: the whole leaf is scanned before the gzip
+        // trailer after the TAR end fails its CRC check.
         ArchiveCase {
             name: "corrupt.tgz",
             depth: "1",
@@ -2719,9 +2744,9 @@ mod complete_profile {
             state: "incomplete",
             reason: "coverage_failure",
             reports: "partial",
-            fragments: 0,
+            fragments: 1,
             issues: 0,
-            files: &[],
+            files: &["corrupt.tgz!leaf.txt"],
             diagnostic: "gzip size or CRC mismatch",
         },
         ArchiveCase {
@@ -2841,6 +2866,7 @@ mod complete_profile {
             files: &[],
             diagnostic: "",
         },
+        // The cut is after the whole leaf, in the TAR end blocks.
         ArchiveCase {
             name: "half.tgz",
             depth: "1",
@@ -2848,9 +2874,9 @@ mod complete_profile {
             state: "incomplete",
             reason: "coverage_failure",
             reports: "partial",
-            fragments: 0,
+            fragments: 1,
             issues: 0,
-            files: &[],
+            files: &["half.tgz!leaf.txt"],
             diagnostic: "",
         },
     ];

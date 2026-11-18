@@ -77,6 +77,8 @@ pub(crate) struct CompleteProfile {
     pub archive_member_bytes: usize,
     pub archive_total_bytes: usize,
     pub archive_spool_bytes: usize,
+    // The patch byte, patch line, metadata, file and hunk keys are limits for
+    // one commit. Git history is streamed, so no key limits its total size.
     pub git_patch_bytes: usize,
     pub git_patch_lines: usize,
     pub git_stderr_bytes: usize,

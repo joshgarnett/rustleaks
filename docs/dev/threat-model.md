@@ -37,8 +37,8 @@ and fail when that boundary changes.
 | Review records | `rustleaks-core/src/triage.rs`, `rustleaks-report/src/triage.rs` | Policy, options and completion binding; finite reasons and expiry; 4,096 records, 100,000 findings, 8 MiB JSON | Core and report triage tests, examples |
 | Decoders and locations | `rustleaks-core/src/decoder/`, `model.rs` | Caller decode depth, decoded bytes and work in budgets, checked offsets | Decoder, arbitrary bytes, locations, parity, `fragment_scan` fuzz |
 | Files and directories | `rustleaks-sources/src/file.rs`, `directory.rs`, `path.rs`, `runner.rs`, `runner/budget.rs` | Bounded chunks and queue, optional complete targets, symlink hop limit 64, path normalization, optional budgets, workers joined | File, directory, path, symlink escape, chunking, complete-target, cancellation, budget and panic cleanup tests |
-| Archives | `rustleaks-sources/src/archive.rs`, codec forks, selected decoders | No extraction to disk, no link following, checked coder graphs, depth 8, 10,000 entries, 64 MiB member, 256 MiB total, 64 MiB spool | Format fixtures, traversal, link, bomb and nesting tests, panic policy example, `archive` fuzz |
-| Git and links | `rustleaks-sources/src/git.rs`, `scm.rs` | No shell, option terminators, isolated Git config, hooks and prompts off, no credential helper, bounded output, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
+| Archives | `rustleaks-sources/src/archive.rs`, `archive/`, `rar.rs`, codec forks, selected decoders | Streamed members, no member extraction to disk, no link following, checked coder graphs, depth 8, 1,000,000 entries, 4 GiB member, 16 GiB total, 1 GiB spool, 64 MiB parts in memory, anonymous owner-only temporary spool files | Format fixtures, traversal, link, bomb, nesting, streaming equivalence and spool cleanup tests, panic policy example, `archive` fuzz |
+| Git and links | `rustleaks-sources/src/git.rs`, `scm.rs` | No shell, option terminators, isolated Git config, hooks and prompts off, no credential helper, streamed output with limits for each commit, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
 | Reports and CLI | `rustleaks-report/src/`, `rustleaks-cli/src/args.rs`, `output.rs`, `run.rs` | JSON and XML escaping, bounded templates, `--redact` before output, escaped terminal control characters, counts instead of values in diagnostics | Report and CLI corpora, invalid byte, terminal control and redaction tests, template properties and fuzz |
 | Dependencies | `Cargo.lock`, `deny.toml`, `supply-chain/`, `supply-chain-exceptions.toml` | Locked versions and sources, vet inventory, license, advisory, ban, build script, native code and unsafe policy | `just security`, cargo-deny, RustSec, cargo-vet, cargo-geiger, Miri |
 | Bazel and local tools | `MODULE.bazel`, lockfiles, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned toolchains and lockfiles, declared inputs, exact tool versions, private bounded output, verified process cleanup | `just ci`, build system checks, package consumers, target compile matrix |
@@ -74,7 +74,9 @@ meta engine, its caches and the reverse NFA fallback.
   speedup.
 - The PikeVM estimate covers dependency search tables and stacks, but not
   allocator overhead.
-- The caller owns reading configuration files and their total size.
+- The caller owns reading configuration files. `FileSystemResolver` and the
+  CLI read at most 16 MiB of each file. Other callers own the size of the
+  text they pass.
 - Configuration is untrusted, so literal-anchor analysis is capped by choice
   and step counts, and the full keyword DFA is used only within the keyword
   size and depth limits.
@@ -127,14 +129,38 @@ See [Using rustleaks-core](../user/library.md#review-records).
 - 7z short member reads stay compatible by default. Callers can require the
   declared lengths.
 - Compressed RAR3, RAR5 and 7z decoding relies on catching panics. These
-  paths are rejected under `panic=abort`.
+  paths are rejected under `panic=abort`. A panic in the scan of a 7z member
+  is raised again after the decoder returns.
 - Allocation failure can still abort.
+- Members are scanned while they are read. A CRC or length check that fails
+  at the end of a member, or a later damaged part, is reported after the
+  bytes before it were scanned. A complete target is published only after a
+  read without failure.
+- ZIP, 7z, Zstandard and LZ4 input that is not a file on disk is copied to a
+  spool: memory up to 1 MiB, then a temporary file. Temporary files are
+  created with `create_new` in the system temporary folder (`TMPDIR`, `TMP`
+  or `TEMP`) under an unpredictable name, with mode `0600` on Unix. On Unix
+  the name is removed right after creation; on Windows the file is opened
+  with no sharing and delete-on-close. No path is reused, and the data is
+  removed on every exit path, including a killed process. The spool limit
+  bounds the bytes held at once by one traversal. A memory-backed temporary
+  folder turns spool files into memory use.
+- The XZ decoder sizes its dictionary from the stream header without a
+  Rustleaks limit. Bzip2 blocks are at most 900 kB, and large-window Brotli is
+  rejected.
 
 ### Git and links
 
 - Git is an external program. Behavior depends on the installed Git and the
   host file system.
-- Fuzzing covers the patch parser in process. It does not run Git.
+- Fuzzing covers the patch parser in process. It does not run Git. Each
+  input is also parsed in one-byte and varied chunks, which must give the
+  same result as the whole input.
+- Git output is parsed while Git runs. Memory follows the largest file record
+  of one commit. Commit identities that the runner keeps for its count grow
+  with the history, up to 100,000,000 commits.
+- An archive blob streams from `git cat-file` into an archive spool. Over its
+  limit, Git is stopped and reaped, and the blob is skipped with an issue.
 
 ### Reports and CLI
 

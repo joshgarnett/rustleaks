@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -145,6 +146,10 @@ impl ConfigResolver for NoIoResolver {
 }
 
 /// Explicit filesystem-backed resolver.
+///
+/// It reads files of at most 16 MiB. A larger file gives a [`ResolverError`]
+/// before more than 16 MiB are read, which loading reports as
+/// [`ConfigError::Resolve`].
 #[derive(Clone, Debug, Default)]
 pub struct FileSystemResolver {
     base_directory: Option<PathBuf>,
@@ -190,13 +195,40 @@ impl ConfigResolver for FileSystemResolver {
         path: &str,
     ) -> Result<ResolvedConfig, ResolverError> {
         let resolved_path = self.resolve_path(origin, Path::new(path));
-        let contents = fs::read_to_string(&resolved_path)
+        let contents = read_config_file(&resolved_path)
             .map_err(|error| ResolverError::new(path, display_origin(origin), error.to_string()))?;
         Ok(ResolvedConfig::new(
             contents,
             ConfigOrigin::Path(resolved_path),
         ))
     }
+}
+
+/// Largest configuration file, in bytes, that [`FileSystemResolver`] reads.
+///
+/// The largest packaged configuration is under 1 MiB. A configuration can
+/// come from the scanned folder, so a larger file fails before more than this
+/// many bytes are read.
+const MAX_CONFIG_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Reads a UTF-8 configuration file of at most [`MAX_CONFIG_FILE_BYTES`].
+fn read_config_file(path: &Path) -> io::Result<String> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(MAX_CONFIG_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_CONFIG_FILE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration file is larger than the 16 MiB limit",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })
 }
 
 /// Deterministic in-memory resolver suitable for embedders and tests.
@@ -1587,9 +1619,63 @@ fn origin_suffix(origin: Option<&ConfigOrigin>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_virtual_path, parse_weak_float, parse_weak_integer, validate_pattern,
-        virtual_path_is_absolute,
+        ConfigError, ConfigLoader, ConfigOrigin, ConfigResolver, FileSystemResolver,
+        MAX_CONFIG_FILE_BYTES, normalize_virtual_path, parse_weak_float, parse_weak_integer,
+        validate_pattern, virtual_path_is_absolute,
     };
+
+    #[test]
+    fn file_system_resolver_reads_at_most_16_mib() {
+        let directory = std::env::temp_dir().join(format!(
+            "rustleaks-core-config-cap-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let limit = usize::try_from(MAX_CONFIG_FILE_BYTES).unwrap();
+        assert_eq!(limit, 16 * 1024 * 1024);
+        let mut contents = b"title = 'at limit'\n".to_vec();
+        contents.resize(limit, b'#');
+        std::fs::write(directory.join("at.toml"), &contents).unwrap();
+        contents.push(b'#');
+        std::fs::write(directory.join("over.toml"), &contents).unwrap();
+        std::fs::write(directory.join("invalid.toml"), b"title = '\xff'\n").unwrap();
+
+        let resolver = FileSystemResolver::with_base_directory(&directory);
+        let at = resolver.resolve(None, "at.toml").unwrap();
+        assert_eq!(at.contents().len(), limit);
+        assert_eq!(at.origin(), &ConfigOrigin::path(directory.join("at.toml")));
+        let over = resolver.resolve(None, "over.toml").unwrap_err();
+        assert_eq!(over.path(), "over.toml");
+        assert_eq!(
+            over.to_string(),
+            "unable to resolve config path 'over.toml' from <memory>: \
+             configuration file is larger than the 16 MiB limit"
+        );
+        // Invalid UTF-8 keeps the message of `fs::read_to_string`.
+        let invalid = resolver.resolve(None, "invalid.toml").unwrap_err();
+        let standard = std::fs::read_to_string(directory.join("invalid.toml")).unwrap_err();
+        assert_eq!(standard.to_string(), "stream did not contain valid UTF-8");
+        assert_eq!(
+            invalid.to_string(),
+            "unable to resolve config path 'invalid.toml' from <memory>: \
+             stream did not contain valid UTF-8"
+        );
+
+        let loader = ConfigLoader::new().with_resolver(resolver);
+        let origin = Some(ConfigOrigin::path(directory.join("root.toml")));
+        let error = loader
+            .load_toml_at("[extend]\npath = 'over.toml'\n", origin.clone())
+            .unwrap_err();
+        assert!(matches!(error, ConfigError::Resolve(_)), "{error:?}");
+        loader
+            .load_toml_at("[extend]\npath = 'at.toml'\n", origin)
+            .unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn go_regex_validation_counts_go_groups() {

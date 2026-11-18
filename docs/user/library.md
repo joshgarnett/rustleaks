@@ -105,7 +105,8 @@ configuration that names it, when that configuration came from a file. Load a
 file with `load_toml_at(text, Some(ConfigOrigin::Path(path)))` to give it that
 folder. For text without a file path, the resolver uses the folder set with
 `FileSystemResolver::with_base_directory`, or the process working folder when
-you use `FileSystemResolver::new()`. `VirtualResolver` serves base
+you use `FileSystemResolver::new()`. It reads files of at most 16 MiB, and
+a larger file fails with `ConfigError::Resolve`. `VirtualResolver` serves base
 configurations from memory instead.
 
 The CLI is different: it reads a relative `extend.path` from the current

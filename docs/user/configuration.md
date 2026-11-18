@@ -268,6 +268,10 @@ end in `.tgz` as compressed TAR archives.
 A file inside an archive is reported with `!` between the archive path and the
 path inside it, for example `bundle.zip!config/app.env`.
 
+Archives are read as streams, so large archives scan with bounded memory.
+Archive size, entry and temporary storage limits apply. See
+[Archives](resource-limits.md#archives).
+
 ## Other scan options
 
 | Flag | Effect |

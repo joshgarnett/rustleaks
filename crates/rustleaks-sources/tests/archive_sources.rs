@@ -367,9 +367,15 @@ fn cancellation_is_observed_during_deflate_decoding() {
     struct CountdownCancellation {
         checks: AtomicUsize,
     }
+    // Cancelled from the seventh check on, like a token cancelled while the
+    // stream is decoded and scanned.
     impl Cancellation for CountdownCancellation {
         fn is_cancelled(&self) -> bool {
-            self.checks.fetch_sub(1, Ordering::AcqRel) == 0
+            self.checks
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+                    left.checked_sub(1)
+                })
+                .is_err()
         }
     }
 

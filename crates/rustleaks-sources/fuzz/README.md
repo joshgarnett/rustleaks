@@ -32,6 +32,12 @@ read-ahead. Decoder memory limits also use the member limit. This leaves room
 for the smallest LZIP dictionary and the 128 KiB windows of the RAR3 and RAR5
 seeds. Production archive defaults do not change.
 
+Archives stream from their input, so each input is scanned twice: once from
+memory and once in reads of one to seven bytes. Both runs must give the same
+fragments, issue stages and kinds, and result. Inputs that cancel after an
+event are scanned once, because the next cancellation poll can come at a
+different point.
+
 `just fuzz-smoke` builds the archive corpus from shared synthetic seed
 builders and reviewed fixtures. The generator writes a `corpus/` folder, a
 manifest with hashes and origins, and the license files. The corpus has 90

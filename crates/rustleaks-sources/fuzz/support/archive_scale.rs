@@ -272,7 +272,14 @@ fn high_ratio(codec: Codec, iterations: usize, scale: Scale) -> Result<Vec<Value
         let [issue] = issues.as_slice() else {
             return Err(format!("{name} over the limit produced {} issues", issues.len()).into());
         };
-        if !fragments.is_empty()
+        // The stream is scanned while it decodes, so the bytes before the
+        // member limit are published before the limit issue.
+        let published = fragments
+            .iter()
+            .map(|fragment| fragment.content().len())
+            .sum::<usize>();
+        if published > member_limit
+            || fragments.iter().any(|fragment| !is_all_zero(fragment))
             || issue.kind() != SourceIssueKind::Limit
             || issue.message() != "archive expansion limit exceeded"
         {

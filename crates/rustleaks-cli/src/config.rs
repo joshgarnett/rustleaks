@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ use rustleaks_core::model::ByteText;
 use rustleaks_core::native::{
     CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, NativePolicyError, PROVIDER_RULES_V1,
 };
-use rustleaks_core::session::{Baseline, IgnoreIssue, IgnoreSet, SessionPolicy};
+use rustleaks_core::session::{Baseline, BaselineLoadError, IgnoreIssue, IgnoreSet, SessionPolicy};
 use rustleaks_sources::LogicalPath;
 
 use crate::args::{CommandKind, Invocation};
@@ -23,6 +24,18 @@ use crate::args::{CommandKind, Invocation};
 /// description `v8.30.0-27-gb58d3f1`. A config `minVersion` above this
 /// version produces an advisory warning.
 const IMPLEMENTED_GITLEAKS_VERSION: &str = "8.30.0";
+
+/// Largest configuration file, in bytes, that Rustleaks reads.
+///
+/// The largest packaged configuration is under 1 MiB. A configuration can
+/// come from the scanned folder, so a larger file fails before more than this
+/// many bytes are read. `FileSystemResolver` in `rustleaks-core` uses the same
+/// limit.
+const MAX_CONFIG_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Bytes in the longest ignore file line, without its line feed, that the
+/// core parser rejects. It matches the default Go scanner token limit.
+const IGNORE_LINE_LIMIT: u64 = 64 * 1024;
 
 pub(crate) struct ConfigAssembly {
     pub full: Arc<CompiledConfig>,
@@ -55,11 +68,33 @@ impl ConfigResolver for CwdResolver {
         requested: &str,
     ) -> Result<ResolvedConfig, ResolverError> {
         let path = resolve(&self.cwd, Path::new(requested));
-        let contents = fs::read_to_string(&path).map_err(|error| {
+        let contents = read_config_file(&path).map_err(|error| {
             ResolverError::new(requested, self.cwd.display().to_string(), error.to_string())
         })?;
         Ok(ResolvedConfig::new(contents, ConfigOrigin::Path(path)))
     }
+}
+
+/// Reads a UTF-8 configuration file of at most [`MAX_CONFIG_FILE_BYTES`].
+///
+/// Errors other than the size limit are the errors of `fs::read_to_string`.
+fn read_config_file(path: &Path) -> io::Result<String> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(MAX_CONFIG_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_CONFIG_FILE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration file is larger than the 16 MiB limit",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })
 }
 
 pub(crate) fn assemble(
@@ -119,7 +154,7 @@ pub(crate) fn assemble(
     let mut excluded_paths = config_exclusions(invocation)?;
     if let Some(path) = &invocation.options.baseline_path {
         let physical = resolve(cwd, path);
-        match Baseline::load_go_json(&physical) {
+        match load_baseline(&physical) {
             Ok(baseline) => match baseline_exclusion(invocation, cwd, &physical) {
                 Ok(exclusion) => {
                     policy = policy.baseline(baseline);
@@ -378,7 +413,7 @@ fn load_path(
     source: &str,
 ) -> Result<(CompiledConfig, String), String> {
     let physical = resolve(cwd, path);
-    let contents = fs::read_to_string(&physical).map_err(|error| {
+    let contents = read_config_file(&physical).map_err(|error| {
         format!(
             "could not read config {} from {source}: {error}",
             path.display()
@@ -468,17 +503,31 @@ impl IgnoreLoader<'_> {
             .try_reserve(1)
             .map_err(|error| format!("could not retain ignore file path: {error}"))?;
         self.loaded.push(canonical);
-        let bytes = fs::read(&physical)
-            .map_err(|error| format!("could not read ignore file {}: {error}", shown.display()))?;
-        let display = clean_native_path(path).unwrap_or(shown);
+        let read_error =
+            |error: io::Error| format!("could not read ignore file {}: {error}", shown.display());
+        let mut reader = BufReader::new(fs::File::open(&physical).map_err(read_error)?);
+        let display = clean_native_path(path).unwrap_or_else(|_| shown.clone());
         let file = display.display();
-        // Feed one line at a time so each diagnostic can name its line. The
-        // parser splits on line feeds, so the installed entries are the same
-        // as for one call over the whole file.
-        for (index, line) in bytes.split_inclusive(|byte| *byte == b'\n').enumerate() {
+        // The scanned repository controls this file, so read one line at a
+        // time and never hold more than one line. Each diagnostic can then
+        // name its line. The parser splits on line feeds, so the installed
+        // entries are the same as for one call over the whole file.
+        let mut line = Vec::new();
+        for index in 0_usize.. {
+            line.clear();
+            // A line of IGNORE_LINE_LIMIT bytes or more is rejected by the
+            // parser whatever follows, so reading one more byte than the
+            // limit is enough to report it.
+            (&mut reader)
+                .take(IGNORE_LINE_LIMIT + 1)
+                .read_until(b'\n', &mut line)
+                .map_err(read_error)?;
+            if line.is_empty() {
+                break;
+            }
             let line_number = index.saturating_add(1);
             let mut stop = false;
-            for issue in self.ignores.extend_go_compatible(line) {
+            for issue in self.ignores.extend_go_compatible(&line) {
                 let warning = match issue {
                     IgnoreIssue::InvalidFieldCount { fields, .. } => {
                         let noun = if fields == 1 { "field" } else { "fields" };
@@ -506,6 +555,21 @@ impl IgnoreLoader<'_> {
         }
         Ok(())
     }
+}
+
+/// Reads a baseline report and parses it with the file-free core parser.
+///
+/// The errors are those of `Baseline::load_go_json`, so messages do not
+/// change.
+fn load_baseline(path: &Path) -> Result<Baseline, BaselineLoadError> {
+    let bytes = fs::read(path).map_err(|source| BaselineLoadError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Baseline::from_go_json(&bytes).map_err(|source| BaselineLoadError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn config_exclusions(invocation: &Invocation) -> Result<Vec<ByteText>, String> {
@@ -724,6 +788,223 @@ mod tests {
                  file=.rustleaksignore line=2",
             ]
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn load_ignore_file(name: &str, contents: &[u8]) -> (IgnoreSet, Vec<String>) {
+        let root = temporary_directory(name);
+        std::fs::write(root.join(".gitleaksignore"), contents).unwrap();
+        let mut ignores = IgnoreSet::default();
+        let mut warnings = Vec::new();
+        IgnoreLoader {
+            cwd: &root,
+            loaded: Vec::new(),
+            ignores: &mut ignores,
+            warnings: &mut warnings,
+        }
+        .append_if_file(Path::new(".gitleaksignore"))
+        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        (ignores, warnings)
+    }
+
+    fn entries(ignores: &IgnoreSet) -> Vec<&[u8]> {
+        ignores.iter().map(ByteText::as_bytes).collect()
+    }
+
+    #[test]
+    fn ignore_file_lines_keep_their_entries_and_line_numbers() {
+        let (ignores, warnings) = load_ignore_file(
+            "ignore-lines",
+            b"a.txt:rule:1\r\n# comment\n\n  dir\\b.txt:rule:2  \nabc:dir\\c.txt:rule:3\nbad\nlast:rule:4",
+        );
+        assert_eq!(
+            entries(&ignores),
+            [
+                b"a.txt:rule:1".as_slice(),
+                b"abc:dir/c.txt:rule:3",
+                b"bad",
+                b"dir/b.txt:rule:2",
+                b"last:rule:4",
+            ]
+        );
+        assert_eq!(
+            warnings,
+            ["ignore file entry has 1 field, expected 3 or 4 file=.gitleaksignore line=6"]
+        );
+    }
+
+    #[test]
+    fn ignore_file_line_limit_is_64_kib_without_the_line_feed() {
+        let limit = 64 * 1024;
+        let mut below = b"x:y:".to_vec();
+        below.resize(limit - 2, b'z');
+        below.extend_from_slice(b"\r\nnext:rule:1\n");
+        let (ignores, warnings) = load_ignore_file("ignore-below", &below);
+        assert_eq!(ignores.len(), 2);
+        assert!(ignores.contains(b"next:rule:1"));
+        assert!(warnings.is_empty());
+
+        let mut at = b"first:rule:1\n".to_vec();
+        at.resize(at.len() + limit, b'z');
+        at.extend_from_slice(b"\nnext:rule:2\n");
+        let (ignores, warnings) = load_ignore_file("ignore-at", &at);
+        assert_eq!(entries(&ignores), [b"first:rule:1".as_slice()]);
+        assert_eq!(
+            warnings,
+            [
+                "ignore file line is 64 KiB or longer, so it and later lines are skipped \
+              file=.gitleaksignore line=2"
+            ]
+        );
+    }
+
+    #[test]
+    fn ignore_file_stops_at_a_long_final_line_without_a_line_feed() {
+        let mut contents = b"first:rule:1\n".to_vec();
+        contents.resize(contents.len() + 4 * 1024 * 1024, b'z');
+        let (ignores, warnings) = load_ignore_file("ignore-long-final", &contents);
+        assert_eq!(entries(&ignores), [b"first:rule:1".as_slice()]);
+        assert_eq!(
+            warnings,
+            [
+                "ignore file line is 64 KiB or longer, so it and later lines are skipped \
+              file=.gitleaksignore line=2"
+            ]
+        );
+    }
+
+    #[test]
+    fn ignore_file_reading_matches_parsing_the_whole_file() {
+        let limit = 64 * 1024;
+        let mut cases: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            b"\n".to_vec(),
+            b"\r\n\r\n".to_vec(),
+            b"a:b:c".to_vec(),
+            b"a:b:c\n\n\nd:e:f:g\n".to_vec(),
+            b"one\ntwo:three\nfour:five:six:seven:eight\n".to_vec(),
+            b"\xef\xbb\xbfa:b:c\n\x85x:y:z\x85\n".to_vec(),
+        ];
+        for length in [limit - 1, limit, limit + 1] {
+            for suffix in [&b""[..], b"\n", b"\r\n", b"\nafter:rule:1\n"] {
+                let mut case = b"before:rule:1\n".to_vec();
+                case.resize(case.len() + length, b'q');
+                case.extend_from_slice(suffix);
+                cases.push(case);
+            }
+        }
+        for (index, case) in cases.iter().enumerate() {
+            let expected = IgnoreSet::parse_go_compatible(case);
+            let (ignores, warnings) = load_ignore_file(&format!("ignore-equal-{index}"), case);
+            assert_eq!(ignores, expected.ignores, "case {index}");
+            assert_eq!(warnings.len(), expected.issues.len(), "case {index}");
+        }
+    }
+
+    fn assemble_directory(root: &Path) -> Result<ConfigAssembly, String> {
+        let invocation = Invocation {
+            command: CommandKind::Directory,
+            source: root.to_path_buf(),
+            options: Options::default(),
+        };
+        assemble(
+            &invocation,
+            ConfigEnvironment {
+                path: None,
+                inline: None,
+                legacy_path: None,
+                legacy_inline: None,
+            },
+            root,
+            &mut |_| {},
+        )
+    }
+
+    fn padded_config(length: usize) -> Vec<u8> {
+        let mut contents = b"[[rules]]\nid = 'padded'\nregex = 'padded'\n".to_vec();
+        contents.resize(length, b'#');
+        contents
+    }
+
+    #[test]
+    fn source_local_config_is_read_up_to_16_mib() {
+        let limit = 16 * 1024 * 1024;
+        assert_eq!(MAX_CONFIG_FILE_BYTES, 16 * 1024 * 1024);
+        let root = temporary_directory("config-cap");
+        let local = root.join(".gitleaks.toml");
+        std::fs::write(&local, padded_config(limit)).unwrap();
+        let assembly = assemble_directory(&root).ok().unwrap();
+        assert!(assembly.full.rule("padded").is_some());
+
+        std::fs::write(&local, padded_config(limit + 1)).unwrap();
+        assert_eq!(
+            assemble_directory(&root).err().unwrap(),
+            format!(
+                "could not read config {} from source-local config: \
+                 configuration file is larger than the 16 MiB limit",
+                local.display()
+            )
+        );
+
+        // An extension is read with the same limit.
+        std::fs::write(root.join("base.toml"), padded_config(limit + 1)).unwrap();
+        std::fs::write(&local, "[extend]\npath = 'base.toml'\n").unwrap();
+        let error = assemble_directory(&root).err().unwrap();
+        assert!(
+            error.starts_with(&format!(
+                "could not compile config {} from source-local config: ",
+                local.display()
+            )),
+            "{error}"
+        );
+        assert!(
+            error.contains("unable to resolve config path 'base.toml' from "),
+            "{error}"
+        );
+        assert!(
+            error.ends_with(": configuration file is larger than the 16 MiB limit"),
+            "{error}"
+        );
+        std::fs::write(root.join("base.toml"), padded_config(limit)).unwrap();
+        let assembly = assemble_directory(&root).ok().unwrap();
+        assert!(assembly.full.rule("padded").is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn baseline_is_read_by_the_cli_with_unchanged_results_and_errors() {
+        let root = temporary_directory("baseline-read");
+        let report = br#"[{"RuleID":"fixture-token","Description":"fixture token",
+            "StartLine":1,"EndLine":1,"StartColumn":7,"EndColumn":16,
+            "Match":"token=AB12","Secret":"AB12","File":"secret.txt",
+            "Commit":"","Entropy":2,"Author":"","Email":"","Date":"",
+            "Message":"","Tags":[],"Fingerprint":"secret.txt:fixture-token:1"}]"#;
+        std::fs::write(root.join("baseline.json"), report).unwrap();
+        std::fs::write(root.join("null.json"), b"null").unwrap();
+        std::fs::write(root.join("bad.json"), b"{}").unwrap();
+
+        let baseline = load_baseline(&root.join("baseline.json")).unwrap();
+        assert_eq!(baseline, Baseline::from_go_json(report).unwrap());
+        assert_eq!(baseline.len(), 1);
+        let entry = &baseline.entries()[0];
+        assert_eq!(entry.rule_id().as_bytes(), b"fixture-token");
+        assert_eq!(entry.file().as_bytes(), b"secret.txt");
+        assert_eq!(entry.start_line(), 1);
+        assert_eq!(entry.secret().as_bytes(), b"AB12");
+        let null = load_baseline(&root.join("null.json")).unwrap();
+        assert!(null.is_empty() && null.was_null());
+
+        for name in ["bad.json", "missing.json"] {
+            let path = root.join(name);
+            let actual = load_baseline(&path).unwrap_err();
+            let expected = Baseline::load_go_json(&path).unwrap_err();
+            assert_eq!(actual.to_string(), expected.to_string(), "{name}");
+            assert_eq!(
+                matches!(actual, BaselineLoadError::Io { .. }),
+                name == "missing.json"
+            );
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 

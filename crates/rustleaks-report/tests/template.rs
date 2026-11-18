@@ -320,6 +320,197 @@ fn source_action_iteration_and_output_limits_have_exact_boundaries() {
     assert!(output.is_empty());
 }
 
+/// Counts written bytes without keeping them.
+struct ByteCounter(usize);
+
+impl Write for ByteCounter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn default_limits_set_no_output_limit() {
+    assert_eq!(TemplateLimits::NO_OUTPUT_LIMIT, usize::MAX);
+    assert_eq!(
+        TemplateLimits::default(),
+        TemplateLimits::new(1024 * 1024, 1_000_000, usize::MAX).with_actions_per_finding(1_000)
+    );
+
+    // A body of almost 1 MiB rendered for each of 80 findings writes more
+    // than the 64 MiB that earlier releases allowed.
+    let mut source = b"{{ range . }}".to_vec();
+    let body = 1024 * 1024 - source.len() - b"{{ end }}".len();
+    source.resize(source.len() + body, b'x');
+    source.extend_from_slice(b"{{ end }}");
+    let reporter = TemplateReporter::from_bytes(&source, TemplateLimits::default()).unwrap();
+    let findings = (0..80).map(|_| fixture_finding()).collect::<Vec<_>>();
+    let mut output = ByteCounter(0);
+    reporter.render(&mut output, &findings).unwrap();
+    assert_eq!(output.0, 80 * body);
+    assert!(output.0 > 64 * 1024 * 1024);
+
+    // An explicit output limit still applies.
+    let limited = TemplateReporter::from_bytes(
+        &source,
+        TemplateLimits::new(1024 * 1024, 1_000_000, 64 * 1024 * 1024),
+    )
+    .unwrap();
+    let mut output = ByteCounter(0);
+    assert!(matches!(
+        limited.render(&mut output, &findings),
+        Err(TemplateError::OutputLimit { limit }) if limit == 64 * 1024 * 1024
+    ));
+    assert!(output.0 <= 64 * 1024 * 1024);
+}
+
+/// Returns the smallest fixed action limit with which `source` renders.
+fn actions_needed(source: &[u8], findings: &[Finding]) -> usize {
+    let fits = |limit| {
+        TemplateReporter::from_bytes(
+            source,
+            TemplateLimits::new(1024 * 1024, limit, TemplateLimits::NO_OUTPUT_LIMIT),
+        )
+        .unwrap()
+        .render(&mut io::sink(), findings)
+        .is_ok()
+    };
+    let (mut low, mut high) = (0, 1_000_000);
+    assert!(fits(high));
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if fits(middle) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    low
+}
+
+#[test]
+fn default_action_limit_grows_by_1_000_for_each_finding() {
+    let limits = TemplateLimits::default();
+    assert_eq!(limits.max_actions, 1_000_000);
+    assert_eq!(limits.actions_per_finding, 1_000);
+    assert_eq!(limits.action_limit(0), 1_000_000);
+    assert_eq!(limits.action_limit(50_000), 51_000_000);
+    assert_eq!(limits.action_limit(usize::MAX), usize::MAX);
+    assert_eq!(
+        TemplateLimits::new(1, usize::MAX, 1)
+            .with_actions_per_finding(1)
+            .action_limit(1),
+        usize::MAX
+    );
+    assert_eq!(TemplateLimits::new(1, 7, 1).action_limit(1_000), 7);
+}
+
+#[test]
+fn packaged_example_templates_use_far_fewer_actions_than_the_allowance() {
+    let one = [fixture_finding()];
+    let two = [fixture_finding(), fixture_finding()];
+    for source in [
+        &include_bytes!("../../../compat/fixtures/upstream/testdata/report/jsonextra.tmpl")[..],
+        include_bytes!("../../../compat/fixtures/upstream/testdata/report/markdown.tmpl"),
+        b"{{range $i, $f := .}}{{$i}} {{.RuleID | quote}} {{.File}}:{{.StartLine}}\n{{end}}total: {{len .}}",
+    ] {
+        let per_finding = actions_needed(source, &two) - actions_needed(source, &one);
+        assert!(per_finding > 0 && per_finding < 100, "{per_finding}");
+    }
+}
+
+#[test]
+fn large_reports_from_normal_templates_fit_the_default_action_limit() {
+    // One range iteration and 29 field actions: 30 actions for each finding.
+    let mut source = b"{{ range . }}".to_vec();
+    for field in [
+        ".RuleID",
+        ".File",
+        ".StartLine",
+        ".EndLine",
+        ".StartColumn",
+        ".EndColumn",
+        ".Commit",
+        ".Author",
+        ".Email",
+        ".Date",
+        ".Message",
+        ".Description",
+        ".Secret",
+        ".Match",
+        ".Entropy",
+    ] {
+        source.extend_from_slice(format!("{{{{ {field} }}}},").as_bytes());
+    }
+    for field in [
+        ".RuleID",
+        ".File",
+        ".Line",
+        ".Commit",
+        ".Author",
+        ".Email",
+        ".Date",
+        ".Message",
+        ".Description",
+        ".Secret",
+        ".Match",
+        ".SymlinkFile",
+        ".Link",
+        ".Line",
+    ] {
+        source.extend_from_slice(format!("{{{{ {field} | quote }}}};").as_bytes());
+    }
+    source.extend_from_slice(b"\n{{ end }}");
+    let finding = fixture_finding();
+    let one = std::slice::from_ref(&finding);
+    let two = [finding.clone(), finding.clone()];
+    assert_eq!(
+        actions_needed(&source, &two) - actions_needed(&source, one),
+        30
+    );
+
+    let findings = vec![finding; 50_000];
+    let reporter = TemplateReporter::from_bytes(&source, TemplateLimits::default()).unwrap();
+    let mut output = ByteCounter(0);
+    reporter.render(&mut output, &findings).unwrap();
+    assert!(output.0 > 0);
+
+    // The fixed limit of earlier releases stopped this report.
+    let fixed = TemplateReporter::from_bytes(
+        &source,
+        TemplateLimits::new(1024 * 1024, 1_000_000, TemplateLimits::NO_OUTPUT_LIMIT),
+    )
+    .unwrap();
+    assert!(matches!(
+        fixed.render(&mut io::sink(), &findings),
+        Err(TemplateError::ActionLimit { limit: 1_000_000 })
+    ));
+}
+
+#[test]
+fn templates_whose_work_grows_faster_than_the_findings_still_stop() {
+    // Nested ranges over all findings need findings squared iterations.
+    let source = b"{{ $all := . }}{{ range $all }}{{ range $all }}x{{ end }}{{ end }}";
+    let reporter = TemplateReporter::from_bytes(source, TemplateLimits::default()).unwrap();
+    let findings = vec![fixture_finding(); 2_000];
+    let mut output = ByteCounter(0);
+    assert!(matches!(
+        reporter.render(&mut output, &findings),
+        Err(TemplateError::ActionLimit { limit: 3_000_000 })
+    ));
+    assert!(output.0 < 3_000_000);
+
+    let small = vec![fixture_finding(); 100];
+    let mut output = ByteCounter(0);
+    reporter.render(&mut output, &small).unwrap();
+    assert_eq!(output.0, 10_000);
+}
+
 #[test]
 fn path_errors_are_stable_and_do_not_embed_platform_prose() {
     assert!(matches!(
@@ -379,7 +570,8 @@ fn public_profile_and_defaults_are_versioned_and_checked() {
     assert_eq!(SAFE_TEMPLATE_PROFILE, "rustleaks-safe-template-v1");
     assert_eq!(
         TemplateLimits::default(),
-        TemplateLimits::new(1024 * 1024, 1_000_000, 64 * 1024 * 1024)
+        TemplateLimits::new(1024 * 1024, 1_000_000, TemplateLimits::NO_OUTPUT_LIMIT)
+            .with_actions_per_finding(1_000)
     );
     let empty = reporter(b"");
     assert!(render(&empty, &[]).is_empty());

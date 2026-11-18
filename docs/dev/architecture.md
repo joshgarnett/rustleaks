@@ -113,8 +113,10 @@ mode reads each eligible input to the end before scanning it.
 
 The core owns the finding model (`model.rs`) and sessions (`session.rs`).
 Sessions apply ignore files, baselines, fingerprints and deduplication across
-fragments. `rustleaks-report` writes findings through the `Reporter` trait. It
-does not change detection state.
+fragments. The core parses ignore files and baselines from bytes, and the CLI
+reads those files. The core helper `Baseline::load_go_json` is a thin wrapper
+for library users. `rustleaks-report` writes findings through the
+`Reporter` trait. It does not change detection state.
 
 ## Names
 

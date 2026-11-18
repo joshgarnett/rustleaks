@@ -438,6 +438,11 @@ impl Baseline {
 
     /// Reads and parses a named baseline report.
     ///
+    /// This is a convenience wrapper that reads the whole file and calls
+    /// [`Baseline::from_go_json`]. It is one of two core functions that read
+    /// files. Programs that read their own input, such as the Rustleaks CLI,
+    /// call [`Baseline::from_go_json`] with the bytes instead.
+    ///
     /// # Errors
     ///
     /// Returns a structured I/O or JSON error without platform-dependent
