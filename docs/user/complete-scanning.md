@@ -134,10 +134,10 @@ called the operation.
 | `archive_entries` | Entries in one archive. | yes |
 | `archive_member_bytes` | Size of one archive member after decompression. | yes |
 | `archive_total_bytes` | Total decompressed bytes of one archive. | yes |
-| `archive_spool_bytes` | Temporary storage for one archive. | yes |
+| `archive_spool_bytes` | Temporary storage, in memory or in temporary files, for ZIP, 7z, Zstandard and LZ4 input of one archive that is not a file on disk. See [Archives](resource-limits.md#archives). | yes |
 | `git_patch_bytes`, `git_patch_lines` | Size of the `git log` output for one commit. A `git diff` counts as one commit. | yes |
 | `git_stderr_bytes` | Size of Git error output that Rustleaks keeps. | yes |
-| `git_blob_bytes` | Size of one archive file read from Git. | yes |
+| `git_blob_bytes` | Size of one archive file read from Git. The archive temporary storage limit also applies. | yes |
 | `git_metadata_bytes` | Size of the metadata of one commit, such as its message. | yes |
 | `git_path_bytes` | Length of one file path in Git output. | yes |
 | `git_files`, `git_hunks` | Number of changed files and diff hunks in one commit. | yes |

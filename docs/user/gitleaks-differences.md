@@ -159,6 +159,28 @@ In a few error cases, Rustleaks stops or fails where Gitleaks does not:
   folding and Unicode character classes in rules can give different results.
   ASCII text is not affected.
 
+### Archives
+
+Gitleaks at the pinned revision reads archives as streams, copies a ZIP or 7z
+archive that is not a file on disk to a temporary file, and sets no limit on
+archive size or entries. `--max-archive-depth` is its only archive limit.
+
+Rustleaks also reads archives as streams, and a member that both tools read
+in full gives the same findings. These points differ:
+
+- Rustleaks limits the entries of one archive, the size of one member, the
+  total decompressed bytes of one archive, and its temporary storage. When a
+  limit is reached, Rustleaks prints a warning and skips the rest of the
+  member or archive, so it can report fewer findings for a very large archive
+  or a decompression bomb. A complete scan then fails with exit code 2. See
+  [Archives](resource-limits.md#archives) for the limits.
+- Rustleaks holds a RAR member, a Snappy or MinLZ stream and some headers in
+  memory, up to 64 MiB, and skips larger ones with a warning.
+- Rustleaks keeps temporary copies of up to 1 MiB in memory instead of in a
+  file. Its temporary files have no name, or are deleted when closed.
+- An archive file from Git history that is larger than its limit is skipped
+  with a warning, and the scan continues.
+
 ## Features that Gitleaks does not have
 
 - [Native rule packs](native-rule-packs.md): 320 extra rules, including helper

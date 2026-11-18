@@ -68,6 +68,24 @@ fn collect(bytes: Vec<u8>, limits: ArchiveLimits) -> Events {
     events
 }
 
+/// Checks members published before a failure.
+///
+/// Members are scanned while they are read, and a checksum is known only at
+/// the end of a member. Members before the failing one are published in
+/// full. The failing member is published in part, or not at all when the
+/// decoder reports the failure together with its last bytes.
+fn assert_published_prefix(actual: &[(Vec<u8>, Vec<u8>)], expected: &[(Vec<u8>, Vec<u8>)]) {
+    assert!(actual.len() <= expected.len());
+    for (index, (path, bytes)) in actual.iter().enumerate() {
+        assert_eq!(path, &expected[index].0);
+        if index + 1 < actual.len() {
+            assert_eq!(bytes, &expected[index].1);
+        } else {
+            assert!(expected[index].1.starts_with(bytes));
+        }
+    }
+}
+
 fn payload(size: usize) -> Vec<u8> {
     (0..size)
         .map(|index| b'a' + u8::try_from(index % 23).unwrap())
@@ -165,13 +183,16 @@ fn observed_cancellation_is_terminal_including_during_member_reads() {
 }
 
 #[test]
-fn crc_corruption_and_container_truncation_do_not_publish_unverified_members() {
+fn crc_corruption_reports_a_decode_issue_and_container_truncation_publishes_nothing() {
     for method in METHODS {
         let content = payload(513);
         let mut member = Member::new("broken.txt", &content, method);
         member.crc ^= 1;
         let events = collect(archive(&[member]), limits(1, 1 << 20));
-        assert!(events.members.is_empty(), "{method:?}");
+        assert_published_prefix(
+            &events.members,
+            &[(b"fixture.7z!broken.txt".to_vec(), content.clone())],
+        );
         assert_eq!(
             events.issues,
             [(SourceStage::Decode, SourceIssueKind::Decode)]
@@ -182,7 +203,7 @@ fn crc_corruption_and_container_truncation_do_not_publish_unverified_members() {
             Method::Deflate => broken.packed[0] |= 0b110, // Reserved block type.
         }
         let events = collect(archive(&[broken]), limits(1, 1 << 20));
-        assert!(events.members.is_empty(), "{method:?}");
+        assert!(events.members.len() <= 1, "{method:?}");
         assert_eq!(
             events.issues,
             [(SourceStage::Decode, SourceIssueKind::Decode)]
@@ -211,8 +232,27 @@ fn entry_and_cumulative_limits_are_inclusive_across_compressed_members() {
         for entries in [1, 2, 3] {
             for total in [12_999, 13_000, 13_001] {
                 let events = collect(bytes.clone(), limits(entries, total));
-                if entries < 2 || total < 13_000 {
+                if entries < 2 {
+                    // Entries are counted from the header, before any member.
                     assert!(events.members.is_empty(), "{method:?}/{entries}/{total}");
+                    assert_eq!(
+                        events.issues,
+                        [(SourceStage::Limit, SourceIssueKind::Limit)]
+                    );
+                } else if total < 13_000 {
+                    // The first member fits and is published; the total is
+                    // reached while the second member is read, so at most
+                    // a part of it is published.
+                    assert_eq!(
+                        events.members[0],
+                        (b"fixture.7z!first.txt".to_vec(), first.clone()),
+                        "{method:?}/{entries}/{total}"
+                    );
+                    assert!(events.members.len() <= 2);
+                    if let Some((path, bytes)) = events.members.get(1) {
+                        assert_eq!(path, b"fixture.7z!second.txt");
+                        assert!(bytes.len() < second.len() && second.starts_with(bytes));
+                    }
                     assert_eq!(
                         events.issues,
                         [(SourceStage::Limit, SourceIssueKind::Limit)]
@@ -286,6 +326,11 @@ fn nesting_charges_inner_archive_bytes_and_decoded_members_once_each() {
                 expected.push((b"fixture.7z!tail.txt".to_vec(), tail.to_vec()));
                 assert!(events.issues.is_empty());
             } else {
+                // The member that reaches the total is scanned up to it.
+                expected.push((
+                    b"fixture.7z!tail.txt".to_vec(),
+                    tail[..tail.len() - 1].to_vec(),
+                ));
                 assert_eq!(
                     events.issues,
                     [(SourceStage::Limit, SourceIssueKind::Limit)]
@@ -398,7 +443,21 @@ fn linear_coder_graphs_preserve_single_solid_and_multiple_folder_bytes() {
                         let events =
                             graph_collect(bytes.clone(), limits(expected.len(), ceiling), strict);
                         if ceiling < total {
-                            assert!(events.members.is_empty());
+                            // A block larger than the total is skipped
+                            // before decoding. Otherwise members before the
+                            // limit are published, and at most a part of
+                            // the member that reaches it.
+                            let (whole, partial) = events
+                                .members
+                                .split_at(events.members.len().saturating_sub(1));
+                            assert!(expected.starts_with(whole));
+                            if let Some((path, bytes)) = partial.first() {
+                                let (_, full) = expected
+                                    .iter()
+                                    .find(|(expected_path, _)| expected_path == path)
+                                    .unwrap();
+                                assert!(full.starts_with(bytes));
+                            }
                             assert_eq!(
                                 events.issues,
                                 [(SourceStage::Limit, SourceIssueKind::Limit)]
@@ -431,10 +490,9 @@ fn declared_early_eof_is_compatible_by_default_and_rejected_only_when_requested(
             }
             assert_eq!(compatible.members, expected, "{method:?}/{layout}");
             let strict = graph_collect(bytes, limits(2, 1 << 20), true);
-            assert!(
-                strict.members.is_empty(),
-                "archive is atomic before publication"
-            );
+            // Members are scanned while they are read, so the short member
+            // is published before its length is known to be short.
+            assert_eq!(strict.members, expected, "{method:?}/{layout}");
             assert_eq!(
                 strict.issues,
                 [(SourceStage::Decode, SourceIssueKind::Decode)]
@@ -444,7 +502,7 @@ fn declared_early_eof_is_compatible_by_default_and_rejected_only_when_requested(
 }
 
 #[test]
-fn graph_crc_failure_and_invalid_bindings_publish_no_members() {
+fn graph_crc_failure_is_a_decode_issue_and_invalid_bindings_publish_no_members() {
     use sevenz_seeds::{Folder, folder_archive};
     for method in METHODS {
         for layout in 0..3 {
@@ -455,9 +513,18 @@ fn graph_crc_failure_and_invalid_bindings_publish_no_members() {
                 &[method, Method::Copy],
             );
             folders.last_mut().unwrap().members.last_mut().unwrap().crc ^= 1;
+            let mut expected = vec![(b"fixture.7z!first.txt".to_vec(), b"first content".to_vec())];
+            if layout != 0 {
+                expected.push((
+                    b"fixture.7z!second.txt".to_vec(),
+                    b"second content".to_vec(),
+                ));
+            }
             for strict in [false, true] {
                 let events = graph_collect(folder_archive(&folders), limits(2, 1 << 20), strict);
-                assert!(events.members.is_empty());
+                // Members before the damaged one are published in full.
+                assert!(events.members.len() + 1 >= expected.len());
+                assert_published_prefix(&events.members, &expected);
                 assert_eq!(
                     events.issues,
                     [(SourceStage::Decode, SourceIssueKind::Decode)]
@@ -587,7 +654,9 @@ fn strict_length_policy_preserves_callback_stop_and_error_across_folder_layouts(
                 let mut calls = 0;
                 let outcome = source.visit(&CancellationToken::new(), &mut |event| {
                     calls += 1;
-                    assert_eq!(matches!(event, SourceEvent::Issue(_)), short);
+                    // The first member is scanned before any length check
+                    // of a later or the same member can fail.
+                    assert!(matches!(event, SourceEvent::Fragment { issue: None, .. }));
                     if fail {
                         Err(error.clone())
                     } else {

@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
-#[cfg(any(test, feature = "archives"))]
+#[cfg(test)]
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
@@ -13,6 +13,10 @@ use std::time::Duration;
 
 use rustleaks_core::model::{CommitMetadata, Fragment};
 
+#[cfg(feature = "archives")]
+use crate::archive::spool::{PushSpool, Spool};
+#[cfg(feature = "archives")]
+use crate::file::FragmentCommit;
 #[cfg(feature = "archives")]
 use crate::{ArchiveOptions, ArchiveSource};
 use crate::{
@@ -26,7 +30,7 @@ use crate::{
 const DEFAULT_MAX_PATCH_BYTES: usize = 1024 * 1024 * 1024;
 const DEFAULT_MAX_PATCH_LINES: usize = 16_000_000;
 const DEFAULT_MAX_STDERR_BYTES: usize = 1024 * 1024;
-const DEFAULT_MAX_BLOB_BYTES: usize = 256 * 1024 * 1024;
+const DEFAULT_MAX_BLOB_BYTES: usize = 1024 * 1024 * 1024;
 const DEFAULT_MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_PATH_BYTES: usize = 1024 * 1024;
 const DEFAULT_MAX_FILES: usize = 1_000_000;
@@ -482,7 +486,21 @@ impl GitSource {
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
         let object = object_spec(&file.commit, &file.path)?;
-        let output = collect_command(
+        let logical = bytes_to_path_buf(
+            copy_limited(&file.path, self.limits.path_bytes(), "Git archive path")
+                .map_err(|error| patch_error_to_source(error, &self.repository))?,
+        );
+        // The blob streams into a spool: memory for a small blob, otherwise
+        // an anonymous temporary file. ZIP and 7z need random access, and the
+        // spool keeps memory bounded for every format.
+        let limit = self
+            .limits
+            .blob_bytes()
+            .min(options.limits().maximum_spool_bytes());
+        let mut blob = PushSpool::new(limit, crate::archive::spool::MEMORY_SPOOL_BYTES);
+        let mut limited = false;
+        let mut write_error = None;
+        let output = stream_command(
             &self.executable,
             &[
                 OsString::from("-C"),
@@ -491,82 +509,112 @@ impl GitSource {
                 OsString::from("blob"),
                 object,
             ],
-            self.limits.blob_bytes(),
             self.limits.stderr_bytes(),
             &self.environment,
             cancellation,
             SourceStage::GitBlob,
+            &mut |chunk| match blob.push(chunk) {
+                Ok(true) => Ok(SourceControl::Continue),
+                Ok(false) => {
+                    limited = true;
+                    Ok(SourceControl::Stop)
+                }
+                Err(error) => {
+                    write_error = Some(error);
+                    Ok(SourceControl::Stop)
+                }
+            },
         )?;
-        let stderr_issue = validate_archive_blob_output(&output, &self.repository)?;
-        if let Some(issue) = stderr_issue {
+        if output.stopped {
+            // Git was stopped and reaped. Skip this blob like an archive
+            // that reaches a limit, and go on with the history.
+            let issue = if limited {
+                SourceIssue::new(
+                    SourceStage::Limit,
+                    SourceIssueKind::Limit,
+                    Some(logical),
+                    "Git archive blob exceeds its byte limit",
+                )
+            } else {
+                let error = write_error.map_or_else(String::new, |error| error.to_string());
+                SourceIssue::new(
+                    SourceStage::GitBlob,
+                    SourceIssueKind::Read,
+                    Some(logical),
+                    format!("could not store a Git archive blob: {error}"),
+                )
+            };
+            return emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback);
+        }
+        if let Some(issue) = validate_archive_blob_output(
+            output.stderr_limited,
+            output.status,
+            &output.stderr,
+            &self.repository,
+        )? {
             let control = emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback)?;
             if control == SourceControl::Stop {
                 return Ok(control);
             }
         }
-        let logical = bytes_to_path_buf(
-            copy_limited(&file.path, self.limits.path_bytes(), "Git archive path")
+        let commit = FragmentCommit {
+            sha: copy_limited(
+                &file.commit,
+                self.limits.metadata_bytes(),
+                "Git archive commit SHA",
+            )
+            .map_err(|error| patch_error_to_source(error, &self.repository))?,
+            metadata: file
+                .metadata
+                .as_ref()
+                .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
+                .transpose()
                 .map_err(|error| patch_error_to_source(error, &self.repository))?,
-        );
-        let mut archive = ArchiveSource::with_options(
-            io::Cursor::new(output.stdout),
-            logical,
-            self.archive_file_options,
-            options,
-        );
-        let mut overlay_error = None;
-        let result = archive.visit(cancellation, &mut |event| match event {
-            SourceEvent::Fragment { fragment, issue } => {
-                match overlay_commit(&fragment, file, self.limits) {
-                    Ok(fragment) => emit(SourceEvent::Fragment {
-                        fragment: Box::new(fragment),
-                        issue,
-                    }),
-                    Err(error) => {
-                        let source_error = patch_error_to_source(error, &self.repository);
-                        let callback_error = CallbackError::new(source_error.to_string());
-                        overlay_error = Some(source_error);
-                        Err(callback_error)
-                    }
-                }
-            }
-            SourceEvent::Issue(issue) => emit(SourceEvent::Issue(issue)),
-        });
-        if let Some(error) = overlay_error {
-            Err(error)
-        } else {
-            result
-        }
+        };
+        let archive = match blob.finish() {
+            Spool::Memory(bytes) => ArchiveSource::with_options(
+                io::Cursor::new(bytes),
+                logical,
+                self.archive_file_options,
+                options,
+            ),
+            Spool::File(file) => ArchiveSource::from_file(
+                file.into_file(),
+                logical,
+                self.archive_file_options,
+                options,
+            ),
+        };
+        // Fragments carry the commit from the start, so their bytes are
+        // never copied again.
+        archive.with_commit(commit).visit(cancellation, emit)
     }
 }
 
+/// Classifies how `git cat-file` ended: a failure stops the scan, and
+/// unexpected standard error is an issue.
 #[cfg(feature = "archives")]
 fn validate_archive_blob_output(
-    output: &CollectedOutput,
+    stderr_limited: bool,
+    status: Option<ExitStatus>,
+    stderr: &[u8],
     repository: &std::path::Path,
 ) -> Result<Option<SourceIssue>, SourceError> {
-    if output.stdout_limited {
-        return Err(terminal(
-            SourceStage::Limit,
-            Some(repository.into()),
-            "Git archive blob exceeded its configured byte ceiling",
-        ));
-    }
-    if output.stderr_limited {
+    if stderr_limited {
         return Err(terminal(
             SourceStage::Limit,
             Some(repository.into()),
             "Git archive-blob stderr exceeded its configured byte ceiling",
         ));
     }
-    if !output.status.is_some_and(|status| status.success()) {
+    if !status.is_some_and(|status| status.success()) {
         return Err(terminal(
             SourceStage::GitBlob,
             Some(repository.into()),
-            git_exit_message(output.status, &output.stderr),
+            git_exit_message(status, stderr),
         ));
     }
-    if first_non_ignored_stderr(&output.stderr).is_some() {
+    if first_non_ignored_stderr(stderr).is_some() {
         return Ok(Some(SourceIssue::new(
             SourceStage::GitBlob,
             SourceIssueKind::GitStderr,
@@ -577,51 +625,7 @@ fn validate_archive_blob_output(
     Ok(None)
 }
 
-#[cfg(feature = "archives")]
-fn overlay_commit(
-    fragment: &Fragment,
-    file: &ParsedFile,
-    limits: GitLimits,
-) -> PatchResult<Fragment> {
-    let mut builder = Fragment::builder(copy_limited(
-        fragment.content().as_bytes(),
-        usize::MAX,
-        "Git archive fragment",
-    )?)
-    .file_path(copy_limited(
-        fragment.file_path().as_bytes(),
-        usize::MAX,
-        "archive path",
-    )?)
-    .symlink_file(copy_limited(
-        fragment.symlink_file().as_bytes(),
-        usize::MAX,
-        "archive symlink path",
-    )?)
-    .windows_file_path(copy_limited(
-        fragment.windows_file_path().as_bytes(),
-        usize::MAX,
-        "archive Windows path",
-    )?)
-    .commit(copy_limited(
-        &file.commit,
-        limits.metadata_bytes(),
-        "Git archive commit SHA",
-    )?)
-    .start_line(fragment.start_line())
-    .inherited_from_finding(fragment.inherited_from_finding());
-    if let Some(metadata) = file
-        .metadata
-        .as_ref()
-        .map(|value| fallible_clone_metadata(value, limits.metadata_bytes()))
-        .transpose()?
-    {
-        builder = builder.commit_metadata(metadata);
-    }
-    Ok(builder.build())
-}
-
-#[cfg(any(test, feature = "archives"))]
+#[cfg(test)]
 struct CollectedOutput {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
@@ -630,7 +634,7 @@ struct CollectedOutput {
     status: Option<ExitStatus>,
 }
 
-#[cfg(any(test, feature = "archives"))]
+#[cfg(test)]
 enum CollectionStop {
     Exited(ExitStatus),
     Cancelled,
@@ -670,7 +674,7 @@ fn spawn_git(
     Ok((child, stdout, stderr))
 }
 
-#[cfg(any(test, feature = "archives"))]
+#[cfg(test)]
 fn collect_command(
     program: &OsStr,
     arguments: &[OsString],
@@ -3171,7 +3175,12 @@ mod tests {
         assert!(message.contains("fixture stderr"), "{message}");
         #[cfg(feature = "archives")]
         assert!(matches!(
-            validate_archive_blob_output(&output, std::path::Path::new("repository")),
+            validate_archive_blob_output(
+                output.stderr_limited,
+                output.status,
+                &output.stderr,
+                std::path::Path::new("repository")
+            ),
             Err(SourceError::Terminal {
                 stage: SourceStage::GitBlob,
                 ..
@@ -3232,9 +3241,14 @@ mod tests {
         assert!(exact.stdout.contains(&b'x'));
         #[cfg(feature = "archives")]
         assert!(
-            validate_archive_blob_output(&exact, std::path::Path::new("repository"))
-                .expect("successful blob classification")
-                .is_some()
+            validate_archive_blob_output(
+                exact.stderr_limited,
+                exact.status,
+                &exact.stderr,
+                std::path::Path::new("repository")
+            )
+            .expect("successful blob classification")
+            .is_some()
         );
         let overflow = collect_command(
             executable.as_os_str(),
@@ -3250,7 +3264,12 @@ mod tests {
         assert!(overflow.stderr_limited);
         #[cfg(feature = "archives")]
         assert!(matches!(
-            validate_archive_blob_output(&overflow, std::path::Path::new("repository")),
+            validate_archive_blob_output(
+                overflow.stderr_limited,
+                overflow.status,
+                &overflow.stderr,
+                std::path::Path::new("repository")
+            ),
             Err(SourceError::Terminal {
                 stage: SourceStage::Limit,
                 ..

@@ -601,21 +601,26 @@ fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
     assert!(!fragments.is_empty());
     assert!(issues.is_empty());
 
-    let error = support::git_source(repository.path())
+    // A blob over its limit is skipped with a limit issue, like other
+    // archive limits, and the history scan goes on.
+    let mut over_issues = Vec::new();
+    let control = support::git_source(repository.path())
         .mode(mode())
         .limits(limits(blob_size - 1))
         .archives(ArchiveOptions::default())
-        .visit(&CancellationToken::new(), &mut |_| {
+        .visit(&CancellationToken::new(), &mut |event| {
+            match event {
+                SourceEvent::Issue(issue) => over_issues.push((issue.stage(), issue.kind())),
+                SourceEvent::Fragment { fragment, .. } => {
+                    assert_ne!(fragment.file_path().as_bytes(), b"main.go.zst");
+                }
+                _ => unreachable!("future source event"),
+            }
             Ok(SourceControl::Continue)
         })
-        .expect_err("over-limit archive blob");
-    assert!(matches!(
-        error,
-        SourceError::Terminal {
-            stage: SourceStage::Limit,
-            ..
-        }
-    ));
+        .expect("over-limit archive blob is skipped");
+    assert_eq!(control, SourceControl::Continue);
+    assert_eq!(over_issues, [(SourceStage::Limit, SourceIssueKind::Limit)]);
 
     let mut callbacks = 0;
     let control = support::git_source(repository.path())

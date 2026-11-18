@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+- Fix archive scans that skipped large archives. With `--max-archive-depth`,
+  a whole archive had to fit in 64 MiB and each member in 64 MiB, so a 200 MB
+  `release.tar.gz` or a 1 GB `backup.zip` was skipped. Rustleaks now reads
+  archives as streams and scans each member while it decompresses it. ZIP and
+  7z files found by `dir` are read in place. Other ZIP, 7z, Zstandard and LZ4
+  input, such as a ZIP inside a TAR or an archive from Git, is copied to
+  memory up to 1 MiB. Larger copies go to an anonymous temporary file that
+  only the owner can read and that is removed on every path. RAR members,
+  Snappy and MinLZ streams and some headers stay in memory, up to 64 MiB. The
+  new defaults for one archive are 1,000,000 entries, 4 GiB for one member,
+  16 GiB in total and 1 GiB of temporary storage. One archive file from Git
+  can have 1 GiB. Findings do not change for members that scanned before.
+  Members before a damaged part or a limit are now scanned before the
+  warning. This includes the bytes of a member whose CRC check fails at its
+  end. A compressed file over the member limit is scanned up to the limit.
+  An archive file from Git over its limit is skipped with a warning instead
+  of stopping the scan with exit code 1.
 - Fix `git` scans that stopped with exit code 1 on long histories, such as
   those of Rails or Django, because the whole `git log` output had to fit in
   256 MiB and 2,000,000 lines. Rustleaks now reads Git output while Git runs

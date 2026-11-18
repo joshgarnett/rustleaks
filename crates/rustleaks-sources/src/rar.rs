@@ -1,7 +1,12 @@
 //! Safe, bounded RAR container parsing and native decompression.
+//!
+//! The container is read as a stream. One member is decoded at a time, in
+//! memory, and handed to the caller before the next member is read.
+
+use std::io::Read;
 
 use compcol::Status;
-use rustleaks_rar_codec::crc32::crc32;
+use rustleaks_rar_codec::crc32::{Crc32, crc32};
 #[cfg(panic = "unwind")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -9,6 +14,7 @@ use crate::Cancellation;
 
 const RAR_PREFIX: &[u8] = b"Rar!\x1a\x07";
 const MAX_SFX_BYTES: usize = 1 << 20;
+const SKIP_BUFFER: usize = 64 * 1024;
 
 const V15_BLOCK_ARCHIVE: u8 = 0x73;
 const V15_BLOCK_FILE: u8 = 0x74;
@@ -49,6 +55,8 @@ pub(crate) enum RarFailure {
     Limit(&'static str),
     Unsupported(String),
     Corrupt(String),
+    /// The archive input could not be read.
+    Read(std::io::Error),
 }
 
 pub(crate) struct RarEntry {
@@ -57,46 +65,158 @@ pub(crate) struct RarEntry {
     pub(crate) is_directory: bool,
 }
 
+/// Reads RAR members in order and passes each one to `visit`.
+///
+/// `visit` returns false to stop. `member_limit` bounds the packed and the
+/// decoded bytes of one member, which are held in memory, and its dictionary.
 pub(crate) fn extract(
-    input: &[u8],
+    input: &mut dyn Read,
     entry_limit: usize,
     member_limit: usize,
     total_limit: usize,
     cancellation: &dyn Cancellation,
-) -> Result<Vec<RarEntry>, RarFailure> {
+    visit: &mut dyn FnMut(RarEntry) -> bool,
+) -> Result<(), RarFailure> {
     if cancellation.is_cancelled() {
         return Err(RarFailure::Cancelled);
     }
-    let search_end = input
-        .len()
-        .min(MAX_SFX_BYTES.saturating_add(RAR_PREFIX.len() + 2));
-    let signature = input[..search_end]
+    let mut prefix = vec![0_u8; MAX_SFX_BYTES.saturating_add(RAR_PREFIX.len() + 2)];
+    let read = read_full(input, &mut prefix)?;
+    prefix.truncate(read);
+    let signature = prefix
         .windows(RAR_PREFIX.len())
         .position(|window| window == RAR_PREFIX)
         .ok_or_else(|| corrupt("RAR signature not found"))?;
     let version_offset = signature
         .checked_add(RAR_PREFIX.len())
         .ok_or(RarFailure::Limit("RAR signature offset overflow"))?;
-    match input.get(version_offset..) {
-        Some([0, rest @ ..]) => {
-            extract_v15(rest, entry_limit, member_limit, total_limit, cancellation)
+    let mut stream = (&prefix[version_offset..]).chain(input);
+    let mut input = RarInput {
+        reader: &mut stream,
+        peeked: None,
+    };
+    let mut version = [0_u8; 1];
+    if input.read(&mut version)? == 1 && version[0] == 0 {
+        return extract_v15(
+            &mut input,
+            entry_limit,
+            member_limit,
+            total_limit,
+            cancellation,
+            visit,
+        );
+    }
+    if version[0] == 1 && input.read(&mut version)? == 1 && version[0] == 0 {
+        return extract_v5(
+            &mut input,
+            entry_limit,
+            member_limit,
+            total_limit,
+            cancellation,
+            visit,
+        );
+    }
+    Err(unsupported("unsupported RAR container version"))
+}
+
+fn read_full(reader: &mut dyn Read, output: &mut [u8]) -> Result<usize, RarFailure> {
+    let mut filled = 0;
+    while filled < output.len() {
+        match reader.read(&mut output[filled..]) {
+            Ok(0) => break,
+            Ok(count) => filled += count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(RarFailure::Read(error)),
         }
-        Some([1, 0, rest @ ..]) => {
-            extract_v5(rest, entry_limit, member_limit, total_limit, cancellation)
+    }
+    Ok(filled)
+}
+
+/// The RAR stream after its signature, with one byte of look-ahead.
+struct RarInput<'a> {
+    reader: &'a mut dyn Read,
+    peeked: Option<u8>,
+}
+
+impl RarInput<'_> {
+    fn at_end(&mut self) -> Result<bool, RarFailure> {
+        if self.peeked.is_some() {
+            return Ok(false);
         }
-        _ => Err(unsupported("unsupported RAR container version")),
+        let mut byte = [0_u8; 1];
+        if read_full(self.reader, &mut byte)? == 0 {
+            return Ok(true);
+        }
+        self.peeked = Some(byte[0]);
+        Ok(false)
+    }
+
+    fn read(&mut self, output: &mut [u8]) -> Result<usize, RarFailure> {
+        let mut filled = 0;
+        if !output.is_empty()
+            && let Some(byte) = self.peeked.take()
+        {
+            output[0] = byte;
+            filled = 1;
+        }
+        Ok(filled + read_full(self.reader, &mut output[filled..])?)
+    }
+
+    fn exact(&mut self, output: &mut [u8], truncated: &'static str) -> Result<(), RarFailure> {
+        if self.read(output)? < output.len() {
+            return Err(corrupt(truncated));
+        }
+        Ok(())
+    }
+
+    /// Reads `count` bytes into memory, at most `limit`.
+    fn bytes(
+        &mut self,
+        count: u64,
+        limit: usize,
+        truncated: &'static str,
+    ) -> Result<Vec<u8>, RarFailure> {
+        let count = usize::try_from(count)
+            .ok()
+            .filter(|count| *count <= limit)
+            .ok_or(RarFailure::Limit("RAR packed data exceeds resource limit"))?;
+        let mut output = Vec::new();
+        output
+            .try_reserve_exact(count)
+            .map_err(|_| RarFailure::Limit("could not allocate RAR packed data"))?;
+        output.resize(count, 0);
+        self.exact(&mut output, truncated)?;
+        Ok(output)
+    }
+
+    fn skip(
+        &mut self,
+        mut count: u64,
+        truncated: &'static str,
+        cancellation: &dyn Cancellation,
+    ) -> Result<(), RarFailure> {
+        let mut buffer = vec![0_u8; SKIP_BUFFER];
+        while count > 0 {
+            if cancellation.is_cancelled() {
+                return Err(RarFailure::Cancelled);
+            }
+            let wanted = usize::try_from(count).map_or(buffer.len(), |left| left.min(buffer.len()));
+            self.exact(&mut buffer[..wanted], truncated)?;
+            count -= wanted as u64;
+        }
+        Ok(())
     }
 }
 
 fn extract_v15(
-    input: &[u8],
+    input: &mut RarInput<'_>,
     entry_limit: usize,
     member_limit: usize,
     total_limit: usize,
     cancellation: &dyn Cancellation,
-) -> Result<Vec<RarEntry>, RarFailure> {
-    let mut cursor = 0;
-    let archive = read_v15_header(input, &mut cursor)?;
+    visit: &mut dyn FnMut(RarEntry) -> bool,
+) -> Result<(), RarFailure> {
+    let archive = read_v15_header(input)?;
     if archive.kind != V15_BLOCK_ARCHIVE {
         return Err(corrupt("RAR archive header is missing"));
     }
@@ -105,68 +225,59 @@ fn extract_v15(
     }
     let archive_solid = archive.flags & V15_ARCHIVE_SOLID != 0;
     let mut decoder29 = rustleaks_rar_codec::codec::rar29::Unpack29::new();
-    let mut entries = Vec::new();
-    entries
-        .try_reserve(entry_limit.min(64))
-        .map_err(|_| RarFailure::Limit("could not retain RAR entry metadata"))?;
+    let mut entries = 0_usize;
     let mut decoded_total = 0usize;
 
-    while cursor < input.len() {
+    while !input.at_end()? {
         if cancellation.is_cancelled() {
             return Err(RarFailure::Cancelled);
         }
-        let header = read_v15_header(input, &mut cursor)?;
-        let data_end = cursor
-            .checked_add(header.data_size)
-            .ok_or(RarFailure::Limit("RAR packed-data range overflow"))?;
-        let packed = input
-            .get(cursor..data_end)
-            .ok_or_else(|| corrupt("truncated RAR packed data"))?;
-        cursor = data_end;
+        let header = read_v15_header(input)?;
         match header.kind {
             V15_BLOCK_FILE => {
-                if entries.len() >= entry_limit {
+                if entries >= entry_limit {
                     return Err(RarFailure::Limit("RAR entry limit exceeded"));
                 }
+                entries += 1;
+                let packed =
+                    input.bytes(header.data_size, member_limit, "truncated RAR packed data")?;
                 let parsed = parse_v15_file(
                     header.flags,
-                    header.data,
-                    packed,
+                    &header.data,
+                    &packed,
                     archive_solid,
                     &mut decoder29,
                     member_limit,
                     cancellation,
                 )?;
+                drop(packed);
                 decoded_total = decoded_total
                     .checked_add(parsed.data.len())
                     .ok_or(RarFailure::Limit("RAR cumulative size overflow"))?;
                 if decoded_total > total_limit {
                     return Err(RarFailure::Limit("RAR cumulative limit exceeded"));
                 }
-                entries
-                    .try_reserve(1)
-                    .map_err(|_| RarFailure::Limit("could not retain RAR entry metadata"))?;
-                entries.push(parsed);
+                if !visit(parsed) {
+                    return Ok(());
+                }
             }
             V15_BLOCK_END => break,
-            _ => {}
+            _ => input.skip(header.data_size, "truncated RAR packed data", cancellation)?,
         }
     }
-    Ok(entries)
+    Ok(())
 }
 
-struct V15Header<'a> {
+struct V15Header {
     kind: u8,
     flags: u16,
-    data_size: usize,
-    data: &'a [u8],
+    data_size: u64,
+    data: Vec<u8>,
 }
 
-fn read_v15_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V15Header<'a>, RarFailure> {
-    let start = *cursor;
-    let base = input
-        .get(start..start.saturating_add(7))
-        .ok_or_else(|| corrupt("truncated RAR block header"))?;
+fn read_v15_header(input: &mut RarInput<'_>) -> Result<V15Header, RarFailure> {
+    let mut base = [0_u8; 7];
+    input.exact(&mut base, "truncated RAR block header")?;
     let expected_crc = u16::from_le_bytes([base[0], base[1]]);
     let kind = base[2];
     let flags = u16::from_le_bytes([base[3], base[4]]);
@@ -182,12 +293,9 @@ fn read_v15_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V15Header<
     if size < 7 {
         return Err(corrupt("invalid RAR block-header size"));
     }
-    let end = start
-        .checked_add(size)
-        .ok_or(RarFailure::Limit("RAR block-header range overflow"))?;
-    let full = input
-        .get(start..end)
-        .ok_or_else(|| corrupt("truncated RAR block header"))?;
+    let mut full = vec![0_u8; size];
+    full[..7].copy_from_slice(&base);
+    input.exact(&mut full[7..], "truncated RAR block header")?;
     let crc_data = if kind == V15_BLOCK_COMMENT && full.len() > 13 {
         &full[2..13]
     } else {
@@ -198,8 +306,7 @@ fn read_v15_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V15Header<
     }
     let mut data = &full[7..];
     let mut data_size = if flags & V15_BLOCK_HAS_DATA != 0 {
-        let size = take_u32(&mut data)?;
-        usize::try_from(size).map_err(|_| RarFailure::Limit("RAR packed size exceeds usize"))?
+        u64::from(take_u32(&mut data)?)
     } else {
         0
     };
@@ -210,16 +317,13 @@ fn read_v15_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V15Header<
         let high = u64::from(u32::from_le_bytes(
             high_bytes.try_into().expect("four-byte slice"),
         ));
-        let combined = (high << 32) | data_size as u64;
-        data_size = usize::try_from(combined)
-            .map_err(|_| RarFailure::Limit("RAR packed size exceeds usize"))?;
+        data_size |= high << 32;
     }
-    *cursor = end;
     Ok(V15Header {
         kind,
         flags,
         data_size,
-        data,
+        data: data.to_vec(),
     })
 }
 
@@ -347,21 +451,21 @@ fn decode_rar3(
 }
 
 fn extract_v5(
-    input: &[u8],
+    input: &mut RarInput<'_>,
     entry_limit: usize,
     member_limit: usize,
     total_limit: usize,
     cancellation: &dyn Cancellation,
-) -> Result<Vec<RarEntry>, RarFailure> {
-    let mut cursor = 0;
-    let archive = read_v5_header(input, &mut cursor)?;
+    visit: &mut dyn FnMut(RarEntry) -> bool,
+) -> Result<(), RarFailure> {
+    let archive = read_v5_header(input, member_limit)?;
     if archive.kind == V5_BLOCK_ENCRYPT {
         return Err(unsupported("encrypted RAR headers are unsupported"));
     }
     if archive.kind != V5_BLOCK_ARCHIVE {
         return Err(corrupt("RAR5 archive header is missing"));
     }
-    let mut archive_data = archive.data;
+    let mut archive_data = archive.data.as_slice();
     let archive_flags = take_vint(&mut archive_data)?;
     let archive_solid = archive_flags & V5_ARCHIVE_SOLID != 0;
     let mut decoder50 = rustleaks_rar_codec::codec::rar50::Unpack50Decoder::new();
@@ -369,88 +473,85 @@ fn extract_v5(
         archive_solid,
         decoder: &mut decoder50,
     };
-    let mut entries = Vec::new();
-    entries
-        .try_reserve(entry_limit.min(64))
-        .map_err(|_| RarFailure::Limit("could not retain RAR entry metadata"))?;
+    let mut entries = 0_usize;
     let mut decoded_total = 0usize;
 
-    while cursor < input.len() {
+    while !input.at_end()? {
         if cancellation.is_cancelled() {
             return Err(RarFailure::Cancelled);
         }
-        let header = read_v5_header(input, &mut cursor)?;
-        let data_end = cursor
-            .checked_add(header.data_size)
-            .ok_or(RarFailure::Limit("RAR5 packed-data range overflow"))?;
-        let packed = input
-            .get(cursor..data_end)
-            .ok_or_else(|| corrupt("truncated RAR5 packed data"))?;
-        cursor = data_end;
+        let header = read_v5_header(input, member_limit)?;
         match header.kind {
             V5_BLOCK_FILE => {
-                if entries.len() >= entry_limit {
+                if entries >= entry_limit {
                     return Err(RarFailure::Limit("RAR entry limit exceeded"));
                 }
+                entries += 1;
+                let packed =
+                    input.bytes(header.data_size, member_limit, "truncated RAR5 packed data")?;
                 let parsed = parse_v5_file(
                     header.flags,
-                    header.data,
-                    header.extra,
-                    packed,
+                    &header.data,
+                    &header.extra,
+                    &packed,
                     &mut decode_state,
                     member_limit,
                     cancellation,
                 )?;
+                drop(packed);
                 decoded_total = decoded_total
                     .checked_add(parsed.data.len())
                     .ok_or(RarFailure::Limit("RAR cumulative size overflow"))?;
                 if decoded_total > total_limit {
                     return Err(RarFailure::Limit("RAR cumulative limit exceeded"));
                 }
-                entries
-                    .try_reserve(1)
-                    .map_err(|_| RarFailure::Limit("could not retain RAR entry metadata"))?;
-                entries.push(parsed);
+                if !visit(parsed) {
+                    return Ok(());
+                }
             }
             V5_BLOCK_ENCRYPT => {
                 return Err(unsupported("encrypted RAR headers are unsupported"));
             }
             V5_BLOCK_END => break,
-            _ => {}
+            _ => input.skip(header.data_size, "truncated RAR5 packed data", cancellation)?,
         }
     }
-    Ok(entries)
+    Ok(())
 }
 
-struct V5Header<'a> {
+struct V5Header {
     kind: u64,
     flags: u64,
-    data_size: usize,
-    data: &'a [u8],
-    extra: &'a [u8],
+    data_size: u64,
+    data: Vec<u8>,
+    extra: Vec<u8>,
 }
 
-fn read_v5_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V5Header<'a>, RarFailure> {
-    let start = *cursor;
-    let crc_bytes = input
-        .get(start..start.saturating_add(4))
-        .ok_or_else(|| corrupt("truncated RAR5 block header"))?;
-    let expected_crc = u32::from_le_bytes(crc_bytes.try_into().expect("four-byte slice"));
-    let mut position = start + 4;
-    let size_start = position;
-    let header_size = take_vint_at(input, &mut position)?;
-    let header_size = bounded_size(header_size, input.len())?;
-    let data_start = position;
-    let data_end = data_start
-        .checked_add(header_size)
-        .ok_or(RarFailure::Limit("RAR5 block-header range overflow"))?;
-    input
-        .get(data_start..data_end)
-        .ok_or_else(|| corrupt("truncated RAR5 block header"))?;
-    if crc32(&input[size_start..data_end]) != expected_crc {
+/// Reads one RAR5 block header, which stays in memory, at most `limit` bytes.
+fn read_v5_header(input: &mut RarInput<'_>, limit: usize) -> Result<V5Header, RarFailure> {
+    let mut crc_bytes = [0_u8; 4];
+    input.exact(&mut crc_bytes, "truncated RAR5 block header")?;
+    let expected_crc = u32::from_le_bytes(crc_bytes);
+    let mut size_bytes = Vec::with_capacity(10);
+    loop {
+        let mut byte = [0_u8; 1];
+        input.exact(&mut byte, "truncated RAR header field")?;
+        size_bytes.push(byte[0]);
+        if byte[0] & 0x80 == 0 || size_bytes.len() == 10 {
+            break;
+        }
+    }
+    let header_size = take_vint(&mut size_bytes.as_slice())?;
+    let header_size = bounded_size(header_size, limit)?;
+    let mut header_bytes = vec![0_u8; header_size];
+    input.exact(&mut header_bytes, "truncated RAR5 block header")?;
+    let mut crc = Crc32::new();
+    crc.update(&size_bytes);
+    crc.update(&header_bytes);
+    if crc.finish() != expected_crc {
         return Err(corrupt("invalid RAR5 block-header CRC"));
     }
-    let mut header = &input[data_start..data_end];
+    let mut header = header_bytes.as_slice();
     let kind = take_vint(&mut header)?;
     let flags = take_vint(&mut header)?;
     let extra_size = if flags & V5_BLOCK_HAS_EXTRA != 0 {
@@ -459,7 +560,7 @@ fn read_v5_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V5Header<'a
         0
     };
     let data_size = if flags & V5_BLOCK_HAS_DATA != 0 {
-        bounded_size(take_vint(&mut header)?, input.len())?
+        take_vint(&mut header)?
     } else {
         0
     };
@@ -468,13 +569,12 @@ fn read_v5_header<'a>(input: &'a [u8], cursor: &mut usize) -> Result<V5Header<'a
     }
     let split = header.len() - extra_size;
     let (data, extra) = header.split_at(split);
-    *cursor = data_end;
     Ok(V5Header {
         kind,
         flags,
         data_size,
-        data,
-        extra,
+        data: data.to_vec(),
+        extra: extra.to_vec(),
     })
 }
 
@@ -810,18 +910,6 @@ fn take_vint(input: &mut &[u8]) -> Result<u64, RarFailure> {
     Err(corrupt("RAR variable integer is too long"))
 }
 
-fn take_vint_at(input: &[u8], cursor: &mut usize) -> Result<u64, RarFailure> {
-    let mut remaining = input
-        .get(*cursor..)
-        .ok_or_else(|| corrupt("truncated RAR variable integer"))?;
-    let before = remaining.len();
-    let value = take_vint(&mut remaining)?;
-    *cursor = cursor
-        .checked_add(before - remaining.len())
-        .ok_or(RarFailure::Limit("RAR cursor overflow"))?;
-    Ok(value)
-}
-
 fn corrupt(message: impl Into<String>) -> RarFailure {
     RarFailure::Corrupt(message.into())
 }
@@ -836,6 +924,29 @@ mod tests {
 
     use super::*;
 
+    /// Collects every member that `extract` passes on.
+    fn extract_all(
+        mut input: &[u8],
+        entry_limit: usize,
+        member_limit: usize,
+        total_limit: usize,
+        cancellation: &dyn Cancellation,
+    ) -> Result<Vec<RarEntry>, RarFailure> {
+        let mut entries = Vec::new();
+        extract(
+            &mut input,
+            entry_limit,
+            member_limit,
+            total_limit,
+            cancellation,
+            &mut |entry| {
+                entries.push(entry);
+                true
+            },
+        )?;
+        Ok(entries)
+    }
+
     const RAR5_COMPRESSED_A: &[u8] = &[
         0xc0, 0x97, 0x0d, 0x02, 0x3f, 0xd3, 0x1f, 0xf1, 0x5e, 0x7f, 0x49, 0x81, 0xa9, 0xbf, 0x15,
         0x00,
@@ -848,7 +959,7 @@ mod tests {
             stored_v15(b"nested/value.txt", b"portable RAR\n"),
             stored_v5(b"nested/value.txt", b"portable RAR\n"),
         ] {
-            let entries = extract(&archive, 4, 4096, 4096, &cancelled).unwrap();
+            let entries = extract_all(&archive, 4, 4096, 4096, &cancelled).unwrap();
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].name, b"nested/value.txt");
             assert_eq!(entries[0].data, b"portable RAR\n");
@@ -864,7 +975,7 @@ mod tests {
             .chain(std::iter::once(b'\n'))
             .collect::<Vec<_>>();
         let archive = compressed_v5(b"value.txt", RAR5_COMPRESSED_A, &expected);
-        let entries = extract(&archive, 4, 1 << 20, 4096, &cancelled).unwrap();
+        let entries = extract_all(&archive, 4, 1 << 20, 4096, &cancelled).unwrap();
         assert_eq!(entries[0].data, expected);
     }
 
@@ -875,7 +986,7 @@ mod tests {
         let packed = rar2_repeat_offset_payload();
         let archive = v15_archive(b"value.txt", &packed, expected, 0x33);
 
-        let entries = extract(&archive, 1, 1 << 20, expected.len(), &cancelled).unwrap();
+        let entries = extract_all(&archive, 1, 1 << 20, expected.len(), &cancelled).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, b"value.txt");
@@ -960,7 +1071,7 @@ mod tests {
         ];
 
         for &(name, archive, expected) in fixtures {
-            let entries = extract(archive, 4, 1 << 20, 1 << 20, &cancelled)
+            let entries = extract_all(archive, 4, 1 << 20, 1 << 20, &cancelled)
                 .unwrap_or_else(|error| panic!("{name}: {error:?}"));
             let actual = entries
                 .iter()
@@ -984,22 +1095,22 @@ mod tests {
         let last = archive.len() - 1;
         archive[last] ^= 1;
         assert!(matches!(
-            extract(&archive, 4, 4096, 4096, &cancelled),
+            extract_all(&archive, 4, 4096, 4096, &cancelled),
             Err(RarFailure::Corrupt(_))
         ));
         let archive = stored_v15(b"value.txt", b"payload");
         assert!(matches!(
-            extract(&archive, 4, 3, 4096, &cancelled),
+            extract_all(&archive, 4, 3, 4096, &cancelled),
             Err(RarFailure::Limit(_))
         ));
         let unsupported = v5_archive(b"value.txt", b"packed", b"payload", (3 << 7) | 2);
         assert!(matches!(
-            extract(&unsupported, 4, 1 << 20, 4096, &cancelled),
+            extract_all(&unsupported, 4, 1 << 20, 4096, &cancelled),
             Err(RarFailure::Unsupported(_))
         ));
         let cancelled = AtomicBool::new(true);
         assert!(matches!(
-            extract(&archive, 4, 4096, 4096, &cancelled),
+            extract_all(&archive, 4, 4096, 4096, &cancelled),
             Err(RarFailure::Cancelled)
         ));
     }
@@ -1010,7 +1121,7 @@ mod tests {
         let archive = stored_v5(&vec![b'n'; 4096], b"payload");
 
         assert!(matches!(
-            extract(&archive, 4, 1024, 4096, &cancelled),
+            extract_all(&archive, 4, 1024, 4096, &cancelled),
             Err(RarFailure::Limit(_))
         ));
     }

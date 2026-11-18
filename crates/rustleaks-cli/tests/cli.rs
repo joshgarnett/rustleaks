@@ -2735,6 +2735,8 @@ mod complete_profile {
             files: &["partial.tar!first.txt"],
             diagnostic: "truncated TAR member",
         },
+        // Archives stream: the whole leaf is scanned before the gzip
+        // trailer after the TAR end fails its CRC check.
         ArchiveCase {
             name: "corrupt.tgz",
             depth: "1",
@@ -2742,9 +2744,9 @@ mod complete_profile {
             state: "incomplete",
             reason: "coverage_failure",
             reports: "partial",
-            fragments: 0,
+            fragments: 1,
             issues: 0,
-            files: &[],
+            files: &["corrupt.tgz!leaf.txt"],
             diagnostic: "gzip size or CRC mismatch",
         },
         ArchiveCase {
@@ -2864,6 +2866,7 @@ mod complete_profile {
             files: &[],
             diagnostic: "",
         },
+        // The cut is after the whole leaf, in the TAR end blocks.
         ArchiveCase {
             name: "half.tgz",
             depth: "1",
@@ -2871,9 +2874,9 @@ mod complete_profile {
             state: "incomplete",
             reason: "coverage_failure",
             reports: "partial",
-            fragments: 0,
+            fragments: 1,
             issues: 0,
-            files: &[],
+            files: &["half.tgz!leaf.txt"],
             diagnostic: "",
         },
     ];

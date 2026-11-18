@@ -92,16 +92,43 @@ struct StandardReader<R>(R);
 
 impl<R: Read + Send> SourceReader for StandardReader<R> {
     fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome {
-        match self.0.read(buffer) {
-            Ok(0) => ReadOutcome::new(0, ReadStatus::Eof),
-            Ok(count) => ReadOutcome::new(count, ReadStatus::Continue),
-            Err(error) => ReadOutcome::new(0, ReadStatus::error(&error)),
-        }
+        standard_read(&mut self.0, buffer)
     }
 }
 
-struct BufferedSourceReader {
-    inner: Box<dyn SourceReader>,
+fn standard_read(reader: &mut dyn Read, buffer: &mut [u8]) -> ReadOutcome {
+    match reader.read(buffer) {
+        Ok(0) => ReadOutcome::new(0, ReadStatus::Eof),
+        Ok(count) => ReadOutcome::new(count, ReadStatus::Continue),
+        Err(error) => ReadOutcome::new(0, ReadStatus::error(&error)),
+    }
+}
+
+/// The read protocol behind [`BufferedSourceReader`], without the `Send`
+/// bound, so archive members can be read from borrowed decoders.
+trait RawSource {
+    fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome;
+}
+
+impl RawSource for Box<dyn SourceReader> {
+    fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome {
+        self.as_mut().read_source(buffer)
+    }
+}
+
+/// A borrowed standard reader, such as one archive member stream.
+#[cfg(feature = "archives")]
+struct BorrowedReader<'a>(&'a mut dyn Read);
+
+#[cfg(feature = "archives")]
+impl RawSource for BorrowedReader<'_> {
+    fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome {
+        standard_read(self.0, buffer)
+    }
+}
+
+struct BufferedSourceReader<I> {
+    inner: I,
     storage: Vec<u8>,
     start: usize,
     end: usize,
@@ -115,8 +142,8 @@ enum ByteOutcome {
     Overreported,
 }
 
-impl BufferedSourceReader {
-    fn new(inner: Box<dyn SourceReader>) -> Self {
+impl<I: RawSource> BufferedSourceReader<I> {
+    fn new(inner: I) -> Self {
         Self {
             inner,
             storage: Vec::new(),
@@ -300,12 +327,121 @@ impl Default for FileOptions {
 
 /// One safe, synchronous reader-backed file source.
 pub struct FileSource {
-    reader: BufferedSourceReader,
+    reader: BufferedSourceReader<Box<dyn SourceReader>>,
+    target: FileTarget,
+    complete_consumed: bool,
+}
+
+/// Commit fields given to every fragment of an archive read from Git.
+#[cfg(feature = "archives")]
+pub(crate) struct FragmentCommit {
+    pub(crate) sha: Vec<u8>,
+    pub(crate) metadata: Option<rustleaks_core::model::CommitMetadata>,
+}
+
+/// Paths, options and fragment fields of one scanned file.
+pub(crate) struct FileTarget {
     physical_path: PathBuf,
     logical_path: LogicalPath,
     symlink_path: Option<PathBuf>,
     options: FileOptions,
-    complete_consumed: bool,
+    #[cfg(feature = "archives")]
+    commit: Option<std::sync::Arc<FragmentCommit>>,
+}
+
+impl FileTarget {
+    fn new(physical_path: PathBuf, options: FileOptions) -> Self {
+        let logical_path = LogicalPath::from_native(&physical_path);
+        Self {
+            physical_path,
+            logical_path,
+            symlink_path: None,
+            options,
+            #[cfg(feature = "archives")]
+            commit: None,
+        }
+    }
+
+    /// Describes one archive member or decoded stream.
+    #[cfg(feature = "archives")]
+    pub(crate) fn member(
+        physical_path: &Path,
+        logical_path: &LogicalPath,
+        symlink_path: Option<&PathBuf>,
+        options: FileOptions,
+        commit: Option<&std::sync::Arc<FragmentCommit>>,
+    ) -> Self {
+        Self {
+            physical_path: physical_path.to_path_buf(),
+            logical_path: logical_path.clone(),
+            symlink_path: symlink_path.cloned(),
+            options,
+            commit: commit.cloned(),
+        }
+    }
+
+    fn issue(
+        &self,
+        stage: SourceStage,
+        kind: SourceIssueKind,
+        message: impl Into<String>,
+    ) -> SourceIssue {
+        SourceIssue::new(stage, kind, Some(self.physical_path.clone()), message)
+    }
+
+    fn fragment(&self, bytes: Vec<u8>, start_line: usize) -> Fragment {
+        let mut builder = Fragment::builder(bytes)
+            .file_path(self.logical_path.normalized().clone())
+            .start_line(start_line);
+        if let Some(original) = self.logical_path.windows_original() {
+            builder = builder.windows_file_path(original.clone());
+        }
+        if let Some(symlink) = &self.symlink_path {
+            builder = builder.symlink_file(LogicalPath::from_native(symlink).normalized().clone());
+        }
+        self.with_commit(builder).build()
+    }
+
+    fn error_fragment(&self) -> Fragment {
+        let path = self
+            .logical_path
+            .windows_original()
+            .unwrap_or_else(|| self.logical_path.normalized());
+        self.with_commit(Fragment::builder(Vec::<u8>::new()).file_path(path.clone()))
+            .build()
+    }
+
+    #[cfg(feature = "archives")]
+    fn with_commit(
+        &self,
+        builder: rustleaks_core::model::FragmentBuilder,
+    ) -> rustleaks_core::model::FragmentBuilder {
+        let Some(commit) = &self.commit else {
+            return builder;
+        };
+        let builder = builder.commit(commit.sha.clone());
+        match &commit.metadata {
+            Some(metadata) => builder.commit_metadata(metadata.clone()),
+            None => builder,
+        }
+    }
+
+    #[cfg(not(feature = "archives"))]
+    #[allow(clippy::unused_self)] // Matches the archive build, which reads the commit.
+    const fn with_commit(
+        &self,
+        builder: rustleaks_core::model::FragmentBuilder,
+    ) -> rustleaks_core::model::FragmentBuilder {
+        builder
+    }
+
+    fn complete_error(&self, stage: SourceStage, message: impl Into<String>) -> SourceError {
+        SourceError::Terminal {
+            stage,
+            path: Some(self.physical_path.clone()),
+            message: message.into(),
+        }
+    }
 }
 
 impl FileSource {
@@ -334,14 +470,9 @@ impl FileSource {
         path: impl Into<PathBuf>,
         options: FileOptions,
     ) -> Self {
-        let physical_path = path.into();
-        let logical_path = LogicalPath::from_native(&physical_path);
         Self {
             reader: BufferedSourceReader::new(reader),
-            physical_path,
-            logical_path,
-            symlink_path: None,
-            options,
+            target: FileTarget::new(path.into(), options),
             complete_consumed: false,
         }
     }
@@ -350,59 +481,14 @@ impl FileSource {
     /// the fragment's file path.
     #[must_use]
     pub fn with_symlink_path(mut self, path: impl Into<PathBuf>) -> Self {
-        self.symlink_path = Some(path.into());
-        self
-    }
-
-    #[cfg(feature = "archives")]
-    pub(crate) fn with_logical_path(mut self, path: LogicalPath) -> Self {
-        self.logical_path = path;
+        self.target.symlink_path = Some(path.into());
         self
     }
 
     /// Returns the physical path used for diagnostics.
     #[must_use]
     pub fn physical_path(&self) -> &Path {
-        &self.physical_path
-    }
-
-    fn issue(
-        &self,
-        stage: SourceStage,
-        kind: SourceIssueKind,
-        message: impl Into<String>,
-    ) -> SourceIssue {
-        SourceIssue::new(stage, kind, Some(self.physical_path.clone()), message)
-    }
-
-    fn emit(
-        event: SourceEvent,
-        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-    ) -> Result<SourceControl, SourceError> {
-        emit(event).map_err(SourceError::Callback)
-    }
-
-    fn fragment(&self, bytes: Vec<u8>, start_line: usize) -> Fragment {
-        let mut builder = Fragment::builder(bytes)
-            .file_path(self.logical_path.normalized().clone())
-            .start_line(start_line);
-        if let Some(original) = self.logical_path.windows_original() {
-            builder = builder.windows_file_path(original.clone());
-        }
-        if let Some(symlink) = &self.symlink_path {
-            builder = builder.symlink_file(LogicalPath::from_native(symlink).normalized().clone());
-        }
-        builder.build()
-    }
-
-    fn error_fragment(&self) -> Fragment {
-        let path = self
-            .logical_path
-            .windows_original()
-            .unwrap_or_else(|| self.logical_path.normalized());
-        Fragment::builder(Vec::<u8>::new())
-            .file_path(path.clone())
-            .build()
+        &self.target.physical_path
     }
 }
 
@@ -428,201 +514,220 @@ impl FileSource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
-        if let Some(maximum) = self.options.complete_target_bytes() {
-            return self.visit_complete(maximum, cancellation, emit);
+        if let Some(maximum) = self.target.options.complete_target_bytes() {
+            if self.complete_consumed {
+                return Err(self
+                    .target
+                    .complete_error(SourceStage::Read, "complete source was already consumed"));
+            }
+            self.complete_consumed = true;
+            return visit_complete(&self.target, &mut self.reader, maximum, cancellation, emit);
         }
-        self.visit_legacy(nominal, cancellation, emit)
+        visit_legacy(&self.target, &mut self.reader, nominal, cancellation, emit)
     }
+}
 
-    fn visit_legacy(
-        &mut self,
-        nominal: &mut Vec<u8>,
-        cancellation: &dyn Cancellation,
-        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-    ) -> Result<SourceControl, SourceError> {
-        let mut total_lines = 0_usize;
-        if nominal.len() != self.options.chunk_size() {
-            *nominal = allocate_nominal(self.options.chunk_size(), &self.physical_path)?;
+/// Scans one borrowed reader, such as an archive member, as one file.
+///
+/// Legacy fragments follow the same read sizes as [`FileSource`], so a reader
+/// that returns the same bytes in the same read sizes gives the same fragments.
+#[cfg(feature = "archives")]
+pub(crate) fn visit_borrowed(
+    reader: &mut dyn Read,
+    target: &FileTarget,
+    nominal: &mut Vec<u8>,
+    cancellation: &dyn Cancellation,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<SourceControl, SourceError> {
+    let mut reader = BufferedSourceReader::new(BorrowedReader(reader));
+    if let Some(maximum) = target.options.complete_target_bytes() {
+        return visit_complete(target, &mut reader, maximum, cancellation, emit);
+    }
+    visit_legacy(target, &mut reader, nominal, cancellation, emit)
+}
+
+fn emit_event(
+    event: SourceEvent,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<SourceControl, SourceError> {
+    emit(event).map_err(SourceError::Callback)
+}
+
+fn visit_legacy<I: RawSource>(
+    target: &FileTarget,
+    reader: &mut BufferedSourceReader<I>,
+    nominal: &mut Vec<u8>,
+    cancellation: &dyn Cancellation,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<SourceControl, SourceError> {
+    let mut total_lines = 0_usize;
+    if nominal.len() != target.options.chunk_size() {
+        *nominal = allocate_nominal(target.options.chunk_size(), &target.physical_path)?;
+    }
+    let nominal = nominal.as_mut_slice();
+    loop {
+        if cancellation.is_cancelled() {
+            return Err(SourceError::Cancelled);
         }
-        let nominal = nominal.as_mut_slice();
-        loop {
-            if cancellation.is_cancelled() {
-                return Err(SourceError::Cancelled);
-            }
 
-            let outcome = self.reader.read(nominal);
-            if outcome.count > nominal.len() {
-                let issue = self.issue(
-                    SourceStage::Limit,
-                    SourceIssueKind::Limit,
-                    "reader returned more bytes than the supplied buffer",
-                );
-                return Self::emit(SourceEvent::Issue(issue), emit);
-            }
-            if outcome.count == 0 {
-                if let ReadStatus::Error { message, .. } = outcome.status {
-                    let issue = self.issue(SourceStage::Read, SourceIssueKind::Read, message);
-                    return Self::emit(
-                        SourceEvent::Fragment {
-                            fragment: Box::new(self.error_fragment()),
-                            issue: Some(issue),
-                        },
-                        emit,
-                    );
-                }
-                return Ok(SourceControl::Continue);
-            }
-
-            let original = &nominal[..outcome.count];
-            if total_lines == 0 && mime::is_application(original) {
-                return Ok(SourceControl::Continue);
-            }
-
-            let fragment_capacity = outcome
-                .count
-                .checked_add(self.options.max_boundary_read_ahead)
-                .ok_or_else(|| SourceError::Terminal {
-                    stage: SourceStage::Limit,
-                    path: Some(self.physical_path.clone()),
-                    message: "fragment buffer capacity overflow".to_owned(),
-                })?;
-            let mut bytes = Vec::new();
-            bytes
-                .try_reserve_exact(fragment_capacity)
-                .map_err(|error| SourceError::Terminal {
-                    stage: SourceStage::Limit,
-                    path: Some(self.physical_path.clone()),
-                    message: format!("could not allocate fragment buffer: {error}"),
-                })?;
-            bytes.extend_from_slice(original);
-            if let Err(issue) = read_until_safe_boundary(
-                &mut self.reader,
-                outcome.count,
-                &mut bytes,
-                &self.physical_path,
-                self.options.max_boundary_read_ahead,
-                cancellation,
-            ) {
-                if cancellation.is_cancelled() {
-                    return Err(SourceError::Cancelled);
-                }
-                return Self::emit(
+        let outcome = reader.read(nominal);
+        if outcome.count > nominal.len() {
+            let issue = target.issue(
+                SourceStage::Limit,
+                SourceIssueKind::Limit,
+                "reader returned more bytes than the supplied buffer",
+            );
+            return emit_event(SourceEvent::Issue(issue), emit);
+        }
+        if outcome.count == 0 {
+            if let ReadStatus::Error { message, .. } = outcome.status {
+                let issue = target.issue(SourceStage::Read, SourceIssueKind::Read, message);
+                return emit_event(
                     SourceEvent::Fragment {
-                        fragment: Box::new(self.error_fragment()),
+                        fragment: Box::new(target.error_fragment()),
                         issue: Some(issue),
                     },
                     emit,
                 );
             }
-
-            let start_line = total_lines
-                .checked_add(1)
-                .ok_or_else(|| SourceError::Terminal {
-                    stage: SourceStage::Limit,
-                    path: Some(self.physical_path.clone()),
-                    message: "fragment start line overflow".to_owned(),
-                })?;
-            let line_count = count_lf(&bytes);
-            total_lines =
-                total_lines
-                    .checked_add(line_count)
-                    .ok_or_else(|| SourceError::Terminal {
-                        stage: SourceStage::Limit,
-                        path: Some(self.physical_path.clone()),
-                        message: "line count overflow".to_owned(),
-                    })?;
-
-            let issue = match &outcome.status {
-                ReadStatus::Error { message, .. } => {
-                    Some(self.issue(SourceStage::Read, SourceIssueKind::Read, message.clone()))
-                }
-                ReadStatus::Continue | ReadStatus::Eof => None,
-            };
-            let fragment = Box::new(self.fragment(bytes, start_line));
-            let control = Self::emit(SourceEvent::Fragment { fragment, issue }, emit)?;
-            if control == SourceControl::Stop || matches!(outcome.status, ReadStatus::Eof) {
-                return Ok(control);
-            }
+            return Ok(SourceControl::Continue);
         }
-    }
 
-    fn visit_complete(
-        &mut self,
-        maximum: usize,
-        cancellation: &dyn Cancellation,
-        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-    ) -> Result<SourceControl, SourceError> {
-        if self.complete_consumed {
-            return Err(
-                self.complete_error(SourceStage::Read, "complete source was already consumed")
+        let original = &nominal[..outcome.count];
+        if total_lines == 0 && mime::is_application(original) {
+            return Ok(SourceControl::Continue);
+        }
+
+        let fragment_capacity = outcome
+            .count
+            .checked_add(target.options.max_boundary_read_ahead)
+            .ok_or_else(|| SourceError::Terminal {
+                stage: SourceStage::Limit,
+                path: Some(target.physical_path.clone()),
+                message: "fragment buffer capacity overflow".to_owned(),
+            })?;
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(fragment_capacity)
+            .map_err(|error| SourceError::Terminal {
+                stage: SourceStage::Limit,
+                path: Some(target.physical_path.clone()),
+                message: format!("could not allocate fragment buffer: {error}"),
+            })?;
+        bytes.extend_from_slice(original);
+        if let Err(issue) = read_until_safe_boundary(
+            reader,
+            outcome.count,
+            &mut bytes,
+            &target.physical_path,
+            target.options.max_boundary_read_ahead,
+            cancellation,
+        ) {
+            if cancellation.is_cancelled() {
+                return Err(SourceError::Cancelled);
+            }
+            return emit_event(
+                SourceEvent::Fragment {
+                    fragment: Box::new(target.error_fragment()),
+                    issue: Some(issue),
+                },
+                emit,
             );
         }
-        self.complete_consumed = true;
-        let mut bytes = Vec::new();
-        let mut buffer = [0_u8; 8_192];
-        loop {
-            if cancellation.is_cancelled() {
-                return Err(SourceError::Cancelled);
+
+        let start_line = total_lines
+            .checked_add(1)
+            .ok_or_else(|| SourceError::Terminal {
+                stage: SourceStage::Limit,
+                path: Some(target.physical_path.clone()),
+                message: "fragment start line overflow".to_owned(),
+            })?;
+        let line_count = count_lf(&bytes);
+        total_lines = total_lines
+            .checked_add(line_count)
+            .ok_or_else(|| SourceError::Terminal {
+                stage: SourceStage::Limit,
+                path: Some(target.physical_path.clone()),
+                message: "line count overflow".to_owned(),
+            })?;
+
+        let issue = match &outcome.status {
+            ReadStatus::Error { message, .. } => {
+                Some(target.issue(SourceStage::Read, SourceIssueKind::Read, message.clone()))
             }
-            // Bypass the legacy buffered reader so it cannot pull extra bytes
-            // while probing exact-cap EOF. At most cap + 1 bytes are consumed.
-            let requested = maximum
-                .saturating_sub(bytes.len())
-                .saturating_add(1)
-                .min(buffer.len());
-            let outcome = self.reader.inner.read_source(&mut buffer[..requested]);
-            if cancellation.is_cancelled() {
-                return Err(SourceError::Cancelled);
-            }
-            if outcome.count > requested {
-                return Err(self.complete_error(
-                    SourceStage::Limit,
-                    "reader returned more bytes than the supplied buffer",
-                ));
-            }
-            if let ReadStatus::Error { message, .. } = outcome.status {
-                return Err(self.complete_error(SourceStage::Read, message));
-            }
-            if outcome.count > maximum - bytes.len() {
-                return Err(self.complete_error(
-                    SourceStage::Limit,
-                    "complete target exceeds maximum source bytes",
-                ));
-            }
-            let needed = bytes.len() + outcome.count;
-            if needed > bytes.capacity() {
-                let capacity = bytes.capacity().saturating_mul(2).max(needed).min(maximum);
-                bytes
-                    .try_reserve_exact(capacity - bytes.len())
-                    .map_err(|error| {
-                        self.complete_error(
-                            SourceStage::Limit,
-                            format!("could not allocate complete target: {error}"),
-                        )
-                    })?;
-            }
-            bytes.extend_from_slice(&buffer[..outcome.count]);
-            if matches!(outcome.status, ReadStatus::Eof) {
-                let prefix = &bytes[..bytes.len().min(COMPLETE_MIME_WINDOW)];
-                if mime::is_application(prefix) {
-                    return Ok(SourceControl::Continue);
-                }
-                return Self::emit(SourceEvent::fragment(self.fragment(bytes, 1)), emit);
-            }
-            if outcome.count == 0 {
-                return Err(self.complete_error(
-                    SourceStage::Read,
-                    "complete-target reader made no progress before EOF",
-                ));
-            }
+            ReadStatus::Continue | ReadStatus::Eof => None,
+        };
+        let fragment = Box::new(target.fragment(bytes, start_line));
+        let control = emit_event(SourceEvent::Fragment { fragment, issue }, emit)?;
+        if control == SourceControl::Stop || matches!(outcome.status, ReadStatus::Eof) {
+            return Ok(control);
         }
     }
+}
 
-    fn complete_error(&self, stage: SourceStage, message: impl Into<String>) -> SourceError {
-        SourceError::Terminal {
-            stage,
-            path: Some(self.physical_path.clone()),
-            message: message.into(),
+fn visit_complete<I: RawSource>(
+    target: &FileTarget,
+    reader: &mut BufferedSourceReader<I>,
+    maximum: usize,
+    cancellation: &dyn Cancellation,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<SourceControl, SourceError> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 8_192];
+    loop {
+        if cancellation.is_cancelled() {
+            return Err(SourceError::Cancelled);
+        }
+        // Bypass the legacy buffered reader so it cannot pull extra bytes
+        // while probing exact-cap EOF. At most cap + 1 bytes are consumed.
+        let requested = maximum
+            .saturating_sub(bytes.len())
+            .saturating_add(1)
+            .min(buffer.len());
+        let outcome = reader.inner.read_source(&mut buffer[..requested]);
+        if cancellation.is_cancelled() {
+            return Err(SourceError::Cancelled);
+        }
+        if outcome.count > requested {
+            return Err(target.complete_error(
+                SourceStage::Limit,
+                "reader returned more bytes than the supplied buffer",
+            ));
+        }
+        if let ReadStatus::Error { message, .. } = outcome.status {
+            return Err(target.complete_error(SourceStage::Read, message));
+        }
+        if outcome.count > maximum - bytes.len() {
+            return Err(target.complete_error(
+                SourceStage::Limit,
+                "complete target exceeds maximum source bytes",
+            ));
+        }
+        let needed = bytes.len() + outcome.count;
+        if needed > bytes.capacity() {
+            let capacity = bytes.capacity().saturating_mul(2).max(needed).min(maximum);
+            bytes
+                .try_reserve_exact(capacity - bytes.len())
+                .map_err(|error| {
+                    target.complete_error(
+                        SourceStage::Limit,
+                        format!("could not allocate complete target: {error}"),
+                    )
+                })?;
+        }
+        bytes.extend_from_slice(&buffer[..outcome.count]);
+        if matches!(outcome.status, ReadStatus::Eof) {
+            let prefix = &bytes[..bytes.len().min(COMPLETE_MIME_WINDOW)];
+            if mime::is_application(prefix) {
+                return Ok(SourceControl::Continue);
+            }
+            return emit_event(SourceEvent::fragment(target.fragment(bytes, 1)), emit);
+        }
+        if outcome.count == 0 {
+            return Err(target.complete_error(
+                SourceStage::Read,
+                "complete-target reader made no progress before EOF",
+            ));
         }
     }
 }
@@ -640,8 +745,8 @@ fn allocate_nominal(size: usize, path: &Path) -> Result<Vec<u8>, SourceError> {
     Ok(buffer)
 }
 
-fn read_until_safe_boundary(
-    reader: &mut BufferedSourceReader,
+fn read_until_safe_boundary<I: RawSource>(
+    reader: &mut BufferedSourceReader<I>,
     nominal_count: usize,
     bytes: &mut Vec<u8>,
     path: &Path,

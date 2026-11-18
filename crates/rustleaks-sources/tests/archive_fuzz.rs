@@ -174,7 +174,8 @@ fn member_limit_and_multifragment_event_bound_are_exercised() {
             );
             assert_eq!(limit_issues, 0);
         } else {
-            assert_eq!(observation.emitted_bytes, 0);
+            // The stream is scanned while it decodes, up to the member limit.
+            assert!(observation.emitted_bytes <= MAX_MEMBER_BYTES);
             assert_eq!(limit_issues, 1);
         }
         assert!(observation.emitted_bytes <= MAX_TOTAL_BYTES);

@@ -388,8 +388,24 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
   fails. The default outside complete mode is `false`, which keeps the
   pinned short-EOF behavior. Outside complete mode, a caller can turn it on
   with `strict_7z_member_lengths(true)`. A length mismatch then gives a
-  recoverable decode issue before any member of that archive is published.
-  Strict lengths add no authenticity or CRC check.
+  recoverable decode issue at the end of the short member and stops that
+  archive. Earlier members, and outside complete mode the bytes of the short
+  member, are already published. Strict lengths add no authenticity or CRC
+  check.
+- Members stream. Each plain member reaches the file scanner through a reader
+  that fills every read unless the member ends. A member read into memory
+  was scanned the same way, so piece boundaries do not depend on how a
+  decoder splits its output. A 7z member keeps the read sizes of its decoder:
+  the reader keeps one chunk and repeats the chunk-sized reads that the old
+  in-memory copy recorded. `tests/archive_streaming.rs` compares both with
+  independent references.
+- A read failure inside a member ends that member. A legacy scan keeps the
+  bytes before the failure and then gets the archive issue; a complete scan
+  sees a read error, publishes nothing for that member, and fails with the
+  archive issue. A TAR container stops after a failed member; ZIP continues
+  with the next member. After a compressed TAR ends, or a compressed member
+  is skipped as binary, the rest of the stream is decoded so trailers and
+  checksums are still checked.
 - 7z coder graphs reject duplicate bindings, invalid packed inputs and cycles
   before any decoder is built. This check is linear in the stream and coder
   counts.

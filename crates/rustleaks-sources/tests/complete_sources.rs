@@ -1280,7 +1280,14 @@ mod excluded_archive_members {
         }
     }
 
+    /// Expected findings as secret and file.
+    type Found = &'static [(&'static [u8], &'static [u8])];
+
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one table covers every corruption case"
+    )]
     fn structural_corruption_has_typed_stage_kind_and_no_partial_leaf() {
         // Byte 148 is the first octal digit of the first header checksum.
         let mut header = archive_seeds::synthetic_tar(&[
@@ -1305,42 +1312,67 @@ mod excluded_archive_members {
         assert_eq!(half.len(), 2071);
         half.truncate(half.len() / 2);
 
-        // (bytes, name, legacy issues, legacy finding, complete stage, owned message)
-        let cases = [
+        // Members are scanned while they are read. A legacy scan publishes
+        // the bytes read before a failure, so the ZIP member whose CRC fails
+        // at its end is scanned, and the TAR member that ends before the
+        // truncated gzip stream is too. A complete target is published only
+        // when it ends without a failure, so the member whose CRC fails is
+        // never published, while the whole TAR member is.
+        // (bytes, name, legacy issues, legacy findings, complete stage,
+        // owned message, complete findings)
+        let crc_findings: Found = &[
+            (b"A001", b"crc.zip!first.txt"),
+            (b"B002", b"crc.zip!second.txt"),
+        ];
+        let half_findings: Found = &[(b"A001", b"half.tar.gz!value.txt")];
+        let cases: [(_, _, _, Found, _, _, Found); 4] = [
             (
                 header,
                 "header.tar",
                 &[(SourceStage::Archive, SourceIssueKind::CorruptArchive)][..],
-                None,
+                &[],
                 SourceStage::Archive,
                 Some("invalid TAR header checksum"),
+                &[],
             ),
             (
                 crc,
                 "crc.zip",
                 &[(SourceStage::Decode, SourceIssueKind::Decode)][..],
-                Some((&b"B002"[..], &b"crc.zip!second.txt"[..])),
+                crc_findings,
                 SourceStage::Decode,
                 Some("ZIP member size or CRC mismatch"),
+                &[],
             ),
             (
                 no_end,
                 "noend.zip",
                 &[(SourceStage::Archive, SourceIssueKind::CorruptArchive)][..],
-                None,
+                &[],
                 SourceStage::Archive,
                 None,
+                &[],
             ),
             (
                 half,
                 "half.tar.gz",
                 &[(SourceStage::Decode, SourceIssueKind::Decode)][..],
-                None,
+                half_findings,
                 SourceStage::Decode,
                 None,
+                half_findings,
             ),
         ];
-        for (data, name, legacy_issues, legacy_finding, complete_stage, owned_message) in cases {
+        for (
+            data,
+            name,
+            legacy_issues,
+            legacy_findings,
+            complete_stage,
+            owned_message,
+            complete_findings,
+        ) in cases
+        {
             let legacy = run(
                 &mut source(data.clone(), name, false, false, 10),
                 &token_detector(),
@@ -1362,11 +1394,7 @@ mod excluded_archive_members {
                 .iter()
                 .map(|finding| (finding.secret().as_bytes(), finding.file().as_bytes()))
                 .collect::<Vec<_>>();
-            assert_eq!(
-                findings,
-                legacy_finding.into_iter().collect::<Vec<_>>(),
-                "{name}"
-            );
+            assert_eq!(findings, legacy_findings, "{name}");
 
             let complete = run(
                 &mut source(data, name, true, false, 10),
@@ -1382,7 +1410,12 @@ mod excluded_archive_members {
             if let Some(owned_message) = owned_message {
                 assert_eq!(message, owned_message, "{name}");
             }
-            assert!(complete.findings().is_empty(), "{name}");
+            let findings = complete
+                .findings()
+                .iter()
+                .map(|finding| (finding.secret().as_bytes(), finding.file().as_bytes()))
+                .collect::<Vec<_>>();
+            assert_eq!(findings, complete_findings, "{name}");
             assert!(complete.issues().is_empty(), "{name}");
         }
     }
@@ -1716,6 +1749,8 @@ mod tgz_targets {
         corrupt[crc] ^= 1;
         let corrupt_outcome =
             run_counted(&mut source(corrupt, "outer.tgz", options(1, 4096, 4096)));
+        // The gzip trailer follows the TAR end, so the whole leaf is
+        // published before the CRC fails. The scan still fails.
         assert!(matches!(
             corrupt_outcome.termination(),
             SourceTermination::SourceError(SourceError::Terminal {
@@ -1724,29 +1759,38 @@ mod tgz_targets {
                 ..
             }) if message == "gzip size or CRC mismatch"
         ));
-        assert!(corrupt_outcome.findings().is_empty());
+        assert_eq!(corrupt_outcome.findings().len(), 1);
         assert!(corrupt_outcome.issues().is_empty());
-        assert_eq!(corrupt_outcome.scanned_bytes(), 0);
+        assert_eq!(corrupt_outcome.scanned_bytes(), 10);
         let usage = corrupt_outcome.usage().unwrap();
-        assert_eq!(usage.original_bytes(), 0);
-        assert_eq!(usage.fragments(), 0);
-        assert_eq!(usage.completed_fragments(), 0);
+        assert_eq!(usage.original_bytes(), 10);
+        assert_eq!(usage.fragments(), 1);
+        assert_eq!(usage.completed_fragments(), 1);
         assert!(usage.is_exact());
-        let tar_bytes = archive_seeds::synthetic_tar(&[("leaf.txt", b"token=A001")]).len();
-        for (bytes, archive_options) in [
-            (bytes.clone(), options(1, 4096, bytes.len() - 1)),
-            (bytes, options(1, tar_bytes - 1, 4096)),
-        ] {
-            let outcome = run(
-                &mut source(bytes, "outer.tgz", archive_options),
-                &token_detector(),
-                ScanOptions::default(),
-            );
-            assert!(matches!(
-                outcome.termination(),
-                SourceTermination::SourceError(SourceError::Terminal { .. })
-            ));
-            assert!(outcome.findings().is_empty());
-        }
+
+        // A gzip stream decodes while it is read, so spool storage does not
+        // limit it.
+        let spooled = run(
+            &mut source(bytes.clone(), "outer.tgz", options(1, 4096, 1)),
+            &token_detector(),
+            ScanOptions::default(),
+        );
+        assert_eq!(spooled.termination(), &SourceTermination::Completed);
+        assert_eq!(spooled.findings().len(), 1);
+
+        // A member over the member limit is never published.
+        let limited = run(
+            &mut source(bytes, "outer.tgz", options(1, 9, 4096)),
+            &token_detector(),
+            ScanOptions::default(),
+        );
+        assert!(matches!(
+            limited.termination(),
+            SourceTermination::SourceError(SourceError::Terminal {
+                stage: SourceStage::Limit,
+                ..
+            })
+        ));
+        assert!(limited.findings().is_empty());
     }
 }
