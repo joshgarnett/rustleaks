@@ -29,6 +29,8 @@ def main_parser():
     run.add_argument('--long-runs', type=int, default=3, help='measured runs for multi-minute cells')
     run.add_argument('--runs', type=int, help='override every run count (marks the run as not protocol)')
     run.add_argument('--timeout', type=float, default=3600, help='seconds before a sample is stopped')
+    run.add_argument('--max-hours', type=float, default=48,
+                     help='run time budget in hours; no sample starts after it and the remaining cells are skipped')
     run.add_argument('--seed', type=int, default=DEFAULT_SEED)
     run.add_argument('--baseline', help='tool id used as the ratio baseline (default: first Rustleaks tool)')
     run.add_argument('--git', help='git executable for git mode (default: found on PATH)')
@@ -81,6 +83,10 @@ def main_normalize(options):
             raise HarnessError('--%s is too small' % name.replace('_', '-'))
     if options.runs is not None and options.runs < 1:
         raise HarnessError('--runs must be at least 1')
+    for name in ('timeout', 'max_hours'):
+        value = getattr(options, name)
+        if not (value > 0 and math.isfinite(value)):
+            raise HarnessError('--%s must be a finite number more than 0' % name.replace('_', '-'))
 
 
 def main_score(options):

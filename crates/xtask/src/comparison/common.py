@@ -123,16 +123,36 @@ def slug(text):
 
 
 def run_text(argv, timeout=20, env=None, cwd=None):
-    """Run a short probe and return (exit code, stdout text, stderr text)."""
+    """Run a short probe and return (exit code, stdout text, stderr text).
+
+    The probe runs in its own session. On timeout its whole process group is
+    killed, and the pipes are closed after a short wait even if a process that
+    left the group still holds them."""
     try:
-        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, timeout=timeout,
+        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
                                    env=env if env is not None else {'PATH': SYSTEM_PATH, 'LC_ALL': 'C'},
-                                   cwd=cwd)
-    except (OSError, subprocess.TimeoutExpired) as error:
+                                   cwd=cwd, start_new_session=True)
+    except OSError as error:
         return None, '', str(error)
-    return (completed.returncode, completed.stdout.decode('utf-8', 'replace'),
-            completed.stderr.decode('utf-8', 'replace'))
+    try:
+        out, err = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.stdout.close()
+            process.stderr.close()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        return None, '', str(error)
+    return process.returncode, out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace')
 
 
 def sysctl(name):

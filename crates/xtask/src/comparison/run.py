@@ -2,7 +2,7 @@
 
 
 class RunContext(object):
-    def __init__(self, options, output, tools, workloads, git):
+    def __init__(self, options, output, tools, workloads, git, started):
         self.options = options
         self.output = output
         self.tools = {tool['id']: tool for tool in tools}
@@ -20,6 +20,8 @@ class RunContext(object):
         write_private(self.shared_rules, adapter_shared_rules_toml().encode())
         self.profiles = {}
         self.counter = 0
+        self.budget_deadline = started + options.max_hours * 3600
+        self.budget_reached_at = None
 
     def profile(self, workers):
         if workers not in self.profiles:
@@ -67,7 +69,7 @@ def run_sample(ctx, cell, phase, repetition):
     if phase == 'instrumented':
         bin_dir = os.path.join(ctx.output, 'instrument', sample_id)
         child_log = os.path.join(ctx.output, 'instrument', sample_id + '.jsonl')
-        measure_git_shim(bin_dir, ctx.git['path'], child_log)
+        measure_git_shim(bin_dir, ctx.git['path'], child_log, ctx.options.timeout)
     invocation = adapter_invocation(tool, cell['mode'], workload_target(workload, cell['mode']), report,
                                     cell['settings'], ctx.inputs())
     env = measure_environment(home, tmp, bin_dir, invocation['env'])
@@ -155,6 +157,22 @@ def run_sample(ctx, cell, phase, repetition):
 
 
 RUN_PARSE_LIMIT = 64 << 20
+RUN_BUDGET_REASON = 'run time budget reached'
+
+
+def run_budget_reached(ctx):
+    """True once the run has used its --max-hours budget. No sample starts after that."""
+    if ctx.budget_reached_at is None and time.monotonic() >= ctx.budget_deadline:
+        ctx.budget_reached_at = utc_now()
+        print('compare: the run time budget of %g hours is used up; the remaining cells are skipped'
+              % ctx.options.max_hours, file=sys.stderr)
+    return ctx.budget_reached_at is not None
+
+
+def run_skip_for_budget(cells):
+    for cell in cells:
+        if cell['status'] == 'planned':
+            cell['status'], cell['reason'] = 'skipped', RUN_BUDGET_REASON
 
 
 def run_count(options, warm_median):
@@ -178,6 +196,9 @@ def run_block(ctx, cells):
         order = [cell for cell in warm if cell['status'] == 'planned']
         ctx.rng.shuffle(order)
         for cell in order:
+            if run_budget_reached(ctx):
+                run_skip_for_budget(cells)
+                return
             record = run_sample(ctx, cell, 'warmup', repetition)
             if record['status'] != 'ok':
                 cell['status'] = 'dropped'
@@ -195,12 +216,16 @@ def run_block(ctx, cells):
         cell['runs_planned'], cell['runs_reason'] = run_count(ctx.options, median)
         cell['warmups'] = len(warmups.get(cell['cell_id'], []))
     done = collections.Counter()
-    while True:
+    while not ctx.budget_reached_at:
         order = [cell for cell in cells if cell['status'] == 'planned' and done[cell['cell_id']] < cell['runs_planned']]
         if not order:
             break
         ctx.rng.shuffle(order)
         for cell in order:
+            if run_budget_reached(ctx):
+                # Cells with every planned sample taken keep their results.
+                run_skip_for_budget([item for item in cells if done[item['cell_id']] < item['runs_planned']])
+                break
             record = run_sample(ctx, cell, 'measured', done[cell['cell_id']])
             done[cell['cell_id']] += 1
             if record['status'] != 'ok':
@@ -218,12 +243,16 @@ def run_block(ctx, cells):
             cell['reason'] = 'every measured sample failed'
         if (cell['mode'] == 'git' and ctx.git and not ctx.options.no_child_instrumentation
                 and cell['cache'] == 'warm' and cell['status'] != 'failed'):
+            if run_budget_reached(ctx):
+                cell['instrumented_status'] = 'skipped: ' + RUN_BUDGET_REASON
+                continue
             record = run_sample(ctx, cell, 'instrumented', 0)
             cell['children'] = record.get('children')
             cell['instrumented_status'] = record['status']
 
 
 def run_command(options):
+    started = time.monotonic()
     os.umask(0o077)
     output = os.path.abspath(options.output)
     if os.path.exists(output):
@@ -252,7 +281,7 @@ def run_command(options):
     probe_env = measure_environment(probe_home, private_dir(os.path.join(probe_home, 'tmp')), None, {})
     for tool in tools:
         tool['probe'] = adapter_probe(tool, probe_env)
-    ctx = RunContext(options, output, tools, workloads, git)
+    ctx = RunContext(options, output, tools, workloads, git, started)
     for workload in workloads:
         workload['input_bytes'], workload['input_bytes_source'] = manifest_input_bytes(workload) \
             if os.path.exists(workload_target(workload, 'dir')) else (workload['size'].get('bytes'), 'manifest')
@@ -306,7 +335,8 @@ def run_command(options):
            'load_before': load_average(), 'background_builds_before': background_builds(),
            'git': git, 'tools_manifest': {key: tools_manifest[key] for key in ('path', 'sha256')},
            'tools': tools, 'workload_manifests': workload_sources, 'workloads': workloads, 'cells': cells,
-           'source': run_source_state()}
+           'source': run_source_state(),
+           'time_budget': {'max_hours': options.max_hours, 'reached': False, 'reached_at': None}}
     planned = [cell for cell in cells if cell['status'] == 'planned']
     print('planned %d cells (%d skipped) over %d workloads' % (
         len(planned), len(cells) - len(planned), len(workloads)), file=sys.stderr)
@@ -326,6 +356,9 @@ def run_command(options):
     run['block_order'] = ['%s/%s' % key for key in order]
     run['blocks'] = []
     for key in order:
+        if run_budget_reached(ctx):
+            run_skip_for_budget(blocks[key])
+            continue
         block = {'block': '%s/%s' % key, 'load_before': load_average(), 'background_builds_before': background_builds(),
                  'thermal_before': thermal_state(), 'started_at': utc_now()}
         print('running %s/%s: %d cells' % (key[0], key[1], len(blocks[key])), file=sys.stderr)
@@ -333,6 +366,11 @@ def run_command(options):
         block.update({'load_after': load_average(), 'background_builds_after': background_builds(),
                       'thermal_after': thermal_state(), 'finished_at': utc_now()})
         run['blocks'].append(block)
+    if ctx.budget_reached_at:
+        skipped = sum(1 for cell in cells if cell.get('reason') == RUN_BUDGET_REASON)
+        run['time_budget'].update(reached=True, reached_at=ctx.budget_reached_at, cells_skipped=skipped)
+        run['protocol_deviations'].append('the run time budget of %g hours was used up; %d cells were skipped'
+                                          % (options.max_hours, skipped))
     after = manifest_verify_hashes(tools)
     for tool in tools:
         tool['sha256_after'] = after[tool['id']]

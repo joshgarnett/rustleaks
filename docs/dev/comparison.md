@@ -179,6 +179,32 @@ Useful options:
   any tool.
 - `--runs N` and `--warmups N` override the run counts for a quick check.
   The report then says that the run is not a protocol run.
+- `--timeout SECONDS` stops one sample. The default is 3600.
+- `--max-hours HOURS` is the time budget for the whole run. The default
+  is 48.
+
+### Time limits
+
+Every step of a run has a finite limit:
+
+- A sample that passes `--timeout`, or whose logs or report pass their size
+  limits, has its process group killed with `SIGKILL`. The kill repeats every
+  second. If the process is still not collected 60 seconds after the first
+  kill, the harness stops waiting and records the sample with the status
+  `timeout-unreaped` or `output-limit-unreaped`.
+- After a scanner exits, any process left in its group is killed and checked
+  again for up to 2 seconds. A sample whose group still has processes, or
+  whose group could not be checked, gets `group_survivors_after_kill`.
+- The `git` shim of the instrumented run kills `git` after `--timeout`
+  seconds and stops waiting 60 seconds later.
+- Version and host probes stop after 20 seconds, with every process they
+  started.
+- No sample starts after the `--max-hours` budget is used up. A sample that
+  is running then finishes or reaches its own timeout. Cells that did not
+  get all their samples are listed as skipped with the reason
+  `run time budget reached`, and their samples stay in `samples.jsonl`.
+  `run.json` records the budget under `time_budget`, with whether it was
+  reached, and the report lists it as a protocol deviation.
 
 At the end, the harness verifies the binary hashes, scores the kept reports
 and writes the report.

@@ -19,33 +19,76 @@ def parse_tree_listing(listing):
     return entries
 
 
+# One object read may take this long before git cat-file is killed, and the
+# process gets this long to exit after its input is closed.
+BLOB_READ_SECONDS = 600
+BLOB_CLOSE_SECONDS = 60
+
+
 class BlobReader:
     def __init__(self, git, repository, environment):
         self.process = subprocess.Popen([git] + GIT_FLAGS + ['-C', str(repository), 'cat-file', '--batch'],
                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         env=environment)
+        self.deadline = None
+        self.expired = False
+        self.done = threading.Event()
+        self.watcher = threading.Thread(target=self.watch, daemon=True)
+        self.watcher.start()
+
+    def watch(self):
+        # Kill git cat-file when one read passes its deadline. The read then
+        # sees the end of the pipe and fails instead of waiting forever.
+        while not self.done.wait(1):
+            deadline = self.deadline
+            if deadline is not None and time.monotonic() > deadline:
+                self.expired = True
+                self.process.kill()
+                return
+
+    def failed(self, message):
+        if self.expired:
+            message = 'git cat-file took more than %d seconds for one object' % BLOB_READ_SECONDS
+        fail(message)
 
     def read(self, oid):
-        self.process.stdin.write(oid.encode('ascii') + b'\n')
-        self.process.stdin.flush()
-        header = self.process.stdout.readline().split()
-        if len(header) != 3 or header[0].decode('ascii') != oid:
-            fail('git cat-file returned an unexpected header for %s' % oid)
-        size = int(header[2])
-        data = self.process.stdout.read(size)
-        if len(data) != size or self.process.stdout.read(1) != b'\n':
-            fail('git cat-file returned a short object for %s' % oid)
-        return data
+        self.deadline = time.monotonic() + BLOB_READ_SECONDS
+        try:
+            try:
+                self.process.stdin.write(oid.encode('ascii') + b'\n')
+                self.process.stdin.flush()
+            except OSError:
+                self.failed('git cat-file stopped before %s' % oid)
+            header = self.process.stdout.readline().split()
+            if len(header) != 3 or header[0].decode('ascii') != oid:
+                self.failed('git cat-file returned an unexpected header for %s' % oid)
+            size = int(header[2])
+            data = self.process.stdout.read(size)
+            if len(data) != size or self.process.stdout.read(1) != b'\n':
+                self.failed('git cat-file returned a short object for %s' % oid)
+            return data
+        finally:
+            self.deadline = None
 
     def close(self):
+        self.done.set()
         self.process.stdin.close()
         self.process.stdout.close()
-        if self.process.wait() != 0:
+        try:
+            code = self.process.wait(timeout=BLOB_CLOSE_SECONDS)
+        except subprocess.TimeoutExpired:
+            self.abort()
+            fail('git cat-file did not exit within %d seconds' % BLOB_CLOSE_SECONDS)
+        if code != 0:
             fail('git cat-file failed')
 
     def abort(self):
+        self.done.set()
         self.process.kill()
-        self.process.wait()
+        try:
+            self.process.wait(timeout=BLOB_CLOSE_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def symlink_parent(tree, relative):
@@ -149,16 +192,16 @@ def fetch_repository(git, environment, url, ref, commit, destination, history):
     remove_tree(destination / 'fetch.json')
     commands = []
 
-    def run(arguments, cwd=repository):
+    def run(arguments, cwd=repository, network=False):
         commands.append(['git'] + (['-C', 'repo'] if cwd else []) + arguments)
-        return git_run(git, cwd, environment, arguments)
+        return git_run(git, cwd, environment, arguments, network=network)
 
     run(['init', '--quiet', str(repository)], cwd=None)
     commands[-1][-1] = 'repo'
     fetch = ['fetch', '--no-tags', '--quiet']
     if not history:
         fetch += ['--depth', '1']
-    run(fetch + [url, ref])
+    run(fetch + [url, ref], network=True)
     fetched = git_text(git, repository, environment, ['rev-parse', 'FETCH_HEAD^{commit}'])
     if fetched != commit:
         fail('%s %s resolved to %s, expected %s' % (url, ref, fetched, commit))

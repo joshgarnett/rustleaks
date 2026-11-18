@@ -61,7 +61,9 @@ The harness checks every hash before and after each run.
 Each run is a separate `cargo xtask compare run` with its own private output
 folder. Defaults: 3 warmups, then 30 measured runs for cells under 1 s, 10
 for cells of 1 s or more, and 3 for cells of 5 minutes or more; one-hour
-timeout per sample; fixed seed; random tool and workload order.
+timeout per sample; a 48-hour time budget per run (`--max-hours`), after
+which no sample starts and the remaining cells are listed as skipped; fixed
+seed; random tool and workload order.
 
 | Run | Workloads | Modes | Lanes | Tools | Notes |
 | --- | --- | --- | --- | --- | --- |
