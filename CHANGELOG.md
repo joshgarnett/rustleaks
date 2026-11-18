@@ -39,6 +39,14 @@
   size does not change memory use. The 1,000,000-action limit still bounds
   the work of rendering. `TemplateLimits::default()` in `rustleaks-report`
   now sets `max_output_bytes` to `TemplateLimits::NO_OUTPUT_LIMIT`.
+- Let the template action limit grow with the number of findings. A
+  template report stopped with exit code 1 after 1,000,000 actions, so a
+  normal template that uses about 30 actions for each finding failed at
+  about 33,000 findings. Gitleaks has no such limit. The limit is now
+  1,000,000 actions plus 1,000 for each finding. A template whose work grows
+  faster than the number of findings still stops with exit code 1.
+  `TemplateLimits` in `rustleaks-report` has a new `actions_per_finding`
+  field, which `TemplateLimits::new` sets to 0.
 - Read the `--baseline-path` file in the CLI and parse it with
   `Baseline::from_go_json`, so the core engine no longer reads it.
   `Baseline::load_go_json` stays as a wrapper for library users. Baseline

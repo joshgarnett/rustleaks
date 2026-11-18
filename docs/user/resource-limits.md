@@ -79,7 +79,7 @@ before that point.
 | One regular expression | 1 MiB of source, 4,096 levels of nesting, and 256 MiB for each compiled form. A repeat count can be at most 1,000, and the counts of nested repeats multiplied together can be at most 1,000. |
 | Native rule packs together | 32 packs, 1 MiB of TOML, 1,024 rules |
 | One line of an ignore file | 64 KiB. Parsing of that file stops at a longer line. Rustleaks reads an ignore file one line at a time, so it never holds more than one line of the file in memory, plus the entries it keeps. |
-| Report template | 1 MiB of source, 1,000,000 actions, 128 levels of nesting. The report size has no limit, because Rustleaks writes the report while it renders. |
+| Report template | 1 MiB of source, 1,000,000 actions plus 1,000 actions for each finding, 128 levels of nesting. The report size has no limit, because Rustleaks writes the report while it renders. |
 | Complete-scan profile file | 16 KiB |
 
 A configuration or rule pack that exceeds these limits fails to load.
