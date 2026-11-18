@@ -25,6 +25,14 @@ use crate::args::{CommandKind, Invocation};
 /// version produces an advisory warning.
 const IMPLEMENTED_GITLEAKS_VERSION: &str = "8.30.0";
 
+/// Largest configuration file, in bytes, that Rustleaks reads.
+///
+/// The largest packaged configuration is under 1 MiB. A configuration can
+/// come from the scanned folder, so a larger file fails before more than this
+/// many bytes are read. `FileSystemResolver` in `rustleaks-core` uses the same
+/// limit.
+const MAX_CONFIG_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Bytes in the longest ignore file line, without its line feed, that the
 /// core parser rejects. It matches the default Go scanner token limit.
 const IGNORE_LINE_LIMIT: u64 = 64 * 1024;
@@ -60,11 +68,33 @@ impl ConfigResolver for CwdResolver {
         requested: &str,
     ) -> Result<ResolvedConfig, ResolverError> {
         let path = resolve(&self.cwd, Path::new(requested));
-        let contents = fs::read_to_string(&path).map_err(|error| {
+        let contents = read_config_file(&path).map_err(|error| {
             ResolverError::new(requested, self.cwd.display().to_string(), error.to_string())
         })?;
         Ok(ResolvedConfig::new(contents, ConfigOrigin::Path(path)))
     }
+}
+
+/// Reads a UTF-8 configuration file of at most [`MAX_CONFIG_FILE_BYTES`].
+///
+/// Errors other than the size limit are the errors of `fs::read_to_string`.
+fn read_config_file(path: &Path) -> io::Result<String> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(MAX_CONFIG_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_CONFIG_FILE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration file is larger than the 16 MiB limit",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })
 }
 
 pub(crate) fn assemble(
@@ -383,7 +413,7 @@ fn load_path(
     source: &str,
 ) -> Result<(CompiledConfig, String), String> {
     let physical = resolve(cwd, path);
-    let contents = fs::read_to_string(&physical).map_err(|error| {
+    let contents = read_config_file(&physical).map_err(|error| {
         format!(
             "could not read config {} from {source}: {error}",
             path.display()
@@ -855,6 +885,76 @@ mod tests {
             assert_eq!(ignores, expected.ignores, "case {index}");
             assert_eq!(warnings.len(), expected.issues.len(), "case {index}");
         }
+    }
+
+    fn assemble_directory(root: &Path) -> Result<ConfigAssembly, String> {
+        let invocation = Invocation {
+            command: CommandKind::Directory,
+            source: root.to_path_buf(),
+            options: Options::default(),
+        };
+        assemble(
+            &invocation,
+            ConfigEnvironment {
+                path: None,
+                inline: None,
+                legacy_path: None,
+                legacy_inline: None,
+            },
+            root,
+            &mut |_| {},
+        )
+    }
+
+    fn padded_config(length: usize) -> Vec<u8> {
+        let mut contents = b"[[rules]]\nid = 'padded'\nregex = 'padded'\n".to_vec();
+        contents.resize(length, b'#');
+        contents
+    }
+
+    #[test]
+    fn source_local_config_is_read_up_to_16_mib() {
+        let limit = 16 * 1024 * 1024;
+        assert_eq!(MAX_CONFIG_FILE_BYTES, 16 * 1024 * 1024);
+        let root = temporary_directory("config-cap");
+        let local = root.join(".gitleaks.toml");
+        std::fs::write(&local, padded_config(limit)).unwrap();
+        let assembly = assemble_directory(&root).ok().unwrap();
+        assert!(assembly.full.rule("padded").is_some());
+
+        std::fs::write(&local, padded_config(limit + 1)).unwrap();
+        assert_eq!(
+            assemble_directory(&root).err().unwrap(),
+            format!(
+                "could not read config {} from source-local config: \
+                 configuration file is larger than the 16 MiB limit",
+                local.display()
+            )
+        );
+
+        // An extension is read with the same limit.
+        std::fs::write(root.join("base.toml"), padded_config(limit + 1)).unwrap();
+        std::fs::write(&local, "[extend]\npath = 'base.toml'\n").unwrap();
+        let error = assemble_directory(&root).err().unwrap();
+        assert!(
+            error.starts_with(&format!(
+                "could not compile config {} from source-local config: ",
+                local.display()
+            )),
+            "{error}"
+        );
+        assert!(
+            error.contains("unable to resolve config path 'base.toml' from "),
+            "{error}"
+        );
+        assert!(
+            error.ends_with(": configuration file is larger than the 16 MiB limit"),
+            "{error}"
+        );
+        std::fs::write(root.join("base.toml"), padded_config(limit)).unwrap();
+        let assembly = assemble_directory(&root).ok().unwrap();
+        assert!(assembly.full.rule("padded").is_some());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -74,7 +74,9 @@ meta engine, its caches and the reverse NFA fallback.
   speedup.
 - The PikeVM estimate covers dependency search tables and stacks, but not
   allocator overhead.
-- The caller owns reading configuration files and their total size.
+- The caller owns reading configuration files. `FileSystemResolver` and the
+  CLI read at most 16 MiB of each file. Other callers own the size of the
+  text they pass.
 - Configuration is untrusted, so literal-anchor analysis is capped by choice
   and step counts, and the full keyword DFA is used only within the keyword
   size and depth limits.

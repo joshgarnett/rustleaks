@@ -142,6 +142,9 @@ In a few error cases, Rustleaks stops or fails where Gitleaks does not:
   one.
 - Rustleaks opens the report file only at the end of the scan. A scan that
   fails early does not create or empty the report file.
+- A configuration file larger than 16 MiB fails to load, and the scan exits
+  with 1. This includes a `.gitleaks.toml` in the scanned folder and each
+  `[extend]` file. The largest packaged configuration is under 1 MiB.
 
 ## Detection details
 

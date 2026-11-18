@@ -25,6 +25,14 @@
   repository controls their size. Before, Rustleaks read the whole file into
   memory before it checked the 64 KiB line limit. Entries, warnings and
   errors do not change.
+- Limit each configuration file to 16 MiB. A configuration can come from
+  the scanned folder, and Rustleaks read it whole with no limit. A larger
+  file now fails to load before Rustleaks reads more than 16 MiB, and the
+  scan exits with 1. This applies to `--config`, the configuration
+  environment variables that name a file, `.gitleaks.toml` and
+  `.rustleaks.toml` in the scanned folder, `[extend]` files, and
+  `FileSystemResolver` in `rustleaks-core`, where the error is a
+  `ConfigError::Resolve`. The largest packaged configuration is under 1 MiB.
 - Add the `help [command]` command, which prints the same help as
   `<command> --help`, and the `completion <shell>` command, which prints a
   completion script for bash, zsh, fish or PowerShell. `completion` accepts
