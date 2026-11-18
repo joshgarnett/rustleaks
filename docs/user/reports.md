@@ -219,7 +219,8 @@ rule ID, and then the number of findings:
 ```
 
 A template file can be at most 1 MiB. Rendering stops with an error after
-1,000,000 actions or 64 MiB of output, and nesting is limited to 128 levels.
+1,000,000 actions, and nesting is limited to 128 levels. The report size has
+no limit, because Rustleaks writes the report while it renders.
 
 ## Field order
 

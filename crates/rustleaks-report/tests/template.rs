@@ -320,6 +320,55 @@ fn source_action_iteration_and_output_limits_have_exact_boundaries() {
     assert!(output.is_empty());
 }
 
+/// Counts written bytes without keeping them.
+struct ByteCounter(usize);
+
+impl Write for ByteCounter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn default_limits_set_no_output_limit() {
+    assert_eq!(TemplateLimits::NO_OUTPUT_LIMIT, usize::MAX);
+    assert_eq!(
+        TemplateLimits::default(),
+        TemplateLimits::new(1024 * 1024, 1_000_000, usize::MAX)
+    );
+
+    // A body of almost 1 MiB rendered for each of 80 findings writes more
+    // than the 64 MiB that earlier releases allowed.
+    let mut source = b"{{ range . }}".to_vec();
+    let body = 1024 * 1024 - source.len() - b"{{ end }}".len();
+    source.resize(source.len() + body, b'x');
+    source.extend_from_slice(b"{{ end }}");
+    let reporter = TemplateReporter::from_bytes(&source, TemplateLimits::default()).unwrap();
+    let findings = (0..80).map(|_| fixture_finding()).collect::<Vec<_>>();
+    let mut output = ByteCounter(0);
+    reporter.render(&mut output, &findings).unwrap();
+    assert_eq!(output.0, 80 * body);
+    assert!(output.0 > 64 * 1024 * 1024);
+
+    // An explicit output limit still applies.
+    let limited = TemplateReporter::from_bytes(
+        &source,
+        TemplateLimits::new(1024 * 1024, 1_000_000, 64 * 1024 * 1024),
+    )
+    .unwrap();
+    let mut output = ByteCounter(0);
+    assert!(matches!(
+        limited.render(&mut output, &findings),
+        Err(TemplateError::OutputLimit { limit }) if limit == 64 * 1024 * 1024
+    ));
+    assert!(output.0 <= 64 * 1024 * 1024);
+}
+
 #[test]
 fn path_errors_are_stable_and_do_not_embed_platform_prose() {
     assert!(matches!(
@@ -379,7 +428,7 @@ fn public_profile_and_defaults_are_versioned_and_checked() {
     assert_eq!(SAFE_TEMPLATE_PROFILE, "rustleaks-safe-template-v1");
     assert_eq!(
         TemplateLimits::default(),
-        TemplateLimits::new(1024 * 1024, 1_000_000, 64 * 1024 * 1024)
+        TemplateLimits::new(1024 * 1024, 1_000_000, TemplateLimits::NO_OUTPUT_LIMIT)
     );
     let empty = reporter(b"");
     assert!(render(&empty, &[]).is_empty());

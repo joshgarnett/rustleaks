@@ -24,10 +24,15 @@ pub struct TemplateLimits {
     /// Maximum number of evaluated actions and range iterations.
     pub max_actions: usize,
     /// Maximum number of bytes sent to the destination.
+    ///
+    /// [`TemplateLimits::NO_OUTPUT_LIMIT`], the default, sets no limit.
     pub max_output_bytes: usize,
 }
 
 impl TemplateLimits {
+    /// A `max_output_bytes` value that sets no output limit.
+    pub const NO_OUTPUT_LIMIT: usize = usize::MAX;
+
     /// Creates an explicit set of resource ceilings.
     #[must_use]
     pub const fn new(max_source_bytes: usize, max_actions: usize, max_output_bytes: usize) -> Self {
@@ -40,8 +45,15 @@ impl TemplateLimits {
 }
 
 impl Default for TemplateLimits {
+    /// 1 MiB of source, 1,000,000 actions and no output limit.
+    ///
+    /// Rendering streams to the destination and buffers at most one quoted
+    /// value, so output size does not drive memory. The language has no
+    /// recursion, and `range` visits only findings or tags, with each
+    /// iteration and action counted against the action limit, so the action
+    /// limit already bounds rendering work.
     fn default() -> Self {
-        Self::new(1024 * 1024, 1_000_000, 64 * 1024 * 1024)
+        Self::new(1024 * 1024, 1_000_000, Self::NO_OUTPUT_LIMIT)
     }
 }
 
@@ -235,7 +247,8 @@ impl TemplateReporter {
         let mut output = CountingWriter {
             inner: writer,
             written: 0,
-            limit: self.limits.max_output_bytes,
+            limit: (self.limits.max_output_bytes != TemplateLimits::NO_OUTPUT_LIMIT)
+                .then_some(self.limits.max_output_bytes),
         };
         let mut state = RenderState {
             variables: Vec::new(),
@@ -1611,17 +1624,22 @@ fn append_limited(output: &mut Vec<u8>, bytes: &[u8], limit: usize) -> Result<()
 struct CountingWriter<'a> {
     inner: &'a mut dyn Write,
     written: usize,
-    limit: usize,
+    /// `None` sets no limit and skips counting, so the count cannot overflow.
+    limit: Option<usize>,
 }
 
 impl CountingWriter<'_> {
     fn emit(&mut self, bytes: &[u8]) -> Result<(), TemplateError> {
+        let Some(limit) = self.limit else {
+            self.inner.write_all(bytes)?;
+            return Ok(());
+        };
         let new_total = self
             .written
             .checked_add(bytes.len())
-            .ok_or(TemplateError::OutputLimit { limit: self.limit })?;
-        if new_total > self.limit {
-            return Err(TemplateError::OutputLimit { limit: self.limit });
+            .ok_or(TemplateError::OutputLimit { limit })?;
+        if new_total > limit {
+            return Err(TemplateError::OutputLimit { limit });
         }
         self.inner.write_all(bytes)?;
         self.written = new_total;

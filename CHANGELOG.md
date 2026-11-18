@@ -33,6 +33,12 @@
   `.rustleaks.toml` in the scanned folder, `[extend]` files, and
   `FileSystemResolver` in `rustleaks-core`, where the error is a
   `ConfigError::Resolve`. The largest packaged configuration is under 1 MiB.
+- Remove the 64 MiB limit on template report output. A template report
+  larger than 64 MiB stopped the scan with exit code 1, and Gitleaks has no
+  such limit. Rustleaks writes the report while it renders, so the report
+  size does not change memory use. The 1,000,000-action limit still bounds
+  the work of rendering. `TemplateLimits::default()` in `rustleaks-report`
+  now sets `max_output_bytes` to `TemplateLimits::NO_OUTPUT_LIMIT`.
 - Add the `help [command]` command, which prints the same help as
   `<command> --help`, and the `completion <shell>` command, which prints a
   completion script for bash, zsh, fish or PowerShell. `completion` accepts
