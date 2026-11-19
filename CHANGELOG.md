@@ -4,6 +4,13 @@
 
 ## [0.1.0-alpha.10] - 2026-11-19
 
+- Windows release builds accept the reviewed MSVC toolset, 14.51.36231, or a
+  newer MSVC 14 toolset from the same Visual Studio edition. Hosted runners
+  update MSVC on their own schedule, and the ARM64 runner moved to
+  14.52.37025. For a newer toolset, the release manifest and
+  `licenses/index.json` record the toolset version and the actual hash and
+  size of each MSVC file. The Microsoft scope notice says so. Windows SDK
+  files stay pinned.
 - Document that with `--max-archive-depth 0`, the default, Rustleaks reads
   files whose names look like archives, such as `docker-compose.branch.yml`
   or `notes.zipper.txt`, as plain text, while Gitleaks skips them unread.

@@ -79,9 +79,14 @@ pub(super) fn collect(
     let linker = fs::canonicalize(linker)
         .map_err(|error| format!("cannot inspect selected linker: {error}"))?;
     let linker_path = normalized_path(&linker.to_string_lossy());
-    let (provider_root, _) = linker_path
+    let (provider_root, toolset) = linker_path
         .split_once("/vc/tools/msvc/")
         .ok_or("selected linker is not an identified MSVC provider")?;
+    let toolset = toolset
+        .split('/')
+        .next()
+        .ok_or("selected linker has no MSVC toolset version")?;
+    accepted_toolset(string(&component["source"], "toolset_version")?, toolset)?;
     let edition = string(&component["source"], "visual_studio_edition")?.to_ascii_lowercase();
     let studio_major = string(&component["source"], "visual_studio_version")?
         .split('.')
@@ -96,7 +101,13 @@ pub(super) fn collect(
         );
     }
     let expected_linker = &component["source"]["target_linker_files"][target];
-    let actual_linker = observe_file(&linker, provider_root, expected_linker)?;
+    let actual_linker = observe_file(
+        &linker,
+        provider_root,
+        expected_linker,
+        &component["source"],
+        toolset,
+    )?;
     let map_text = read_text(map, 32 * 1024 * 1024)?;
     let trace_text = read_text(trace, 64 * 1024 * 1024)?;
     let mut image_header = Vec::new();
@@ -150,7 +161,13 @@ pub(super) fn collect(
         let expected = expected.get(library).ok_or_else(|| {
             format!("selected native runtime library {library} has no reviewed provider")
         })?;
-        let mut record = observe_file(&path, provider_root, expected)?;
+        let mut record = observe_file(
+            &path,
+            provider_root,
+            expected,
+            &component["source"],
+            toolset,
+        )?;
         record["members"] = json!(selected_members);
         observed.insert(library.clone(), record);
     }
@@ -162,7 +179,7 @@ pub(super) fn collect(
     let evidence = json!({
         "schema_version":1,"target":target,"candidate":commit,"binary_sha256":binary_sha256,
         "component_id":component["id"],"selection":"configured-cli-action-and-native-map-search-trace",
-        "map_identity":map_identity,"linker":actual_linker,"inputs":observed.into_values().collect::<Vec<_>>(),
+        "toolset_version":toolset,"map_identity":map_identity,"linker":actual_linker,"inputs":observed.into_values().collect::<Vec<_>>(),
     });
     validate(bundle, &evidence, target, commit, binary_sha256)?;
     write_json(&evidence_root.join("verified-runtime.json"), &evidence)?;
@@ -481,24 +498,116 @@ fn unique_provider(
         .ok_or_else(|| "native provider disappeared".into())
 }
 
-fn observe_file(path: &Path, provider_root: &str, expected: &Value) -> Result<Value, String> {
+fn observe_file(
+    path: &Path,
+    provider_root: &str,
+    reviewed: &Value,
+    source: &Value,
+    toolset: &str,
+) -> Result<Value, String> {
+    let (mut expected, observed) = toolset_record(reviewed, source, toolset)?;
     let actual = normalized_path(&path.to_string_lossy());
-    let expected_path = normalized_path(string(expected, "original_path")?);
+    let expected_path = normalized_path(string(&expected, "original_path")?);
     let original = provider_relative_path(&actual, provider_root)?;
     if original != expected_path {
         return Err(format!(
             "selected native provider path differs from reviewed identity {}",
-            string(expected, "original_path")?
+            string(&expected, "original_path")?
         ));
     }
     let size = fs::metadata(path).map_err(|error| error.to_string())?.len();
+    let digest = sha256_file(path)?;
+    if observed {
+        expected["sha256"] = json!(digest);
+        expected["size"] = json!(size);
+        return Ok(expected);
+    }
     if expected["size"].as_u64() != Some(size) {
         return Err(format!(
             "selected native file {original} has unreviewed size {size}"
         ));
     }
-    validate_file_identity(expected, &original, &sha256_file(path)?, size)?;
-    Ok(expected.clone())
+    validate_file_identity(&expected, &original, &digest, size)?;
+    Ok(expected)
+}
+
+/// Accept the reviewed MSVC toolset or a newer toolset with the same major
+/// version, such as 14.52.37025 for a reviewed 14.51.36231.
+fn accepted_toolset(reviewed: &str, actual: &str) -> Result<(), String> {
+    let parse = |version: &str| -> Option<[u32; 3]> {
+        let parts = version
+            .split('.')
+            .map(|part| {
+                if part.is_empty()
+                    || part.len() > 9
+                    || !part.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return None;
+                }
+                part.parse().ok()
+            })
+            .collect::<Option<Vec<u32>>>()?;
+        parts.try_into().ok()
+    };
+    let reviewed_parts = parse(reviewed).ok_or("reviewed MSVC toolset version is invalid")?;
+    match parse(actual) {
+        Some(parts) if parts[0] == reviewed_parts[0] && parts >= reviewed_parts => Ok(()),
+        _ => Err(format!(
+            "selected MSVC toolset {actual} is neither the reviewed {reviewed} nor a newer {}.x toolset",
+            reviewed_parts[0]
+        )),
+    }
+}
+
+/// Return a reviewed provider record as it applies to the selected toolset.
+/// The flag is true when the record is an MSVC file of a newer toolset: the
+/// reviewed path and role then apply under the selected toolset folder, and
+/// the file's hash and size are recorded from the actual file instead of
+/// pinned. Windows SDK files and files of the reviewed toolset stay pinned.
+fn toolset_record(
+    reviewed: &Value,
+    source: &Value,
+    toolset: &str,
+) -> Result<(Value, bool), String> {
+    let reviewed_toolset = string(source, "toolset_version")?;
+    let path = string(reviewed, "original_path")?;
+    match path.strip_prefix(&format!("VC/Tools/MSVC/{reviewed_toolset}/")) {
+        Some(rest) if toolset != reviewed_toolset => {
+            let mut record = reviewed.clone();
+            let fields = record
+                .as_object_mut()
+                .ok_or("reviewed native provider is not an object")?;
+            fields.insert(
+                "original_path".into(),
+                json!(format!("VC/Tools/MSVC/{toolset}/{rest}")),
+            );
+            for pinned in ["sha256", "size", "file_version"] {
+                fields.remove(pinned);
+            }
+            Ok((record, true))
+        }
+        _ => Ok((reviewed.clone(), false)),
+    }
+}
+
+/// Copy the recorded hash and size of a newer-toolset file into its expected
+/// record after checking their form.
+fn observed_bytes(expected: &mut Value, recorded: &Value) -> Result<(), String> {
+    let digest = string(recorded, "sha256")?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("native runtime evidence has an invalid provider SHA-256".into());
+    }
+    let size = recorded["size"]
+        .as_u64()
+        .filter(|size| *size > 0)
+        .ok_or("native runtime evidence has an invalid provider size")?;
+    expected["sha256"] = json!(digest);
+    expected["size"] = json!(size);
+    Ok(())
 }
 
 fn provider_relative_path(actual: &str, provider_root: &str) -> Result<String, String> {
@@ -558,9 +667,18 @@ pub(super) fn validate(
     {
         return Err("reviewed native linker pin disagrees with the toolset identity".into());
     }
+    let toolset = string(evidence, "toolset_version")?;
+    accepted_toolset(string(source, "toolset_version")?, toolset)?;
+    let (mut expected_linker, observed) = toolset_record(linker, source, toolset)?;
+    if observed {
+        observed_bytes(&mut expected_linker, &evidence["linker"])?;
+    }
     let expected_inputs = component["source"]["target_input_files"][target]
         .as_array()
-        .ok_or("reviewed runtime omits target input identities")?;
+        .ok_or("reviewed runtime omits target input identities")?
+        .iter()
+        .map(|reviewed| toolset_record(reviewed, source, toolset))
+        .collect::<Result<Vec<_>, String>>()?;
     let inputs = evidence["inputs"]
         .as_array()
         .ok_or("native runtime evidence omits observed inputs")?;
@@ -574,9 +692,9 @@ pub(super) fn validate(
         if !seen.insert(path) {
             return Err("native runtime evidence repeats a provider input".into());
         }
-        let expected = expected_inputs
+        let (expected, observed) = expected_inputs
             .iter()
-            .find(|expected| expected["original_path"] == path)
+            .find(|(expected, _)| expected["original_path"] == path)
             .ok_or("native runtime evidence contains an unreviewed provider input")?;
         let members = input["members"]
             .as_array()
@@ -598,6 +716,9 @@ pub(super) fn validate(
             return Err("native runtime provider has no actual mapped members".into());
         }
         let mut expected = expected.clone();
+        if *observed {
+            observed_bytes(&mut expected, input)?;
+        }
         expected["members"] = json!(sorted);
         if *input != expected {
             return Err("native runtime evidence differs from reviewed provider bytes or canonical mapped members".into());
@@ -617,7 +738,7 @@ pub(super) fn validate(
     {
         return Err("native runtime evidence has an invalid binary/map identity".into());
     }
-    let expected = json!({"schema_version":1,"target":target,"candidate":commit,"binary_sha256":binary_sha256,"component_id":component["id"],"selection":"configured-cli-action-and-native-map-search-trace","map_identity":expected_identity,"linker":component["source"]["target_linker_files"][target],"inputs":canonical.into_values().collect::<Vec<_>>()});
+    let expected = json!({"schema_version":1,"target":target,"candidate":commit,"binary_sha256":binary_sha256,"component_id":component["id"],"selection":"configured-cli-action-and-native-map-search-trace","toolset_version":toolset,"map_identity":expected_identity,"linker":expected_linker,"inputs":canonical.into_values().collect::<Vec<_>>()});
     if evidence != &expected || evidence["linker"].is_null() {
         return Err("native runtime evidence does not match the reviewed linker, target, candidate, binary, and provider scope".into());
     }
@@ -821,7 +942,7 @@ mod tests {
         };
         let mut observed = input;
         observed["members"] = json!(["exe_main.obj"]);
-        let evidence = json!({"schema_version":1,"target":TARGET,"candidate":"c".repeat(40),"binary_sha256":"d".repeat(64),"component_id":"runtime:synthetic-msvc","selection":"configured-cli-action-and-native-map-search-trace","map_identity":{"machine":0x8664,"timestamp":0x1234_5678,"image_base":0x1_4000_0000_u64,"entry_rva":0x1234},"linker":linker,"inputs":[observed]});
+        let evidence = json!({"schema_version":1,"target":TARGET,"candidate":"c".repeat(40),"binary_sha256":"d".repeat(64),"component_id":"runtime:synthetic-msvc","selection":"configured-cli-action-and-native-map-search-trace","toolset_version":"14.51.36231","map_identity":{"machine":0x8664,"timestamp":0x1234_5678,"image_base":0x1_4000_0000_u64,"entry_rva":0x1234},"linker":linker,"inputs":[observed]});
         (bundle, evidence)
     }
 
@@ -833,6 +954,7 @@ mod tests {
             "/candidate",
             "/binary_sha256",
             "/target",
+            "/toolset_version",
             "/linker/sha256",
             "/linker/file_version",
             "/inputs/0/sha256",
@@ -860,5 +982,74 @@ mod tests {
             .unwrap()
             .push(evidence["inputs"][0].clone());
         assert!(validate(&bundle, &extra, TARGET, &"c".repeat(40), &"d".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn newer_toolsets_of_the_same_major_version_are_accepted() {
+        accepted_toolset("14.51.36231", "14.51.36231").unwrap();
+        accepted_toolset("14.51.36231", "14.51.36300").unwrap();
+        accepted_toolset("14.51.36231", "14.52.37025").unwrap();
+        for rejected in [
+            "14.51.36230",
+            "14.50.40000",
+            "15.0.1",
+            "14.52",
+            "14.52.37025.1",
+            "14.52.+37025",
+            "14.52.x",
+            "",
+        ] {
+            assert!(
+                accepted_toolset("14.51.36231", rejected).is_err(),
+                "accepted {rejected}"
+            );
+        }
+    }
+
+    #[test]
+    fn newer_toolset_evidence_records_actual_msvc_bytes_under_reviewed_paths() {
+        let (mut bundle, evidence) = portable_fixture();
+        let sdk = json!({"original_path":"Windows Kits/10/Lib/10.0.26100.0/um/x64/kernel32.Lib","sha256":"e".repeat(64),"size":99,"role":"external-system-runtime-import-library-input"});
+        bundle.index["components"][0]["source"]["target_input_files"][TARGET]
+            .as_array_mut()
+            .unwrap()
+            .push(sdk.clone());
+        let mut newer = evidence;
+        newer["toolset_version"] = json!("14.52.37025");
+        newer["linker"] = json!({"original_path":"VC/Tools/MSVC/14.52.37025/bin/HostX64/x64/link.exe","sha256":"f".repeat(64),"size":2222});
+        let mut sdk_observed = sdk;
+        sdk_observed["members"] = json!(["kernel32.dll"]);
+        newer["inputs"] = json!([
+            sdk_observed,
+            {"original_path":"VC/Tools/MSVC/14.52.37025/lib/x64/msvcrt.lib","sha256":"0".repeat(64),"size":5555,"role":"embedded-startup-support","members":["exe_main.obj"]},
+        ]);
+        let check = |evidence: &Value| {
+            validate(&bundle, evidence, TARGET, &"c".repeat(40), &"d".repeat(64))
+        };
+        check(&newer).unwrap();
+        for (pointer, value) in [
+            ("/toolset_version", json!("14.50.40000")),
+            ("/toolset_version", json!("15.0.1")),
+            (
+                "/linker/original_path",
+                json!("VC/Tools/MSVC/14.51.36231/bin/HostX64/x64/link.exe"),
+            ),
+            ("/linker/sha256", json!("F".repeat(64))),
+            ("/linker/size", json!(0)),
+            (
+                "/inputs/1/original_path",
+                json!("VC/Tools/MSVC/14.51.36231/lib/x64/msvcrt.lib"),
+            ),
+            ("/inputs/1/role", json!("changed")),
+            ("/inputs/1/sha256", json!("short")),
+            ("/inputs/0/sha256", json!("1".repeat(64))),
+        ] {
+            let mut changed = newer.clone();
+            *changed.pointer_mut(pointer).unwrap() = value;
+            assert!(check(&changed).is_err(), "accepted changed {pointer}");
+        }
+        let mut unpinned = newer.clone();
+        unpinned["linker"]["file_version"] = json!("14.52.37030.0");
+        assert!(check(&unpinned).is_err());
     }
 }

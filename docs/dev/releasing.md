@@ -201,6 +201,15 @@ point. Each native library must have one observed provider path that matches
 the reviewed MSVC and SDK identities and file hashes. A missing, changed,
 extra or ambiguous provider stops packaging.
 
+Hosted runners update MSVC on their own schedule. The linker's toolset may be
+the reviewed version or a newer toolset with the same major version, from the
+same Visual Studio edition and major version. For a newer toolset, each MSVC
+file must have the reviewed path and role under the new toolset folder, and
+the collector records its actual hash and size instead of the pinned values.
+Windows SDK files stay pinned. An older toolset, a different major version or
+a different set of files stops packaging. Review the Microsoft terms again
+when Visual Studio or the MSVC major version changes.
+
 Provider identities are bound into the signed notice index and the release
 manifest. The raw Windows evidence is kept as
 `runtime-provider-evidence-<target>-<candidate>`, next to the nine releasable

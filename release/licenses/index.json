@@ -2888,10 +2888,10 @@
             "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/SCOPE.txt",
             "original_path": "SCOPE.txt",
             "provenance": "Project-authored scope notice for the selected Microsoft components; operative Microsoft terms are preserved separately.",
-            "sha256": "9946d83cc491c388102d449fa5331914db163f6f4ce9b289ad39279c03452885"
+            "sha256": "a60afc1ade48b59169f0141585d87aa7644dd43ca5a51097ea9c2374d6a743d6"
           },
           "original_path": "SCOPE.txt",
-          "sha256": "9946d83cc491c388102d449fa5331914db163f6f4ce9b289ad39279c03452885"
+          "sha256": "a60afc1ade48b59169f0141585d87aa7644dd43ca5a51097ea9c2374d6a743d6"
         },
         {
           "archive_path": "licenses/runtime/microsoft-msvc-runtime-14.51.36231/copyright/003922d8654c2fedb1e6cd5143fea6cd30ca6bf50ff5c23953408a9a45f0e4f7.notice",
@@ -6034,7 +6034,7 @@
     "crates/rustleaks-sources/Cargo.toml": "57c0fa392b1dff1269a218c211523def69e374ec363be1bc572db5122666f3eb",
     "platforms/BUILD.bazel": "b34d62c8006369bc0ab313596023cf60a5ad9a6310096a2c7bf9c7f64244506c",
     "release/notice-inputs/packages/catalog.json": "193ae78951cf9184699ea6cf670b3fb80b711c2f0276ff2b94474b5205b7bdfe",
-    "release/notice-inputs/runtime/catalog.json": "1b581511cb16b1b424969c1c401850a432ce9d20de799ae8650dee18883417d5",
+    "release/notice-inputs/runtime/catalog.json": "8f3fcf9cafc85eb00b9f89bc04d6a50c8030d408d0d9674abd86390e98923882",
     "rust-toolchain.toml": "e3a213e0d222e94d213cafbc20932eb3f76c643b4dd63756acf95192df2aa310"
   },
   "runtime_target_coverage": [
