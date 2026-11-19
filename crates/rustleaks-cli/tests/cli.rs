@@ -4269,7 +4269,9 @@ mod jobs {
         }
         assert_eq!(rows, sorted(expected));
         assert!(log.contains("exceeds maximum archive depth"), "{log}");
-        assert!(log.contains(" input/broken.tar.gz"), "{log}");
+        // Source warnings name the path with the platform separator.
+        let broken = std::path::Path::new("input").join("broken.tar.gz");
+        assert!(log.contains(&format!(" {}", broken.display())), "{log}");
         assert!(
             log.lines()
                 .filter(|line| line.starts_with("warn source ") || line.starts_with("error source "))
