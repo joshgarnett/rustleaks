@@ -694,7 +694,8 @@ fn spawn_git(
     stage: SourceStage,
     with_input: bool,
 ) -> Result<GitChild, SourceError> {
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(arguments)
         .envs(environment.iter().cloned())
         .stdin(if with_input {
@@ -703,8 +704,8 @@ fn spawn_git(
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    let mut child = crate::process::spawn(&mut command)
         .map_err(|error| terminal(stage, None, format!("could not start Git: {error}")))?;
     let stdin = child.stdin.take();
     if with_input && stdin.is_none() {

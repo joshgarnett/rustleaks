@@ -184,6 +184,12 @@ See [Using rustleaks-core](../user/library.md#review-records).
   and every thread is joined, on stop, error and cancellation. Each process
   maps the repository's packs, so memory grows with the process count. The
   CLI caps the count at 6.
+- `rustleaks-sources` starts its child processes one at a time. On macOS and
+  other targets without `pipe2`, a child started while another thread
+  creates a pipe can inherit that pipe, and two `git log` processes that
+  hold each other's input open wait forever. A program that embeds
+  `rustleaks-sources` and starts its own children on other threads during a
+  history scan can still cause this.
 
 ### Reports and CLI
 

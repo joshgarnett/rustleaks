@@ -441,7 +441,7 @@ fn run_git_remote(
         command.current_dir(repository);
     }
 
-    let mut child = command.spawn().map_err(|error| {
+    let mut child = crate::process::spawn(&mut command).map_err(|error| {
         ScmError::new(
             ScmErrorKind::Spawn,
             format!("failed to spawn git remote discovery: {error}"),
