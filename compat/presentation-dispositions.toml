@@ -136,6 +136,11 @@ Limit and decoding flags:
       --timeout <seconds>
           Stop the scan after this many seconds.
           0 means no time limit. Default: 0.
+  -j, --jobs <number>
+          Scan with this many detection threads.
+          Default: the number of CPUs that Rustleaks may use, up to 12.
+          This flag overrides workers in a --complete-profile file.
+          Findings and reports do not depend on this number.
       --complete-profile <path>
           Scan with the limits in this profile file.
           Rustleaks then reports whether the scan was complete.
@@ -273,6 +278,11 @@ Limit and decoding flags:
       --timeout <seconds>
           Stop the scan after this many seconds.
           0 means no time limit. Default: 0.
+  -j, --jobs <number>
+          Scan with this many detection threads.
+          Default: the number of CPUs that Rustleaks may use, up to 12.
+          This flag overrides workers in a --complete-profile file.
+          Findings and reports do not depend on this number.
       --complete-profile <path>
           Scan with the limits in this profile file.
           Rustleaks then reports whether the scan was complete.

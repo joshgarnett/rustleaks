@@ -197,13 +197,14 @@ Only the `defaults` lane gets cold cells unless `--cold-lanes` adds more.
 
 Each tool sets threads in its own way, and the ways are not the same:
 
-- Rustleaks scans with 1 worker by default. Its 1-thread cells use no
-  profile, for every build. The only way to set more workers is a
-  `--complete-profile` file, which also makes Rustleaks read each file
-  whole. For more than 1 thread, the harness generates a profile with high
-  limits and the requested `workers` value. A binary without
-  `--complete-profile` runs only the 1-thread cells, and the other cells are
-  listed as skipped.
+- Rustleaks scans with one detection thread for each CPU, up to 12, by
+  default, in builds that have `--jobs`. The harness passes `--jobs N` to these builds in
+  every thread cell. Older builds scan with 1 worker by default. Their
+  1-thread cells use no profile, and for more than 1 thread the harness
+  generates a `--complete-profile` file with high limits and the requested
+  `workers` value. A profile also makes Rustleaks read each file whole. An
+  older binary without `--complete-profile` runs only the 1-thread cells, and
+  the other cells are listed as skipped.
 - Gitleaks and Betterleaks get `GOMAXPROCS`. Gitleaks keeps a fixed 40
   detection goroutines. Betterleaks 2 starts 4 times `GOMAXPROCS` workers.
 - Kingfisher gets `--jobs`.

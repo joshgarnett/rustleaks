@@ -467,6 +467,10 @@ fn invocation(run: &Run<'_>, flags: Flags, extra: &[&str]) -> Command {
     }
     if let Some(workers) = flags.workers {
         command.args(["--complete-profile", &format!("profile-w{workers}.limits")]);
+    } else {
+        // One thread, as before --jobs, so phases do not depend on the
+        // number of CPUs of the host.
+        command.args(["--jobs", "1"]);
     }
     match flags.report {
         Report::Stdout => {

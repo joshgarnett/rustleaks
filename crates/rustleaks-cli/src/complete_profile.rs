@@ -2,6 +2,7 @@
 
 use std::fs::File;
 use std::io::{self, Read, Write};
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use rustleaks_core::ScanBudget;
@@ -256,7 +257,9 @@ impl CompleteProfile {
         .map_err(|error| error.to_string())
     }
 
-    pub fn runner(&self) -> Result<SourceRunner, String> {
+    /// Builds the profile runner. `--jobs`, when given, replaces the profile
+    /// `workers` value; the queue capacity always comes from the profile.
+    pub fn runner(&self, jobs: Option<NonZeroUsize>) -> Result<SourceRunner, String> {
         let fragment = ScanBudget::unlimited()
             .max_decoded_bytes(self.fragment_decoded_bytes)
             .max_work_units(self.fragment_work_units)
@@ -271,7 +274,8 @@ impl CompleteProfile {
             .max_finding_payload_bytes(self.operation_finding_payload_bytes)
             .max_collected_spans(self.operation_collected_spans)
             .max_normalization_bytes(self.operation_normalization_bytes);
-        SourceRunner::new(self.workers, self.queue_capacity)
+        let workers = jobs.map_or(self.workers, NonZeroUsize::get);
+        SourceRunner::new(workers, self.queue_capacity)
             .map_err(|error| error.to_string())?
             .fail_on_coverage_error(true)
             .with_budget(
@@ -502,8 +506,15 @@ mod tests {
     #[test]
     fn explicit_policy_installs_every_engine_and_adapter_dimension() {
         let profile = CompleteProfile::read(PROFILE.as_bytes()).unwrap();
-        let runner = profile.runner().unwrap();
+        let runner = profile.runner(None).unwrap();
         assert_eq!((runner.workers(), runner.queue_capacity()), (1, 2));
+        // --jobs replaces only the worker count, also above the profile's
+        // own maximum of 64; the queue and the budget stay the profile's.
+        for jobs in [1, 3, 65, 200] {
+            let replaced = profile.runner(NonZeroUsize::new(jobs)).unwrap();
+            assert_eq!((replaced.workers(), replaced.queue_capacity()), (jobs, 2));
+            assert_eq!(replaced.budget(), runner.budget());
+        }
         let budget = runner.budget().unwrap();
         for (actual, expected) in [
             (budget.fragment_budget(), [4, 6, 8, 10, 12, 14]),

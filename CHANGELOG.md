@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- Scan with one detection thread for each CPU that Rustleaks may use, up to
+  12. Before,
+  a scan used one thread unless a `--complete-profile` file set `workers`. On
+  Linux the CPU count follows CPU affinity and cgroup CPU quotas. Add
+  `--jobs N` (`-j N`) to set the number of threads. It has no fixed maximum
+  and replaces `workers` in a profile. Findings, their order, reports,
+  warnings and exit codes do not depend on the number of threads. Memory
+  grows with the number of threads, so use a lower `--jobs` value to use less
+  memory. Without a profile, up to one piece of input for each thread waits
+  for a thread, but never more than 1,024. `--log-level debug` prints the
+  thread count. `SourceRunner::default` in `rustleaks-sources` still uses one
+  worker.
 - Fix archive scans that skipped large archives. With `--max-archive-depth`,
   a whole archive had to fit in 64 MiB and each member in 64 MiB, so a 200 MB
   `release.tar.gz` or a 1 GB `backup.zip` was skipped. Rustleaks now reads

@@ -332,6 +332,11 @@ example.
 - At most `queue_capacity + workers + 1` fragments without errors are held by
   the scheduling path. Source adapters can hold more data, so their own limits
   still apply. Issue limits count issues, not message length.
+- `SourceRunner::default` uses one worker and one queue slot. The `rustleaks`
+  command takes the worker count from `--jobs`, then from the profile
+  `workers` key, then from `std::thread::available_parallelism` up to 12,
+  or uses 1 when that fails. Without a profile, its queue capacity equals the worker
+  count, up to 1,024, because the channel allocates its slots up front.
 - A complete run returns findings in producer order, the same as one worker.
   After a budget stop, the returned subset and its order depend on
   scheduling.

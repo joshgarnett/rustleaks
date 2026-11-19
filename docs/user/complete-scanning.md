@@ -123,7 +123,7 @@ called the operation.
 | `operation_original_bytes` | Total input bytes for the whole scan. | no |
 | `operation_fragments` | Total number of pieces for the whole scan. | no |
 | `operation_issues` | Number of source warnings, such as skipped files, that the scan may keep. | no |
-| `workers` | Number of detection threads, at most 64. | yes |
+| `workers` | Number of detection threads, at most 64. `--jobs` replaces this value and has no fixed maximum. | yes |
 | `queue_capacity` | Number of pieces that can wait for a worker, at most 1,024. | yes |
 | `fragment_decoded_bytes`, `operation_decoded_bytes` | Bytes produced by decoding, per piece and for the whole scan. | no |
 | `fragment_work_units`, `operation_work_units` | Detection work, per piece and for the whole scan. | no |

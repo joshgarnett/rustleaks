@@ -36,6 +36,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | Distinct commits counted | 100,000,000 | Fixed | The scan stops with exit code 1. |
 | Source warnings and errors kept, such as unreadable or skipped files | 10,000 | Profile key `operation_issues` | Later ones are counted, not kept, and one log line gives their number. The scan goes on, and the exit code and report do not change. |
 | Time | No limit | `--timeout N` seconds | The scan stops with exit code 1 and reports what it found so far. |
+| Detection threads | One for each CPU that Rustleaks may use, up to 12 | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Detection threads](#detection-threads). |
 | Detection work and finding memory | No limit | Profile keys that start with `fragment_` and `operation_` | The scan stops and is incomplete (exit 2). |
 
 The profile keys belong to a `--complete-profile` file, so you can change
@@ -55,9 +56,10 @@ a hard deadline.
 
 ### Git history
 
-Rustleaks reads `git log` output while Git runs. It keeps one changed file of
-one commit in memory at a time, so the memory for Git output follows the
-largest change, not the length of the history. The Git limits above apply to
+Rustleaks reads `git log` output while Git runs. It parses one changed file of
+one commit at a time, so the memory for Git output follows the largest change,
+not the length of the history. Detection threads can hold more diff hunks; see
+[Detection threads](#detection-threads). The Git limits above apply to
 each commit, from one `commit` line of the output to the next. No limit
 applies to the total size of the history. A `git diff`, used by `--staged`
 and `--pre-commit`, has no commits, so its whole output counts as one commit.
@@ -65,6 +67,55 @@ and `--pre-commit`, has no commits, so its whole output counts as one commit.
 When Git fails, or a later commit reaches a limit or cannot be read, the scan
 stops with exit code 1. The report can then hold findings from the commits
 before that point.
+
+### Detection threads
+
+Rustleaks scans with one detection thread for each CPU that it may use, up
+to 12. On Linux, this number follows the CPU affinity and the cgroup CPU
+quota of the process. If Rustleaks cannot find the number, it uses one
+thread. `--jobs` can set more. See
+[More threads are not always faster](#more-threads-are-not-always-faster).
+
+`--jobs N` sets the number of threads. It has no fixed maximum. If the system
+cannot start a thread, the scan stops before it reads any input and exits
+with 1, or with 2 under `--complete-profile`. `--jobs` also replaces
+`workers` in a `--complete-profile` file, so the order is `--jobs`, then the
+profile, then the CPU count up to 12.
+
+Findings, their order, reports, warnings and exit codes are the same for any
+number of threads. A scan that stops early, because of `--timeout` or a
+profile limit, can have different findings.
+
+One thread reads the input and splits it into pieces. Each detection thread
+scans one piece at a time. Without a profile, up to N pieces wait for a
+thread, but never more than 1,024. With a profile, `queue_capacity` sets this
+number. So memory grows with the thread count:
+
+- At most 2 times N plus 1 pieces are in memory when the queue holds N. A
+  piece of a file is about 100,000 bytes. A piece of Git history is one diff
+  hunk, which can be as large as one changed file.
+- Each thread that searches keeps its own pattern search caches.
+
+#### More threads are not always faster
+
+Past some number of threads, a scan gets no faster, but each added thread
+still uses memory. The scan is then limited by something that more
+detection threads do not speed up:
+
+- One thread reads the input. When the detection threads scan pieces faster
+  than that thread can read them, added threads wait. This happens first on
+  folders with many small files.
+- For Git history, `git log -p` produces the input. History scans are
+  usually limited by Git, not by detection threads.
+- Input with many matches, such as files dense with keywords, keeps gaining
+  from more threads for longer, because detection is most of the work.
+
+On a 36-CPU host, `dir` scans of large public repositories were within 4
+percent of their best time at 12 threads and used about half the memory of
+36 threads. A folder of 100,000 small files was no faster with more than
+one thread. This is why the default stops at 12. To find the best value for
+your input, time a scan at a few `--jobs` values. To use less memory, set a
+lower value.
 
 ### Archives
 
@@ -214,6 +265,8 @@ are not memory limits. Some cases use much more memory than the input size:
   memory that [Archives](#archives) lists. The XZ decoder sizes its
   dictionary from the stream header, without a Rustleaks limit. A complete
   scan holds each member in memory, up to `target_bytes`.
+- Each detection thread holds its own piece of input and search caches. See
+  [Detection threads](#detection-threads).
 - Rustleaks may stop the process if memory runs out.
 
 For untrusted input, run Rustleaks with an operating system memory limit, or

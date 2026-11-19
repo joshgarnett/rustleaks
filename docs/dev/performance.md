@@ -314,7 +314,8 @@ holds one more token. It is written as a working tree and imported as three
 commits, so `dir repo` and `git repo` scan the same files. A plant is
 expected when its decode depth, archive depth and pack fit the flags: values
 encoded six times need decode depth 6 or more, and the TAR leaf needs archive
-depth 2 or more.
+depth 2 or more. Phases without a profile pass `--jobs 1`, so their timings
+do not depend on the number of CPUs of the host.
 
 | Workload | Phases |
 | --- | --- |
@@ -322,7 +323,7 @@ depth 2 or more.
 | `cli-matrix-dir-decode-depth`, `cli-matrix-git-decode-depth` | `--max-decode-depth` 0, 5 and 8. |
 | `cli-matrix-dir-archive-depth`, `cli-matrix-git-archive-depth` | `--max-archive-depth` 0 and 8. |
 | `cli-matrix-dir-report`, `cli-matrix-git-report` | No report, and a JSON report written to a file, at decode depth 5. |
-| `cli-matrix-dir-packs-profile`, `cli-matrix-git-packs-profile` | All packs on or off, crossed with `--complete-profile` on (one worker) or off. |
+| `cli-matrix-dir-packs-profile`, `cli-matrix-git-packs-profile` | All packs on or off, crossed with `--complete-profile` on or off. Both use one worker. |
 | `cli-matrix-dir-workers`, `cli-matrix-git-workers` | All packs with a complete profile of 1, 4 or 8 workers. |
 | `cli-matrix-dir-size-series` | Folders of 0, 1, 16 and 128 MiB in 64 KiB files with one token each. The empty folder gives the fixed cost of a process; the others give the cost per byte. |
 | `cli-matrix-dir-ignore-baseline` | No suppression, an ignore file, and a baseline. The ignore file and the baseline each hold 10,000 unrelated entries and one entry for a planted finding, which must then be missing from the report. |
