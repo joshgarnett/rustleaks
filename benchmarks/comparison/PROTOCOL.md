@@ -51,8 +51,10 @@ The harness checks every hash before and after each run.
 - Held-out set: sealed on 2026-11-17 by an agent independent of Rustleaks
   tuning, inventory SHA-256
   `5aca16b8fd8f1b03c04680f07fba4251675214e66ad14dc98707c4705c1ec927`. The seal
-  is checked before the run. It has not been scanned by any tool before this
-  run.
+  is checked before the run. The harness smoke passes of 2026-11-18 and
+  2026-11-19 scanned it once each to check that every cell runs; those
+  outputs were checked for exit status and failures only, and no Rustleaks
+  change was made in response to them.
 - CredData: not included unless the maintainer allows running its download
   script. If included later, it is a separate, labeled addition.
 
