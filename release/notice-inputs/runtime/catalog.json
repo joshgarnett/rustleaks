@@ -583,7 +583,7 @@
         {
           "original_path": "SCOPE.txt",
           "input_path": "release/notice-inputs/runtime/microsoft-msvc-runtime-14.51.36231/SCOPE.txt",
-          "sha256": "9946d83cc491c388102d449fa5331914db163f6f4ce9b289ad39279c03452885",
+          "sha256": "a60afc1ade48b59169f0141585d87aa7644dd43ca5a51097ea9c2374d6a743d6",
           "provenance": "Project-authored scope notice for the selected Microsoft components; operative Microsoft terms are preserved separately."
         },
         {
