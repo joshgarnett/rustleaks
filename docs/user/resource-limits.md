@@ -73,9 +73,8 @@ before that point.
 Rustleaks scans with one detection thread for each CPU that it may use, up
 to 12. On Linux, this number follows the CPU affinity and the cgroup CPU
 quota of the process. If Rustleaks cannot find the number, it uses one
-thread. Beyond about 12 threads, scans of large repositories got little
-faster on a 36-CPU host while memory kept growing, so the default stops
-there. `--jobs` can set more.
+thread. `--jobs` can set more. See
+[More threads are not always faster](#more-threads-are-not-always-faster).
 
 `--jobs N` sets the number of threads. It has no fixed maximum. If the system
 cannot start a thread, the scan stops before it reads any input and exits
@@ -97,7 +96,26 @@ number. So memory grows with the thread count:
   hunk, which can be as large as one changed file.
 - Each thread that searches keeps its own pattern search caches.
 
-Use a lower `--jobs` value to use less memory.
+#### More threads are not always faster
+
+Past some number of threads, a scan gets no faster, but each added thread
+still uses memory. The scan is then limited by something that more
+detection threads do not speed up:
+
+- One thread reads the input. When the detection threads scan pieces faster
+  than that thread can read them, added threads wait. This happens first on
+  folders with many small files.
+- For Git history, `git log -p` produces the input. History scans are
+  usually limited by Git, not by detection threads.
+- Input with many matches, such as files dense with keywords, keeps gaining
+  from more threads for longer, because detection is most of the work.
+
+On a 36-CPU host, `dir` scans of large public repositories were within 4
+percent of their best time at 12 threads and used about half the memory of
+36 threads. A folder of 100,000 small files was no faster with more than
+one thread. This is why the default stops at 12. To find the best value for
+your input, time a scan at a few `--jobs` values. To use less memory, set a
+lower value.
 
 ### Archives
 
