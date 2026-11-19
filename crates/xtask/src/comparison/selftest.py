@@ -83,6 +83,16 @@ def selftest_check(condition, message):
 
 
 def selftest_units():
+    with tempfile.TemporaryDirectory() as folder:
+        manifest = os.path.join(folder, 'w.json')
+        with open(manifest, 'w') as handle:
+            json.dump({'schema': SCHEMA_WORKLOADS, 'set': 's', 'workloads': [
+                {'id': 'a', 'family': 'synthetic', 'modes': ['stdin'], 'path': 'a'},
+                {'id': 'b', 'family': 'synthetic', 'modes': ['dir', 'stdin'], 'path': 'b'}]}, handle)
+        loaded, sources = manifest_load_workloads([manifest], folder)
+        selftest_check([workload['id'] for workload in loaded] == ['b'] and loaded[0]['modes'] == ['dir']
+                       and [item['id'] for item in sources[0]['skipped_workloads']] == ['a', 'b'],
+                       'unsupported modes are dropped and listed')
     split = {'target': '/cache/repos/x', 'targets': {'dir': '/cache/repos/x/tree', 'git': '/cache/repos/x/repo'}}
     selftest_check(workload_target(split, 'dir') == '/cache/repos/x/tree'
                    and workload_target(split, 'git') == '/cache/repos/x/repo', 'per-mode paths pick the mode target')
@@ -348,6 +358,44 @@ def selftest_matching():
                    'commit-agnostic matching pairs a value found at different commits')
 
 
+def selftest_dense_matching():
+    """Many findings on one line stay fast and every finding reaches its
+    partner: by column for distinct values, by rank for values with no
+    usable column (decoded findings carry the column of the encoded run),
+    and the time limit stops scoring instead of running on."""
+
+    def value(index):
+        return 'TOKEN%08dabcdefghijkl' % index
+
+    count = 4000
+    left = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), columns=[40 * i + 1, 40 * i + 25])
+            for i in range(count)]
+    right = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), columns=[40 * i + 2, 40 * i + 25])
+             for i in reversed(range(count))]
+    started = time.monotonic()
+    result = score_compare(left, right, 'l', 'r')
+    selftest_check(result['matched'] == count, 'every finding on a crowded line is matched by column')
+    decoded_left = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), True, [1, 125000]) for i in range(count)]
+    decoded_right = [adapter_finding('r', 'dense.txt', '', 1, 1, value(i), True, [7, 9000])
+                     for i in reversed(range(count))]
+    selftest_check(score_compare(decoded_left, decoded_right, 'l', 'r')['matched'] == count,
+                   'decoded findings with one shared column are matched by text')
+    repeated = [adapter_finding('r', 'dense.txt', '', 1, 1, value(0), columns=[1, 2]) for _ in range(count)]
+    selftest_check(score_compare(repeated, list(repeated), 'l', 'r')['matched'] == count,
+                   'a value repeated on one line is matched one to one')
+    selftest_check(time.monotonic() - started < 120, 'dense matching finishes in bounded time')
+    score_limit_start(1e-9)
+    try:
+        time.sleep(0.01)
+        score_compare(left, right, 'l', 'r')
+        stopped = False
+    except ScoreTimeLimit:
+        stopped = True
+    finally:
+        SCORE_LIMIT.update({'deadline': None, 'hours': None})
+    selftest_check(stopped, 'the scoring time limit stops a comparison')
+
+
 def selftest_tool(directory, family, adapter, version):
     path = os.path.join(directory, 'fake-' + adapter)
     write_private(path, (FAKE_SCANNER % {'python': sys.executable, 'family': adapter}).encode())
@@ -452,6 +500,9 @@ def selftest_end_to_end():
         children = {cell['adapter']: cell.get('children') for cell in run['cells']}
         selftest_check(children['gitleaks']['processes'] == 1 and children['kingfisher']['processes'] == 0,
                        'the git shim counts git processes per tool: %s' % children)
+        if measure_rss_reader() is not None:
+            selftest_check(all((value or {}).get('scanner_peak_rss_bytes', 0) > 0 for value in children.values()),
+                           'the instrumented run samples the scanner process alone: %s' % children)
         dry = os.path.join(directory, 'run-dry')
         options = selftest_options(base, output=dry, lanes='threads', modes='dir', threads='1,2')
         options.dry_run = True
@@ -486,7 +537,210 @@ def selftest_end_to_end():
 def selftest_main():
     selftest_units()
     selftest_matching()
+    selftest_dense_matching()
     selftest_adapters()
     selftest_end_to_end()
+    selftest_guard_sample_timeout()
+    selftest_guard_unreaped()
+    selftest_guard_orphans()
+    selftest_guard_run_text()
+    selftest_guard_run_budget()
     print('comparison self-test passed')
     return 0
+
+
+# Time limit checks. Each one uses short limits and tiny fake processes.
+
+STUBBORN_SCANNER = r"""
+import os, signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with open(sys.argv[1], 'w') as handle:
+    handle.write(str(os.getpid()))
+time.sleep(60)
+"""
+
+ORPHAN_SCANNER = r"""
+import subprocess, sys
+child = subprocess.Popen(['/bin/sleep', '60'])
+with open(sys.argv[1], 'w') as handle:
+    handle.write(str(child.pid))
+"""
+
+WAITING_PROBE = r"""
+import subprocess, sys
+child = subprocess.Popen(['/bin/sleep', '60'])
+with open(sys.argv[1], 'w') as handle:
+    handle.write(str(child.pid))
+child.wait()
+"""
+
+
+def selftest_guard_gone(pid, seconds=5):
+    """True when the process is gone, or is a zombie that init has not collected yet."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        code, out, _ = run_text(['/bin/ps', '-o', 'stat=', '-p', str(pid)])
+        if code != 0 or out.strip().startswith('Z'):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def selftest_guard_measure(directory, name, script, timeout, grace=None):
+    pid_path = os.path.join(directory, name + '.pid')
+    env = {'PATH': SYSTEM_PATH, 'LC_ALL': 'C'}
+    started = time.monotonic()
+    result = measure_execute([sys.executable, '-I', '-c', script, pid_path], env, directory,
+                             os.path.join(directory, name + '.stdout'), os.path.join(directory, name + '.stderr'),
+                             timeout, grace=grace)
+    elapsed = time.monotonic() - started
+    with open(pid_path) as handle:
+        pid = int(handle.read())
+    return result, elapsed, pid
+
+
+def selftest_guard_sample_timeout():
+    """A scanner that ignores SIGTERM and sleeps past --timeout is killed and recorded."""
+    directory = tempfile.mkdtemp(prefix='compare-guard-')
+    try:
+        timeout, grace = 0.5, 3
+        result, elapsed, pid = selftest_guard_measure(directory, 'stubborn', STUBBORN_SCANNER, timeout, grace)
+        selftest_check(result['status'] == 'timeout' and result['exit_code'] == -signal.SIGKILL,
+                       'a sample past its timeout is killed: %s' % result)
+        selftest_check(elapsed < timeout + grace, 'a killed sample returns within timeout and grace: %.2f s' % elapsed)
+        selftest_check(selftest_guard_gone(pid), 'the killed scanner is gone')
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def selftest_guard_unreaped():
+    """When SIGKILL cannot end a sample, the wait stops after the grace period."""
+    directory = tempfile.mkdtemp(prefix='compare-guard-')
+    namespace = globals()
+    saved = {name: namespace[name] for name in ('measure_kill_group', 'measure_kill_process')}
+    handler = signal.getsignal(MEASURE_INTERRUPT)
+    pid = None
+    try:
+        # Kills that do nothing stand in for a process that SIGKILL cannot end.
+        namespace['measure_kill_group'] = namespace['measure_kill_process'] = lambda pid: False
+        timeout, grace = 0.3, 0.5
+        result, elapsed, pid = selftest_guard_measure(directory, 'unreaped', STUBBORN_SCANNER, timeout, grace)
+        selftest_check(result['status'] == 'timeout-unreaped' and 'wall_ns' not in result,
+                       'an unreaped sample is recorded as failed: %s' % result)
+        selftest_check(elapsed < timeout + grace + 1, 'the wait stops after timeout and grace: %.2f s' % elapsed)
+        selftest_check(signal.getsignal(MEASURE_INTERRUPT) == handler, 'the interrupt handler is restored')
+    finally:
+        namespace.update(saved)
+        if pid is not None:
+            measure_kill_group(pid)
+            os.waitpid(pid, 0)
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def selftest_guard_orphans():
+    """Processes left in the group are killed and checked again."""
+    directory = tempfile.mkdtemp(prefix='compare-guard-')
+    namespace = globals()
+    saved = namespace['measure_kill_group']
+    try:
+        result, _, pid = selftest_guard_measure(directory, 'orphan', ORPHAN_SCANNER, 30)
+        if result['group_cleanup_checked']:
+            selftest_check(result['status'] == 'orphan-descendants' and 'group_survivors_after_kill' not in result,
+                           'a left-over process is found and killed: %s' % result)
+        selftest_check(selftest_guard_gone(pid), 'the left-over process is gone')
+        namespace['measure_kill_group'] = lambda pid: False
+        result, _, pid = selftest_guard_measure(directory, 'survivor', ORPHAN_SCANNER, 30)
+        namespace['measure_kill_group'] = saved
+        if result['group_cleanup_checked']:
+            selftest_check(result.get('group_survivors_after_kill') is True,
+                           'a process that survives the kill is recorded: %s' % result)
+        measure_kill_process(pid)
+        selftest_check(selftest_guard_gone(pid), 'the surviving process is cleaned up')
+    finally:
+        namespace['measure_kill_group'] = saved
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def selftest_guard_run_text():
+    """A probe past its timeout is killed with every process it started."""
+    directory = tempfile.mkdtemp(prefix='compare-guard-')
+    try:
+        pid_path = os.path.join(directory, 'probe.pid')
+        started = time.monotonic()
+        code, _, error = run_text([sys.executable, '-I', '-c', WAITING_PROBE, pid_path], timeout=1)
+        elapsed = time.monotonic() - started
+        selftest_check(code is None and 'timed out' in error, 'a probe past its timeout fails: %r' % error)
+        selftest_check(elapsed < 5, 'a probe that holds its pipes open still returns: %.2f s' % elapsed)
+        with open(pid_path) as handle:
+            selftest_check(selftest_guard_gone(int(handle.read())), 'the probe grandchild is killed')
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def selftest_guard_fixture(directory):
+    bins = private_dir(os.path.join(directory, 'tools'))
+    tools = [selftest_tool(bins, 'rustleaks', 'rustleaks', '0.0.0'), selftest_tool(bins, 'gitleaks', 'gitleaks', '8.0.0')]
+    git = os.path.join(bins, 'git')
+    write_private(git, (FAKE_GIT % {'python': sys.executable}).encode())
+    os.chmod(git, 0o700)
+    cache = private_dir(os.path.join(directory, 'cache'))
+    tree = os.path.join(cache, 'tree')
+    os.makedirs(tree)
+    write_private(os.path.join(tree, 'a.txt'), b'nothing here\n')
+    base = {'tools': os.path.join(directory, 'tools.json'), 'workloads': os.path.join(directory, 'workloads.json'),
+            'cache': cache, 'git': git}
+    write_json(base['tools'], {'schema': SCHEMA_TOOLS, 'tools': tools})
+    write_json(base['workloads'], {'schema': SCHEMA_WORKLOADS, 'set': 'self-test', 'workloads': [{
+        'id': 'budget', 'family': 'synthetic', 'modes': ['dir'],
+        'source': {'kind': 'generated', 'generator': 'self-test', 'params': {}, 'seed': '1'},
+        'path': 'tree', 'size': {'bytes': 13, 'files': 1, 'commits': 0}, 'tuned': True}]})
+    return base
+
+
+def selftest_guard_run_budget():
+    """No sample starts after --max-hours, and the remaining cells are skipped."""
+    directory = tempfile.mkdtemp(prefix='compare-guard-')
+    namespace = globals()
+    saved = namespace['run_budget_reached']
+    try:
+        base = selftest_guard_fixture(directory)
+        output = os.path.join(directory, 'run-spent')
+        options = selftest_options(base, output=output, lanes='defaults', modes='dir', cache='warm',
+                                   warmups='0', runs='2', max_hours='0.0000001')
+        selftest_check(run_command(options) == 0, 'a run with a spent budget completes')
+        run = read_json(os.path.join(output, 'run.json'))
+        selftest_check(all(cell['status'] == 'skipped' and cell['reason'] == RUN_BUDGET_REASON
+                           for cell in run['cells']), 'every cell is skipped when the budget is spent')
+        selftest_check(run['time_budget']['reached'] and run['time_budget']['max_hours'] == 0.0000001
+                       and run['time_budget']['cells_skipped'] == 2, 'run.json records the budget: %s' % run['time_budget'])
+        selftest_check(not os.path.exists(os.path.join(output, 'samples.jsonl')), 'no sample starts after the budget')
+        report = open(os.path.join(output, 'report.md'), encoding='utf-8').read()
+        selftest_check(RUN_BUDGET_REASON in report and 'time budget' in report,
+                       'the report lists budget-skipped cells and the deviation')
+
+        def reached_after_three(ctx):
+            if ctx.counter >= 3:
+                ctx.budget_deadline = 0
+            return saved(ctx)
+
+        # Two cells of two samples each. The budget ends after the third
+        # sample, so one cell is complete and the other is not.
+        namespace['run_budget_reached'] = reached_after_three
+        output = os.path.join(directory, 'run-partial')
+        options = selftest_options(base, output=output, lanes='defaults', modes='dir', cache='warm',
+                                   warmups='0', runs='2')
+        selftest_check(run_command(options) == 0, 'a run that reaches its budget completes')
+        run = read_json(os.path.join(output, 'run.json'))
+        statuses = sorted((cell['status'], cell.get('reason')) for cell in run['cells'])
+        selftest_check(statuses == [('ok', None), ('skipped', RUN_BUDGET_REASON)],
+                       'a complete cell keeps its results and an incomplete one is skipped: %s' % statuses)
+        selftest_check(len(read_jsonl(os.path.join(output, 'samples.jsonl'))) == 3, 'no sample starts after the budget')
+        selftest_check(run['time_budget']['reached'] and run['time_budget']['cells_skipped'] == 1
+                       and run['settings']['max_hours'] == 8, 'run.json records the default budget')
+    finally:
+        namespace['run_budget_reached'] = saved
+        shutil.rmtree(directory, ignore_errors=True)

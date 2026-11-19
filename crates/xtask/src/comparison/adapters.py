@@ -318,11 +318,21 @@ def adapter_leak_exit_code(tool):
     return 200 if tool['adapter'] == 'kingfisher' else 1
 
 
+ADAPTER_REALPATHS = {}
+
+
+def adapter_realpath(target):
+    """os.path.realpath of a scan target, computed once per target."""
+    if target not in ADAPTER_REALPATHS:
+        ADAPTER_REALPATHS[target] = os.path.realpath(target)
+    return ADAPTER_REALPATHS[target]
+
+
 def adapter_strip(path, target):
     """Remove only an exact input prefix. Nothing else is changed."""
     if not isinstance(path, str):
         return ''
-    for prefix in (target, os.path.realpath(target)):
+    for prefix in (target, adapter_realpath(target)):
         prefix = prefix.rstrip('/')
         if path == prefix:
             return os.path.basename(prefix)

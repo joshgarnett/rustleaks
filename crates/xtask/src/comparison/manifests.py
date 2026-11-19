@@ -66,8 +66,18 @@ def manifest_load_workloads(paths, cache_root):
                 raise HarnessError(where + ': id %r is repeated' % entry['id'])
             seen.add(entry['id'])
             modes = entry.get('modes')
-            if not isinstance(modes, list) or not modes or any(mode not in MODES for mode in modes):
-                raise HarnessError(where + ': "modes" must list dir and/or git')
+            if not isinstance(modes, list) or not modes or any(not isinstance(mode, str) for mode in modes):
+                raise HarnessError(where + ': "modes" must be a list of mode names')
+            unsupported = [mode for mode in modes if mode not in MODES]
+            modes = [mode for mode in modes if mode in MODES]
+            if unsupported:
+                # Other modes, such as stdin, are not run by this harness. A
+                # workload with no supported mode is skipped and listed.
+                sources[-1].setdefault('skipped_workloads', []).append(
+                    {'id': entry['id'], 'reason': 'modes not run by the harness: ' + ', '.join(unsupported)})
+                if not modes:
+                    continue
+                entry = dict(entry, modes=modes)
             relative = entry.get('path')
             if not isinstance(relative, str) or not relative or os.path.isabs(relative) or '..' in relative.split('/'):
                 raise HarnessError(where + ': "path" must be relative to the cache root')

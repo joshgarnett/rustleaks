@@ -11,8 +11,28 @@
 
 SCORE_NEAR_LINES = 3
 SCORE_MIN_SHARED = 4
-SCORE_MAX_TEXT = 4096
 SCORE_MAX_CANDIDATES = 64
+SCORE_WINDOW = 256
+SCORE_MAX_HINTS = 5000
+SCORE_MARKDOWN_ROWS = 1000
+# Pairs of texts whose lengths multiply to more than this are compared by
+# equality and containment only (difflib is quadratic in the lengths).
+SCORE_MAX_WORK = 4096 * 4096
+SCORE_OVERLAP_MEMO_LIMIT = 1000000
+SCORE_DEFAULT_HOURS = 12
+SCORE_GIT_SECONDS = 600
+SCORE_LIMIT = {'deadline': None, 'hours': None}
+SCORE_OVERLAP_MEMO = {}
+
+
+class ScoreTimeLimit(Exception):
+    """Scoring passed its time limit (--score-hours)."""
+
+
+def score_check():
+    deadline = SCORE_LIMIT['deadline']
+    if deadline is not None and time.monotonic() > deadline:
+        raise ScoreTimeLimit('scoring time limit of %s hours reached' % SCORE_LIMIT['hours'])
 SCORE_TEST_FOLDERS = frozenset(('test', 'tests', 'spec', 'fixtures', 'examples'))
 
 
@@ -24,11 +44,44 @@ def score_overlap(left, right):
         return len(left)
     if left in right or right in left:
         return min(len(left), len(right))
-    if len(left) > SCORE_MAX_TEXT and len(right) > SCORE_MAX_TEXT:
+    if len(left) * len(right) > SCORE_MAX_WORK:
         # Long values (such as private keys) are compared by containment only.
         return 0
-    matcher = difflib.SequenceMatcher(None, left, right, autojunk=False)
-    return matcher.find_longest_match(0, len(left), 0, len(right)).size
+    key = (left, right)
+    size = SCORE_OVERLAP_MEMO.get(key)
+    if size is None:
+        matcher = difflib.SequenceMatcher(None, left, right, autojunk=False)
+        size = matcher.find_longest_match(0, len(left), 0, len(right)).size
+        if len(SCORE_OVERLAP_MEMO) >= SCORE_OVERLAP_MEMO_LIMIT:
+            SCORE_OVERLAP_MEMO.clear()
+        SCORE_OVERLAP_MEMO[key] = size
+    return size
+
+
+def score_could_match(left, right):
+    """False only when the texts cannot match (see score_texts_match).
+
+    A match needs a shared run of `need` characters. Any such run in the
+    shorter text contains one of its aligned blocks of need // 2 characters,
+    so when no block occurs in the longer text there is no match."""
+    short, long_ = (left, right) if len(left) <= len(right) else (right, left)
+    if short in long_:
+        return True
+    need = max(SCORE_MIN_SHARED, (len(short) + 1) // 2)
+    size = max(1, need // 2)
+    return any(short[start:start + size] in long_ for start in range(0, len(short) - size + 1, size))
+
+
+def score_text_overlap(left, right):
+    """The overlap when two secret texts match, otherwise None."""
+    if not left or not right:
+        return None
+    if left == right:
+        return len(left)
+    if not score_could_match(left, right):
+        return None
+    overlap = score_overlap(left, right)
+    return overlap if score_texts_match(left, right, overlap) else None
 
 
 def score_texts_match(left, right, overlap):
@@ -56,8 +109,30 @@ def score_keys(item, ignore_commit=False):
     return [(item['path'], commit) for commit in sorted(commits)]
 
 
+def score_column(item):
+    """Start column of an item, or 0 when the tool gave none (cached)."""
+    value = item.get('_column')
+    if value is None:
+        columns = item.get('columns') or ()
+        value = columns[0] if columns else None
+        value = value if isinstance(value, int) and value > 0 else 0
+        item['_column'] = value
+    return value
+
+
+def score_nearness(item, other):
+    """Sort key for candidates: line distance, then column distance."""
+    return (score_line_distance(item, other), abs(score_column(item) - score_column(other)))
+
+
 class ScoreNeighbours(object):
-    """Items indexed by path (and commit), sorted by line, for bounded lookups."""
+    """Items indexed by path (and commit), sorted by line and column, for
+    bounded lookups.
+
+    A lookup never looks at more than SCORE_WINDOW items per key, so a file
+    with many findings on one line (minified or generated files) stays cheap:
+    when the line window is larger than that, only the items nearest by line
+    and column are considered."""
 
     def __init__(self, items, ignore_commit=False):
         self.items = items
@@ -69,20 +144,31 @@ class ScoreNeighbours(object):
                 self.by_key[key].append(position)
                 self.by_text[key + (item['secret_sha256'],)].append(position)
                 self.span[key] = max(self.span[key], item['end_line'] - item['start_line'])
-        self.starts = {}
+
+        def order(position):
+            return (items[position]['start_line'], score_column(items[position]), position)
+
+        self.starts, self.orders = {}, {}
         for key, positions in self.by_key.items():
-            positions.sort(key=lambda position: items[position]['start_line'])
+            positions.sort(key=order)
             self.starts[key] = [items[position]['start_line'] for position in positions]
+            self.orders[key] = [order(position) for position in positions]
+        self.text_orders = {}
+        for key, positions in self.by_text.items():
+            positions.sort(key=order)
+            self.text_orders[key] = [order(position) for position in positions]
         self.ignore_commit = ignore_commit
 
     def has_key(self, item):
         return any(key in self.by_key for key in score_keys(item, self.ignore_commit))
 
     def near(self, item, radius, same_text=True):
-        """Positions within `radius` lines, plus items with the same text.
+        """Positions within `radius` lines, plus the nearest items with the
+        same text, nearest first by line and then by column.
 
-        At most SCORE_MAX_CANDIDATES positions, nearest first."""
+        At most SCORE_MAX_CANDIDATES positions."""
         found = set()
+        probe = (item['start_line'], score_column(item), -1)
         for key in score_keys(item, self.ignore_commit):
             positions = self.by_key.get(key)
             if not positions:
@@ -90,20 +176,47 @@ class ScoreNeighbours(object):
             starts = self.starts[key]
             low = bisect.bisect_left(starts, item['start_line'] - radius - self.span[key])
             high = bisect.bisect_right(starts, item['end_line'] + radius)
+            if high - low > SCORE_WINDOW:
+                middle = bisect.bisect_left(self.orders[key], probe, low, high)
+                low, high = max(low, middle - SCORE_WINDOW // 2), min(high, middle + SCORE_WINDOW // 2)
             for position in positions[low:high]:
-                other = self.items[position]
-                if score_line_distance(item, other) <= radius:
+                if score_line_distance(item, self.items[position]) <= radius:
                     found.add(position)
             if same_text:
-                found.update(self.by_text.get(key + (item['secret_sha256'],), ()))
-        ordered = sorted(found, key=lambda position: (score_line_distance(item, self.items[position]), position))
-        return ordered[:SCORE_MAX_CANDIDATES]
+                text_key = key + (item['secret_sha256'],)
+                same = self.by_text.get(text_key)
+                if same:
+                    middle = bisect.bisect_left(self.text_orders[text_key], probe)
+                    found.update(same[max(0, middle - SCORE_MAX_CANDIDATES):middle + SCORE_MAX_CANDIDATES])
+        sha = item['secret_sha256']
 
-    def path_items(self, item):
-        """Every item in the same file, for line-free matching (capped)."""
+        def order(position):
+            other = self.items[position]
+            return (score_line_distance(item, other), other['secret_sha256'] != sha,
+                    abs(score_column(item) - score_column(other)), position)
+
+        return sorted(found, key=order)[:SCORE_MAX_CANDIDATES]
+
+    def path_items(self, item, limit=SCORE_MAX_CANDIDATES * 64):
+        """Items in the same file in line order, for line-free matching
+        (at most `limit`)."""
         found = []
         for key in score_keys(item, self.ignore_commit):
-            found.extend(self.by_key.get(key, ()))
+            found.extend(self.by_key.get(key, ())[:limit - len(found)])
+            if len(found) >= limit:
+                break
+        return found
+
+    def same_text_window(self, item, rank):
+        """Items in the same file with the same text, around the rank-th one.
+
+        Items with the same path and text are interchangeable for line-free
+        matching, so pairing by rank keeps the matching maximum while each
+        item gets at most 2 * SCORE_MAX_CANDIDATES candidates."""
+        found = []
+        for key in score_keys(item, self.ignore_commit):
+            same = self.by_text.get(key + (item['secret_sha256'],), ())
+            found.extend(same[max(0, rank - SCORE_MAX_CANDIDATES):rank + SCORE_MAX_CANDIDATES])
         return found
 
 
@@ -124,7 +237,13 @@ def score_assign(edges):
         if left not in match_left and right not in match_right:
             match_left[left] = right
             match_right[right] = left
-    for start in adjacency:
+    # Left nodes seen by a search that found no free right node cannot reach
+    # one until the matching changes, so later searches skip them. This
+    # does not change which path a search finds.
+    dead = set()
+    for count, start in enumerate(adjacency):
+        if count % 256 == 0:
+            score_check()
         if start in match_left:
             continue
         parent = {}
@@ -141,9 +260,13 @@ def score_assign(edges):
                     free = right
                     break
                 partner = match_right[right]
-                if partner not in visited:
+                if partner not in visited and partner not in dead:
                     visited.add(partner)
                     queue.append(partner)
+        if free is None:
+            dead |= visited
+            continue
+        dead.clear()
         right = free
         while right is not None:
             node = parent[right]
@@ -154,24 +277,39 @@ def score_assign(edges):
     return [(left, right, weight[(left, right)]) for left, right in match_left.items()]
 
 
-def score_text_edges(left, right, ignore_commit=False, ignore_lines=False):
-    index = ScoreNeighbours(right, ignore_commit)
+def score_text_edges(left, right, ignore_commit=False, ignore_lines=False, index=None):
+    index = index if index is not None else ScoreNeighbours(right, ignore_commit)
     edges = []
+    # Items with the same path and text are paired by rank in line and
+    # column order, so repeated values reach their partners while each item
+    # gets a bounded number of candidates.
+    ranks, counter = {}, collections.Counter()
+    for i in sorted(range(len(left)), key=lambda i: (left[i]['start_line'], score_column(left[i]), i)):
+        rank_key = (tuple(score_keys(left[i], ignore_commit)), left[i]['secret_sha256'])
+        ranks[i] = counter[rank_key]
+        counter[rank_key] += 1
     for i, item in enumerate(left):
-        positions = index.path_items(item)[:SCORE_MAX_CANDIDATES * 64] if ignore_lines else index.near(item, 0)
-        for j in positions:
+        if i % 256 == 0:
+            score_check()
+        positions = set(index.same_text_window(item, ranks[i]))
+        if ignore_lines:
+            positions.update(position for position in index.path_items(item)
+                             if right[position]['secret_sha256'] != item['secret_sha256'])
+        else:
+            positions.update(index.near(item, 0, same_text=False))
+        for j in sorted(positions):
             other = right[j]
             if not ignore_lines and not score_lines_intersect(item, other):
                 continue
-            overlap = score_overlap(item['secret'], other['secret'])
-            if score_texts_match(item['secret'], other['secret'], overlap):
-                edges.append((overlap, score_line_distance(item, other), i, j))
+            overlap = score_text_overlap(item['secret'], other['secret'])
+            if overlap is not None:
+                edges.append((overlap, score_nearness(item, other), i, j))
     return edges
 
 
-def score_match(left, right, ignore_commit=False, ignore_lines=False):
+def score_match(left, right, ignore_commit=False, ignore_lines=False, index=None):
     """Return (pairs, unmatched left positions, unmatched right positions)."""
-    pairs = score_assign(score_text_edges(left, right, ignore_commit, ignore_lines))
+    pairs = score_assign(score_text_edges(left, right, ignore_commit, ignore_lines, index))
     used_left = {i for i, _, _ in pairs}
     used_right = {j for _, j, _ in pairs}
     return (sorted(pairs), [i for i in range(len(left)) if i not in used_left],
@@ -209,10 +347,10 @@ def score_hint(item, own, own_matched, others):
     `own` and `others` are ScoreNeighbours over each side; `own_matched` is
     the set of matched positions on the item's own side."""
     if own is not None:
-        for position in own.near(item, 0):
+        for position in own.near(item, 0, same_text=False):
             twin = own.items[position]
             if position in own_matched and twin is not item and score_lines_intersect(item, twin) and \
-                    score_texts_match(item['secret'], twin['secret'], score_overlap(item['secret'], twin['secret'])):
+                    score_text_overlap(item['secret'], twin['secret']) is not None:
                 return {'hint': 'duplicate', 'detail': 'same value already matched under rule ' + twin['rule'],
                         'counterpart': score_public(twin)}
     best = None
@@ -242,16 +380,22 @@ def score_hint(item, own, own_matched, others):
 
 
 def score_compare(left, right, left_name, right_name, ignore_commit=False):
-    pairs, unmatched_left, unmatched_right = score_match(left, right, ignore_commit)
     left_index, right_index = ScoreNeighbours(left, ignore_commit), ScoreNeighbours(right, ignore_commit)
+    pairs, unmatched_left, unmatched_right = score_match(left, right, ignore_commit, index=right_index)
     matched_left = {i for i, _, _ in pairs}
     matched_right = {j for _, j, _ in pairs}
 
     def listing(positions, items, own, matched, others):
         rows = []
-        for position in positions:
+        for count, position in enumerate(positions):
+            if count % 256 == 0:
+                score_check()
             row = score_public(items[position])
-            row.update(score_hint(items[position], own, matched, others))
+            if count < SCORE_MAX_HINTS:
+                row.update(score_hint(items[position], own, matched, others))
+            else:
+                row.update({'hint': 'not-examined', 'counterpart': None,
+                            'detail': 'hints are computed for the first %d unmatched items only' % SCORE_MAX_HINTS})
             rows.append(row)
         rows.sort(key=lambda row: (row['path'], row['commit'] or '', row['start_line'], row['rule'], row['secret_sha256']))
         return rows
@@ -294,7 +438,7 @@ def score_read_blob(root, commit, path, git):
         raise HarnessError('labels with a commit need git')
     spec = ':' + path if commit == SCORE_STAGED else '%s:%s' % (commit, path)
     completed = subprocess.run([git, '-C', root, 'show', spec], stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=SCORE_GIT_SECONDS,
                                env={'PATH': SYSTEM_PATH, 'LC_ALL': 'C', 'GIT_CONFIG_NOSYSTEM': '1',
                                     'GIT_CONFIG_GLOBAL': '/dev/null', 'HOME': '/nonexistent'})
     if completed.returncode != 0:
@@ -328,7 +472,7 @@ def score_load_labels(path, workload_id, root, git=None, mode=None, home_tool=No
     mode otherwise. Label values other than secret and not-secret, such as
     ambiguous, are kept so scoring can exclude them."""
     labels, problems = [], collections.Counter()
-    cache = {}
+    cache, newlines = {}, {}
     for row in read_jsonl(path):
         if workload_id is not None and row.get('workload') != workload_id:
             continue
@@ -348,8 +492,9 @@ def score_load_labels(path, workload_id, root, git=None, mode=None, home_tool=No
         try:
             if key not in cache:
                 cache[key] = score_read_blob(root, key[0], key[1], git)
+                newlines[key] = [match.start() for match in re.finditer(b'\n', cache[key])]
             data = cache[key]
-        except (OSError, TypeError):
+        except (OSError, TypeError, subprocess.TimeoutExpired):
             problems['file not readable'] += 1
             continue
         start, end = row.get('start'), row.get('end')
@@ -365,7 +510,8 @@ def score_load_labels(path, workload_id, root, git=None, mode=None, home_tool=No
         if not isinstance(row.get('secret_sha256'), str) or not HEX64.match(row['secret_sha256']):
             problems['secret_sha256 missing'] += 1
             continue
-        line = data.count(b'\n', 0, start) + 1
+        line = bisect.bisect_left(newlines[key], start) + 1
+        column = start - (newlines[key][line - 2] + 1 if line > 1 else 0) + 1
         if row.get('line') not in (None, line):
             problems['line differs from byte offset (offset used)'] += 1
         body = segment[:-1] if segment.endswith(b'\n') else segment
@@ -387,6 +533,7 @@ def score_load_labels(path, workload_id, root, git=None, mode=None, home_tool=No
         labels.append({'rule': category, 'path': row['path'], 'commit': commit,
                        'commits': {value for value in (row.get('commit'), introduced) if value} or {commit},
                        'start_line': line, 'end_line': line + body.count(b'\n'), 'secret': text,
+                       'columns': [column, None],
                        'secret_sha256': row['secret_sha256'], 'secret_length': len(text),
                        'label': 'not-secret' if expected == 'none' else row['label'], 'category': category,
                        'source': source, 'start': start, 'end': end, 'kind': kind, 'encoding': encoding,
@@ -420,6 +567,7 @@ def score_label_groups(labels):
         else:
             groups.append({'path': label['path'], 'commit': label['commit'], 'commits': set(label['commits']),
                            'start': label['start'], 'end': label['end'], 'start_line': label['start_line'],
+                           'columns': label['columns'],
                            'end_line': label['end_line'], 'members': [label]})
     for group in groups:
         members = group['members']
@@ -465,10 +613,9 @@ def score_group_overlap(finding, group, ignore_commit=False):
         else:
             if not ignore_commit and not score_lines_intersect(member, finding):
                 continue
-            overlap = score_overlap(member['secret'], finding['secret'])
-            if not score_texts_match(member['secret'], finding['secret'], overlap):
+            score = score_text_overlap(member['secret'], finding['secret'])
+            if score is None:
                 continue
-            score = overlap
         best = score if best is None else max(best, score)
     return best
 
@@ -481,19 +628,29 @@ class ScoreGroupIndex(object):
         self.groups = groups
         self.ignore_commit = ignore_commit
         self.near_index = ScoreNeighbours(groups, ignore_commit)
-        self.path_wide = collections.defaultdict(list)
+        # Case groups match any finding in the file. Encoded (hash) groups
+        # are never merged and match only a finding with their SHA-256, so
+        # they are indexed by it.
+        self.case_wide = collections.defaultdict(list)
+        self.hash_wide = collections.defaultdict(list)
         for position, group in enumerate(groups):
-            if group['path_wide']:
-                for key in score_keys(group, ignore_commit):
-                    self.path_wide[key].append(position)
+            if not group['path_wide']:
+                continue
+            hashes = {member['secret_sha256'] for member in group['members'] if member['kind'] == 'hash'}
+            for key in score_keys(group, ignore_commit):
+                if any(member['kind'] == 'case' for member in group['members']):
+                    self.case_wide[key].append(position)
+                for value in hashes:
+                    self.hash_wide[key + (value,)].append(position)
 
     def candidates(self, finding):
-        found = set(self.near_index.path_items(finding)[:SCORE_MAX_CANDIDATES * 64] if self.ignore_commit
-                    else self.near_index.near(finding, 0, same_text=False))
+        found = set(self.near_index.path_items(finding) if self.ignore_commit
+                    else self.near_index.near(finding, 0, same_text=True))
         probe = dict(finding, path=score_outer_path(finding['path']))
         for item in (finding, probe):
             for key in score_keys(item, self.ignore_commit):
-                found.update(self.path_wide.get(key, ()))
+                found.update(self.case_wide.get(key, ()))
+                found.update(self.hash_wide.get(key + (finding['secret_sha256'],), ()))
         return sorted(found)
 
 
@@ -528,6 +685,8 @@ def score_quality(findings, labels, labels_complete=True, ignore_commit=False):
                      for member in group['members'] if member['label'] == 'secret'}
     edges, on_none = [], {}
     for j, finding in enumerate(findings):
+        if j % 256 == 0:
+            score_check()
         for g in index.candidates(finding):
             score = score_group_overlap(finding, groups[g], ignore_commit)
             if score is None:
@@ -594,12 +753,19 @@ def score_quality(findings, labels, labels_complete=True, ignore_commit=False):
         add(key, group['path'], group, empty)
         if key == 'false_negative':
             row = score_public(group['primary'])
-            row.update(score_hint(group['primary'], None, set(), finding_index))
+            if len(missed) < SCORE_MAX_HINTS:
+                row.update(score_hint(group['primary'], None, set(), finding_index))
+            else:
+                row.update({'hint': 'not-examined', 'counterpart': None,
+                            'detail': 'hints are computed for the first %d missed labels only' % SCORE_MAX_HINTS})
             row.update({'group_members': len(group['members']), 'unfilled': empty,
                         'scope_difference': group['scope_difference']})
             missed.append(row)
     unmatched = []
+    hinted = 0
     for j, finding in enumerate(findings):
+        if j % 256 == 0:
+            score_check()
         if j in used_findings:
             continue
         row = score_public(finding)
@@ -625,7 +791,12 @@ def score_quality(findings, labels, labels_complete=True, ignore_commit=False):
                         'counterpart': None})
         else:
             key = 'unlabeled_findings' if labels_complete else 'unknown_findings'
-            row.update(score_hint(finding, None, set(), index.near_index))
+            hinted += 1
+            if hinted <= SCORE_MAX_HINTS:
+                row.update(score_hint(finding, None, set(), index.near_index))
+            else:
+                row.update({'hint': 'not-examined', 'counterpart': None,
+                            'detail': 'hints are computed for the first %d such findings only' % SCORE_MAX_HINTS})
             row['hint'] = ('unlabeled: ' if labels_complete else 'unknown: ') + row['hint']
         add(key, finding['path'])
         unmatched.append(row)
@@ -685,6 +856,7 @@ def score_quality_both(findings, labels, complete, mode):
 
 
 def score_adhoc(args):
+    score_limit_start(getattr(args, 'score_hours', None))
     target = os.path.abspath(args.target)
     sides = []
     for spec in (args.left, args.right):
@@ -714,9 +886,22 @@ def score_adhoc(args):
     return result
 
 
-def score_run(run_dir, seed):
+def score_limit_start(hours):
+    """Start the scoring time limit. Work after it is listed as not scored."""
+    hours = SCORE_DEFAULT_HOURS if hours is None else hours
+    if hours <= 0:
+        raise HarnessError('--score-hours must be positive')
+    SCORE_LIMIT.update({'deadline': time.monotonic() + hours * 3600, 'hours': hours})
+
+
+def score_run(run_dir, seed, hours=None):
     """Score every kept report in a run: identity agreement within each
-    comparable group, and quality for workloads with labels."""
+    comparable group, and quality for workloads with labels.
+
+    Scoring stops after `hours` (default SCORE_DEFAULT_HOURS); comparisons
+    and quality rows not finished by then are listed in `not_scored`."""
+    score_limit_start(hours)
+    not_scored = []
     run = read_json(os.path.join(run_dir, 'run.json'))
     cells = [cell for cell in run['cells'] if cell.get('kept_report') and cell.get('cache') == 'warm']
     if not cells:
@@ -742,11 +927,16 @@ def score_run(run_dir, seed):
         for a in range(len(members)):
             for b in range(a + 1, len(members)):
                 left, right = members[a], members[b]
-                result = score_compare(loaded[left['cell_id']], loaded[right['cell_id']],
-                                       left['cell_id'], right['cell_id'])
-                if left['mode'] == 'git':
-                    result['commit_agnostic'] = score_commit_agnostic(loaded[left['cell_id']],
-                                                                      loaded[right['cell_id']])
+                try:
+                    result = score_compare(loaded[left['cell_id']], loaded[right['cell_id']],
+                                           left['cell_id'], right['cell_id'])
+                    if left['mode'] == 'git':
+                        result['commit_agnostic'] = score_commit_agnostic(loaded[left['cell_id']],
+                                                                          loaded[right['cell_id']])
+                except ScoreTimeLimit as error:
+                    not_scored.append({'kind': 'agreement', 'left': left['cell_id'], 'right': right['cell_id'],
+                                       'reason': str(error)})
+                    continue
                 result.update({'group': group, 'cache': cache})
                 comparisons.append(result)
     quality, label_cache, label_errors = [], {}, []
@@ -768,13 +958,18 @@ def score_run(run_dir, seed):
         if label_cache[key] is None or not label_cache[key][0]:
             continue
         labels, problems = label_cache[key]
-        result = score_quality_both(loaded[cell['cell_id']], labels,
-                                    workload.get('labels_complete', True) is not False, cell['mode'])
+        try:
+            result = score_quality_both(loaded[cell['cell_id']], labels,
+                                        workload.get('labels_complete', True) is not False, cell['mode'])
+        except ScoreTimeLimit as error:
+            not_scored.append({'kind': 'quality', 'left': cell['cell_id'], 'right': None, 'reason': str(error)})
+            continue
         result.update({'name': cell['cell_id'], 'label_problems': problems, 'labels': len(labels),
                        'workload': workload['id'], 'lane': cell['lane'], 'tool': cell['tool'], 'mode': cell['mode']})
         quality.append(result)
     return {'schema': SCHEMA_SCORE, 'kind': 'run', 'run_id': run['run_id'], 'comparisons': comparisons,
-            'quality': quality, 'label_errors': sorted(set(label_errors)),
+            'quality': quality, 'label_errors': sorted(set(label_errors)), 'not_scored': not_scored,
+            'score_hours': SCORE_LIMIT['hours'],
             'score_errors': [{'cell': cell['cell_id'], 'error': cell['score_error']}
                              for cell in cells if cell.get('score_error')]}
 
@@ -810,6 +1005,9 @@ def score_markdown(result):
     lines = list(SCORE_MARKDOWN_HEADER)
     for message in result.get('label_errors', []):
         lines += ['WARNING: ' + message, '']
+    for row in result.get('not_scored', []):
+        lines += ['NOT SCORED (%s): %s%s: %s' % (row['kind'], row['left'], ' versus ' + row['right'] if row['right'] else '',
+                                                 row['reason']), '']
     for comparison in result['comparisons']:
         lines += ['## %s versus %s' % (comparison['left'], comparison['right']), '']
         if comparison.get('group'):
@@ -832,7 +1030,11 @@ def score_markdown(result):
             lines += ['Only %s, by hint: %s.' % (side, ', '.join('%s %d' % item for item in sorted(hints.items()))), '',
                       '| Path | Commit | Lines | Rule | Secret SHA-256 | Length | Hint | Detail | Counterpart |',
                       '| --- | --- | --- | --- | --- | ---: | --- | --- | --- |']
-            for row in rows:
+            if len(rows) > SCORE_MARKDOWN_ROWS:
+                lines.insert(len(lines) - 2, 'Only the first %d of %d rows are listed; score.json has all of them.'
+                             % (SCORE_MARKDOWN_ROWS, len(rows)))
+                lines.insert(len(lines) - 2, '')
+            for row in rows[:SCORE_MARKDOWN_ROWS]:
                 other = row['counterpart']
                 lines.append('| `%s` | %s | %d-%d | `%s` | `%s` | %d | %s | %s | %s |' % (
                     row['path'], (row['commit'] or '')[:12], row['start_line'], row['end_line'], row['rule'],
@@ -866,9 +1068,13 @@ def score_markdown(result):
                             ('Findings with no label of their own', quality['unmatched_findings'])):
             if not rows:
                 continue
-            lines += [title + ':', '', '| Path | Lines | Rule or category | Secret SHA-256 | Length | Hint |',
+            lines += [title + ':', '']
+            if len(rows) > SCORE_MARKDOWN_ROWS:
+                lines += ['Only the first %d of %d rows are listed; score.json has all of them.'
+                          % (SCORE_MARKDOWN_ROWS, len(rows)), '']
+            lines += ['| Path | Lines | Rule or category | Secret SHA-256 | Length | Hint |',
                       '| --- | --- | --- | --- | ---: | --- |']
-            for row in rows:
+            for row in rows[:SCORE_MARKDOWN_ROWS]:
                 lines.append('| `%s` | %d-%d | `%s` | `%s` | %d | %s |' % (
                     row['path'], row['start_line'], row['end_line'], row['rule'], row['secret_sha256'][:16],
                     row['secret_length'], row['hint']))

@@ -6,6 +6,11 @@ what each lane means, what the harness measures, and the limits of the
 results. No result from this harness is a portable speed or quality
 guarantee.
 
+The 2026-11 comparison is fixed in
+[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md),
+and its results are in
+[benchmarks/comparison/results-2026-11.md](../../benchmarks/comparison/results-2026-11.md).
+
 ## What the harness does
 
 The harness runs several scanner binaries on the same inputs and records:
@@ -179,9 +184,45 @@ Useful options:
   any tool.
 - `--runs N` and `--warmups N` override the run counts for a quick check.
   The report then says that the run is not a protocol run.
+- `--timeout SECONDS` stops one sample. The default is 3600.
+- `--max-hours HOURS` is the time budget for the whole run. The default
+  is 8.
+
+### Time limits
+
+Every step of a run has a finite limit:
+
+- A sample that passes `--timeout`, or whose logs or report pass their size
+  limits, has its process group killed with `SIGKILL`. The kill repeats every
+  second. If the process is still not collected 60 seconds after the first
+  kill, the harness stops waiting and records the sample with the status
+  `timeout-unreaped` or `output-limit-unreaped`.
+- After a scanner exits, any process left in its group is killed and checked
+  again for up to 2 seconds. A sample whose group still has processes, or
+  whose group could not be checked, gets `group_survivors_after_kill`.
+- The `git` shim of the instrumented run kills `git` after `--timeout`
+  seconds and stops waiting 60 seconds later.
+- Version and host probes stop after 20 seconds, with every process they
+  started.
+- No sample starts after the `--max-hours` budget is used up. A sample that
+  is running then finishes or reaches its own timeout. Cells that did not
+  get all their samples are listed as skipped with the reason
+  `run time budget reached`, and their samples stay in `samples.jsonl`.
+  `run.json` records the budget under `time_budget`, with whether it was
+  reached, and the report lists it as a protocol deviation.
+- Scoring stops after `--score-hours` (default 12) on `compare run` and
+  `compare score`. Comparisons and quality rows not finished by then are
+  listed under "Not scored" in the report. Reading a labeled file from a
+  commit with `git show` stops after 10 minutes.
 
 At the end, the harness verifies the binary hashes, scores the kept reports
 and writes the report.
+
+Scoring work is bounded by input size. Each finding is compared with at most
+64 candidates: items with the same text, paired by rank in line and column
+order, and then the nearest items by line and column. Hints that explain
+unmatched items are computed for the first 5,000 per list, and `score.md`
+lists the first 1,000 rows of each list; `score.json` has every row.
 
 ## Lanes
 
@@ -257,20 +298,30 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
   process. Rustleaks, Gitleaks and Betterleaks 1 run `git log -p`.
   Betterleaks 2 and Kingfisher read Git in process, so their Git work is part
   of the scanner figures.
+- The same instrumented run samples the resident size of the scanner process
+  alone every 10 ms (`proc_pid_rusage` on macOS, `VmHWM` on Linux). The peak
+  RSS of a `git` cell is often the peak of `git log -p`, not of the scanner;
+  this column shows the scanner's own share. A spike shorter than 10 ms can
+  be missed.
 - Not measured: the combined RSS of processes that run at the same time,
   helper processes other than `git`, I/O wait and disk bytes read.
 - Findings are counted from the parsed report, every record, with no
   deduplication by the harness. Reports over 64 MiB are parsed once per
-  cell; later runs check only the exit code. A report over 256 MiB stops the
-  run.
+  cell; later runs check only the exit code. A report over 4 GiB, or a log
+  over 64 MiB, stops the run. The report limit is set well above the largest
+  report seen so far (Betterleaks writes about 300 MB for the 1 GiB keyword
+  workload) so that it stops only runaway output.
 - Thermal state is recorded before the first and after the last measured
   run of each cell.
 
 ## Runs and statistics
 
-- Warm cells get 3 warmups. Cells with a warmup median under 1 second get 30
-  measured runs, and longer cells get 10. Cells of 300 seconds or more get 3
-  runs, and the report gives the reason.
+- Warm cells get 1 warmup and 3 measured runs. `--runs-fast`, `--runs-slow`
+  and `--long-runs` set the count for cells under 1 second, of 1 second or
+  more, and of 300 seconds or more; all three default to 3. The maintainer
+  chose this budget on 2026-11-18 so that a full comparison takes hours,
+  not days. Medians are stable at this count; confidence intervals are
+  wider than with more runs.
 - Cold cells start every run with an empty `HOME`, `TMPDIR` and cache
   folders, so compiled rule caches start empty. They have no warmups. The
   operating system page cache is not purged, because that needs root.

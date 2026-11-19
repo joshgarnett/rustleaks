@@ -12,10 +12,13 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import zipfile
 import zlib
 
@@ -266,15 +269,53 @@ GIT_FLAGS = ['-c', 'core.logAllRefUpdates=false', '-c', 'gc.auto=0', '-c', 'core
              '-c', 'init.defaultBranch=main']
 
 
-def git_run(git, repository, environment, arguments, stdin=None, timeout=86400, stdout=None):
-    command = [git] + GIT_FLAGS + (['-C', str(repository)] if repository else []) + arguments
-    result = subprocess.run(command, env=environment, stdin=stdin,
-                            stdout=subprocess.PIPE if stdout is None else stdout,
-                            stderr=subprocess.PIPE, check=False, timeout=timeout)
-    if result.returncode:
-        fail('git %s failed: %s' % (' '.join(arguments[:3]),
-                                    result.stderr.decode('utf-8', 'replace')[-2000:]))
-    return result.stdout
+# Every git call has a time limit, so no step can wait forever. The limits are
+# far above the time any pinned repository needs. Network calls also stop when
+# the transfer stays under 1000 bytes per second for 120 seconds.
+GIT_LOCAL_TIMEOUT = 6 * 3600
+GIT_NETWORK_TIMEOUT = 4 * 3600
+GIT_NETWORK_FLAGS = ['-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=120']
+GIT_STOP_WAIT = 60
+
+
+def stop_process_group(process):
+    # Kill the process and everything it started, then collect it. Pipes that
+    # a process outside the group still holds are closed after a short wait.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        process.kill()
+    try:
+        process.communicate(timeout=GIT_STOP_WAIT)
+    except (subprocess.TimeoutExpired, ValueError):
+        for pipe in (process.stdout, process.stderr):
+            if pipe is not None:
+                pipe.close()
+        try:
+            process.wait(timeout=GIT_STOP_WAIT)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def git_run(git, repository, environment, arguments, stdin=None, timeout=None, stdout=None, network=False):
+    if timeout is None:
+        timeout = GIT_NETWORK_TIMEOUT if network else GIT_LOCAL_TIMEOUT
+    command = ([git] + GIT_FLAGS + (GIT_NETWORK_FLAGS if network else [])
+               + (['-C', str(repository)] if repository else []) + arguments)
+    process = subprocess.Popen(command, env=environment, stdin=stdin,
+                               stdout=subprocess.PIPE if stdout is None else stdout,
+                               stderr=subprocess.PIPE, start_new_session=True)
+    try:
+        output, errors = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop_process_group(process)
+        fail('git %s did not finish in %d seconds' % (' '.join(arguments[:3]), timeout))
+    except BaseException:
+        stop_process_group(process)
+        raise
+    if process.returncode:
+        fail('git %s failed: %s' % (' '.join(arguments[:3]), errors.decode('utf-8', 'replace')[-2000:]))
+    return output
 
 
 def git_text(git, repository, environment, arguments):

@@ -149,6 +149,12 @@ Notes:
   tree.
 - The full histories of the large repositories need several GB each. Fetch
   them only when a run needs them.
+- Every `git` call has a time limit: 4 hours for `git fetch` and 6 hours for
+  local commands. `git fetch` also gets `http.lowSpeedLimit=1000` and
+  `http.lowSpeedTime=120`, so it stops when the transfer stays under 1000
+  bytes per second for 2 minutes. When `tree/` is written, `git cat-file` is
+  killed if one object takes more than 10 minutes, and gets 1 minute to exit
+  at the end.
 
 Repositories are used for speed only. They carry no labels. Findings in real
 repositories are not recorded in this repository. Each repository keeps its

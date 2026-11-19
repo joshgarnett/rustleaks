@@ -6,7 +6,7 @@ REPORT_MEASURED = [
     'Wall time: from spawn to the return of wait4 for the scanner process, measured by the harness. It includes process start, rule loading, scanning and writing the report file.',
     'User and system CPU time: from the wait4 rusage of the scanner. On macOS and Linux this includes every descendant the scanner waited for, such as git.',
     'Peak RSS: ru_maxrss from the same rusage. It is the largest single process among the scanner and its waited-for descendants, not the sum of processes that ran at the same time.',
-    'Child processes: in git mode, one extra untimed run per warm cell puts a git shim on PATH that records wall time, CPU time and peak RSS of each git process. Only git is shimmed. Tools that read Git in process (Kingfisher, Betterleaks v2) show no git children; their Git work is part of the scanner figures.',
+    'Child processes: in git mode, one extra untimed run per warm cell puts a git shim on PATH that records wall time, CPU time and peak RSS of each git process. Only git is shimmed. Tools that read Git in process (Kingfisher, Betterleaks v2) show no git children; their Git work is part of the scanner figures. The same run samples the resident size of the scanner process alone every 10 ms, because the peak RSS of a cell is the largest single process and can be a git child.',
     'Not measured: the combined RSS of processes that run at the same time, memory of helper processes other than git, GPU or I/O wait time, and disk bytes read.',
     'Input bytes come from the workload manifest (or a harness walk of regular files outside .git when the manifest has none), never from a tool. Throughput is input bytes divided by the median wall time.',
     'Findings are counted from the parsed report, every record, with no deduplication by the harness.',
@@ -142,7 +142,9 @@ def report_write(run_dir, seed):
                    'quality': [{key: row[key] for key in ('name', 'workload', 'lane', 'tool', 'overall', 'by_category',
                                                           'by_source', 'by_scope', 'labels', 'labels_complete',
                                                           'label_problems') if key in row}
-                               for row in score.get('quality', [])]}}
+                               for row in score.get('quality', [])],
+                   'not_scored': score.get('not_scored', []), 'score_errors': score.get('score_errors', []),
+                   'score_hours': score.get('score_hours')}}
     path = os.path.join(run_dir, 'summary.json')
     write_json(path, summary, exclusive=False)
     write_private(os.path.join(run_dir, 'report.md'), report_markdown(run, cells, score, summary).encode(), exclusive=False)
@@ -218,6 +220,11 @@ def report_markdown(run, cells, score, summary):
                            'Tuned', 'Labels', 'Config or ignore files at the scan root'], rows)
     tuned = [workload['id'] for workload in run['workloads'] if workload.get('tuned')]
     lines += ['', 'Tuned inputs (used during Rustleaks development): %s.' % (', '.join(tuned) if tuned else 'none'), '']
+    skipped = [item for source in run.get('workload_manifests') or [] for item in source.get('skipped_workloads') or []]
+    if skipped:
+        lines += ['Workloads in the manifests that this harness does not run:', '']
+        lines += ['- %s: %s' % (item['id'], item['reason']) for item in skipped]
+        lines += ['']
     for lane in LANES:
         lane_cells = [cell for cell in cells if cell['lane'] == lane]
         if not lane_cells:
@@ -249,10 +256,12 @@ def report_markdown(run, cells, score, summary):
         children = [cell for cell in lane_cells if cell.get('children')]
         if children:
             rows = [[cell['cell_id'], cell['children']['processes'], report_ms(cell['children']['cpu_user_ns']),
-                     report_ms(cell['children']['cpu_system_ns']), report_mib(cell['children']['peak_rss_bytes'])]
+                     report_ms(cell['children']['cpu_system_ns']), report_mib(cell['children']['peak_rss_bytes']),
+                     report_mib(cell['children'].get('scanner_peak_rss_bytes'))]
                     for cell in children]
-            lines += ['Git child processes from the instrumented run:', '']
-            lines += report_table(['Cell', 'git processes', 'User CPU ms (sum)', 'System CPU ms (sum)', 'Peak RSS MiB (largest)'], rows)
+            lines += ['Git child processes and the scanner process alone, from the instrumented run:', '']
+            lines += report_table(['Cell', 'git processes', 'User CPU ms (sum)', 'System CPU ms (sum)', 'git peak RSS MiB (largest)',
+                                   'Scanner process peak RSS MiB (sampled every 10 ms)'], rows)
             lines.append('')
     pairs = run.get('pairwise') or []
     if pairs:
@@ -283,6 +292,14 @@ def report_markdown(run, cells, score, summary):
                                for cell in bad])
     else:
         lines.append('None.')
+    if score and (score.get('not_scored') or score.get('score_errors')):
+        lines += ['', '## Not scored', '',
+                  'Scoring has a time limit (--score-hours, %s here). Work not finished by then, and reports that '
+                  'could not be read, are listed here and are missing from the agreement and quality tables.'
+                  % score.get('score_hours'), '']
+        rows = [[row['kind'], row['left'], row.get('right') or '-', row['reason']] for row in score.get('not_scored', [])]
+        rows += [['report', row['cell'], '-', row['error']] for row in score.get('score_errors', [])]
+        lines += report_table(['Kind', 'Cell', 'Other cell', 'Reason'], rows)
     lines += ['', '## Run counts', '']
     counts = collections.Counter((cell['runs_planned'], cell['runs_reason']) for cell in cells if cell.get('runs_planned'))
     lines += ['- %d cells: %s runs (%s)' % (count, runs, reason) for (runs, reason), count in sorted(counts.items())]

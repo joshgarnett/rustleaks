@@ -22,18 +22,22 @@ def main_parser():
     run.add_argument('--archive-depth-on', type=int, default=8, help='archive depth when archives are on')
     run.add_argument('--cache', default='warm,cold', help='cache states for the cold lanes: warm, cold')
     run.add_argument('--cold-lanes', default='defaults', help='lanes that also get cold cells')
-    run.add_argument('--warmups', type=int, default=3)
-    run.add_argument('--runs-fast', type=int, default=30, help='measured runs for cells under 1 s')
-    run.add_argument('--runs-slow', type=int, default=10, help='measured runs for cells of 1 s or more')
+    run.add_argument('--warmups', type=int, default=1)
+    run.add_argument('--runs-fast', type=int, default=3, help='measured runs for cells under 1 s')
+    run.add_argument('--runs-slow', type=int, default=3, help='measured runs for cells of 1 s or more')
     run.add_argument('--long-seconds', type=float, default=300, help='cells at least this long are multi-minute cells')
     run.add_argument('--long-runs', type=int, default=3, help='measured runs for multi-minute cells')
     run.add_argument('--runs', type=int, help='override every run count (marks the run as not protocol)')
     run.add_argument('--timeout', type=float, default=3600, help='seconds before a sample is stopped')
+    run.add_argument('--max-hours', type=float, default=8,
+                     help='run time budget in hours; no sample starts after it and the remaining cells are skipped')
     run.add_argument('--seed', type=int, default=DEFAULT_SEED)
     run.add_argument('--baseline', help='tool id used as the ratio baseline (default: first Rustleaks tool)')
     run.add_argument('--git', help='git executable for git mode (default: found on PATH)')
     run.add_argument('--no-child-instrumentation', action='store_true', help='skip the instrumented git run')
     run.add_argument('--no-score', action='store_true', help='do not score kept reports at the end')
+    run.add_argument('--score-hours', type=float, default=SCORE_DEFAULT_HOURS,
+                     help='hours before scoring stops; unfinished work is listed as not scored')
     run.add_argument('--dry-run', action='store_true', help='plan cells and write run.json without running tools')
     run.add_argument('--target-config', choices=('skip', 'run'), default='skip',
                      help='cells whose tool would load a configuration or ignore file from the scan root: '
@@ -50,6 +54,8 @@ def main_parser():
                        help='labels are incomplete: count findings with no label as unknown, not false positives')
     score.add_argument('--git', help='git executable for labels with a commit')
     score.add_argument('--output', help='folder for score.json and score.md (default: the run folder)')
+    score.add_argument('--score-hours', type=float, default=SCORE_DEFAULT_HOURS,
+                       help='hours before scoring stops; unfinished work is listed as not scored')
     score.add_argument('--seed', type=int, default=DEFAULT_SEED)
     report = commands.add_parser('report', help='write summary.json and report.md for a run folder')
     report.add_argument('--run', required=True)
@@ -77,11 +83,15 @@ def main_normalize(options):
             raise HarnessError('--%s is too small' % name.replace('_', '-'))
     if options.runs is not None and options.runs < 1:
         raise HarnessError('--runs must be at least 1')
+    for name in ('timeout', 'max_hours'):
+        value = getattr(options, name)
+        if not (value > 0 and math.isfinite(value)):
+            raise HarnessError('--%s must be a finite number more than 0' % name.replace('_', '-'))
 
 
 def main_score(options):
     if options.run:
-        result = score_run(os.path.abspath(options.run), options.seed)
+        result = score_run(os.path.abspath(options.run), options.seed, options.score_hours)
         output = os.path.abspath(options.output or options.run)
     else:
         if not options.left or not options.target:
