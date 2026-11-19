@@ -181,7 +181,7 @@ Useful options:
   The report then says that the run is not a protocol run.
 - `--timeout SECONDS` stops one sample. The default is 3600.
 - `--max-hours HOURS` is the time budget for the whole run. The default
-  is 48.
+  is 8.
 
 ### Time limits
 
@@ -311,9 +311,12 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 
 ## Runs and statistics
 
-- Warm cells get 3 warmups. Cells with a warmup median under 1 second get 30
-  measured runs, and longer cells get 10. Cells of 300 seconds or more get 3
-  runs, and the report gives the reason.
+- Warm cells get 1 warmup and 3 measured runs. `--runs-fast`, `--runs-slow`
+  and `--long-runs` set the count for cells under 1 second, of 1 second or
+  more, and of 300 seconds or more; all three default to 3. The maintainer
+  chose this budget on 2026-11-18 so that a full comparison takes hours,
+  not days. Medians are stable at this count; confidence intervals are
+  wider than with more runs.
 - Cold cells start every run with an empty `HOME`, `TMPDIR` and cache
   folders, so compiled rule caches start empty. They have no warmups. The
   operating system page cache is not purged, because that needs root.

@@ -22,14 +22,14 @@ def main_parser():
     run.add_argument('--archive-depth-on', type=int, default=8, help='archive depth when archives are on')
     run.add_argument('--cache', default='warm,cold', help='cache states for the cold lanes: warm, cold')
     run.add_argument('--cold-lanes', default='defaults', help='lanes that also get cold cells')
-    run.add_argument('--warmups', type=int, default=3)
-    run.add_argument('--runs-fast', type=int, default=30, help='measured runs for cells under 1 s')
-    run.add_argument('--runs-slow', type=int, default=10, help='measured runs for cells of 1 s or more')
+    run.add_argument('--warmups', type=int, default=1)
+    run.add_argument('--runs-fast', type=int, default=3, help='measured runs for cells under 1 s')
+    run.add_argument('--runs-slow', type=int, default=3, help='measured runs for cells of 1 s or more')
     run.add_argument('--long-seconds', type=float, default=300, help='cells at least this long are multi-minute cells')
     run.add_argument('--long-runs', type=int, default=3, help='measured runs for multi-minute cells')
     run.add_argument('--runs', type=int, help='override every run count (marks the run as not protocol)')
     run.add_argument('--timeout', type=float, default=3600, help='seconds before a sample is stopped')
-    run.add_argument('--max-hours', type=float, default=48,
+    run.add_argument('--max-hours', type=float, default=8,
                      help='run time budget in hours; no sample starts after it and the remaining cells are skipped')
     run.add_argument('--seed', type=int, default=DEFAULT_SEED)
     run.add_argument('--baseline', help='tool id used as the ratio baseline (default: first Rustleaks tool)')

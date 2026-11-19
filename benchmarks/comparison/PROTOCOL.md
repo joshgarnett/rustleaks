@@ -11,7 +11,7 @@ commit and the report. A change starts a new comparison.
    in `dir` mode and in `git` mode.
 3. Quality: precision and recall on labeled data whose labels no scanner
    produced, and agreement on each tool's own rule examples.
-4. Scaling: time with 1, 4 and all threads, and on dense findings.
+4. Scaling: time with 1, 4, 12 and all threads, and on dense findings.
 
 Results are reported per question and per workload family, never as one
 blended score.
@@ -59,23 +59,27 @@ The harness checks every hash before and after each run.
 ## Runs
 
 Each run is a separate `cargo xtask compare run` with its own private output
-folder. Defaults: 3 warmups, then 30 measured runs for cells under 1 s, 10
-for cells of 1 s or more, and 3 for cells of 5 minutes or more; one-hour
-timeout per sample; a 48-hour time budget per run (`--max-hours`), after
-which no sample starts and the remaining cells are listed as skipped; fixed
-seed; random tool and workload order.
+folder. Defaults: one warmup, then 3 measured runs per cell. The maintainer
+chose this budget so that all runs together take about 4 to 5 hours.
+Medians were stable at this count in the quick runs of 2026-11-18;
+confidence intervals are wider than with more runs. Other defaults:
+one-hour timeout per sample; an 8-hour time budget per run (`--max-hours`),
+after which no sample starts and the remaining cells are listed as skipped;
+fixed seed; random tool and workload order.
 
 | Run | Workloads | Modes | Lanes | Tools | Notes |
 | --- | --- | --- | --- | --- | --- |
 | R1 | public-repos, all 14 | dir | defaults (warm) | all 6 | headline throughput |
 | R2 | public-repos except linux and gitlab | git | defaults (warm) | all 6 | headline history |
-| R3 | linux, gitlab | git | defaults (warm) | rustleaks-main, gitleaks, betterleaks-2.0.0-rc.8, kingfisher | 1 run, no warmup, 8-hour sample timeout: single observations, labeled as such, because one history scan takes many minutes |
 | R4 | synthetic, 70 of 71 (`empty-stdin` is a stdin workload the harness does not run) | per workload | defaults (warm) | all 6 | tuned workloads reported apart |
 | R4c | tiny-positive, tiny-clean-file, tiny-clean-tree | dir | defaults (cold: fresh HOME, plus warm cells the harness requires) | all 6 | startup with empty tool caches |
-| R5 | rails, django, keyword-dense-16mib, mixed-source-16mib | dir, git | threads (1, 4, all), features, shared-rules, rustleaks-2x2 | all 6 | settings lanes |
+| R5 | rails, django, keyword-dense-16mib, mixed-source-16mib | dir, git | threads (1, 4, 12, all), features, shared-rules, rustleaks-2x2 | all 6 | settings lanes |
 | R6 | held-out perf and git workloads | per workload | defaults, threads | all 6 | sealed inputs |
 | R7 | constructed-v1 and fixtures-matrix | dir | defaults | all 6 | quality only: 1 run, no warmup; timings not reported |
 | R7h | held-out quality | dir | defaults | all 6 | quality only: 1 run, no warmup; timings not reported |
+
+The history of linux and gitlab is not scanned: one history scan of linux
+takes hours per tool. Their `dir` scans are part of R1.
 
 Commands, with `TOOLS` the private tools manifest, `CACHE` the workload cache
 on a case-sensitive volume, `HELD` the sealed held-out folder, `W` the
@@ -93,12 +97,6 @@ cargo xtask compare run --workloads W/public-repos.json --cache-root CACHE \
   --workload croc --workload flask --workload jq --workload select2 \
   --workload rails --workload django --workload ruby --workload lucene \
   --workload bootstrap --workload prometheus --workload mongo --workload typescript
-# R3
-cargo xtask compare run --workloads W/public-repos.json --cache-root CACHE \
-  --lanes defaults --cache warm --modes git --target-config run \
-  --workload linux --workload gitlab --warmups 0 --runs 1 --timeout 28800 \
-  --tool rustleaks-main --tool gitleaks-8.30.1 \
-  --tool betterleaks-2.0.0-rc.8 --tool kingfisher-2.19.1
 # R4
 cargo xtask compare run --workloads W/synthetic.json --cache-root CACHE \
   --lanes defaults --cache warm
@@ -111,7 +109,7 @@ cargo xtask compare run --workloads W/public-repos.json \
   --workloads W/synthetic.json --cache-root CACHE \
   --lanes threads,features,shared-rules,rustleaks-2x2 --cache warm \
   --workload rails --workload django --workload keyword-dense-16mib \
-  --workload mixed-source-16mib
+  --workload mixed-source-16mib --threads 1,4,12,all
 # R6
 cargo xtask compare run --workloads HELD-manifest.json --cache-root HELD \
   --lanes defaults,threads --cache warm --workload heldout-perf-10m \
@@ -163,11 +161,9 @@ the harness flags those cells.
 - Inputs used during Rustleaks development: the 19 tuned synthetic
   workloads and the Rustleaks pack fixtures.
 - The page cache is not purged between runs; cold cells use a fresh HOME only.
-- Rustleaks scans with one detection worker unless `--complete-profile`
-  sets more. Lanes with more than one Rustleaks worker therefore use a
-  complete profile, which turns every coverage gap into exit code 2. An
-  input with a damaged archive (django has one in its tests) makes those
-  cells fail where other tools print a warning.
+- Rustleaks scans with one detection thread for each CPU, up to 12, by
+  default. Thread cells pass `--jobs N`. Rustleaks 0.1.0-alpha.9 scans with
+  one thread.
 - Rustleaks 0.1.0-alpha.9 has no `--complete-profile` or `--native-pack`, so
   its thread, features, shared-rules and 2x2 cells are skipped.
 - Kingfisher reports each distinct value once by default and picks one of

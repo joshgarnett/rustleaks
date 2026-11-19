@@ -740,7 +740,7 @@ def selftest_guard_run_budget():
                        'a complete cell keeps its results and an incomplete one is skipped: %s' % statuses)
         selftest_check(len(read_jsonl(os.path.join(output, 'samples.jsonl'))) == 3, 'no sample starts after the budget')
         selftest_check(run['time_budget']['reached'] and run['time_budget']['cells_skipped'] == 1
-                       and run['settings']['max_hours'] == 48, 'run.json records the default budget')
+                       and run['settings']['max_hours'] == 8, 'run.json records the default budget')
     finally:
         namespace['run_budget_reached'] = saved
         shutil.rmtree(directory, ignore_errors=True)
