@@ -39,7 +39,8 @@ pub(crate) struct Options {
     pub native_packs: Vec<String>,
     pub complete_profile: Option<PathBuf>,
     /// Detection threads from `--jobs`. `None` leaves the choice to the
-    /// complete profile or the number of CPUs that the process may use.
+    /// complete profile or the number of CPUs that the process may use, up
+    /// to 12.
     pub jobs: Option<NonZeroUsize>,
     pub exit_code: i32,
     pub report_path: Option<PathBuf>,

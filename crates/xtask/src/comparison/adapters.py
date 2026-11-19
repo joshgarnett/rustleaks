@@ -37,7 +37,7 @@ PROFILE_LIMITS = [
 
 ADAPTER_FACTS = {
     'rustleaks': {
-        'defaults': {'threads': 'one detection thread per CPU the process may use; 1 worker in builds without --jobs',
+        'defaults': {'threads': 'one detection thread per CPU the process may use, up to 12; 1 worker in builds without --jobs',
                      'decode_depth': 5, 'archive_depth': 0, 'dedup': 'none'},
         'scope': [
             'dir mode skips .git folders, like Gitleaks.',

@@ -4419,7 +4419,7 @@ mod jobs {
         let fixture = fixture();
         fixture.write("input/a.txt", "token=PREC0001\n");
         fixture.write("scan.limits", PROFILE.replace("workers=1\n", "workers=2\n"));
-        let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let cpus = std::thread::available_parallelism().map_or(1, |cpus| cpus.get().min(12));
         for (extra, threads) in [
             (&[][..], cpus),
             (&["--jobs", "3"][..], 3),

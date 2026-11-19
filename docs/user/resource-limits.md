@@ -36,7 +36,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | Distinct commits counted | 100,000,000 | Fixed | The scan stops with exit code 1. |
 | Source warnings and errors kept, such as unreadable or skipped files | 10,000 | Profile key `operation_issues` | Later ones are counted, not kept, and one log line gives their number. The scan goes on, and the exit code and report do not change. |
 | Time | No limit | `--timeout N` seconds | The scan stops with exit code 1 and reports what it found so far. |
-| Detection threads | One for each CPU that Rustleaks may use | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Detection threads](#detection-threads). |
+| Detection threads | One for each CPU that Rustleaks may use, up to 12 | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Detection threads](#detection-threads). |
 | Detection work and finding memory | No limit | Profile keys that start with `fragment_` and `operation_` | The scan stops and is incomplete (exit 2). |
 
 The profile keys belong to a `--complete-profile` file, so you can change
@@ -70,15 +70,18 @@ before that point.
 
 ### Detection threads
 
-Rustleaks scans with one detection thread for each CPU that it may use. On
-Linux, this number follows the CPU affinity and the cgroup CPU quota of the
-process. If Rustleaks cannot find the number, it uses one thread.
+Rustleaks scans with one detection thread for each CPU that it may use, up
+to 12. On Linux, this number follows the CPU affinity and the cgroup CPU
+quota of the process. If Rustleaks cannot find the number, it uses one
+thread. Beyond about 12 threads, scans of large repositories got little
+faster on a 36-CPU host while memory kept growing, so the default stops
+there. `--jobs` can set more.
 
 `--jobs N` sets the number of threads. It has no fixed maximum. If the system
 cannot start a thread, the scan stops before it reads any input and exits
 with 1, or with 2 under `--complete-profile`. `--jobs` also replaces
 `workers` in a `--complete-profile` file, so the order is `--jobs`, then the
-profile, then the CPU count.
+profile, then the CPU count up to 12.
 
 Findings, their order, reports, warnings and exit codes are the same for any
 number of threads. A scan that stops early, because of `--timeout` or a

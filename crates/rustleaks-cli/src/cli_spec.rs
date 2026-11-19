@@ -385,7 +385,7 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         Group::Limits,
         &[
             "Scan with this many detection threads.",
-            "Default: the number of CPUs that Rustleaks may use.",
+            "Default: the number of CPUs that Rustleaks may use, up to 12.",
             "This flag overrides workers in a --complete-profile file.",
             "Findings and reports do not depend on this number.",
         ],

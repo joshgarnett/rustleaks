@@ -197,8 +197,8 @@ Only the `defaults` lane gets cold cells unless `--cold-lanes` adds more.
 
 Each tool sets threads in its own way, and the ways are not the same:
 
-- Rustleaks scans with one detection thread for each CPU by default, in
-  builds that have `--jobs`. The harness passes `--jobs N` to these builds in
+- Rustleaks scans with one detection thread for each CPU, up to 12, by
+  default, in builds that have `--jobs`. The harness passes `--jobs N` to these builds in
   every thread cell. Older builds scan with 1 worker by default. Their
   1-thread cells use no profile, and for more than 1 thread the harness
   generates a `--complete-profile` file with high limits and the requested

@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-- Scan with one detection thread for each CPU that Rustleaks may use. Before,
+- Scan with one detection thread for each CPU that Rustleaks may use, up to
+  12. Before,
   a scan used one thread unless a `--complete-profile` file set `workers`. On
   Linux the CPU count follows CPU affinity and cgroup CPU quotas. Add
   `--jobs N` (`-j N`) to set the number of threads. It has no fixed maximum

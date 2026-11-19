@@ -233,7 +233,7 @@ See [Reports](reports.md) for the formats and fields.
 | `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also finds URL-safe Base64, Base64 without padding, and Base64 of binary data. See [Decoding](configuration.md#decoding). Not in 0.1.0-alpha.9. |
 | `--max-archive-depth` | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
 | `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1. `0` or less means no time limit. |
-| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. More threads use more memory. See [Detection threads](resource-limits.md#detection-threads). Not in 0.1.0-alpha.9. |
+| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. More threads use more memory. See [Detection threads](resource-limits.md#detection-threads). Not in 0.1.0-alpha.9. |
 | `--complete-profile` | Path | None | Scan with the limits in this profile file and report whether the scan was complete. See [Complete scanning](complete-scanning.md). Not in 0.1.0-alpha.9. |
 
 ### Logging
