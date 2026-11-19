@@ -2123,6 +2123,64 @@ fn shorthand_unknown_is_not_the_unknown_long_exit_class() {
     assert_ne!(OsStr::new("-x"), OsStr::new("--x"));
 }
 
+#[test]
+fn archive_depth_zero_reads_archive_named_files_as_text() {
+    // Gitleaks skips these files unread at archive depth 0, because each name
+    // contains an archive or compression extension. Rustleaks reads them as
+    // plain text, so their secrets are reported.
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    let names = [
+        "docker-compose.branch.yml",
+        "app.browser.js",
+        "notes.zipper.txt",
+        "data.gz.md",
+        "plain.zip",
+    ];
+    for (index, name) in names.iter().enumerate() {
+        fixture.write(name, format!("token=AB{index:02}\n"));
+    }
+    let result = output(
+        &fixture.0,
+        &[
+            "dir",
+            ".",
+            "--no-banner",
+            "-c",
+            "config.toml",
+            "--report-path",
+            "-",
+            "--report-format",
+            "json",
+            "--log-level",
+            "fatal",
+        ],
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let mut rows = report_rows(&result);
+    rows.sort();
+    let mut expected = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            (
+                "fixture-token".to_owned(),
+                (*name).to_owned(),
+                1,
+                format!("AB{index:02}"),
+                String::new(),
+            )
+        })
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(rows, expected);
+}
+
 mod complete_profile {
     use super::*;
     use std::io::{self, Cursor, Read};

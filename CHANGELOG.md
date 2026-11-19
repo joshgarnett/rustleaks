@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Document that with `--max-archive-depth 0`, the default, Rustleaks reads
+  files whose names look like archives, such as `docker-compose.branch.yml`
+  or `notes.zipper.txt`, as plain text, while Gitleaks skips them unread.
+  Rustleaks behaves as in 0.1.0-alpha.9, and a test now covers it.
 - Read `git` history with several `git log` processes at the same time: one
   for each detection thread, up to 6. One `git log` process uses about one
   CPU, so before, more detection threads did not make history scans faster.

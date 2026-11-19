@@ -180,6 +180,13 @@ in full gives the same findings. These points differ:
   file. Its temporary files have no name, or are deleted when closed.
 - An archive file from Git history that is larger than its limit is skipped
   with a warning, and the scan continues.
+- With `--max-archive-depth 0`, the default, Rustleaks reads every file as
+  plain text, whatever its name. Gitleaks instead skips, without reading it,
+  any file whose name looks like an archive or compressed file by the name
+  rules in [Archives](configuration.md#archives). These names include
+  ordinary text files such as `docker-compose.branch.yml` (`.br`),
+  `app.browser.js` and `notes.zipper.txt`. Rustleaks reports the secrets in
+  those files, so it can report more findings than Gitleaks.
 
 ## Features that Gitleaks does not have
 

@@ -255,7 +255,8 @@ Limits of the Base64 modes:
 
 With `--max-archive-depth N` above 0, Rustleaks opens archives and scans the
 files inside them, up to N levels of archives inside archives. The default is
-0, which does not open archives.
+0, which does not open archives: every file, whatever its name, is read as
+plain text.
 
 Rustleaks decides whether a file is an archive by its name only, not by its
 content. A name that contains `.tar`, `.zip`, `.7z` or `.rar` is an archive.
