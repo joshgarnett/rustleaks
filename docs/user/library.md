@@ -8,7 +8,7 @@ review records.
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
 
 These guides describe the current source. Features listed under Unreleased in
-the [changelog](../../CHANGELOG.md) are not in 0.1.0-alpha.9. To use them now,
+the [changelog](../../CHANGELOG.md) are not in a release yet. To use them now,
 depend on the Git repository instead of the crates.io release. Sections that
 use such features say so.
 
@@ -23,7 +23,7 @@ library is alpha software, and its API can change between alpha releases. To
 pin the exact version, add it with `=`:
 
 ```sh
-cargo add rustleaks-core@=0.1.0-alpha.9
+cargo add rustleaks-core@=0.1.0-alpha.10
 ```
 
 Only `rustleaks-core` is published. The file, archive and Git readers, the
@@ -146,7 +146,7 @@ fn main() {
 | Option | Default in the library | Default in the CLI |
 | --- | --- | --- |
 | `max_decode_depth` | 0, no decoding | 5 |
-| `base64_mode` (not in 0.1.0-alpha.9) | `Base64Mode::Compatible` | `compatible` |
+| `base64_mode` | `Base64Mode::Compatible` | `compatible` |
 | `max_target_bytes` | `None`, no limit | No limit |
 | `redaction_percent` | 0 | 0, 100 with `--redact`, or N with `--redact=N` |
 | `honor_allow_markers` | `true` | `true` |
@@ -367,9 +367,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   fingerprints without a session.
 
 ## Native rule packs
-
-`PROVIDER_RULES_V1` and `CONNECTION_RULES_V1` are not in 0.1.0-alpha.9, so
-this example does not compile against that release.
 
 `NativePolicy` starts from the default rules and adds rule packs. See [Native
 rule packs](native-rule-packs.md) for what each pack contains.

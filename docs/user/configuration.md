@@ -233,7 +233,7 @@ text up to 5 levels deep, and scans the decoded bytes too. Change the depth
 with `--max-decode-depth N`. Use `0` to turn decoding off. Findings in decoded
 text have tags such as `decoded:base64` and `decode-depth:1`.
 
-`--base64-mode` (not in 0.1.0-alpha.9) selects how Base64 is decoded:
+`--base64-mode` selects how Base64 is decoded:
 
 - `compatible`, the default, decodes Base64 the same way as Gitleaks.
 - `extended` also accepts URL-safe Base64, Base64 without padding, and
@@ -255,7 +255,8 @@ Limits of the Base64 modes:
 
 With `--max-archive-depth N` above 0, Rustleaks opens archives and scans the
 files inside them, up to N levels of archives inside archives. The default is
-0, which does not open archives.
+0, which does not open archives: every file, whatever its name, is read as
+plain text.
 
 Rustleaks decides whether a file is an archive by its name only, not by its
 content. A name that contains `.tar`, `.zip`, `.7z` or `.rar` is an archive.
@@ -278,8 +279,8 @@ Archive size, entry and temporary storage limits apply. See
 | --- | --- |
 | `--max-target-megabytes N` | Skip files larger than N megabytes (N times 1,000,000 bytes). `0`, the default, means no limit. |
 | `--follow-symlinks` | `dir` only. Scan files that symbolic links point to. |
-| `--scan-git-metadata` | `dir` only. Also scan the text metadata files in `.git` folders, such as `config`, `hooks` and `logs`. See [Git metadata](cli-reference.md#git-metadata). Not in 0.1.0-alpha.9. |
+| `--scan-git-metadata` | `dir` only. Also scan the text metadata files in `.git` folders, such as `config`, `hooks` and `logs`. See [Git metadata](cli-reference.md#git-metadata). |
 | `--timeout N` | Stop the scan after N seconds. The scan then fails with exit code 1. `0`, the default, means no timeout. |
-| `--native-pack ID` | Add an optional rule pack. See [Native rule packs](native-rule-packs.md). Not in 0.1.0-alpha.9. |
+| `--native-pack ID` | Add an optional rule pack. See [Native rule packs](native-rule-packs.md). |
 
 See the [command reference](cli-reference.md) for every flag.

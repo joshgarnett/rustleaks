@@ -41,7 +41,7 @@ jobs:
       - name: Install Rustleaks
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: 0.1.0-alpha.9
+          VERSION: 0.1.0-alpha.10
         run: |
           stem="rustleaks-${VERSION}-x86_64-unknown-linux-gnu"
           gh release download "v${VERSION}" --repo joshgarnett/rustleaks \
@@ -187,4 +187,4 @@ Links appear in the `Link` field of reports and in `--verbose` output.
 | `--log-level LEVEL` | `trace`, `debug`, `info` (the default), `warn`, `error` or `fatal`. |
 | `--timeout N` | Stop after N seconds. A scan that times out exits with 1 and reports only what it found so far. |
 | `--baseline-path FILE` | Report only findings that are not in an earlier JSON report. See [Baselines](configuration.md#baselines). |
-| `--complete-profile FILE` | Fail with exit code 2 unless the scan covered all of its input. See [Complete scanning](complete-scanning.md). Not in 0.1.0-alpha.9. |
+| `--complete-profile FILE` | Fail with exit code 2 unless the scan covered all of its input. See [Complete scanning](complete-scanning.md). |

@@ -1,6 +1,6 @@
 ---
 name: rustleaks-parity-audit
-description: Audit Rustleaks functional compatibility against frozen historical Gitleaks evidence and Rust contracts by reconciling traceability, replaying Rust regressions and classifying each difference as functional or presentation. Use for parity reviews and unexplained baseline-versus-Rust outcomes, not general test failures.
+description: Audit Rustleaks behavior against frozen historical Gitleaks evidence and Rust contracts by reconciling traceability, replaying Rust regressions and classifying each difference as functional or presentation. Use for parity reviews and unexplained baseline-versus-Rust outcomes, not general test failures.
 ---
 
 # Rustleaks parity audit
@@ -61,6 +61,9 @@ Assign each difference exactly one disposition:
 - exact supported behavior after correcting the harness or Rust code;
 - a named safe Rust disposition with an executable negative control;
 - an explicit profile exclusion requiring maintainer approval;
+- a documented finding difference: Rustleaks finds more, or gives a clearer
+  result without losing a secret, and the difference is listed in
+  `docs/user/gitleaks-differences.md` with a Rust test;
 - a presentation disposition for a reviewed change to help, usage, error
   wording, log, banner or summary text; or
 - a Rustleaks defect.

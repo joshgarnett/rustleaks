@@ -5,7 +5,7 @@ default of a command or flag. The other guides explain how to use each
 feature, and this page links to them.
 
 These guides describe the current source. Features listed under Unreleased in
-the [changelog](../../CHANGELOG.md) are not in 0.1.0-alpha.9. To use them now,
+the [changelog](../../CHANGELOG.md) are not in a release yet. To use them now,
 [build from source](getting-started.md#build-from-source).
 
 ## Synopsis
@@ -20,8 +20,8 @@ rustleaks <command> [flags] [path]
 | `dir [path]` | Scan a folder or a single file. `file` and `directory` are other names for this command. |
 | `stdin` | Scan bytes read from standard input. |
 | `version` | Print the Rustleaks version. |
-| `help [command]` | Print help for Rustleaks or for one command. Not in 0.1.0-alpha.9. |
-| `completion <shell>` | Print a shell completion script. Not in 0.1.0-alpha.9. |
+| `help [command]` | Print help for Rustleaks or for one command. |
+| `completion <shell>` | Print a shell completion script. |
 
 `rustleaks` with no command, or with only scan flags, prints the main help and
 exits with 0.
@@ -87,7 +87,7 @@ Scans a folder and everything below it, or a single file. `file` and
 | Flag | Value | Effect |
 | --- | --- | --- |
 | `--follow-symlinks` | None | Scan files that symbolic links point to. Without this flag, links are skipped. |
-| `--scan-git-metadata` | None | Also scan the text metadata files in `.git` folders. See [Git metadata](#git-metadata). Not in 0.1.0-alpha.9. |
+| `--scan-git-metadata` | None | Also scan the text metadata files in `.git` folders. See [Git metadata](#git-metadata). |
 
 The `File` field of a finding depends on the path you give. See [Ignore
 files](configuration.md#ignore-files).
@@ -167,7 +167,7 @@ rustleaks version
 Prints the Rustleaks version number on standard output. It accepts the scan
 flags and ignores them.
 
-### help (not in 0.1.0-alpha.9)
+### help
 
 ```text
 rustleaks help [command]
@@ -178,7 +178,7 @@ configuration order and the exit codes. `rustleaks help <command>` prints the
 same page as `rustleaks <command> --help`. `-h` and `--help` work everywhere.
 `help` accepts the scan flags and ignores them.
 
-### completion (not in 0.1.0-alpha.9)
+### completion
 
 ```text
 rustleaks completion <shell>
@@ -200,7 +200,7 @@ The `git`, `dir` and `stdin` commands accept every flag in this section. The
 | --- | --- | --- | --- | --- |
 | `--config` | `-c` | Path | None | Read the configuration from this file. See [Configuration order](#configuration-order). |
 | `--enable-rule` | | Rule IDs | All rules | Use only these rules. Separate IDs with commas or repeat the flag. An unknown ID is an error. See [Configuration](configuration.md#choosing-rules-with---enable-rule). |
-| `--native-pack` | | `rustleaks-extra-v1`, `rustleaks-providers-v1` or `rustleaks-connections-v1` | None | Add a built-in rule pack to the default rules. Repeat the flag to add more packs. Works only with the default configuration. See [Native rule packs](native-rule-packs.md). Not in 0.1.0-alpha.9. |
+| `--native-pack` | | `rustleaks-extra-v1`, `rustleaks-providers-v1` or `rustleaks-connections-v1` | None | Add a built-in rule pack to the default rules. Repeat the flag to add more packs. Works only with the default configuration. See [Native rule packs](native-rule-packs.md). |
 
 ### Suppression
 
@@ -230,11 +230,11 @@ See [Reports](reports.md) for the formats and fields.
 | --- | --- | --- | --- |
 | `--max-target-megabytes` | Whole number | `0` | Skip files larger than this many megabytes (1,000,000 bytes each). `0` or less means no limit. |
 | `--max-decode-depth` | Whole number | `5` | Decode encoded text up to this many levels deep. `0` or less turns decoding off. |
-| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also finds URL-safe Base64, Base64 without padding, and Base64 of binary data. See [Decoding](configuration.md#decoding). Not in 0.1.0-alpha.9. |
+| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also finds URL-safe Base64, Base64 without padding, and Base64 of binary data. See [Decoding](configuration.md#decoding). |
 | `--max-archive-depth` | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
 | `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1. `0` or less means no time limit. |
-| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. With 2 or more, a `dir` scan also reads files on two threads, and a `git` scan of history reads it with this many `git log` processes, up to 6. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. More threads use more memory, and past some number they do not make the scan faster. See [Detection threads](resource-limits.md#detection-threads). Not in 0.1.0-alpha.9. |
-| `--complete-profile` | Path | None | Scan with the limits in this profile file and report whether the scan was complete. See [Complete scanning](complete-scanning.md). Not in 0.1.0-alpha.9. |
+| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. With 2 or more, a `dir` scan also reads files on two threads, and a `git` scan of history reads it with this many `git log` processes, up to 6. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. More threads use more memory, and past some number they do not make the scan faster. See [Detection threads](resource-limits.md#detection-threads). |
+| `--complete-profile` | Path | None | Scan with the limits in this profile file and report whether the scan was complete. See [Complete scanning](complete-scanning.md). |
 
 ### Logging
 

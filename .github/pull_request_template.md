@@ -12,8 +12,9 @@
 
 ## Compatibility and security
 
-<!-- Describe functional compatibility impact (configuration meaning, findings,
-spans, fingerprints, report fields, exit codes, supported commands and flags),
+<!-- Describe functional impact (configuration meaning, findings, spans,
+fingerprints, report fields, exit codes, supported commands and flags, and any
+new difference from Gitleaks with its documentation),
 sensitive data, dependencies, unsafe code, resource limits, or write
 "No impact" with a reason.
 

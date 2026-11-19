@@ -353,5 +353,6 @@ The quality runs, which match each value, found two differences:
   name contains an archive or compression extension anywhere, such as `.br`
   in `.branch`, `.gz` or `.zip`, without reading it. Rustleaks reads these
   files as plain text at depth 0. Rustleaks 0.1.0-alpha.9 behaves the same
-  way. This difference is not yet documented, and no Rustleaks change was
-  made in response to the held-out result.
+  way. The maintainer chose to keep this behavior, and it is now listed in
+  [Differences from Gitleaks](../../docs/user/gitleaks-differences.md#archives).
+  No Rustleaks code changed in response to the held-out result.
