@@ -19,9 +19,9 @@
   `rustleaks-sources` adds `GitSource::history_processes` and
   `GitSource::history_batch_commits`; the default is still one process.
 - Scan with one detection thread for each CPU that Rustleaks may use, up to
-  12. Before,
-  a scan used one thread unless a `--complete-profile` file set `workers`. On
-  Linux the CPU count follows CPU affinity and cgroup CPU quotas. Add
+  12. Before, a scan used one thread unless a `--complete-profile` file set
+  `workers`. On Linux the CPU count follows CPU affinity and cgroup CPU
+  quotas. Add
   `--jobs N` (`-j N`) to set the number of threads. It has no fixed maximum
   and replaces `workers` in a profile. Findings, their order, reports,
   warnings and exit codes do not depend on the number of threads. Memory
