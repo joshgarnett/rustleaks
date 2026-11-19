@@ -654,7 +654,11 @@ fn shallow_clones_match_one_process() {
 fn other_modes_options_and_pretty_formats_use_one_process() {
     let sandbox = Sandbox::new("modes");
     let repository = sandbox.import(&rich_history());
-    sandbox.git(&repository, &["reset", "--quiet", "--hard", "main"], None);
+    // A mixed reset fills the index without writing the files, because Git
+    // for Windows cannot create the synthetic paths with tabs, quotes and
+    // newlines. The unstaged diff then also lists the missing files.
+    sandbox.git(&repository, &["reset", "--quiet", "main"], None);
+    fs::create_dir_all(repository.join("src")).expect("create src folder");
     fs::write(repository.join("src/main.txt"), lines("WORKTREE", 3)).expect("edit worktree");
     fs::write(repository.join("staged.txt"), lines("STAGED", 2)).expect("write staged file");
     sandbox.git(&repository, &["add", "staged.txt"], None);
