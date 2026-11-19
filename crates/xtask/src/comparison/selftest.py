@@ -543,6 +543,7 @@ def selftest_main():
     selftest_guard_sample_timeout()
     selftest_guard_unreaped()
     selftest_guard_orphans()
+    selftest_guard_denied_checks()
     selftest_guard_run_text()
     selftest_guard_run_budget()
     print('comparison self-test passed')
@@ -663,6 +664,25 @@ def selftest_guard_orphans():
     finally:
         namespace['measure_kill_group'] = saved
         shutil.rmtree(directory, ignore_errors=True)
+
+
+def selftest_guard_denied_checks():
+    """A denied group check is retried; only a check denied until the end is unknown."""
+    namespace = globals()
+    names = ('measure_group_alive', 'measure_kill_group', 'MEASURE_SURVIVOR_WAIT_SECONDS')
+    saved = {name: namespace[name] for name in names}
+    try:
+        namespace['measure_kill_group'] = lambda pid: True
+        namespace['MEASURE_SURVIVOR_WAIT_SECONDS'] = 0.5
+        answers = iter([None, None, False])
+        namespace['measure_group_alive'] = lambda pid: next(answers)
+        selftest_check(measure_group_survivors(1) is False,
+                       'a group that is gone after denied checks has no survivors')
+        namespace['measure_group_alive'] = lambda pid: None
+        selftest_check(measure_group_survivors(1) is None,
+                       'a check denied until the deadline is recorded as unknown')
+    finally:
+        namespace.update(saved)
 
 
 def selftest_guard_run_text():

@@ -228,11 +228,16 @@ def measure_wait(argv, env, cwd, stdout_path, stderr_path, timeout, watch_paths,
 
 
 def measure_group_survivors(pid):
-    """Kill and check a process group again until it is gone or a short wait ends."""
+    """Kill and check a process group again until it is gone or a short wait ends.
+
+    macOS can deny the check for a moment while a killed member is reaped, so
+    a denied check is retried like a live group. The result is None only when
+    every check until the deadline was denied.
+    """
     deadline = time.monotonic() + MEASURE_SURVIVOR_WAIT_SECONDS
     while True:
         alive = measure_group_alive(pid)
-        if alive is not True or time.monotonic() > deadline:
+        if alive is False or time.monotonic() > deadline:
             return alive
         time.sleep(0.05)
         measure_kill_group(pid)
