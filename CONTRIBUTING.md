@@ -4,9 +4,12 @@ Rustleaks is in alpha development. This file is the single source for the
 issue, commit and pull request rules. People and agents follow the same
 rules.
 
-Every contribution must keep the functional guarantees in the
+Every contribution must keep what the
 [compatibility policy](docs/user/gitleaks-differences.md#compatibility-policy)
-and the boundaries between the core engine, source adapters, reports,
+promises: Gitleaks configuration, ignores, baselines, reports, exit codes and
+supported commands keep working, no change loses a secret, and each finding
+difference from Gitleaks is documented and tested. It must also keep the
+boundaries between the core engine, source adapters, reports,
 compatibility tools and CLI described in the
 [architecture](docs/dev/architecture.md). Rustleaks owns its help, usage,
 error wording, logs and other presentation, and may change them with reviewed
@@ -20,8 +23,10 @@ An issue describes one current problem that someone can act on. Open an issue
 only for:
 
 - a defect: Rustleaks behaves incorrectly and you can reproduce it;
-- a compatibility gap: a functional difference from the pinned Gitleaks
-  revision; or
+- a compatibility gap: a Gitleaks configuration, report, exit code or
+  supported command that does not work as documented, or a finding
+  difference from the pinned Gitleaks revision that loses a secret or is not
+  documented; or
 - a feature proposal: a concrete capability or workflow change with a clear
   outcome.
 
@@ -207,7 +212,7 @@ Before committing:
 ## Pull requests
 
 Fill in the pull request template: the resulting behavior, the reason, the
-exact checks you ran, the functional compatibility or security impact, any
+exact checks you ran, the functional or security impact, any
 presentation changes, and real linked issues.
 
 The pull request title follows the commit subject grammar, because pull

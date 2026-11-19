@@ -8,36 +8,38 @@ Gitleaks. See [NOTICE](../../NOTICE) for attribution.
 
 ## Compatibility policy
 
-Rustleaks is backward compatible with one pinned Gitleaks revision: commit
+Rustleaks started as a port of one Gitleaks revision: commit
 `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` (`v8.30.0-27-gb58d3f1`). It
 implements the configuration features of Gitleaks 8.30.0. The packaged
 default rules are the Gitleaks default configuration at that revision, with
 SHA-256 `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
-The Gitleaks name only names the compatibility target. It does not mean that
+The Gitleaks name only names where Rustleaks started. It does not mean that
 Rustleaks is an official Gitleaks release.
 
-Compatibility covers these points:
+Rustleaks now stands on its own. It is not bound to give the same output as
+Gitleaks. It keeps the things that let you move from Gitleaks working:
 
 - Gitleaks configuration files load and mean the same thing.
-- The same input and configuration give the same findings, including rule
-  ID, match, secret, file, line and column, commit details and fingerprints.
 - Ignore files, baselines and allow comments keep working.
 - The Gitleaks commands, flags, environment variables and file names (such
   as `.gitleaks.toml` and `.gitleaksignore`) that Rustleaks supports keep
   working.
-- Exit codes do not change.
-- Error classes and output streams do not change. Each error keeps its
-  class, and each kind of output goes to the same stream.
+- Exit codes keep their meaning.
 - JSON, CSV, JUnit, SARIF and template reports keep their field names, types
   and meanings.
+
+Findings can differ from Gitleaks when Rustleaks finds more, or when a
+difference gives a clearer result without losing a secret. Each such
+difference is listed on this page and covered by a test.
 
 Rustleaks owns its help text, usage and error wording, banner, log and
 summary lines, other diagnostic output, and the order of JSON keys and CSV
 columns. It can change them. Each such change updates a test expectation,
 and a reviewer checks the new text against the stated intent.
 
-A change to any point in the list above needs maintainer approval, a
-changelog entry and tests that show the new behavior.
+Some changes need maintainer approval, a changelog entry and tests: removing
+a point in the list above, changing the meaning of a configuration, report
+field or exit code, or making Rustleaks miss secrets it found before.
 
 Contributors can find how this policy is tested in [Testing and
 parity](../dev/testing-and-parity.md).
@@ -50,7 +52,8 @@ parity](../dev/testing-and-parity.md).
   [Configuration](configuration.md).
 - **Findings.** For the same input and configuration, Rustleaks reports the
   same rule IDs, matches, secrets, files, lines, columns, commit details,
-  entropy, tags and fingerprints. Columns are counted as in Gitleaks. See
+  entropy, tags and fingerprints, except for the differences listed on this
+  page. Columns are counted as in Gitleaks. See
   [Line and column numbers](reports.md#line-and-column-numbers).
 - **Ignore files.** `.gitleaksignore` files work, with the same fingerprint
   format.

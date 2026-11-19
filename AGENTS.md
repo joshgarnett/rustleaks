@@ -2,14 +2,16 @@
 
 ## Repository contract
 
-Rustleaks is an independent, engine-first secret scanner in Rust. It stays
-backward compatible with one pinned Gitleaks revision, as defined in the
+Rustleaks is an independent, engine-first secret scanner in Rust. It started
+as a port of one pinned Gitleaks revision and now stands on its own, as
+defined in the
 [compatibility policy](docs/user/gitleaks-differences.md#compatibility-policy).
-Configuration meaning, findings, fingerprints, ignores, baselines, allow
-comments, exit codes, report fields, and supported Gitleaks commands, flags,
-environment variables and file names do not change. Help, usage, error
-wording, logs, the banner, and JSON key or CSV column order are presentation
-that Rustleaks owns.
+Gitleaks configuration files, ignores, baselines, allow comments, exit codes,
+report fields, and supported Gitleaks commands, flags, environment variables
+and file names keep working and keep their meaning. Findings may differ from
+Gitleaks when Rustleaks loses no secret; each difference is documented and
+tested. Help, usage, error wording, logs, the banner, and JSON key or CSV
+column order are presentation that Rustleaks owns.
 
 Keep `rustleaks-core` independent of files, archives, Git, reports, the CLI,
 async runtimes and native libraries. Source adapters belong in
@@ -62,16 +64,18 @@ CLI evidence for the exact target. Current native evidence is described in
 
 ## Invariants
 
-- Keep configuration meaning, findings, exact spans, fingerprints, exit codes,
-  report fields, error classes, and the mappings in
-  `compat/test-manifest.toml` unchanged. Error classes include the structured
-  error kinds of the `rustleaks-core` library, such as `ConfigError` kinds.
-  Historical Go observations are frozen provenance; validate current behavior
-  with Rust regression tests and local evidence checks. Specify new
-  expectations for these functional fields independently of the
-  implementation under test. Never hide a functional difference with
-  normalization. Never use current output as the expected value for these
-  fields. The live Go oracle and automatic upstream rediscovery are retired.
+- Keep configuration meaning, exit codes, report fields, error classes, and
+  the mappings in `compat/test-manifest.toml` unchanged. Error classes include
+  the structured error kinds of the `rustleaks-core` library, such as
+  `ConfigError` kinds. A change to findings, spans or fingerprints must not
+  lose a secret, needs a changelog entry, and a difference from Gitleaks is
+  listed in `docs/user/gitleaks-differences.md`. Historical Go observations
+  are frozen provenance; validate current behavior with Rust regression tests
+  and local evidence checks. Specify new expectations for these functional
+  fields independently of the implementation under test. Never hide a
+  functional difference with normalization. Never use current output as the
+  expected value for these fields. The live Go oracle and automatic upstream
+  rediscovery are retired.
 - Presentation (help, usage, error wording, logs, banner, summaries, and JSON
   key or CSV column order) may change. Each change needs an updated
   expectation that a reviewer checks against its stated intent. When the
@@ -118,9 +122,9 @@ Stop for maintainer approval before:
 - changing GitHub settings or ownership;
 - enabling paid services;
 - accepting a security exception;
-- changing a functional compatibility guarantee (configuration meaning,
-  findings, fingerprints, report fields, exit codes, or accepted Gitleaks
-  commands, flags, environment variables and file names);
+- removing a supported Gitleaks command, flag, environment variable or file
+  name, changing the meaning of a configuration, report field or exit code,
+  or making Rustleaks miss secrets that it found before;
 - selecting a release version;
 - creating or publishing a release or crate; or
 - using a credential.

@@ -25,8 +25,8 @@ Owned crates must continue to forbid unsafe Rust. Treat dependency unsafe
 inventory as a change signal, not proof of safety or reachability. Review any
 new source, build script, native link, license, advisory, vet exemption,
 exception review condition, feature, or target-specific edge. Accepting an
-advisory, vetting, unsafe, or native exception, or changing a functional
-compatibility guarantee, needs maintainer approval. See [Approval
+advisory, vetting, unsafe, or native exception, or a change that the
+compatibility policy reserves for the maintainer, needs maintainer approval. See [Approval
 boundaries](../../../AGENTS.md#approval-boundaries).
 
 Before retaining an approved cargo-vet exemption, apply the [exemption
