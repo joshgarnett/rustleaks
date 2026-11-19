@@ -4281,6 +4281,96 @@ mod jobs {
         );
     }
 
+    /// Skipped, unreadable and linked inputs among many tiny files. Their
+    /// warnings must keep their order between the files that are read.
+    #[test]
+    fn directory_skips_and_their_warnings_do_not_depend_on_jobs() {
+        let fixture = fixture();
+        let mut expected = Vec::new();
+        for file in 0..400_usize {
+            let path = format!("input/t{}/f{file:03}.txt", file % 8);
+            if file % 9 == 4 {
+                fixture.write(&path, "");
+            } else if file % 4 == 1 {
+                let secret = format!("TINY{file:04}");
+                fixture.write(&path, format!("value token={secret} end\n"));
+                expected.push(token(&path, 1, &secret, ""));
+            } else {
+                fixture.write(&path, format!("plain {file}\n"));
+            }
+        }
+        // Above --max-target-megabytes 1, so skipped with a warning, between
+        // read files of the same folder.
+        fixture.write(
+            "input/t3/f100-large.txt",
+            planted(17_000, &[(1, "SKIPPED1".to_owned())]),
+        );
+        // A WebAssembly header makes a binary file, which is skipped.
+        fixture.write("input/t5/binary.wasm", b"\0asm\x01\0\0\0token=BINARY01\n");
+        #[cfg(unix)]
+        let locked = {
+            use std::os::unix::fs::{PermissionsExt, symlink};
+            let input = fixture.0.join("input");
+            symlink("missing.txt", input.join("t1/f050-dangling.txt")).unwrap();
+            symlink("f061-loop.txt", input.join("t2/f060-loop.txt")).unwrap();
+            symlink("f060-loop.txt", input.join("t2/f061-loop.txt")).unwrap();
+            symlink("../t0", input.join("t4/f070-folder")).unwrap();
+            fixture.write("input/t6/f080-locked.txt", "token=LOCKED01\n");
+            fixture.write("input/t7/f090-locked/inside.txt", "token=LOCKED02\n");
+            fs::set_permissions(
+                input.join("t6/f080-locked.txt"),
+                fs::Permissions::from_mode(0o000),
+            )
+            .unwrap();
+            fs::set_permissions(
+                input.join("t7/f090-locked"),
+                fs::Permissions::from_mode(0o000),
+            )
+            .unwrap();
+            fs::File::open(input.join("t6/f080-locked.txt")).is_err()
+        };
+        let result = std::panic::catch_unwind(|| {
+            same_for_every_count(
+                &fixture,
+                &[
+                    "dir",
+                    "input",
+                    "--follow-symlinks",
+                    "--max-target-megabytes",
+                    "1",
+                ],
+                None,
+                7,
+            )
+        });
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in ["input/t6/f080-locked.txt", "input/t7/f090-locked"] {
+                fs::set_permissions(fixture.0.join(path), fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            if !locked {
+                expected.push(token("input/t6/f080-locked.txt", 1, "LOCKED01", ""));
+                expected.push(token("input/t7/f090-locked/inside.txt", 1, "LOCKED02", ""));
+            }
+        }
+        let (rows, log) = result.unwrap();
+        assert_eq!(sorted(rows), sorted(expected));
+        assert!(log.contains("f100-large.txt"), "{log}");
+        #[cfg(unix)]
+        {
+            for name in ["f050-dangling.txt", "f060-loop.txt", "f061-loop.txt"] {
+                assert!(log.contains(name), "{name}: {log}");
+            }
+            if locked {
+                for name in ["f080-locked.txt", "f090-locked"] {
+                    assert!(log.contains(name), "{name}: {log}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn complete_profile_scans_do_not_depend_on_jobs() {
         let fixture = fixture();

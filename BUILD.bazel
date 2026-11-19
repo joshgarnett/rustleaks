@@ -217,6 +217,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-sources:archive_semantics_test",
     "//crates/rustleaks-sources:archive_streaming_test",
     "//crates/rustleaks-sources:chunk_boundaries_test",
+    "//crates/rustleaks-sources:directory_readers_test",
     "//crates/rustleaks-sources:git_corpus_test",
     "//crates/rustleaks-sources:git_history_test",
     "//crates/rustleaks-sources:git_scm_test",

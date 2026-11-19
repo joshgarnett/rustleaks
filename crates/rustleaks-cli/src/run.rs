@@ -301,6 +301,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         }
     };
     warn_quoted_log_options(invocation, stderr, log_level);
+    source.set_read_threads(read_threads(runner.workers()));
     if log_level.shows_debug() {
         let _ = output::info(
             stderr,
@@ -663,6 +664,22 @@ fn default_runner(
         .map_err(|error| error.to_string())
 }
 
+/// The most threads that read the files of a directory scan. On a 36-CPU
+/// macOS host, two reader threads made a scan of 100,000 small files about
+/// 37 percent faster than one, and scans of large repositories 2 to 30
+/// percent faster. Three or four were no faster for most of them and used
+/// more CPU time, because opening files in the operating system was then
+/// the limit.
+const MAX_READ_THREADS: usize = 2;
+
+/// Returns how many threads read the files of a directory scan: one for each
+/// detection thread, up to `MAX_READ_THREADS`. With one detection thread,
+/// detection is the limit, so a second reader would add CPU time for little
+/// gain.
+fn read_threads(workers: usize) -> NonZeroUsize {
+    NonZeroUsize::new(workers.min(MAX_READ_THREADS)).unwrap_or(NonZeroUsize::MIN)
+}
+
 #[derive(Clone, Copy)]
 enum LogLevel {
     Trace,
@@ -844,6 +861,13 @@ mod tests {
             config_toml: None,
             legacy_config_path: None,
             legacy_config_toml: None,
+        }
+    }
+
+    #[test]
+    fn directory_scans_read_files_on_one_thread_per_detection_thread_up_to_two() {
+        for (workers, expected) in [(1, 1), (2, 2), (3, 2), (12, 2), (128, 2)] {
+            assert_eq!(read_threads(workers).get(), expected, "{workers} workers");
         }
     }
 

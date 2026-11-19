@@ -145,15 +145,43 @@ Findings, their order, reports, warnings and exit codes are the same for any
 number of threads. A scan that stops early, because of `--timeout` or a
 profile limit, can have different findings.
 
-One thread reads the input and splits it into pieces. Each detection thread
-scans one piece at a time. Without a profile, up to N pieces wait for a
-thread, but never more than 1,024. With a profile, `queue_capacity` sets this
-number. So memory grows with the thread count:
+One thread reads the input and splits it into pieces. In a `dir` scan with
+two or more detection threads, that thread walks the folder, and two more
+threads open and read the files that it finds. See [Reading
+files](#reading-files). Each detection thread scans one piece at a time.
+Without a profile, up to N pieces wait for a thread, but never more than
+1,024. With a profile, `queue_capacity` sets this number. So memory grows
+with the thread count:
 
 - At most 2 times N plus 1 pieces are in memory when the queue holds N. A
   piece of a file is about 100,000 bytes. A piece of Git history is one diff
   hunk, which can be as large as one changed file.
+- In a `dir` scan, the two threads that read files hold at most 18 more
+  pieces and one read buffer of 100,000 bytes each.
 - Each thread that searches keeps its own pattern search caches.
+
+With `--complete-profile`, a piece of a file is the whole file, up to
+`target_bytes`.
+
+#### Reading files
+
+In a `dir` scan with two or more detection threads, one thread walks the
+folder in the same order as with one thread. It checks every path, size and
+symbolic link before a file is opened. Two other threads open the files that
+pass and split them into pieces. The pieces and the warnings reach the
+detection threads in walk order, so findings, their order, reports, warnings
+and exit codes are the same as with one thread.
+
+- The walk stays at most 16 files and warnings ahead of the pieces that the
+  detection threads have received. A large file is read one piece at a
+  time.
+- Archives, and compressed files such as `app.log.gz`, are read by the
+  walking thread, so a scan still reads one archive at a time.
+- With `--jobs 1`, the walking thread reads every file itself, as before.
+  With one detection thread, detection is the limit, and a second reading
+  thread made scans at most a few percent faster for much more CPU time.
+- If a reading thread cannot start, the threads that did start read the
+  files, or the walking thread reads them when none started.
 
 #### More threads are not always faster
 
@@ -161,9 +189,11 @@ Past some number of threads, a scan gets no faster, but each added thread
 still uses memory. The scan is then limited by something that more
 detection threads do not speed up:
 
-- One thread reads the input. When the detection threads scan pieces faster
-  than that thread can read them, added threads wait. This happens first on
-  folders with many small files.
+- For a folder, two threads read the files. When the detection threads scan
+  pieces faster than these threads can open and read files, added threads
+  wait. This happens first on folders with many small files, where opening
+  each file takes most of the time. More reading threads did not open files
+  faster on the host below.
 - For Git history, `git log -p` produces the input. Up to 6 `git log`
   processes run at the same time, one for each detection thread. Past that,
   history scans are usually limited by Git, not by detection threads. See
@@ -174,7 +204,7 @@ detection threads do not speed up:
 On a 36-CPU host, `dir` scans of large public repositories were within 4
 percent of their best time at 12 threads and used about half the memory of
 36 threads. A folder of 100,000 small files was no faster with more than
-one thread. This is why the default stops at 12. To find the best value for
+two threads. This is why the default stops at 12. To find the best value for
 your input, time a scan at a few `--jobs` values. To use less memory, set a
 lower value.
 

@@ -175,6 +175,13 @@ rustleaks_integration_test(
 )
 
 rustleaks_integration_test(
+    name = "directory_readers_test",
+    src = "tests/directory_readers.rs",
+    crate_features = _ARCHIVE_FEATURES,
+    deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+)
+
+rustleaks_integration_test(
     name = "perf_archives_test",
     src = "tests/perf_archives.rs",
     crate_features = _ARCHIVE_FEATURES,
@@ -226,6 +233,7 @@ test_suite(
         ":archive_semantics_test",
         ":archive_streaming_test",
         ":chunk_boundaries_test",
+        ":directory_readers_test",
         ":complete_sources_test",
         ":git_corpus_test",
         ":git_history_test",

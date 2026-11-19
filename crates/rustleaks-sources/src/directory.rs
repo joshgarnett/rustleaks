@@ -15,7 +15,13 @@ use crate::{
     SourceControl, SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
+mod readers;
+
 const DEFAULT_MAX_SYMLINK_HOPS: usize = 64;
+
+/// Files and issues that the walk may hold ahead of the callback for each
+/// reader thread when `DirectoryOptions::read_threads` is above 1.
+const READ_AHEAD_PER_THREAD: usize = 8;
 
 /// The folder name whose plain-text metadata `scan_git_metadata` selects.
 const GIT_FOLDER: &str = ".git";
@@ -56,6 +62,7 @@ pub struct DirectoryOptions {
     emit_limit_issues: bool,
     scan_git_metadata: bool,
     max_symlink_hops: NonZeroUsize,
+    read_threads: NonZeroUsize,
     #[cfg(feature = "archives")]
     archive_options: Option<crate::ArchiveOptions>,
 }
@@ -182,6 +189,31 @@ impl DirectoryOptions {
         Ok(self)
     }
 
+    /// Sets how many threads open and read the files that the walk finds.
+    ///
+    /// The default, 1, reads every file on the calling thread. A larger
+    /// value starts up to that many reader threads, while the calling thread
+    /// walks the tree in the same order and reads archives one at a time.
+    /// Events still reach the callback on the calling thread and in walk
+    /// order, so fragments, issues, errors and their order do not depend on
+    /// this value.
+    ///
+    /// Each reader thread keeps its own nominal read buffer and builds at
+    /// most one fragment at a time. The walk stays at most eight times the
+    /// thread count files and issues ahead of the callback, and each of those
+    /// holds at most one finished fragment.
+    #[must_use]
+    pub const fn read_threads(mut self, threads: NonZeroUsize) -> Self {
+        self.read_threads = threads;
+        self
+    }
+
+    /// Returns how many threads read files.
+    #[must_use]
+    pub const fn reading_threads(&self) -> usize {
+        self.read_threads.get()
+    }
+
     /// Returns whether file symlinks are followed.
     #[must_use]
     pub const fn follows_symlinks(&self) -> bool {
@@ -216,6 +248,7 @@ impl Default for DirectoryOptions {
             scan_git_metadata: false,
             max_symlink_hops: NonZeroUsize::new(DEFAULT_MAX_SYMLINK_HOPS)
                 .expect("the default symlink hop ceiling is positive"),
+            read_threads: NonZeroUsize::MIN,
             #[cfg(feature = "archives")]
             archive_options: None,
         }
@@ -252,6 +285,12 @@ impl DirectorySource {
         }
     }
 
+    /// Sets how many threads read files, as
+    /// [`DirectoryOptions::read_threads`] does.
+    pub const fn set_read_threads(&mut self, threads: NonZeroUsize) {
+        self.options.read_threads = threads;
+    }
+
     /// Returns the physical traversal root.
     #[must_use]
     pub fn root(&self) -> &Path {
@@ -262,9 +301,8 @@ impl DirectorySource {
         &self,
         path: &Path,
         git_root: Option<&Path>,
-        nominal: &mut Vec<u8>,
         cancellation: &dyn Cancellation,
-        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+        sink: &mut dyn WalkSink,
     ) -> Result<SourceControl, SourceError> {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
@@ -292,7 +330,7 @@ impl DirectorySource {
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(error) => {
-                return emit_issue(io_issue(SourceStage::Metadata, path, &error), emit);
+                return sink.issue(io_issue(SourceStage::Metadata, path, &error));
             }
         };
 
@@ -300,7 +338,7 @@ impl DirectorySource {
             if git_entry.is_some_and(|entry| !entry.directory) {
                 return Ok(SourceControl::Continue);
             }
-            return self.walk_directory(path, git_root, nominal, cancellation, emit);
+            return self.walk_directory(path, git_root, cancellation, sink);
         }
         if complete_pruned || git_entry.is_some_and(|entry| !entry.file) {
             return Ok(SourceControl::Continue);
@@ -318,7 +356,7 @@ impl DirectorySource {
             if !self.options.emit_limit_issues {
                 return Ok(SourceControl::Continue);
             }
-            return emit_issue(
+            return sink.issue(
                 SourceIssue::new(
                     SourceStage::Limit,
                     SourceIssueKind::Limit,
@@ -326,7 +364,6 @@ impl DirectorySource {
                     "skipping file: exceeds maximum file size",
                 )
                 .excluded(),
-                emit,
             );
         }
 
@@ -337,7 +374,7 @@ impl DirectorySource {
             match self.followed_target(path) {
                 Ok(Some(target)) => (target, Some(path.to_path_buf())),
                 Ok(None) => return Ok(SourceControl::Continue),
-                Err(issue) => return emit_issue(issue, emit),
+                Err(issue) => return sink.issue(issue),
             }
         } else {
             (path.to_path_buf(), None)
@@ -352,9 +389,11 @@ impl DirectorySource {
         {
             return Ok(SourceControl::Continue);
         }
-        self.visit_file(target, alias, nominal, cancellation, emit)
+        sink.file(target, alias)
     }
 
+    /// Opens and scans one file that passed every walk check. Reader threads
+    /// call this too, so it depends on no walk state.
     fn visit_file(
         &self,
         target: PathBuf,
@@ -397,9 +436,8 @@ impl DirectorySource {
         &self,
         path: &Path,
         git_root: Option<&Path>,
-        nominal: &mut Vec<u8>,
         cancellation: &dyn Cancellation,
-        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+        sink: &mut dyn WalkSink,
     ) -> Result<SourceControl, SourceError> {
         let mut git_root = git_root;
         if self.path_allowed(path) {
@@ -412,7 +450,7 @@ impl DirectorySource {
         }
         let entries = match fs::read_dir(path) {
             Ok(entries) => entries,
-            Err(error) => return emit_issue(io_issue(SourceStage::Traverse, path, &error), emit),
+            Err(error) => return sink.issue(io_issue(SourceStage::Traverse, path, &error)),
         };
         let mut children = Vec::new();
         for entry in entries {
@@ -422,15 +460,12 @@ impl DirectorySource {
             match entry {
                 Ok(entry) => {
                     if let Err(error) = children.try_reserve(1) {
-                        return emit_issue(
-                            SourceIssue::new(
-                                SourceStage::Limit,
-                                SourceIssueKind::Limit,
-                                Some(path.to_path_buf()),
-                                format!("could not retain directory entry: {error}"),
-                            ),
-                            emit,
-                        );
+                        return sink.issue(SourceIssue::new(
+                            SourceStage::Limit,
+                            SourceIssueKind::Limit,
+                            Some(path.to_path_buf()),
+                            format!("could not retain directory entry: {error}"),
+                        ));
                     }
                     #[cfg(not(windows))]
                     children.push(entry.file_name());
@@ -440,7 +475,7 @@ impl DirectorySource {
                     children.push(entry);
                 }
                 Err(error) => {
-                    let control = emit_issue(io_issue(SourceStage::Traverse, path, &error), emit)?;
+                    let control = sink.issue(io_issue(SourceStage::Traverse, path, &error))?;
                     if control == SourceControl::Stop {
                         return Ok(control);
                     }
@@ -453,9 +488,9 @@ impl DirectorySource {
         children.sort_by_key(fs::DirEntry::file_name);
         for child in children {
             #[cfg(not(windows))]
-            let control = self.walk(&path.join(child), git_root, nominal, cancellation, emit)?;
+            let control = self.walk(&path.join(child), git_root, cancellation, sink)?;
             #[cfg(windows)]
-            let control = self.walk(&child.path(), git_root, nominal, cancellation, emit)?;
+            let control = self.walk(&child.path(), git_root, cancellation, sink)?;
             if control == SourceControl::Stop {
                 return Ok(control);
             }
@@ -608,13 +643,87 @@ impl DirectorySource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
-        let mut nominal = Vec::new();
         let Some((physical, logical)) = self.path_translation() else {
-            return self.walk(&self.root, None, &mut nominal, cancellation, emit);
+            return self.walk_and_read(cancellation, emit);
         };
-        self.walk(&self.root, None, &mut nominal, cancellation, &mut |event| {
+        self.walk_and_read(cancellation, &mut |event| {
             emit(translate_event(event, &physical, &logical)?)
         })
+    }
+
+    /// Walks the tree and reads the files it finds, on this thread or on
+    /// reader threads. Events reach `emit` on this thread and in walk order
+    /// either way.
+    fn walk_and_read(
+        &self,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        if self.options.read_threads.get() > 1 {
+            return readers::walk(self, self.options.read_threads, cancellation, emit);
+        }
+        let mut sink = SerialSink {
+            source: self,
+            nominal: Vec::new(),
+            cancellation,
+            emit,
+        };
+        self.walk(&self.root, None, cancellation, &mut sink)
+    }
+
+    /// Whether a found file is read as an archive. Archives are read on the
+    /// walking thread, so a scan reads one archive at a time.
+    fn reads_as_archive(&self, target: &Path) -> bool {
+        #[cfg(feature = "archives")]
+        if self.options.archive_options.is_some() {
+            return crate::archive::path_is_archive(
+                target,
+                self.options.file_options.complete_target_bytes().is_some(),
+            );
+        }
+        let _ = target;
+        false
+    }
+}
+
+/// Receives what the walk finds, in walk order.
+trait WalkSink {
+    /// Delivers one issue found by the walk.
+    fn issue(&mut self, issue: SourceIssue) -> Result<SourceControl, SourceError>;
+
+    /// Reads one file that passed every walk check.
+    fn file(
+        &mut self,
+        target: PathBuf,
+        alias: Option<PathBuf>,
+    ) -> Result<SourceControl, SourceError>;
+}
+
+/// Reads each file on the walking thread as soon as the walk finds it.
+struct SerialSink<'a, 'e> {
+    source: &'a DirectorySource,
+    nominal: Vec<u8>,
+    cancellation: &'a dyn Cancellation,
+    emit: &'a mut (dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError> + 'e),
+}
+
+impl WalkSink for SerialSink<'_, '_> {
+    fn issue(&mut self, issue: SourceIssue) -> Result<SourceControl, SourceError> {
+        emit_issue(issue, self.emit)
+    }
+
+    fn file(
+        &mut self,
+        target: PathBuf,
+        alias: Option<PathBuf>,
+    ) -> Result<SourceControl, SourceError> {
+        self.source.visit_file(
+            target,
+            alias,
+            &mut self.nominal,
+            self.cancellation,
+            self.emit,
+        )
     }
 }
 

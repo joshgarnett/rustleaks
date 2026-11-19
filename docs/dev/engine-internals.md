@@ -403,6 +403,49 @@ Bounds:
 several splits on synthetic histories, and the `rustleaks` CLI tests compare
 reports for several `--jobs` values.
 
+## Directory reader threads
+
+`DirectoryOptions::read_threads` sets how many threads open and read the
+files of a directory walk. The default, 1, reads every file on the calling
+thread. The `rustleaks` command uses one reader for each detection thread, up
+to 2. More readers did not open files faster on the measured macOS host, and
+they used more CPU time.
+
+With more than one reader:
+
+- The calling thread walks the tree in the same order as before and makes
+  every decision before a file is opened: metadata, path allowlists, the
+  `.git` metadata selection, complete-mode exclusions, the size limit and
+  symbolic links. Only opening a file, reading it and splitting it into
+  fragments move to a reader thread, which runs the same code as one thread.
+- Walk results wait in one queue in walk order: issues, files and archives.
+  Only the calling thread calls the callback, and only with events from the
+  head of the queue. So events, issues, errors and their order do not depend
+  on the reader count. The first stop or error in walk order ends the walk,
+  as it does with one reader.
+- Archives and compressed streams are read on the calling thread when they
+  reach the head of the queue, so a scan reads one archive at a time.
+- The queue holds at most 8 entries for each reader. Each file in it holds at
+  most one finished event, and its reader waits before it hands over the
+  next. Each reader keeps its own nominal buffer of the chunk size. For R
+  readers, this stage holds at most 9R fragments and R nominal buffers. In
+  complete mode, a fragment is a whole target, up to the complete-target
+  limit.
+- The calling thread checks cancellation before it forwards each queued
+  event, so no event reaches the callback after cancellation is seen.
+  Readers check the caller's cancellation and the end of the walk at the
+  same points as a file source. A reader blocked in a read call finishes
+  that call first.
+- A reader starts when the walk finds a file and no started reader is free,
+  up to the limit. If a thread cannot start, the started readers read the
+  files, or the calling thread reads them when none started. If a reader
+  panics, the walk ends with a terminal source error, and the panic is raised
+  again when the threads are joined.
+- `tests/directory_readers.rs` compares events, findings, issues and their
+  order for 1 to 8 readers on mixed trees, with a stop or an error at every
+  event, with cancellation, and in complete mode. The `jobs` tests in the CLI
+  suite compare reports and logs across `--jobs` values.
+
 ## Complete targets
 
 `FileOptions::complete(maximum)` reads one eligible target to a clean end of

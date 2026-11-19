@@ -30,6 +30,19 @@
   for a thread, but never more than 1,024. `--log-level debug` prints the
   thread count. `SourceRunner::default` in `rustleaks-sources` still uses one
   worker.
+- Make `dir` scans of folders with many small files faster. With two or more
+  detection threads, one thread walks the folder and two threads open and
+  read the files that it finds. Before, one thread did all of this, and
+  opening each file was the slowest step. The walk still makes every path,
+  size and symbolic link decision, and archives are still read one at a
+  time. Pieces and warnings reach the detection threads in walk order, so
+  findings, their order, reports, warnings and exit codes do not change. The
+  reading threads hold at most 18 more pieces of input and two read buffers
+  of 100,000 bytes. On a 36-CPU macOS host, a folder of 100,000 files of 64
+  bytes took about 1.2 s instead of 1.9 s, and a large public
+  repository 2.2 to 2.4 s instead of 2.9 to 3.2 s. With `--jobs 1`, files
+  are read as before. `DirectoryOptions::read_threads` in
+  `rustleaks-sources` sets the number of reading threads; the default is 1.
 - Fix archive scans that skipped large archives. With `--max-archive-depth`,
   a whole archive had to fit in 64 MiB and each member in 64 MiB, so a 200 MB
   `release.tar.gz` or a 1 GB `backup.zip` was skipped. Rustleaks now reads
