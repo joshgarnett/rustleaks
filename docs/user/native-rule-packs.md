@@ -4,10 +4,6 @@ This guide is for people who want Rustleaks to look for more kinds of secrets
 than the default rules cover. It explains the optional rule packs that ship
 with Rustleaks and how to turn them on.
 
-The `--native-pack` flag and the providers and connections packs are not in
-0.1.0-alpha.9. To use them now, [build from
-source](getting-started.md#build-from-source).
-
 ## What a rule pack is
 
 The default rules are the Gitleaks default configuration, with 222 rules.
@@ -88,8 +84,8 @@ Library users add packs with `NativePolicy`. The pack text is built into
 | Pack ID | Constant |
 | --- | --- |
 | `rustleaks-extra-v1` | `rustleaks_core::native::EXTRA_RULES_V1` |
-| `rustleaks-providers-v1` | `rustleaks_core::native::PROVIDER_RULES_V1` (not in 0.1.0-alpha.9) |
-| `rustleaks-connections-v1` | `rustleaks_core::native::CONNECTION_RULES_V1` (not in 0.1.0-alpha.9) |
+| `rustleaks-providers-v1` | `rustleaks_core::native::PROVIDER_RULES_V1` |
+| `rustleaks-connections-v1` | `rustleaks_core::native::CONNECTION_RULES_V1` |
 
 See [Using rustleaks-core](library.md#native-rule-packs) for an example.
 

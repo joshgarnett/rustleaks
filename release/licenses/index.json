@@ -1111,7 +1111,7 @@
       "coverage": "selected-release-build-graph",
       "documents": [
         {
-          "archive_path": "licenses/packages/rustleaks-cli-0.1.0-alpha.9/LICENSE",
+          "archive_path": "licenses/packages/rustleaks-cli-0.1.0-alpha.10/LICENSE",
           "origin": {
             "kind": "workspace",
             "path": "LICENSE"
@@ -1120,7 +1120,7 @@
           "sha256": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21"
         }
       ],
-      "id": "pkg:cargo/rustleaks-cli@0.1.0-alpha.9",
+      "id": "pkg:cargo/rustleaks-cli@0.1.0-alpha.10",
       "license_expression": "MIT",
       "license_file": null,
       "name": "rustleaks-cli",
@@ -1138,13 +1138,13 @@
         "x86_64-unknown-linux-gnu",
         "x86_64-unknown-linux-musl"
       ],
-      "version": "0.1.0-alpha.9"
+      "version": "0.1.0-alpha.10"
     },
     {
       "coverage": "selected-release-build-graph",
       "documents": [
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/LICENSE",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/LICENSE",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/LICENSE"
@@ -1153,7 +1153,7 @@
           "sha256": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/NOTICE",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/NOTICE",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/NOTICE"
@@ -1162,7 +1162,7 @@
           "sha256": "b21f8ab0dbda74c26f488d217b744da0029ae774a81d6094fcdfa9178bc0e2b1"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/data/LICENSE.tiktoken",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/data/LICENSE.tiktoken",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/data/LICENSE.tiktoken"
@@ -1171,7 +1171,7 @@
           "sha256": "418cb499b436128d653d79941333a5437b7be2ea9213dcc2f04d15d5d2c51d86"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/data/LICENSE.tiktoken-rs",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/data/LICENSE.tiktoken-rs",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/data/LICENSE.tiktoken-rs"
@@ -1180,7 +1180,7 @@
           "sha256": "f7c6ddf9d84fd7b8ad5917e4074d4c05e4c1dfb752a28a0058f06bd0f5e2edcc"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/default/LICENSE.betterleaks",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/default/LICENSE.betterleaks",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/default/LICENSE.betterleaks"
@@ -1189,7 +1189,7 @@
           "sha256": "caea114592a8f8e5e05a116d63a99e0ccd79a3ff74f4ddf270bcf4c929eb021e"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/default/LICENSE.kingfisher",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/default/LICENSE.kingfisher",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/default/LICENSE.kingfisher"
@@ -1198,7 +1198,7 @@
           "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/default/LICENSE.veles",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/default/LICENSE.veles",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/default/LICENSE.veles"
@@ -1207,7 +1207,7 @@
           "sha256": "8d51837cfc3877f9847cc13afd6274bf5df00399f65dbf3eed2ca2ea070582ce"
         },
         {
-          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.9/crates/rustleaks-core/default/NOTICE",
+          "archive_path": "licenses/packages/rustleaks-core-0.1.0-alpha.10/crates/rustleaks-core/default/NOTICE",
           "origin": {
             "kind": "workspace",
             "path": "crates/rustleaks-core/default/NOTICE"
@@ -1216,7 +1216,7 @@
           "sha256": "d81140aa6d1666ef9c03bf38cc983d16ade32bd634caed46524f6997c6c7b1f2"
         }
       ],
-      "id": "pkg:cargo/rustleaks-core@0.1.0-alpha.9",
+      "id": "pkg:cargo/rustleaks-core@0.1.0-alpha.10",
       "license_expression": "MIT AND BSD-3-Clause AND Apache-2.0",
       "license_file": null,
       "name": "rustleaks-core",
@@ -1234,7 +1234,7 @@
         "x86_64-unknown-linux-gnu",
         "x86_64-unknown-linux-musl"
       ],
-      "version": "0.1.0-alpha.9"
+      "version": "0.1.0-alpha.10"
     },
     {
       "coverage": "selected-release-build-graph",
@@ -1273,7 +1273,7 @@
       "coverage": "selected-release-build-graph",
       "documents": [
         {
-          "archive_path": "licenses/packages/rustleaks-report-0.1.0-alpha.9/LICENSE",
+          "archive_path": "licenses/packages/rustleaks-report-0.1.0-alpha.10/LICENSE",
           "origin": {
             "kind": "workspace",
             "path": "LICENSE"
@@ -1282,7 +1282,7 @@
           "sha256": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21"
         }
       ],
-      "id": "pkg:cargo/rustleaks-report@0.1.0-alpha.9",
+      "id": "pkg:cargo/rustleaks-report@0.1.0-alpha.10",
       "license_expression": "MIT",
       "license_file": null,
       "name": "rustleaks-report",
@@ -1300,7 +1300,7 @@
         "x86_64-unknown-linux-gnu",
         "x86_64-unknown-linux-musl"
       ],
-      "version": "0.1.0-alpha.9"
+      "version": "0.1.0-alpha.10"
     },
     {
       "coverage": "selected-release-build-graph",
@@ -1339,7 +1339,7 @@
       "coverage": "selected-release-build-graph",
       "documents": [
         {
-          "archive_path": "licenses/packages/rustleaks-sources-0.1.0-alpha.9/LICENSE",
+          "archive_path": "licenses/packages/rustleaks-sources-0.1.0-alpha.10/LICENSE",
           "origin": {
             "kind": "workspace",
             "path": "LICENSE"
@@ -1348,7 +1348,7 @@
           "sha256": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21"
         }
       ],
-      "id": "pkg:cargo/rustleaks-sources@0.1.0-alpha.9",
+      "id": "pkg:cargo/rustleaks-sources@0.1.0-alpha.10",
       "license_expression": "MIT",
       "license_file": null,
       "name": "rustleaks-sources",
@@ -1366,7 +1366,7 @@
         "x86_64-unknown-linux-gnu",
         "x86_64-unknown-linux-musl"
       ],
-      "version": "0.1.0-alpha.9"
+      "version": "0.1.0-alpha.10"
     },
     {
       "coverage": "selected-release-build-graph",
@@ -6006,17 +6006,17 @@
   "input_sha256": {
     ".bazelrc": "d7349453c297f3d7022669d8a0589171924be4e214663c364f1cb183ed12bc7a",
     ".bazelversion": "1b9487d55bea47fea50d226cc9c53bc548877ad2a318bac8fbc8b320f429e5c5",
-    "Cargo.lock": "2736a8528fe968c1b1124247c122f51140dd853f403444b97a72b02460667572",
-    "Cargo.toml": "b90ff6999ff2dffae23fa2b3e810127fe5d2c122ed7150d48fbcf1da216ee95a",
+    "Cargo.lock": "8f12542118cae677145051e9029af9da20956625045d3b6e49af2c7eb6068fec",
+    "Cargo.toml": "a5362bbcdb00acb940601caa04c6145c1846a27aebf604d9588abfea23fdd755",
     "LICENSE": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21",
-    "MODULE.bazel": "ac5c8195ef875f6e2528de43c93a1a1e62502fe28cbbc38a95e802e4ad609d0e",
+    "MODULE.bazel": "e8448eb162e2ec25655ea24856fbe96ae801ea01e9ba6e7716128898fd56e621",
     "MODULE.bazel.lock": "6a5a7a0892952dd6cdd9e2c0ae44bc98ef23726b57e1449c0a9c09d8b8b8560e",
     "bazel/BUILD.bazel": "754dfddf376ecd444508f64dce61eab14544fa31ba6f8213defbd26f90d74f66",
-    "cargo-bazel-lock.json": "b7a61cd3dcfa5378f94ecf59952a4c8ad3cc0525c1ac18b332d7a5d0d1c28af5",
+    "cargo-bazel-lock.json": "44753655ec55cc8e0063f3cbd929d0c5086f073f48ff294148186218b11b3b8b",
     "crates/rustleaks-bzip2/Cargo.toml": "4a9fea971ca2f3a527f3658a6d061cae0b4a71f2d71bba6119876fd2ef9cda9b",
     "crates/rustleaks-bzip2/LICENSE-APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
     "crates/rustleaks-bzip2/LICENSE-MIT": "a45da9aad6e4c77faac5b8be230daf2e2cab653b66e95b0f21e353116fed2da9",
-    "crates/rustleaks-cli/Cargo.toml": "240325692a817ec612f8ab313c5eb2b56a9f529ba685abd207ad5932c181bffa",
+    "crates/rustleaks-cli/Cargo.toml": "31c2527071c293cf97feb72854b9bf854a5adeedbdc20f6d2087332fb97443ab",
     "crates/rustleaks-core/Cargo.toml": "dd3efd91b2e9d7899af48834d32d63c03885780d5e471fccafd4135ddccd52aa",
     "crates/rustleaks-core/LICENSE": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21",
     "crates/rustleaks-core/NOTICE": "b21f8ab0dbda74c26f488d217b744da0029ae774a81d6094fcdfa9178bc0e2b1",
@@ -6028,10 +6028,10 @@
     "crates/rustleaks-core/default/NOTICE": "d81140aa6d1666ef9c03bf38cc983d16ade32bd634caed46524f6997c6c7b1f2",
     "crates/rustleaks-rar-codec/COPYING": "e0db3404ecb210e185232f58c0f528bd403fe0e439ce869ffda80351cc561122",
     "crates/rustleaks-rar-codec/Cargo.toml": "7a4c574f753a72f21d5e8fe7a71a94e75a1e309634aae6266ca54bab7feb8090",
-    "crates/rustleaks-report/Cargo.toml": "beaa5c04bdc59c7d7de75397a0c01beb755bc0e4ab91efaa15f9221f2bb32c86",
+    "crates/rustleaks-report/Cargo.toml": "0d38a2e5f4b4b34724b743628bb6dd4507b31bc638786d5f06dbff911bb593c5",
     "crates/rustleaks-sevenz/Cargo.toml": "2385f923d175e1d3ac5bc867869ad70c6e3d43805d678d70b2e42c48cb546ded",
     "crates/rustleaks-sevenz/LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-    "crates/rustleaks-sources/Cargo.toml": "58e24e19102735c498461e35e0dc2833ac9a1540add4a8cacbd8216945ee332e",
+    "crates/rustleaks-sources/Cargo.toml": "57c0fa392b1dff1269a218c211523def69e374ec363be1bc572db5122666f3eb",
     "platforms/BUILD.bazel": "b34d62c8006369bc0ab313596023cf60a5ad9a6310096a2c7bf9c7f64244506c",
     "release/notice-inputs/packages/catalog.json": "193ae78951cf9184699ea6cf670b3fb80b711c2f0276ff2b94474b5205b7bdfe",
     "release/notice-inputs/runtime/catalog.json": "1b581511cb16b1b424969c1c401850a432ce9d20de799ae8650dee18883417d5",

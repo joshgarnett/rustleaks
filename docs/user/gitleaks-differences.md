@@ -67,7 +67,6 @@ parity](../dev/testing-and-parity.md).
 - **Help and completion.** The `help` command and the `completion` command for
   bash, zsh, fish and PowerShell work as in Gitleaks, but the help text uses
   Rustleaks wording. `completion` accepts `--no-descriptions` and ignores it.
-  Both commands are not in 0.1.0-alpha.9.
 - **Report tool name.** SARIF and JUnit reports name the tool `gitleaks`. The
   SARIF `semanticVersion` is the fixed value `v8.0.0`, as in Gitleaks. GitHub
   code scanning tracks alerts by tool name, so alert history continues after
@@ -110,8 +109,6 @@ order of configuration sources.
 
 ### Added in Rustleaks
 
-These flags are not in 0.1.0-alpha.9.
-
 - `--native-pack`, which adds optional rule packs. See [Native rule
   packs](native-rule-packs.md).
 - `--base64-mode extended`, which finds more Base64 text. See
@@ -124,7 +121,7 @@ These flags are not in 0.1.0-alpha.9.
 ### Version
 
 `rustleaks version` and `rustleaks --version` print the Rustleaks version,
-such as `0.1.0-alpha.9`, not a Gitleaks version. A configuration with a
+such as `0.1.0-alpha.10`, not a Gitleaks version. A configuration with a
 `minVersion` newer than 8.30.0 still loads, but Rustleaks prints a warning,
 because it may not support newer settings.
 

@@ -4,7 +4,7 @@ This guide is for people who want to run the `rustleaks` command. If you want
 to call the scanner from Rust code, read [Using rustleaks-core](library.md).
 
 These guides describe the current source. Features listed under Unreleased in
-the [changelog](../../CHANGELOG.md) are not in 0.1.0-alpha.9. To use them now,
+the [changelog](../../CHANGELOG.md) are not in a release yet. To use them now,
 [build from source](#build-from-source).
 
 ## What Rustleaks is
@@ -34,7 +34,7 @@ pre-releases.
 | Windows ARM64 | `rustleaks-VERSION-aarch64-pc-windows-msvc.tar.gz` |
 
 `VERSION` is the release version without the leading `v`, for example
-`0.1.0-alpha.9`. The release tag is `vVERSION`.
+`0.1.0-alpha.10`. The release tag is `vVERSION`.
 
 Each archive contains one folder named like the archive, without `.tar.gz`.
 The folder holds the `rustleaks` program (`rustleaks.exe` on Windows),
@@ -55,7 +55,7 @@ archive with source material for the Linux glibc builds.
 This example installs the Linux x86_64 build with the GitHub CLI:
 
 ```sh
-VERSION=0.1.0-alpha.9
+VERSION=0.1.0-alpha.10
 TARGET=x86_64-unknown-linux-gnu
 STEM="rustleaks-${VERSION}-${TARGET}"
 gh release download "v${VERSION}" --repo joshgarnett/rustleaks \
@@ -193,9 +193,8 @@ for every code and for how to tell findings and errors apart.
 
 `rustleaks help` lists the commands, the flags, the configuration order and
 the exit codes. `rustleaks help git` shows the flags and examples for one
-command. `rustleaks completion bash` prints a shell completion script. The
-`help` and `completion` commands are not in 0.1.0-alpha.9. See the [command
-reference](cli-reference.md) for every command and flag.
+command. `rustleaks completion bash` prints a shell completion script. See
+the [command reference](cli-reference.md) for every command and flag.
 
 ## Next steps
 

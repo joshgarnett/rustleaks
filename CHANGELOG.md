@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0-alpha.10] - 2026-11-19
+
 - Document that with `--max-archive-depth 0`, the default, Rustleaks reads
   files whose names look like archives, such as `docker-compose.branch.yml`
   or `notes.zipper.txt`, as plain text, while Gitleaks skips them unread.
@@ -357,7 +359,7 @@ Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
-[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.9...HEAD
+[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.10...HEAD
 [0.1.0-alpha.1]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
@@ -367,3 +369,4 @@ version and exact source commit.
 [0.1.0-alpha.7]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.7
 [0.1.0-alpha.8]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.9]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.9
+[0.1.0-alpha.10]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.10

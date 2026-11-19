@@ -43,8 +43,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 The profile keys belong to a `--complete-profile` file, so you can change
 these limits only in a complete scan. In a complete scan, reaching any limit
 makes the scan incomplete, and it exits with 2. See [Complete
-scanning](complete-scanning.md#profile-keys). Complete scanning is not in
-0.1.0-alpha.9.
+scanning](complete-scanning.md#profile-keys).
 
 Detection work grows with the input size, the number of rules and the decode
 depth. Many encoded values in one piece of input, such as one Base64 value on

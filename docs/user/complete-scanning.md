@@ -5,9 +5,6 @@ for example in an audit or a release gate. It explains the
 `--complete-profile` option, the profile file, and the status line that a
 complete scan prints.
 
-Complete scanning is not in 0.1.0-alpha.9. To use it now, [build from
-source](getting-started.md#build-from-source).
-
 ## Why complete scanning exists
 
 A normal scan does not fail when it skips some input. Some inputs can be
