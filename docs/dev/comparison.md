@@ -6,6 +6,11 @@ what each lane means, what the harness measures, and the limits of the
 results. No result from this harness is a portable speed or quality
 guarantee.
 
+The 2026-11 comparison is fixed in
+[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md),
+and its results are in
+[benchmarks/comparison/results-2026-11.md](../../benchmarks/comparison/results-2026-11.md).
+
 ## What the harness does
 
 The harness runs several scanner binaries on the same inputs and records:
