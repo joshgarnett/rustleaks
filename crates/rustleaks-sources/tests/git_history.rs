@@ -96,6 +96,8 @@ impl Sandbox {
 
     /// Creates the repository from a `git fast-import` stream. Automatic
     /// maintenance is off, so no repack runs while a scan reads objects.
+    /// `core.protectNTFS` is off so that Git for Windows accepts the
+    /// synthetic paths with tabs, quotes and newlines; no file is checked out.
     fn import(&self, history: &History) -> PathBuf {
         let repository = self.repository();
         fs::create_dir(&repository).expect("create repository");
@@ -104,6 +106,7 @@ impl Sandbox {
             ("gc.auto", "0"),
             ("maintenance.auto", "false"),
             ("core.autocrlf", "false"),
+            ("core.protectNTFS", "false"),
         ] {
             self.git(&repository, &["config", key, value], None);
         }
@@ -612,10 +615,22 @@ fn shallow_clones_match_one_process() {
     let sandbox = Sandbox::new("shallow");
     let repository = sandbox.import(&rich_history());
     let shallow = sandbox.0.join("shallow");
-    let url = format!("file://{}", repository.display());
+    // A file URL keeps --depth in a local clone. Windows paths need
+    // forward slashes and a third slash before the drive letter.
+    let path = repository
+        .to_str()
+        .expect("UTF-8 sandbox path")
+        .replace('\\', "/");
+    let url = if path.starts_with('/') {
+        format!("file://{path}")
+    } else {
+        format!("file:///{path}")
+    };
     sandbox.git(
         &sandbox.0,
         &[
+            "-c",
+            "core.protectNTFS=false",
             "clone",
             "--quiet",
             "--bare",
@@ -629,6 +644,7 @@ fn shallow_clones_match_one_process() {
     );
     sandbox.git(&shallow, &["config", "gc.auto", "0"], None);
     sandbox.git(&shallow, &["config", "maintenance.auto", "false"], None);
+    sandbox.git(&shallow, &["config", "core.protectNTFS", "false"], None);
     assert!(shallow.join("shallow").is_file());
     let outcome = assert_splits_match(&sandbox, &shallow, Plan::Batches, |source| source);
     assert_eq!(outcome.result, Ok(SourceControl::Continue));
