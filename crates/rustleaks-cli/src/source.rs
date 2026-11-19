@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io::Read;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,13 +17,29 @@ use crate::complete_profile::CompleteProfile;
 use crate::config::resolve;
 
 pub(crate) struct BuiltSource {
-    source: Box<dyn Source>,
+    source: InnerSource,
     excluded: Vec<ByteText>,
     excluded_bytes: u64,
     excluded_commits: CommitCounter,
 }
 
 const MAX_UNIQUE_EXCLUDED_COMMITS: usize = 100_000_000;
+
+/// The source of a scan. A directory stays typed so that the scan can set
+/// its reader threads after the detection threads are known.
+enum InnerSource {
+    Directory(Box<DirectorySource>),
+    Other(Box<dyn Source>),
+}
+
+impl InnerSource {
+    fn as_source(&mut self) -> &mut dyn Source {
+        match self {
+            Self::Directory(source) => source.as_mut(),
+            Self::Other(source) => source.as_mut(),
+        }
+    }
+}
 
 struct CommitCounter {
     values: Vec<ByteText>,
@@ -85,6 +102,14 @@ impl BuiltSource {
     pub fn excluded_commits(&self) -> &[ByteText] {
         &self.excluded_commits.values
     }
+
+    /// Sets how many threads read the files of a directory scan. Other
+    /// sources read on one thread.
+    pub fn set_read_threads(&mut self, threads: NonZeroUsize) {
+        if let InnerSource::Directory(source) = &mut self.source {
+            source.set_read_threads(threads);
+        }
+    }
 }
 
 impl Source for BuiltSource {
@@ -96,7 +121,7 @@ impl Source for BuiltSource {
         let excluded = &self.excluded;
         let excluded_bytes = &mut self.excluded_bytes;
         let excluded_commits = &mut self.excluded_commits;
-        self.source.visit(cancellation, &mut |event| {
+        self.source.as_source().visit(cancellation, &mut |event| {
             if let SourceEvent::Fragment {
                 fragment,
                 issue: None,
@@ -130,6 +155,7 @@ pub(crate) fn build<R: Read + Send + 'static>(
     excluded: Vec<ByteText>,
     cwd: &Path,
     profile: Option<&CompleteProfile>,
+    git_history_processes: NonZeroUsize,
 ) -> Result<BuiltSource, String> {
     let injected_cwd_differs = match std::env::current_dir() {
         Ok(current) => current != cwd,
@@ -148,7 +174,7 @@ pub(crate) fn build<R: Read + Send + 'static>(
         CompleteProfile::file_options,
     )?;
     let archive = archive_options(invocation, early_config.clone(), profile)?;
-    let source: Box<dyn Source> = match invocation.command {
+    let source = match invocation.command {
         CommandKind::Directory => {
             let mut options = DirectoryOptions::default()
                 .file_options(file_options)
@@ -168,7 +194,10 @@ pub(crate) fn build<R: Read + Send + 'static>(
             if let Some(archive) = archive {
                 options = options.archives(archive);
             }
-            Box::new(DirectorySource::with_options(physical_source, options))
+            InnerSource::Directory(Box::new(DirectorySource::with_options(
+                physical_source,
+                options,
+            )))
         }
         CommandKind::Git => {
             let mode = if invocation.options.pre_commit || invocation.options.staged {
@@ -180,7 +209,9 @@ pub(crate) fn build<R: Read + Send + 'static>(
                     options: invocation.options.git_log_args.clone(),
                 }
             };
-            let mut git = GitSource::new(physical_source).mode(mode);
+            let mut git = GitSource::new(physical_source)
+                .mode(mode)
+                .history_processes(git_history_processes);
             if let Some(profile) = profile {
                 git = git
                     .limits(profile.git_limits()?)
@@ -192,9 +223,9 @@ pub(crate) fn build<R: Read + Send + 'static>(
                 }
                 git = git.archives(archive);
             }
-            Box::new(git)
+            InnerSource::Other(Box::new(git))
         }
-        CommandKind::Stdin => match archive {
+        CommandKind::Stdin => InnerSource::Other(match archive {
             Some(options) => Box::new(ArchiveSource::with_options(
                 stdin,
                 std::path::PathBuf::new(),
@@ -206,7 +237,7 @@ pub(crate) fn build<R: Read + Send + 'static>(
                 std::path::PathBuf::new(),
                 file_options,
             )),
-        },
+        }),
     };
     Ok(BuiltSource {
         source,

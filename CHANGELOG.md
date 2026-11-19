@@ -2,10 +2,26 @@
 
 ## [Unreleased]
 
+- Read `git` history with several `git log` processes at the same time: one
+  for each detection thread, up to 6. One `git log` process uses about one
+  CPU, so before, more detection threads did not make history scans faster.
+  Rustleaks lists the commits with `git rev-list`, shows batches of 250
+  commits with separate `git log` processes, and reads their output in list
+  order, so it reads the same text as from one process. Findings, their
+  order, reports, warnings and exit codes do not change, also when Git fails
+  or a commit reaches a limit. Only the Git error text in the log can differ.
+  On a 36-CPU host with the default thread count, history scans of mongo,
+  typescript and rails took about a third of the time. `--jobs 1`,
+  `--log-opts`, `--staged`, `--pre-commit`, a configured `format.pretty`,
+  error output from `git rev-list`, and histories of one batch use one
+  process. Up to 132 MiB of Git output waits for the parser, and the
+  `git_stderr_bytes` limit counts the error output of all processes together.
+  `rustleaks-sources` adds `GitSource::history_processes` and
+  `GitSource::history_batch_commits`; the default is still one process.
 - Scan with one detection thread for each CPU that Rustleaks may use, up to
-  12. Before,
-  a scan used one thread unless a `--complete-profile` file set `workers`. On
-  Linux the CPU count follows CPU affinity and cgroup CPU quotas. Add
+  12. Before, a scan used one thread unless a `--complete-profile` file set
+  `workers`. On Linux the CPU count follows CPU affinity and cgroup CPU
+  quotas. Add
   `--jobs N` (`-j N`) to set the number of threads. It has no fixed maximum
   and replaces `workers` in a profile. Findings, their order, reports,
   warnings and exit codes do not depend on the number of threads. Memory
@@ -14,6 +30,19 @@
   for a thread, but never more than 1,024. `--log-level debug` prints the
   thread count. `SourceRunner::default` in `rustleaks-sources` still uses one
   worker.
+- Make `dir` scans of folders with many small files faster. With two or more
+  detection threads, one thread walks the folder and two threads open and
+  read the files that it finds. Before, one thread did all of this, and
+  opening each file was the slowest step. The walk still makes every path,
+  size and symbolic link decision, and archives are still read one at a
+  time. Pieces and warnings reach the detection threads in walk order, so
+  findings, their order, reports, warnings and exit codes do not change. The
+  reading threads hold at most 18 more pieces of input and two read buffers
+  of 100,000 bytes. On a 36-CPU macOS host, a folder of 100,000 files of 64
+  bytes took about 1.2 s instead of 1.9 s, and a large public
+  repository 2.2 to 2.4 s instead of 2.9 to 3.2 s. With `--jobs 1`, files
+  are read as before. `DirectoryOptions::read_threads` in
+  `rustleaks-sources` sets the number of reading threads; the default is 1.
 - Fix archive scans that skipped large archives. With `--max-archive-depth`,
   a whole archive had to fit in 64 MiB and each member in 64 MiB, so a 200 MB
   `release.tar.gz` or a 1 GB `backup.zip` was skipped. Rustleaks now reads

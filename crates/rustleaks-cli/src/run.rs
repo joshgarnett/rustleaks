@@ -252,6 +252,18 @@ fn run_scan_inner<R: Read + Send + 'static>(
             return 1;
         }
     };
+    let jobs = invocation.options.jobs;
+    let runner = match profile.map_or_else(
+        || default_runner(jobs, thread::available_parallelism),
+        |profile| profile.runner(jobs),
+    ) {
+        Ok(runner) => runner,
+        Err(error) => {
+            finish_timer(timer.take());
+            let _ = output::error(stderr, error);
+            return 1;
+        }
+    };
     let mut source = match source::build(
         invocation,
         stdin,
@@ -259,6 +271,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         config.excluded_paths,
         &environment.cwd,
         profile,
+        git_history_processes(runner.workers()),
     ) {
         Ok(source) => source,
         Err(error) => {
@@ -288,18 +301,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         }
     };
     warn_quoted_log_options(invocation, stderr, log_level);
-    let jobs = invocation.options.jobs;
-    let runner = match profile.map_or_else(
-        || default_runner(jobs, thread::available_parallelism),
-        |profile| profile.runner(jobs),
-    ) {
-        Ok(runner) => runner,
-        Err(error) => {
-            finish_timer(timer.take());
-            let _ = output::error(stderr, error);
-            return 1;
-        }
-    };
+    source.set_read_threads(read_threads(runner.workers()));
     if log_level.shows_debug() {
         let _ = output::info(
             stderr,
@@ -630,6 +632,21 @@ const MAX_DEFAULT_QUEUE_CAPACITY: usize = 1024;
 /// used about half the memory of 36 threads. `--jobs` can set more.
 const MAX_DEFAULT_JOBS: usize = 12;
 
+/// The most `git log` processes that read Git history at the same time.
+/// Each process maps the pack files and holds its own caches, from hundreds
+/// of megabytes to gigabytes for large histories. On a 36-CPU host with 12
+/// detection threads, history scans of mongo and typescript were about 3
+/// times faster with 6 processes than with 1, 4 processes were slower and 8
+/// were not faster. The 6 Git processes together used no more memory than
+/// one process that reads the whole history.
+const MAX_GIT_HISTORY_PROCESSES: usize = 6;
+
+/// Reads Git history with one process for each detection thread, up to
+/// `MAX_GIT_HISTORY_PROCESSES`. So `--jobs 1` keeps one Git process.
+fn git_history_processes(workers: usize) -> NonZeroUsize {
+    NonZeroUsize::new(workers.min(MAX_GIT_HISTORY_PROCESSES)).unwrap_or(NonZeroUsize::MIN)
+}
+
 /// Builds the runner of a scan without `--complete-profile`. `--jobs` sets the
 /// detection threads; otherwise there is one for each CPU that the process
 /// may use, up to `MAX_DEFAULT_JOBS`, or one when that number is unknown. The
@@ -645,6 +662,22 @@ fn default_runner(
     );
     SourceRunner::new(workers, workers.min(MAX_DEFAULT_QUEUE_CAPACITY))
         .map_err(|error| error.to_string())
+}
+
+/// The most threads that read the files of a directory scan. On a 36-CPU
+/// macOS host, two reader threads made a scan of 100,000 small files about
+/// 37 percent faster than one, and scans of large repositories 2 to 30
+/// percent faster. Three or four were no faster for most of them and used
+/// more CPU time, because opening files in the operating system was then
+/// the limit.
+const MAX_READ_THREADS: usize = 2;
+
+/// Returns how many threads read the files of a directory scan: one for each
+/// detection thread, up to `MAX_READ_THREADS`. With one detection thread,
+/// detection is the limit, so a second reader would add CPU time for little
+/// gain.
+fn read_threads(workers: usize) -> NonZeroUsize {
+    NonZeroUsize::new(workers.min(MAX_READ_THREADS)).unwrap_or(NonZeroUsize::MIN)
 }
 
 #[derive(Clone, Copy)]
@@ -832,6 +865,13 @@ mod tests {
     }
 
     #[test]
+    fn directory_scans_read_files_on_one_thread_per_detection_thread_up_to_two() {
+        for (workers, expected) in [(1, 1), (2, 2), (3, 2), (12, 2), (128, 2)] {
+            assert_eq!(read_threads(workers).get(), expected, "{workers} workers");
+        }
+    }
+
+    #[test]
     fn default_runner_prefers_jobs_then_available_cpus_up_to_twelve_then_one() {
         let never = || -> std::io::Result<NonZeroUsize> { panic!("--jobs skips the CPU query") };
         for (available, expected) in [
@@ -860,6 +900,13 @@ mod tests {
         ] {
             let runner = default_runner(NonZeroUsize::new(jobs), never).unwrap();
             assert_eq!((runner.workers(), runner.queue_capacity()), expected);
+        }
+    }
+
+    #[test]
+    fn git_history_uses_one_process_for_each_thread_up_to_six() {
+        for (workers, expected) in [(1, 1), (2, 2), (6, 6), (7, 6), (12, 6), (5000, 6)] {
+            assert_eq!(git_history_processes(workers).get(), expected, "{workers}");
         }
     }
 

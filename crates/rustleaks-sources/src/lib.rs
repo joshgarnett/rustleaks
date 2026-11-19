@@ -14,6 +14,7 @@ mod file;
 mod git;
 mod mime;
 mod path;
+mod process;
 #[cfg(feature = "archives")]
 mod rar;
 mod runner;

@@ -1884,6 +1884,12 @@ pub(crate) fn name_is_archive(name: &[u8], complete: bool) -> bool {
     identify_for_mode(name, complete).is_some()
 }
 
+/// Whether [`ArchiveSource`] reads the file at `path` as an archive or a
+/// compressed stream, judged by its file name as when it is visited.
+pub(crate) fn path_is_archive(path: &Path, complete: bool) -> bool {
+    name_is_archive(&native_file_name_bytes(path), complete)
+}
+
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())

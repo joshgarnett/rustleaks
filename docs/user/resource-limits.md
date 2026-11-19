@@ -28,7 +28,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | Size of one scanned piece of a file | About 100,000 bytes | Profile key `target_bytes`, which makes each file one piece | Larger files are scanned in several pieces. |
 | Symbolic link hops | 64 | Fixed | Warning; the link is skipped. |
 | `git log` or `git diff` output for one commit | 1 GiB and 16,000,000 lines | Profile keys `git_patch_bytes` and `git_patch_lines` | The scan stops with exit code 1. |
-| Git error output kept | 1 MiB | Profile key `git_stderr_bytes` | The scan stops with exit code 1. |
+| Git error output kept | 1 MiB, for all `git log` processes of a scan together | Profile key `git_stderr_bytes` | The scan stops with exit code 1. |
 | One archive file read from Git | 1 GiB, and at most the archive temporary storage | Profile keys `git_blob_bytes` and `archive_spool_bytes` | Warning; the archive is skipped. |
 | Metadata of one commit | 16 MiB | Profile key `git_metadata_bytes` | The scan stops with exit code 1. |
 | One path in Git output | 1 MiB | Profile key `git_path_bytes` | The scan stops with exit code 1. |
@@ -37,6 +37,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | Source warnings and errors kept, such as unreadable or skipped files | 10,000 | Profile key `operation_issues` | Later ones are counted, not kept, and one log line gives their number. The scan goes on, and the exit code and report do not change. |
 | Time | No limit | `--timeout N` seconds | The scan stops with exit code 1 and reports what it found so far. |
 | Detection threads | One for each CPU that Rustleaks may use, up to 12 | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Detection threads](#detection-threads). |
+| `git log` processes that read history at the same time | One for each detection thread, up to 6 | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Git history](#git-history). |
 | Detection work and finding memory | No limit | Profile keys that start with `fragment_` and `operation_` | The scan stops and is incomplete (exit 2). |
 
 The profile keys belong to a `--complete-profile` file, so you can change
@@ -68,6 +69,64 @@ When Git fails, or a later commit reaches a limit or cannot be read, the scan
 stops with exit code 1. The report can then hold findings from the commits
 before that point.
 
+#### Several Git processes
+
+One `git log` process uses about one CPU, so it limits how fast a history
+scan can be. With more than one detection thread, Rustleaks reads the
+history with several `git log` processes at the same time: one for each
+detection thread, up to 6. `--jobs 1` uses one process.
+
+1. `git rev-list --full-history --all` lists the commits in the order that
+   `git log` shows them.
+2. The list is split into batches of 250 commits that follow each other in
+   the list.
+3. A separate `git log` process shows the commits of each batch.
+4. Rustleaks reads the output of the batches in list order, so it reads the
+   same text as from one `git log` process.
+
+So findings, their order, reports, warnings and exit codes do not change.
+When Git fails, or a commit reaches a limit, the report holds findings from
+the same commits as with one process. The Git error text in the log line
+comes from the process that failed, so it can differ. When the error output
+limit is reached, the findings before the stop depend on timing, as with one
+process.
+
+Rustleaks uses one process when:
+
+- `--jobs 1` or the profile key `workers=1` sets one detection thread;
+- `--log-opts` with a value, `--staged` or `--pre-commit` is used, because
+  options such as a path, `--follow`, `--reverse` or `-n` change which
+  commits Git shows or how it shows them;
+- `git rev-list` fails or writes any error output, such as a warning about a
+  broken reference or a graft file, because each `git log` process would
+  repeat the warning;
+- the Git setting `format.pretty` is set, because some formats change how
+  Git separates commits;
+- the history fits in one batch; or
+- the history has more than 10,000,000 commits.
+
+Memory:
+
+- Each `git log` process maps the pack files of the repository and keeps its
+  own caches. For large histories, one process can use from hundreds of
+  megabytes to more than 2 GB. A process for one batch reads fewer commits,
+  so it usually uses less than one process for the whole history.
+- Output that Git writes before Rustleaks reads it waits in memory: up to
+  4 MiB for the batch that Rustleaks reads, and up to 128 MiB for all later
+  batches together. A `git log` process whose output does not fit waits.
+- The commit list uses about 41 bytes for each commit.
+- The error output of all `git log` processes counts toward
+  `git_stderr_bytes` together. A warning that each process writes, such as
+  the one about a too low `diff.renameLimit`, counts once for each process
+  that writes it.
+
+On a 36-CPU host with 12 detection threads, history scans of six public
+repositories, from 5,000 to 100,000 commits, took 0.3 to 0.6 times as long
+as with one Git process. All Git processes together used about as much
+memory as one Git process for the whole history, or less. Rustleaks itself
+used up to about 0.45 GB more, because more pieces of input wait for the
+detection threads and more Git output waits for the parser.
+
 ### Detection threads
 
 Rustleaks scans with one detection thread for each CPU that it may use, up
@@ -86,15 +145,43 @@ Findings, their order, reports, warnings and exit codes are the same for any
 number of threads. A scan that stops early, because of `--timeout` or a
 profile limit, can have different findings.
 
-One thread reads the input and splits it into pieces. Each detection thread
-scans one piece at a time. Without a profile, up to N pieces wait for a
-thread, but never more than 1,024. With a profile, `queue_capacity` sets this
-number. So memory grows with the thread count:
+One thread reads the input and splits it into pieces. In a `dir` scan with
+two or more detection threads, that thread walks the folder, and two more
+threads open and read the files that it finds. See [Reading
+files](#reading-files). Each detection thread scans one piece at a time.
+Without a profile, up to N pieces wait for a thread, but never more than
+1,024. With a profile, `queue_capacity` sets this number. So memory grows
+with the thread count:
 
 - At most 2 times N plus 1 pieces are in memory when the queue holds N. A
   piece of a file is about 100,000 bytes. A piece of Git history is one diff
   hunk, which can be as large as one changed file.
+- In a `dir` scan, the two threads that read files hold at most 18 more
+  pieces and one read buffer of 100,000 bytes each.
 - Each thread that searches keeps its own pattern search caches.
+
+With `--complete-profile`, a piece of a file is the whole file, up to
+`target_bytes`.
+
+#### Reading files
+
+In a `dir` scan with two or more detection threads, one thread walks the
+folder in the same order as with one thread. It checks every path, size and
+symbolic link before a file is opened. Two other threads open the files that
+pass and split them into pieces. The pieces and the warnings reach the
+detection threads in walk order, so findings, their order, reports, warnings
+and exit codes are the same as with one thread.
+
+- The walk stays at most 16 files and warnings ahead of the pieces that the
+  detection threads have received. A large file is read one piece at a
+  time.
+- Archives, and compressed files such as `app.log.gz`, are read by the
+  walking thread, so a scan still reads one archive at a time.
+- With `--jobs 1`, the walking thread reads every file itself, as before.
+  With one detection thread, detection is the limit, and a second reading
+  thread made scans at most a few percent faster for much more CPU time.
+- If a reading thread cannot start, the threads that did start read the
+  files, or the walking thread reads them when none started.
 
 #### More threads are not always faster
 
@@ -102,18 +189,22 @@ Past some number of threads, a scan gets no faster, but each added thread
 still uses memory. The scan is then limited by something that more
 detection threads do not speed up:
 
-- One thread reads the input. When the detection threads scan pieces faster
-  than that thread can read them, added threads wait. This happens first on
-  folders with many small files.
-- For Git history, `git log -p` produces the input. History scans are
-  usually limited by Git, not by detection threads.
+- For a folder, two threads read the files. When the detection threads scan
+  pieces faster than these threads can open and read files, added threads
+  wait. This happens first on folders with many small files, where opening
+  each file takes most of the time. More reading threads did not open files
+  faster on the host below.
+- For Git history, `git log -p` produces the input. Up to 6 `git log`
+  processes run at the same time, one for each detection thread. Past that,
+  history scans are usually limited by Git, not by detection threads. See
+  [Several Git processes](#several-git-processes).
 - Input with many matches, such as files dense with keywords, keeps gaining
   from more threads for longer, because detection is most of the work.
 
 On a 36-CPU host, `dir` scans of large public repositories were within 4
 percent of their best time at 12 threads and used about half the memory of
 36 threads. A folder of 100,000 small files was no faster with more than
-one thread. This is why the default stops at 12. To find the best value for
+two threads. This is why the default stops at 12. To find the best value for
 your input, time a scan at a few `--jobs` values. To use less memory, set a
 lower value.
 

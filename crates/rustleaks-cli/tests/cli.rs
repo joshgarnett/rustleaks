@@ -4281,6 +4281,96 @@ mod jobs {
         );
     }
 
+    /// Skipped, unreadable and linked inputs among many tiny files. Their
+    /// warnings must keep their order between the files that are read.
+    #[test]
+    fn directory_skips_and_their_warnings_do_not_depend_on_jobs() {
+        let fixture = fixture();
+        let mut expected = Vec::new();
+        for file in 0..400_usize {
+            let path = format!("input/t{}/f{file:03}.txt", file % 8);
+            if file % 9 == 4 {
+                fixture.write(&path, "");
+            } else if file % 4 == 1 {
+                let secret = format!("TINY{file:04}");
+                fixture.write(&path, format!("value token={secret} end\n"));
+                expected.push(token(&path, 1, &secret, ""));
+            } else {
+                fixture.write(&path, format!("plain {file}\n"));
+            }
+        }
+        // Above --max-target-megabytes 1, so skipped with a warning, between
+        // read files of the same folder.
+        fixture.write(
+            "input/t3/f100-large.txt",
+            planted(17_000, &[(1, "SKIPPED1".to_owned())]),
+        );
+        // A WebAssembly header makes a binary file, which is skipped.
+        fixture.write("input/t5/binary.wasm", b"\0asm\x01\0\0\0token=BINARY01\n");
+        #[cfg(unix)]
+        let locked = {
+            use std::os::unix::fs::{PermissionsExt, symlink};
+            let input = fixture.0.join("input");
+            symlink("missing.txt", input.join("t1/f050-dangling.txt")).unwrap();
+            symlink("f061-loop.txt", input.join("t2/f060-loop.txt")).unwrap();
+            symlink("f060-loop.txt", input.join("t2/f061-loop.txt")).unwrap();
+            symlink("../t0", input.join("t4/f070-folder")).unwrap();
+            fixture.write("input/t6/f080-locked.txt", "token=LOCKED01\n");
+            fixture.write("input/t7/f090-locked/inside.txt", "token=LOCKED02\n");
+            fs::set_permissions(
+                input.join("t6/f080-locked.txt"),
+                fs::Permissions::from_mode(0o000),
+            )
+            .unwrap();
+            fs::set_permissions(
+                input.join("t7/f090-locked"),
+                fs::Permissions::from_mode(0o000),
+            )
+            .unwrap();
+            fs::File::open(input.join("t6/f080-locked.txt")).is_err()
+        };
+        let result = std::panic::catch_unwind(|| {
+            same_for_every_count(
+                &fixture,
+                &[
+                    "dir",
+                    "input",
+                    "--follow-symlinks",
+                    "--max-target-megabytes",
+                    "1",
+                ],
+                None,
+                7,
+            )
+        });
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in ["input/t6/f080-locked.txt", "input/t7/f090-locked"] {
+                fs::set_permissions(fixture.0.join(path), fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            if !locked {
+                expected.push(token("input/t6/f080-locked.txt", 1, "LOCKED01", ""));
+                expected.push(token("input/t7/f090-locked/inside.txt", 1, "LOCKED02", ""));
+            }
+        }
+        let (rows, log) = result.unwrap();
+        assert_eq!(sorted(rows), sorted(expected));
+        assert!(log.contains("f100-large.txt"), "{log}");
+        #[cfg(unix)]
+        {
+            for name in ["f050-dangling.txt", "f060-loop.txt", "f061-loop.txt"] {
+                assert!(log.contains(name), "{name}: {log}");
+            }
+            if locked {
+                for name in ["f080-locked.txt", "f090-locked"] {
+                    assert!(log.contains(name), "{name}: {log}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn complete_profile_scans_do_not_depend_on_jobs() {
         let fixture = fixture();
@@ -4414,6 +4504,150 @@ mod jobs {
         );
         assert_eq!(sorted(rows), sorted(expected));
         assert!(log.contains("25 commits scanned."), "{log}");
+    }
+
+    /// Imports a `git fast-import` stream and returns the object name of
+    /// each mark.
+    fn fast_import(repository: &Path, stream: &[u8]) -> Vec<(usize, String)> {
+        let marks = repository.join(".git/marks.txt");
+        let mut child = Command::new(git_executable())
+            .current_dir(repository)
+            .args(["fast-import", "--quiet"])
+            .arg(format!("--export-marks={}", marks.display()))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(stream).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::read_to_string(&marks)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let (mark, sha) = line.split_once(' ').unwrap();
+                (mark[1..].parse().unwrap(), sha.to_owned())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn git_history_read_by_several_git_processes_matches_one_process() {
+        // More than two batches of 250 commits, so every count above one
+        // reads the history with several `git log` processes. A side branch
+        // is merged back, and some commits show no diff.
+        let fixture = fixture();
+        let repository = fixture.0.join("repo");
+        fs::create_dir(&repository).unwrap();
+        git(&repository, &["init", "--quiet"]);
+        git(&repository, &["config", "gc.auto", "0"]);
+        git(&repository, &["config", "maintenance.auto", "false"]);
+        let mut stream = String::new();
+        let mut contents = vec![String::new(); 7];
+        let mut plants = Vec::new();
+        for mark in 1..=640_usize {
+            let branch = if (300..340).contains(&mark) {
+                "side"
+            } else {
+                "main"
+            };
+            let _ = write!(
+                stream,
+                "commit refs/heads/{branch}\nmark :{mark}\n\
+                 author Jobs Test <jobs@example.invalid> {time} +0000\n\
+                 committer Jobs Test <jobs@example.invalid> {time} +0000\n\
+                 data 10\nchange {mark:03}\n",
+                time = 1_700_000_000 + mark * 60,
+            );
+            match mark {
+                1 => {}
+                300 => stream.push_str("from :299\n"),
+                // The merge keeps the files of the side branch. Git shows no
+                // diff for a merge with the default options.
+                340 => {
+                    stream.push_str("from :299\nmerge :339\n");
+                    for (index, text) in contents.iter().enumerate() {
+                        let _ = write!(
+                            stream,
+                            "M 100644 inline src/f{index}.txt\ndata {}\n{text}\n",
+                            text.len()
+                        );
+                    }
+                }
+                _ => {
+                    let _ = writeln!(stream, "from :{}", mark - 1);
+                }
+            }
+            // Every 50th commit changes nothing.
+            if mark % 50 != 0 && mark != 340 {
+                let index = mark % 7;
+                let secret = format!("H{mark:07}");
+                for filler in 0..mark % 4 {
+                    let _ = writeln!(contents[index], "plain {mark} {filler}");
+                }
+                let _ = writeln!(contents[index], "value token={secret} end");
+                let line = contents[index].lines().count();
+                let path = format!("src/f{index}.txt");
+                let _ = write!(
+                    stream,
+                    "M 100644 inline {path}\ndata {}\n{}\n",
+                    contents[index].len(),
+                    contents[index]
+                );
+                plants.push((mark, path, line, secret));
+            }
+            stream.push('\n');
+        }
+        let marks = fast_import(&repository, stream.as_bytes());
+        let expected = plants
+            .iter()
+            .map(|(mark, path, line, secret)| {
+                let (_, sha) = marks.iter().find(|(found, _)| found == mark).unwrap();
+                token(path, *line, secret, sha)
+            })
+            .collect::<Vec<_>>();
+
+        let (rows, log) =
+            same_for_every_count(&fixture, &["git", "repo", "--platform", "none"], None, 7);
+        assert_eq!(sorted(rows.clone()), sorted(expected));
+        assert!(
+            log.contains(&format!("{} commits scanned.", plants.len())),
+            "{log}"
+        );
+
+        // Git records the commands that ran: with four threads, one commit
+        // list and three batches of at most 250 commits.
+        let trace = fixture.0.join("git-trace");
+        let result = command(&fixture.0)
+            .args([
+                "git",
+                "repo",
+                "--platform",
+                "none",
+                "--no-banner",
+                "--config",
+                "config.toml",
+                "--jobs",
+                "4",
+                "--report-path",
+                "-",
+                "--report-format",
+                "json",
+            ])
+            .env("GIT_TRACE", &trace)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert_eq!(sorted(json_report_rows(&result.stdout)), sorted(rows));
+        let trace = fs::read_to_string(&trace).unwrap();
+        let count = |needle: &str| trace.lines().filter(|line| line.contains(needle)).count();
+        assert_eq!(count("built-in: git rev-list --full-history --all"), 1);
+        assert_eq!(count("--no-walk=unsorted --stdin"), 3);
     }
 
     #[test]

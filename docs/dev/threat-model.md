@@ -127,6 +127,13 @@ See [Using rustleaks-core](../user/library.md#review-records).
   queue without a profile holds at most 1,024 fragments. A thread that cannot
   start ends the scan before the source is read, and started threads are
   joined.
+- A `dir` scan with two or more detection threads also starts up to two
+  threads that open and read files. The walking thread still makes every
+  path, size and symbolic link decision before a file is opened, and it reads
+  archives one at a time. The reading threads hold at most 18 fragments and
+  two read buffers. A reading thread that cannot start does not end the
+  scan; the started reading thread, or else the walking thread, reads the
+  files instead. All of them are joined before the scan returns.
 - Intentional exclusions stay separate from coverage failures, and a failed
   complete target publishes no partial prefix.
 
@@ -167,6 +174,22 @@ See [Using rustleaks-core](../user/library.md#review-records).
   with the history, up to 100,000,000 commits.
 - An archive blob streams from `git cat-file` into an archive spool. Over its
   limit, Git is stopped and reaped, and the blob is skipped with an issue.
+- With several history processes, a scan also starts `git rev-list`,
+  `git config --get format.pretty` and one `git log --stdin` for each batch
+  of commits, at most `history_processes` at a time. They use the same Git
+  executable and environment as the single `git log`.
+  Commit names reach standard input only after they are checked to be
+  hexadecimal object names, because `--stdin` also accepts options. A failed
+  write to standard input fails the batch. Every child is killed and reaped,
+  and every thread is joined, on stop, error and cancellation. Each process
+  maps the repository's packs, so memory grows with the process count. The
+  CLI caps the count at 6.
+- `rustleaks-sources` starts its child processes one at a time. On macOS and
+  other targets without `pipe2`, a child started while another thread
+  creates a pipe can inherit that pipe, and two `git log` processes that
+  hold each other's input open wait forever. A program that embeds
+  `rustleaks-sources` and starts its own children on other threads during a
+  history scan can still cause this.
 
 ### Reports and CLI
 
