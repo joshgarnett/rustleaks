@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- Read `git` history with several `git log` processes at the same time: one
+  for each detection thread, up to 6. One `git log` process uses about one
+  CPU, so before, more detection threads did not make history scans faster.
+  Rustleaks lists the commits with `git rev-list`, shows batches of 250
+  commits with separate `git log` processes, and reads their output in list
+  order, so it reads the same text as from one process. Findings, their
+  order, reports, warnings and exit codes do not change, also when Git fails
+  or a commit reaches a limit. Only the Git error text in the log can differ.
+  On a 36-CPU host with the default thread count, history scans of mongo,
+  typescript and rails took about a third of the time. `--jobs 1`,
+  `--log-opts`, `--staged`, `--pre-commit`, a configured `format.pretty`,
+  error output from `git rev-list`, and histories of one batch use one
+  process. Up to 132 MiB of Git output waits for the parser, and the
+  `git_stderr_bytes` limit counts the error output of all processes together.
+  `rustleaks-sources` adds `GitSource::history_processes` and
+  `GitSource::history_batch_commits`; the default is still one process.
 - Scan with one detection thread for each CPU that Rustleaks may use, up to
   12. Before,
   a scan used one thread unless a `--complete-profile` file set `workers`. On

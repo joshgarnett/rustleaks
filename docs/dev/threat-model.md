@@ -167,6 +167,16 @@ See [Using rustleaks-core](../user/library.md#review-records).
   with the history, up to 100,000,000 commits.
 - An archive blob streams from `git cat-file` into an archive spool. Over its
   limit, Git is stopped and reaped, and the blob is skipped with an issue.
+- With several history processes, a scan also starts `git rev-list`,
+  `git config --get format.pretty` and one `git log --stdin` for each batch
+  of commits, at most `history_processes` at a time. They use the same Git
+  executable and environment as the single `git log`.
+  Commit names reach standard input only after they are checked to be
+  hexadecimal object names, because `--stdin` also accepts options. A failed
+  write to standard input fails the batch. Every child is killed and reaped,
+  and every thread is joined, on stop, error and cancellation. Each process
+  maps the repository's packs, so memory grows with the process count. The
+  CLI caps the count at 6.
 
 ### Reports and CLI
 

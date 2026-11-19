@@ -1,12 +1,12 @@
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 #[cfg(test)]
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::thread;
 use std::time::Duration;
@@ -23,6 +23,8 @@ use crate::{
     CallbackError, Cancellation, Source, SourceConfigError, SourceControl, SourceError,
     SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
+
+mod history;
 
 // Patch, line, file, hunk and metadata ceilings apply to one commit. History
 // output is parsed one file record at a time, so these values do not bound
@@ -208,6 +210,8 @@ pub struct GitSource {
     mode: GitMode,
     limits: GitLimits,
     environment: Vec<(OsString, OsString)>,
+    history_processes: NonZeroUsize,
+    history_batch_commits: Option<NonZeroUsize>,
     #[cfg(feature = "archives")]
     archives: Option<ArchiveOptions>,
     #[cfg(feature = "archives")]
@@ -224,6 +228,8 @@ impl GitSource {
             mode: GitMode::default(),
             limits: GitLimits::default(),
             environment: Vec::new(),
+            history_processes: NonZeroUsize::MIN,
+            history_batch_commits: None,
             #[cfg(feature = "archives")]
             archives: None,
             #[cfg(feature = "archives")]
@@ -260,6 +266,34 @@ impl GitSource {
     #[must_use]
     pub const fn limits(mut self, limits: GitLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Sets the most `git log` processes that read history at the same time.
+    ///
+    /// The default is one. With more, and with the default history options,
+    /// the source lists the commits with `git rev-list`, shows consecutive
+    /// batches of them with separate `git log` processes, and parses their
+    /// output in list order. The parser reads the same bytes as from one
+    /// `git log` process, so fragments, their order, issues and error stages
+    /// do not change. Only the Git error text of a failed batch can differ.
+    /// Other modes and history options, a configured `format.pretty`, and
+    /// histories of one batch use one process.
+    #[must_use]
+    pub const fn history_processes(mut self, processes: NonZeroUsize) -> Self {
+        self.history_processes = processes;
+        self
+    }
+
+    /// Sets the commits that each `git log` process shows when several
+    /// processes read history.
+    ///
+    /// The default is 250. Larger batches start fewer processes, but each
+    /// process uses more memory as it reads more commits, and more output
+    /// waits for the parser.
+    #[must_use]
+    pub const fn history_batch_commits(mut self, commits: NonZeroUsize) -> Self {
+        self.history_batch_commits = Some(commits);
         self
     }
 
@@ -338,6 +372,9 @@ impl Source for GitSource {
             return Err(SourceError::Cancelled);
         }
         let this = &*self;
+        if let Some(plan) = history::plan(this, cancellation)? {
+            return history::visit(this, &plan, cancellation, emit);
+        }
         let mut stream = PatchStream::new(this.limits);
         // Each file record is parsed and emitted once the next record starts,
         // so memory follows the largest record instead of the whole history.
@@ -641,20 +678,43 @@ enum CollectionStop {
     Limited,
 }
 
+/// A started Git child with its output pipes, and its input pipe when the
+/// command reads standard input.
+struct GitChild {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+}
+
 fn spawn_git(
     program: &OsStr,
     arguments: &[OsString],
     environment: &[(OsString, OsString)],
     stage: SourceStage,
-) -> Result<(Child, ChildStdout, ChildStderr), SourceError> {
+    with_input: bool,
+) -> Result<GitChild, SourceError> {
     let mut child = Command::new(program)
         .args(arguments)
         .envs(environment.iter().cloned())
-        .stdin(Stdio::null())
+        .stdin(if with_input {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| terminal(stage, None, format!("could not start Git: {error}")))?;
+    let stdin = child.stdin.take();
+    if with_input && stdin.is_none() {
+        stop_and_reap(&mut child, stage, "after a missing stdin pipe")?;
+        return Err(terminal(
+            stage,
+            None,
+            "Git standard input pipe was unavailable",
+        ));
+    }
     let Some(stdout) = child.stdout.take() else {
         stop_and_reap(&mut child, stage, "after a missing stdout pipe")?;
         return Err(terminal(
@@ -671,7 +731,12 @@ fn spawn_git(
             "Git standard error pipe was unavailable",
         ));
     };
-    Ok((child, stdout, stderr))
+    Ok(GitChild {
+        child,
+        stdin,
+        stdout,
+        stderr,
+    })
 }
 
 #[cfg(test)]
@@ -684,23 +749,26 @@ fn collect_command(
     cancellation: &dyn Cancellation,
     stage: SourceStage,
 ) -> Result<CollectedOutput, SourceError> {
-    let (mut child, stdout, stderr) = spawn_git(program, arguments, environment, stage)?;
+    let GitChild {
+        mut child,
+        stdout,
+        stderr,
+        ..
+    } = spawn_git(program, arguments, environment, stage, false)?;
 
     thread::scope(|scope| {
-        let stdout_exceeded = Arc::new(AtomicBool::new(false));
-        let stderr_exceeded = Arc::new(AtomicBool::new(false));
-        let stdout_flag = Arc::clone(&stdout_exceeded);
-        let stderr_flag = Arc::clone(&stderr_exceeded);
-        let stdout_reader =
-            scope.spawn(move || read_bounded_and_drain(stdout, stdout_limit, &stdout_flag));
-        let stderr_reader =
-            scope.spawn(move || read_bounded_and_drain(stderr, stderr_limit, &stderr_flag));
+        let stdout_budget = Arc::new(OutputBudget::new(stdout_limit));
+        let stderr_budget = Arc::new(OutputBudget::new(stderr_limit));
+        let stdout_flag = Arc::clone(&stdout_budget);
+        let stderr_flag = Arc::clone(&stderr_budget);
+        let stdout_reader = scope.spawn(move || read_bounded_and_drain(stdout, &stdout_flag));
+        let stderr_reader = scope.spawn(move || read_bounded_and_drain(stderr, &stderr_flag));
         let stop = loop {
             if cancellation.is_cancelled() {
                 stop_and_reap(&mut child, stage, "after cancellation")?;
                 break CollectionStop::Cancelled;
             }
-            if stdout_exceeded.load(Ordering::Acquire) || stderr_exceeded.load(Ordering::Acquire) {
+            if stdout_budget.is_exceeded() || stderr_budget.is_exceeded() {
                 stop_and_reap(&mut child, stage, "after an output limit")?;
                 break CollectionStop::Limited;
             }
@@ -775,22 +843,59 @@ fn stream_command(
     stage: SourceStage,
     on_chunk: &mut dyn FnMut(&[u8]) -> Result<SourceControl, SourceError>,
 ) -> Result<StreamedOutput, SourceError> {
-    let (mut child, stdout, stderr) = spawn_git(program, arguments, environment, stage)?;
-    let stderr_exceeded = AtomicBool::new(false);
+    stream_command_with(
+        program,
+        arguments,
+        CommandIo {
+            input: None,
+            stderr: &OutputBudget::new(stderr_limit),
+        },
+        environment,
+        cancellation,
+        stage,
+        &mut |chunk| on_chunk(&chunk),
+    )
+}
+
+/// Standard input and the standard error budget of one streamed command.
+#[derive(Clone, Copy)]
+struct CommandIo<'a> {
+    /// Bytes written to standard input, which is then closed. Without input,
+    /// standard input is empty.
+    input: Option<&'a [u8]>,
+    /// Can be shared with other Git processes of the same scan.
+    stderr: &'a OutputBudget,
+}
+
+/// Runs Git like [`stream_command`], with optional standard input and a
+/// standard error budget that several commands can share. `on_chunk` owns
+/// each chunk.
+fn stream_command_with(
+    program: &OsStr,
+    arguments: &[OsString],
+    io: CommandIo<'_>,
+    environment: &[(OsString, OsString)],
+    cancellation: &dyn Cancellation,
+    stage: SourceStage,
+    on_chunk: &mut dyn FnMut(Vec<u8>) -> Result<SourceControl, SourceError>,
+) -> Result<StreamedOutput, SourceError> {
+    let GitChild {
+        mut child,
+        stdin,
+        stdout,
+        stderr,
+    } = spawn_git(program, arguments, environment, stage, io.input.is_some())?;
+    let budget = io.stderr;
     thread::scope(|scope| {
+        // A separate writer never blocks the stdout reader. Dropping the pipe
+        // after the input ends it.
+        let writer = io.input.zip(stdin).map(|(input, mut stdin)| {
+            scope.spawn(move || stdin.write_all(input).and_then(|()| stdin.flush()))
+        });
         let (sender, receiver) = mpsc::sync_channel(STDOUT_QUEUE_CHUNKS);
         let stdout_reader = scope.spawn(move || read_chunks(stdout, &sender));
-        let stderr_flag = &stderr_exceeded;
-        let stderr_reader =
-            scope.spawn(move || read_bounded_and_drain(stderr, stderr_limit, stderr_flag));
-        let end = drive_stream(
-            &mut child,
-            &receiver,
-            &stderr_exceeded,
-            cancellation,
-            stage,
-            on_chunk,
-        );
+        let stderr_reader = scope.spawn(move || read_bounded_and_drain(stderr, budget));
+        let end = drive_stream(&mut child, &receiver, budget, cancellation, stage, on_chunk);
         // Dropping the receiver wakes a reader that waits on a full queue.
         drop(receiver);
         match &end {
@@ -800,6 +905,11 @@ fn stream_command(
             StreamEnd::Stopped => stop_and_reap(&mut child, stage, "after the consumer stopped")?,
             StreamEnd::Failed(_) => stop_and_reap(&mut child, stage, "after a stream failure")?,
         }
+        let written = writer.map(|writer| {
+            writer
+                .join()
+                .map_err(|_| terminal(stage, None, "Git stdin writer panicked"))
+        });
         stdout_reader
             .join()
             .map_err(|_| terminal(stage, None, "Git stdout reader panicked"))?;
@@ -816,6 +926,15 @@ fn stream_command(
             StreamEnd::StderrLimited => (None, false),
             StreamEnd::Stopped => (None, true),
         };
+        // A Git that read only part of its input can still exit successfully,
+        // so a failed write fails the command.
+        if let Some(written) = written
+            && status.is_some_and(|status| status.success())
+        {
+            written?.map_err(|error| {
+                terminal(stage, None, format!("could not write Git stdin: {error}"))
+            })?;
+        }
         Ok(StreamedOutput {
             stderr,
             stderr_limited,
@@ -828,20 +947,20 @@ fn stream_command(
 fn drive_stream(
     child: &mut Child,
     receiver: &mpsc::Receiver<io::Result<Vec<u8>>>,
-    stderr_exceeded: &AtomicBool,
+    stderr: &OutputBudget,
     cancellation: &dyn Cancellation,
     stage: SourceStage,
-    on_chunk: &mut dyn FnMut(&[u8]) -> Result<SourceControl, SourceError>,
+    on_chunk: &mut dyn FnMut(Vec<u8>) -> Result<SourceControl, SourceError>,
 ) -> StreamEnd {
     loop {
         if cancellation.is_cancelled() {
             return StreamEnd::Cancelled;
         }
-        if stderr_exceeded.load(Ordering::Acquire) {
+        if stderr.is_exceeded() {
             return StreamEnd::StderrLimited;
         }
         match receiver.recv_timeout(COMMAND_POLL) {
-            Ok(Ok(chunk)) => match on_chunk(&chunk) {
+            Ok(Ok(chunk)) => match on_chunk(chunk) {
                 Ok(SourceControl::Continue) => {}
                 Ok(SourceControl::Stop) => return StreamEnd::Stopped,
                 Err(error) => return StreamEnd::Failed(error),
@@ -861,7 +980,7 @@ fn drive_stream(
         if cancellation.is_cancelled() {
             return StreamEnd::Cancelled;
         }
-        if stderr_exceeded.load(Ordering::Acquire) {
+        if stderr.is_exceeded() {
             return StreamEnd::StderrLimited;
         }
         match child.try_wait() {
@@ -956,14 +1075,54 @@ fn git_exit_message(status: Option<ExitStatus>, stderr: &[u8]) -> String {
     }
 }
 
+/// Output bytes that one or more Git processes may still keep.
+///
+/// Readers take bytes from the budget as they read. Bytes beyond it are read
+/// and dropped, and the budget is marked exceeded.
+struct OutputBudget {
+    remaining: AtomicUsize,
+    exceeded: AtomicBool,
+}
+
+impl OutputBudget {
+    const fn new(limit: usize) -> Self {
+        Self {
+            remaining: AtomicUsize::new(limit),
+            exceeded: AtomicBool::new(false),
+        }
+    }
+
+    /// Takes up to `wanted` bytes and returns how many were taken.
+    fn take(&self, wanted: usize) -> usize {
+        let previous = self
+            .remaining
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                Some(remaining - remaining.min(wanted))
+            })
+            .unwrap_or_else(|remaining| remaining);
+        let taken = previous.min(wanted);
+        if taken < wanted {
+            self.exceeded.store(true, Ordering::Release);
+        }
+        taken
+    }
+
+    fn remaining(&self) -> usize {
+        self.remaining.load(Ordering::Acquire)
+    }
+
+    fn is_exceeded(&self) -> bool {
+        self.exceeded.load(Ordering::Acquire)
+    }
+}
+
 fn read_bounded_and_drain(
     mut reader: impl Read,
-    limit: usize,
-    exceeded: &AtomicBool,
+    budget: &OutputBudget,
 ) -> io::Result<(Vec<u8>, bool)> {
     let mut retained = Vec::new();
     retained
-        .try_reserve_exact(limit.min(64 * 1024))
+        .try_reserve_exact(budget.remaining().min(64 * 1024))
         .map_err(|error| io::Error::other(format!("could not reserve command output: {error}")))?;
     let mut buffer = [0_u8; 8192];
     let mut limited = false;
@@ -972,8 +1131,7 @@ fn read_bounded_and_drain(
         if read == 0 {
             break;
         }
-        let remaining = limit.saturating_sub(retained.len());
-        let keep = read.min(remaining);
+        let keep = budget.take(read);
         if keep > 0 {
             retained.try_reserve(keep).map_err(|error| {
                 io::Error::other(format!("could not grow command output: {error}"))
@@ -981,9 +1139,6 @@ fn read_bounded_and_drain(
             retained.extend_from_slice(&buffer[..keep]);
         }
         limited |= keep < read;
-        if limited {
-            exceeded.store(true, Ordering::Release);
-        }
     }
     Ok((retained, limited))
 }
@@ -3112,19 +3267,36 @@ mod tests {
         assert!(GitLimits::default().with_parser_limits(1, 1, 0, 1).is_err());
         assert!(GitLimits::default().with_parser_limits(1, 1, 1, 0).is_err());
 
-        let exceeded = AtomicBool::new(false);
+        let exceeded = OutputBudget::new(5);
         let (retained, limited) =
-            read_bounded_and_drain(io::Cursor::new(b"abcdef"), 5, &exceeded).expect("bounded read");
+            read_bounded_and_drain(io::Cursor::new(b"abcdef"), &exceeded).expect("bounded read");
         assert_eq!(retained, b"abcde");
         assert!(limited);
-        assert!(exceeded.load(Ordering::Acquire));
+        assert!(exceeded.is_exceeded());
 
-        let exact = AtomicBool::new(false);
+        let exact = OutputBudget::new(5);
         let (retained, limited) =
-            read_bounded_and_drain(io::Cursor::new(b"abcde"), 5, &exact).expect("exact read");
+            read_bounded_and_drain(io::Cursor::new(b"abcde"), &exact).expect("exact read");
         assert_eq!(retained, b"abcde");
         assert!(!limited);
-        assert!(!exact.load(Ordering::Acquire));
+        assert!(!exact.is_exceeded());
+
+        // Readers that share a budget keep at most its bytes together.
+        let shared = OutputBudget::new(6);
+        let (first, first_limited) =
+            read_bounded_and_drain(io::Cursor::new(b"abcd"), &shared).expect("first read");
+        assert_eq!(
+            (first.as_slice(), first_limited),
+            (b"abcd".as_slice(), false)
+        );
+        assert!(!shared.is_exceeded());
+        let (second, second_limited) =
+            read_bounded_and_drain(io::Cursor::new(b"efgh"), &shared).expect("second read");
+        assert_eq!(
+            (second.as_slice(), second_limited),
+            (b"ef".as_slice(), true)
+        );
+        assert!(shared.is_exceeded());
 
         let limits = GitLimits::new(64, 2, 64, 64).expect("limits");
         assert!(parse_patch(b"\n\n", limits, &crate::CancellationToken::new()).is_ok());
@@ -3436,7 +3608,7 @@ mod tests {
             Err(PatchError::Limit(_))
         ));
 
-        assert!(read_bounded_and_drain(FailingReader, 8, &AtomicBool::new(false)).is_err());
+        assert!(read_bounded_and_drain(FailingReader, &OutputBudget::new(8)).is_err());
         assert!(matches!(
             reserve_input(&mut Vec::new(), usize::MAX, "injected allocation"),
             Err(PatchError::Limit(_))

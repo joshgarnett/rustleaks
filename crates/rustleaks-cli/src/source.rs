@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io::Read;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -130,6 +131,7 @@ pub(crate) fn build<R: Read + Send + 'static>(
     excluded: Vec<ByteText>,
     cwd: &Path,
     profile: Option<&CompleteProfile>,
+    git_history_processes: NonZeroUsize,
 ) -> Result<BuiltSource, String> {
     let injected_cwd_differs = match std::env::current_dir() {
         Ok(current) => current != cwd,
@@ -180,7 +182,9 @@ pub(crate) fn build<R: Read + Send + 'static>(
                     options: invocation.options.git_log_args.clone(),
                 }
             };
-            let mut git = GitSource::new(physical_source).mode(mode);
+            let mut git = GitSource::new(physical_source)
+                .mode(mode)
+                .history_processes(git_history_processes);
             if let Some(profile) = profile {
                 git = git
                     .limits(profile.git_limits()?)

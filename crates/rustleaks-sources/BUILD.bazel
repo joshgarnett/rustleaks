@@ -198,6 +198,7 @@ rustleaks_integration_test(
     for test in [
         "archive_sources",
         "git_corpus",
+        "git_history",
         "git_scm",
         "git_sources",
         "native_sources",
@@ -227,6 +228,7 @@ test_suite(
         ":chunk_boundaries_test",
         ":complete_sources_test",
         ":git_corpus_test",
+        ":git_history_test",
         ":git_scm_test",
         ":git_sources_test",
         ":native_sources_test",

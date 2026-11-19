@@ -341,6 +341,68 @@ example.
   After a budget stop, the returned subset and its order depend on
   scheduling.
 
+## Git history processes
+
+`GitSource::history_processes` sets how many `git log` processes may read
+history at the same time. The default is one. The `rustleaks` command uses
+one for each detection thread, up to 6 (`MAX_GIT_HISTORY_PROCESSES` in
+`crates/rustleaks-cli/src/run.rs`). The code is in
+`crates/rustleaks-sources/src/git/history.rs`.
+
+With more than one, and with the default history options, `plan`:
+
+1. Runs `git rev-list --full-history --all`. Without a pathspec, `git log`
+   shows each commit the same way whether or not it walks the history, so
+   `git log --no-walk=unsorted` gives each listed commit the same text as the
+   default `git log`. The list must succeed, write no standard error, and
+   hold only hexadecimal object names of one length. Checking the names also
+   keeps option text out of `--stdin`, which accepts options.
+2. Splits the list into batches of 250 consecutive commits.
+   `GitSource::history_batch_commits` sets another size. A list of one batch
+   uses one process.
+3. Runs `git config --get format.pretty`, which must exit with 1. One process
+   writes a blank line between two shown commits in the default format; a
+   `tformat` or `oneline` format ends each commit instead.
+
+`visit` starts one thread for each process. Each thread takes the next
+batch, writes its commit names to the standard input of
+`git log -p -U0 --diff-filter=tuxdb --no-walk=unsorted --stdin`, and passes
+the output in pieces of 256 KiB. The calling thread feeds the batches in list
+order to one `PatchStream`. Before the first output of a batch, it adds the
+blank line that one process writes, when an earlier batch showed a commit.
+A batch that shows no commit writes nothing, as one process would. So the
+parser reads the same bytes as from one process, and the per-commit limits,
+fragments, their order and every parse error are the same.
+
+The end of each batch is handled like the end of one process: the final
+record of the batch waits until its Git process exits successfully. When a
+batch fails, the scan stops with the `GitExit` error before that record, and
+the later batches are stopped. The message holds the standard error of the
+failed process only. The `GitStderr` issue is emitted once, before the final
+record of the history, when any batch wrote a line that is not ignored.
+
+Bounds:
+
+- At most `history_processes` Git processes run, and at most two batches for
+  each process are queued.
+- `ReorderBuffer` bounds output that waits for the parser: 4 MiB for the
+  batch that the parser reads and 128 MiB for later batches together. A
+  thread whose output does not fit waits with the Git pipe full, so Git
+  waits too. The batch that the parser reads never waits for a later batch,
+  so the parser always makes progress. Parsed pieces return to a pool.
+- The commit list keeps one line of 41 or 65 bytes for each commit, up to
+  10,000,000 commits. A longer list uses one process.
+- `git_stderr_bytes` is one `OutputBudget` that all batch processes share.
+  A warning that each process repeats counts once for each process.
+- Cancellation, a stop from the consumer and an error end the visit: every
+  Git child is killed and reaped, and every thread is joined before `visit`
+  returns. A child that cannot be stopped or reaped fails the scan, as with
+  one process.
+
+`tests/git_history.rs` compares the events and errors of one process with
+several splits on synthetic histories, and the `rustleaks` CLI tests compare
+reports for several `--jobs` values.
+
 ## Complete targets
 
 `FileOptions::complete(maximum)` reads one eligible target to a clean end of

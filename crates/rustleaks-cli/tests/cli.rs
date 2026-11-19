@@ -4416,6 +4416,150 @@ mod jobs {
         assert!(log.contains("25 commits scanned."), "{log}");
     }
 
+    /// Imports a `git fast-import` stream and returns the object name of
+    /// each mark.
+    fn fast_import(repository: &Path, stream: &[u8]) -> Vec<(usize, String)> {
+        let marks = repository.join(".git/marks.txt");
+        let mut child = Command::new(git_executable())
+            .current_dir(repository)
+            .args(["fast-import", "--quiet"])
+            .arg(format!("--export-marks={}", marks.display()))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(stream).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::read_to_string(&marks)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let (mark, sha) = line.split_once(' ').unwrap();
+                (mark[1..].parse().unwrap(), sha.to_owned())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn git_history_read_by_several_git_processes_matches_one_process() {
+        // More than two batches of 250 commits, so every count above one
+        // reads the history with several `git log` processes. A side branch
+        // is merged back, and some commits show no diff.
+        let fixture = fixture();
+        let repository = fixture.0.join("repo");
+        fs::create_dir(&repository).unwrap();
+        git(&repository, &["init", "--quiet"]);
+        git(&repository, &["config", "gc.auto", "0"]);
+        git(&repository, &["config", "maintenance.auto", "false"]);
+        let mut stream = String::new();
+        let mut contents = vec![String::new(); 7];
+        let mut plants = Vec::new();
+        for mark in 1..=640_usize {
+            let branch = if (300..340).contains(&mark) {
+                "side"
+            } else {
+                "main"
+            };
+            let _ = write!(
+                stream,
+                "commit refs/heads/{branch}\nmark :{mark}\n\
+                 author Jobs Test <jobs@example.invalid> {time} +0000\n\
+                 committer Jobs Test <jobs@example.invalid> {time} +0000\n\
+                 data 10\nchange {mark:03}\n",
+                time = 1_700_000_000 + mark * 60,
+            );
+            match mark {
+                1 => {}
+                300 => stream.push_str("from :299\n"),
+                // The merge keeps the files of the side branch. Git shows no
+                // diff for a merge with the default options.
+                340 => {
+                    stream.push_str("from :299\nmerge :339\n");
+                    for (index, text) in contents.iter().enumerate() {
+                        let _ = write!(
+                            stream,
+                            "M 100644 inline src/f{index}.txt\ndata {}\n{text}\n",
+                            text.len()
+                        );
+                    }
+                }
+                _ => {
+                    let _ = writeln!(stream, "from :{}", mark - 1);
+                }
+            }
+            // Every 50th commit changes nothing.
+            if mark % 50 != 0 && mark != 340 {
+                let index = mark % 7;
+                let secret = format!("H{mark:07}");
+                for filler in 0..mark % 4 {
+                    let _ = writeln!(contents[index], "plain {mark} {filler}");
+                }
+                let _ = writeln!(contents[index], "value token={secret} end");
+                let line = contents[index].lines().count();
+                let path = format!("src/f{index}.txt");
+                let _ = write!(
+                    stream,
+                    "M 100644 inline {path}\ndata {}\n{}\n",
+                    contents[index].len(),
+                    contents[index]
+                );
+                plants.push((mark, path, line, secret));
+            }
+            stream.push('\n');
+        }
+        let marks = fast_import(&repository, stream.as_bytes());
+        let expected = plants
+            .iter()
+            .map(|(mark, path, line, secret)| {
+                let (_, sha) = marks.iter().find(|(found, _)| found == mark).unwrap();
+                token(path, *line, secret, sha)
+            })
+            .collect::<Vec<_>>();
+
+        let (rows, log) =
+            same_for_every_count(&fixture, &["git", "repo", "--platform", "none"], None, 7);
+        assert_eq!(sorted(rows.clone()), sorted(expected));
+        assert!(
+            log.contains(&format!("{} commits scanned.", plants.len())),
+            "{log}"
+        );
+
+        // Git records the commands that ran: with four threads, one commit
+        // list and three batches of at most 250 commits.
+        let trace = fixture.0.join("git-trace");
+        let result = command(&fixture.0)
+            .args([
+                "git",
+                "repo",
+                "--platform",
+                "none",
+                "--no-banner",
+                "--config",
+                "config.toml",
+                "--jobs",
+                "4",
+                "--report-path",
+                "-",
+                "--report-format",
+                "json",
+            ])
+            .env("GIT_TRACE", &trace)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert_eq!(sorted(json_report_rows(&result.stdout)), sorted(rows));
+        let trace = fs::read_to_string(&trace).unwrap();
+        let count = |needle: &str| trace.lines().filter(|line| line.contains(needle)).count();
+        assert_eq!(count("built-in: git rev-list --full-history --all"), 1);
+        assert_eq!(count("--no-walk=unsorted --stdin"), 3);
+    }
+
     #[test]
     fn jobs_overrides_the_profile_which_overrides_the_cpu_count() {
         let fixture = fixture();

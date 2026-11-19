@@ -252,6 +252,18 @@ fn run_scan_inner<R: Read + Send + 'static>(
             return 1;
         }
     };
+    let jobs = invocation.options.jobs;
+    let runner = match profile.map_or_else(
+        || default_runner(jobs, thread::available_parallelism),
+        |profile| profile.runner(jobs),
+    ) {
+        Ok(runner) => runner,
+        Err(error) => {
+            finish_timer(timer.take());
+            let _ = output::error(stderr, error);
+            return 1;
+        }
+    };
     let mut source = match source::build(
         invocation,
         stdin,
@@ -259,6 +271,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         config.excluded_paths,
         &environment.cwd,
         profile,
+        git_history_processes(runner.workers()),
     ) {
         Ok(source) => source,
         Err(error) => {
@@ -288,18 +301,6 @@ fn run_scan_inner<R: Read + Send + 'static>(
         }
     };
     warn_quoted_log_options(invocation, stderr, log_level);
-    let jobs = invocation.options.jobs;
-    let runner = match profile.map_or_else(
-        || default_runner(jobs, thread::available_parallelism),
-        |profile| profile.runner(jobs),
-    ) {
-        Ok(runner) => runner,
-        Err(error) => {
-            finish_timer(timer.take());
-            let _ = output::error(stderr, error);
-            return 1;
-        }
-    };
     if log_level.shows_debug() {
         let _ = output::info(
             stderr,
@@ -630,6 +631,21 @@ const MAX_DEFAULT_QUEUE_CAPACITY: usize = 1024;
 /// used about half the memory of 36 threads. `--jobs` can set more.
 const MAX_DEFAULT_JOBS: usize = 12;
 
+/// The most `git log` processes that read Git history at the same time.
+/// Each process maps the pack files and holds its own caches, from hundreds
+/// of megabytes to gigabytes for large histories. On a 36-CPU host with 12
+/// detection threads, history scans of mongo and typescript were about 3
+/// times faster with 6 processes than with 1, 4 processes were slower and 8
+/// were not faster. The 6 Git processes together used no more memory than
+/// one process that reads the whole history.
+const MAX_GIT_HISTORY_PROCESSES: usize = 6;
+
+/// Reads Git history with one process for each detection thread, up to
+/// `MAX_GIT_HISTORY_PROCESSES`. So `--jobs 1` keeps one Git process.
+fn git_history_processes(workers: usize) -> NonZeroUsize {
+    NonZeroUsize::new(workers.min(MAX_GIT_HISTORY_PROCESSES)).unwrap_or(NonZeroUsize::MIN)
+}
+
 /// Builds the runner of a scan without `--complete-profile`. `--jobs` sets the
 /// detection threads; otherwise there is one for each CPU that the process
 /// may use, up to `MAX_DEFAULT_JOBS`, or one when that number is unknown. The
@@ -860,6 +876,13 @@ mod tests {
         ] {
             let runner = default_runner(NonZeroUsize::new(jobs), never).unwrap();
             assert_eq!((runner.workers(), runner.queue_capacity()), expected);
+        }
+    }
+
+    #[test]
+    fn git_history_uses_one_process_for_each_thread_up_to_six() {
+        for (workers, expected) in [(1, 1), (2, 2), (6, 6), (7, 6), (12, 6), (5000, 6)] {
+            assert_eq!(git_history_processes(workers).get(), expected, "{workers}");
         }
     }
 
