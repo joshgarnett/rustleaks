@@ -22,11 +22,15 @@ details and must not enter the default core graph or public API. See
 [the architecture](docs/dev/architecture.md).
 
 `compat/upstream-revision.txt` pins Gitleaks commit
-`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and default configuration SHA-256
-`e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
-Compatibility evidence is under `compat/`. The packaged configuration is
-`crates/rustleaks-core/default/gitleaks.toml`, with a checked copy at
-`compat/config-corpus/default-gitleaks.toml`.
+`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b`. The pin and its default
+configuration SHA-256
+`e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf` describe
+the unchanged upstream copy at `compat/config-corpus/default-gitleaks.toml`.
+Compatibility evidence is under `compat/`. The shipped default rules,
+`crates/rustleaks-core/default/gitleaks.toml`, are Rustleaks-owned and based
+on that copy. They may differ from it by reviewed, tested changes, each listed
+in [Default rules](docs/user/gitleaks-differences.md#default-rules) and named
+in `crates/rustleaks-core/tests/default_rules.rs`.
 
 ## Commands
 
@@ -118,7 +122,7 @@ reviews and merges.
 Stop for maintainer approval before:
 
 - adding or updating dependencies, toolchains, `rules_rust`, the Gitleaks pin
-  or the copied default configuration;
+  or the upstream copy of the default configuration;
 - changing GitHub settings or ownership;
 - enabling paid services;
 - accepting a security exception;
@@ -131,4 +135,6 @@ Stop for maintainer approval before:
 
 A local dry run does not authorize publication. Changes to help, usage, error
 wording, log, banner and summary lines, and JSON key and CSV column order need
-review but not maintainer approval.
+review but not maintainer approval. Changes to the shipped default rules need
+normal review, tests and a listed difference; a change that makes Rustleaks
+miss secrets it found before still needs maintainer approval.

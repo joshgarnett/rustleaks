@@ -969,7 +969,8 @@ fn expected(id: &str) -> Expected {
     let empty = fnv_extend(FNV_OFFSET, &0u64.to_le_bytes());
     match id {
         "default-compile" => Expected::new(
-            97_731,
+            // The byte length of the shipped default rules.
+            100_665,
             222,
             0,
             0xbba0_f636_d5a0_2d49,

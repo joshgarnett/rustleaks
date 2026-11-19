@@ -21,7 +21,7 @@ use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Serialize;
 
-use model::{CONFIG_SHA256, Case, PROFILE, Span, fingerprint};
+use model::{Case, PROFILE, Span, fingerprint};
 use score::{Counts, Observation, Rates};
 
 #[derive(Serialize)]
@@ -161,7 +161,7 @@ pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
         scope: "Synthetic intent labels; no deployment accuracy or live validity claim. Exact-span and case-distinct-value recall are separate metrics.",
         profile: PROFILE,
         package_version: env!("CARGO_PKG_VERSION"),
-        default_config_sha256: CONFIG_SHA256,
+        default_config_sha256: DEFAULT_CONFIG_SHA256,
         loaded_config_fnv1a64: fingerprint(DEFAULT_CONFIG_BYTES),
         native_pack: "rustleaks-extra-v1",
         native_pack_fnv1a64: fingerprint(EXTRA_RULES_V1.as_bytes()),
@@ -284,14 +284,15 @@ fn project(case: &Case, selected_rule: Option<&str>) -> (Case, Vec<usize>) {
     (projected, indices)
 }
 
+// The loaded default must be the reviewed shipped default, which records its
+// own SHA-256. The upstream copy it is based on is checked against the pin by
+// the configuration corpus checks.
 fn verify_config_bytes(actual: &[u8]) -> Result<(), String> {
-    let mirror = include_bytes!("../../../../compat/config-corpus/default-gitleaks.toml");
-    if actual != mirror
-        || DEFAULT_CONFIG_SHA256 != CONFIG_SHA256
+    if actual != DEFAULT_CONFIG_BYTES
         || DEFAULT_CONFIG_REVISION != "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b"
     {
         return Err(
-            "quality evaluation default configuration differs from its pinned mirror".into(),
+            "quality evaluation default configuration differs from the shipped default".into(),
         );
     }
     Ok(())

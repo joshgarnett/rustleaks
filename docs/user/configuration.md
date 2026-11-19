@@ -8,7 +8,10 @@ finds it, and the ways to hide findings you have already reviewed.
 
 Rustleaks uses the Gitleaks TOML configuration format. A Gitleaks
 configuration file works without changes. Rustleaks ships one default
-configuration, the Gitleaks default rules, with 222 rules.
+configuration with 222 rules. It is based on the Gitleaks default rules and
+adds allowlists that hide some values that are clearly not secrets, such as
+hex digests under hash names and published documentation examples. See
+[Default rules](gitleaks-differences.md#default-rules).
 
 A small configuration that adds one rule to the default rules looks like this:
 

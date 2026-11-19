@@ -1699,12 +1699,7 @@ pub(super) const ARTIFACTS: &[(&str, &str, &str)] = &[
     (
         "compat/upstream-revision.txt",
         "100644",
-        "e1fa98165a4182ed33c2cf412f7470a3b4652cf9f6e61d30ab6cc476a760d145",
-    ),
-    (
-        "crates/rustleaks-core/default/gitleaks.toml",
-        "100644",
-        "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf",
+        "6df2936bf15a3ded5702b6d86e784b9d2703b0cce9cbea78007db39736b72d5f",
     ),
     (
         "crates/rustleaks-core/src/go_lowercase_tables.rs",

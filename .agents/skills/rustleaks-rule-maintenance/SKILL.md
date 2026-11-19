@@ -9,17 +9,34 @@ Read `docs/dev/rule-pack-authoring.md`, `docs/dev/testing-and-parity.md`, the
 [compatibility
 policy](../../../docs/user/gitleaks-differences.md#compatibility-policy), the
 applicable config and detection corpus READMEs, and the rule-related entries
-in `compat/test-manifest.toml`. Decide whether the request changes copied
-upstream defaults, supported TOML semantics, a native rule pack, or only
+in `compat/test-manifest.toml`. Decide whether the request changes the
+shipped default rules, supported TOML semantics, a native rule pack, or only
 Rustleaks test coverage.
 
 ## Default rules
 
-Do not edit the copied default configuration on its own. A change derived
-from a new Gitleaks revision uses `rustleaks-upstream-sync` and updates the
-pin, both config copies, hashes, generated evidence and provenance together.
-A Rustleaks-only change to the default rules needs explicit maintainer
-approval and a named compatibility disposition.
+The shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`,
+are Rustleaks-owned and based on the unchanged upstream copy,
+`compat/config-corpus/default-gitleaks.toml`. Never edit the upstream copy; a
+change derived from a new Gitleaks revision uses `rustleaks-upstream-sync`
+and updates the pin, the upstream copy, hashes, generated evidence and
+provenance together.
+
+A Rustleaks change to the shipped default rules needs normal review, and:
+
+- tests with expectations from the change's definition, including near
+  misses that must stay findings;
+- an update to `crates/rustleaks-core/tests/default_rules.rs`, which names
+  every difference from the upstream copy;
+- an entry in `docs/user/gitleaks-differences.md#default-rules` and a
+  changelog entry;
+- updates of `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and
+  `DEFAULT_RULES_SHA256` in `xtask`, and of generated baselines with their
+  maintained commands; and
+- a measurement on a held-out set that was not used to design the change.
+
+A change that makes Rustleaks miss secrets it found before needs maintainer
+approval.
 
 ## Native rule packs
 

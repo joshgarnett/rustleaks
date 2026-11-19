@@ -4,3 +4,6 @@ description=v8.30.0-27-gb58d3f1
 default_config=config/gitleaks.toml
 default_config_sha256=e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf
 oracle_relative_path=../gitleaks
+upstream_copy=compat/config-corpus/default-gitleaks.toml
+shipped_default=crates/rustleaks-core/default/gitleaks.toml
+shipped_default_note=Based on default_config at this revision. default_config_sha256 describes the upstream copy. The shipped default may differ by reviewed, tested changes listed in docs/user/gitleaks-differences.md#default-rules.

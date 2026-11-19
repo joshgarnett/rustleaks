@@ -1,3 +1,10 @@
+# Rustleaks default rules, based on the Gitleaks default configuration at
+# commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b. The unchanged upstream copy
+# is compat/config-corpus/default-gitleaks.toml. Rustleaks changes to this file
+# are listed in docs/user/gitleaks-differences.md#default-rules and checked by
+# crates/rustleaks-core/tests/default_rules.rs.
+#
+# Upstream header:
 # This file has been auto-generated. Do not edit manually.
 # If you would like to contribute new rules, please use
 # cmd/generate/config/main.go and follow the contributing guidelines
@@ -18,8 +25,7 @@ title = "gitleaks config"
 # config-enabled features are guaranteed to work.
 minVersion = "v8.25.0"
 
-# TODO: change to [[allowlists]]
-[allowlist]
+[[allowlists]]
 description = "global allow lists"
 paths = [
     '''gitleaks\.toml''',
@@ -68,6 +74,25 @@ stopwords = [
     "abcdefghijklmnopqrstuvwxyz",
 ]
 
+# Rustleaks: exact example values that vendors publish in their
+# documentation. Each pattern is written with character classes or escapes so
+# that this file does not itself hold a credential-shaped string.
+# - Discord: https://docs.discord.com/developers/reference#authentication
+#   (the token, and its form after the first part is decoded from Base64)
+# - Azurite: https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite
+# - Telegram: https://core.telegram.org/bots/api#authorizing-your-bot
+# - Slack: https://docs.slack.dev/authentication/tokens/
+# - Google: https://docs.cloud.google.com/docs/authentication/api-keys
+[[allowlists]]
+description = "Published vendor documentation examples"
+regexes = [
+    '''^198622483471925248\.Cl2FMQ\.ZnCjm1XVW7vRze4b7Cq4se7kKWs$''',
+    '''^Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq[/]K1SZFPTOtr[/]KBHBeksoGMGw[=]{2}$''',
+    '''^MTk4NjIyNDgzNDcxOTI1MjQ4\.Cl2FMQ\.ZnCjm1XVW7vRze4b7Cq4se7kKWs$''',
+    '''^123456:ABC\-DEF1234ghIkl\-zyx57W2v1u123ew11$''',
+    '''^xoxp\-111\-222\-333\-d6bc768406e5c2e6958cfc399b438004$''',
+    '''^AIz[a]SyDaGmWKa4JsXZ\-HjGw7ISLn_3namBGewQe$''',
+]
 [[rules]]
 id = "1password-secret-key"
 description = "Uncovered a possible 1Password secret key, potentially compromising access to secrets in vaults."
@@ -2125,6 +2150,35 @@ regexes = [
     '''LICENSE[^=]*=\s*"[^"]+''',
     '''LIC_FILES_CHKSUM[^=]*=\s*"[^"]+''',
     '''SRC[^=]*=\s*"[a-zA-Z0-9]+''',
+]
+# Rustleaks allowlists for values that are clearly not secrets.
+[[rules.allowlists]]
+description = "Hex digests assigned to hash-like names"
+regexTarget = "match"
+regexes = [
+    '''(?i)(?:md5|sha-?(?:1|224|256|384|512)?|digest|checksum|fingerprint|hash|etag)[\w.\-]*['"\x60]?\s*(?:=>|:=|[:=])\s*['"\x60]?(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}|[0-9a-f]{128})['"\x60]?$''',
+]
+[[rules.allowlists]]
+description = "Git object IDs assigned to commit or revision names"
+regexTarget = "match"
+regexes = [
+    '''(?i)(?:commit|revision|rev)['"\x60]?\s*(?:=>|:=|[:=])\s*['"\x60]?[0-9a-f]{40}['"\x60]?$''',
+]
+[[rules.allowlists]]
+description = "Subresource Integrity values"
+regexes = [
+    '''^sha(?:256|384|512)-[A-Za-z0-9+/]{43,86}={0,2}$''',
+]
+[[rules.allowlists]]
+description = "Stripe publishable keys, which Stripe documents as safe to expose"
+regexes = [
+    '''^pk_(?:live|test)_[0-9A-Za-z]{10,}$''',
+]
+[[rules.allowlists]]
+description = "UUIDs assigned to identifier names. Names that contain secret, such as secret_id, are not matched."
+regexTarget = "match"
+regexes = [
+    '''(?i)^(?:[\w\-]*\.)?(?:[a-z0-9]*(?:token|client|tenant|app|application|user|account|object|subscription|resource|request|session|trace|correlation|device|instance|project|org|organization|workspace|key)[_\-]?)?(?:id|uuid|guid)['"\x60]?\s*(?:=>|:=|[:=])\s*['"\x60]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"\x60]?$''',
 ]
 
 [[rules]]

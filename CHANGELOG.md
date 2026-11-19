@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+- The default rules are now Rustleaks-owned, based on the Gitleaks default
+  configuration at the same pin. The unchanged upstream copy stays in
+  `compat/config-corpus/default-gitleaks.toml`, and
+  `config::DEFAULT_CONFIG_SHA256` is now the SHA-256 of the shipped rules.
+  Each change is listed in Differences from Gitleaks under Default rules.
+- Hide more values that are clearly not secrets in the default rules, so they
+  are not reported. `generic-api-key` no longer reports hex digests under hash
+  names such as `token_md5`, Git object IDs under commit or revision names,
+  Subresource Integrity values, Stripe publishable keys, and UUIDs under
+  identifier names such as `token_id` or `client_id`. No rule reports the
+  exact documentation examples that Discord, Azurite, Telegram, Slack and
+  Google publish. The default rules still have 222 rules. On the 2026-11-19
+  comparison sets, findings on non-secret values fell from 114 to 13 on the
+  generated set used to design the changes and from 213 to 184 on an
+  independent held-out set, with the same secrets found. UUIDs under
+  `client_id` style names, such as Keycloak client IDs, are no longer
+  reported.
+
 ## [0.1.0-alpha.10] - 2026-11-19
 
 - Windows release builds accept the reviewed MSVC toolset, 14.51.36231, or a

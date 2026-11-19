@@ -76,8 +76,9 @@ maintenance tools. They are never published.
 ### Configuration
 
 `rustleaks-core` parses TOML into a validated, immutable compiled
-configuration (`config` module). The packaged default rules,
-`crates/rustleaks-core/default/gitleaks.toml`, are built into the crate.
+configuration (`config` module). The default rules,
+`crates/rustleaks-core/default/gitleaks.toml`, are built into the crate. They
+are based on the upstream copy in `compat/config-corpus/default-gitleaks.toml`.
 Native rule packs load through `native::NativePolicy`, which adds stricter
 validation before the normal loader runs. Regex types stay private.
 
@@ -130,8 +131,14 @@ identity and attribution. These names do not identify the product.
 
 ### A detection rule
 
-- Do not edit the packaged default rules by hand. They are a copy of the
-  pinned Gitleaks configuration. A change comes from a new upstream pin. See
+- The default rules are Rustleaks-owned and based on the pinned Gitleaks
+  configuration. A change to them needs review, tests in
+  `crates/rustleaks-core/tests/default_rules.rs` (which names every
+  difference from the upstream copy), an entry in
+  [Default rules](../user/gitleaks-differences.md#default-rules), a changelog
+  entry, and a measurement on a held-out set that was not used to design it.
+  A change that makes Rustleaks miss secrets needs maintainer approval. Do not
+  edit the upstream copy; it changes only with a new pin. See
   [Updating upstream](updating-upstream.md).
 - Add a new rule to a native rule pack. See
   [Rule pack authoring](rule-pack-authoring.md).

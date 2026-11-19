@@ -54,6 +54,7 @@ rustleaks_library(
         "controlled_scan",
         "default_rule_corpus",
         "decoded_locations",
+        "default_rules",
         "detect_corpus",
         "engine",
         "generic_recall",
