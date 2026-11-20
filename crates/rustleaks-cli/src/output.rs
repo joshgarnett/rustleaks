@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rustleaks_core::config::CompiledConfig;
-use rustleaks_core::model::{ByteText, Finding};
+use rustleaks_core::model::{ByteText, Finding, Location};
 use rustleaks_report::{
     CsvReporter, JsonReporter, JunitReporter, ReportError, Reporter, SarifReporter, TemplateLimits,
     TemplateReporter,
@@ -219,20 +219,27 @@ fn normalize_format(value: &str) -> String {
     trim_go_space(value).to_lowercase()
 }
 
-pub(crate) fn verbose(writer: &mut dyn Write, findings: &[Finding]) -> io::Result<()> {
+/// Prints each finding for `--verbose`. A `redact` percent above zero also
+/// masks the helper values on `Required:` lines. The engine masks only the
+/// primary secret of a finding.
+pub(crate) fn verbose(
+    writer: &mut dyn Write,
+    findings: &[Finding],
+    redact: usize,
+) -> io::Result<()> {
     for finding in findings {
-        verbose_finding(writer, finding)?;
+        verbose_finding(writer, finding, redact)?;
     }
     Ok(())
 }
 
-fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
+fn verbose_finding(writer: &mut dyn Write, finding: &Finding, redact: usize) -> io::Result<()> {
     label(writer, "Finding:", trim_bytes(finding.match_text()))?;
     label(writer, "Secret:", trim_bytes(finding.secret()))?;
     label(writer, "RuleID:", finding.rule_id().to_string_lossy())?;
     writeln!(writer, "{:<12} {:.6}", "Entropy:", finding.entropy())?;
     if finding.file().is_empty() {
-        required(writer, finding)?;
+        required(writer, finding, redact)?;
         return writeln!(writer);
     }
     if !finding.tags().is_empty() {
@@ -258,7 +265,7 @@ fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> 
             "Fingerprint:",
             finding.fingerprint().to_string_lossy(),
         )?;
-        required(writer, finding)?;
+        required(writer, finding, redact)?;
         return writeln!(writer);
     }
     label(writer, "Commit:", finding.commit().to_string_lossy())?;
@@ -273,13 +280,20 @@ fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> 
     if !finding.link().is_empty() {
         label(writer, "Link:", finding.link().to_string_lossy())?;
     }
-    required(writer, finding)?;
+    required(writer, finding, redact)?;
     writeln!(writer)
 }
 
-fn required(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
+fn required(writer: &mut dyn Write, finding: &Finding, redact: usize) -> io::Result<()> {
     for (index, value) in finding.required_findings().iter().enumerate() {
-        let bytes = trim_raw(value.secret().as_bytes());
+        let masked;
+        let secret = if redact > 0 {
+            masked = redact_secret(value.secret(), redact);
+            masked.as_bytes()
+        } else {
+            value.secret().as_bytes()
+        };
+        let bytes = trim_raw(secret);
         let shown = if bytes.len() > 40 {
             [&bytes[..37], b"..."].concat()
         } else {
@@ -293,6 +307,20 @@ fn required(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
         writer.write_all(b"\n")?;
     }
     Ok(())
+}
+
+/// Masks a helper value with the rule of `Finding::redacted`, so a helper
+/// value and the primary secret are hidden the same way.
+fn redact_secret(secret: &ByteText, percent: usize) -> ByteText {
+    Finding::builder()
+        .rule_id("")
+        .location(Location::default())
+        .secret(secret.clone())
+        .build()
+        .map_or_else(
+            |_| ByteText::from("REDACTED"),
+            |finding| finding.redacted(percent).secret().clone(),
+        )
 }
 
 fn label(writer: &mut dyn Write, name: &str, value: impl std::fmt::Display) -> io::Result<()> {
@@ -470,6 +498,23 @@ mod tests {
     }
 
     #[test]
+    fn helper_values_are_masked_like_the_primary_secret() {
+        let secret = ByteText::from("helperclient42");
+        for (percent, expected) in [
+            (10, "helperclient4..."),
+            (50, "helperc..."),
+            (99, "..."),
+            (100, "REDACTED"),
+            (250, "REDACTED"),
+        ] {
+            assert_eq!(
+                redact_secret(&secret, percent).as_bytes(),
+                expected.as_bytes()
+            );
+        }
+    }
+
+    #[test]
     fn diagnostics_escape_terminal_control_characters() {
         let mut output = Vec::new();
         error(&mut output, "path\u{1b}[2J\nforged").unwrap();
@@ -587,7 +632,7 @@ mod tests {
             .build()
             .unwrap();
         let mut output = Vec::new();
-        verbose(&mut output, &[finding]).unwrap();
+        verbose(&mut output, &[finding], 0).unwrap();
         assert!(!output.contains(&0x1b));
         assert!(
             output

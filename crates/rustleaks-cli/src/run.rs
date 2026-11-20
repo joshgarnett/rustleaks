@@ -389,7 +389,9 @@ fn run_scan_inner<R: Read + Send + 'static>(
             .collect();
     }
     let partial = partial || profile.is_some() && !status.is_complete();
-    if invocation.options.verbose && output::verbose(stdout, &findings).is_err() {
+    if invocation.options.verbose
+        && output::verbose(stdout, &findings, invocation.options.redact).is_err()
+    {
         status.reason = CompletionReason::ReportFailure;
         return 1;
     }

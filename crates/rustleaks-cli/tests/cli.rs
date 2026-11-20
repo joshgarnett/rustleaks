@@ -1454,6 +1454,60 @@ fn redaction_and_custom_zero_exit_are_applied_to_reports() {
 }
 
 #[test]
+fn redaction_hides_helper_values_of_composite_rules_in_verbose_output() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "composite.toml",
+        "[[rules]]\nid='primary-rule'\ndescription='primary'\nregex='''password=\"([A-Za-z0-9]+)\"'''\nsecretGroup=1\n[[rules.required]]\nid='helper-rule'\n[[rules]]\nid='helper-rule'\ndescription='helper'\nregex='''client=\"([a-z0-9]+)\"'''\nsecretGroup=1\nskipReport=true\n",
+    );
+    fixture.write(
+        "secret.txt",
+        b"client=\"helperclient42\" password=\"Primary9Z\"\n",
+    );
+    let verbose = |extra: &[&str]| {
+        let mut arguments = vec![
+            "dir",
+            "secret.txt",
+            "--no-banner",
+            "-c",
+            "composite.toml",
+            "--verbose",
+        ];
+        arguments.extend_from_slice(extra);
+        let result = output(&fixture.0, &arguments);
+        assert_eq!(
+            result.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let stdout = String::from_utf8(result.stdout).unwrap();
+        let required = stdout
+            .lines()
+            .filter(|line| line.starts_with("Required:"))
+            .map(|line| line.split_whitespace().nth(1).unwrap().to_owned())
+            .collect::<Vec<_>>();
+        (stdout, required)
+    };
+
+    let (stdout, required) = verbose(&[]);
+    assert_eq!(required, ["helper-rule:1:helperclient42"], "{stdout}");
+    assert!(stdout.contains("Primary9Z"));
+
+    // 14 bytes with 50 percent hidden keep the first 7.
+    for (flag, shown) in [
+        ("--redact", "helper-rule:1:REDACTED"),
+        ("--redact=100", "helper-rule:1:REDACTED"),
+        ("--redact=50", "helper-rule:1:helperc..."),
+    ] {
+        let (stdout, required) = verbose(&[flag]);
+        assert_eq!(required, [shown], "{flag}: {stdout}");
+        assert!(!stdout.contains("helperclient42"), "{flag}: {stdout}");
+        assert!(!stdout.contains("Primary9Z"), "{flag}: {stdout}");
+    }
+}
+
+#[test]
 fn log_level_filters_normalized_summary_severities() {
     let fixture = Fixture::new();
     fixture.write("config.toml", no_match_config());
