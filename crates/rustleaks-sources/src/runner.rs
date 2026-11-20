@@ -1,7 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, TrySendError};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::thread;
 use std::time::Duration;
 
@@ -359,8 +360,7 @@ impl SourceRunner {
         queue_wait: &QueueWait,
         before_spawn: impl Fn(usize) -> std::io::Result<()>,
     ) -> SourceOutcome {
-        let (sender, receiver) = mpsc::sync_channel::<Job>(self.queue_capacity());
-        let receiver = Arc::new(Mutex::new(receiver));
+        let queue = JobQueue::new(self.queue_capacity(), queue_wait);
         let mut issues = Vec::new();
         let mut omitted_issues = 0_u64;
         let mut source_result = Ok(SourceControl::Continue);
@@ -379,7 +379,7 @@ impl SourceRunner {
                 });
             if setup_error.is_none() {
                 for index in 0..self.workers() {
-                    let receiver = WorkerReceiver::new(Arc::clone(&receiver), queue_wait);
+                    let receiver = queue.receiver();
                     let worker = &worker;
                     let spawned = before_spawn(index).and_then(|()| {
                         thread::Builder::new()
@@ -397,10 +397,8 @@ impl SourceRunner {
                     }
                 }
             }
-            // Only workers may retain receivers while the producer is active.
-            // Otherwise their failure cannot disconnect a full queue.
-            drop(receiver);
-
+            // Only workers hold receivers, so their failure disconnects a full
+            // queue.
             if let Some(error) = setup_error {
                 source_result = Err(error);
             } else {
@@ -436,7 +434,7 @@ impl SourceRunner {
                     let mut remaining_retries = INITIAL_QUEUE_RETRIES;
                     loop {
                         ensure_active(cancellation, "source runner cancelled while scheduling")?;
-                        match sender.try_send(pending) {
+                        match queue.try_send(pending) {
                             Ok(()) => return Ok(SourceControl::Continue),
                             Err(TrySendError::Full(job)) => {
                                 pending = job;
@@ -451,7 +449,7 @@ impl SourceRunner {
                     }
                 });
             }
-            drop(sender);
+            queue.close();
 
             for handle in handles {
                 match handle.join() {
@@ -506,6 +504,9 @@ struct FragmentBatch {
 }
 
 const INITIAL_QUEUE_RETRIES: usize = 32;
+
+/// Attempts to take the job queue lock without blocking before waiting on it.
+const QUEUE_LOCK_SPINS: usize = 128;
 
 /// Serializes notifications with the producer's transition from Full to sleep.
 struct QueueWait {
@@ -592,56 +593,237 @@ impl QueueWait {
     }
 }
 
-/// Drops receiver ownership before notifying the producer about worker exit.
-struct WorkerReceiver<'a> {
-    receiver: Option<Arc<Mutex<mpsc::Receiver<Job>>>>,
-    queue_wait: &'a QueueWait,
-    #[cfg(test)]
-    after_receive: Option<mpsc::Sender<()>>,
+/// Bounded first-in, first-out queue from the producer to the detection
+/// workers.
+///
+/// Workers lock the queue only to take a job. While it is empty, an idle
+/// worker parks its thread without holding a lock, and only the job that ends
+/// its wait wakes it. The producer never sleeps on this lock: a full queue
+/// returns the job to the producer, which waits on [`QueueWait`]. The first
+/// job taken after the producer saw the queue full, and the exit of any
+/// receiver, notify that gate. The producer also polls at the gate interval,
+/// so no notification is required for progress.
+///
+/// A producer retrying a full queue does not take the lock. It publishes
+/// `producer_blocked` and then reads `queued`, while a worker publishes
+/// `queued` after taking a job and then reads `producer_blocked`. All four are
+/// sequentially consistent, so either the worker notifies the producer or the
+/// producer sees the free slot.
+struct JobQueue<'a> {
+    state: Mutex<JobState>,
+    /// Number of queued jobs, written only under the lock.
+    queued: AtomicUsize,
+    /// Live [`WorkerReceiver`] handles, written only under the lock. Zero
+    /// means disconnected.
+    receivers: AtomicUsize,
+    /// The producer saw the queue full since the last taken job.
+    producer_blocked: AtomicBool,
+    capacity: usize,
+    wait: &'a QueueWait,
 }
 
-impl<'a> WorkerReceiver<'a> {
-    fn new(receiver: Arc<Mutex<mpsc::Receiver<Job>>>, queue_wait: &'a QueueWait) -> Self {
+struct JobState {
+    jobs: VecDeque<Job>,
+    /// The producer has finished; workers drain the queue and then stop.
+    closed: bool,
+    /// Parked workers, most recent last. A worker stays here until a waker
+    /// removes it and sets its flag.
+    sleepers: Vec<Sleeper>,
+    /// A parked worker was woken and has not yet taken the lock. While this is
+    /// set, new jobs do not wake another worker; the woken worker wakes the
+    /// next one if jobs remain, so the producer pays for at most one wake-up
+    /// at a time.
+    waking: bool,
+}
+
+/// One parked worker thread and the flag that ends its wait.
+struct Sleeper {
+    thread: thread::Thread,
+    woken: Arc<AtomicBool>,
+}
+
+impl Sleeper {
+    fn wake(self) {
+        self.woken.store(true, Ordering::Release);
+        self.thread.unpark();
+    }
+}
+
+impl JobState {
+    /// Claims one parked worker to wake for a queued job. The caller wakes it
+    /// after releasing the lock.
+    fn wake_one(&mut self) -> Option<Sleeper> {
+        if self.waking || self.jobs.is_empty() {
+            return None;
+        }
+        let sleeper = self.sleepers.pop()?;
+        self.waking = true;
+        Some(sleeper)
+    }
+}
+
+impl<'a> JobQueue<'a> {
+    fn new(capacity: usize, wait: &'a QueueWait) -> Self {
         Self {
-            receiver: Some(receiver),
-            queue_wait,
+            state: Mutex::new(JobState {
+                jobs: VecDeque::new(),
+                closed: false,
+                sleepers: Vec::new(),
+                waking: false,
+            }),
+            queued: AtomicUsize::new(0),
+            receivers: AtomicUsize::new(0),
+            producer_blocked: AtomicBool::new(false),
+            capacity,
+            wait,
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, JobState> {
+        // Every critical section is a few operations long. A short spin
+        // avoids parking in the kernel when another thread holds the lock
+        // only briefly, which a contended platform mutex may otherwise do.
+        for _ in 0..QUEUE_LOCK_SPINS {
+            match self.state.try_lock() {
+                Ok(guard) => return guard,
+                Err(TryLockError::Poisoned(poisoned)) => return poisoned.into_inner(),
+                Err(TryLockError::WouldBlock) => std::hint::spin_loop(),
+            }
+        }
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Registers one worker's receiver.
+    fn receiver(&self) -> WorkerReceiver<'_> {
+        let state = self.lock();
+        self.receivers.fetch_add(1, Ordering::SeqCst);
+        drop(state);
+        WorkerReceiver {
+            queue: self,
+            woken: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             after_receive: None,
         }
     }
 
+    /// Enqueues without blocking, with the results of a bounded channel.
+    #[allow(clippy::result_large_err)] // The queue returns ownership of an unsent fragment without another allocation.
+    fn try_send(&self, job: Job) -> Result<(), TrySendError<Job>> {
+        if self.is_full_without_lock() {
+            return Err(TrySendError::Full(job));
+        }
+        let mut state = self.lock();
+        if self.receivers.load(Ordering::SeqCst) == 0 {
+            return Err(TrySendError::Disconnected(job));
+        }
+        if state.jobs.len() >= self.capacity {
+            self.producer_blocked.store(true, Ordering::SeqCst);
+            return Err(TrySendError::Full(job));
+        }
+        state.jobs.push_back(job);
+        self.queued.store(state.jobs.len(), Ordering::SeqCst);
+        let sleeper = state.wake_one();
+        drop(state);
+        if let Some(sleeper) = sleeper {
+            sleeper.wake();
+        }
+        Ok(())
+    }
+
+    /// Reports a full queue with live receivers without taking the lock. The
+    /// blocked flag is published before the second read, so a job taken
+    /// after this read notifies the producer. Any other state, including
+    /// disconnection, takes the locked path.
+    fn is_full_without_lock(&self) -> bool {
+        if self.receivers.load(Ordering::SeqCst) == 0
+            || self.queued.load(Ordering::SeqCst) < self.capacity
+        {
+            return false;
+        }
+        self.producer_blocked.store(true, Ordering::SeqCst);
+        self.queued.load(Ordering::SeqCst) >= self.capacity
+            && self.receivers.load(Ordering::SeqCst) != 0
+    }
+
+    /// Lets the workers take the queued jobs and then stop.
+    fn close(&self) {
+        let sleepers = {
+            let mut state = self.lock();
+            state.closed = true;
+            std::mem::take(&mut state.sleepers)
+        };
+        for sleeper in sleepers {
+            sleeper.wake();
+        }
+    }
+}
+
+/// One worker's handle on the [`JobQueue`]. Dropping it unregisters the
+/// worker before it notifies the producer about the exit.
+struct WorkerReceiver<'a> {
+    queue: &'a JobQueue<'a>,
+    /// Set by the waker that removes this worker from the sleepers.
+    woken: Arc<AtomicBool>,
+    #[cfg(test)]
+    after_receive: Option<mpsc::Sender<()>>,
+}
+
+impl WorkerReceiver<'_> {
     fn recv(&self) -> Result<Job, mpsc::RecvError> {
         #[cfg(test)]
-        if let Some(before_receive) = &self.queue_wait.before_receive {
+        if let Some(before_receive) = &self.queue.wait.before_receive {
             let _ = before_receive.send(());
         }
-        let received = self
-            .receiver
-            .as_ref()
-            .expect("worker retains its receiver until exit")
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .recv();
-        if received.is_ok() {
-            #[cfg(test)]
-            if let Some(after_receive) = &self.after_receive {
-                let _ = after_receive.send(());
+        let mut state = self.queue.lock();
+        let job = loop {
+            if let Some(job) = state.jobs.pop_front() {
+                break job;
             }
-            // Release the receiver mutex before acquiring the notification gate.
-            self.queue_wait.notify();
+            if state.closed {
+                return Err(mpsc::RecvError);
+            }
+            self.woken.store(false, Ordering::Relaxed);
+            state.sleepers.push(Sleeper {
+                thread: thread::current(),
+                woken: Arc::clone(&self.woken),
+            });
+            drop(state);
+            // Parking can return early; only the waker's flag ends the wait.
+            while !self.woken.load(Ordering::Acquire) {
+                thread::park();
+            }
+            state = self.queue.lock();
+            state.waking = false;
+        };
+        self.queue.queued.store(state.jobs.len(), Ordering::SeqCst);
+        let notify = self.queue.producer_blocked.swap(false, Ordering::SeqCst);
+        let next = state.wake_one();
+        drop(state);
+        if let Some(next) = next {
+            next.wake();
         }
-        received
+        #[cfg(test)]
+        if let Some(after_receive) = &self.after_receive {
+            let _ = after_receive.send(());
+        }
+        if notify {
+            // Release the queue lock before acquiring the notification gate.
+            self.queue.wait.notify();
+        }
+        Ok(job)
     }
 }
 
 impl Drop for WorkerReceiver<'_> {
     fn drop(&mut self) {
-        drop(self.receiver.take());
+        let state = self.queue.lock();
+        self.queue.receivers.fetch_sub(1, Ordering::SeqCst);
+        drop(state);
         #[cfg(test)]
-        if let Some(receiver_dropped) = &self.queue_wait.receiver_dropped {
+        if let Some(receiver_dropped) = &self.queue.wait.receiver_dropped {
             let _ = receiver_dropped.send(());
         }
-        self.queue_wait.notify();
+        self.queue.wait.notify();
     }
 }
 
@@ -776,8 +958,8 @@ impl Default for SourceRunner {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Condvar;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Condvar};
     use std::time::Duration;
 
     use rustleaks_core::config::ConfigLoader;
@@ -943,15 +1125,15 @@ mod tests {
     #[test]
     fn dequeue_before_gated_retry_does_not_require_a_notification_to_be_remembered() {
         let wait = QueueWait::default();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        let receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
-        assert!(sender.try_send(queue_job(0)).is_ok());
-        let Err(TrySendError::Full(pending)) = sender.try_send(queue_job(1)) else {
+        let queue = JobQueue::new(1, &wait);
+        let receiver = queue.receiver();
+        assert!(queue.try_send(queue_job(0)).is_ok());
+        let Err(TrySendError::Full(pending)) = queue.try_send(queue_job(1)) else {
             panic!("the occupied queue must reject the pending job");
         };
         assert_eq!(receiver.recv().unwrap().sequence, 0);
         let guard = wait.wait(None);
-        assert!(sender.try_send(pending).is_ok());
+        assert!(queue.try_send(pending).is_ok());
         drop(guard);
         assert_eq!(receiver.recv().unwrap().sequence, 1);
     }
@@ -962,14 +1144,14 @@ mod tests {
             interval: NOTIFICATION_ONLY_INTERVAL,
             ..QueueWait::default()
         };
-        let (sender, receiver) = mpsc::sync_channel(1);
+        let queue = JobQueue::new(1, &wait);
         let (after_receive, dequeued) = mpsc::channel();
-        let mut receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
+        let mut receiver = queue.receiver();
         receiver.after_receive = Some(after_receive);
-        assert!(sender.try_send(queue_job(0)).is_ok());
+        assert!(queue.try_send(queue_job(0)).is_ok());
         let guard = wait.wait(None);
         assert!(matches!(
-            sender.try_send(queue_job(1)),
+            queue.try_send(queue_job(1)),
             Err(TrySendError::Full(_))
         ));
         thread::scope(|scope| {
@@ -1010,15 +1192,15 @@ mod tests {
             receiver_dropped: Some(receiver_dropped),
             ..QueueWait::default()
         };
-        let (sender, receiver) = mpsc::sync_channel(1);
-        let receiver = WorkerReceiver::new(Arc::new(Mutex::new(receiver)), &wait);
-        assert!(sender.try_send(queue_job(0)).is_ok());
+        let queue = JobQueue::new(1, &wait);
+        let receiver = queue.receiver();
+        assert!(queue.try_send(queue_job(0)).is_ok());
         let guard = wait.wait(None);
         thread::scope(|scope| {
             let worker = scope.spawn(move || drop(receiver));
             dropped.recv_timeout(TEST_TIMEOUT).unwrap();
             assert!(matches!(
-                sender.try_send(queue_job(1)),
+                queue.try_send(queue_job(1)),
                 Err(TrySendError::Disconnected(_))
             ));
             let (done, completion) = mpsc::channel();
@@ -1043,23 +1225,82 @@ mod tests {
     #[test]
     fn one_receiver_exit_keeps_the_surviving_worker_connected() {
         let wait = QueueWait::default();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        let receiver = Arc::new(Mutex::new(receiver));
-        let first = WorkerReceiver::new(Arc::clone(&receiver), &wait);
-        let second = WorkerReceiver::new(receiver, &wait);
-        assert!(sender.try_send(queue_job(0)).is_ok());
+        let queue = JobQueue::new(1, &wait);
+        let first = queue.receiver();
+        let second = queue.receiver();
+        assert!(queue.try_send(queue_job(0)).is_ok());
         drop(first);
         assert!(matches!(
-            sender.try_send(queue_job(1)),
+            queue.try_send(queue_job(1)),
             Err(TrySendError::Full(_))
         ));
         assert_eq!(second.recv().unwrap().sequence, 0);
-        assert!(sender.try_send(queue_job(1)).is_ok());
+        assert!(queue.try_send(queue_job(1)).is_ok());
         drop(second);
         assert!(matches!(
-            sender.try_send(queue_job(2)),
+            queue.try_send(queue_job(2)),
             Err(TrySendError::Disconnected(_))
         ));
+    }
+
+    #[test]
+    fn closing_wakes_idle_receivers_after_they_take_the_queued_jobs() {
+        let wait = QueueWait::default();
+        let queue = JobQueue::new(4, &wait);
+        thread::scope(|scope| {
+            let workers = (0..3)
+                .map(|_| {
+                    let receiver = queue.receiver();
+                    scope.spawn(move || {
+                        let mut taken = Vec::new();
+                        while let Ok(job) = receiver.recv() {
+                            taken.push(job.sequence);
+                        }
+                        taken
+                    })
+                })
+                .collect::<Vec<_>>();
+            for sequence in 0..4 {
+                assert!(queue.try_send(queue_job(sequence)).is_ok());
+            }
+            queue.close();
+            let mut taken = workers
+                .into_iter()
+                .flat_map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>();
+            taken.sort_unstable();
+            assert_eq!(taken, [0, 1, 2, 3]);
+        });
+    }
+
+    #[test]
+    fn many_workers_receive_every_job_exactly_once() {
+        const JOBS: usize = 20_000;
+        for (workers, capacity) in [(2, 1), (8, 1), (8, 16), (16, 3)] {
+            let received = Mutex::new(Vec::with_capacity(JOBS));
+            let outcome = SourceRunner::new(workers, capacity)
+                .unwrap()
+                .run_with_worker(
+                    &mut TokenFragments(JOBS),
+                    &SessionPolicy::default(),
+                    &CancellationToken::new(),
+                    |receiver| {
+                        let mut taken = Vec::new();
+                        while let Ok(job) = receiver.recv() {
+                            taken.push(job.sequence);
+                        }
+                        received.lock().unwrap().extend(taken);
+                        Vec::new()
+                    },
+                );
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            let mut received = received.into_inner().unwrap();
+            received.sort_unstable();
+            assert!(
+                received.iter().copied().eq(0..u64::try_from(JOBS).unwrap()),
+                "{workers} workers, capacity {capacity}: each job must arrive exactly once"
+            );
+        }
     }
 
     #[test]

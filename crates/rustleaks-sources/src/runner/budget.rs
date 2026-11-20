@@ -5,11 +5,11 @@ use std::sync::{MutexGuard, PoisonError};
 use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanTermination, ScanUsage};
 
 use super::{
-    Arc, CallbackError, CancellationToken, Engine, Fragment, INITIAL_QUEUE_RETRIES, Job, Mutex,
-    QueueWait, ScanControl, ScanOptions, ScanOutcome, SessionPolicy, Source, SourceControl,
+    CallbackError, CancellationToken, Engine, Fragment, INITIAL_QUEUE_RETRIES, Job, JobQueue,
+    Mutex, QueueWait, ScanControl, ScanOptions, ScanOutcome, SessionPolicy, Source, SourceControl,
     SourceError, SourceEvent, SourceIssue, SourceOutcome, SourceRunner, SourceStatistics,
-    SourceTermination, TrySendError, WorkerReceiver, ensure_active, finish_run,
-    merge_complete_scan, mpsc, thread, worker_terminal,
+    SourceTermination, TrySendError, ensure_active, finish_run, merge_complete_scan, thread,
+    worker_terminal,
 };
 use crate::Cancellation;
 
@@ -743,8 +743,7 @@ fn run_with_scan_setup(
         stopped: AtomicBool::new(false),
         accounting: Mutex::new(Accounting::default()),
     };
-    let (sender, receiver) = mpsc::sync_channel::<Job>(runner.queue_capacity());
-    let receiver = Arc::new(Mutex::new(receiver));
+    let queue = JobQueue::new(runner.queue_capacity(), queue_wait);
     let mut issues = Vec::new();
     let mut source_result = Ok(SourceControl::Continue);
     let mut worker_panicked = false;
@@ -759,7 +758,7 @@ fn run_with_scan_setup(
             .map(|error| worker_terminal(format!("could not allocate worker handles: {error}")));
         if setup_error.is_none() {
             for index in 0..runner.workers() {
-                let receiver = WorkerReceiver::new(Arc::clone(&receiver), queue_wait);
+                let receiver = queue.receiver();
                 let operation = &operation;
                 let scan = &scan;
                 match before_spawn(index).and_then(|()| {
@@ -807,7 +806,6 @@ fn run_with_scan_setup(
                 }
             }
         }
-        drop(receiver);
         if let Some(error) = setup_error {
             source_result = Err(error);
         } else {
@@ -848,11 +846,11 @@ fn run_with_scan_setup(
                     &operation,
                     Job { sequence, fragment },
                     queue_wait,
-                    |pending| sender.try_send(pending),
+                    |pending| queue.try_send(pending),
                 )
             });
         }
-        drop(sender);
+        queue.close();
         for handle in handles {
             match handle.join() {
                 Ok(worker_batches) => batches.extend(worker_batches),
@@ -888,8 +886,8 @@ fn run_with_scan_setup(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Condvar;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::{Condvar, mpsc};
     use std::time::Duration;
 
     use rustleaks_core::config::ConfigLoader;

@@ -14,7 +14,7 @@ use rustleaks_sources::{
 use crate::args::{CommandKind, Invocation};
 
 const MAX_PROFILE_BYTES: usize = 16 * 1024;
-// Version 1 bounds eager channel slots and requested detection threads.
+// Version 1 bounds waiting fragments and requested detection threads.
 // These are scheduling guards, not a process memory quota.
 const MAX_WORKERS: usize = 64;
 const MAX_QUEUE_CAPACITY: usize = 1024;

@@ -94,12 +94,20 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Result<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "rustleaks-perf-io-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root)?;
+        // A later run can reuse the process ID of a run that left a folder
+        // behind, so a taken name moves to the next one.
+        let root = loop {
+            let root = std::env::temp_dir().join(format!(
+                "rustleaks-perf-io-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            match fs::create_dir(&root) {
+                Ok(()) => break root,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.into()),
+            }
+        };
         fs::create_dir(root.join("empty"))?;
         fs::write(root.join("empty-config"), b"")?;
         Ok(Self(root))
