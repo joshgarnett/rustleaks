@@ -2,10 +2,10 @@
 #![no_main]
 
 #[allow(dead_code)]
-#[path = "../../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 
-use campaign_profile::Profile;
+use fuzz_profile::Profile;
 
 use std::hint::black_box;
 use std::io::{self, Write};
@@ -56,7 +56,7 @@ fn finding(index: usize, bytes: &[u8]) -> Finding {
 fuzz_target!(|data: &[u8]| {
     let profile = Profile::current();
     let caps = profile.template();
-    let (control, template, finding_bytes) = campaign_profile::template_parts(data, profile);
+    let (control, template, finding_bytes) = fuzz_profile::template_parts(data, profile);
     let chunk_size = finding_bytes.len().div_ceil(caps.findings).max(1);
     let mut findings = finding_bytes
         .chunks(chunk_size)

@@ -2,10 +2,10 @@
 #![no_main]
 
 #[allow(dead_code)]
-#[path = "../../tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 
-use campaign_profile::Profile;
+use fuzz_profile::Profile;
 
 use std::borrow::Cow;
 use std::hint::black_box;
@@ -18,7 +18,7 @@ mod regex;
 use regex::GoRegex;
 
 fn framed_input(data: &[u8]) -> Option<(Cow<'_, str>, &[u8])> {
-    let (pattern, haystack) = campaign_profile::regex_parts(data, Profile::current())?;
+    let (pattern, haystack) = fuzz_profile::regex_parts(data, Profile::current())?;
     Some((String::from_utf8_lossy(pattern), haystack))
 }
 

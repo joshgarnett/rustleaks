@@ -288,7 +288,7 @@ coverage needs the matching LLVM tools and a coverage replay. Ordinary Bazel
 tests do not replace source coverage.
 
 The shared limits and larger seeds are in
-`crates/rustleaks-core/tests/support/campaign_profile.rs`, outside the
+`crates/rustleaks-core/tests/support/fuzz_profile.rs`, outside the
 library. `RUSTLEAKS_FUZZ_PROFILE=deep` selects the deep harness profile; the
 private runner sets and records it. Unknown profiles fail at startup.
 

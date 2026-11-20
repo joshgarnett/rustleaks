@@ -4,8 +4,8 @@ exports_files(["Cargo.toml"])
 rustleaks_build_contract_files()
 
 filegroup(
-    name = "campaign_profile_support",
-    srcs = ["tests/support/campaign_profile.rs"],
+    name = "fuzz_profile_support",
+    srcs = ["tests/support/fuzz_profile.rs"],
     visibility = ["//visibility:public"],
 )
 
@@ -70,7 +70,7 @@ rustleaks_integration_test(
     name = "security_stress_test",
     src = "tests/security_stress.rs",
     deps = [":rustleaks_core"],
-    srcs = [":campaign_profile_support"],
+    srcs = [":fuzz_profile_support"],
 )
 
 rustleaks_integration_test(

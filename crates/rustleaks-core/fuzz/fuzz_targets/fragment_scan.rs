@@ -2,10 +2,10 @@
 #![no_main]
 
 #[allow(dead_code)]
-#[path = "../../tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 
-use campaign_profile::Profile;
+use fuzz_profile::Profile;
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -73,7 +73,7 @@ fuzz_target!(|data: &[u8]| {
         .max_decode_depth(limits.decode_depth)
         .max_target_bytes(Some(limits.input_bytes + DECODE_SUFFIX.len()))
         .redaction_percent(usize::from(control % 101))
-        .honor_gitleaks_allow(control & 2 == 0)
+        .honor_allow_markers(control & 2 == 0)
         .build();
 
     let scan = || -> ScanOutcome {

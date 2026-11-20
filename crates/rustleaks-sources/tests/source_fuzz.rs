@@ -4,8 +4,8 @@
 #![allow(missing_docs)]
 
 #[allow(dead_code)]
-#[path = "../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 #[allow(dead_code)]
 #[path = "../fuzz/support/git_harness.rs"]
 mod git_harness;
@@ -16,7 +16,7 @@ mod reader_harness;
 #[path = "../fuzz/support/source_frame.rs"]
 mod source_frame;
 
-use campaign_profile::{Profile, deep_seed};
+use fuzz_profile::{Profile, deep_seed};
 use rustleaks_sources::{SourceControl, SourceError, SourceEvent, SourceIssueKind, SourceStage};
 use source_frame::{Encoding, GIT_HEADER_BYTES, GitFrame, READER_HEADER_BYTES, ReaderFrame};
 

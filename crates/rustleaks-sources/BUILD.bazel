@@ -109,7 +109,7 @@ rustleaks_integration_test(
         "fuzz/seeds/archive/zip-header.txt",
     ],
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -118,7 +118,7 @@ rustleaks_integration_test(
     crate_features = _ARCHIVE_FEATURES,
     data = ["//compat:all"],
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -130,7 +130,7 @@ rustleaks_integration_test(
     ],
     crate_features = _FUZZING_FEATURES,
     deps = [":profile_fuzzing"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -138,7 +138,7 @@ rustleaks_integration_test(
     src = "tests/security_stress.rs",
     crate_features = _ARCHIVE_FEATURES,
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(

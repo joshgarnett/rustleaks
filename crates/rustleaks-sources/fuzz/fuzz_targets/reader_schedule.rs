@@ -2,8 +2,8 @@
 #![no_main]
 
 #[allow(dead_code)]
-#[path = "../../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 #[allow(dead_code)]
 #[path = "../support/reader_harness.rs"]
 mod reader_harness;
@@ -17,6 +17,6 @@ use std::hint::black_box;
 fuzz_target!(|data: &[u8]| {
     black_box(reader_harness::exercise(
         data,
-        campaign_profile::Profile::current(),
+        fuzz_profile::Profile::current(),
     ));
 });
