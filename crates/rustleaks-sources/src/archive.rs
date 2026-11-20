@@ -1296,7 +1296,9 @@ impl<'a> ArchiveState<'a> {
                 return Ok(true);
             }
             if entry.size() > member_limit as u64 {
-                return Err(seven_error("archive resource limit exceeded"));
+                return Err(rustleaks_sevenz::Error::from(
+                    Failure::Limit("archive resource limit exceeded".to_owned()).into_io(),
+                ));
             }
             let name = clean_member_name(entry.name().as_bytes());
             let mut decoded = DecodeErrors(stream);
@@ -1359,18 +1361,7 @@ impl<'a> ArchiveState<'a> {
             return outcome;
         }
         if let Err(error) = result {
-            let message = error.to_string();
-            let issue = if message.contains("limit") {
-                limit_issue(self.physical_path, message)
-            } else {
-                issue(
-                    self.physical_path,
-                    SourceStage::Decode,
-                    SourceIssueKind::Decode,
-                    message,
-                )
-            };
-            return emit_issue(issue, emit);
+            return emit_issue(seven_traversal_issue(self.physical_path, &error), emit);
         }
         Ok(SourceControl::Continue)
     }
@@ -1648,6 +1639,27 @@ fn preflight_7z(
 
 fn seven_error(message: impl Into<String>) -> rustleaks_sevenz::Error {
     rustleaks_sevenz::Error::from(std::io::Error::other(message.into()))
+}
+
+/// Builds the issue for an error that ended a 7z traversal.
+///
+/// A decoder that needs more memory than the 7z memory limit, and a limit
+/// of this crate, give a limit issue. Any other error is a decode issue.
+fn seven_traversal_issue(path: &Path, error: &rustleaks_sevenz::Error) -> SourceIssue {
+    if let rustleaks_sevenz::Error::Io(inner, _) = error
+        && let Some(message) = stream::limit(inner)
+    {
+        return limit_issue(path, message);
+    }
+    if matches!(error, rustleaks_sevenz::Error::MaxMemLimited { .. }) {
+        return limit_issue(path, error.to_string());
+    }
+    issue(
+        path,
+        SourceStage::Decode,
+        SourceIssueKind::Decode,
+        error.to_string(),
+    )
 }
 
 const LZ4_FRAME_MAGIC: u32 = 0x184D_2204;

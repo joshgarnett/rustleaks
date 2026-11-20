@@ -72,6 +72,17 @@ impl Failure {
     }
 }
 
+/// Returns the message of a wrapped [`Failure::Limit`].
+pub(super) fn limit(error: &io::Error) -> Option<&str> {
+    match error
+        .get_ref()
+        .and_then(<dyn std::error::Error + Send + Sync>::downcast_ref::<Failure>)
+    {
+        Some(Failure::Limit(message)) => Some(message),
+        _ => None,
+    }
+}
+
 fn is_failure(error: &io::Error) -> bool {
     error
         .get_ref()
