@@ -100,6 +100,8 @@ def self_test_creddata(root):
     workload = manifest['workloads'][0]
     if workload['path'] != 'credata/CredData/data' or workload['labels'] != 'credata/labels.jsonl':
         raise QualityError('CredData manifest paths are wrong')
+    if workload.get('labels_complete') is not False:
+        raise QualityError('the CredData manifest must mark its labels incomplete')
     # Rows past the end of a line or the file are problems, not silent
     # labels, and a span labeled both ways is left out and reported.
     bad_rows = [
