@@ -4,10 +4,11 @@ This guide is for Rust developers who use `rustleaks-core` and want to track
 findings that a person has already reviewed. Read [Using
 rustleaks-core](library.md) first.
 
-The `rustleaks_core::triage` module labels each finding as `New` or `Acknowledged`. It never removes a finding,
-changes detection, or marks a credential as safe. An acknowledgement records
-a decision in your review process. It is separate from ignore files and
-baselines, and you must turn it on yourself.
+The `rustleaks_core::triage` module labels each finding as `New` or
+`Acknowledged`. It never removes a finding, changes detection, or marks a
+credential as safe. An acknowledgement records a decision in your review
+process. It is separate from ignore files and baselines, and you must turn
+it on yourself.
 
 ```rust
 use rustleaks_core::explanation::ExplanationOptions;

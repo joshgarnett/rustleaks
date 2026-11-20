@@ -20,9 +20,11 @@ does not change the packaged default rules.
   only these 3 rules and without the default rules. Use `--native-pack` to
   add the rules to the default rules.
 
-See [Native rule packs](../../../docs/user/native-rule-packs.md) for users and
-[Rule pack authoring](../../../docs/dev/rule-pack-authoring.md) for
-contributors.
+See [Native rule
+packs](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/native-rule-packs.md)
+for users and [Rule pack
+authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
+for contributors.
 
 ## Rules
 
@@ -102,40 +104,3 @@ References:
 - [MongoDB connection string formats](https://www.mongodb.com/docs/manual/reference/connection-string-formats/):
   credentials, percent encoding of reserved characters, standard host lists,
   and one SRV host without a port.
-
-## Maintenance
-
-- Tests: `crates/rustleaks-core/tests/native_rules.rs`, with the native loader
-  and identity in `native_policy.rs`.
-- Edit `rustleaks-extra-v1.toml` by hand. A change in what the pack detects
-  needs a new pack ID.
-- A refresh needs a review of provider format changes, new independent test
-  cases and a new run of the quality comparison. Nothing is downloaded.
-- Regenerate the `.sha256` identity after a change, and check it:
-
-  ```sh
-  cargo xtask generate native-pack-identity
-  cargo xtask generate native-pack-identity --check
-  ```
-
-  Never edit the digest by hand. The build checks that it matches the TOML
-  bytes.
-
-### Quality evaluation
-
-The synthetic [quality corpus](../../../compat/quality-corpus/README.md)
-compares the default rules with and without this pack on the same inputs.
-It has Azure field orders, repeats, invalid bytes, percent-encoded wrappers,
-MongoDB percent-encoded user information, short passwords, templates and near
-misses. Sovereign Azure endpoints and MongoDB IPv6 inputs are kept as positive
-gap cases. They are not negative examples.
-
-The pack is accepted only when the comparison shows no lost held-out
-positives, no new alerts on reviewed negatives and no unreviewed duplicate
-alerts. The one reviewed duplicate is the `mongodb-provider-overlap` case,
-where a synthetic MongoDB password has the shape of a GitHub token. These
-cases are small structural controls, not a measure of accuracy on real data.
-
-Run `just quality-eval` for the current counts. A change must cite that
-report and its source and configuration identity. A report that runs
-successfully is not by itself an acceptance decision.

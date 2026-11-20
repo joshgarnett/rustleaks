@@ -270,9 +270,8 @@ line, and redaction can create separate lines.
 - On the shared path, a primary charges the work units for all its edges
   together, before the shared list is built. The list then holds and charges
   helpers in edge order: all helpers of the first edge, then all helpers of
-  the next. Before this change, a primary charged one edge unit before that
-  edge's helpers. Near a budget limit, the order decides only which budget
-  kind the termination reports. A rule that stops early publishes no findings
+  the next. Near a budget limit, the order decides only which budget kind
+  the termination reports. A rule that stops early publishes no findings
   either way.
 - Work and memory in the engine grow with primaries plus helpers when all
   edges have window `0`, and with primaries plus projected helpers for line
@@ -292,15 +291,50 @@ line, and redaction can create separate lines.
 
 ## Source runner budgets
 
-`SourceRunner::new` and `SourceRunner::default` have no scan limits.
-`with_budget` installs a `SourceBudget` with limits for fragment size, total
-original bytes, fragment count, retained issues, and per-fragment and
-operation engine budgets. [Using
-rustleaks-core](../user/library.md#budgets-across-many-fragments) has an
-example.
+`rustleaks-sources` is not published. Its `SourceRunner` reads a source in
+fragments and scans them on worker threads. `SourceRunner::new` and
+`SourceRunner::default` have no scan limits. `with_budget` installs a
+`SourceBudget` with limits for fragment size, total original bytes, fragment
+count, retained issues, and per-fragment (`per_fragment`) and operation
+(`aggregate`) engine budgets:
+
+```rust
+use rustleaks_core::ScanBudget;
+use rustleaks_sources::{SourceBudget, SourceRunner};
+
+let runner = SourceRunner::new(4, 8)?.with_budget(
+    SourceBudget::unlimited()
+        .max_fragment_bytes(1024 * 1024)
+        .max_original_bytes(128 * 1024 * 1024)
+        .max_fragments(10_000)
+        .max_issues(100)
+        .per_fragment(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(1024 * 1024)
+                .max_work_units(100_000)
+                .max_finding_records(1_000)
+                .max_finding_payload_bytes(8 * 1024 * 1024)
+                .max_collected_spans(10_000)
+                .max_normalization_bytes(16 * 1024 * 1024),
+        )
+        .aggregate(
+            ScanBudget::unlimited()
+                .max_decoded_bytes(32 * 1024 * 1024)
+                .max_work_units(10_000_000)
+                .max_finding_records(10_000)
+                .max_finding_payload_bytes(64 * 1024 * 1024)
+                .max_collected_spans(100_000)
+                .max_normalization_bytes(128 * 1024 * 1024),
+        ),
+)?;
+```
 
 - All limits include their value; zero is valid. Each finite operation engine
   limit needs a finite per-fragment limit of the same kind.
+- The limits are not a heap quota. They do not interrupt one engine step,
+  and they cannot make a custom source check its cancellation flag. For a
+  source that has no natural end, set original bytes, fragment count, issues
+  and engine limits together.
 - Before a scan, the runner reserves the full per-fragment allowance in every
   operation dimension at once. After the scan it charges the measured usage
   and returns the rest. When a reservation does not fit while other scans
@@ -332,11 +366,9 @@ example.
 - At most `queue_capacity + workers + 1` fragments without errors are held by
   the scheduling path. Source adapters can hold more data, so their own limits
   still apply. Issue limits count issues, not message length.
-- `SourceRunner::default` uses one worker and one queue slot. The `rustleaks`
-  command takes the worker count from `--jobs`, then from the profile
-  `workers` key, then from `std::thread::available_parallelism` up to 12,
-  or uses 1 when that fails. Without a profile, its queue capacity equals the worker
-  count, up to 1,024, which bounds the fragments that wait for a worker.
+- `SourceRunner::default` uses one worker and one queue slot. For the
+  workers and queue of the `rustleaks` command, see [CLI threads and
+  memory](#cli-threads-and-memory).
 - The queue is one locked first-in, first-out list. A worker locks it only to
   take a fragment. While the list is empty, an idle worker parks its thread
   without holding a lock. A new fragment wakes one parked worker, and that
@@ -349,6 +381,47 @@ example.
 - A complete run returns findings in producer order, the same as one worker.
   After a budget stop, the returned subset and its order depend on
   scheduling.
+
+## CLI threads and memory
+
+This section is the one place for the thread defaults of the `rustleaks`
+command and the memory that each one adds. The user guide gives the
+summary in [Detection
+threads](../user/resource-limits.md#detection-threads).
+
+| Item | CLI value | Code |
+| --- | --- | --- |
+| Detection threads (workers) | `--jobs`, then the profile `workers` key, then `std::thread::available_parallelism` up to 12, or 1 when that fails | `MAX_DEFAULT_JOBS`, `default_runner` |
+| Runner queue | Without a profile, one slot for each worker, up to 1,024. With a profile, `queue_capacity`. | `MAX_DEFAULT_QUEUE_CAPACITY` |
+| `git log` processes for history | One for each worker, up to 6 | `MAX_GIT_HISTORY_PROCESSES` |
+| Directory reader threads | One for each worker, up to 2 | `MAX_READ_THREADS` |
+
+The constants are in `crates/rustleaks-cli/src/run.rs`. Their doc comments
+record the measurements behind each default. Memory that grows with these
+numbers:
+
+- The runner holds at most `queue_capacity + workers + 1` fragments. See
+  [Source runner budgets](#source-runner-budgets).
+- Each `git log` process maps the pack files and keeps its own caches, from
+  hundreds of megabytes to more than 2 GB for large histories. The output
+  that waits for the parser is bounded; see [Git history
+  processes](#git-history-processes).
+- For R reader threads, the reader stage holds at most 9R fragments and R
+  read buffers of the chunk size. See [Directory reader
+  threads](#directory-reader-threads).
+- Each worker keeps its own regex search caches.
+
+On a 36-CPU host with 12 detection threads, history scans of six public
+repositories, from 5,000 to 100,000 commits, took 0.3 to 0.6 times as long
+with 6 Git processes as with one. All Git processes together used about as
+much memory as one Git process for the whole history, or less. Rustleaks
+itself used up to about 0.45 GB more, because more fragments waited for the
+workers and more Git output waited for the parser. On the same host, `dir`
+scans of large public repositories were within 4 percent of their best time
+at 12 threads and used about half the memory of 36 threads. A folder of
+100,000 small files was no faster with more than two threads. With one
+detection thread, a second reader thread made scans at most a few percent
+faster for much more CPU time.
 
 ## Git history processes
 
@@ -372,6 +445,11 @@ With more than one, and with the default history options, `plan`:
 3. Runs `git config --get format.pretty`, which must exit with 1. One process
    writes a blank line between two shown commits in the default format; a
    `tformat` or `oneline` format ends each commit instead.
+
+If a check fails, the history uses one process. `--log-opts` with a value,
+`--staged` and `--pre-commit` also use one process, because options such as
+a path, `--follow`, `--reverse` or `-n` change which commits Git shows or how
+it shows them.
 
 `visit` starts one thread for each process. Each thread takes the next
 batch, writes its commit names to the standard input of
@@ -417,13 +495,13 @@ reports for several `--jobs` values.
 `DirectoryOptions::read_threads` sets how many threads open and read the
 files of a directory walk. The default, 1, reads every file on the calling
 thread. The `rustleaks` command uses one reader for each detection thread, up
-to 2. More readers did not open files faster on the measured macOS host, and
-they used more CPU time.
+to 2 (`MAX_READ_THREADS` in `crates/rustleaks-cli/src/run.rs`, which records
+the measurement).
 
 With more than one reader:
 
-- The calling thread walks the tree in the same order as before and makes
-  every decision before a file is opened: metadata, path allowlists, the
+- The calling thread walks the tree in the same order as with one reader
+  and makes every decision before a file is opened: metadata, path allowlists, the
   `.git` metadata selection, complete-mode exclusions, the size limit and
   symbolic links. Only opening a file, reading it and splitting it into
   fragments move to a reader thread, which runs the same code as one thread.
@@ -483,7 +561,8 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
   separates `Excluded` from `CoverageFailure`.
 - Complete directory traversal applies a known path exclusion before it reads
   metadata, follows links or opens the file. An excluded dangling link does
-  not stop later files. The legacy traversal keeps its original order.
+  not stop later files. In normal (not complete) mode, traversal keeps its
+  usual order.
 - Complete TAR and ZIP traversal can skip an excluded member before copying
   or decoding it. Container, entry-count, spool, TAR header and padding, and
   ZIP header and range checks still apply. A bad CRC in an excluded ZIP member
@@ -500,8 +579,8 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
 ### Archives
 
 - A final `.tgz` suffix, in any ASCII case, is read as gzip-compressed TAR in
-  complete mode. It uses one archive depth level, like `.tar.gz`. The legacy
-  path does not recognize it.
+  complete mode. It uses one archive depth level, like `.tar.gz`. Normal
+  (not complete) mode does not recognize it.
 - Complete mode forces strict 7z member lengths, even if
   `ArchiveOptions::strict_7z_member_lengths(false)` was set. A short member
   fails. The default outside complete mode is `false`, which keeps the
@@ -512,13 +591,11 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
   member, are already published. Strict lengths add no authenticity or CRC
   check.
 - Members stream. Each plain member reaches the file scanner through a reader
-  that fills every read unless the member ends. A member read into memory
-  was scanned the same way, so piece boundaries do not depend on how a
-  decoder splits its output. A 7z member keeps the read sizes of its decoder:
-  the reader keeps one chunk and repeats the chunk-sized reads that the old
-  in-memory copy recorded. `tests/archive_streaming.rs` compares both with
-  independent references.
-- A read failure inside a member ends that member. A legacy scan keeps the
+  that fills every read unless the member ends, so piece boundaries do not
+  depend on how a decoder splits its output. A 7z member keeps its
+  decoder's chunk-sized reads: the reader keeps one chunk at a time.
+  `tests/archive_streaming.rs` compares both with independent references.
+- A read failure inside a member ends that member. A normal scan keeps the
   bytes before the failure and then gets the archive issue; a complete scan
   sees a read error, publishes nothing for that member, and fails with the
   archive issue. A TAR container stops after a failed member; ZIP continues
@@ -563,6 +640,40 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
   An unknown or disabled platform, a missing remote and an empty commit mean
   that no link applies. A discovery, build or admission failure makes the
   result incomplete.
+
+## Example profile on large inputs
+
+These scans show what the [example
+profile](../user/complete-scanning.md#the-profile-file) does with some large
+inputs. They are not a promise about other inputs, rules or releases. The
+user guide keeps only the advice that follows from them.
+
+How the scans were run:
+
+- An optimized build (`bazelisk build -c opt //crates/rustleaks-cli:rustleaks`).
+- All rules: the default rules plus the `rustleaks-extra-v1`,
+  `rustleaks-providers-v1` and `rustleaks-connections-v1` native packs.
+- `--complete-profile` with the example profile, `--max-decode-depth 5`,
+  `--max-archive-depth 0` and `--base64-mode compatible`.
+- Synthetic inputs with known GitHub tokens. Each row is one scan of one file,
+  or of one folder where the row says so.
+
+| Input | Size | Result | Limit that stopped the scan |
+| --- | --- | --- | --- |
+| A folder of 132 files with plain tokens, or of 186 files with Base64 tokens. Each file has one token, or one almost valid token, across byte 4,096. | 4,160 to 4,216 bytes per file | Complete. Every planted token was found once, on the right line. | None |
+| The same, with the token across byte 65,536, 100,000, 125,000, 153,672 or 182,344 | 65,600 to 182,464 bytes per file | Stopped. Each scan reported 7 to 16 of its 50 or 72 planted tokens. | `operation_work_units`, the limit for the whole scan |
+| One 64-byte JSON record per line. A token on every line, on every other line, or on no line. | 512 KiB and 2 MiB | Stopped. No planted token was reported. | `fragment_work_units`, the limit for one file |
+| The same records on one long line, with tokens | 512 KiB and 2 MiB | Stopped. No planted token was reported. | `fragment_finding_payload_bytes`, because each finding keeps a copy of the whole line |
+| The same records on one long line, without valid tokens | 512 KiB and 2 MiB | Stopped | `fragment_work_units` |
+| One Base64 value that holds 4,096 records, encoded once or twice | 289,467 and 385,951 bytes | Stopped. No planted token was reported. | `fragment_work_units` |
+| 20,000 lines, each the Base64 form of one token | 1,140,021 bytes | Stopped. No planted token was reported. | `fragment_work_units` |
+
+The last row comes from a separate scan with the same options. A second run
+of that input with a much larger profile completed. It needed about 71
+million work units in one file with `--base64-mode compatible`, and about 95
+million with `--base64-mode extended`. The example profile allows 10 million
+for one file. With the default rules alone, the same input completed under
+the example profile in both modes and needed less than 250,000 work units.
 
 ## What these limits do not bound
 

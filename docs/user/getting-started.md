@@ -88,12 +88,13 @@ and Git. Bazelisk downloads the Bazel version that the repository selects.
 ```sh
 git clone https://github.com/joshgarnett/rustleaks.git
 cd rustleaks
-bazelisk build //crates/rustleaks-cli:rustleaks
+bazelisk build -c opt //crates/rustleaks-cli:rustleaks
 ./bazel-bin/crates/rustleaks-cli/rustleaks version
 ```
 
-Contributors should read [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full
-tool setup.
+`-c opt` builds an optimized program. Without it, Bazel builds a slower
+debug build. Contributors should read [CONTRIBUTING.md](../../CONTRIBUTING.md)
+for the full tool setup.
 
 ### Git
 

@@ -221,10 +221,10 @@ A complete scan covers the inputs of the selected command and rules.
 It does not mean that every byte on disk was checked, or that every possible
 secret format was found.
 
-- Files that a configuration allowlist excludes by path, binary files,
-  symbolic links that are not followed, and archives deeper than
-  `--max-archive-depth` are skipped on purpose. They do not make the scan
-  incomplete.
+- Files that a configuration allowlist excludes by path, [binary
+  files](cli-reference.md#files-that-are-skipped), symbolic links that are
+  not followed, and archives deeper than `--max-archive-depth` are skipped
+  on purpose. They do not make the scan incomplete.
 - A `git` scan still covers only the lines added in each commit, not whole
   files. Archive files found in Git history are read in full.
 - Standard input is not checked for archives by content.

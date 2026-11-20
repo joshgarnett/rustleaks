@@ -10,9 +10,9 @@ tell them apart, choose another value for findings, for example
 `--exit-code 3`. Do not use 2 or 126. See [Exit
 codes](cli-reference.md#exit-codes) for every code.
 
-A missing or unreadable baseline file does not fail the scan. Rustleaks logs
-an error and scans without the baseline, so every earlier finding is reported
-again. Check the log if a baseline scan reports more than you expect.
+A missing or unreadable baseline file does not fail the scan, and every
+earlier finding is reported again. See [Baselines](configuration.md#baselines).
+Check the log if a baseline scan reports more than you expect.
 
 ## GitHub Actions
 
@@ -88,9 +88,10 @@ place of the Scan step above:
 
 ## Scanning a range of history
 
-By default `rustleaks git` runs `git log -p -U0 --full-history --all
---diff-filter=tuxdb`, which covers every commit reachable from any branch or
-tag. `--log-opts` replaces the options after `-U0`:
+By default `rustleaks git` scans every commit reachable from any branch or
+tag. `--log-opts` replaces the `git log` options. See
+[git](cli-reference.md#git) for the default options and how Rustleaks splits
+the value. Examples:
 
 ```sh
 # Commits on the current branch since main
@@ -102,12 +103,6 @@ rustleaks git . --log-opts="-n 20"
 # All branches, from one date
 rustleaks git . --log-opts="--all --since=2026-01-01"
 ```
-
-Rustleaks splits the value at each space and does not use shell quoting.
-Do not put quotes inside the value. Rustleaks warns when a word starts and
-ends with a quote, and Git then usually fails.
-
-`--log-opts` has no effect with `--staged` or `--pre-commit`.
 
 ## Pre-commit hooks
 
@@ -171,10 +166,9 @@ link from the host name.
 | `gitea.com`, `code.forgejo.org`, `codeberg.org` | Gitea |
 | `bitbucket.org` | Bitbucket |
 
-For a self-hosted server, set the platform yourself with `--platform`:
-`github`, `gitlab`, `azuredevops`, `gitea` or `bitbucket`. Case does not
-matter. `--platform none` turns links off and does not run
-`git ls-remote`. Any other value stops a history scan with an error.
+For a self-hosted server, set the platform yourself with `--platform`, for
+example `--platform gitlab`. `--platform none` turns links off and does not
+run `git ls-remote`. See [git](cli-reference.md#git) for every value.
 
 Links appear in the `Link` field of reports and in `--verbose` output.
 `--staged` and `--pre-commit` scans have no links.
@@ -185,6 +179,6 @@ Links appear in the `Link` field of reports and in `--verbose` output.
 | --- | --- |
 | `--no-banner` | Hide the banner in logs. |
 | `--log-level LEVEL` | `trace`, `debug`, `info` (the default), `warn`, `error` or `fatal`. |
-| `--timeout N` | Stop after N seconds. A scan that times out exits with 1 and reports only what it found so far. |
+| `--timeout N` | Stop after N seconds. A scan that times out exits with 1, or with 2 under `--complete-profile`, and reports only what it found so far. |
 | `--baseline-path FILE` | Report only findings that are not in an earlier JSON report. See [Baselines](configuration.md#baselines). |
 | `--complete-profile FILE` | Fail with exit code 2 unless the scan covered all of its input. See [Complete scanning](complete-scanning.md). |

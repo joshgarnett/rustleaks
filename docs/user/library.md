@@ -7,10 +7,8 @@ review records.
 
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
 
-These guides describe the current source. Features listed under Unreleased in
-the [changelog](../../CHANGELOG.md) are not in a release yet. To use them now,
-depend on the Git repository instead of the crates.io release. Sections that
-use such features say so.
+This guide describes the current source. See the
+[changelog](../../CHANGELOG.md) for what is not released yet.
 
 ## Add the library
 
@@ -34,8 +32,9 @@ report writers and the command-line program are not published crates.
 The engine takes bytes that you give it and returns findings. It does not read
 files, run Git, read environment variables, write logs, start threads or need
 an async runtime. Only two helpers read files, and only when you call them:
-`Baseline::load_go_json` and `FileSystemResolver`. An `Engine` can be shared between threads (`Send + Sync`).
-Build it once and reuse it, because building it compiles every rule.
+`Baseline::load_go_json` and `FileSystemResolver`. An `Engine` can be shared
+between threads (`Send + Sync`). Build it once and reuse it, because building
+it compiles every rule.
 
 ## A first scan
 
@@ -112,8 +111,9 @@ configurations from memory instead.
 The CLI is different: it reads a relative `extend.path` from the current
 working folder.
 
-The loader ignores `minVersion` unless you call
-`ConfigLoader::with_current_version`. With a version set, invalid `minVersion`
+The loader ignores `minVersion` unless you set a current version with
+`ConfigLoader::new().with_current_version("8.30.0")?`. The call fails if the
+version you give is not valid. With a version set, invalid `minVersion`
 values are errors and `CompiledConfig::requires_newer_version()` tells you
 whether the configuration asks for a newer version.
 
@@ -140,6 +140,7 @@ fn main() {
 | `start_line` | The line number of the first line. The default is 0. Use 1 to number lines like the CLI. |
 | `commit`, `commit_metadata` | Git details reported in findings. |
 | `symlink_file` | The link path for a file reached through a symbolic link. |
+| `windows_file_path` | The original Windows spelling of the path, with `\` separators. Rule `path` patterns also test this value. It is not reported. |
 
 `ScanOptions` controls detection. Build it with `ScanOptions::builder()`:
 
@@ -221,68 +222,6 @@ What your program must do:
 See [Resource limits](resource-limits.md) for the limits of the `rustleaks`
 command.
 
-### Budgets across many fragments
-
-`rustleaks-sources` is not published on crates.io. This section applies when
-you build on it from this repository. Its `SourceRunner` reads a source in
-fragments and scans them on worker threads. `SourceRunner::new` and
-`SourceRunner::default` have no scan limits. To limit a whole source
-operation, install a `SourceBudget`:
-
-```rust
-use rustleaks_core::ScanBudget;
-use rustleaks_sources::{SourceBudget, SourceRunner};
-
-let runner = SourceRunner::new(4, 8)?.with_budget(
-    SourceBudget::unlimited()
-        .max_fragment_bytes(1024 * 1024)
-        .max_original_bytes(128 * 1024 * 1024)
-        .max_fragments(10_000)
-        .max_issues(100)
-        .per_fragment(
-            ScanBudget::unlimited()
-                .max_decoded_bytes(1024 * 1024)
-                .max_work_units(100_000)
-                .max_finding_records(1_000)
-                .max_finding_payload_bytes(8 * 1024 * 1024)
-                .max_collected_spans(10_000)
-                .max_normalization_bytes(16 * 1024 * 1024),
-        )
-        .aggregate(
-            ScanBudget::unlimited()
-                .max_decoded_bytes(32 * 1024 * 1024)
-                .max_work_units(10_000_000)
-                .max_finding_records(10_000)
-                .max_finding_payload_bytes(64 * 1024 * 1024)
-                .max_collected_spans(100_000)
-                .max_normalization_bytes(128 * 1024 * 1024),
-        ),
-)?;
-```
-
-- Every limit includes its value, and zero is valid. Each finite `aggregate`
-  limit needs a finite `per_fragment` limit of the same kind.
-- The first budget that runs out stops the operation. The outcome holds
-  `SourceTermination::BudgetExceeded` with the scope, resource, limit, amount
-  used and the rejected request. Treat it as incomplete coverage.
-- Only fragments that finished scanning add findings. After a budget stop,
-  which findings you get, and their order, depend on scheduling.
-- Original bytes and the fragment count are counted when a fragment is
-  admitted, before it is queued. `SourceOutcome::usage` separates admitted
-  fragments from fragments that were scanned completely.
-- Finding records are counted before ignore and baseline filtering, so the
-  aggregate finding-record limit also limits how many findings are kept.
-- Near the end of a budget, fewer scans can run at the same time.
-- The limits do not set a heap quota. They do not interrupt one engine step,
-  and they cannot make a custom source check its cancellation flag. Set
-  original bytes, fragment count, issues and engine limits together for a
-  source that has no natural end.
-- Reaching the issue limit is allowed. Rejecting the next issue ends the run
-  as incomplete.
-
-[Engine internals](../dev/engine-internals.md#source-runner-budgets)
-describes how reservations and charges work.
-
 ## Reading findings
 
 `ScanOutcome::findings()` returns the findings. Text fields are `ByteText`,
@@ -297,6 +236,7 @@ invalid UTF-8) or `to_string_lossy()`.
 | `secret_range()`, `match_range()` | `FindingRange::Exact(ByteRange)` with exact byte offsets into the fragment, or `FindingRange::Unavailable` when no exact range exists, for example for decoded text. |
 | `line()` | The source line that holds the match. |
 | `file()`, `symlink_file()`, `commit()`, `author()`, `email()`, `date()`, `message()` | Values copied from the fragment. |
+| `link()` | A web link to the finding. The engine leaves it empty. The CLI adds it for Git history scans. |
 | `entropy()`, `tags()` | Shannon entropy of the secret, and rule and decoding tags. |
 | `fingerprint()` | Empty until a session assigns it. See below. |
 | `required_findings()` | Helper findings for rules with `[[rules.required]]`. |

@@ -86,8 +86,9 @@ Rustleaks tries to end a part at a blank line. If it finds none in the next
 that line count from the start of the part.
 
 On the first line of a piece, the column is the position of the byte in its
-line, counting from 1. On every later line, the column is the position plus 1. `EndColumn` follows the same rule. Gitleaks
-counts columns in the same way.
+line, counting from 1. On every later line, the column is the position plus
+1. `EndColumn` follows the same rule. Gitleaks counts columns in the same
+way.
 
 For example, take a configuration with one rule that matches `TOKEN`, and a
 file with these three lines:
@@ -192,8 +193,8 @@ Inside `range`, these fields are available: `RuleID`, `Description`,
 `File`, `SymlinkFile`, `Commit`, `Link`, `Entropy`, `Author`, `Email`, `Date`,
 `Message`, `Tags` and `Fingerprint`. `Line` is the source line that holds the
 match. Except on the first line of a file, a Git diff hunk or standard input,
-`Line` starts with the newline character before the line. `Tags` is a list, so use it with `range`
-or `len`.
+`Line` starts with the newline character before the line. `Tags` is a list,
+so use it with `range` or `len`.
 
 The template language supports:
 
@@ -218,14 +219,15 @@ rule ID, and then the number of findings:
 {{end}}total: {{len .}}
 ```
 
-A template file can be at most 1 MiB. Rendering stops with an error after
-1,000,000 actions plus 1,000 actions for each finding, and nesting is limited
-to 128 levels. An action is one `{{ }}` block that Rustleaks evaluates, or one
-pass through a `range`. The example above uses 5 actions for each finding, so
-normal templates stay far below the limit for any number of findings. A
-template whose work grows faster than the number of findings, such as a
-`range` over all findings inside another, still stops. The report size has no
-limit, because Rustleaks writes the report while it renders.
+The template size, the number of actions and the nesting depth are limited.
+See [Limits on input you give
+Rustleaks](resource-limits.md#limits-on-input-you-give-rustleaks) for the
+numbers. An action is one `{{ }}` block that Rustleaks evaluates, or one pass
+through a `range`. The action limit grows with the number of findings, and
+the example above uses 5 actions for each finding, so normal templates stay
+far below it. A template whose work grows faster than the number of
+findings, such as a `range` over all findings inside another, still stops
+with an error.
 
 ## Field order
 

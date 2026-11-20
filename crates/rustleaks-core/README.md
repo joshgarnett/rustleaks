@@ -2,17 +2,17 @@
 
 `rustleaks-core` is the detection engine of
 [Rustleaks](https://github.com/joshgarnett/rustleaks), a secret scanner. It
-reads Gitleaks configuration files and scans bytes that you give it for
-secrets, such as API keys and passwords. Rustleaks is compatible with Gitleaks
-8.30.0 configuration, findings and reports. See [Differences from
+scans bytes that you give it for secrets, such as API keys and passwords. It
+reads Gitleaks 8.30.0 configuration files, ignore files, baselines and allow
+comments, and keeps the Gitleaks report fields. Its findings can differ from
+Gitleaks. [Differences from
 Gitleaks](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/gitleaks-differences.md)
-for the exceptions.
+lists each difference.
 
 The engine is synchronous. It does not read files, run Git, read environment
 variables, write logs, start threads or need an async runtime. Only
 `Baseline::load_go_json` and `FileSystemResolver` read files, when you call
-them. An `Engine` can
-be shared between threads.
+them. An `Engine` can be shared between threads.
 
 The crate is alpha software. Its API can change between alpha releases.
 Rustleaks is an independent project and is not affiliated with or endorsed by
@@ -54,9 +54,9 @@ records.
 ## Rules
 
 The crate includes default rules based on the Gitleaks default rules, and
-three optional rule packs.
-The packs add rules to the default rules and are used only when you add them
-with `native::NativePolicy`. Rule counts include helper rules.
+three optional rule packs. The packs add rules to the default rules and are
+used only when you add them with `native::NativePolicy`. Rule counts include
+helper rules.
 
 | Rule set | Constant | Rules | Details |
 | --- | --- | ---: | --- |
