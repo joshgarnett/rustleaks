@@ -15,12 +15,8 @@ mod git;
 mod mime;
 mod path;
 mod process;
-#[cfg(feature = "archives")]
-mod rar;
 mod runner;
 mod scm;
-#[cfg(feature = "archives")]
-mod snappy;
 mod source;
 
 #[cfg(feature = "archives")]

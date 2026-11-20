@@ -15,6 +15,8 @@ use crate::{
     SourceControl, SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
+mod rar;
+mod snappy;
 pub(crate) mod spool;
 mod stream;
 
@@ -1010,7 +1012,7 @@ impl<'a> ArchiveState<'a> {
         let remaining_bytes = self.budget.remaining();
         let member_limit = self.memory_limit();
         let mut outcome = None;
-        let result = crate::rar::extract(
+        let result = rar::extract(
             reader,
             remaining_entries,
             member_limit,
@@ -1047,11 +1049,11 @@ impl<'a> ArchiveState<'a> {
         }
         match result {
             Ok(()) => Ok(SourceControl::Continue),
-            Err(crate::rar::RarFailure::Cancelled) => Err(SourceError::Cancelled),
-            Err(crate::rar::RarFailure::Limit(message)) => {
+            Err(rar::RarFailure::Cancelled) => Err(SourceError::Cancelled),
+            Err(rar::RarFailure::Limit(message)) => {
                 emit_issue(limit_issue(self.physical_path, message), emit)
             }
-            Err(crate::rar::RarFailure::Unsupported(message)) => emit_issue(
+            Err(rar::RarFailure::Unsupported(message)) => emit_issue(
                 issue(
                     self.physical_path,
                     SourceStage::ArchiveMember,
@@ -1060,12 +1062,10 @@ impl<'a> ArchiveState<'a> {
                 ),
                 emit,
             ),
-            Err(crate::rar::RarFailure::Corrupt(message)) => {
+            Err(rar::RarFailure::Corrupt(message)) => {
                 emit_issue(corrupt(self.physical_path, message), emit)
             }
-            Err(crate::rar::RarFailure::Read(error)) => {
-                self.emit_failure(Failure::from_io(error), emit)
-            }
+            Err(rar::RarFailure::Read(error)) => self.emit_failure(Failure::from_io(error), emit),
         }
     }
 
@@ -1455,18 +1455,16 @@ fn with_codec<T>(
             // compressed and the decoded stream stay within the memory limit.
             let compressed = read_bounded(input, memory_limit)?;
             let decoded = if matches!(codec, Codec::Snappy) {
-                crate::snappy::decode_framed(&compressed, memory_limit, cancellation)
+                snappy::decode_framed(&compressed, memory_limit, cancellation)
             } else {
-                crate::snappy::decode_minlz_framed(&compressed, memory_limit, cancellation)
+                snappy::decode_minlz_framed(&compressed, memory_limit, cancellation)
             }
             .map_err(|error| match error {
-                crate::snappy::SnappyFailure::Cancelled => Failure::Cancelled,
-                crate::snappy::SnappyFailure::Limit => {
+                snappy::SnappyFailure::Cancelled => Failure::Cancelled,
+                snappy::SnappyFailure::Limit => {
                     Failure::Limit("archive expansion limit exceeded".to_owned())
                 }
-                crate::snappy::SnappyFailure::Decode(message) => {
-                    Failure::Decode(message.to_owned())
-                }
+                snappy::SnappyFailure::Decode(message) => Failure::Decode(message.to_owned()),
             })?;
             drop(compressed);
             use_reader(&mut decoded.as_slice())
