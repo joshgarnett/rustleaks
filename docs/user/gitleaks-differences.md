@@ -31,8 +31,10 @@ as Gitleaks. It keeps the things that let you move from Gitleaks working:
   and meanings.
 
 Findings can differ from Gitleaks when Rustleaks finds more, or when a
-difference gives a clearer result without losing a secret. Each such
-difference is listed on this page and covered by a test.
+difference gives a clearer result. Each difference is listed on this page
+and covered by a test. A change that stops reporting a value Gitleaks reports
+needs maintainer approval and is listed as a known loss, as in
+[Default rules](#default-rules).
 
 Help, usage, error wording, the banner, log and summary lines, and the order
 of JSON keys and CSV columns can change between releases. Use exit codes and
