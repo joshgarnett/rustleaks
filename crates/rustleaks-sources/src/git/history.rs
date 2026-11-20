@@ -22,14 +22,11 @@ use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 
 use super::{
-    COMMAND_POLL, CommandIo, GitMode, GitSource, OutputBudget, PatchStream, StreamedOutput,
-    first_non_ignored_stderr, git_exit_message, patch_error_to_source, stream_command_with,
-    terminal,
+    CommandIo, GitMode, GitSource, OutputBudget, PatchStream, StreamedOutput,
+    first_non_ignored_stderr, patch_error_to_source, stream_command_with,
 };
-use crate::{
-    CallbackError, Cancellation, SourceControl, SourceError, SourceEvent, SourceIssue,
-    SourceIssueKind, SourceStage,
-};
+use crate::process::CHILD_POLL;
+use crate::{CallbackError, Cancellation, SourceControl, SourceError, SourceEvent, SourceStage};
 
 /// Git output is passed to the parser in pieces of about this size.
 const MESSAGE_BYTES: usize = 256 * 1024;
@@ -301,7 +298,7 @@ impl ReorderBuffer {
             }
             state = self
                 .released
-                .wait_timeout(state, COMMAND_POLL)
+                .wait_timeout(state, CHILD_POLL)
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
@@ -314,7 +311,7 @@ impl ReorderBuffer {
         }
         let mut piece = Vec::new();
         piece.try_reserve_exact(MESSAGE_BYTES).map_err(|error| {
-            terminal(
+            SourceError::terminal(
                 SourceStage::GitCommand,
                 None,
                 format!("could not reserve Git history output: {error}"),
@@ -410,7 +407,7 @@ pub(super) fn visit(
         let result = match spawn_error {
             Some(error) if workers.is_empty() => {
                 drop(jobs);
-                Err(terminal(
+                Err(SourceError::terminal(
                     SourceStage::GitCommand,
                     None,
                     format!("could not start a Git history thread: {error}"),
@@ -433,7 +430,7 @@ pub(super) fn visit(
             }
         }
         if panicked {
-            return Err(terminal(
+            return Err(SourceError::terminal(
                 SourceStage::GitCommand,
                 None,
                 "a Git history thread panicked",
@@ -551,9 +548,9 @@ fn parse_batches(
                 return Err(SourceError::Cancelled);
             }
             if plan.stderr.is_exceeded() {
-                return Err(stderr_exceeded(source));
+                return Err(source.stderr_exceeded());
             }
-            match receiver.recv_timeout(COMMAND_POLL) {
+            match receiver.recv_timeout(CHILD_POLL) {
                 Ok(Message::Output(chunk)) => {
                     // One process writes a blank line before every shown
                     // commit after the first. A batch that shows no commit
@@ -582,44 +579,19 @@ fn parse_batches(
         // The final record of a batch waits like the final record of one
         // process: a later failure ends the scan before it is published.
         if output.stderr_limited || plan.stderr.is_exceeded() {
-            return Err(stderr_exceeded(source));
+            return Err(source.stderr_exceeded());
         }
         if output.stopped || !output.status.is_some_and(|status| status.success()) {
-            return Err(terminal(
-                SourceStage::GitExit,
-                Some(source.repository.clone()),
-                git_exit_message(output.status, &output.stderr),
-            ));
+            return Err(source.exit_error(&output));
         }
         warned |= first_non_ignored_stderr(&output.stderr).is_some();
     }
     drop(jobs);
-    if warned {
-        let control = emit(SourceEvent::Issue(SourceIssue::new(
-            SourceStage::GitCommand,
-            SourceIssueKind::GitStderr,
-            Some(source.repository.clone()),
-            "stderr is not empty",
-        )))
-        .map_err(SourceError::Callback)?;
-        if control == SourceControl::Stop {
-            return Ok(control);
-        }
-    }
-    stream.finish();
-    source.emit_ready_files(&mut stream, cancellation, emit)
-}
-
-fn stderr_exceeded(source: &GitSource) -> SourceError {
-    terminal(
-        SourceStage::Limit,
-        Some(source.repository.clone()),
-        "Git standard error exceeded its configured byte ceiling",
-    )
+    source.finish_history(stream, warned, cancellation, emit)
 }
 
 fn stopped_thread() -> SourceError {
-    terminal(
+    SourceError::terminal(
         SourceStage::GitCommand,
         None,
         "a Git history thread stopped without a result",

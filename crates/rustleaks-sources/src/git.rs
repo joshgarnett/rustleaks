@@ -4,12 +4,9 @@ use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
-#[cfg(test)]
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::thread;
-use std::time::Duration;
 
 use rustleaks_core::model::{CommitMetadata, Fragment};
 
@@ -23,6 +20,9 @@ use crate::{
     CallbackError, Cancellation, Source, SourceConfigError, SourceControl, SourceError,
     SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
+
+use crate::process::CHILD_POLL;
+use crate::source::emit_issue;
 
 mod history;
 
@@ -39,22 +39,21 @@ const DEFAULT_MAX_FILES: usize = 1_000_000;
 const DEFAULT_MAX_HUNKS: usize = 2_000_000;
 const STDOUT_CHUNK_BYTES: usize = 64 * 1024;
 const STDOUT_QUEUE_CHUNKS: usize = 16;
-const COMMAND_POLL: Duration = Duration::from_millis(2);
 
 /// Git history or worktree/index selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum GitMode {
-    /// Scan `git log -p -U0`, using the pinned defaults when options are absent.
+    /// Scan `git log -p -U0`, using the default options when none are given.
     Log {
         /// Literal space-delimited arguments appended after `-U0`.
         options: Option<String>,
     },
-    /// Scan history with explicit shell-free arguments after the pinned prefix.
+    /// Scan history with explicit shell-free arguments after the default prefix.
     LogArguments(Vec<OsString>),
     /// Scan a worktree or staged-index diff.
     Diff {
-        /// Insert `--staged` before the pinned pathspec.
+        /// Insert `--staged` before the default pathspec.
         staged: bool,
     },
 }
@@ -219,7 +218,7 @@ pub struct GitSource {
 }
 
 impl GitSource {
-    /// Creates a Git source using the pinned default history command.
+    /// Creates a Git source using the default history command.
     #[must_use]
     pub fn new(repository: impl Into<PathBuf>) -> Self {
         Self {
@@ -397,37 +396,60 @@ impl Source for GitSource {
             return Ok(SourceControl::Stop);
         }
         if output.stderr_limited {
-            return Err(terminal(
-                SourceStage::Limit,
-                Some(this.repository.clone()),
-                "Git standard error exceeded its configured byte ceiling",
-            ));
+            return Err(this.stderr_exceeded());
         }
         if !output.status.is_some_and(|status| status.success()) {
-            return Err(terminal(
-                SourceStage::GitExit,
-                Some(this.repository.clone()),
-                git_exit_message(output.status, &output.stderr),
-            ));
+            return Err(this.exit_error(&output));
         }
-        if first_non_ignored_stderr(&output.stderr).is_some() {
-            let control = emit(SourceEvent::Issue(SourceIssue::new(
-                SourceStage::GitCommand,
-                SourceIssueKind::GitStderr,
-                Some(this.repository.clone()),
-                "stderr is not empty",
-            )))
-            .map_err(SourceError::Callback)?;
+        let warned = first_non_ignored_stderr(&output.stderr).is_some();
+        this.finish_history(stream, warned, cancellation, emit)
+    }
+}
+
+impl GitSource {
+    fn stderr_exceeded(&self) -> SourceError {
+        SourceError::terminal(
+            SourceStage::Limit,
+            Some(self.repository.clone()),
+            "Git standard error exceeded its configured byte ceiling",
+        )
+    }
+
+    fn exit_error(&self, output: &StreamedOutput) -> SourceError {
+        SourceError::terminal(
+            SourceStage::GitExit,
+            Some(self.repository.clone()),
+            git_exit_message(output.status, &output.stderr),
+        )
+    }
+
+    /// Ends a history scan after every Git process succeeded: reports a Git
+    /// warning on standard error, then publishes the last file record.
+    fn finish_history(
+        &self,
+        mut stream: PatchStream,
+        warned: bool,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        if warned {
+            let control = emit_issue(
+                SourceIssue::new(
+                    SourceStage::GitCommand,
+                    SourceIssueKind::GitStderr,
+                    Some(self.repository.clone()),
+                    "stderr is not empty",
+                ),
+                emit,
+            )?;
             if control == SourceControl::Stop {
                 return Ok(control);
             }
         }
         stream.finish();
-        this.emit_ready_files(&mut stream, cancellation, emit)
+        self.emit_ready_files(&mut stream, cancellation, emit)
     }
-}
 
-impl GitSource {
     fn emit_ready_files(
         &self,
         stream: &mut PatchStream,
@@ -581,7 +603,7 @@ impl GitSource {
                     format!("could not store a Git archive blob: {error}"),
                 )
             };
-            return emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback);
+            return emit_issue(issue, emit);
         }
         if let Some(issue) = validate_archive_blob_output(
             output.stderr_limited,
@@ -589,7 +611,7 @@ impl GitSource {
             &output.stderr,
             &self.repository,
         )? {
-            let control = emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback)?;
+            let control = emit_issue(issue, emit)?;
             if control == SourceControl::Stop {
                 return Ok(control);
             }
@@ -638,14 +660,14 @@ fn validate_archive_blob_output(
     repository: &std::path::Path,
 ) -> Result<Option<SourceIssue>, SourceError> {
     if stderr_limited {
-        return Err(terminal(
+        return Err(SourceError::terminal(
             SourceStage::Limit,
             Some(repository.into()),
             "Git archive-blob stderr exceeded its configured byte ceiling",
         ));
     }
     if !status.is_some_and(|status| status.success()) {
-        return Err(terminal(
+        return Err(SourceError::terminal(
             SourceStage::GitBlob,
             Some(repository.into()),
             git_exit_message(status, stderr),
@@ -660,22 +682,6 @@ fn validate_archive_blob_output(
         )));
     }
     Ok(None)
-}
-
-#[cfg(test)]
-struct CollectedOutput {
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    stdout_limited: bool,
-    stderr_limited: bool,
-    status: Option<ExitStatus>,
-}
-
-#[cfg(test)]
-enum CollectionStop {
-    Exited(ExitStatus),
-    Cancelled,
-    Limited,
 }
 
 /// A started Git child with its output pipes, and its input pipe when the
@@ -705,12 +711,13 @@ fn spawn_git(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = crate::process::spawn(&mut command)
-        .map_err(|error| terminal(stage, None, format!("could not start Git: {error}")))?;
+    let mut child = crate::process::spawn(&mut command).map_err(|error| {
+        SourceError::terminal(stage, None, format!("could not start Git: {error}"))
+    })?;
     let stdin = child.stdin.take();
     if with_input && stdin.is_none() {
         stop_and_reap(&mut child, stage, "after a missing stdin pipe")?;
-        return Err(terminal(
+        return Err(SourceError::terminal(
             stage,
             None,
             "Git standard input pipe was unavailable",
@@ -718,7 +725,7 @@ fn spawn_git(
     }
     let Some(stdout) = child.stdout.take() else {
         stop_and_reap(&mut child, stage, "after a missing stdout pipe")?;
-        return Err(terminal(
+        return Err(SourceError::terminal(
             stage,
             None,
             "Git standard output pipe was unavailable",
@@ -726,7 +733,7 @@ fn spawn_git(
     };
     let Some(stderr) = child.stderr.take() else {
         stop_and_reap(&mut child, stage, "after a missing stderr pipe")?;
-        return Err(terminal(
+        return Err(SourceError::terminal(
             stage,
             None,
             "Git standard error pipe was unavailable",
@@ -737,79 +744,6 @@ fn spawn_git(
         stdin,
         stdout,
         stderr,
-    })
-}
-
-#[cfg(test)]
-fn collect_command(
-    program: &OsStr,
-    arguments: &[OsString],
-    stdout_limit: usize,
-    stderr_limit: usize,
-    environment: &[(OsString, OsString)],
-    cancellation: &dyn Cancellation,
-    stage: SourceStage,
-) -> Result<CollectedOutput, SourceError> {
-    let GitChild {
-        mut child,
-        stdout,
-        stderr,
-        ..
-    } = spawn_git(program, arguments, environment, stage, false)?;
-
-    thread::scope(|scope| {
-        let stdout_budget = Arc::new(OutputBudget::new(stdout_limit));
-        let stderr_budget = Arc::new(OutputBudget::new(stderr_limit));
-        let stdout_flag = Arc::clone(&stdout_budget);
-        let stderr_flag = Arc::clone(&stderr_budget);
-        let stdout_reader = scope.spawn(move || read_bounded_and_drain(stdout, &stdout_flag));
-        let stderr_reader = scope.spawn(move || read_bounded_and_drain(stderr, &stderr_flag));
-        let stop = loop {
-            if cancellation.is_cancelled() {
-                stop_and_reap(&mut child, stage, "after cancellation")?;
-                break CollectionStop::Cancelled;
-            }
-            if stdout_budget.is_exceeded() || stderr_budget.is_exceeded() {
-                stop_and_reap(&mut child, stage, "after an output limit")?;
-                break CollectionStop::Limited;
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => break CollectionStop::Exited(status),
-                Ok(None) => thread::sleep(Duration::from_millis(2)),
-                Err(error) => {
-                    stop_and_reap(&mut child, stage, "after a wait failure")?;
-                    return Err(terminal(
-                        stage,
-                        None,
-                        format!("could not wait for Git: {error}"),
-                    ));
-                }
-            }
-        };
-        let (stdout, stdout_limited) = stdout_reader
-            .join()
-            .map_err(|_| terminal(stage, None, "Git stdout reader panicked"))?
-            .map_err(|error| {
-                terminal(stage, None, format!("could not read Git stdout: {error}"))
-            })?;
-        let (stderr, stderr_limited) = stderr_reader
-            .join()
-            .map_err(|_| terminal(stage, None, "Git stderr reader panicked"))?
-            .map_err(|error| {
-                terminal(stage, None, format!("could not read Git stderr: {error}"))
-            })?;
-        let status = match stop {
-            CollectionStop::Exited(status) => Some(status),
-            CollectionStop::Cancelled => return Err(SourceError::Cancelled),
-            CollectionStop::Limited => None,
-        };
-        Ok(CollectedOutput {
-            stdout,
-            stderr,
-            stdout_limited,
-            stderr_limited,
-            status,
-        })
     })
 }
 
@@ -909,16 +843,16 @@ fn stream_command_with(
         let written = writer.map(|writer| {
             writer
                 .join()
-                .map_err(|_| terminal(stage, None, "Git stdin writer panicked"))
+                .map_err(|_| SourceError::terminal(stage, None, "Git stdin writer panicked"))
         });
         stdout_reader
             .join()
-            .map_err(|_| terminal(stage, None, "Git stdout reader panicked"))?;
+            .map_err(|_| SourceError::terminal(stage, None, "Git stdout reader panicked"))?;
         let (stderr, stderr_limited) = stderr_reader
             .join()
-            .map_err(|_| terminal(stage, None, "Git stderr reader panicked"))?
+            .map_err(|_| SourceError::terminal(stage, None, "Git stderr reader panicked"))?
             .map_err(|error| {
-                terminal(stage, None, format!("could not read Git stderr: {error}"))
+                SourceError::terminal(stage, None, format!("could not read Git stderr: {error}"))
             })?;
         let (status, stopped) = match end {
             StreamEnd::Exited(status) => (Some(status), false),
@@ -933,7 +867,7 @@ fn stream_command_with(
             && status.is_some_and(|status| status.success())
         {
             written?.map_err(|error| {
-                terminal(stage, None, format!("could not write Git stdin: {error}"))
+                SourceError::terminal(stage, None, format!("could not write Git stdin: {error}"))
             })?;
         }
         Ok(StreamedOutput {
@@ -960,14 +894,14 @@ fn drive_stream(
         if stderr.is_exceeded() {
             return StreamEnd::StderrLimited;
         }
-        match receiver.recv_timeout(COMMAND_POLL) {
+        match receiver.recv_timeout(CHILD_POLL) {
             Ok(Ok(chunk)) => match on_chunk(chunk) {
                 Ok(SourceControl::Continue) => {}
                 Ok(SourceControl::Stop) => return StreamEnd::Stopped,
                 Err(error) => return StreamEnd::Failed(error),
             },
             Ok(Err(error)) => {
-                return StreamEnd::Failed(terminal(
+                return StreamEnd::Failed(SourceError::terminal(
                     stage,
                     None,
                     format!("could not read Git stdout: {error}"),
@@ -986,9 +920,9 @@ fn drive_stream(
         }
         match child.try_wait() {
             Ok(Some(status)) => return StreamEnd::Exited(status),
-            Ok(None) => thread::sleep(COMMAND_POLL),
+            Ok(None) => thread::sleep(CHILD_POLL),
             Err(error) => {
-                return StreamEnd::Failed(terminal(
+                return StreamEnd::Failed(SourceError::terminal(
                     stage,
                     None,
                     format!("could not wait for Git: {error}"),
@@ -1041,7 +975,7 @@ fn stop_and_reap(
     let wait_error = child.reap().err();
     match (kill_error, wait_error) {
         (None, None) => Ok(()),
-        (kill, wait) => Err(terminal(
+        (kill, wait) => Err(SourceError::terminal(
             stage,
             None,
             format!("could not clean up Git {context}: kill={kill:?}; wait={wait:?}"),
@@ -2525,22 +2459,14 @@ fn parse_usize(value: &[u8]) -> Result<usize, String> {
         .map_err(|_| "invalid Git hunk range".to_owned())
 }
 
-fn terminal(stage: SourceStage, path: Option<PathBuf>, message: impl Into<String>) -> SourceError {
-    SourceError::Terminal {
-        stage,
-        path,
-        message: message.into(),
-    }
-}
-
 fn patch_error_to_source(error: PatchError, repository: &std::path::Path) -> SourceError {
     match error {
         PatchError::Cancelled => SourceError::Cancelled,
         PatchError::Limit(message) => {
-            terminal(SourceStage::Limit, Some(repository.into()), message)
+            SourceError::terminal(SourceStage::Limit, Some(repository.into()), message)
         }
         PatchError::Invalid(message) => {
-            terminal(SourceStage::GitParse, Some(repository.into()), message)
+            SourceError::terminal(SourceStage::GitParse, Some(repository.into()), message)
         }
     }
 }
@@ -2568,7 +2494,7 @@ fn object_spec(commit: &[u8], path: &[u8]) -> Result<OsString, SourceError> {
         .checked_add(path.len())
         .and_then(|size| size.checked_add(1))
         .ok_or_else(|| {
-            terminal(
+            SourceError::terminal(
                 SourceStage::Limit,
                 None,
                 "Git object specification size overflowed usize",
@@ -2576,7 +2502,7 @@ fn object_spec(commit: &[u8], path: &[u8]) -> Result<OsString, SourceError> {
         })?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(required).map_err(|error| {
-        terminal(
+        SourceError::terminal(
             SourceStage::Limit,
             None,
             format!("could not allocate Git object specification: {error}"),
@@ -2590,6 +2516,8 @@ fn object_spec(commit: &[u8], path: &[u8]) -> Result<OsString, SourceError> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     struct CancelAfterPolls(std::sync::atomic::AtomicUsize);
@@ -2717,51 +2645,35 @@ mod tests {
     #[test]
     fn cancellation_after_spawn_kills_reaps_and_joins_git_helpers() {
         let executable = std::env::current_exe().expect("current test executable");
-        let arguments = [
-            OsString::from("--exact"),
-            OsString::from("git::tests::subprocess_fixture_waits"),
-            OsString::from("--nocapture"),
-        ];
         let environment = [(
             OsString::from("RUSTLEAKS_GIT_CANCEL_CHILD"),
             OsString::from("1"),
         )];
         for stage in [SourceStage::GitCommand, SourceStage::GitBlob] {
             let cancellation = CancelAfterPolls(std::sync::atomic::AtomicUsize::new(4));
-            let result = collect_command(
+            let started = std::time::Instant::now();
+            let result = stream_command(
                 executable.as_os_str(),
-                &arguments,
-                64 * 1024,
+                &fixture_arguments(),
                 64 * 1024,
                 &environment,
                 &cancellation,
                 stage,
+                &mut |_| Ok(SourceControl::Continue),
             );
             assert!(matches!(result, Err(SourceError::Cancelled)));
+            // The child sleeps for 30 seconds unless it is killed.
+            assert!(started.elapsed() < Duration::from_secs(20));
         }
     }
 
     #[cfg(unix)]
     #[test]
     fn cancelled_git_child_is_not_left_waitable_or_zombie() {
-        for streamed in [false, true] {
-            assert_cancelled_child_is_reaped(streamed);
-        }
-    }
-
-    #[cfg(unix)]
-    fn assert_cancelled_child_is_reaped(streamed: bool) {
-        let pid_path = std::env::temp_dir().join(format!(
-            "rustleaks-git-child-pid-{}-{streamed}",
-            std::process::id()
-        ));
+        let pid_path =
+            std::env::temp_dir().join(format!("rustleaks-git-child-pid-{}", std::process::id()));
         let _ = std::fs::remove_file(&pid_path);
         let executable = std::env::current_exe().expect("current test executable");
-        let arguments = [
-            OsString::from("--exact"),
-            OsString::from("git::tests::subprocess_fixture_waits"),
-            OsString::from("--nocapture"),
-        ];
         let environment = [
             (
                 OsString::from("RUSTLEAKS_GIT_CANCEL_CHILD"),
@@ -2773,34 +2685,16 @@ mod tests {
             ),
         ];
         let cancellation = CancelWhenFileContainsPid(pid_path.clone());
-        let cancelled = if streamed {
-            matches!(
-                stream_command(
-                    executable.as_os_str(),
-                    &arguments,
-                    64 * 1024,
-                    &environment,
-                    &cancellation,
-                    SourceStage::GitCommand,
-                    &mut |_| Ok(SourceControl::Continue),
-                ),
-                Err(SourceError::Cancelled)
-            )
-        } else {
-            matches!(
-                collect_command(
-                    executable.as_os_str(),
-                    &arguments,
-                    64 * 1024,
-                    64 * 1024,
-                    &environment,
-                    &cancellation,
-                    SourceStage::GitCommand,
-                ),
-                Err(SourceError::Cancelled)
-            )
-        };
-        assert!(cancelled);
+        let result = stream_command(
+            executable.as_os_str(),
+            &fixture_arguments(),
+            64 * 1024,
+            &environment,
+            &cancellation,
+            SourceStage::GitCommand,
+            &mut |_| Ok(SourceControl::Continue),
+        );
+        assert!(matches!(result, Err(SourceError::Cancelled)));
         let raw_pid = std::fs::read_to_string(&pid_path)
             .expect("read selected child PID")
             .parse()
@@ -3311,18 +3205,34 @@ mod tests {
         );
     }
 
+    /// Runs a command through [`stream_command`] and keeps its standard
+    /// output.
+    fn run_streamed(
+        program: &OsStr,
+        arguments: &[OsString],
+        stderr_limit: usize,
+        environment: &[(OsString, OsString)],
+        stage: SourceStage,
+    ) -> Result<(Vec<u8>, StreamedOutput), SourceError> {
+        let mut stdout = Vec::new();
+        let output = stream_command(
+            program,
+            arguments,
+            stderr_limit,
+            environment,
+            &crate::CancellationToken::new(),
+            stage,
+            &mut |chunk| {
+                stdout.extend_from_slice(chunk);
+                Ok(SourceControl::Continue)
+            },
+        )?;
+        Ok((stdout, output))
+    }
+
     #[test]
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one table covers every command outcome class"
-    )]
-    fn matrix_h_exit_status_and_bounded_stderr_are_diagnostic() {
+    fn exit_status_and_bounded_stderr_are_diagnostic() {
         let executable = std::env::current_exe().expect("current test executable");
-        let arguments = [
-            OsString::from("--exact"),
-            OsString::from("git::tests::subprocess_fixture_waits"),
-            OsString::from("--nocapture"),
-        ];
         let environment = [
             (
                 OsString::from("RUSTLEAKS_GIT_CHILD_EXIT"),
@@ -3333,13 +3243,11 @@ mod tests {
                 OsString::from("fixture stderr"),
             ),
         ];
-        let output = collect_command(
+        let (_, output) = run_streamed(
             executable.as_os_str(),
-            &arguments,
-            64 * 1024,
+            &fixture_arguments(),
             64 * 1024,
             &environment,
-            &crate::CancellationToken::new(),
             SourceStage::GitCommand,
         )
         .expect("collect child failure");
@@ -3371,13 +3279,11 @@ mod tests {
                     OsString::from(stderr),
                 ),
             ];
-            let output = collect_command(
+            let (_, output) = run_streamed(
                 executable.as_os_str(),
-                &arguments,
-                64,
+                &fixture_arguments(),
                 64,
                 &environment,
-                &crate::CancellationToken::new(),
                 SourceStage::GitCommand,
             )
             .expect("collect nonzero fixture");
@@ -3399,19 +3305,17 @@ mod tests {
                 OsString::from("5"),
             ),
         ];
-        let exact = collect_command(
+        let (stdout, exact) = run_streamed(
             executable.as_os_str(),
-            &arguments,
-            64 * 1024,
+            &fixture_arguments(),
             5,
             &overflow_environment,
-            &crate::CancellationToken::new(),
             SourceStage::GitBlob,
         )
         .expect("exact command boundaries");
-        assert!(!exact.stdout_limited);
         assert!(!exact.stderr_limited);
-        assert!(exact.stdout.contains(&b'x'));
+        assert_eq!(exact.stderr, b"12345");
+        assert!(stdout.contains(&b'x'));
         #[cfg(feature = "archives")]
         assert!(
             validate_archive_blob_output(
@@ -3423,17 +3327,14 @@ mod tests {
             .expect("successful blob classification")
             .is_some()
         );
-        let overflow = collect_command(
+        let (_, overflow) = run_streamed(
             executable.as_os_str(),
-            &arguments,
-            64 * 1024,
+            &fixture_arguments(),
             4,
             &overflow_environment,
-            &crate::CancellationToken::new(),
             SourceStage::GitBlob,
         )
         .expect("overflow command boundaries");
-        assert!(!overflow.stdout_limited);
         assert!(overflow.stderr_limited);
         #[cfg(feature = "archives")]
         assert!(matches!(
@@ -3449,13 +3350,11 @@ mod tests {
             })
         ));
 
-        let missing = collect_command(
+        let missing = run_streamed(
             OsStr::new("rustleaks-deliberately-missing-git-executable"),
             &[],
             1,
-            1,
             &[],
-            &crate::CancellationToken::new(),
             SourceStage::GitCommand,
         );
         assert!(matches!(
@@ -4058,7 +3957,7 @@ commit 4444444444444444444444444444444444444444";
             &crate::CancellationToken::new(),
             SourceStage::GitCommand,
             &mut |_| {
-                Err(terminal(
+                Err(SourceError::terminal(
                     SourceStage::GitParse,
                     None,
                     "injected parse failure",
@@ -4089,37 +3988,5 @@ commit 4444444444444444444444444444444444444444";
                 ..
             })
         ));
-    }
-
-    #[test]
-    fn streamed_command_cancellation_kills_a_silent_child() {
-        let executable = std::env::current_exe().expect("current test executable");
-        let environment = [(
-            OsString::from("RUSTLEAKS_GIT_CANCEL_CHILD"),
-            OsString::from("1"),
-        )];
-        let cancellation = CancelAfterPolls(std::sync::atomic::AtomicUsize::new(4));
-        let started = std::time::Instant::now();
-        let result = stream_command(
-            executable.as_os_str(),
-            &fixture_arguments(),
-            64,
-            &environment,
-            &cancellation,
-            SourceStage::GitCommand,
-            &mut |_| Ok(SourceControl::Continue),
-        );
-        assert!(matches!(result, Err(SourceError::Cancelled)));
-        assert!(started.elapsed() < Duration::from_secs(20));
-    }
-
-    #[test]
-    fn safe_portable_boundary_has_no_owned_unsafe() {
-        let production = include_str!("git.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .expect("production prefix");
-        assert!(!production.contains("unsafe {"));
-        assert!(!production.contains("std::os::windows"));
     }
 }

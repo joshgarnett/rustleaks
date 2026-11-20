@@ -3,6 +3,11 @@
 use std::io;
 use std::process::{Child, Command};
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
+
+/// How long a thread that waits for a child process sleeps between checks of
+/// the child and of cancellation.
+pub(crate) const CHILD_POLL: Duration = Duration::from_millis(2);
 
 /// Held while this crate starts a child process.
 ///

@@ -8,14 +8,12 @@ use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 use std::str::FromStr;
 use std::thread;
-use std::time::Duration;
 
 use rustleaks_core::model::{ByteText, Finding, Location};
 
 use crate::{Cancellation, INNER_PATH_SEPARATOR};
 
 const OUTPUT_LIMIT: usize = 1024 * 1024;
-const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(2);
 const NO_REMOTE_MESSAGE: &[u8] = b"No remote configured";
 
 /// Supported source-control hosting platforms.
@@ -455,8 +453,8 @@ fn run_git_remote(
     };
 
     thread::scope(|scope| {
-        let stdout_reader = scope.spawn(move || read_bounded_and_drain(stdout));
-        let stderr_reader = scope.spawn(move || read_bounded_and_drain(stderr));
+        let stdout_reader = scope.spawn(move || read_remote_output(stdout));
+        let stderr_reader = scope.spawn(move || read_remote_output(stderr));
 
         let status = loop {
             if cancellation.is_cancelled() {
@@ -491,7 +489,7 @@ fn run_git_remote(
 
             match child.try_wait() {
                 Ok(Some(status)) => break status,
-                Ok(None) => thread::sleep(CHILD_POLL_INTERVAL),
+                Ok(None) => thread::sleep(crate::process::CHILD_POLL),
                 Err(error) => {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -540,7 +538,7 @@ fn cleanup_after_pipe_failure(
     Err(ScmError::new(ScmErrorKind::Cleanup, detail))
 }
 
-fn read_bounded_and_drain(mut reader: impl Read) -> io::Result<RetainedOutput> {
+fn read_remote_output(mut reader: impl Read) -> io::Result<RetainedOutput> {
     let mut retained = Vec::new();
     let mut exceeded_limit = false;
     let mut retention_failed = false;
