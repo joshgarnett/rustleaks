@@ -38,22 +38,13 @@ The program is Python 3.9 standard library code in
 `crates/xtask/src/comparison_quality/`. xtask embeds it with `include_str!`
 and runs it with `python3 -I -`, which reads the program from standard input.
 
-## Labels format
+## Labels
 
-Each line of `labels.jsonl` is one JSON object with these fields, in this
-order:
-
-| Field | Meaning |
-| --- | --- |
-| `workload` | Workload identifier, `constructed-v1` or `credata`. |
-| `path` | File path relative to the workload root, with forward slashes. |
-| `commit` | Always `null`. Both sources are directory inputs. |
-| `start`, `end` | Byte offsets of the labeled text in the file. `end` is exclusive. |
-| `line` | One-based line of `start`. `\r\n`, `\r` and `\n` each end a line. |
-| `secret_sha256` | SHA-256 of the labeled bytes. The text itself is never stored. |
-| `category` | Category name, listed below. |
-| `label` | `secret` or `not-secret`. |
-| `source` | `constructed` or `credData`. |
+Both sources write the labels format described in
+[Labels](comparison.md#labels), with the fields in the order of that table.
+`workload` is `constructed-v1` or `credata`, `commit` is always `null`
+because both sources are directory inputs, and `source` is `constructed` or
+`credData`. For `line`, `\r\n`, `\r` and `\n` each end a line.
 
 ## Constructed corpus
 
@@ -154,8 +145,8 @@ workflows, JSON, Java properties, INI, TOML, Terraform and Dockerfiles. Code
 contexts: Python, JavaScript, TypeScript, Go, Java, Ruby, PHP, C#, Rust,
 shell, and Windows batch and PowerShell scripts with `\r\n` line endings.
 Other contexts: logs, Markdown, HTML, `package-lock.json`, `go.sum`,
-checksum files, `authorized_keys` and key files. Multi-line keys are stored escaped in JSON and `.env` files, as YAML
-block scalars, and as raw strings in source code. About 15 percent of the
+checksum files, `authorized_keys` and key files. Multi-line keys are stored
+escaped in JSON and `.env` files, as YAML block scalars, and as raw strings in source code. About 15 percent of the
 positives of five kinds sit in test paths, because a real-looking credential
 in a test file is still a credential. Some comment lines hold non-ASCII
 characters, so byte and character offsets differ.
@@ -197,74 +188,73 @@ the end of the `END` line.
 
 ## Samsung CredData
 
-### Review
+The adapter uses commit `01e3d135a90f46c9a7965683b24a05d12e136b33` of
+<https://github.com/Samsung/CredData>.
 
-Reviewed at commit `01e3d135a90f46c9a7965683b24a05d12e136b33` of
-<https://github.com/Samsung/CredData> on 2026-11-17.
+### License
 
-- **License.** The repository is under the Apache License 2.0. That covers
-  the metadata, the scripts and the README. The README says each data file
-  stays under the license of its source project. CredData kept only
-  repositories whose license allowed use in a dataset. A license file per
-  source repository is copied next to its data.
-- **Verdict.** Benchmark use is allowed: the metadata is Apache-2.0, and the
-  data files are fetched from their public sources under their own licenses.
-  Rustleaks must not redistribute the data. The adapter reads a local copy
-  in a cache folder, and nothing from CredData is committed.
-- **Download.** `download_data.py` reads `snapshot.json`, which lists 337
-  GitHub repositories with pinned commits. It fetches each commit with
-  `git fetch --depth 1` into `tmp/`, copies the labeled files into `data/`,
-  then rewrites the true values. It needs Linux or macOS, Python 3.10 or
-  later, Git and network access to all 337 repositories. Its
-  `requirements.txt` adds `pybase62`, used to rewrite values, and other
-  packages. The download was not run for this review. The size of `tmp/` is
-  not known; `data/` is about 17 million lines in about 11,500 files,
-  according to `.ci/benchmark.txt`. A repository that has disappeared stops
-  the script.
-- **Metadata format.** `meta/` holds one CSV file per repository, 337 files
-  and about 6 MB. The columns are `Id`, `FileID`, `Domain`, `RepoName`,
-  `FilePath`, `LineStart`, `LineEnd`, `GroundTruth`, `ValueStart`,
-  `ValueEnd`, `CryptographyKey`, `PredefinedPattern` and `Category`. Lines
-  are one-based. `ValueStart` and `ValueEnd` are character positions in a
-  line. An empty or `-1` value means the whole line.
-- **Labels.** `T` means the value looks like a real credential. `F` means a
-  false positive. `X` means a test value, an example or a placeholder.
-  CredData's own scorer counts both `F` and `X` as negatives.
-- **Counts.** The adapter read all 67,896 metadata rows at this commit:
-  15,753 `T`, 48,061 `F` and 4,082 `X`, in 11,030 files from 337
-  repositories. 33,571 rows mark a whole line, 1,003 of them `T`. 1,351
-  rows span more than one line, mostly private keys.
-- **Categories.** `Category` holds CredSweeper rule names, joined with `:`
-  when more than one rule applies. There are 274 distinct values. The most
-  common `T` categories are `Key` (3,822), `Password` (2,573), `UUID`
-  (2,316), `Secret` (1,263) and `PEM Private Key` (1,161).
-- **Obfuscation.** Only `T` values are rewritten, by
-  [`obfuscate_creds.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/obfuscate_creds.py).
-  Fixed-format values keep their prefix and get random characters from the
-  original character set and length. Multi-line private keys keep their
-  `BEGIN` and `END` lines, header lines and the first 64 characters of the
-  first body line. Every other letter and digit is replaced by a random
-  letter or digit. Values in the `AWS Multi`, `Google Multi`, `JWK`,
-  `Alibaba Multi` and `Twilio Multi` categories are not rewritten. `F` and
-  `X` values keep their original text. Directory and file names are
-  replaced by hashes under `data/<repo>/<scope>/`.
+The CredData metadata, scripts and README are under the Apache License 2.0.
+Each data file stays under the license of its source project, and CredData
+copies a license file per source repository next to its data. Use for
+benchmarks is allowed; do not redistribute the data. The adapter reads a
+local copy in a cache folder, and nothing from CredData is committed.
+
+### Data and metadata
+
+`download_data.py` reads `snapshot.json`, which lists GitHub repositories
+with pinned commits. It fetches each commit with `git fetch --depth 1` into
+`tmp/`, copies the labeled files into `data/`, then rewrites the true values.
+It needs Linux or macOS, Python 3.10 or later, Git and network access to
+every listed repository. Its `requirements.txt` adds `pybase62`, used to
+rewrite values, and other packages. A repository that has disappeared stops
+the script.
+
+`meta/` holds one CSV file per repository. The columns are `Id`, `FileID`,
+`Domain`, `RepoName`, `FilePath`, `LineStart`, `LineEnd`, `GroundTruth`,
+`ValueStart`, `ValueEnd`, `CryptographyKey`, `PredefinedPattern` and
+`Category`. Lines are one-based. `ValueStart` and `ValueEnd` are character
+positions in a line. An empty or `-1` value means the whole line. Some rows
+span more than one line, mostly private keys.
+
+`GroundTruth` holds the label:
+
+- `T`: the value looks like a real credential.
+- `F`: a false positive.
+- `X`: a test value, an example or a placeholder.
+
+CredData's own scorer counts both `F` and `X` as negatives.
+
+`Category` holds CredSweeper rule names, joined with `:` when more than one
+rule applies.
+
+Only `T` values are rewritten, by
+[`obfuscate_creds.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/obfuscate_creds.py).
+Fixed-format values keep their prefix and get random characters from the
+original character set and length. Multi-line private keys keep their
+`BEGIN` and `END` lines, header lines and the first 64 characters of the
+first body line. Every other letter and digit is replaced by a random letter
+or digit. Values in the `AWS Multi`, `Google Multi`, `JWK`, `Alibaba Multi`
+and `Twilio Multi` categories are not rewritten. `F` and `X` values keep
+their original text. Directory and file names are replaced by hashes under
+`data/<repo>/<scope>/`.
 
 ### Effects on a comparison
 
-- **Test paths.** Ground rule 1 labels every credential in test or example
-  folders as `T`. At this commit 10,618 of the 15,753 `T` rows are under a
-  `test` scope folder. A tool that skips test paths, or treats obvious test
-  values as safe, loses recall here by design.
+- **Test paths.** CredData labels every credential in test or example
+  folders as `T`, and most `T` rows are under a `test` scope folder. A tool
+  that skips test paths, or treats obvious test values as safe, loses recall
+  here by design.
 - **Label vocabulary.** CredData labels CredSweeper candidates, including
   UUIDs, salts and nonces, and keyword lines without a vendor format. A
-  scanner that reports only vendor formats will show low recall on those
+  scanner that reports only vendor formats shows low recall on those
   categories. Report CredData results by category, not only in total.
 - **Unlabeled findings.** CredData labels only lines that its source tools
   reported. A finding on an unlabeled line is unknown, not a false positive.
   CredData's own scorer,
   [`benchmark/scanner/scanner.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/benchmark/scanner/scanner.py),
   counts such a finding in `lost_cnt` and leaves it out of the true and
-  false positive totals. The harness should do the same for this workload.
+  false positive totals. The adapter sets `labels_complete: false` in
+  `workload.json`, so the harness does the same.
 - **Rewritten values.** Rewritten values have the right shape but random
   content, so validation and checksum checks may reject them.
 - **Prior tuning.** Betterleaks release candidates changed generic filters
@@ -273,9 +263,6 @@ Reviewed at commit `01e3d135a90f46c9a7965683b24a05d12e136b33` of
   and [pull request 487](https://github.com/betterleaks/betterleaks/pull/487)).
   Its CredData score is not a held-out measurement. Rustleaks has not used
   CredData.
-- **Known label noise.** The Betterleaks author wrote in
-  [Rare Not Random](https://lookingatcomputer.substack.com/p/rare-not-random)
-  that some CredData labels look wrong.
 
 ### Prepare and convert
 
