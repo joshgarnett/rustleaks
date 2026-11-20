@@ -1,21 +1,18 @@
-# Reviewed synthetic AWS compatibility examples and source assertions.
-crates/rustleaks-core/src/lib.rs:aws-access-token:14
-
 # Reviewed synthetic values in the independent accuracy corpus generator.
 crates/rustleaks-compat/src/evaluation/generator.rs:github-pat:3
 crates/rustleaks-compat/src/evaluation/generator.rs:aws-access-token:4
 crates/rustleaks-compat/src/evaluation/generator.rs:private-key:167
 crates/rustleaks-compat/src/evaluation/generator.rs:generic-api-key:217
-crates/rustleaks-compat/src/evaluation/native_cases.rs:github-pat:182
+crates/rustleaks-compat/src/evaluation/native_cases.rs:github-pat:176
 crates/rustleaks-core/tests/native_policy.rs:aws-access-token:37
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:340
 
 # Reviewed generated hashes and synthetic decoder test values.
 MODULE.bazel.lock:generic-api-key:794
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1988
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1993
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2009
-crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2013
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1989
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:1994
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2010
+crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2014
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
 crates/rustleaks-core/tests/engine.rs:generic-api-key:353
@@ -88,6 +85,9 @@ c2744796b6d04b1927f6c83009629a2357542775:crates/rustleaks-core/tests/connection_
 2aa1834793cbcf6f5e8968cc9caeb37b3db24d9a:docs/validation/default-rule-throughput.md:sourcegraph-access-token:7
 4168b3cf12417436cc625bf356f0840e76cd5b96:crates/rustleaks-core/tests/native_policy.rs:aws-access-token:30
 4fd49b0d8c1f5f49ca89527bf15b3b0d0c53761d:crates/rustleaks-core/tests/native_policy.rs:aws-access-token:30
+4168b3cf12417436cc625bf356f0840e76cd5b96:crates/rustleaks-compat/src/evaluation/pilot.rs:github-pat:182
+feb7a54e3ab17d690fd2724e39ae40f8b7bbe324:crates/rustleaks-core/src/lib.rs:aws-access-token:14
+4fd49b0d8c1f5f49ca89527bf15b3b0d0c53761d:crates/rustleaks-compat/src/evaluation/pilot.rs:github-pat:182
 7a96354d4e9d58db3755bb71af10491972b29386:crates/xtask/src/tooling/cli_corpus/fixture.rs:aws-access-token:109
 3ca35a125fcd946f10275da7974b3c6db60e1fea:crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:287
 3ca35a125fcd946f10275da7974b3c6db60e1fea:crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:289
