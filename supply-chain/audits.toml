@@ -73,6 +73,12 @@ criteria = "safe-to-deploy"
 delta = "5.0.3 -> 6.2.0"
 notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
+[[audits.brotli-decompressor]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "6.2.0 -> 6.3.2"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-20.md; integration checks are separate evidence"
+
 [[audits.cfg-if]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -163,6 +169,12 @@ criteria = "safe-to-deploy"
 delta = "1.1.9 -> 1.1.10"
 notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
+[[audits.flate2]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "1.1.10 -> 1.1.11"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-20.md; integration checks are separate evidence"
+
 [[audits.hashbrown]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -216,6 +228,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.14.0"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in docs/dependency-audits/runtime-lz4-flex-batch-30.md"
+
+[[audits.lz4_flex]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "0.14.0 -> 0.14.2"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-20.md; integration checks are separate evidence"
 
 [[audits.lzma-rust2]]
 who = "OpenAI Codex"
@@ -337,6 +355,12 @@ criteria = "safe-to-deploy"
 delta = "1.1.1 -> 1.1.2"
 notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
+[[audits.serde_spanned]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "1.1.2 -> 1.1.3"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-20.md; integration checks are separate evidence"
+
 [[audits.sha2]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -409,6 +433,12 @@ criteria = "safe-to-deploy"
 delta = "1.1.4+spec-1.1.0 -> 1.2.0+spec-1.1.0"
 notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
 
+[[audits.toml]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "1.2.0+spec-1.1.0 -> 1.2.1+spec-1.1.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-20.md; integration checks are separate evidence"
+
 [[audits.toml_datetime]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
@@ -420,6 +450,12 @@ who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 delta = "1.1.1+spec-1.1.0 -> 1.1.2+spec-1.1.0"
 notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11.md; integration checks are separate evidence"
+
+[[audits.toml_datetime]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "1.1.2+spec-1.1.0 -> 1.1.3+spec-1.1.0"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-20.md; integration checks are separate evidence"
 
 [[audits.toml_parser]]
 who = "OpenAI Codex"

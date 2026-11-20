@@ -357,7 +357,7 @@ consumers, source distribution or reachability change, or when new audit or
 advisory evidence appears. `just security` rejects a missing, malformed or
 expired review date on an ordinary exemption.
 
-The standing exemption for `compcol 0.7.8` uses `review-on=boundary-change`
+The standing exemption for `compcol 0.8.0` uses `review-on=boundary-change`
 and has no calendar expiry. It covers only the reviewed registry source, the
 `alloc` and `rar2` features in the workspace feature union and Bazel
 resolution, and the eight maintained 64-bit targets. The vet check enforces

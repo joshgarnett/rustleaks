@@ -12,9 +12,9 @@ const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
 pub(crate) const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
 const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
-const COMPCOL_EXEMPTION_VERSION: &str = "0.7.8";
+const COMPCOL_EXEMPTION_VERSION: &str = "0.8.0";
 const COMPCOL_EXEMPTION_SHA256: &str =
-    "7a9657f9d47c2bc36be681f158d208f40bafdd1c8c32003dac8e7dfe0cb68a97";
+    "f4be160df80e77bdf4902bb026c6a0f6c700ec7793379c26305d45e293e17b8c";
 /// Targets the compcol exemption was reviewed for. This is a separate list from
 /// [`REQUIRED_TARGETS`] so that a target change requires a new review.
 const COMPCOL_EXEMPTION_TARGETS: &[&str] = &[
@@ -355,11 +355,11 @@ fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
         "alloc-no-stdlib@3.0.0",
         "alloc-stdlib@0.3.0",
         "block-buffer@0.12.1",
-        "brotli-decompressor@6.2.0",
+        "brotli-decompressor@6.3.2",
         "const-oid@0.10.2",
         "hybrid-array@0.4.15",
         "itoa@1.0.18",
-        "lz4_flex@0.14.0",
+        "lz4_flex@0.14.2",
         "lzma-rust2@0.25.0",
         "memchr@2.8.3",
         "proc-macro2@1.0.107",
@@ -826,7 +826,7 @@ mod tests {
     #[test]
     fn standing_vet_exemption_accepts_only_the_approved_package_and_criterion() {
         let entry: toml::Value = toml::from_str(
-            r#"version = "0.7.8"
+            r#"version = "0.8.0"
 criteria = "safe-to-deploy"
 notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; resolution=fixed audited release; review-on=boundary-change"
 "#,
@@ -835,7 +835,7 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
         assert!(validate_vet_exemption("compcol", &entry, future).unwrap());
         assert!(validate_vet_exemption("other", &entry, future).is_err());
         for (field, value) in [
-            ("version", "0.7.9"),
+            ("version", "0.8.1"),
             ("criteria", "safe-to-run"),
             ("criteria", "unreviewed"),
             (
@@ -881,13 +881,13 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
     fn standing_compcol_scope_rejects_resolved_graph_expansion() {
         let core = BTreeSet::from(["rustleaks-core".to_owned()]);
         let metadata = serde_json::json!({
-            "packages": [{"name":"compcol", "version":"0.7.8", "id":"compcol-id",
+            "packages": [{"name":"compcol", "version":"0.8.0", "id":"compcol-id",
                 "source":"registry+https://github.com/rust-lang/crates.io-index"}],
             "resolve":{"nodes":[{"id":"compcol-id", "features":["alloc","rar2"]}]},
         });
         let bazel = serde_json::json!({
-            "crates":{"compcol 0.7.8":{
-                "name":"compcol", "version":"0.7.8",
+            "crates":{"compcol 0.8.0":{
+                "name":"compcol", "version":"0.8.0",
                 "repository":{"Http":{"sha256":COMPCOL_EXEMPTION_SHA256}},
                 "common_attrs":{"crate_features":{"common":["alloc","rar2"],"selects":{}}},
             }},
@@ -898,7 +898,7 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
         coupled.insert("compcol".into());
         assert!(validate_compcol_exemption_scope(&coupled, &metadata, &bazel).is_err());
         for (path, value) in [
-            ("/packages/0/version", serde_json::json!("0.7.9")),
+            ("/packages/0/version", serde_json::json!("0.8.1")),
             ("/packages/0/source", serde_json::Value::Null),
             (
                 "/resolve/nodes/0/features",
@@ -918,17 +918,17 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
             );
         }
         for (path, value) in [
-            ("/crates/compcol 0.7.8/version", serde_json::json!("0.7.9")),
+            ("/crates/compcol 0.8.0/version", serde_json::json!("0.8.1")),
             (
-                "/crates/compcol 0.7.8/repository/Http/sha256",
+                "/crates/compcol 0.8.0/repository/Http/sha256",
                 serde_json::json!("changed"),
             ),
             (
-                "/crates/compcol 0.7.8/common_attrs/crate_features/common",
+                "/crates/compcol 0.8.0/common_attrs/crate_features/common",
                 serde_json::json!(["alloc", "rar2", "default"]),
             ),
             (
-                "/crates/compcol 0.7.8/common_attrs/crate_features/selects",
+                "/crates/compcol 0.8.0/common_attrs/crate_features/selects",
                 serde_json::json!({"cfg(unix)":["std"]}),
             ),
             (

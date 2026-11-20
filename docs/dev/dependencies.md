@@ -95,11 +95,11 @@ aho-corasick@1.1.5
 alloc-no-stdlib@3.0.0
 alloc-stdlib@0.3.0
 block-buffer@0.12.1
-brotli-decompressor@6.2.0
+brotli-decompressor@6.3.2
 const-oid@0.10.2
 hybrid-array@0.4.15
 itoa@1.0.18
-lz4_flex@0.14.0
+lz4_flex@0.14.2
 lzma-rust2@0.25.0
 memchr@2.8.3
 proc-macro2@1.0.107
@@ -150,15 +150,17 @@ graph is pinned exactly.
 - `lzma-rust2 0.25.0` has optimization turned off. `lz4_flex` uses its
   checked, safe encode and decode features.
 - The bzip2, RAR and 7z forks in this repository forbid unsafe code.
-- RAR2 uses `compcol 0.7.8` with only `alloc` and `rar2`. That graph has no
+- RAR2 uses `compcol 0.8.0` with only `alloc` and `rar2`. That graph has no
   normal dependencies, build script, native code or unsafe Rust. Version
-  0.7.8 corrects the repeated-match offset history and caps speculative output
-  reservation. A synthetic archive regression keeps expected bytes that were
-  checked against the pinned Go decoder. The
-  [compcol review](../dependency-audits/compcol-0.7.8.md) records the source
-  change and a notice issue in unselected bzip2 code, which Rustleaks neither
-  compiles nor redistributes. Turning on other codecs or distributing their
-  sources reopens the review.
+  0.8.0 streams decoded output from the fixed 1 MiB window instead of
+  building the whole member in memory. A synthetic archive regression keeps
+  expected bytes that were checked against the pinned Go decoder. The
+  [compcol 0.7.8 review](../dependency-audits/compcol-0.7.8.md) records the
+  repeated-match correction and a notice issue in unselected bzip2 code,
+  which Rustleaks neither compiles nor redistributes. The
+  [0.8.0 delta review](../dependency-audits/maintenance-2026-11-20.md#compcol)
+  records the streaming change and why the exemption remains. Turning on
+  other codecs or distributing their sources reopens the review.
 - XZ checksums use pinned `sha2`. Its portable and hardware dispatch is the
   main intended unsafe boundary for archives.
 - The Bazel workspace feature union turns on the SIMD checksum path in
