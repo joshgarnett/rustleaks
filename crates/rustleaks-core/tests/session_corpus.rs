@@ -2,8 +2,7 @@
 //! Differential replay of the frozen scan-session oracle corpus.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use base64::Engine as _;
 use rustleaks_core::model::{Finding, Fragment, Location, RequiredFinding};
@@ -12,6 +11,12 @@ use rustleaks_core::session::{
     qualified_fingerprint, sort_findings_canonical,
 };
 use serde::{Deserialize, Serialize};
+
+#[allow(dead_code)]
+#[path = "support/corpus.rs"]
+mod corpus;
+
+use corpus::json_lines;
 
 #[derive(Deserialize)]
 struct Request {
@@ -446,15 +451,6 @@ fn project_finding(finding: &Finding) -> FindingWire {
 
 fn corpus_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/session-corpus")
-}
-
-fn json_lines<T: for<'de> Deserialize<'de>>(path: &Path) -> Vec<T> {
-    fs::read_to_string(path)
-        .unwrap()
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect()
 }
 
 fn decode(value: &str) -> Vec<u8> {

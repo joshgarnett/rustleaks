@@ -8,12 +8,16 @@ use std::sync::OnceLock;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use rustleaks_core::config::CompiledConfig;
-use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
-use rustleaks_core::native::{
-    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
-};
+use rustleaks_core::model::{Finding, Fragment, Location, ScanOptions};
+use rustleaks_core::native::{CONNECTION_RULES_V1, NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
+
+#[allow(dead_code)]
+#[path = "support/native_harness.rs"]
+mod native_harness;
+
+use native_harness::{all_packs_config, exact_range as range, scan};
 
 #[derive(Deserialize)]
 #[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
@@ -60,16 +64,7 @@ fn cases() -> &'static Cases {
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
-        NativePolicy::builder()
-            .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
-            .unwrap()
-            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
-            .unwrap()
-            .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-            .unwrap()
-            .compile()
-            .unwrap()
-            .0
+        all_packs_config()
             .select_rules(cases().baseline_rule_ids.iter().map(String::as_str))
             .unwrap()
     })
@@ -107,17 +102,6 @@ fn previous() -> &'static Engine {
         assert_eq!(previous.rules().len(), 335);
         Engine::builder(previous).build().unwrap()
     })
-}
-
-fn range([start, end]: [usize; 2]) -> FindingRange {
-    FindingRange::Exact(ByteRange::new(start, end).unwrap())
-}
-
-fn scan(engine: &Engine, bytes: &[u8], path: &str) -> Vec<Finding> {
-    let fragment = Fragment::builder(bytes).file_path(path).build();
-    let result = engine.scan_fragment(&fragment, &ScanOptions::default());
-    assert!(result.is_complete());
-    result.findings().to_vec()
 }
 
 fn selected_findings(findings: &[Finding], rule: &str) -> Vec<Finding> {
