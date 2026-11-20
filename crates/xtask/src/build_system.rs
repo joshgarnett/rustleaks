@@ -329,7 +329,10 @@ fn suite_groups_contain(build: &str, suite: &str, stem: &str) -> bool {
                 .nth(1)
                 .and_then(|tail| tail.split("\n]").next())
                 .and_then(|tail| tail.split("\n}").next())
-                .is_some_and(|list| list.lines().any(|line| line.trim_start().starts_with(&quoted)))
+                .is_some_and(|list| {
+                    list.lines()
+                        .any(|line| line.trim_start().starts_with(&quoted))
+                })
         })
 }
 
