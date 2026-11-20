@@ -342,11 +342,11 @@ impl OrderedSink<'_, '_, '_> {
         loop {
             if state.reader_panicked {
                 drop(state);
-                self.end(Err(SourceError::Terminal {
-                    stage: SourceStage::Read,
-                    path: None,
-                    message: "directory reader thread panicked".to_owned(),
-                }));
+                self.end(Err(SourceError::terminal(
+                    SourceStage::Read,
+                    None,
+                    "directory reader thread panicked",
+                )));
                 return true;
             }
             if !state.items.is_empty() && self.cancellation.is_cancelled() {

@@ -1,4 +1,4 @@
-//! In-memory larger archive/reader cases selected only by the deep operator.
+//! In-memory larger archive and reader cases run by `just security-deep`.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
@@ -71,7 +71,7 @@ fn profile_caps_and_long_schedule_are_explicit() {
 }
 
 #[test]
-#[ignore = "optional larger-input driver, invoked by the deep-security operator"]
+#[ignore = "optional larger-input driver, run by `just security-deep`"]
 fn security_stress_driver() {
     large_archive_frame_reaches_tail();
     archive_expansion_boundary();

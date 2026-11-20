@@ -9,6 +9,7 @@ use std::sync::Arc;
 use rustleaks_core::config::CompiledConfig;
 
 use crate::file::{FileTarget, FragmentCommit, visit_borrowed};
+use crate::source::emit_issue;
 use crate::{
     CallbackError, Cancellation, FileOptions, LogicalPath, Source, SourceConfigError,
     SourceControl, SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
@@ -155,7 +156,7 @@ impl ArchiveOptions {
 
     /// Adds exact decorated target paths excluded before complete-mode reads.
     ///
-    /// This compares normalized logical paths. Legacy fragments ignore it.
+    /// This compares normalized logical paths. Chunked scans ignore it.
     /// Only emitted leaf paths, including compressed streams, are matched.
     /// Naming a container does not exclude its descendants. Container and
     /// shared-decoder checks needed to reach eligible members remain active.
@@ -349,10 +350,12 @@ impl ArchiveSource {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
-        let input = self.input.take().ok_or_else(|| SourceError::Terminal {
-            stage: SourceStage::Open,
-            path: Some(self.physical_path.clone()),
-            message: "archive source was already consumed".to_owned(),
+        let input = self.input.take().ok_or_else(|| {
+            SourceError::terminal(
+                SourceStage::Open,
+                Some(self.physical_path.clone()),
+                "archive source was already consumed",
+            )
         })?;
         let name = native_file_name_bytes(&self.physical_path);
         let complete = self.file_options.complete_target_bytes().is_some();
@@ -2045,13 +2048,6 @@ fn member_issue(path: &Path, message: impl Into<String>) -> SourceIssue {
 
 fn limit_issue(path: &Path, message: impl Into<String>) -> SourceIssue {
     issue(path, SourceStage::Limit, SourceIssueKind::Limit, message)
-}
-
-fn emit_issue(
-    issue: SourceIssue,
-    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-) -> Result<SourceControl, SourceError> {
-    emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback)
 }
 
 #[cfg(test)]

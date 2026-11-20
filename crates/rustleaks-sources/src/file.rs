@@ -5,12 +5,13 @@ use std::path::{Path, PathBuf};
 use rustleaks_core::model::Fragment;
 
 use crate::mime;
+use crate::source::emit_event;
 use crate::{
     CallbackError, Cancellation, LogicalPath, Source, SourceConfigError, SourceControl,
     SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
-/// Pinned nominal file-fragment size in bytes.
+/// Default nominal file-fragment size in bytes.
 pub const DEFAULT_CHUNK_SIZE: usize = 100_000;
 
 /// Maximum number of bytes appended while seeking a safe split boundary.
@@ -239,7 +240,7 @@ impl<I: RawSource> BufferedSourceReader<I> {
     }
 }
 
-/// Validated legacy-fragment or bounded complete-target options.
+/// Validated chunked-fragment or bounded complete-target options.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FileOptions {
     chunk_size: NonZeroUsize,
@@ -285,7 +286,7 @@ impl FileOptions {
         })
     }
 
-    /// Returns the complete-target byte ceiling, or `None` for legacy fragments.
+    /// Returns the complete-target byte ceiling, or `None` for chunked fragments.
     #[must_use]
     pub const fn complete_target_bytes(self) -> Option<usize> {
         match self.complete_target_bytes {
@@ -318,7 +319,7 @@ impl Default for FileOptions {
     fn default() -> Self {
         Self {
             chunk_size: NonZeroUsize::new(DEFAULT_CHUNK_SIZE)
-                .expect("the pinned default chunk size is positive"),
+                .expect("the default chunk size is positive"),
             max_boundary_read_ahead: MAX_BOUNDARY_READ_AHEAD,
             complete_target_bytes: None,
         }
@@ -435,17 +436,13 @@ impl FileTarget {
         builder
     }
 
-    fn complete_error(&self, stage: SourceStage, message: impl Into<String>) -> SourceError {
-        SourceError::Terminal {
-            stage,
-            path: Some(self.physical_path.clone()),
-            message: message.into(),
-        }
+    fn terminal(&self, stage: SourceStage, message: impl Into<String>) -> SourceError {
+        SourceError::terminal(stage, Some(self.physical_path.clone()), message)
     }
 }
 
 impl FileSource {
-    /// Creates a file source from a standard Rust reader using pinned defaults.
+    /// Creates a file source from a standard Rust reader using default options.
     #[must_use]
     pub fn new<R>(reader: R, path: impl Into<PathBuf>) -> Self
     where
@@ -480,15 +477,9 @@ impl FileSource {
     /// Records the discovered symlink alias while retaining the target path as
     /// the fragment's file path.
     #[must_use]
-    pub fn with_symlink_path(mut self, path: impl Into<PathBuf>) -> Self {
+    pub(crate) fn with_symlink_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.target.symlink_path = Some(path.into());
         self
-    }
-
-    /// Returns the physical path used for diagnostics.
-    #[must_use]
-    pub fn physical_path(&self) -> &Path {
-        &self.target.physical_path
     }
 }
 
@@ -518,18 +509,18 @@ impl FileSource {
             if self.complete_consumed {
                 return Err(self
                     .target
-                    .complete_error(SourceStage::Read, "complete source was already consumed"));
+                    .terminal(SourceStage::Read, "complete source was already consumed"));
             }
             self.complete_consumed = true;
             return visit_complete(&self.target, &mut self.reader, maximum, cancellation, emit);
         }
-        visit_legacy(&self.target, &mut self.reader, nominal, cancellation, emit)
+        visit_chunked(&self.target, &mut self.reader, nominal, cancellation, emit)
     }
 }
 
 /// Scans one borrowed reader, such as an archive member, as one file.
 ///
-/// Legacy fragments follow the same read sizes as [`FileSource`], so a reader
+/// Chunked fragments follow the same read sizes as [`FileSource`], so a reader
 /// that returns the same bytes in the same read sizes gives the same fragments.
 #[cfg(feature = "archives")]
 pub(crate) fn visit_borrowed(
@@ -543,17 +534,10 @@ pub(crate) fn visit_borrowed(
     if let Some(maximum) = target.options.complete_target_bytes() {
         return visit_complete(target, &mut reader, maximum, cancellation, emit);
     }
-    visit_legacy(target, &mut reader, nominal, cancellation, emit)
+    visit_chunked(target, &mut reader, nominal, cancellation, emit)
 }
 
-fn emit_event(
-    event: SourceEvent,
-    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-) -> Result<SourceControl, SourceError> {
-    emit(event).map_err(SourceError::Callback)
-}
-
-fn visit_legacy<I: RawSource>(
+fn visit_chunked<I: RawSource>(
     target: &FileTarget,
     reader: &mut BufferedSourceReader<I>,
     nominal: &mut Vec<u8>,
@@ -601,18 +585,22 @@ fn visit_legacy<I: RawSource>(
         let fragment_capacity = outcome
             .count
             .checked_add(target.options.max_boundary_read_ahead)
-            .ok_or_else(|| SourceError::Terminal {
-                stage: SourceStage::Limit,
-                path: Some(target.physical_path.clone()),
-                message: "fragment buffer capacity overflow".to_owned(),
+            .ok_or_else(|| {
+                SourceError::terminal(
+                    SourceStage::Limit,
+                    Some(target.physical_path.clone()),
+                    "fragment buffer capacity overflow",
+                )
             })?;
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(fragment_capacity)
-            .map_err(|error| SourceError::Terminal {
-                stage: SourceStage::Limit,
-                path: Some(target.physical_path.clone()),
-                message: format!("could not allocate fragment buffer: {error}"),
+            .map_err(|error| {
+                SourceError::terminal(
+                    SourceStage::Limit,
+                    Some(target.physical_path.clone()),
+                    format!("could not allocate fragment buffer: {error}"),
+                )
             })?;
         bytes.extend_from_slice(original);
         if let Err(issue) = read_until_safe_boundary(
@@ -635,21 +623,21 @@ fn visit_legacy<I: RawSource>(
             );
         }
 
-        let start_line = total_lines
-            .checked_add(1)
-            .ok_or_else(|| SourceError::Terminal {
-                stage: SourceStage::Limit,
-                path: Some(target.physical_path.clone()),
-                message: "fragment start line overflow".to_owned(),
-            })?;
+        let start_line = total_lines.checked_add(1).ok_or_else(|| {
+            SourceError::terminal(
+                SourceStage::Limit,
+                Some(target.physical_path.clone()),
+                "fragment start line overflow",
+            )
+        })?;
         let line_count = count_lf(&bytes);
-        total_lines = total_lines
-            .checked_add(line_count)
-            .ok_or_else(|| SourceError::Terminal {
-                stage: SourceStage::Limit,
-                path: Some(target.physical_path.clone()),
-                message: "line count overflow".to_owned(),
-            })?;
+        total_lines = total_lines.checked_add(line_count).ok_or_else(|| {
+            SourceError::terminal(
+                SourceStage::Limit,
+                Some(target.physical_path.clone()),
+                "line count overflow",
+            )
+        })?;
 
         let issue = match &outcome.status {
             ReadStatus::Error { message, .. } => {
@@ -678,7 +666,7 @@ fn visit_complete<I: RawSource>(
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
-        // Bypass the legacy buffered reader so it cannot pull extra bytes
+        // Bypass the chunked-mode buffered reader so it cannot pull extra bytes
         // while probing exact-cap EOF. At most cap + 1 bytes are consumed.
         let requested = maximum
             .saturating_sub(bytes.len())
@@ -689,16 +677,16 @@ fn visit_complete<I: RawSource>(
             return Err(SourceError::Cancelled);
         }
         if outcome.count > requested {
-            return Err(target.complete_error(
+            return Err(target.terminal(
                 SourceStage::Limit,
                 "reader returned more bytes than the supplied buffer",
             ));
         }
         if let ReadStatus::Error { message, .. } = outcome.status {
-            return Err(target.complete_error(SourceStage::Read, message));
+            return Err(target.terminal(SourceStage::Read, message));
         }
         if outcome.count > maximum - bytes.len() {
-            return Err(target.complete_error(
+            return Err(target.terminal(
                 SourceStage::Limit,
                 "complete target exceeds maximum source bytes",
             ));
@@ -709,7 +697,7 @@ fn visit_complete<I: RawSource>(
             bytes
                 .try_reserve_exact(capacity - bytes.len())
                 .map_err(|error| {
-                    target.complete_error(
+                    target.terminal(
                         SourceStage::Limit,
                         format!("could not allocate complete target: {error}"),
                     )
@@ -724,7 +712,7 @@ fn visit_complete<I: RawSource>(
             return emit_event(SourceEvent::fragment(target.fragment(bytes, 1)), emit);
         }
         if outcome.count == 0 {
-            return Err(target.complete_error(
+            return Err(target.terminal(
                 SourceStage::Read,
                 "complete-target reader made no progress before EOF",
             ));
@@ -734,13 +722,13 @@ fn visit_complete<I: RawSource>(
 
 fn allocate_nominal(size: usize, path: &Path) -> Result<Vec<u8>, SourceError> {
     let mut buffer = Vec::new();
-    buffer
-        .try_reserve_exact(size)
-        .map_err(|error| SourceError::Terminal {
-            stage: SourceStage::Limit,
-            path: Some(path.to_path_buf()),
-            message: format!("could not allocate nominal chunk buffer: {error}"),
-        })?;
+    buffer.try_reserve_exact(size).map_err(|error| {
+        SourceError::terminal(
+            SourceStage::Limit,
+            Some(path.to_path_buf()),
+            format!("could not allocate nominal chunk buffer: {error}"),
+        )
+    })?;
     buffer.resize(size, 0);
     Ok(buffer)
 }
