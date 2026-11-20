@@ -1,5 +1,5 @@
 {
-  "checksum": "c7e703bbd39fe37965528b68a3f474eb51a22cb6eefc0f5b85440c76814a72ac",
+  "checksum": "46866c23529e14a0351d8cd139c2de262333d34bccab02b61a622dfaf83b8e2b",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -2034,12 +2034,6 @@
         "compile_data_glob": [
           "**"
         ],
-        "crate_features": {
-          "common": [
-            "default"
-          ],
-          "selects": {}
-        },
         "deps": {
           "common": [
             {
@@ -2324,17 +2318,6 @@
         "compile_data_glob": [
           "**"
         ],
-        "crate_features": {
-          "common": [
-            "brotli",
-            "bzip2",
-            "default",
-            "deflate",
-            "lz4",
-            "zstd"
-          ],
-          "selects": {}
-        },
         "deps": {
           "common": [
             {

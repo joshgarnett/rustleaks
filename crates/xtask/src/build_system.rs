@@ -375,53 +375,20 @@ fn contains_non_rust_source_asset(directory: &Path) -> Result<bool, String> {
 }
 
 fn check_profiles(root: &Path) -> Result<(), String> {
-    let profiles = [
-        (
-            "rustleaks-bzip2",
-            &[
-                "default",
-                "nightly",
-                "rustc_1_37",
-                "rustc_1_40",
-                "rustc_1_51",
-            ][..],
-        ),
-        ("rustleaks-sevenz", &["minimal"][..]),
-        ("rustleaks-sources", &["fuzzing", "minimal"][..]),
-    ];
-    for (package, required) in profiles {
-        let build = fs::read_to_string(root.join("crates").join(package).join("BUILD.bazel"))
-            .map_err(|error| format!("cannot read {package} BUILD file: {error}"))?;
-        require_contains(
-            &build,
-            "feature_profiles",
-            &format!("{package} feature profiles"),
-        )?;
-        for profile in required {
-            require_contains(
-                &build,
-                &format!("profile_{profile}"),
-                &format!("{package} {profile} profile"),
-            )?;
-        }
-    }
-
-    let bzip2 = fs::read_to_string(root.join("crates/rustleaks-bzip2/BUILD.bazel"))
-        .map_err(|error| format!("cannot read rustleaks-bzip2 BUILD file: {error}"))?;
-    require_not_contains(
-        named_call(&bzip2, "rustleaks_library", "rustleaks_bzip2")?,
-        "crate_features",
-        "rustleaks-bzip2 default target",
-    )?;
-    for closure in [
-        r#""nightly": ["nightly", "rustc_1_37", "rustc_1_40"]"#,
-        r#""rustc_1_40": ["rustc_1_37", "rustc_1_40"]"#,
-    ] {
-        require_contains(&bzip2, closure, "rustleaks-bzip2 feature closure")?;
-    }
-
     let sources = fs::read_to_string(root.join("crates/rustleaks-sources/BUILD.bazel"))
         .map_err(|error| format!("cannot read rustleaks-sources BUILD file: {error}"))?;
+    require_contains(
+        &sources,
+        "feature_profiles",
+        "rustleaks-sources feature profiles",
+    )?;
+    for profile in ["fuzzing", "minimal"] {
+        require_contains(
+            &sources,
+            &format!("profile_{profile}"),
+            &format!("rustleaks-sources {profile} profile"),
+        )?;
+    }
     require_not_contains(
         named_call(&sources, "rustleaks_library", "rustleaks_sources")?,
         "crate_features",

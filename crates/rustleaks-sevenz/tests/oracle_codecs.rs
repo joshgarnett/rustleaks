@@ -1,14 +1,6 @@
-#![cfg(all(
-    feature = "brotli",
-    feature = "bzip2",
-    feature = "deflate",
-    feature = "lz4",
-    feature = "zstd"
-))]
-
 use std::{fs::File, path::PathBuf};
 
-use rustleaks_sevenz::{ArchiveReader, Password};
+use rustleaks_sevenz::ArchiveReader;
 
 const FIXTURES: &[(&str, usize)] = &[
     ("copy.7z", 10),
@@ -33,15 +25,11 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 #[test]
-fn decodes_every_non_encrypted_pinned_go_method_fixture() {
+fn decodes_every_unencrypted_method_fixture() {
     for &(name, expected_files) in FIXTURES {
-        let mut archive = ArchiveReader::new_with_memory_limit_kb(
-            File::open(fixture(name)).unwrap(),
-            Password::empty(),
-            64 * 1024,
-        )
-        .unwrap_or_else(|error| panic!("failed to open {name}: {error}"));
-        archive.set_thread_count(1);
+        let mut archive =
+            ArchiveReader::new_with_memory_limit_kb(File::open(fixture(name)).unwrap(), 64 * 1024)
+                .unwrap_or_else(|error| panic!("failed to open {name}: {error}"));
         let mut files = 0;
         let mut bytes = 0_u64;
         let mut read_sizes = Vec::new();
@@ -67,7 +55,14 @@ fn decodes_every_non_encrypted_pinned_go_method_fixture() {
         assert_eq!(files, expected_files, "unexpected member count for {name}");
         assert!(bytes > 0, "empty decoded archive {name}");
         if name == "deflate.7z" {
-            assert_eq!(&read_sizes[read_sizes.len() - 2..], &[701, 3_286]);
+            // The 701-byte read ends at a 32 KiB DEFLATE window flush (see
+            // `src/codec/deflate.rs`); without the flush stop it would merge
+            // with the next read.
+            assert_eq!(
+                &read_sizes[read_sizes.len() - 2..],
+                &[701, 3_286],
+                "deflate output must stop at the 32 KiB window flush"
+            );
         }
     }
 }

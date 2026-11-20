@@ -24,7 +24,6 @@ rustleaks_library(
 
 rustleaks_library(
     name = "rustleaks_sources_archives",
-    aliases_extra = {"//crates/rustleaks-bzip2:rustleaks_bzip2": "bzip2_rs"},
     compile_data = ["//compat:fixtures"],
     crate_features = _ARCHIVE_FEATURES,
     crate_name = "rustleaks_sources",

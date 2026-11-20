@@ -39,7 +39,7 @@ impl HuffmanTree {
                 value: i as u16,
                 length,
             })
-            .collect::<ArrayVec<[LengthPair; crate::LEN_258]>>();
+            .collect::<ArrayVec<[LengthPair; crate::MAX_SYMBOLS]>>();
 
         pairs.sort_unstable_by(|a, b| {
             a.length
@@ -64,7 +64,7 @@ impl HuffmanTree {
                 code = code.wrapping_add(1 << (32 - length));
                 c
             })
-            .collect::<ArrayVec<[HuffmanCode; crate::LEN_258]>>();
+            .collect::<ArrayVec<[HuffmanCode; crate::MAX_SYMBOLS]>>();
 
         codes.sort_unstable_by_key(|entry| entry.code);
 

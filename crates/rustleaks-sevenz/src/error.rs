@@ -74,30 +74,6 @@ impl Error {
     pub(crate) fn io_msg(e: std::io::Error, msg: impl Into<Cow<'static, str>>) -> Self {
         Self::Io(e, msg.into())
     }
-
-    pub(crate) fn bad_password(e: std::io::Error, encryped: bool) -> Self {
-        if encryped {
-            Self::MaybeBadPassword(e)
-        } else {
-            Self::io_msg(e, "")
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[inline]
-    pub(crate) fn file_open(e: std::io::Error, filename: impl Into<Cow<'static, str>>) -> Self {
-        Self::Io(e, filename.into())
-    }
-
-    pub(crate) fn maybe_bad_password(self, encryped: bool) -> Self {
-        if !encryped {
-            return self;
-        }
-        match self {
-            Self::Io(e, s) if s.is_empty() => Self::MaybeBadPassword(e),
-            _ => self,
-        }
-    }
 }
 
 impl Display for Error {

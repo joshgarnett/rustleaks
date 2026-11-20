@@ -11,13 +11,13 @@ default = []
 fuzzing = []
 archives = [
     "dep:brotli-decompressor",
-    "dep:bzip2-rs",
     "dep:compcol",
     "dep:rustleaks-rar-codec",
     "dep:lz4_flex",
     "dep:lzma-rust2",
     "dep:miniz_oxide",
     "dep:rawzip",
+    "dep:rustleaks-bzip2",
     "dep:rustleaks-sevenz",
     "dep:sha2",
     "dep:zstd-zero",
@@ -25,7 +25,6 @@ archives = [
 
 [dependencies]
 brotli-decompressor = { version = "=6.2.0", default-features = false, features = ["std"], optional = true }
-bzip2-rs = { package = "rustleaks-bzip2", path = "../rustleaks-bzip2", version = "=0.1.2-rustleaks.1", default-features = false, optional = true }
 compcol = { version = "=0.7.8", default-features = false, features = ["rar2"], optional = true }
 rustleaks-rar-codec = { path = "../rustleaks-rar-codec", version = "=0.9.3-rustleaks.1", optional = true }
 rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.11" }
@@ -33,6 +32,7 @@ lz4_flex = { version = "=0.14.0", default-features = false, features = ["checked
 lzma-rust2 = { version = "=0.25.0", default-features = false, features = ["std", "xz", "lzip"], optional = true }
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"], optional = true }
 rawzip = { version = "=0.5.2", default-features = false, features = ["std"], optional = true }
+rustleaks-bzip2 = { path = "../rustleaks-bzip2", version = "=0.1.2-rustleaks.1", optional = true }
 rustleaks-sevenz = { path = "../rustleaks-sevenz", version = "=0.20.2-rustleaks.1", optional = true }
 sha2 = { version = "=0.11.1", default-features = false, optional = true }
 zstd-zero = { version = "=0.2.1", default-features = false, optional = true }
