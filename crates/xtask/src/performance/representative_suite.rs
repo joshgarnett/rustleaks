@@ -10,10 +10,7 @@ use super::{
     Prepared, action_identity_for, argument_file_identity, bazel, command_output, prepare,
     sha256_bytes, sha256_file, workspace_root,
 };
-
-#[path = "performance_groups.rs"]
 mod groups;
-#[path = "performance_source_scale.rs"]
 mod source_scale;
 
 const SCOPE: &str = "representative-v1-operation-only";

@@ -28,7 +28,7 @@ parity](../docs/dev/testing-and-parity.md).
 Frozen files are historical provenance. They record what the Go
 implementation did at the pinned revision, and they are never edited. Their
 paths, file modes and SHA-256 hashes are listed in
-`crates/xtask/src/tooling/frozen_manifest.rs`. The frozen check also rejects
+`crates/xtask/src/tooling/frozen/manifest.rs`. The frozen check also rejects
 added or removed files inside each frozen directory.
 
 The live Go oracle is retired. Most `cargo xtask` commands named in the frozen

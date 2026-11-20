@@ -16,7 +16,6 @@ use serde_json::Value;
 use super::{private, sha256_bytes, verification};
 
 #[cfg(test)]
-#[path = "check_tests.rs"]
 mod tests;
 
 /// The example profile in `docs/user/complete-scanning.md`, byte for byte.

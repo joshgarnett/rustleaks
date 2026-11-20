@@ -87,7 +87,7 @@ The [`compat/` README](../../compat/README.md) lists every file in
 `compat/`, says which files are frozen and how to regenerate the others.
 
 Frozen files record what Gitleaks did at the pinned revision. They are
-history and never change. `crates/xtask/src/tooling/frozen_manifest.rs`
+history and never change. `crates/xtask/src/tooling/frozen/manifest.rs`
 lists their paths, modes and SHA-256 hashes. Commands named inside frozen
 READMEs describe the retired Go workflow and no longer run.
 

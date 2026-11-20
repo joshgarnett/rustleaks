@@ -79,7 +79,6 @@ pub(crate) fn command_status_with_timeout(
 }
 
 #[cfg(unix)]
-#[path = "process_cleanup.rs"]
 mod process_cleanup;
 
 pub(crate) fn terminate_process_tree(

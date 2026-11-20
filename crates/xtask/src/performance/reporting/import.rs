@@ -21,8 +21,6 @@ const INVESTIGATION_WORKLOADS: &[&str] = &[
     "core-dense-16-kib",
     "core-decode-depth-5",
 ];
-
-#[path = "existing.rs"]
 mod existing;
 
 pub(super) fn parse(bytes: &[u8]) -> Result<Value, String> {

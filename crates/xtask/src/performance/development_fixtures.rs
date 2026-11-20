@@ -18,25 +18,15 @@ use sha2::{Digest, Sha256};
 
 use crate::fuzzing::private;
 use crate::tooling::sha256_bytes;
-
-#[path = "performance_fixtures/boundaries.rs"]
 mod boundaries;
-#[path = "performance_fixtures/check.rs"]
 mod check;
-#[path = "performance_fixtures/connections.rs"]
 mod connections;
-#[path = "performance_fixtures/density.rs"]
 mod density;
 #[cfg(test)]
-#[path = "performance_fixtures/tests.rs"]
 mod tests;
-#[path = "performance_fixtures/verification.rs"]
 mod verification;
-#[path = "performance_fixtures/verification_details.rs"]
 mod verification_details;
-#[path = "performance_fixtures/verification_domain.rs"]
 mod verification_domain;
-#[path = "performance_fixtures/verification_seed.rs"]
 mod verification_seed;
 
 const DEVELOPMENT_SEED: &str = "rustleaks.kingfisher-expansion.v1.dev.2026-11-13";

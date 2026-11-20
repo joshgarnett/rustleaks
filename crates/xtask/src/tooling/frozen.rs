@@ -2,8 +2,6 @@
 //!
 //! It does not observe upstream code, generate expected outcomes, or claim
 //! fresh parity.
-
-#[path = "frozen_manifest.rs"]
 mod manifest;
 
 use std::collections::BTreeSet;

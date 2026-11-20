@@ -9,21 +9,13 @@ use serde_json::{Value, json};
 
 use crate::tooling::{command_output, sha256_bytes, sha256_file};
 use crate::{DEFAULT_RULES_SHA256, RELEASE_VERSION, REVISION, workspace_root};
-
-#[path = "performance_representative.rs"]
 mod representative_suite;
 
 pub(crate) use representative_suite::run as representative;
-
-#[path = "performance_investigation.rs"]
 mod investigation;
 pub(crate) use investigation::{calibrate, profile};
-
-#[path = "performance_reporting.rs"]
 mod reporting;
 pub(crate) use reporting::run as report;
-
-#[path = "performance_fixtures.rs"]
 mod development_fixtures;
 pub(crate) use development_fixtures::run as fixtures;
 
@@ -440,18 +432,18 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
             "crates/rustleaks-sources/fuzz/support/archive_seeds.rs".to_owned(),
             "crates/rustleaks-sources/fuzz/support/archive_scale.rs".to_owned(),
             "crates/rustleaks-sources/fuzz/support/archive_frame.rs".to_owned(),
-            "crates/xtask/src/performance.rs".to_owned(),
-            "crates/xtask/src/performance_reporting.rs".to_owned(),
-            "crates/xtask/src/performance_reporting/import.rs".to_owned(),
-            "crates/xtask/src/performance_reporting/existing.rs".to_owned(),
-            "crates/xtask/src/performance_reporting/tests.rs".to_owned(),
-            "crates/xtask/src/performance_representative.rs".to_owned(),
-            "crates/xtask/src/performance_source_scale.rs".to_owned(),
-            "crates/xtask/src/performance_groups.rs".to_owned(),
-            "crates/xtask/src/performance_investigation.rs".to_owned(),
-            "crates/xtask/src/performance_investigation.txt".to_owned(),
-            "crates/xtask/src/performance_investigation/window_matrix.rs".to_owned(),
-            "crates/xtask/src/performance_investigation/window_tests.rs".to_owned(),
+            "crates/xtask/src/performance/mod.rs".to_owned(),
+            "crates/xtask/src/performance/reporting.rs".to_owned(),
+            "crates/xtask/src/performance/reporting/import.rs".to_owned(),
+            "crates/xtask/src/performance/reporting/import/existing.rs".to_owned(),
+            "crates/xtask/src/performance/reporting/tests.rs".to_owned(),
+            "crates/xtask/src/performance/representative_suite.rs".to_owned(),
+            "crates/xtask/src/performance/representative_suite/source_scale.rs".to_owned(),
+            "crates/xtask/src/performance/representative_suite/groups.rs".to_owned(),
+            "crates/xtask/src/performance/investigation.rs".to_owned(),
+            "crates/xtask/src/performance/investigation/controller.txt".to_owned(),
+            "crates/xtask/src/performance/investigation/window_matrix.rs".to_owned(),
+            "crates/xtask/src/performance/investigation/window_tests.rs".to_owned(),
         ]
     )?);
     if fs::metadata(&binary)

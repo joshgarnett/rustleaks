@@ -17,11 +17,8 @@ use super::{
     workspace_root,
 };
 use crate::fuzzing::private;
-
-#[path = "performance_reporting/import.rs"]
 mod import;
 #[cfg(test)]
-#[path = "performance_reporting/tests.rs"]
 mod tests;
 
 const INPUT_LIMIT: u64 = 16 * 1024 * 1024;
@@ -295,7 +292,7 @@ fn inspect_observation(kind: &str, path: &Path) -> Result<Value, String> {
         command
             .args([
                 "-c",
-                include_str!("performance_investigation.txt"),
+                include_str!("investigation/controller.txt"),
                 "--inspect-observation",
                 kind,
             ])

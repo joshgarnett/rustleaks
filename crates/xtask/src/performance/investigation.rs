@@ -13,13 +13,11 @@ use super::{
     Prepared, codegen_option, command_output, compiler_arguments, prepare, prepare_with_flags,
     sha256_bytes, sha256_file, string_arguments, workspace_root,
 };
-
-#[path = "performance_investigation/window_matrix.rs"]
 mod window_matrix;
 
 pub(crate) use window_matrix::WORKLOADS as MATRIX_WORKLOADS;
 
-const CONTROLLER: &str = include_str!("performance_investigation.txt");
+const CONTROLLER: &str = include_str!("investigation/controller.txt");
 const PROFILE_SCOPE: &str = "profile-v1-instrumented-steady-loop";
 const PROFILE_FLAGS: &[&str] = &[
     "--@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=line-tables-only",
@@ -1185,5 +1183,4 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "performance_investigation/window_tests.rs"]
 mod window_tests;
