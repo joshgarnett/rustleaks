@@ -61,8 +61,8 @@ just security
 
 The final `just ci` result covers `just check` and committed parity. When a
 feature or dependency can affect supported compatibility, run
-`cargo xtask qualify` only against a clean, committed candidate tree. It
-already includes package and fuzz checks, so do not rerun those gates. Run
+`cargo xtask regression-check`. Run `cargo xtask qualify` against a clean,
+committed candidate tree when the public API or the MSRV build can change. Run
 `just package-check` for other packaged-asset or consumer changes. Run
 `just release-dry-run` instead when publish metadata or package contents change
 because the release dry run includes the package and consumer checks. A

@@ -50,9 +50,9 @@ Run all commands from the repository root.
 Run `just flake-check` after a change to timers, cancellation, subprocesses,
 directory traversal, temporary paths or concurrency. Every run must pass.
 
-`cargo xtask qualify` runs from a clean, committed tree. It adds package,
-external consumer, fuzz, Miri and performance checks to the regression check.
-Use it when supported compatibility behavior or its evidence changes.
+Run `cargo xtask regression-check` when supported compatibility behavior or
+its evidence changes. `cargo xtask qualify` is a release candidate check; see
+[Releasing](releasing.md).
 
 Neither Go nor a Gitleaks checkout is needed for any of these commands.
 

@@ -55,15 +55,15 @@ For the provider and connection packs:
    `crates/xtask/src/tooling/native_coverage/reviewed.json`. The `native`
    object must equal the TOML rule, and `origin` holds the source, revision,
    file hash, license and changes made.
-3. Update the rule counts in
-   `crates/xtask/src/tooling/native_coverage_assets.rs` when you add a rule.
-4. Regenerate the pack TOML, its `.provenance.json` and the `.sha256`
+3. Regenerate the pack TOML, its `.provenance.json` and the `.sha256`
    identity, then check them:
 
    ```sh
    cargo xtask generate native-pack-identity
    cargo xtask generate native-pack-identity --check
    ```
+
+   Rule counts come from these files, so no count needs a manual edit.
 
 For `rustleaks-extra-v1`, edit the TOML and run the same generator to update
 its `.sha256`. Never edit a `.sha256` or `.provenance.json` file by hand.
@@ -123,11 +123,10 @@ bazelisk test //crates/rustleaks-core:native_policy_test
 `bazelisk test //crates/rustleaks-core:config_test` for TOML, extension, or
 config-loading changes. Then run the commands that the [local
 workflow](../../../CONTRIBUTING.md#local-workflow) table names for the
-change, at least `just ci`. Run `cargo xtask qualify` against a clean,
-committed candidate when supported behavior or its regression evidence
-changes. Treat a behavior fix as a supported-behavior change even when
-unchanged committed evidence already contains the expected outcome. When
-`cargo xtask qualify` is not needed, run `just fuzz-smoke` for a parser, regex,
+change, at least `just ci`. Run `cargo xtask regression-check` when
+supported behavior or its regression evidence changes. Treat a behavior fix
+as a supported-behavior change even when unchanged committed evidence already
+contains the expected outcome. Run `just fuzz-smoke` for a parser, regex,
 decoder, predicate or hostile-input change. New expectations must be
 specified independently of current Rust output; do not rewrite historical Go
 observations.

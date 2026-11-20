@@ -31,8 +31,9 @@ just release-dry-run
 ```
 
 - [ ] All commands pass.
-- [ ] If compatibility inputs or behavior changed, `cargo xtask qualify`
-      passes.
+- [ ] `cargo xtask qualify` passes on the clean, committed candidate.
+- [ ] If compatibility inputs or behavior changed,
+      `cargo xtask regression-check` passes.
 - [ ] `cargo-semver-checks` passes for each public crate and feature
       profile against the latest version on crates.io, and a person reviewed
       the API change. See the
@@ -123,8 +124,10 @@ upload. The package metadata selects docs.rs documentation for all features
 with warnings denied; the hosted dry run repeats that and keeps the exact
 `.crate` archive and its file list.
 
-`cargo xtask qualify` checks frozen evidence and runs Rust regression and
-release hardening checks. It needs no Go installation or Gitleaks checkout.
+`cargo xtask qualify` checks that the candidate tree is clean and committed,
+runs the bounded composite resource tests, compares the public API with the
+snapshot and builds with the minimum supported Rust version. The other gates
+above cover tests, parity, security, fuzzing and packaging.
 
 Qualification is bound to the candidate commit and tree. Reuse a successful
 result while the commit, version, lockfiles, workflow definitions and release

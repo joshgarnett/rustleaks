@@ -73,11 +73,13 @@ run. See the [`compat/` README](../../compat/README.md#frozen-evidence).
    ```sh
    just ci
    just security
+   cargo xtask regression-check
    cargo xtask qualify
    ```
 
-   Qualification includes the regression check and package, external consumer, Miri, fuzz and
-   performance checks. Refresh the native evidence for each target.
+   `regression-check` checks the frozen evidence and replays it. `qualify`
+   checks the public API snapshot and the MSRV build. Refresh the native
+   evidence for each target.
    Cross-compilation proves only that the code compiles.
 7. **Review and record.** Get an independent review of the finding
    differences and the Rust API.

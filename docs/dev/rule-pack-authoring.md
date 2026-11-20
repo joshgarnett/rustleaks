@@ -319,15 +319,13 @@ To add or change a rule in the generated part:
 1. Edit the rule in `native_coverage/providers.toml` or `connections.toml`.
 2. Add or update its record in `native_coverage/reviewed.json`. The `native`
    object must equal the TOML rule, and `origin` holds the source details.
-3. Update the rule counts in
-   `crates/xtask/src/tooling/native_coverage_assets.rs` when you add a rule.
-4. Regenerate the pack, its provenance and the identity:
+3. Regenerate the pack, its provenance and the identity:
 
    ```sh
    cargo xtask generate native-pack-identity
    ```
 
-5. Check that the committed files match:
+4. Check that the committed files match:
 
    ```sh
    cargo xtask generate native-pack-identity --check

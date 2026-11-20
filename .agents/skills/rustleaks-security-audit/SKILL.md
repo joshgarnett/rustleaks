@@ -55,9 +55,8 @@ just ci
 ```
 
 The final `just ci` result includes committed parity. When supported behavior
-or its regression evidence changes, run `cargo xtask qualify` against a clean,
-committed candidate tree; it includes package and fuzz checks. Otherwise run
-`just fuzz-smoke`, and add `just package-check` when public APIs, default
+or its regression evidence changes, also run `cargo xtask regression-check`.
+Run `just fuzz-smoke`, and add `just package-check` when public APIs, default
 assets, features, manifests, or dependencies change. Do not run
 `just package-check` for an ordinary owned source-code fix; add it only when
 one of those package-facing boundaries changes. Follow the incident procedure

@@ -50,7 +50,8 @@ replay and target compilation.
 | Check formatting | `just format` |
 | Lint, prose, docs, build and target checks | `just check` |
 | Run before opening a pull request | `just ci` and `just security` |
-| All local release and compatibility checks, from a clean committed tree | `cargo xtask qualify` |
+| Frozen evidence check and parity replay | `cargo xtask regression-check` |
+| Release candidate checks (public API, MSRV), from a clean committed tree | `cargo xtask qualify` |
 
 [Local workflow](CONTRIBUTING.md#local-workflow) lists the command for each
 kind of change.

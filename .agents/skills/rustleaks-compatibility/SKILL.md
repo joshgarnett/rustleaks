@@ -60,6 +60,7 @@ committed tree, finish with:
 ```sh
 just ci
 just security
+cargo xtask regression-check
 cargo xtask qualify
 ```
 

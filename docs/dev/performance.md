@@ -82,7 +82,7 @@ and build steps are outside the timers. Report workloads count findings; scan
 workloads count input bytes. Do not combine the two into one bytes per second
 series.
 
-`just perf-check`, and so `cargo xtask qualify`, runs every standard
+`just perf-check` runs every standard
 workload, checks its exact outcome and the build identity, and sets no time
 or memory limit. To look for a speed or memory regression before a release,
 compare builds with the [scanner comparison](comparison.md) harness, as
@@ -126,8 +126,8 @@ positions, geometry, reader schedules and policy fields.
 ### Checking large fixtures against their answers
 
 `--check` verifies a generated bundle, scans its largest cases with the CLI,
-and compares each report with the answers. It is a manual check. No test,
-`just ci` or qualify run starts it.
+and compares each report with the answers. It is a manual check. No test or
+`just ci` run starts it.
 
 ```sh
 bazelisk build -c opt //crates/rustleaks-cli:rustleaks

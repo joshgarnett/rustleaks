@@ -57,7 +57,8 @@ Never send vulnerability details to a public issue.
 - In a clean checkout, run the affected tests, `just security`,
   `just fuzz-smoke`, `just ci`, the package checks and the native target
   checks. `just ci` includes the committed corpora and parity tests. Run
-  `cargo xtask qualify` when compatibility behavior or its evidence changed.
+  `cargo xtask regression-check` when compatibility behavior or its evidence
+  changed.
   Get a technical review from someone other than the author of the fix.
 - Rebuild release artifacts from trusted inputs. Reconcile the source,
   lockfiles, Bazel graph, SBOM, checksums and attestations before publication

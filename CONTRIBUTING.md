@@ -102,7 +102,7 @@ Then run the broader command that fits the change:
 | Compatibility evidence | `cargo xtask regression-check` (it includes `just parity`) |
 | Public API, manifests, features, packaged assets or release inputs | `just package-check` |
 | Parser, matcher, decoder, source, report, CLI, resource limit or fuzz input | `just fuzz-build` and `just fuzz-smoke` |
-| Supported compatibility behavior or its evidence | `cargo xtask qualify`, from a clean, committed tree |
+| Public API snapshot, MSRV or a release candidate | `cargo xtask qualify`, from a clean, committed tree |
 
 Before opening a pull request, run:
 
@@ -115,7 +115,7 @@ Package checks run Cargo consumers offline. In a fresh clone, run
 `cargo fetch --locked` once before `just package-check` or
 `just release-dry-run`.
 
-Keep functional assertions apart from performance budgets. See
+Do not make a functional test depend on timing. See
 [Testing and parity](docs/dev/testing-and-parity.md) for how to add and
 register tests.
 
