@@ -27,7 +27,6 @@ rustleaks_library(
     data = ["//compat:all"],
     edition = "2024",
     unit_test_tags = ["exclusive"],
-    version = "0.1.0-alpha.11",
 )
 
 [
@@ -169,6 +168,7 @@ test_suite(
         ":config_test",
         ":controlled_scan_test",
         ":default_rule_corpus_test",
+        ":default_rules_test",
         ":decoded_locations_test",
         ":detect_corpus_test",
         ":engine_test",

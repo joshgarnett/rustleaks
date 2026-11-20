@@ -32,9 +32,11 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         ));
     }
 
+    check_version(root, &workspace)?;
+    let root_targets = root_rust_targets(root)?;
     let mut publishable = Vec::new();
     for member in &members {
-        check_crate(root, member, &mut publishable)?;
+        check_crate(root, member, &root_targets, &mut publishable)?;
     }
     if publishable != ["rustleaks-core"] {
         return Err(format!(
@@ -129,6 +131,7 @@ fn discover_crates(root: &Path) -> Result<BTreeSet<String>, String> {
 fn check_crate(
     root: &Path,
     member: &str,
+    root_targets: &str,
     publishable: &mut Vec<&'static str>,
 ) -> Result<(), String> {
     let crate_root = root.join(member);
@@ -186,7 +189,7 @@ fn check_crate(
     }
 
     check_dependencies(root, member, &manifest, &build)?;
-    check_test_membership(&crate_root, &build)?;
+    check_test_membership(&crate_root, member, &build, root_targets)?;
     check_compile_assets(&crate_root, &build)?;
     Ok(())
 }
@@ -270,7 +273,16 @@ fn normalize_path(path: &Path) -> PathBuf {
     normalized
 }
 
-fn check_test_membership(crate_root: &Path, build: &str) -> Result<(), String> {
+/// Requires every integration test file `tests/<stem>.rs` to build as the
+/// Bazel target `<stem>_test`, to be listed in the crate's `all_tests` suite,
+/// which `//:test` runs, and in the root `_RUST_TARGETS` list, which
+/// `//:clippy` and `//:format` check.
+fn check_test_membership(
+    crate_root: &Path,
+    member: &str,
+    build: &str,
+    root_targets: &str,
+) -> Result<(), String> {
     let tests = crate_root.join("tests");
     if !tests.is_dir() {
         return Ok(());
@@ -294,8 +306,51 @@ fn check_test_membership(crate_root: &Path, build: &str) -> Result<(), String> {
                 path.display()
             ));
         }
+        let suite = named_call(build, "test_suite", "all_tests")
+            .map_err(|error| format!("{member}: {error}"))?;
+        require_contains(
+            suite,
+            &format!("\":{stem}_test\""),
+            &format!("{member} all_tests suite"),
+        )?;
+        require_contains(
+            root_targets,
+            &format!("\"//{member}:{stem}_test\""),
+            "root _RUST_TARGETS list",
+        )?;
     }
     Ok(())
+}
+
+/// Returns the root `_RUST_TARGETS` list, which `//:clippy` and `//:format`
+/// check.
+fn root_rust_targets(root: &Path) -> Result<String, String> {
+    let build = fs::read_to_string(root.join("BUILD.bazel"))
+        .map_err(|error| format!("cannot read BUILD.bazel: {error}"))?;
+    build
+        .split("_RUST_TARGETS = [")
+        .nth(1)
+        .and_then(|tail| tail.split("\n]").next())
+        .map(str::to_owned)
+        .ok_or_else(|| "BUILD.bazel omits the _RUST_TARGETS list".to_owned())
+}
+
+/// Requires the `RUSTLEAKS_VERSION` that Bazel targets use to equal the Cargo
+/// workspace package version.
+fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
+    let cargo = workspace
+        .get("workspace")
+        .and_then(|value| value.get("package"))
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_str)
+        .ok_or("Cargo.toml has no workspace package version")?;
+    let rules = fs::read_to_string(root.join("bazel/rust_crate.bzl"))
+        .map_err(|error| format!("cannot read bazel/rust_crate.bzl: {error}"))?;
+    require_contains(
+        &rules,
+        &format!("\nRUSTLEAKS_VERSION = \"{cargo}\"\n"),
+        "bazel/rust_crate.bzl workspace version",
+    )
 }
 
 fn check_compile_assets(crate_root: &Path, build: &str) -> Result<(), String> {
@@ -570,10 +625,6 @@ fn check_interface(root: &Path) -> Result<(), String> {
         return Err(format!("Bazelisk version must be 9.2.0, got {version:?}"));
     }
 
-    if root.join(".go-version").exists() {
-        return Err("the retired Go toolchain pin must not be restored".into());
-    }
-
     let bazelrc = fs::read_to_string(root.join(".bazelrc"))
         .map_err(|error| format!("cannot read .bazelrc: {error}"))?;
     for required in [
@@ -644,6 +695,8 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "check",
         "ci",
         "compare",
+        "compare-quality",
+        "compare-workloads",
         "deps-repin",
         "docs",
         "docs-check",
@@ -727,6 +780,14 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             "compare",
             "bazelisk run //crates/xtask:xtask -- compare \"$@\"",
         ),
+        (
+            "compare-quality",
+            "bazelisk run //crates/xtask:xtask -- compare-quality \"$@\"",
+        ),
+        (
+            "compare-workloads",
+            "bazelisk run //crates/xtask:xtask -- compare-workloads \"$@\"",
+        ),
         ("check", "bazelisk test //:check"),
         ("ci", "bazelisk test --jobs=1 //:ci"),
     ] {
@@ -737,9 +798,10 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "bazelisk build --build_tests_only //:test",
         "just ci test prebuild",
     )?;
-    require_not_contains(&justfile, "go version", "retired Go doctor requirement")?;
     for recipe in [
         "compare",
+        "compare-quality",
+        "compare-workloads",
         "fuzz",
         "perf-profile",
         "perf-calibrate",
@@ -750,9 +812,6 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             &format!("[unix]\n[positional-arguments]\n{recipe} *arguments:"),
             &format!("private Unix {recipe} argument forwarding"),
         )?;
-    }
-    for forbidden in ["go env", ".go-version"] {
-        require_not_contains(&justfile, forbidden, "retired Go toolchain requirement")?;
     }
     for forbidden in ["cargo build", "cargo clippy", "cargo doc", "cargo test"] {
         require_not_contains(&justfile, forbidden, "normal just recipe")?;
@@ -873,7 +932,27 @@ fn require_not_contains(haystack: &str, needle: &str, context: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::check_bazel_ignore;
+    use super::{check_bazel_ignore, check_test_membership};
+
+    #[test]
+    fn test_membership_requires_the_suite_and_root_lists() {
+        let crate_root =
+            std::env::temp_dir().join(format!("rustleaks-build-system-{}", std::process::id()));
+        std::fs::create_dir_all(crate_root.join("tests")).unwrap();
+        std::fs::write(crate_root.join("tests/sample.rs"), "").unwrap();
+        let declared = "[\n    rustleaks_integration_test(\n        name = test + \"_test\",\n    )\n    for test in [\"sample\"]\n]\n";
+        let suite = "test_suite(\n    name = \"all_tests\",\n    tests = [\":sample_test\"],\n)\n";
+        let root = "\n    \"//crates/demo:sample_test\",";
+        let check = |build: &str, root: &str| {
+            check_test_membership(&crate_root, "crates/demo", build, root)
+        };
+        assert!(check(&format!("{declared}{suite}"), root).is_ok());
+        let without_suite = suite.replace("\":sample_test\"", "");
+        assert!(check(&format!("{declared}{without_suite}"), root).is_err());
+        assert!(check(&format!("{declared}{suite}"), "").is_err());
+        assert!(check(suite, root).is_err());
+        std::fs::remove_dir_all(&crate_root).unwrap();
+    }
 
     #[test]
     fn bazel_ignore_rejects_missing_outputs_and_source_exclusions() {
