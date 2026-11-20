@@ -246,8 +246,9 @@ scanned bytes. Do not guess a range that is `Unavailable`.
 
 Findings keep secret bytes in memory and are not cleared when dropped. Their
 `Debug` output leaves the contents out. `Finding::redacted(percent)` masks the
-secret, and `Finding::without_detected_secrets()` removes every detected
-secret from the finding. `Finding` also implements `serde::Serialize` with the
+primary secret only; it does not change `required_findings()`.
+`Finding::without_detected_secrets()` removes every detected secret,
+including the values of required findings. `Finding` also implements `serde::Serialize` with the
 JSON report field names. That output includes the secret. Before you log
 findings or send them elsewhere, use one of these methods or copy only the
 fields you need.

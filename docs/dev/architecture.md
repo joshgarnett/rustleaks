@@ -173,7 +173,7 @@ identity and attribution. These names do not identify the product.
    to `REPORT_FORMATS` in `crates/rustleaks-cli/src/cli_spec.rs`.
 4. Add tests in `crates/rustleaks-report/tests/reporters.rs` with expected
    output written by hand, and a CLI test in
-   `crates/rustleaks-cli/tests/cli.rs`.
+   `crates/rustleaks-cli/tests/cli/reports.rs`.
 5. Document the format in the user [reports guide](../user/reports.md).
 
 ### A CLI flag
@@ -184,8 +184,8 @@ identity and attribution. These names do not identify the product.
    Help, usage and shell completion are built from this table. Unit tests
    check that every flag in the table parses.
 3. Use the value in `run.rs`, `source.rs`, `config.rs` or `output.rs`.
-4. Add tests in `crates/rustleaks-cli/tests/cli.rs`. Write the expected exit
-   code, findings and output by hand.
+4. Add tests in the matching topic file under `crates/rustleaks-cli/tests/cli/`.
+   Write the expected exit code, findings and output by hand.
 5. Document the flag in the user
    [command reference](../user/cli-reference.md).
 
