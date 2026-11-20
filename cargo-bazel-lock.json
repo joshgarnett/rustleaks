@@ -1,5 +1,5 @@
 {
-  "checksum": "1837c44ca8d7a8dfcda914b3709324930f6eb442b7a6c26b393bb6e00ea92aca",
+  "checksum": "5872ace179569f675e250965883c634e555b32f49ab64321570d993a60be0309",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -321,14 +321,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "brotli-decompressor 6.2.0": {
+    "brotli-decompressor 6.3.2": {
       "name": "brotli-decompressor",
-      "version": "6.2.0",
+      "version": "6.3.2",
       "package_url": "https://github.com/dropbox/rust-brotli-decompressor",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/brotli-decompressor/6.2.0/download",
-          "sha256": "34c6783f42c21c952ad7112b354f0ba2f10760e9decea5b1b60523d6e270faaf"
+          "url": "https://static.crates.io/crates/brotli-decompressor/6.3.2/download",
+          "sha256": "cc031cd87c6529082b0b65c604e86af0ed7744841b17ccfe60b1e31fa606179e"
         }
       },
       "targets": [
@@ -371,7 +371,7 @@
           "selects": {}
         },
         "edition": "2015",
-        "version": "6.2.0"
+        "version": "6.3.2"
       },
       "license": "BSD-3-Clause/MIT",
       "license_ids": [
@@ -419,14 +419,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "compcol 0.7.8": {
+    "compcol 0.8.0": {
       "name": "compcol",
-      "version": "0.7.8",
+      "version": "0.8.0",
       "package_url": "https://github.com/KarpelesLab/compcol",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/compcol/0.7.8/download",
-          "sha256": "7a9657f9d47c2bc36be681f158d208f40bafdd1c8c32003dac8e7dfe0cb68a97"
+          "url": "https://static.crates.io/crates/compcol/0.8.0/download",
+          "sha256": "f4be160df80e77bdf4902bb026c6a0f6c700ec7793379c26305d45e293e17b8c"
         }
       },
       "targets": [
@@ -456,7 +456,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.7.8"
+        "version": "0.8.0"
       },
       "license": "MIT",
       "license_ids": [
@@ -930,14 +930,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "flate2 1.1.10": {
+    "flate2 1.1.11": {
       "name": "flate2",
-      "version": "1.1.10",
+      "version": "1.1.11",
       "package_url": "https://github.com/rust-lang/flate2-rs",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/flate2/1.1.10/download",
-          "sha256": "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+          "url": "https://static.crates.io/crates/flate2/1.1.11/download",
+          "sha256": "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
         }
       },
       "targets": [
@@ -980,7 +980,7 @@
           "selects": {}
         },
         "edition": "2018",
-        "version": "1.1.10"
+        "version": "1.1.11"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -1293,14 +1293,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "lz4_flex 0.14.0": {
+    "lz4_flex 0.14.2": {
       "name": "lz4_flex",
-      "version": "0.14.0",
+      "version": "0.14.2",
       "package_url": "https://github.com/pseitz/lz4_flex",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/lz4_flex/0.14.0/download",
-          "sha256": "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
+          "url": "https://static.crates.io/crates/lz4_flex/0.14.2/download",
+          "sha256": "f56455fff36934a9500d69062aec1c77037179b6f0669e4d5d6b72b84722d6a3"
         }
       },
       "targets": [
@@ -1343,7 +1343,7 @@
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.14.0"
+        "version": "0.14.2"
       },
       "license": "MIT",
       "license_ids": [
@@ -2191,7 +2191,7 @@
               "target": "thiserror"
             },
             {
-              "id": "toml 1.2.0+spec-1.1.0",
+              "id": "toml 1.2.1+spec-1.1.0",
               "target": "toml"
             }
           ],
@@ -2321,11 +2321,11 @@
         "deps": {
           "common": [
             {
-              "id": "brotli-decompressor 6.2.0",
+              "id": "brotli-decompressor 6.3.2",
               "target": "brotli_decompressor"
             },
             {
-              "id": "lz4_flex 0.14.0",
+              "id": "lz4_flex 0.14.2",
               "target": "lz4_flex"
             },
             {
@@ -2386,15 +2386,15 @@
         "deps": {
           "common": [
             {
-              "id": "brotli-decompressor 6.2.0",
+              "id": "brotli-decompressor 6.3.2",
               "target": "brotli_decompressor"
             },
             {
-              "id": "compcol 0.7.8",
+              "id": "compcol 0.8.0",
               "target": "compcol"
             },
             {
-              "id": "lz4_flex 0.14.0",
+              "id": "lz4_flex 0.14.2",
               "target": "lz4_flex"
             },
             {
@@ -2846,14 +2846,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "serde_spanned 1.1.2": {
+    "serde_spanned 1.1.3": {
       "name": "serde_spanned",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "package_url": "https://github.com/toml-rs/toml",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/serde_spanned/1.1.2/download",
-          "sha256": "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+          "url": "https://static.crates.io/crates/serde_spanned/1.1.3/download",
+          "sha256": "9c187e0a369471c550af028cba56d4f4fa2a489ad28151ae95a4d340a2a8b782"
         }
       },
       "targets": [
@@ -2893,7 +2893,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "1.1.2"
+        "version": "1.1.3"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -3352,14 +3352,14 @@
       ],
       "license_file": "LICENSE-APACHE.md"
     },
-    "toml 1.2.0+spec-1.1.0": {
+    "toml 1.2.1+spec-1.1.0": {
       "name": "toml",
-      "version": "1.2.0+spec-1.1.0",
+      "version": "1.2.1+spec-1.1.0",
       "package_url": "https://github.com/toml-rs/toml",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/toml/1.2.0+spec-1.1.0/download",
-          "sha256": "c5ffcdf8f50436dbbfd675c1fe1b8e0854f42b7defea8584bdebe1aee900e561"
+          "url": "https://static.crates.io/crates/toml/1.2.1+spec-1.1.0/download",
+          "sha256": "d5755c51863cdac711f1956baf8eb9588e060755f7d3c4c979e70ea1e1f32cd7"
         }
       },
       "targets": [
@@ -3398,11 +3398,11 @@
               "target": "serde_core"
             },
             {
-              "id": "serde_spanned 1.1.2",
+              "id": "serde_spanned 1.1.3",
               "target": "serde_spanned"
             },
             {
-              "id": "toml_datetime 1.1.2+spec-1.1.0",
+              "id": "toml_datetime 1.1.3+spec-1.1.0",
               "target": "toml_datetime"
             },
             {
@@ -3421,7 +3421,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "1.2.0+spec-1.1.0"
+        "version": "1.2.1+spec-1.1.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -3430,14 +3430,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "toml_datetime 1.1.2+spec-1.1.0": {
+    "toml_datetime 1.1.3+spec-1.1.0": {
       "name": "toml_datetime",
-      "version": "1.1.2+spec-1.1.0",
+      "version": "1.1.3+spec-1.1.0",
       "package_url": "https://github.com/toml-rs/toml",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/toml_datetime/1.1.2+spec-1.1.0/download",
-          "sha256": "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
+          "url": "https://static.crates.io/crates/toml_datetime/1.1.3+spec-1.1.0/download",
+          "sha256": "173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49"
         }
       },
       "targets": [
@@ -3477,7 +3477,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "1.1.2+spec-1.1.0"
+        "version": "1.1.3+spec-1.1.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -3922,7 +3922,7 @@
               "target": "base64"
             },
             {
-              "id": "flate2 1.1.10",
+              "id": "flate2 1.1.11",
               "target": "flate2"
             },
             {
@@ -3942,7 +3942,7 @@
               "target": "tar"
             },
             {
-              "id": "toml 1.2.0+spec-1.1.0",
+              "id": "toml 1.2.1+spec-1.1.0",
               "target": "toml"
             }
           ],
@@ -4170,10 +4170,10 @@
   "direct_deps": [
     "aho-corasick 1.1.5",
     "base64 0.23.1",
-    "brotli-decompressor 6.2.0",
-    "compcol 0.7.8",
-    "flate2 1.1.10",
-    "lz4_flex 0.14.0",
+    "brotli-decompressor 6.3.2",
+    "compcol 0.8.0",
+    "flate2 1.1.11",
+    "lz4_flex 0.14.2",
     "lzma-rust2 0.25.0",
     "miniz_oxide 0.9.1",
     "rawzip 0.5.2",
@@ -4186,7 +4186,7 @@
     "tar 0.4.46",
     "thiserror 2.0.21",
     "tinyvec 1.13.3",
-    "toml 1.2.0+spec-1.1.0",
+    "toml 1.2.1+spec-1.1.0",
     "zstd-zero 0.2.1"
   ],
   "direct_dev_deps": [

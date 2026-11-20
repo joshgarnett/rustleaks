@@ -8,8 +8,8 @@ description = "Safe bounded 7z decoder for rustleaks"
 publish = false
 
 [dependencies]
-brotli-decompressor = { version = "=6.2.0", default-features = false, features = ["std"] }
-lz4_flex = { version = "=0.14.0", default-features = false, features = ["checked-decode", "frame", "safe-decode", "std"] }
+brotli-decompressor = { version = "=6.3.2", default-features = false, features = ["std"] }
+lz4_flex = { version = "=0.14.2", default-features = false, features = ["checked-decode", "frame", "safe-decode", "std"] }
 lzma-rust2 = { version = "=0.25.0", default-features = false, features = ["std"] }
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
 rustleaks-bzip2 = { path = "../rustleaks-bzip2", version = "=0.1.2-rustleaks.1" }

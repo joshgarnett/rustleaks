@@ -28,6 +28,11 @@
   checks are removed. The CredData comparison workload scores findings on
   unlabeled lines as unknown, not as false positives. `default_rules_test`
   now runs with the other tests.
+- Archive codec updates: `brotli-decompressor` 6.3.2, `lz4_flex` 0.14.2 and
+  `compcol` 0.8.0. The RAR2 decoder in `compcol` 0.8.0 streams output from a
+  fixed window instead of holding the whole member in memory. Findings do
+  not change. `toml` 1.2.1 and `flate2` 1.1.11 are also updated. The audits
+  are in `docs/dependency-audits/maintenance-2026-11-20.md`.
 - The documentation separates user guides from developer guides, describes
   the current compatibility policy and lists the developer docs in
   `docs/dev/README.md`.

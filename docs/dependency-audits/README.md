@@ -26,10 +26,12 @@ table below to find a package.
 | `block-buffer` | 0.12.1 | [runtime-block-buffer-batch-19.md](runtime-block-buffer-batch-19.md) | Full |
 | `brotli-decompressor` | 5.0.3 | [runtime-compression-batch-42.md](runtime-compression-batch-42.md) | Full |
 | `brotli-decompressor` | 5.0.3 to 6.2.0 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
+| `brotli-decompressor` | 6.2.0 to 6.3.2 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta |
 | `cfg-if` | 1.0.4 | [runtime-cfg-if-batch-16.md](runtime-cfg-if-batch-16.md) | Full |
 | `cfg-if` | 1.0.4 to 1.0.5 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `compcol` | 0.6.10 | [runtime-compcol-batch-39.md](runtime-compcol-batch-39.md) | Full |
 | `compcol` | 0.6.10 to 0.7.8 | [compcol-0.7.8.md](compcol-0.7.8.md) | Delta, for the cargo-vet exemption |
+| `compcol` | 0.7.8 to 0.8.0 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta, for the cargo-vet exemption |
 | `const-oid` | 0.10.2 | [runtime-const-oid-batch-27.md](runtime-const-oid-batch-27.md) | Full |
 | `cpufeatures` | 0.3.0 | [runtime-small-residual-batch-41.md](runtime-small-residual-batch-41.md) | Full |
 | `crc32fast` | 1.5.1 | [runtime-crc32fast-batch-25.md](runtime-crc32fast-batch-25.md) | Full |
@@ -42,6 +44,7 @@ table below to find a package.
 | `filetime` | 0.2.29 | [runtime-filetime-batch-24.md](runtime-filetime-batch-24.md) | Full |
 | `flate2` | 1.1.9 | [runtime-compression-batch-42.md](runtime-compression-batch-42.md) | Full |
 | `flate2` | 1.1.9 to 1.1.10 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
+| `flate2` | 1.1.10 to 1.1.11 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta |
 | `hashbrown` | 0.17.1 | [runtime-hashbrown-batch-38.md](runtime-hashbrown-batch-38.md) | Full |
 | `hybrid-array` | 0.4.14 | [runtime-hybrid-array-batch-28.md](runtime-hybrid-array-batch-28.md) | Full |
 | `hybrid-array` | 0.4.14 to 0.4.15 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
@@ -51,6 +54,7 @@ table below to find a package.
 | `libc` | 0.2.190 to 0.2.191 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `linux-raw-sys` | 0.12.1 | [platform-bindings-batch-43.md](platform-bindings-batch-43.md) | Full |
 | `lz4_flex` | 0.14.0 | [runtime-lz4-flex-batch-30.md](runtime-lz4-flex-batch-30.md) | Full |
+| `lz4_flex` | 0.14.0 to 0.14.2 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta |
 | `lzma-rust2` | 0.20.0 | [runtime-lzma-rust2-batch-36.md](runtime-lzma-rust2-batch-36.md) | Full |
 | `lzma-rust2` | 0.20.0 to 0.25.0 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `memchr` | 2.8.3 | [core-memchr-batch-6.md](core-memchr-batch-6.md) | Full |
@@ -72,6 +76,7 @@ table below to find a package.
 | `serde_json` | 1.0.151 to 1.0.154 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `serde_spanned` | 1.1.1 | [core-leaves-batch-1.md](core-leaves-batch-1.md) | Full |
 | `serde_spanned` | 1.1.1 to 1.1.2 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
+| `serde_spanned` | 1.1.2 to 1.1.3 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta |
 | `sha2` | 0.11.1 | [maintenance-2026-11.md](maintenance-2026-11.md) | Full |
 | `sha2` | 0.11.0 | [runtime-sha2-exception.md](runtime-sha2-exception.md) | Exception, resolved by 0.11.1 |
 | `simd-adler32` | 0.3.10 | [runtime-simd-adler32-batch-20.md](runtime-simd-adler32-batch-20.md) | Full |
@@ -85,8 +90,10 @@ table below to find a package.
 | `tinyvec` | 1.12.0 | [runtime-tinyvec-batch-33.md](runtime-tinyvec-batch-33.md) | Full |
 | `toml` | 1.1.4+spec-1.1.0 | [core-toml-batch-4.md](core-toml-batch-4.md) | Full |
 | `toml` | 1.1.4+spec-1.1.0 to 1.2.0+spec-1.1.0 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
+| `toml` | 1.2.0+spec-1.1.0 to 1.2.1+spec-1.1.0 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta |
 | `toml_datetime` | 1.1.1+spec-1.1.0 | [core-leaves-batch-1.md](core-leaves-batch-1.md) | Full |
 | `toml_datetime` | 1.1.1+spec-1.1.0 to 1.1.2+spec-1.1.0 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
+| `toml_datetime` | 1.1.2+spec-1.1.0 to 1.1.3+spec-1.1.0 | [maintenance-2026-11-20.md](maintenance-2026-11-20.md) | Delta |
 | `toml_parser` | 1.1.3+spec-1.1.0 | [core-toml-batch-4.md](core-toml-batch-4.md) | Full |
 | `toml_parser` | 1.1.3+spec-1.1.0 to 1.1.5+spec-1.1.0 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `toml_writer` | 1.1.2+spec-1.1.0 | [core-leaves-batch-1.md](core-leaves-batch-1.md) | Full |
