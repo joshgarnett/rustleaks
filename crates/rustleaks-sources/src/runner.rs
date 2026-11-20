@@ -1093,8 +1093,8 @@ impl Source for CompleteCoverageSource<'_> {
 impl Default for SourceRunner {
     fn default() -> Self {
         Self {
-            workers: NonZeroUsize::new(1).expect("one worker is positive"),
-            queue_capacity: NonZeroUsize::new(1).expect("one queue slot is positive"),
+            workers: NonZeroUsize::MIN,
+            queue_capacity: NonZeroUsize::MIN,
             budget: None,
             fail_on_coverage_error: false,
         }

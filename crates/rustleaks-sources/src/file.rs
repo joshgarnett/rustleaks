@@ -318,8 +318,7 @@ impl FileOptions {
 impl Default for FileOptions {
     fn default() -> Self {
         Self {
-            chunk_size: NonZeroUsize::new(DEFAULT_CHUNK_SIZE)
-                .expect("the default chunk size is positive"),
+            chunk_size: const { NonZeroUsize::new(DEFAULT_CHUNK_SIZE).unwrap() },
             max_boundary_read_ahead: MAX_BOUNDARY_READ_AHEAD,
             complete_target_bytes: None,
         }

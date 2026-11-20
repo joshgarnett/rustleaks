@@ -29,14 +29,14 @@ mod history;
 // Patch, line, file, hunk and metadata ceilings apply to one commit. History
 // output is parsed one file record at a time, so these values do not bound
 // the size of a whole history.
-const DEFAULT_MAX_PATCH_BYTES: usize = 1024 * 1024 * 1024;
-const DEFAULT_MAX_PATCH_LINES: usize = 16_000_000;
-const DEFAULT_MAX_STDERR_BYTES: usize = 1024 * 1024;
-const DEFAULT_MAX_BLOB_BYTES: usize = 1024 * 1024 * 1024;
-const DEFAULT_MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
-const DEFAULT_MAX_PATH_BYTES: usize = 1024 * 1024;
-const DEFAULT_MAX_FILES: usize = 1_000_000;
-const DEFAULT_MAX_HUNKS: usize = 2_000_000;
+const DEFAULT_MAX_PATCH_BYTES: NonZeroUsize = NonZeroUsize::new(1024 * 1024 * 1024).unwrap();
+const DEFAULT_MAX_PATCH_LINES: NonZeroUsize = NonZeroUsize::new(16_000_000).unwrap();
+const DEFAULT_MAX_STDERR_BYTES: NonZeroUsize = NonZeroUsize::new(1024 * 1024).unwrap();
+const DEFAULT_MAX_BLOB_BYTES: NonZeroUsize = NonZeroUsize::new(1024 * 1024 * 1024).unwrap();
+const DEFAULT_MAX_METADATA_BYTES: NonZeroUsize = NonZeroUsize::new(16 * 1024 * 1024).unwrap();
+const DEFAULT_MAX_PATH_BYTES: NonZeroUsize = NonZeroUsize::new(1024 * 1024).unwrap();
+const DEFAULT_MAX_FILES: NonZeroUsize = NonZeroUsize::new(1_000_000).unwrap();
+const DEFAULT_MAX_HUNKS: NonZeroUsize = NonZeroUsize::new(2_000_000).unwrap();
 const STDOUT_CHUNK_BYTES: usize = 64 * 1024;
 const STDOUT_QUEUE_CHUNKS: usize = 16;
 
@@ -103,10 +103,7 @@ impl GitLimits {
                 .ok_or_else(|| SourceConfigError::positive("git_stderr_bytes"))?,
             blob: NonZeroUsize::new(blob_bytes)
                 .ok_or_else(|| SourceConfigError::positive("git_blob_bytes"))?,
-            metadata: NonZeroUsize::new(DEFAULT_MAX_METADATA_BYTES).unwrap_or(NonZeroUsize::MIN),
-            path: NonZeroUsize::new(DEFAULT_MAX_PATH_BYTES).unwrap_or(NonZeroUsize::MIN),
-            files: NonZeroUsize::new(DEFAULT_MAX_FILES).unwrap_or(NonZeroUsize::MIN),
-            hunks: NonZeroUsize::new(DEFAULT_MAX_HUNKS).unwrap_or(NonZeroUsize::MIN),
+            ..Self::default()
         })
     }
 
@@ -186,14 +183,14 @@ impl GitLimits {
 impl Default for GitLimits {
     fn default() -> Self {
         Self {
-            patch: NonZeroUsize::new(DEFAULT_MAX_PATCH_BYTES).unwrap_or(NonZeroUsize::MIN),
-            lines: NonZeroUsize::new(DEFAULT_MAX_PATCH_LINES).unwrap_or(NonZeroUsize::MIN),
-            stderr: NonZeroUsize::new(DEFAULT_MAX_STDERR_BYTES).unwrap_or(NonZeroUsize::MIN),
-            blob: NonZeroUsize::new(DEFAULT_MAX_BLOB_BYTES).unwrap_or(NonZeroUsize::MIN),
-            metadata: NonZeroUsize::new(DEFAULT_MAX_METADATA_BYTES).unwrap_or(NonZeroUsize::MIN),
-            path: NonZeroUsize::new(DEFAULT_MAX_PATH_BYTES).unwrap_or(NonZeroUsize::MIN),
-            files: NonZeroUsize::new(DEFAULT_MAX_FILES).unwrap_or(NonZeroUsize::MIN),
-            hunks: NonZeroUsize::new(DEFAULT_MAX_HUNKS).unwrap_or(NonZeroUsize::MIN),
+            patch: DEFAULT_MAX_PATCH_BYTES,
+            lines: DEFAULT_MAX_PATCH_LINES,
+            stderr: DEFAULT_MAX_STDERR_BYTES,
+            blob: DEFAULT_MAX_BLOB_BYTES,
+            metadata: DEFAULT_MAX_METADATA_BYTES,
+            path: DEFAULT_MAX_PATH_BYTES,
+            files: DEFAULT_MAX_FILES,
+            hunks: DEFAULT_MAX_HUNKS,
         }
     }
 }

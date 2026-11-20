@@ -18,7 +18,7 @@ use crate::{
 
 mod readers;
 
-const DEFAULT_MAX_SYMLINK_HOPS: usize = 64;
+const DEFAULT_MAX_SYMLINK_HOPS: NonZeroUsize = NonZeroUsize::new(64).unwrap();
 
 /// Files and issues that the walk may hold ahead of the callback for each
 /// reader thread when `DirectoryOptions::read_threads` is above 1.
@@ -218,8 +218,7 @@ impl Default for DirectoryOptions {
             logical_root: None,
             emit_limit_issues: false,
             scan_git_metadata: false,
-            max_symlink_hops: NonZeroUsize::new(DEFAULT_MAX_SYMLINK_HOPS)
-                .expect("the default symlink hop ceiling is positive"),
+            max_symlink_hops: DEFAULT_MAX_SYMLINK_HOPS,
             read_threads: NonZeroUsize::MIN,
             #[cfg(feature = "archives")]
             archive_options: None,

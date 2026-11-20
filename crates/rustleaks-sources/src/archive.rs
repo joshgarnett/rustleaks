@@ -28,10 +28,10 @@ const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
 const GIB: usize = 1024 * MIB;
 const DEFAULT_MAX_DEPTH: usize = 8;
-const DEFAULT_MAX_ENTRIES: usize = 1_000_000;
-const DEFAULT_MAX_MEMBER_BYTES: usize = 4 * GIB;
-const DEFAULT_MAX_TOTAL_BYTES: usize = 16 * GIB;
-const DEFAULT_MAX_SPOOL_BYTES: usize = GIB;
+const DEFAULT_MAX_ENTRIES: NonZeroUsize = NonZeroUsize::new(1_000_000).unwrap();
+const DEFAULT_MAX_MEMBER_BYTES: NonZeroUsize = NonZeroUsize::new(4 * GIB).unwrap();
+const DEFAULT_MAX_TOTAL_BYTES: NonZeroUsize = NonZeroUsize::new(16 * GIB).unwrap();
+const DEFAULT_MAX_SPOOL_BYTES: NonZeroUsize = NonZeroUsize::new(GIB).unwrap();
 /// Largest archive part that must be held in memory at once: a RAR member,
 /// a Snappy or `MinLZ` stream, a TAR long name, 7z headers, and the decoder
 /// dictionaries of 7z, Zstandard and LZIP. The member limit lowers it.
@@ -112,10 +112,10 @@ impl Default for ArchiveLimits {
     fn default() -> Self {
         Self {
             depth: DEFAULT_MAX_DEPTH,
-            entries: NonZeroUsize::new(DEFAULT_MAX_ENTRIES).expect("positive default"),
-            member_bytes: NonZeroUsize::new(DEFAULT_MAX_MEMBER_BYTES).expect("positive default"),
-            total_bytes: NonZeroUsize::new(DEFAULT_MAX_TOTAL_BYTES).expect("positive default"),
-            spool_bytes: NonZeroUsize::new(DEFAULT_MAX_SPOOL_BYTES).expect("positive default"),
+            entries: DEFAULT_MAX_ENTRIES,
+            member_bytes: DEFAULT_MAX_MEMBER_BYTES,
+            total_bytes: DEFAULT_MAX_TOTAL_BYTES,
+            spool_bytes: DEFAULT_MAX_SPOOL_BYTES,
         }
     }
 }
