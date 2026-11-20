@@ -144,7 +144,7 @@ fn matrix_n_isolated_platform_fixtures_use_distinct_private_copies() {
 }
 
 #[test]
-fn allowlist_corpus_retains_source_work_and_downstream_suppression() {
+fn matrix_g_allowlist_corpus_retains_source_work_and_downstream_suppression() {
     let requests = json_lines::<Request>(&corpus_root().join("requests-v1.jsonl"));
     let request = requests
         .iter()

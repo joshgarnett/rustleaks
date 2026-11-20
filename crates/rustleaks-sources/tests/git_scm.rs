@@ -91,7 +91,7 @@ fn bootstrap_source_link_matches_frozen_bytes() {
 }
 
 #[test]
-fn remote_normalization_platform_names_match_the_contract() {
+fn matrix_l_remote_normalization_platform_names_match_the_contract() {
     let cases = [
         ("", ScmPlatform::Unknown, "unknown"),
         ("UnKnOwN", ScmPlatform::Unknown, "unknown"),
