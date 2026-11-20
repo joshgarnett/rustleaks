@@ -299,11 +299,13 @@ fn check_test_membership(
         }
         let suite = named_call(build, "test_suite", "all_tests")
             .map_err(|error| format!("{member}: {error}"))?;
-        require_contains(
-            suite,
-            &format!("\":{stem}_test\""),
-            &format!("{member} all_tests suite"),
-        )?;
+        if !suite.contains(&format!("\":{stem}_test\""))
+            && !suite_groups_contain(build, suite, stem)
+        {
+            return Err(format!(
+                "{member} all_tests suite is missing '\":{stem}_test\"'"
+            ));
+        }
         require_contains(
             root_targets,
             &format!("\"//{member}:{stem}_test\""),
@@ -311,6 +313,24 @@ fn check_test_membership(
         )?;
     }
     Ok(())
+}
+
+/// Reports whether an `all_tests` suite built from grouped name lists, such
+/// as `for test in _PLAIN_TESTS + _CORPUS_TESTS`, includes `stem` in one of
+/// those lists.
+fn suite_groups_contain(build: &str, suite: &str, stem: &str) -> bool {
+    let quoted = format!("\"{stem}\"");
+    suite
+        .split(|character: char| !(character.is_ascii_uppercase() || character == '_'))
+        .filter(|word| word.starts_with('_') && word.ends_with("_TESTS"))
+        .any(|group| {
+            build
+                .split(&format!("\n{group} = "))
+                .nth(1)
+                .and_then(|tail| tail.split("\n]").next())
+                .and_then(|tail| tail.split("\n}").next())
+                .is_some_and(|list| list.lines().any(|line| line.trim_start().starts_with(&quoted)))
+        })
 }
 
 /// Returns the root `_RUST_TARGETS` list, which `//:clippy` and `//:format`
@@ -908,6 +928,10 @@ mod tests {
         let without_suite = suite.replace("\":sample_test\"", "");
         assert!(check(&format!("{declared}{without_suite}"), root).is_err());
         assert!(check(&format!("{declared}{suite}"), "").is_err());
+        let grouped = "\n_PLAIN_TESTS = [\n    \"sample\",\n]\n\ntest_suite(\n    name = \"all_tests\",\n    tests = [\":\" + test + \"_test\" for test in _PLAIN_TESTS],\n)\n";
+        assert!(check(&format!("{declared}{grouped}"), root).is_ok());
+        let other_group = grouped.replace("\"sample\",", "\"other\",");
+        assert!(check(&format!("{declared}{other_group}"), root).is_err());
         assert!(check(suite, root).is_err());
         std::fs::remove_dir_all(&crate_root).unwrap();
     }
