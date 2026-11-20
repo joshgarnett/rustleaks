@@ -9,7 +9,7 @@ use std::process::Command;
 use flate2::read::GzDecoder;
 use serde_json::{Value, json};
 
-use crate::tooling::{command_output, sha256_file};
+use crate::tooling::{command_output, hex_lower, sha256_file};
 
 use super::{
     RELEASE_VERSION, committed_file_bytes, notices, sha256_bytes, validate_commit, write_archive,
@@ -690,7 +690,7 @@ pub(super) fn relink(
             "schemaVersion":1,"candidate":commit,"target":target,
             "sourceArchive":{"file":binding["file"],"sha256":binding["sha256"]},
             "baselineBinarySha256":baseline_sha256,"modifiedBinarySha256":sha256_bytes(&modified_bytes),
-            "startup":{"path":startup_path,"originalSha256":sha256_bytes(&original),"modifiedSha256":sha256_bytes(&modified),"entryMarkerHex":hex(&marker)},
+            "startup":{"path":startup_path,"originalSha256":sha256_bytes(&original),"modifiedSha256":sha256_bytes(&modified),"entryMarkerHex":hex_lower(&marker)},
             "nativeSmoke":{"help":true,"version":true},"modifiedEntryVerified":true,
         }),
     )
@@ -787,15 +787,6 @@ fn entry_marker(architecture: &str) -> Vec<u8> {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    let mut output = String::new();
-    for byte in bytes {
-        write!(output, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    output
-}
-
 fn elf_u64(bytes: &[u8], offset: usize) -> Result<u64, String> {
     let data: [u8; 8] = bytes
         .get(offset..offset.saturating_add(8))
@@ -889,7 +880,7 @@ pub(super) fn validate_relink_proof(
             } else {
                 "95293b62857d9b4d3d1b0c9fefc7f0676ed69d65d8dbc35f3a125624e878bfc7"
             }
-        || value["startup"]["entryMarkerHex"] != hex(&entry_marker(architecture))
+        || value["startup"]["entryMarkerHex"] != hex_lower(&entry_marker(architecture))
     {
         return Err("source relink proof does not bind the candidate, target, native binary, source archive, and startup replacement".into());
     }

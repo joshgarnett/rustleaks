@@ -1551,8 +1551,8 @@ mod tests {
 
     #[test]
     fn file_sources_are_root_independent_and_reject_changed_or_missing_bytes() {
-        let first = crate::ScopedTempDir::new("notice-first-root").unwrap();
-        let second = crate::ScopedTempDir::new("notice-second-root").unwrap();
+        let first = crate::tooling::ScopedTempDir::new("notice-first-root").unwrap();
+        let second = crate::tooling::ScopedTempDir::new("notice-second-root").unwrap();
         for root in [&first.path, &second.path] {
             fs::create_dir_all(root.join("nested")).unwrap();
             fs::write(root.join("nested/LICENSE"), b"synthetic MIT\r\n").unwrap();
@@ -1569,7 +1569,7 @@ mod tests {
 
     #[test]
     fn generation_uses_current_git_canonical_bytes_without_requiring_a_commit() {
-        let root = crate::ScopedTempDir::new("notice-canonical-worktree").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("notice-canonical-worktree").unwrap();
         let git = |args: &[&str]| {
             let output = Command::new("git")
                 .current_dir(&root.path)
@@ -1608,7 +1608,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn notice_sources_reject_symlink_escapes() {
-        let root = crate::ScopedTempDir::new("notice-symlink").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("notice-symlink").unwrap();
         std::os::unix::fs::symlink("/", root.path.join("escape")).unwrap();
         assert!(
             read_regular(&root.path, "escape/LICENSE")
@@ -1621,8 +1621,8 @@ mod tests {
     #[test]
     fn generation_rejects_output_and_parent_symlinks_without_touching_external_files() {
         for link_parent in [false, true] {
-            let root = crate::ScopedTempDir::new("notice-output-symlink").unwrap();
-            let external = crate::ScopedTempDir::new("notice-external-preserve").unwrap();
+            let root = crate::tooling::ScopedTempDir::new("notice-output-symlink").unwrap();
+            let external = crate::tooling::ScopedTempDir::new("notice-external-preserve").unwrap();
             fs::create_dir(external.path.join("licenses")).unwrap();
             let external_file = external.path.join("licenses/preserve.txt");
             fs::write(&external_file, b"unrelated external contents\n").unwrap();

@@ -12,13 +12,13 @@ use flate2::bufread::GzDecoder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::tooling::{command_output, sha256_file};
+use crate::RELEASE_VERSION;
+use crate::tooling::{command_output, hex_lower, sha256_bytes, sha256_file};
 
 mod corresponding_source;
 mod notices;
 mod runtime_inputs;
 
-const RELEASE_VERSION: &str = "0.1.0-alpha.11";
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
 const BAZEL_VERSION: &str = "9.2.0";
 const RULES_RUST_VERSION: &str = "0.72.0";
@@ -1334,11 +1334,7 @@ fn validate_archive(
             }
             digest.update(&buffer[..read]);
         }
-        let digest = digest.finalize();
-        let mut encoded = String::with_capacity(digest.len() * 2);
-        for byte in digest {
-            write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
-        }
+        let encoded = hex_lower(&digest.finalize());
         if count != member.size || encoded != member.sha256 {
             return Err(format!(
                 "release entry {path} differs from its committed bytes or selected binary"
@@ -1676,15 +1672,6 @@ fn percent_encode(value: &str) -> String {
     encoded
 }
 
-fn sha256_bytes(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    encoded
-}
-
 fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     let mut bytes = serde_json::to_vec_pretty(value)
         .map_err(|error| format!("cannot encode {}: {error}", path.display()))?;
@@ -1754,7 +1741,7 @@ mod tests {
 
     #[test]
     fn native_archive_checks_exact_notices_binary_modes_and_inventory() {
-        let root = crate::ScopedTempDir::new("notice-archive-validation").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("notice-archive-validation").unwrap();
         let stem = "rustleaks-1.0-x86_64-unknown-linux-gnu";
         let path = root.path.join(format!("{stem}.tar.gz"));
         let document_names = [
@@ -1879,7 +1866,7 @@ mod tests {
 
     #[test]
     fn native_archive_rejects_unknown_huge_or_extended_members_before_payload_reads() {
-        let root = crate::ScopedTempDir::new("native-archive-early-limits").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("native-archive-early-limits").unwrap();
         let path = root.path.join("native.tar.gz");
         let digest = sha256_bytes(b"native binary");
         for (name, kind, size, message) in [
@@ -1931,7 +1918,7 @@ mod tests {
 
     #[test]
     fn native_archive_accepts_bounded_unicode_long_paths_and_rejects_trailer_changes() {
-        let root = crate::ScopedTempDir::new("native-archive-long-path").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("native-archive-long-path").unwrap();
         let path = root.path.join("native.tar.gz");
         let name = format!("licenses/{}/LICENSE", "unicode-é-".repeat(14));
         let documents =
@@ -2004,7 +1991,7 @@ mod tests {
 
     #[test]
     fn gnu_bundle_inventory_requires_source_materials_and_proof_together() {
-        let root = crate::ScopedTempDir::new("source-bundle-inventory").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("source-bundle-inventory").unwrap();
         for name in [
             "native.tar.gz",
             "native.cdx.json",

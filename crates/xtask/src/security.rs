@@ -1,0 +1,980 @@
+//! Dependency policy, vetting, unsafe inventory, Miri and panic policy checks.
+
+use std::collections::BTreeSet;
+use std::path::Path;
+use std::process::Command;
+use std::time::Duration;
+
+use crate::tooling::{ScopedTempDir, command_output, command_status_with_timeout};
+use crate::{require_exact_tool_version, tooling, workspace_root};
+
+const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
+const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
+pub(crate) const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
+const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
+const COMPCOL_EXEMPTION_VERSION: &str = "0.7.8";
+const COMPCOL_EXEMPTION_SHA256: &str =
+    "7a9657f9d47c2bc36be681f158d208f40bafdd1c8c32003dac8e7dfe0cb68a97";
+/// Targets the compcol exemption was reviewed for. This is a separate list from
+/// [`REQUIRED_TARGETS`] so that a target change requires a new review.
+const COMPCOL_EXEMPTION_TARGETS: &[&str] = &[
+    "aarch64-apple-darwin",
+    "aarch64-pc-windows-msvc",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+];
+pub(crate) const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
+
+fn validate_supply_chain_exceptions(source: &str) -> Result<(), String> {
+    let active = source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect::<Vec<_>>();
+    if active.first().copied() != Some("schema = 1") {
+        return Err("supply-chain exception file must start with `schema = 1`".into());
+    }
+    if active.len() != 1 {
+        return Err(
+            "active supply-chain exceptions require an explicit validator and release review"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn supply_chain_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["deny", "--version"]),
+        CARGO_DENY_VERSION,
+        "cargo-deny",
+    )?;
+    let exceptions = std::fs::read_to_string(root.join("supply-chain-exceptions.toml"))
+        .map_err(|error| format!("cannot read supply-chain exception policy: {error}"))?;
+    validate_supply_chain_exceptions(&exceptions)?;
+    command_output(
+        Command::new("cargo")
+            .args(["deny", "check"])
+            .current_dir(&root),
+    )?;
+    println!("dependency advisories, bans, licenses, and sources satisfy policy");
+    Ok(())
+}
+
+fn rustsec_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["audit", "--version"]),
+        CARGO_AUDIT_VERSION,
+        "cargo-audit",
+    )?;
+    command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args(["audit", "--deny", "warnings", "--color", "never"]),
+    )?;
+    println!(
+        "fresh RustSec audit found no vulnerability, unmaintained, unsound, or yanked warning"
+    );
+    Ok(())
+}
+
+fn vet_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["vet", "--version"]),
+        CARGO_VET_VERSION,
+        "cargo-vet",
+    )?;
+    for required in [
+        "supply-chain/config.toml",
+        "supply-chain/audits.toml",
+        "supply-chain/imports.lock",
+    ] {
+        if !root.join(required).is_file() {
+            return Err(format!("cargo-vet policy is missing {required}"));
+        }
+    }
+    if validate_vet_exemptions(&root.join("supply-chain/config.toml"))? {
+        check_compcol_exemption_scope(&root)?;
+    }
+    tooling::check_vet_inventory(&root, &root.join("supply-chain/inventory-v1.json"))?;
+    command_output(Command::new("cargo").current_dir(&root).args([
+        "vet",
+        "--locked",
+        "--no-registry-suggestions",
+    ]))?;
+    println!("locked cargo-vet graph satisfies the checked-in review policy");
+    Ok(())
+}
+
+fn validate_vet_exemptions(path: &Path) -> Result<bool, String> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read cargo-vet policy {}: {error}", path.display()))?;
+    let config: toml::Value = toml::from_str(&source)
+        .map_err(|error| format!("cannot parse cargo-vet policy {}: {error}", path.display()))?;
+    let exemptions = match config.get("exemptions") {
+        Some(exemptions) => Some(
+            exemptions
+                .as_table()
+                .ok_or("cargo-vet exemptions are not a table")?,
+        ),
+        None => None,
+    };
+    let today = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("system clock predates the Unix epoch: {error}"))?
+        .as_secs()
+        / 86_400;
+    let mut record_count = 0_usize;
+    let mut compcol_standing_exemption = false;
+    for (package, entries) in exemptions.into_iter().flatten() {
+        let entries = entries
+            .as_array()
+            .ok_or_else(|| format!("cargo-vet exemptions for {package} are not an array"))?;
+        record_count += entries.len();
+        for entry in entries {
+            compcol_standing_exemption |= validate_vet_exemption(package, entry, today)?;
+        }
+    }
+    let crate_name_count = exemptions.map_or(0, toml::map::Map::len);
+    println!(
+        "all {record_count} cargo-vet exemption records across {crate_name_count} crate names have required metadata and valid review conditions"
+    );
+    Ok(compcol_standing_exemption)
+}
+
+fn validate_vet_exemption(package: &str, entry: &toml::Value, today: u64) -> Result<bool, String> {
+    let version = entry
+        .get("version")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| format!("cargo-vet exemption for {package} omits version"))?;
+    let context = format!("cargo-vet exemption {package}@{version}");
+    let notes = entry
+        .get("notes")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| format!("{context} omits notes"))?;
+    let field = |name: &str| -> Result<Option<&str>, String> {
+        let values = notes
+            .split(';')
+            .filter_map(|field| field.trim().split_once('='))
+            .filter_map(|(key, value)| (key == name).then_some(value.trim()))
+            .collect::<Vec<_>>();
+        match values.as_slice() {
+            [] => Ok(None),
+            [value] if !value.is_empty() => Ok(Some(*value)),
+            _ => Err(format!("{context} has empty or duplicate {name} metadata")),
+        }
+    };
+    for name in ["owner", "scope", "rationale"] {
+        field(name)?.ok_or_else(|| format!("{context} omits {name} metadata"))?;
+    }
+    let review_by = field("review-by")?;
+    if let Some(review_on) = field("review-on")? {
+        let criterion = entry.get("criteria").is_some_and(|criteria| {
+            criteria.as_str() == Some("safe-to-deploy")
+                || criteria.as_array().is_some_and(|values| {
+                    values.len() == 1 && values[0].as_str() == Some("safe-to-deploy")
+                })
+        });
+        if package != "compcol"
+            || version != COMPCOL_EXEMPTION_VERSION
+            || !criterion
+            || review_on != "boundary-change"
+            || review_by.is_some()
+        {
+            return Err(format!("{context} is not the approved standing exemption"));
+        }
+        field("resolution")?.ok_or_else(|| format!("{context} omits resolution metadata"))?;
+        return Ok(true);
+    }
+    let review = review_by.ok_or_else(|| format!("{context} has no review date"))?;
+    let review_day = parse_civil_day(review)
+        .ok_or_else(|| format!("{context} has invalid review date {review}"))?;
+    if review_day < today {
+        return Err(format!("{context} expired on {review}"));
+    }
+    Ok(false)
+}
+
+fn check_compcol_exemption_scope(root: &Path) -> Result<(), String> {
+    let core = normal_dependency_packages(root, "rustleaks-core", true)?;
+    let metadata = command_output(Command::new("cargo").current_dir(root).args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked",
+        "--all-features",
+    ]))?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata)
+        .map_err(|error| format!("cannot decode cargo metadata: {error}"))?;
+    let bazel = std::fs::read_to_string(root.join("cargo-bazel-lock.json"))
+        .map_err(|error| format!("cannot read cargo-bazel-lock.json: {error}"))?;
+    let bazel: serde_json::Value = serde_json::from_str(&bazel)
+        .map_err(|error| format!("cannot decode cargo-bazel-lock.json: {error}"))?;
+    validate_compcol_exemption_scope(&core, &metadata, &bazel)?;
+    println!(
+        "compcol standing exemption retains its reviewed source, features, targets, and core boundary"
+    );
+    Ok(())
+}
+
+fn validate_compcol_exemption_scope(
+    core: &BTreeSet<String>,
+    metadata: &serde_json::Value,
+    bazel: &serde_json::Value,
+) -> Result<(), String> {
+    let outside_scope = "compcol standing exemption requires re-review after a source, version, feature, target, or core boundary change";
+    if core.contains("compcol") {
+        return Err(outside_scope.into());
+    }
+    let packages = metadata["packages"].as_array().ok_or(outside_scope)?;
+    let compcol = packages
+        .iter()
+        .filter(|package| package["name"].as_str() == Some("compcol"))
+        .collect::<Vec<_>>();
+    let [compcol] = compcol.as_slice() else {
+        return Err(outside_scope.into());
+    };
+    if compcol["version"].as_str() != Some(COMPCOL_EXEMPTION_VERSION)
+        || compcol["source"].as_str()
+            != Some("registry+https://github.com/rust-lang/crates.io-index")
+    {
+        return Err(outside_scope.into());
+    }
+    let id = compcol["id"].as_str().ok_or(outside_scope)?;
+    let node = metadata["resolve"]["nodes"]
+        .as_array()
+        .ok_or(outside_scope)?
+        .iter()
+        .find(|node| node["id"].as_str() == Some(id))
+        .ok_or(outside_scope)?;
+    let expected_features = BTreeSet::from(["alloc", "rar2"]);
+    if json_string_set(&node["features"])? != expected_features {
+        return Err(outside_scope.into());
+    }
+
+    let crates = bazel["crates"].as_object().ok_or(outside_scope)?;
+    let compcol = crates
+        .values()
+        .filter(|package| package["name"].as_str() == Some("compcol"))
+        .collect::<Vec<_>>();
+    let [compcol] = compcol.as_slice() else {
+        return Err(outside_scope.into());
+    };
+    let features = &compcol["common_attrs"]["crate_features"];
+    if compcol["version"].as_str() != Some(COMPCOL_EXEMPTION_VERSION)
+        || compcol["repository"]["Http"]["sha256"].as_str() != Some(COMPCOL_EXEMPTION_SHA256)
+        || json_string_set(&features["common"])? != expected_features
+        || !features["selects"]
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty)
+    {
+        return Err(outside_scope.into());
+    }
+    let mut targets = BTreeSet::new();
+    for condition in bazel["conditions"]
+        .as_object()
+        .ok_or(outside_scope)?
+        .values()
+    {
+        targets.extend(json_string_set(condition)?);
+    }
+    if targets != COMPCOL_EXEMPTION_TARGETS.iter().copied().collect() {
+        return Err(outside_scope.into());
+    }
+    Ok(())
+}
+
+fn json_string_set(value: &serde_json::Value) -> Result<BTreeSet<&str>, String> {
+    value
+        .as_array()
+        .ok_or_else(|| "expected an array of strings in dependency resolution".to_owned())?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| "expected a string in dependency resolution".to_owned())
+        })
+        .collect()
+}
+
+fn parse_civil_day(value: &str) -> Option<u64> {
+    let mut fields = value.split('-');
+    let mut year = fields.next()?.parse::<i64>().ok()?;
+    let month = fields.next()?.parse::<i64>().ok()?;
+    let day = fields.next()?.parse::<i64>().ok()?;
+    if fields.next().is_some() || !(1..=12).contains(&month) {
+        return None;
+    }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if !(1..=days_in_month).contains(&day) {
+        return None;
+    }
+    year -= i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    (era * 146_097 + day_of_era - 719_468).try_into().ok()
+}
+
+pub(crate) fn unsafe_count(value: &serde_json::Value) -> u64 {
+    match value {
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .map(|(name, value)| {
+                if name == "unsafe_" {
+                    value.as_u64().unwrap_or_default()
+                } else {
+                    unsafe_count(value)
+                }
+            })
+            .sum(),
+        serde_json::Value::Array(values) => values.iter().map(unsafe_count).sum(),
+        _ => 0,
+    }
+}
+
+fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
+    let common = [
+        "aho-corasick@1.1.5",
+        "alloc-no-stdlib@3.0.0",
+        "alloc-stdlib@0.3.0",
+        "block-buffer@0.12.1",
+        "brotli-decompressor@6.2.0",
+        "const-oid@0.10.2",
+        "hybrid-array@0.4.15",
+        "itoa@1.0.18",
+        "lz4_flex@0.14.0",
+        "lzma-rust2@0.25.0",
+        "memchr@2.8.3",
+        "proc-macro2@1.0.107",
+        "regex-automata@0.4.18",
+        "semver@1.0.28",
+        "serde_core@1.0.229",
+        "serde_json@1.0.154",
+        "sha2@0.11.1",
+        "syn@3.0.9",
+        "toml_parser@1.1.5+spec-1.1.0",
+        "twox-hash@2.1.5",
+        "unicode-ident@1.0.27",
+        "winnow@1.0.5",
+        "zmij@1.0.23",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    let target_specific = ["cpufeatures@0.3.1", "libc@0.2.191"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    (common, target_specific)
+}
+
+fn validate_unsafe_package_set(
+    unsafe_packages: &BTreeSet<String>,
+) -> Result<(usize, usize), String> {
+    let (common, target_specific) = reviewed_unsafe_packages();
+    let missing = common
+        .difference(unsafe_packages)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let unexpected = unsafe_packages
+        .difference(&common)
+        .filter(|package| !target_specific.contains(*package))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        return Err(format!(
+            "cargo-geiger unsafe-bearing package set changed: missing common {missing:?}, unexpected {unexpected:?}, got {unsafe_packages:?}"
+        ));
+    }
+    Ok((
+        common.len(),
+        unsafe_packages.intersection(&target_specific).count(),
+    ))
+}
+
+fn unsafe_inventory_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    require_exact_tool_version(
+        Command::new("cargo").args(["geiger", "--version"]),
+        CARGO_GEIGER_VERSION,
+        "cargo-geiger",
+    )?;
+    let target = ScopedTempDir::new("geiger")?;
+    let manifest = root.join("crates/rustleaks-sources/Cargo.toml");
+    let output = command_output(
+        Command::new("cargo")
+            .current_dir(&root)
+            .env("CARGO_TARGET_DIR", &target.path)
+            .args(["geiger", "--manifest-path"])
+            .arg(&manifest)
+            .args([
+                "--all-features",
+                "--locked",
+                "--offline",
+                "--output-format",
+                "Json",
+                "--quiet",
+            ]),
+    )?;
+    let report = output
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("{\"packages\":"))
+        .ok_or("cargo-geiger output omitted its JSON inventory")?;
+    let report: serde_json::Value = serde_json::from_str(report)
+        .map_err(|error| format!("cannot decode cargo-geiger inventory: {error}"))?;
+    if report["packages_without_metrics"]
+        .as_array()
+        .is_none_or(|packages| !packages.is_empty())
+    {
+        return Err("cargo-geiger omitted metrics for one or more selected packages".into());
+    }
+    let packages = report["packages"]
+        .as_array()
+        .ok_or("cargo-geiger inventory omits packages")?;
+    let mut unsafe_packages = BTreeSet::new();
+    for package in packages {
+        let id = &package["package"]["id"];
+        let name = id["name"]
+            .as_str()
+            .ok_or("cargo-geiger package omits name")?;
+        let version = id["version"]
+            .as_str()
+            .ok_or("cargo-geiger package omits version")?;
+        let used_unsafe = unsafe_count(&package["unsafety"]["used"]);
+        validate_owned_unsafe_package(
+            id,
+            used_unsafe,
+            package["unsafety"]["forbids_unsafe"] == true,
+        )?;
+        if used_unsafe != 0 {
+            unsafe_packages.insert(format!("{name}@{version}"));
+        }
+    }
+    let (common_count, selected_target_specific) = validate_unsafe_package_set(&unsafe_packages)?;
+    println!(
+        "cargo-geiger matched the reviewed {common_count}-package common unsafe-bearing inventory plus {selected_target_specific} target-specific packages; owned packages remain zero-unsafe"
+    );
+    Ok(())
+}
+
+fn validate_owned_unsafe_package(
+    id: &serde_json::Value,
+    used_unsafe: u64,
+    forbids_unsafe: bool,
+) -> Result<(), String> {
+    let source = &id["source"];
+    if (source.is_null() || source.get("Path").is_some()) && (used_unsafe != 0 || !forbids_unsafe) {
+        return Err(format!(
+            "owned package {}@{} does not have a zero-unsafe forbid inventory",
+            id["name"].as_str().unwrap_or("unknown"),
+            id["version"].as_str().unwrap_or("unknown"),
+        ));
+    }
+    Ok(())
+}
+
+fn normal_dependency_packages(
+    root: &Path,
+    package: &str,
+    all_features: bool,
+) -> Result<BTreeSet<String>, String> {
+    let mut command = Command::new("cargo");
+    command.current_dir(root).args([
+        "tree", "--color", "never", "--locked", "--edges", "normal", "--prefix", "none", "-p",
+        package, "--target", "all",
+    ]);
+    if all_features {
+        command.arg("--all-features");
+    }
+    let output = command_output(&mut command)?;
+    output
+        .lines()
+        .map(|line| {
+            line.split_whitespace()
+                .next()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{package} dependency tree contains an empty entry"))
+        })
+        .collect()
+}
+
+fn validate_dependency_boundaries(
+    core: &BTreeSet<String>,
+    sources: &BTreeSet<String>,
+    metadata: &str,
+) -> Result<(), String> {
+    let coupled = core
+        .iter()
+        .filter(|package| {
+            (package.starts_with("rustleaks-") && package.as_str() != "rustleaks-core")
+                || package.as_str() == "xtask"
+        })
+        .collect::<Vec<_>>();
+    if !coupled.is_empty() {
+        return Err(format!(
+            "rustleaks-core depends on higher-layer or codec packages: {coupled:?}"
+        ));
+    }
+
+    let native_helpers = ["bindgen", "cc", "cmake", "pkg-config", "vcpkg"];
+    let native = sources
+        .iter()
+        .filter(|package| native_helpers.contains(&package.as_str()) || package.ends_with("-sys"))
+        .collect::<Vec<_>>();
+    if !native.is_empty() {
+        return Err(format!(
+            "normal all-feature source graph contains native build dependencies: {native:?}"
+        ));
+    }
+
+    let metadata: serde_json::Value = serde_json::from_str(metadata)
+        .map_err(|error| format!("cannot decode cargo metadata: {error}"))?;
+    let packages = metadata["packages"]
+        .as_array()
+        .ok_or("cargo metadata omits packages")?;
+    let linked = packages
+        .iter()
+        .filter_map(|package| {
+            package["links"].as_str().map(|links| {
+                format!(
+                    "{}@{} ({links})",
+                    package["name"].as_str().unwrap_or("<unnamed>"),
+                    package["version"].as_str().unwrap_or("<unknown>")
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if !linked.is_empty() {
+        return Err(format!(
+            "locked workspace resolution contains native links packages: {linked:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn dependency_safety_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    let core = normal_dependency_packages(&root, "rustleaks-core", false)?;
+    let sources = normal_dependency_packages(&root, "rustleaks-sources", true)?;
+    let metadata = command_output(Command::new("cargo").current_dir(&root).args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked",
+    ]))?;
+    validate_dependency_boundaries(&core, &sources, &metadata)?;
+    println!(
+        "dependency boundaries exclude core layer coupling, native build helpers, and links packages"
+    );
+    Ok(())
+}
+
+fn owned_safety_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    let workspace = std::fs::read_to_string(root.join("Cargo.toml"))
+        .map_err(|error| format!("cannot read workspace manifest: {error}"))?;
+    if !workspace.contains("[workspace.lints.rust]\nunsafe_code = \"forbid\"") {
+        return Err("workspace must forbid unsafe code for inheriting owned crates".into());
+    }
+    let crate_roots = [
+        "crates/rustleaks-bzip2/src/lib.rs",
+        "crates/rustleaks-cli/src/lib.rs",
+        "crates/rustleaks-cli/src/main.rs",
+        "crates/rustleaks-compat/src/lib.rs",
+        "crates/rustleaks-compat/src/bin/rustleaks-perf.rs",
+        "crates/rustleaks-compat/src/bin/rustleaks-quality.rs",
+        "crates/rustleaks-core/src/lib.rs",
+        "crates/rustleaks-rar-codec/src/lib.rs",
+        "crates/rustleaks-report/src/lib.rs",
+        "crates/rustleaks-sevenz/src/lib.rs",
+        "crates/rustleaks-sources/src/lib.rs",
+        "crates/rustleaks-sources/examples/panic_abort_policy.rs",
+        "crates/xtask/src/main.rs",
+        "crates/rustleaks-core/fuzz/fuzz_targets/config.rs",
+        "crates/rustleaks-core/fuzz/fuzz_targets/fragment_scan.rs",
+        "crates/rustleaks-core/fuzz/fuzz_targets/go_regex.rs",
+        "crates/rustleaks-core/fuzz/fuzz_targets/session.rs",
+        "crates/rustleaks-report/fuzz/fuzz_targets/template.rs",
+        "crates/rustleaks-sources/fuzz/fuzz_targets/archive.rs",
+        "crates/rustleaks-sources/fuzz/fuzz_targets/git_patch.rs",
+        "crates/rustleaks-sources/fuzz/fuzz_targets/reader_schedule.rs",
+    ];
+    for relative in crate_roots {
+        let source = std::fs::read_to_string(root.join(relative))
+            .map_err(|error| format!("cannot read owned crate root {relative}: {error}"))?;
+        if !source
+            .lines()
+            .take(50)
+            .any(|line| line == "#![forbid(unsafe_code)]")
+        {
+            return Err(format!(
+                "owned crate root {relative} does not forbid unsafe code"
+            ));
+        }
+    }
+    println!("workspace, fork, executable, example, and standalone fuzz roots forbid unsafe code");
+    Ok(())
+}
+
+pub(crate) fn security_check() -> Result<(), String> {
+    supply_chain_check()?;
+    rustsec_check()?;
+    vet_check()?;
+    dependency_safety_check()?;
+    owned_safety_check()?;
+    unsafe_inventory_check()?;
+    miri_check()?;
+    panic_abort_check()?;
+    println!("dependency policy, vetting, Miri, panic policy, and owned-code safety checks passed");
+    Ok(())
+}
+
+fn miri_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    let target = ScopedTempDir::new("miri")?;
+    let toolchain = format!("+{MIRI_TOOLCHAIN}");
+    let cases = [
+        (
+            "rustleaks-core",
+            "decoder::tests::maps_every_overlap_geometry_with_signed_overflow",
+        ),
+        (
+            "rustleaks-core",
+            "config::loader::tests::virtual_paths_are_host_independent_and_preserve_parents",
+        ),
+        (
+            "rustleaks-core",
+            "session::tests::batches_merge_only_under_the_same_policy",
+        ),
+        (
+            "rustleaks-sources",
+            "runner::tests::partial_fragment_findings_are_not_merged_into_a_source_batch",
+        ),
+        (
+            "rustleaks-report",
+            "go_json::tests::float32_format_uses_go_json_cutoffs_and_sign",
+        ),
+    ];
+    for (package, case) in cases {
+        command_status_with_timeout(
+            Command::new("cargo")
+                .current_dir(&root)
+                .env("CARGO_TARGET_DIR", &target.path)
+                .args([
+                    toolchain.as_str(),
+                    "miri",
+                    "test",
+                    "-p",
+                    package,
+                    "--lib",
+                    "--locked",
+                    "--offline",
+                    case,
+                    "--",
+                    "--exact",
+                ]),
+            Duration::from_mins(20),
+            &format!("Miri case {package}::{case}"),
+        )?;
+    }
+    println!("selected core, source, and report state transitions passed pinned Miri");
+    Ok(())
+}
+
+fn panic_abort_check() -> Result<(), String> {
+    let root = workspace_root()?;
+    let target = ScopedTempDir::new("panic-abort")?;
+    command_status_with_timeout(
+        Command::new("cargo")
+            .current_dir(&root)
+            .env("CARGO_TARGET_DIR", &target.path)
+            .env("RUSTFLAGS", "-D warnings -C panic=abort")
+            .args([
+                "run",
+                "--locked",
+                "--offline",
+                "-p",
+                "rustleaks-sources",
+                "--example",
+                "panic_abort_policy",
+                "--all-features",
+            ]),
+        Duration::from_mins(4),
+        "panic=abort archive policy",
+    )?;
+    println!("panic=abort archive policy rejected 7z as unsupported before dependency entry");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::{
+        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, parse_civil_day,
+        reviewed_unsafe_packages, validate_compcol_exemption_scope, validate_dependency_boundaries,
+        validate_owned_unsafe_package, validate_supply_chain_exceptions,
+        validate_unsafe_package_set, validate_vet_exemption,
+    };
+
+    #[test]
+    fn unsafe_inventory_accepts_only_reviewed_target_variance() {
+        let (common, target_specific) = reviewed_unsafe_packages();
+        assert_eq!(validate_unsafe_package_set(&common).unwrap(), (23, 0));
+
+        let union = common.union(&target_specific).cloned().collect();
+        assert_eq!(validate_unsafe_package_set(&union).unwrap(), (23, 2));
+
+        let missing = common.iter().skip(1).cloned().collect::<BTreeSet<_>>();
+        assert!(validate_unsafe_package_set(&missing).is_err());
+
+        let mut unexpected = common;
+        unexpected.insert("unreviewed@1.0.0".into());
+        assert!(validate_unsafe_package_set(&unexpected).is_err());
+    }
+
+    #[test]
+    fn unsafe_inventory_enforces_path_package_policy() {
+        let mut id = serde_json::json!({
+            "name": "rustleaks-core",
+            "version": "0.1.0",
+            "source": { "Path": "file:///workspace/crates/rustleaks-core" },
+        });
+        assert!(validate_owned_unsafe_package(&id, 0, true).is_ok());
+        assert!(validate_owned_unsafe_package(&id, 1, true).is_err());
+        assert!(validate_owned_unsafe_package(&id, 0, false).is_err());
+
+        id["source"] = serde_json::Value::Null;
+        assert!(validate_owned_unsafe_package(&id, 0, true).is_ok());
+        assert!(validate_owned_unsafe_package(&id, 1, true).is_err());
+        assert!(validate_owned_unsafe_package(&id, 0, false).is_err());
+
+        id["source"] = serde_json::json!({ "Registry": { "name": "crates.io" } });
+        assert!(validate_owned_unsafe_package(&id, 1, false).is_ok());
+    }
+
+    #[test]
+    fn civil_dates_reject_impossible_exemption_deadlines() {
+        assert_eq!(parse_civil_day("1970-01-01"), Some(0));
+        assert!(parse_civil_day("2024-02-29").is_some());
+        assert!(parse_civil_day("2023-02-29").is_none());
+        assert!(parse_civil_day("2026-04-31").is_none());
+        assert!(parse_civil_day("2026-13-01").is_none());
+        assert!(parse_civil_day("2026-01-01-extra").is_none());
+    }
+
+    #[test]
+    fn vet_exemptions_retain_ordinary_expiry_and_require_valid_metadata() {
+        let today = parse_civil_day("2026-11-05").unwrap();
+        let entry = |notes: &str| {
+            toml::Value::Table(toml::map::Map::from_iter([
+                ("version".into(), toml::Value::String("1.0.0".into())),
+                (
+                    "criteria".into(),
+                    toml::Value::String("safe-to-deploy".into()),
+                ),
+                ("notes".into(), toml::Value::String(notes.into())),
+            ]))
+        };
+        let metadata = "owner=maintainers; scope=runtime; rationale=review gap";
+        for date in ["2026-11-05", "2026-11-06"] {
+            assert!(
+                !validate_vet_exemption(
+                    "other",
+                    &entry(&format!("{metadata}; review-by={date}")),
+                    today,
+                )
+                .unwrap()
+            );
+        }
+        for suffix in [
+            "",
+            "; review-by=2026-11-04",
+            "; review-by=never",
+            "; review-by=2026-11-31",
+            "; review-by=2026-11-06; review-by=2026-11-07",
+            "; owner=; review-by=2026-11-06",
+            "; review-on=boundary-change",
+        ] {
+            assert!(
+                validate_vet_exemption("other", &entry(&format!("{metadata}{suffix}")), today)
+                    .is_err(),
+                "{suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn standing_vet_exemption_accepts_only_the_approved_package_and_criterion() {
+        let entry: toml::Value = toml::from_str(
+            r#"version = "0.7.8"
+criteria = "safe-to-deploy"
+notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; resolution=fixed audited release; review-on=boundary-change"
+"#,
+        ).unwrap();
+        let future = parse_civil_day("2100-01-01").unwrap();
+        assert!(validate_vet_exemption("compcol", &entry, future).unwrap());
+        assert!(validate_vet_exemption("other", &entry, future).is_err());
+        for (field, value) in [
+            ("version", "0.7.9"),
+            ("criteria", "safe-to-run"),
+            ("criteria", "unreviewed"),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; resolution=fix; review-on=never",
+            ),
+            (
+                "notes",
+                "owner=; scope=runtime; rationale=gap; resolution=fix; review-on=boundary-change",
+            ),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; resolution=fix; review-on=boundary-change; review-on=boundary-change",
+            ),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; review-on=boundary-change",
+            ),
+            (
+                "notes",
+                "owner=maintainers; scope=runtime; rationale=gap; resolution=fix; review-on=boundary-change; review-by=2100-01-01",
+            ),
+        ] {
+            let mut invalid = entry.clone();
+            invalid[field] = toml::Value::String(value.into());
+            assert!(
+                validate_vet_exemption("compcol", &invalid, future).is_err(),
+                "{field}={value}"
+            );
+        }
+        let mut criteria_array = entry.clone();
+        criteria_array["criteria"] =
+            toml::Value::Array(vec![toml::Value::String("safe-to-deploy".into())]);
+        assert!(validate_vet_exemption("compcol", &criteria_array, future).unwrap());
+        criteria_array["criteria"]
+            .as_array_mut()
+            .unwrap()
+            .push(toml::Value::String("safe-to-run".into()));
+        assert!(validate_vet_exemption("compcol", &criteria_array, future).is_err());
+    }
+
+    #[test]
+    fn standing_compcol_scope_rejects_resolved_graph_expansion() {
+        let core = BTreeSet::from(["rustleaks-core".to_owned()]);
+        let metadata = serde_json::json!({
+            "packages": [{"name":"compcol", "version":"0.7.8", "id":"compcol-id",
+                "source":"registry+https://github.com/rust-lang/crates.io-index"}],
+            "resolve":{"nodes":[{"id":"compcol-id", "features":["alloc","rar2"]}]},
+        });
+        let bazel = serde_json::json!({
+            "crates":{"compcol 0.7.8":{
+                "name":"compcol", "version":"0.7.8",
+                "repository":{"Http":{"sha256":COMPCOL_EXEMPTION_SHA256}},
+                "common_attrs":{"crate_features":{"common":["alloc","rar2"],"selects":{}}},
+            }},
+            "conditions":{"cfg(reviewed)":COMPCOL_EXEMPTION_TARGETS},
+        });
+        validate_compcol_exemption_scope(&core, &metadata, &bazel).unwrap();
+        let mut coupled = core.clone();
+        coupled.insert("compcol".into());
+        assert!(validate_compcol_exemption_scope(&coupled, &metadata, &bazel).is_err());
+        for (path, value) in [
+            ("/packages/0/version", serde_json::json!("0.7.9")),
+            ("/packages/0/source", serde_json::Value::Null),
+            (
+                "/resolve/nodes/0/features",
+                serde_json::json!(["alloc", "rar2", "lzfse"]),
+            ),
+            ("/resolve/nodes/0/features", serde_json::json!(["rar2"])),
+            (
+                "/resolve/nodes/0/features",
+                serde_json::json!(["alloc", "rar2", false]),
+            ),
+        ] {
+            let mut changed = metadata.clone();
+            *changed.pointer_mut(path).unwrap() = value;
+            assert!(
+                validate_compcol_exemption_scope(&core, &changed, &bazel).is_err(),
+                "{path}"
+            );
+        }
+        for (path, value) in [
+            ("/crates/compcol 0.7.8/version", serde_json::json!("0.7.9")),
+            (
+                "/crates/compcol 0.7.8/repository/Http/sha256",
+                serde_json::json!("changed"),
+            ),
+            (
+                "/crates/compcol 0.7.8/common_attrs/crate_features/common",
+                serde_json::json!(["alloc", "rar2", "default"]),
+            ),
+            (
+                "/crates/compcol 0.7.8/common_attrs/crate_features/selects",
+                serde_json::json!({"cfg(unix)":["std"]}),
+            ),
+            (
+                "/conditions",
+                serde_json::json!({"cfg(target_pointer_width=32)":["i686-unknown-linux-gnu"]}),
+            ),
+        ] {
+            let mut changed = bazel.clone();
+            *changed.pointer_mut(path).unwrap() = value;
+            assert!(
+                validate_compcol_exemption_scope(&core, &metadata, &changed).is_err(),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn supply_chain_exceptions_fail_closed_when_activated() {
+        validate_supply_chain_exceptions("# policy\nschema = 1\n").unwrap();
+        assert!(validate_supply_chain_exceptions("schema = 2\n").is_err());
+        assert!(
+            validate_supply_chain_exceptions("schema = 1\n[[exception]]\nid = \"SC-1\"\n").is_err()
+        );
+    }
+
+    #[test]
+    fn dependency_boundaries_reject_only_security_relevant_structure() {
+        let core = BTreeSet::from(["rustleaks-core".to_owned(), "serde".to_owned()]);
+        let sources = BTreeSet::from([
+            "rustleaks-core".to_owned(),
+            "rustleaks-sources".to_owned(),
+            "serde".to_owned(),
+        ]);
+        let metadata = r#"{"packages":[{"name":"serde","version":"1.0.0","links":null}]}"#;
+        validate_dependency_boundaries(&core, &sources, metadata).unwrap();
+
+        let coupled = BTreeSet::from([
+            "rustleaks-core".to_owned(),
+            "rustleaks-rar-codec".to_owned(),
+        ]);
+        assert!(validate_dependency_boundaries(&coupled, &sources, metadata).is_err());
+
+        let native = BTreeSet::from(["rustleaks-sources".to_owned(), "openssl-sys".to_owned()]);
+        assert!(validate_dependency_boundaries(&core, &native, metadata).is_err());
+
+        let linked = r#"{"packages":[{"name":"native","version":"1.0.0","links":"native"}]}"#;
+        assert!(validate_dependency_boundaries(&core, &sources, linked).is_err());
+    }
+}

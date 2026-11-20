@@ -106,12 +106,12 @@ mod tests {
     use std::path::Path;
 
     use super::{archive_frame, generate_archive_fuzz_seeds};
-    use crate::tooling::support::TempDir;
+    use crate::tooling::support::ScopedTempDir;
 
     #[test]
     fn generated_seed_tree_is_exact_and_versioned() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let temporary = TempDir::new("archive-seed-generation").unwrap();
+        let temporary = ScopedTempDir::new("archive-seed-generation").unwrap();
         let output = temporary.path.join("output");
         assert_eq!(
             generate_archive_fuzz_seeds(&root, &output, false).unwrap(),

@@ -7,7 +7,7 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::TempDir;
+use super::ScopedTempDir;
 use crate::tooling::support::diagnostic_tail;
 
 pub(super) const CASE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -26,7 +26,7 @@ pub(super) fn run<S: AsRef<std::ffi::OsStr>>(
     directory: &Path,
     env: &BTreeMap<String, Vec<u8>>,
     stdin_bytes: &[u8],
-    temporary: &TempDir,
+    temporary: &ScopedTempDir,
     label: &str,
     timeout: Duration,
     limit: usize,
@@ -133,7 +133,7 @@ pub(super) fn command<S: AsRef<std::ffi::OsStr>>(
     args: &[S],
     directory: &Path,
     env: &BTreeMap<String, Vec<u8>>,
-    temporary: &TempDir,
+    temporary: &ScopedTempDir,
     label: &str,
     timeout: Duration,
     limit: usize,

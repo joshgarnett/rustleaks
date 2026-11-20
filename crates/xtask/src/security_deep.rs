@@ -265,12 +265,12 @@ fn execute(
         run.stage(&format!("miri-{name}"), true, |root, directory, deadline| {
             if !observed { return Ok(Step::skipped("identity-unavailable")); }
             let target = root.join("target/private-deep-miri");
-            let arguments = [format!("+{}",crate::MIRI_TOOLCHAIN),"miri".into(),"test".into(),"-p".into(),(*package).into(),"--lib".into(),"--locked".into(),"--offline".into(),(*case).into(),"--".into(),"--exact".into()];
+            let arguments = [format!("+{}",crate::security::MIRI_TOOLCHAIN),"miri".into(),"test".into(),"-p".into(),(*package).into(),"--lib".into(),"--locked".into(),"--offline".into(),(*case).into(),"--".into(),"--exact".into()];
             let outcome = command(root, directory, "miri", "cargo", &arguments, deadline, 600, &[("CARGO_TARGET_DIR",target.to_string_lossy().into_owned())])?;
             require_success(outcome)?;
             let stdout = fs::read_to_string(directory.join("miri/stdout.log")).map_err(|error| error.to_string())?;
             if !stdout.contains("test result: ok. 1 passed;") { return Err("Miri did not execute exactly one selected case".into()); }
-            Ok(Step::pass(json!({"toolchain":crate::MIRI_TOOLCHAIN,"package":package,"case":case,"scope":"executed Miri path only"})))
+            Ok(Step::pass(json!({"toolchain":crate::security::MIRI_TOOLCHAIN,"package":package,"case":case,"scope":"executed Miri path only"})))
         })?;
     }
     for target in TARGETS {

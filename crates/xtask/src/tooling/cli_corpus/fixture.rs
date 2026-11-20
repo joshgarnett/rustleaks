@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use super::TempDir;
+use super::ScopedTempDir;
 use super::process::{self, OUTPUT_LIMIT};
 
 pub(super) const MATCHING_CONFIG: &str = "title='fixture'\n[[rules]]\nid='fixture-token'\ndescription='fixture token'\nregex='''token=([A-Z0-9]{4})'''\nsecretGroup=1\nkeywords=['token']\n";
@@ -26,7 +26,7 @@ pub(super) struct Prepared {
     pub(super) native_path: Option<OsString>,
 }
 
-pub(super) fn setup(root: &Path, kind: &str, temporary: &TempDir) -> Result<(), String> {
+pub(super) fn setup(root: &Path, kind: &str, temporary: &ScopedTempDir) -> Result<(), String> {
     write(root, "config.toml", MATCHING_CONFIG.as_bytes())?;
     write(root, "never.toml", NO_MATCH_CONFIG.as_bytes())?;
     write(root, "template.tmpl", TEMPLATE.as_bytes())?;
@@ -102,7 +102,7 @@ pub(super) fn prepare(
     root: &Path,
     value: Option<&str>,
     fake_git_binary: &Path,
-    temporary: &TempDir,
+    temporary: &ScopedTempDir,
     label: &str,
 ) -> Result<Prepared, String> {
     let Some(value) = value else {
@@ -211,7 +211,7 @@ pub(super) fn prepare(
     Ok(Prepared::default())
 }
 
-fn init_git(root: &Path, remote: Option<&str>, temporary: &TempDir) -> Result<(), String> {
+fn init_git(root: &Path, remote: Option<&str>, temporary: &ScopedTempDir) -> Result<(), String> {
     git(root, &["init", "--quiet"], temporary, "init")?;
     git(
         root,
@@ -244,7 +244,7 @@ fn init_git(root: &Path, remote: Option<&str>, temporary: &TempDir) -> Result<()
     Ok(())
 }
 
-fn git(root: &Path, args: &[&str], temporary: &TempDir, label: &str) -> Result<(), String> {
+fn git(root: &Path, args: &[&str], temporary: &ScopedTempDir, label: &str) -> Result<(), String> {
     let env = BTreeMap::from([
         ("GIT_AUTHOR_NAME".into(), b"CLI Corpus".to_vec()),
         ("GIT_AUTHOR_EMAIL".into(), b"cli@example.invalid".to_vec()),
@@ -385,11 +385,11 @@ mod tests {
     use std::os::unix::fs::PermissionsExt as _;
     use std::process::{Command, Stdio};
 
-    use super::{TempDir, fake_git};
+    use super::{ScopedTempDir, fake_git};
 
     #[test]
     fn fake_git_pid_file_uses_child_working_directory() {
-        let temporary = TempDir::new("cli-fake-git-test").unwrap();
+        let temporary = ScopedTempDir::new("cli-fake-git-test").unwrap();
         let base = &temporary.path;
         let caller = base.join("caller");
         let fixture = base.join("fixture");
