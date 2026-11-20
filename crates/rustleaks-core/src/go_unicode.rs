@@ -1,4 +1,5 @@
-//! Pinned Go-compatible Unicode helpers used outside regular expressions.
+//! Go Unicode helpers used outside regular expressions: rune decoding as in
+//! Go's `unicode/utf8` package and Go's simple lowercase mapping.
 
 include!("go_lowercase_tables.rs");
 
@@ -17,25 +18,62 @@ pub(crate) fn lowercase_bytes(bytes: &[u8]) -> Vec<u8> {
     output.into_bytes()
 }
 
-pub(crate) fn chars(mut bytes: &[u8]) -> impl Iterator<Item = char> + '_ {
-    std::iter::from_fn(move || {
-        let (&first, remaining) = bytes.split_first()?;
-        if first.is_ascii() {
-            bytes = remaining;
-            return Some(char::from(first));
-        }
-        for width in 2..=4 {
-            if let Some(candidate) = bytes.get(..width)
-                && let Ok(valid) = std::str::from_utf8(candidate)
-                && let Some(character) = valid.chars().next()
-                && character.len_utf8() == width
-            {
-                bytes = &bytes[width..];
-                return Some(character);
+/// Decodes the first rune like Go's `utf8.DecodeRune`.
+///
+/// Returns the rune and its width in bytes. An invalid or truncated encoding
+/// is one `U+FFFD` of width 1. Empty input returns `U+FFFD` of width 0.
+pub(crate) fn decode_rune(bytes: &[u8]) -> (char, usize) {
+    let Some(&first) = bytes.first() else {
+        return (char::REPLACEMENT_CHARACTER, 0);
+    };
+    if first.is_ascii() {
+        return (char::from(first), 1);
+    }
+    let width = match first {
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return (char::REPLACEMENT_CHARACTER, 1),
+    };
+    if let Some(candidate) = bytes.get(..width)
+        && let Ok(valid) = std::str::from_utf8(candidate)
+        && let Some(character) = valid.chars().next()
+    {
+        return (character, width);
+    }
+    (char::REPLACEMENT_CHARACTER, 1)
+}
+
+/// Decodes the last rune like Go's `utf8.DecodeLastRune`.
+///
+/// Returns the rune and its width in bytes. An invalid or truncated encoding
+/// is one `U+FFFD` of width 1. Empty input returns `U+FFFD` of width 0.
+pub(crate) fn decode_last_rune(bytes: &[u8]) -> (char, usize) {
+    let Some(&last) = bytes.last() else {
+        return (char::REPLACEMENT_CHARACTER, 0);
+    };
+    if last.is_ascii() {
+        return (char::from(last), 1);
+    }
+    for width in 2..=4.min(bytes.len()) {
+        if let Ok(valid) = std::str::from_utf8(&bytes[bytes.len() - width..]) {
+            let mut characters = valid.chars();
+            if let (Some(character), None) = (characters.next(), characters.next()) {
+                return (character, width);
             }
         }
-        bytes = remaining;
-        Some('\u{fffd}')
+    }
+    (char::REPLACEMENT_CHARACTER, 1)
+}
+
+pub(crate) fn chars(mut bytes: &[u8]) -> impl Iterator<Item = char> + '_ {
+    std::iter::from_fn(move || {
+        if bytes.is_empty() {
+            return None;
+        }
+        let (character, width) = decode_rune(bytes);
+        bytes = &bytes[width..];
+        Some(character)
     })
 }
 
@@ -64,6 +102,27 @@ fn simple_lowercase(character: char) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rune_decoding_matches_go_utf8() {
+        let replacement = char::REPLACEMENT_CHARACTER;
+        for (bytes, first, last) in [
+            (b"".as_slice(), (replacement, 0), (replacement, 0)),
+            (b"a", ('a', 1), ('a', 1)),
+            ("\u{e9}".as_bytes(), ('\u{e9}', 2), ('\u{e9}', 2)),
+            ("\u{20ac}x".as_bytes(), ('\u{20ac}', 3), ('x', 1)),
+            ("x\u{1f600}".as_bytes(), ('x', 1), ('\u{1f600}', 4)),
+            (b"\xff", (replacement, 1), (replacement, 1)),
+            (b"\xc0\x80", (replacement, 1), (replacement, 1)),
+            (b"\xe2\x82", (replacement, 1), (replacement, 1)),
+            (b"\xed\xa0\x80", (replacement, 1), (replacement, 1)),
+            (b"\xf4\x90\x80\x80", (replacement, 1), (replacement, 1)),
+            (b"\x80\x80\x80\x80\x80", (replacement, 1), (replacement, 1)),
+        ] {
+            assert_eq!(decode_rune(bytes), first, "{bytes:?}");
+            assert_eq!(decode_last_rune(bytes), last, "{bytes:?}");
+        }
+    }
 
     #[test]
     fn mapping_is_pinned_and_invalid_bytes_are_individual_rune_errors() {

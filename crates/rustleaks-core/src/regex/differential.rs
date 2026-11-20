@@ -1,4 +1,4 @@
-//! Differential evidence against the former eager `PikeVM` search path.
+//! Differential tests against an eager `PikeVM` search path.
 //!
 //! The frontend is shared deliberately: these tests compare backend selection,
 //! captures, iteration and byte mapping, not the independent Go syntax contract.
@@ -61,9 +61,9 @@ impl Reference {
         Some(Self { backend, captures })
     }
 
-    // Retain the previous normalization and iteration implementation separately
-    // from production helpers so sharing a normalized pass cannot hide a byte
-    // remapping or empty-match progression regression.
+    // An independent copy of normalization and iteration, so a bug shared with
+    // the production helpers cannot hide a byte remapping or empty-match
+    // progression regression.
     fn captures_all(&self, haystack: &[u8]) -> Vec<CaptureSpans> {
         let (bytes, boundaries) = normalize(haystack);
         let end = bytes.len();

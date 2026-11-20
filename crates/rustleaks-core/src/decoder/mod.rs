@@ -1,8 +1,7 @@
 //! Private encoded-segment decoder and original-offset mapper.
 
-#![allow(dead_code)]
-
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::convert::Infallible;
 use std::ops::Range;
 use std::sync::{Arc, OnceLock};
@@ -157,12 +156,9 @@ pub(crate) struct EncodedSegment {
 }
 
 impl EncodedSegment {
+    #[cfg(test)]
     pub(crate) const fn original(&self) -> StartEnd {
         self.original
-    }
-
-    pub(crate) const fn encoded(&self) -> StartEnd {
-        self.encoded
     }
 
     pub(crate) const fn decoded(&self) -> StartEnd {
@@ -173,13 +169,14 @@ impl EncodedSegment {
         &self.decoded_value
     }
 
+    #[cfg(test)]
     pub(crate) const fn depth(&self) -> usize {
         self.depth
     }
 }
 
-/// Resource checkpoints shared with the controlled engine. Existing work
-/// checkpoints keep their order; span admission adds no work units.
+/// Resource checkpoints shared with the controlled engine. Work checkpoints
+/// come in decode order; span admission adds no work units.
 pub(crate) enum DecodeCheckpoint {
     Work(usize),
     CollectedSpans(usize),
@@ -194,6 +191,7 @@ pub(crate) struct Decoder {
 }
 
 impl Decoder {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::with_base64_mode(Base64Mode::Compatible)
     }
@@ -210,7 +208,8 @@ impl Decoder {
     }
 
     /// Decodes one pass, returning the complete output even when nothing
-    /// decoded. Production scans use [`Self::decode_controlled`].
+    /// decoded. Scans use [`Self::decode_with_resources`].
+    #[cfg(test)]
     pub(crate) fn decode(
         &mut self,
         data: &[u8],
@@ -236,6 +235,7 @@ impl Decoder {
     /// When no segment decodes the returned buffer is empty and unallocated:
     /// the caller retains `data` and only reads the buffer once `segments` is
     /// non-empty.
+    #[cfg(test)]
     pub(crate) fn decode_controlled<E>(
         &mut self,
         data: &[u8],
@@ -740,6 +740,7 @@ fn append_hex(encoded: &[u8], output: &mut Vec<u8>) {
     }
 }
 
+#[cfg(test)]
 fn append_base64(encoded: &[u8], output: &mut Vec<u8>) {
     append_base64_with_mode(encoded, output, Base64Mode::Compatible);
 }
@@ -1052,7 +1053,7 @@ mod tests {
             append_base64_with_mode(encoded, &mut output, Base64Mode::Extended);
             assert_eq!(output, b"seed");
         }
-        // Candidate discovery retains its historical heuristic in both modes.
+        // Candidate discovery uses the same heuristic in both modes.
         let mut output = b"seed".to_vec();
         append_base64_with_mode(b"QUFBQUFBQUFBQUFB", &mut output, Base64Mode::Extended);
         assert_eq!(output, b"seed");

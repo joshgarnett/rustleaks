@@ -1,4 +1,4 @@
-//! Raw and compiled Rustleaks configuration with upstream compatibility.
+//! Raw and compiled Rustleaks configuration in the Gitleaks TOML format.
 //!
 //! Parsing is deliberately permissive at the [`RawConfig`] boundary. User
 //! supplied patterns are retained as strings here; the private matching
@@ -27,7 +27,7 @@ pub const DEFAULT_CONFIG: &str = include_str!("../../default/gitleaks.toml");
 /// Byte view of [`DEFAULT_CONFIG`].
 pub const DEFAULT_CONFIG_BYTES: &[u8] = DEFAULT_CONFIG.as_bytes();
 
-/// Upstream Gitleaks revision on which [`DEFAULT_CONFIG`] is based.
+/// Gitleaks commit on which [`DEFAULT_CONFIG`] is based.
 pub const DEFAULT_CONFIG_REVISION: &str = crate::UPSTREAM_REVISION;
 
 /// SHA-256 of [`DEFAULT_CONFIG_BYTES`], the shipped Rustleaks default. The

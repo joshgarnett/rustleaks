@@ -1,8 +1,8 @@
-//! Explicit native composition and additive scan metadata.
+//! Native rule-pack composition and scan explanations.
 //!
-//! Existing [`Engine`] construction and scans retain the pinned compatibility
-//! behavior. Native composition starts from the same embedded default and
-//! appends separately identified TOML packs, rejecting replacements. Identity
+//! An [`Engine`] scans with only the configuration it is built from. Native
+//! composition starts from the embedded default and appends separately
+//! identified TOML packs, rejecting replacements. Identity
 //! equality compares exact input bytes, including formatting, pack order and
 //! extension selection. It is not a hash and makes no cryptographic claim.
 //!
@@ -48,24 +48,25 @@ pub(crate) mod predicate;
 /// Version of native composition, identity and explanation semantics.
 pub const NATIVE_POLICY_VERSION: &str = "rustleaks-native-v1";
 
-/// Explicitly selected native pilot pack; never part of the default config.
+/// The `rustleaks-extra-v1` rule pack. Never part of the default rules.
 pub const EXTRA_RULES_V1: &str = include_str!("../default/rustleaks-extra-v1.toml");
 
-/// SHA-256 of the packaged pilot TOML, checked by the maintained generator.
+/// SHA-256 of [`EXTRA_RULES_V1`].
 pub const EXTRA_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-extra-v1.sha256");
 
-/// Explicitly selected provider rules adapted from pinned MIT Betterleaks and
-/// Apache-2.0 Veles sources. This pack never changes the default configuration.
+/// The `rustleaks-providers-v1` rule pack, adapted from MIT Betterleaks and
+/// Apache-2.0 Veles sources. Never part of the default rules.
 pub const PROVIDER_RULES_V1: &str = include_str!("../default/rustleaks-providers-v1.toml");
 
-/// SHA-256 of the packaged provider TOML, checked by the maintained generator.
+/// SHA-256 of [`PROVIDER_RULES_V1`].
 pub const PROVIDER_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-providers-v1.sha256");
 
-/// Explicitly selected ASCII connection-credential rules adapted from pinned
-/// Apache-2.0 Kingfisher/Veles and MIT Betterleaks sources. Never in the default config.
+/// The `rustleaks-connections-v1` rule pack of ASCII connection credentials,
+/// adapted from Apache-2.0 Kingfisher and Veles and MIT Betterleaks sources.
+/// Never part of the default rules.
 pub const CONNECTION_RULES_V1: &str = include_str!("../default/rustleaks-connections-v1.toml");
 
-/// SHA-256 of the packaged connection TOML, checked by the maintained generator.
+/// SHA-256 of [`CONNECTION_RULES_V1`].
 pub const CONNECTION_RULES_V1_SHA256: &str =
     include_str!("../default/rustleaks-connections-v1.sha256");
 
@@ -80,8 +81,8 @@ pub enum NativeExtension {
 
 /// Exact policy identity with configuration bytes omitted from diagnostics.
 ///
-/// Identity includes the policy and crate versions, pinned upstream/config
-/// identity, ordered pack IDs and exact TOML bytes, and extension selection.
+/// Identity includes the policy and crate versions, the default
+/// configuration's Gitleaks revision and hash, ordered pack IDs and exact TOML bytes, and extension selection.
 /// Equal identities imply equal configuration inputs, not equal source input,
 /// scan options, budgets, or runtime results. Byte formatting changes produce
 /// a different identity deliberately. This type does not serialize implicitly:
@@ -106,7 +107,7 @@ impl NativePolicyIdentity {
     /// Returns an immutable, source-omitting reference for a supported builtin
     /// composition, including checked content hashes and enabled extensions.
     ///
-    /// Present for the pinned base alone and exact packaged packs selected as
+    /// Present for the default rules alone and exact packaged packs selected as
     /// `rustleaks-extra-v1`, `rustleaks-providers-v1` or
     /// `rustleaks-connections-v1`, including every composition order.
     /// Custom packs return `None` and require a
@@ -153,7 +154,7 @@ impl NativePolicy {
     /// Maximum aggregate native rules across appended packs.
     pub const MAX_NATIVE_RULES: usize = 1_024;
 
-    /// Starts an explicit native policy with only the pinned default rules.
+    /// Starts a native policy with only the embedded default rules.
     #[must_use]
     pub fn builder() -> Self {
         Self::default()
@@ -161,7 +162,7 @@ impl NativePolicy {
 
     /// Appends a named, versioned rules pack through native TOML semantics.
     ///
-    /// Scalar `entropy` retains legacy behavior. A native byte predicate uses
+    /// Scalar `entropy` works as in [`ConfigLoader`]. A native byte predicate uses
     /// `entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt", threshold = 3.5 }`.
     /// The comparator is `lt` or `le`, and the finite threshold is in `0..=8`.
     /// A structured entropy value requires this loader; the compatibility
@@ -993,8 +994,8 @@ impl NativeEngine {
         &self.identity
     }
 
-    /// Scans with unchanged finding, ordering, decoding, error and partial-result
-    /// semantics, adding bounded annotations separate from legacy findings.
+    /// Scans like [`Engine::scan_fragment_controlled`] and also records
+    /// bounded explanations, kept separate from the findings.
     #[must_use]
     pub fn scan_fragment_controlled(
         &self,
@@ -1022,7 +1023,8 @@ impl NativeEngine {
     }
 }
 
-/// Additive native envelope. Legacy finding serialization is untouched.
+/// A scan outcome together with the policy identity, options and
+/// explanations.
 #[derive(Clone, Debug)]
 pub struct NativeScanOutcome {
     scan: ScanOutcome,
@@ -1056,7 +1058,7 @@ impl NativeScanOutcome {
         self.offline_annotations_enabled
     }
 
-    /// Returns the full legacy outcome; always inspect completion/termination.
+    /// Returns the scan outcome. Check completion or termination before use.
     #[must_use]
     pub const fn scan(&self) -> &ScanOutcome {
         &self.scan
@@ -1074,7 +1076,7 @@ impl NativeScanOutcome {
         &self.explanations
     }
 
-    /// Consumes the envelope and returns the unchanged legacy outcome.
+    /// Consumes the envelope and returns the scan outcome.
     #[must_use]
     pub fn into_scan(self) -> ScanOutcome {
         self.scan
@@ -1097,7 +1099,7 @@ pub enum NativePolicyError {
     /// Two definitions claim the same rule ID.
     #[error("native rule identifier collision")]
     RuleCollision,
-    /// A pack requests a directive that could change the pinned base.
+    /// A pack requests a directive that could change the default rules.
     #[error("unsupported native pack composition directive")]
     UnsupportedPackDirective,
     /// A native table contains an unsupported field. The name and value are
@@ -1127,11 +1129,11 @@ pub enum NativePolicyError {
     /// A source-byte, pack-count or rule-count limit was exceeded.
     #[error("native composition safety limit exceeded")]
     LimitExceeded,
-    /// Existing configuration parser/compiler failure; diagnostics can include
-    /// user-supplied configuration text and must be handled accordingly.
+    /// A configuration parse or compile error. Its message can include
+    /// configuration text supplied by the caller.
     #[error(transparent)]
     Config(#[from] ConfigError),
-    /// Existing engine prefilter failure.
+    /// The engine could not build its keyword prefilter.
     #[error(transparent)]
     Engine(#[from] ScanError),
 }

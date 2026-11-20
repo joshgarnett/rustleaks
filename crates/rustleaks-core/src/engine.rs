@@ -54,8 +54,8 @@ const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
 /// expression search and one individual encoding transform are indivisible.
 /// Without a collected-span limit, whole-rule enumeration is also indivisible.
 /// A collected-span limit adds a cancellation poll before each span append.
-/// Historical candidate work checkpoints still follow eager enumeration;
-/// decoder candidate loops are checkpointed between transforms.
+/// Candidate work checkpoints follow eager enumeration; decoder candidate
+/// loops are checkpointed between transforms.
 /// Cancellation requested inside an indivisible operation is observed at the
 /// next checkpoint.
 pub trait ScanCancellation: Send + Sync {
@@ -855,8 +855,8 @@ impl<'a> ScanContext<'a> {
         &mut self,
         fields: impl IntoIterator<Item = usize>,
     ) -> Result<(), ScanTermination> {
-        // One cancellation poll preserves the historical record checkpoint.
-        // Commit both reservations only when the whole record is admitted.
+        // Poll for cancellation once per finding record. Commit both
+        // reservations only when the whole record is admitted.
         self.check_cancelled()?;
         let mut records = self.usage.finding_records;
         charge_counter(
@@ -1598,8 +1598,8 @@ impl Engine {
     }
 
     // Helpers inherit only the buffer/coordinate contract, never a caller's
-    // public inherited flag. Their own required edges are not recursively run,
-    // as in legacy helper evaluation; primary relations are always enforced.
+    // public inherited flag. As for any helper rule, their own required edges
+    // are not run recursively; primary relations are always enforced.
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn native_candidates<'a>(
         &'a self,
@@ -2083,7 +2083,8 @@ impl Engine {
         };
         let secret = extracted_secret.bytes;
         // Native predicates remain on the compiled rule through projections.
-        // Legacy zero thresholds still defer entropy until finding construction.
+        // A scalar `entropy` of zero defers the calculation until finding
+        // construction.
         let threshold_entropy = rule.native_entropy.map_or_else(
             || (rule.entropy != 0.0).then(|| shannon_entropy(secret)),
             |policy| Some(policy.calculate(secret)),
@@ -2241,7 +2242,7 @@ fn keyword_gate_open(rule: &CompiledRule, indexes: &[usize], matched_keywords: &
     rule.keywords.is_empty() || indexes.iter().any(|&index| matched_keywords[index])
 }
 
-fn path_allowed(
+fn path_allowed_controlled(
     allowlist: &CompiledAllowlist,
     path: &[u8],
     context: &mut ScanContext<'_>,
@@ -2250,6 +2251,23 @@ fn path_allowed(
         Some(matcher) if !path.is_empty() => context.is_match(matcher, path),
         _ => Ok(false),
     }
+}
+
+/// Checks the fragment path, then its Windows spelling when one is set.
+fn fragment_path_allowed(
+    allowlist: &CompiledAllowlist,
+    fragment: &Fragment,
+    context: &mut ScanContext<'_>,
+) -> Result<bool, ScanTermination> {
+    Ok(
+        path_allowed_controlled(allowlist, fragment.file_path().as_bytes(), context)?
+            || (!fragment.windows_file_path().is_empty()
+                && path_allowed_controlled(
+                    allowlist,
+                    fragment.windows_file_path().as_bytes(),
+                    context,
+                )?),
+    )
 }
 
 fn regex_allowed(
@@ -2274,9 +2292,7 @@ fn commit_or_path_allowed(
     }
     for allowlist in allowlists {
         let commit = allowlist.commit_allowed(fragment.commit().as_bytes());
-        let path = path_allowed(allowlist, fragment.file_path().as_bytes(), context)?
-            || (!fragment.windows_file_path().is_empty()
-                && path_allowed(allowlist, fragment.windows_file_path().as_bytes(), context)?);
+        let path = fragment_path_allowed(allowlist, fragment, context)?;
         let allowed = match allowlist.condition {
             Condition::Or => commit || path,
             Condition::And => {
@@ -2324,13 +2340,7 @@ fn finding_allowed_controlled<'a>(
             Condition::Or => regex || stopword,
             Condition::And => {
                 let commit = allowlist.commit_allowed(fragment.commit().as_bytes());
-                let path = path_allowed(allowlist, fragment.file_path().as_bytes(), context)?
-                    || (!fragment.windows_file_path().is_empty()
-                        && path_allowed(
-                            allowlist,
-                            fragment.windows_file_path().as_bytes(),
-                            context,
-                        )?);
+                let path = fragment_path_allowed(allowlist, fragment, context)?;
                 (allowlist.commits.is_empty() || commit)
                     && (allowlist.paths.is_empty() || path)
                     && (allowlist.regexes.is_empty() || regex)
@@ -3220,9 +3230,9 @@ fn upstream_location(
     if end > 0 && end_line < newlines.len() {
         let previous = end_line.checked_sub(1).map_or(0, |line| newlines[line]);
         location.end_column = end - previous;
-        // For an empty match on a newline, the old loop set the end column
-        // on the preceding iteration, then overwrote its end line and index
-        // when assigning the start. Preserve that assignment order exactly.
+        // For an empty match on a newline, Gitleaks sets the end column in
+        // the previous iteration, then overwrites the end line and index when
+        // it assigns the start. Keep that order.
         if end_line >= start_line {
             location.end_line = end_line;
             location.end_line_index = newlines[end_line];
@@ -3379,8 +3389,8 @@ fn native_keyword_gate(
         }
         return Ok(false);
     }
-    // Only old native rules without an explicit buffer or byte contract can
-    // reach this fallback. Preserve their compatibility gate and accounting.
+    // Native rules without a byte or buffer contract reach this fallback. It
+    // uses the Gitleaks keyword gate and work accounting.
     if rule.keywords.is_empty() {
         return Ok(true);
     }
@@ -5006,7 +5016,7 @@ regexes = ['''^ZX9(?: ZX9){3}$''']
     }
 
     #[test]
-    fn joined_allowlist_flags_and_stopword_match_geometry_match_go() {
+    fn joined_allowlist_flags_and_stopword_presence_match_go() {
         let config = ConfigLoader::new()
             .load_toml(
                 r#"
@@ -5024,20 +5034,11 @@ stopwords = ["he", "she", "FaKe", "ÉCOLE", "�"]
         let allowlist = &config.allowlists[0];
         assert!(allowlist.path_allowed(b"bar"));
         assert!(allowlist.regex_allowed(b"bar"));
-        assert_eq!(allowlist.matched_stop_word(b"she"), Some(b"she".to_vec()));
-        assert_eq!(
-            allowlist.matched_stop_word(b"prefix FAKE suffix"),
-            Some(b"fake".to_vec())
-        );
-        assert_eq!(
-            allowlist.matched_stop_word("prefix ÉCOLE suffix".as_bytes()),
-            Some("école".as_bytes().to_vec())
-        );
-        assert_eq!(
-            allowlist.matched_stop_word(b"\xff"),
-            Some("�".as_bytes().to_vec())
-        );
-        assert_eq!(allowlist.matched_stop_word(b"real"), None);
+        assert!(allowlist.contains_stop_word(b"she"));
+        assert!(allowlist.contains_stop_word(b"prefix FAKE suffix"));
+        assert!(allowlist.contains_stop_word("prefix ÉCOLE suffix".as_bytes()));
+        assert!(allowlist.contains_stop_word(b"\xff"));
+        assert!(!allowlist.contains_stop_word(b"real"));
 
         let empty = ConfigLoader::new()
             .load_toml(
@@ -5051,7 +5052,7 @@ stopwords = [""]
 "#,
             )
             .unwrap();
-        assert_eq!(empty.allowlists[0].matched_stop_word(b"nonempty"), None);
+        assert!(!empty.allowlists[0].contains_stop_word(b"nonempty"));
     }
 
     #[test]
