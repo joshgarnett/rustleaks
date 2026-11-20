@@ -1250,7 +1250,6 @@ impl<'a> ArchiveState<'a> {
                 );
             }
         };
-        reader.set_thread_count(1);
         let archive_entries = reader.archive().files.len();
         match self.budget.entries.get().checked_add(archive_entries) {
             Some(entries) if entries <= self.options.limits.entries.get() => {
@@ -1439,7 +1438,9 @@ fn with_codec<T>(
             miniz_oxide::DataFormat::Zlib,
             "zlib",
         )),
-        Codec::Bzip2 => use_reader(&mut DecodeErrors(bzip2_rs::DecoderReader::new(input))),
+        Codec::Bzip2 => use_reader(&mut DecodeErrors(rustleaks_bzip2::DecoderReader::new(
+            input,
+        ))),
         Codec::Xz => use_reader(&mut DecodeErrors(lzma_rust2::XzReader::new(input, true))),
         Codec::Lzip => use_reader(&mut LzipReader::new(input, memory_limit)),
         Codec::Brotli => {
@@ -1544,11 +1545,7 @@ fn open_7z<R: Read + Seek>(
     {
         let memory_limit_kb = memory_limit.div_ceil(1024).max(1);
         let parsed = catch_unwind(AssertUnwindSafe(|| {
-            rustleaks_sevenz::ArchiveReader::new_with_memory_limit_kb(
-                source,
-                rustleaks_sevenz::Password::empty(),
-                memory_limit_kb,
-            )
+            rustleaks_sevenz::ArchiveReader::new_with_memory_limit_kb(source, memory_limit_kb)
         }));
         let Ok(reader) = parsed else {
             return Err(SevenOpenFailure {

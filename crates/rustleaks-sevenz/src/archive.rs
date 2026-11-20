@@ -27,11 +27,6 @@ pub(crate) const K_C_TIME: u8 = 0x12;
 pub(crate) const K_A_TIME: u8 = 0x13;
 pub(crate) const K_M_TIME: u8 = 0x14;
 pub(crate) const K_WIN_ATTRIBUTES: u8 = 0x15;
-
-/// Archive comment property identifier. Comment parsing and writing are not
-/// supported by this crate.
-#[allow(unused)]
-pub(crate) const K_COMMENT: u8 = 0x16;
 pub(crate) const K_ENCODED_HEADER: u8 = 0x17;
 pub(crate) const K_START_POS: u8 = 0x18;
 pub(crate) const K_DUMMY: u8 = 0x19;
@@ -56,20 +51,6 @@ pub struct Archive {
     pub stream_map: StreamMap,
     /// Whether this is a solid archive (better compression, slower random access).
     pub is_solid: bool,
-}
-
-impl Archive {
-    /// Returns the offset from beginning of file + SIGNATURE_HEADER_SIZE to packed streams.
-    /// Used for calculating byte offsets when streaming uncompressed (COPY) content.
-    pub fn pack_pos(&self) -> u64 {
-        self.pack_pos
-    }
-
-    /// Returns the sizes of each packed stream in bytes.
-    /// Used for calculating byte ranges when streaming.
-    pub fn pack_sizes(&self) -> &[u64] {
-        &self.pack_sizes
-    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -122,79 +103,6 @@ pub struct ArchiveEntry {
 }
 
 impl ArchiveEntry {
-    /// Creates a new default archive entry.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates a new archive entry representing a file.
-    ///
-    /// # Arguments
-    /// * `entry_name` - The name/path of the file within the archive
-    pub fn new_file(entry_name: &str) -> Self {
-        Self {
-            name: entry_name.to_string(),
-            has_stream: true,
-            is_directory: false,
-            ..Default::default()
-        }
-    }
-
-    /// Creates a new archive entry representing a directory.
-    ///
-    /// # Arguments
-    /// * `entry_name` - The name/path of the directory within the archive
-    pub fn new_directory(entry_name: &str) -> Self {
-        Self {
-            name: entry_name.to_string(),
-            has_stream: false,
-            is_directory: true,
-            ..Default::default()
-        }
-    }
-
-    /// Creates a new archive entry from a filesystem path.
-    ///
-    /// Automatically extracts metadata like timestamps and attributes from the filesystem.
-    /// On Windows, backslashes in the entry name are converted to forward slashes.
-    ///
-    /// # Arguments
-    /// * `path` - The filesystem path to extract metadata from
-    /// * `entry_name` - The name/path to use for this entry within the archive
-    pub fn from_path(path: impl AsRef<std::path::Path>, entry_name: String) -> Self {
-        let path = path.as_ref();
-        #[cfg(target_os = "windows")]
-        let entry_name = entry_name.replace('\\', "/");
-        let mut entry = ArchiveEntry {
-            name: entry_name,
-            has_stream: path.is_file(),
-            is_directory: path.is_dir(),
-            ..Default::default()
-        };
-
-        if let Ok(meta) = path.metadata() {
-            if let Ok(modified) = meta.modified()
-                && let Ok(date) = NtTime::try_from(modified)
-            {
-                entry.last_modified_date = date;
-                entry.has_last_modified_date = entry.last_modified_date.0 > 0;
-            }
-            if let Ok(date) = meta.created()
-                && let Ok(date) = NtTime::try_from(date)
-            {
-                entry.creation_date = date;
-                entry.has_creation_date = entry.creation_date.0 > 0;
-            }
-            if let Ok(date) = meta.accessed()
-                && let Ok(date) = NtTime::try_from(date)
-            {
-                entry.access_date = date;
-                entry.has_access_date = entry.access_date.0 > 0;
-            }
-        }
-        entry
-    }
-
     /// Returns the name/path of this entry within the archive.
     pub fn name(&self) -> &str {
         self.name.as_ref()

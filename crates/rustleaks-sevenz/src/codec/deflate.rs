@@ -53,9 +53,8 @@ impl<R: Read> Read for DeflateDecoder<R> {
             } else {
                 MZFlush::None
             };
-            // Go's compress/flate reader exposes output at its 32 KiB history-window
-            // flushes. Keeping the same boundary matters because the pinned source
-            // fragmenter observes short reads before applying its safe-boundary peek.
+            // Output stops at each 32 KiB window flush, as in Gitleaks' DEFLATE
+            // reader, so short reads fall where Gitleaks sees them.
             let until_window_flush = DEFLATE_WINDOW_SIZE - self.emitted % DEFLATE_WINDOW_SIZE;
             let output_limit = output.len().min(until_window_flush);
             let result = inflate(

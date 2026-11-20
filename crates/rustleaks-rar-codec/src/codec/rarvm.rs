@@ -1,4 +1,4 @@
-use super::{Error, Result};
+use super::{try_copy_bytes, Error, Result};
 
 const MEMORY_SIZE: usize = 0x40000;
 const MEMORY_MASK: u32 = 0x3ffff;
@@ -10,15 +10,6 @@ const MAX_INSTRUCTIONS: usize = 25_000_000;
 const FLAG_C: u32 = 1;
 const FLAG_Z: u32 = 2;
 const FLAG_S: u32 = 0x8000_0000;
-
-fn try_copy_bytes(input: &[u8], message: &'static str) -> Result<Vec<u8>> {
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(input.len())
-        .map_err(|_| Error::InvalidData(message))?;
-    output.extend_from_slice(input);
-    Ok(output)
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
@@ -168,6 +159,7 @@ impl Program {
         })
     }
 
+    #[cfg(test)]
     pub fn execute(&self, invocation: Invocation<'_>) -> Result<ExecutionResult> {
         self.execute_with_cancel(invocation, &mut || false)
     }
@@ -444,10 +436,6 @@ impl Vm {
             regs,
             flags: 0,
         })
-    }
-
-    fn run(&mut self, program: &Program) -> Result<ExecutionResult> {
-        self.run_with_cancel(program, &mut || false)
     }
 
     fn run_with_cancel(

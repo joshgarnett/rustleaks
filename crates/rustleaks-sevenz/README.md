@@ -1,27 +1,16 @@
 # rustleaks-sevenz
 
-This crate is derived from the
-[`sevenz-rust2` 0.20.2 decoder](https://crates.io/crates/sevenz-rust2)
-and is maintained in-tree under its Apache-2.0 terms. The license text is in
-`LICENSE` next to this file. The fork version is `0.20.2-rustleaks.1`. The
-upstream archive SHA-256 is
-`29225600349ef74beda5a9fffb36ac660a24613c0bde9315d0c49be1d51e9c24` and the
-upstream commit is `424ebdb8fa98b78b8e1c18f73c9add6972fe5496`.
+A safe, bounded 7z decoder for the Rustleaks archive sources. It reads 7z
+archives and decodes members. It has no encoder and no AES support, so
+encrypted members fail as an unsupported method.
 
-The fork keeps only 7z reading. It removes the encoder, writer, file system
-extraction and AES code, so encrypted members fail as an unsupported method.
-It adds checked offsets, fallible allocation, bounded metadata and checks of
-the coder graph. The graph check rejects duplicate stream bindings, invalid
-packed inputs and cycles before any decoder is built. The crate forbids
-unsafe code and follows the workspace Rust 1.95 policy. Its default features
-turn on the Brotli, BZip2, Deflate, LZ4 and Zstandard decoders. BZip2 uses the
-in-tree `rustleaks-bzip2` fork.
+The crate is internal to Rustleaks and is not published. Only
+`rustleaks-sources` uses it, behind its `archives` feature. No type from this
+crate appears in a public API.
 
-The released `sevenz-rust2` 0.22.2 with the needed codecs adds `zstd-sys`, a
-native linked library, so it is not used. The changes above cannot be made
-with an extension trait around the upstream API.
+- Upstream: [`sevenz-rust2`](https://crates.io/crates/sevenz-rust2) 0.20.2.
+- License: Apache-2.0, in `LICENSE`.
 
-The crate is not published. Only `rustleaks-sources` uses it, behind the
-`archives` feature, and no type from this crate appears in a public API. See
-[Dependencies](../../docs/dev/dependencies.md#archive-codec-decision) for the
-decision and the conditions for replacing the fork.
+See [Dependencies](../../docs/dev/dependencies.md#archive-codec-decision) for
+the upstream commit and archive SHA-256, the changes from upstream, the reason
+for the fork and the conditions for replacing it.

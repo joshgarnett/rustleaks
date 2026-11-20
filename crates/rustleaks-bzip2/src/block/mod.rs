@@ -175,7 +175,7 @@ impl Block {
         if read == 0 && !out.is_empty() {
             self.state = State::NotReady;
 
-            let crc = self.hasher.finalyze();
+            let crc = self.hasher.finalize();
             if self.expected_crc != crc {
                 return Err(BlockError::new("bad crc"));
             }
@@ -235,7 +235,7 @@ impl Block {
 
         let huffman_groups = reader
             .read_u8(3)
-            .ok_or_else(|| BlockError::new("huffmann groups truncated"))?;
+            .ok_or_else(|| BlockError::new("huffman groups truncated"))?;
         if huffman_groups < 2 || huffman_groups > 6 {
             return Err(BlockError::new("invalid number of huffman trees"));
         }
@@ -244,11 +244,6 @@ impl Block {
             .read_u16(15)
             .ok_or_else(|| BlockError::new("selectors used truncated"))?;
 
-        #[cfg(feature = "nightly")]
-        let mut selectors_list = ArrayVec::<[u8; 18001]>::new();
-        #[cfg(feature = "nightly")]
-        selectors_list.set_len(usize::from(selectors_used));
-        #[cfg(not(feature = "nightly"))]
         let mut selectors_list = vec![0u8; usize::from(selectors_used)];
 
         let mut move_to_front_decoder = MoveToFrontDecoder::new();
@@ -269,14 +264,14 @@ impl Block {
             *selector_item = move_to_front_decoder.decode(trees);
         }
 
-        // limited in lenght of huffman_used_symbols
+        // limited in length of huffman_used_symbols
         let mut symbols = [0u8; 256];
         symbols[..huffman_used_bitmaps.len()].copy_from_slice(&huffman_used_bitmaps);
         let mut move_to_front_decoder_2 = MoveToFrontDecoder::new_from_symbols(symbols);
 
         let mut huffman_trees = ArrayVec::<[HuffmanTree; 6]>::new();
 
-        let mut lengths = ArrayVec::<[u8; crate::LEN_258]>::new();
+        let mut lengths = ArrayVec::<[u8; crate::MAX_SYMBOLS]>::new();
         lengths.set_len(huffman_used_bitmaps.len() + 2);
 
         for _ in 0..huffman_groups {

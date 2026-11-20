@@ -152,11 +152,7 @@ impl Read for Chunked {
 
 /// The fragments of each 7z member read with chunk-sized reads, by name.
 fn seven_reference(archive: &[u8], prefix: &str) -> Vec<(String, usize, Vec<u8>)> {
-    let mut reader = rustleaks_sevenz::ArchiveReader::new(
-        Cursor::new(archive.to_vec()),
-        rustleaks_sevenz::Password::empty(),
-    )
-    .unwrap();
+    let mut reader = rustleaks_sevenz::ArchiveReader::new(Cursor::new(archive.to_vec())).unwrap();
     let mut members = Vec::new();
     reader
         .for_each_entries(|entry, stream| {

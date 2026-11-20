@@ -1,17 +1,10 @@
 //! Safe, bounded 7z decoding for the `rustleaks-sources` archive feature.
 //!
-//! This in-tree fork retains the portable decompression methods used by the
-//! pinned Go source profile. It contains no encoder, filesystem extraction
-//! helper, or parallel runtime.
-#![cfg_attr(docsrs, feature(doc_cfg))]
+//! The crate decodes only. It has no encoder, no file system extraction and
+//! no worker threads.
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
-#![allow(unexpected_cfgs)]
 
-#[cfg(target_arch = "wasm32")]
-extern crate wasm_bindgen;
-
-mod encryption;
 mod error;
 mod reader;
 
@@ -29,7 +22,6 @@ use std::io::Read;
 
 pub use archive::*;
 pub use block::*;
-pub use encryption::Password;
 pub use error::Error;
 pub use reader::{ArchiveReader, BlockDecoder};
 pub use time::NtTime;
@@ -37,7 +29,6 @@ pub use time::NtTime;
 trait ByteReader {
     fn read_u8(&mut self) -> std::io::Result<u8>;
 
-    #[cfg(feature = "brotli")]
     fn read_u16(&mut self) -> std::io::Result<u16>;
 
     fn read_u32(&mut self) -> std::io::Result<u32>;
@@ -53,7 +44,6 @@ impl<T: Read> ByteReader for T {
         Ok(buf[0])
     }
 
-    #[cfg(feature = "brotli")]
     #[inline(always)]
     fn read_u16(&mut self) -> std::io::Result<u16> {
         let mut buf = [0; 2];

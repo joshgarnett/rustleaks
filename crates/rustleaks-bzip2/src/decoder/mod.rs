@@ -196,10 +196,6 @@ impl Decoder {
                     return Ok(ReadState::NeedsWrite(self.space()));
                 }
 
-                if read == 0 && !buf.is_empty() {
-                    self.eof = true;
-                }
-
                 self.skip_bits = reader.position();
 
                 if block.is_not_ready() {

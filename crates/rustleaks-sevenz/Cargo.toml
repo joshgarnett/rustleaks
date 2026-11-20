@@ -2,23 +2,15 @@
 name = "rustleaks-sevenz"
 version = "0.20.2-rustleaks.1"
 edition = "2024"
-rust-version = "1.95"
+rust-version.workspace = true
 license = "Apache-2.0"
 description = "Safe bounded 7z decoder for rustleaks"
 publish = false
 
 [dependencies]
 brotli-decompressor = { version = "=6.2.0", default-features = false, features = ["std"] }
-bzip2-rs = { package = "rustleaks-bzip2", path = "../rustleaks-bzip2", version = "=0.1.2-rustleaks.1", default-features = false }
 lz4_flex = { version = "=0.14.0", default-features = false, features = ["checked-decode", "frame", "safe-decode", "std"] }
 lzma-rust2 = { version = "=0.25.0", default-features = false, features = ["std"] }
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
+rustleaks-bzip2 = { path = "../rustleaks-bzip2", version = "=0.1.2-rustleaks.1" }
 zstd-zero = { version = "=0.2.1", default-features = false }
-
-[features]
-default = ["brotli", "bzip2", "deflate", "lz4", "zstd"]
-brotli = []
-bzip2 = []
-deflate = []
-lz4 = []
-zstd = []
