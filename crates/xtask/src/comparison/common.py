@@ -1,8 +1,9 @@
 # Comparison harness: shared helpers.
 #
-# The xtask binary embeds every file in this folder and runs them with
-# `python3 -I`. Only the Python 3.9 standard library is used. The modules share
-# one global namespace, so names carry a module prefix where they could clash.
+# xtask (embedded_python.rs) runs embedded_python/support.py and then every
+# file in this folder with `python3 -I -`. Only the Python 3.9 standard library
+# is used. The modules share one global namespace, so names carry a module
+# prefix where they could clash.
 import argparse
 import bisect
 import collections
@@ -27,7 +28,6 @@ import threading
 import time
 
 SCHEMA_TOOLS = 'rustleaks-comparison-tools-v1'
-SCHEMA_WORKLOADS = 'rustleaks-comparison-workloads-v1'
 SCHEMA_RUN = 'rustleaks-comparison-run-v1'
 SCHEMA_SAMPLE = 'rustleaks-comparison-sample-v1'
 SCHEMA_SUMMARY = 'rustleaks-comparison-summary-v1'
@@ -42,20 +42,8 @@ class HarnessError(Exception):
     """A problem with inputs or the environment. The message is printed."""
 
 
-def sha256_bytes(data):
-    return hashlib.sha256(data).hexdigest()
-
-
 def sha256_text(text):
     return sha256_bytes(text.encode('utf-8', 'surrogatepass'))
-
-
-def sha256_file(path):
-    digest = hashlib.sha256()
-    with open(path, 'rb') as handle:
-        for block in iter(lambda: handle.read(1 << 20), b''):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def json_bytes(value, pretty=False):
@@ -138,19 +126,7 @@ def run_text(argv, timeout=20, env=None, cwd=None):
     try:
         out, err = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as error:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except OSError:
-            process.kill()
-        try:
-            process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.stdout.close()
-            process.stderr.close()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
+        stop_process_group(process, 5)
         return None, '', str(error)
     return process.returncode, out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace')
 

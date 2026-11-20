@@ -1,6 +1,7 @@
 # Python 3.9 standard library only. Shared helpers for `cargo xtask
-# compare-workloads`. The Rust glue joins the modules in this directory in a
-# fixed order and runs them with `python3 -I`.
+# compare-workloads`. xtask (embedded_python.rs) runs
+# embedded_python/support.py and then the modules in this folder in a fixed
+# order, in one global namespace, with `python3 -I -`.
 import argparse
 import array
 import base64
@@ -22,11 +23,8 @@ import time
 import zipfile
 import zlib
 
-WORKLOADS_SCHEMA = 'rustleaks-comparison-workloads-v1'
 INVENTORY_SCHEMA = 'rustleaks-comparison-inventory-v1'
 FETCH_SCHEMA = 'rustleaks-comparison-fetch-v1'
-LABEL_KEYS = ('workload', 'path', 'commit', 'start', 'end', 'line', 'secret_sha256',
-              'category', 'label', 'source')
 MANIFEST_DIRECTORY = 'benchmarks/comparison/workloads'
 
 
@@ -36,18 +34,6 @@ class WorkloadError(Exception):
 
 def fail(message):
     raise WorkloadError(message)
-
-
-def sha256_bytes(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def sha256_file(path):
-    digest = hashlib.sha256()
-    with open(path, 'rb') as stream:
-        for block in iter(lambda: stream.read(1 << 20), b''):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def git_blob_sha1(data):
@@ -278,25 +264,6 @@ GIT_NETWORK_FLAGS = ['-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=1
 GIT_STOP_WAIT = 60
 
 
-def stop_process_group(process):
-    # Kill the process and everything it started, then collect it. Pipes that
-    # a process outside the group still holds are closed after a short wait.
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except OSError:
-        process.kill()
-    try:
-        process.communicate(timeout=GIT_STOP_WAIT)
-    except (subprocess.TimeoutExpired, ValueError):
-        for pipe in (process.stdout, process.stderr):
-            if pipe is not None:
-                pipe.close()
-        try:
-            process.wait(timeout=GIT_STOP_WAIT)
-        except subprocess.TimeoutExpired:
-            pass
-
-
 def git_run(git, repository, environment, arguments, stdin=None, timeout=None, stdout=None, network=False):
     if timeout is None:
         timeout = GIT_NETWORK_TIMEOUT if network else GIT_LOCAL_TIMEOUT
@@ -308,10 +275,10 @@ def git_run(git, repository, environment, arguments, stdin=None, timeout=None, s
     try:
         output, errors = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        stop_process_group(process)
+        stop_process_group(process, GIT_STOP_WAIT)
         fail('git %s did not finish in %d seconds' % (' '.join(arguments[:3]), timeout))
     except BaseException:
-        stop_process_group(process)
+        stop_process_group(process, GIT_STOP_WAIT)
         raise
     if process.returncode:
         fail('git %s failed: %s' % (' '.join(arguments[:3]), errors.decode('utf-8', 'replace')[-2000:]))
@@ -346,8 +313,8 @@ def make_label(workload, path, data, start, end, category, label, source='constr
         fail('label range outside its file: %s %d..%d' % (path, start, end))
     value = data[start:end] if secret is None else secret
     record = {'workload': workload, 'path': path, 'commit': commit, 'start': start, 'end': end,
-              'line': data.count(b'\n', 0, start) + 1,
-              'end_line': data.count(b'\n', 0, max(start, end - 1)) + 1,
+              'line': line_of(data, start),
+              'end_line': line_of(data, max(start, end - 1)),
               'secret_sha256': sha256_bytes(value), 'category': category, 'label': label,
               'source': source}
     record.update(extra)

@@ -329,7 +329,7 @@ def run_command(options):
         deviations.append('--runs %d overrides the protocol run counts' % options.runs)
     if options.warmups < 1:
         deviations.append('--warmups %d is below the protocol minimum of 1' % options.warmups)
-    run = {'schema': SCHEMA_RUN, 'run_id': datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ') + '-%04x' % random.getrandbits(16),
+    run = {'schema': SCHEMA_RUN, 'run_id': datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-%04x' % random.getrandbits(16),
            'harness_sha256': HARNESS_SHA256, 'started_at': utc_now(), 'command': 'run',
            'settings': {key: value for key, value in vars(options).items() if key not in ('func',)},
            'protocol_deviations': deviations, 'host': host_details(), 'thermal_before': thermal_state(),

@@ -1,9 +1,7 @@
-# The 19 synthetic workloads of the earlier cross-scanner harness
-# (branch test/cross-scanner-benchmarks, recipe cli-synthetic-v1), kept byte
-# for byte. Rustleaks was tuned on these inputs, so the manifest marks them
+# The 19 synthetic workloads of recipe cli-synthetic-v1. Their bytes must not
+# change. Rustleaks was tuned on these inputs, so the manifest marks them
 # `tuned: true`. Expectations come from construction, never from scanner
-# output. Changes here are limited to the output layout, the entry point,
-# and keeping each planted file's bytes for the labels.
+# output.
 
 
 COMPARISON_FIXTURE_VERSION = 'cli-synthetic-v1'
@@ -294,20 +292,20 @@ def comparison_fixture_git_history(root, git, environment, identity, count):
     return workload
 
 
-LEGACY_IDS = ('json-4mib', 'base64-20000', 'files-100000', 'findings-10000', 'zstd-500',
+TUNED_IDS = ('json-4mib', 'base64-20000', 'files-100000', 'findings-10000', 'zstd-500',
               'git-20000', 'json-768-files', 'invalid-utf8-4mib', 'multilanguage-256kib',
               'empty-stdin', 'tiny-clean-file', 'tiny-positive', 'tiny-clean-tree',
               'mixed-app-16mib', 'mixed-clean-4mib', 'heldout-mixed-8mib',
               'git-bounded-control', 'git-current-tree-control', 'git-staged-control')
-LEGACY_CATEGORIES = {'github-pat': 'vcs-token', 'aws-access-token': 'cloud-key',
+TUNED_CATEGORIES = {'github-pat': 'vcs-token', 'aws-access-token': 'cloud-key',
                      'slack-bot-token': 'chat-token'}
 
 
-def legacy_generate(root, git, scale):
-    # The legacy recipe builds all 19 workloads together because the Git
-    # controls share one history. Existing legacy folders are replaced.
+def tuned_generate(root, git, scale):
+    # The recipe builds all 19 workloads together because the Git
+    # controls share one history. Existing folders of these workloads are replaced.
     root = pathlib.Path(root)
-    for identity in LEGACY_IDS:
+    for identity in TUNED_IDS:
         remove_tree(root / 'synthetic' / identity)
     remove_tree(root / '.control')
     (root / 'synthetic').mkdir(mode=0o700, exist_ok=True)
@@ -321,7 +319,7 @@ def legacy_generate(root, git, scale):
     return {workload['id']: workload for workload in workloads}
 
 
-def legacy_labels(workload):
+def tuned_labels(workload):
     # Convert the prescribed findings into labels. Columns are 1-based and
     # the end column is inclusive, as in the earlier manifest.
     labels = []
@@ -338,7 +336,7 @@ def legacy_labels(workload):
                   'commit': finding['commit'] or None, 'start': start, 'end': end,
                   'line': finding['start_line'], 'end_line': finding['end_line'],
                   'secret_sha256': finding['secret_sha256'],
-                  'category': LEGACY_CATEGORIES[finding['rule_id']], 'label': 'secret',
+                  'category': TUNED_CATEGORIES[finding['rule_id']], 'label': 'secret',
                   'source': 'constructed', 'kind': finding['rule_id']}
         if finding['decoded']:
             record['encoding'] = 'base64'

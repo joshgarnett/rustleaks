@@ -1,8 +1,5 @@
 # Comparison harness: command line.
 
-COMPARE_USAGE = 'cargo xtask compare <run|score|report|self-test> [OPTIONS]'
-
-
 def main_parser():
     parser = argparse.ArgumentParser(prog='cargo xtask compare', description='Cross-scanner comparison harness.')
     commands = parser.add_subparsers(dest='command')
@@ -137,3 +134,6 @@ def comparison_main(arguments):
     except HarnessError as error:
         print('compare: %s' % error, file=sys.stderr)
         return 1
+
+
+sys.exit(comparison_main(sys.argv[1:]))

@@ -12,6 +12,7 @@ mod comparison;
 mod comparison_quality;
 mod comparison_workloads;
 mod docs_check;
+mod embedded_python;
 mod fuzzing;
 mod performance;
 mod release_artifact;

@@ -2,7 +2,6 @@
 
 TOOL_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
-WORKLOAD_FAMILIES = ('real-repo', 'labeled', 'fixtures-matrix', 'synthetic')
 
 
 def manifest_load_tools(path):
@@ -52,8 +51,8 @@ def manifest_load_workloads(paths, cache_root):
     workloads, seen, sources = [], set(), []
     for path in paths:
         data = read_json(path)
-        if not isinstance(data, dict) or data.get('schema') != SCHEMA_WORKLOADS:
-            raise HarnessError('%s: schema must be %s' % (path, SCHEMA_WORKLOADS))
+        if not isinstance(data, dict) or data.get('schema') != WORKLOADS_SCHEMA:
+            raise HarnessError('%s: schema must be %s' % (path, WORKLOADS_SCHEMA))
         entries = data.get('workloads')
         if not isinstance(entries, list):
             raise HarnessError('%s: "workloads" must be a list' % path)
