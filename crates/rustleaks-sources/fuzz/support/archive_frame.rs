@@ -66,7 +66,8 @@ pub fn encode(format: u8, control: u8, payload: &[u8]) -> Vec<u8> {
     framed
 }
 
-/// Preserve the previous one-byte selector's behavior while making its fields explicit.
+/// Frames an unframed seed whose first byte is both the format selector and
+/// the control byte, such as the files in `seeds/archive/`.
 pub fn migrate_legacy(data: &[u8]) -> Option<Vec<u8>> {
     if data.len() > MAX_INPUT_BYTES - (HEADER_BYTES - 1) {
         return None;

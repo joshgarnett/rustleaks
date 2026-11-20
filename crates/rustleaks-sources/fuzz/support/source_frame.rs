@@ -1,9 +1,9 @@
-//! Versioned, independently controlled reader/Git inputs with legacy fallback.
+//! Reader and Git fuzz inputs, with or without a versioned control header.
 //!
-//! Complete `RLR\x01` and `RLG\x01` headers opt into v1. All other inputs,
-//! including short/unknown-version headers, retain the original interpretation.
-//! These complete prefixes reserve a small part of the former arbitrary input
-//! space. Reviewed committed/generated legacy seeds have no prefix collisions.
+//! An input that starts with a complete `RLR\x01` or `RLG\x01` header is a v1
+//! frame with independent controls. Any other input, including a short or
+//! unknown-version header, is unframed: its first byte holds the controls.
+//! No committed or generated unframed seed starts with a v1 header.
 //! Input caps include headers. Deep increases input length, not per-operation
 //! limits. No production API or source limit is changed by these test helpers.
 
@@ -23,7 +23,7 @@ pub const MAX_GIT_PATH_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Encoding {
-    Legacy,
+    Unframed,
     V1,
 }
 
@@ -52,7 +52,8 @@ pub struct ReaderFrame<'a> {
 impl<'a> ReaderFrame<'a> {
     /// V1: magic, chunk, read-ahead, stop, error, pre-cancel, callback-cancel,
     /// little-endian u16 schedule length, schedule, payload. Boolean fields
-    /// use only bit zero; numeric fields keep the legacy per-operation caps.
+    /// use only bit zero; numeric fields keep the per-operation caps of
+    /// unframed inputs.
     pub fn decode(data: &'a [u8], profile: Profile) -> Self {
         let data = bounded(data, profile, "reader_schedule");
         if data.len() >= READER_HEADER_BYTES && data.starts_with(READER_MAGIC) {
@@ -76,7 +77,7 @@ impl<'a> ReaderFrame<'a> {
         }
         let (control, schedule, payload) = campaign_profile::reader_parts(data, profile);
         Self {
-            encoding: Encoding::Legacy,
+            encoding: Encoding::Unframed,
             controls: ReaderControls {
                 chunk_bytes: usize::from(control & 0x3f) + 1,
                 read_ahead_bytes: usize::from(control >> 2) & 0x3f,
@@ -125,7 +126,7 @@ impl<'a> GitFrame<'a> {
         }
         let control = data.first().copied().unwrap_or_default();
         Self {
-            encoding: Encoding::Legacy,
+            encoding: Encoding::Unframed,
             controls: GitControls {
                 files: usize::from(control & 0x1f) + 1,
                 hunks: usize::from(control) + 1,
@@ -143,7 +144,7 @@ fn bounded<'a>(data: &'a [u8], profile: Profile, target: &str) -> &'a [u8] {
 }
 
 /// Synthetic v1 seeds for ordinary campaign initialization and proof tests.
-/// Legacy committed and deep seeds remain unchanged and are still replayed.
+/// The committed and deep seeds are unframed and are replayed as they are.
 pub fn seeds(target: &str) -> Vec<(&'static str, Vec<u8>)> {
     match target {
         "reader_schedule" => reader_seeds(),

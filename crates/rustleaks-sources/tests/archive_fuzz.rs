@@ -1,5 +1,6 @@
 //! Deterministic coverage of the archive fuzz framing and decoder entry points.
 #![cfg(feature = "archives")]
+#![forbid(unsafe_code)]
 
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;

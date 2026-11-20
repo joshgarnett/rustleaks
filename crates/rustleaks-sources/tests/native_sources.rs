@@ -1,4 +1,7 @@
 //! Native reader, directory, symlink, cancellation, and runner coverage.
+#![forbid(unsafe_code)]
+
+mod support;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -17,6 +20,8 @@ use rustleaks_sources::{
     SourceEvent, SourceIssue, SourceIssueKind, SourceReader, SourceRunner, SourceStage,
     SourceTermination,
 };
+
+use support::collect;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -42,27 +47,6 @@ impl Drop for TempTree {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
-}
-
-fn collect(source: &mut dyn Source) -> (Vec<Fragment>, Vec<SourceIssueKind>) {
-    let mut fragments = Vec::new();
-    let mut issues = Vec::new();
-    source
-        .visit(&CancellationToken::new(), &mut |event| {
-            match event {
-                SourceEvent::Fragment { fragment, issue } => {
-                    fragments.push(*fragment);
-                    if let Some(issue) = issue {
-                        issues.push(issue.kind());
-                    }
-                }
-                SourceEvent::Issue(issue) => issues.push(issue.kind()),
-                _ => panic!("unexpected future source event in compatibility test"),
-            }
-            Ok(SourceControl::Continue)
-        })
-        .expect("source visit succeeds");
-    (fragments, issues)
 }
 
 #[derive(Clone)]

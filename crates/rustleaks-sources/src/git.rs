@@ -2712,7 +2712,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_b_text_patch_hunks_preserve_added_bytes_and_no_newline() {
+    fn text_patch_hunks_preserve_added_bytes_and_no_newline() {
         let patch = b"commit 0123456789abcdef\nAuthor: Test User <user@example.com>\nDate:   Tue Nov 2 18:37:53 2021 -0500\n\n    title\n\ndiff --git a/a.txt b/a.txt\nindex 1111111..2222222 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n-old\n+new\n+tail\n\\ No newline at end of file\n";
         let files = parse_patch(
             patch,
@@ -2732,7 +2732,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_c_strict_byte_paths_decode_git_quoting() {
+    fn strict_byte_paths_decode_git_quoting() {
         assert_eq!(
             decode_patch_path(
                 br#""b/tab\tand\303\251.txt""#,
@@ -3081,7 +3081,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_a_exact_argv_preserves_literal_space_splitting() {
+    fn exact_argv_preserves_literal_space_splitting() {
         let source = GitSource::new("repo").mode(GitMode::Log {
             options: Some("--all  foo...".to_owned()),
         });
@@ -3152,7 +3152,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_j_resource_boundaries_fail_closed() {
+    fn resource_boundaries_fail_closed() {
         assert!(GitLimits::new(0, 1, 1, 1).is_err());
         assert!(GitLimits::new(1, 0, 1, 1).is_err());
         assert!(GitLimits::new(1, 1, 0, 1).is_err());
@@ -3367,7 +3367,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_d_metadata_uses_go_unicode_whitespace() {
+    fn metadata_uses_go_unicode_whitespace() {
         let patch = "commit abc\nAuthor: \u{3000}A User\u{00a0} <a@example.com>\nDate:   Tue Nov 2 18:37:53 2021 -0500\n\n    \u{3000}title\u{00a0}\n\ndiff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -0,0 +1 @@\n+x\n";
         let files = parse_patch(
             patch.as_bytes(),
@@ -3461,7 +3461,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_j_cancellation_is_polled_during_large_parser_streams() {
+    fn cancellation_is_polled_during_large_parser_streams() {
         let input = vec![b'x'; 64 * 1024];
         assert!(matches!(
             parse_patch(
@@ -3474,7 +3474,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_k_parser_resource_boundaries_are_exact() {
+    fn parser_resource_boundaries_are_exact() {
         let cancellation = crate::CancellationToken::new();
         assert_eq!(
             decode_patch_path(b"b/abcd", true, 4, &cancellation).expect("exact path"),

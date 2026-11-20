@@ -1,4 +1,5 @@
 //! Isolated native Git subprocess coverage.
+#![forbid(unsafe_code)]
 
 mod support;
 
@@ -6,13 +7,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use rustleaks_core::model::Fragment;
 #[cfg(feature = "archives")]
 use rustleaks_sources::ArchiveOptions;
 use rustleaks_sources::{
     CallbackError, CancellationToken, GitLimits, GitMode, Source, SourceControl, SourceError,
     SourceEvent, SourceIssueKind, SourceStage,
 };
+
+use support::collect;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -59,27 +61,6 @@ fn copy_tree(source: &Path, destination: &Path) {
             fs::copy(entry.path(), target).expect("copy fixture file");
         }
     }
-}
-
-fn collect(source: &mut dyn Source) -> (Vec<Fragment>, Vec<SourceIssueKind>) {
-    let mut fragments = Vec::new();
-    let mut issues = Vec::new();
-    source
-        .visit(&CancellationToken::new(), &mut |event| {
-            match event {
-                SourceEvent::Fragment { fragment, issue } => {
-                    fragments.push(*fragment);
-                    if let Some(issue) = issue {
-                        issues.push(issue.kind());
-                    }
-                }
-                SourceEvent::Issue(issue) => issues.push(issue.kind()),
-                _ => panic!("unexpected future Git source event"),
-            }
-            Ok(SourceControl::Continue)
-        })
-        .expect("Git source succeeds");
-    (fragments, issues)
 }
 
 #[cfg(unix)]
@@ -477,7 +458,7 @@ fn default_log_matches_current_pinned_added_fragment_stream() {
 }
 
 #[test]
-fn matrix_f_diff_and_index_fragments_have_zero_metadata() {
+fn diff_and_index_fragments_have_zero_metadata() {
     let repository = TempRepo::copy_fixture("staged");
     let mut source = support::git_source(repository.path()).mode(GitMode::Diff { staged: true });
     let (fragments, issues) = collect(&mut source);
@@ -520,7 +501,7 @@ fn patch_byte_and_line_ceilings_are_structured_limit_failures() {
 }
 
 #[test]
-fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
+fn callback_failure_remains_distinct_after_git_is_reaped() {
     let repository = TempRepo::copy_fixture("small");
     let mut callbacks = 0;
     assert_eq!(
@@ -543,7 +524,7 @@ fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
 
 #[cfg(feature = "archives")]
 #[test]
-fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
+fn binary_and_history_archives_reuse_safe_archive_expansion() {
     let repository = TempRepo::copy_fixture("archives");
     let mut source = support::git_source(repository.path()).archives(ArchiveOptions::default());
     let (fragments, issues) = collect(&mut source);
@@ -580,7 +561,7 @@ fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
 
 #[cfg(feature = "archives")]
 #[test]
-fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
+fn archive_blob_exact_over_and_early_stop_are_structured() {
     let repository = TempRepo::copy_fixture("archives");
     let commit = "db8789716fc664dbce0ed2d492570e92abf717a5";
     let blob_size = usize::try_from(
