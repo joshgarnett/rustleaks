@@ -12,13 +12,13 @@ use flate2::bufread::GzDecoder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::tooling::{command_output, sha256_file};
+use crate::RELEASE_VERSION;
+use crate::tooling::{command_output, hex_lower, sha256_bytes, sha256_file};
 
 mod corresponding_source;
 mod notices;
 mod runtime_inputs;
 
-const RELEASE_VERSION: &str = "0.1.0-alpha.11";
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
 const BAZEL_VERSION: &str = "9.2.0";
 const RULES_RUST_VERSION: &str = "0.72.0";
@@ -1334,11 +1334,7 @@ fn validate_archive(
             }
             digest.update(&buffer[..read]);
         }
-        let digest = digest.finalize();
-        let mut encoded = String::with_capacity(digest.len() * 2);
-        for byte in digest {
-            write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
-        }
+        let encoded = hex_lower(&digest.finalize());
         if count != member.size || encoded != member.sha256 {
             return Err(format!(
                 "release entry {path} differs from its committed bytes or selected binary"
@@ -1672,15 +1668,6 @@ fn percent_encode(value: &str) -> String {
             encoded.push(char::from(b"0123456789ABCDEF"[usize::from(byte >> 4)]));
             encoded.push(char::from(b"0123456789ABCDEF"[usize::from(byte & 0x0f)]));
         }
-    }
-    encoded
-}
-
-fn sha256_bytes(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
     }
     encoded
 }

@@ -17,6 +17,8 @@ use super::{
 #[path = "performance_investigation/window_matrix.rs"]
 mod window_matrix;
 
+pub(crate) use window_matrix::WORKLOADS as MATRIX_WORKLOADS;
+
 const CONTROLLER: &str = include_str!("performance_investigation.txt");
 const PROFILE_SCOPE: &str = "profile-v1-instrumented-steady-loop";
 const PROFILE_FLAGS: &[&str] = &[

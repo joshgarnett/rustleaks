@@ -28,16 +28,6 @@ const POLICY: &[&str] = &[
     "docs/dev/dependencies.md",
     "MODULE.bazel",
 ];
-const TARGETS: &[&str] = &[
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "x86_64-apple-darwin",
-    "aarch64-apple-darwin",
-    "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
-];
 
 #[allow(clippy::too_many_lines)] // Keep each evidence source beside its validation and final record.
 pub(super) fn snapshot(
@@ -235,7 +225,7 @@ pub(super) fn snapshot(
         return Err("invalid advisory database revision".into());
     }
     Ok(
-        json!({"schema_version":1,"kind":"dependency-comparison-evidence","source_identity":identity,"locks":locks,"policy":policy,"locked_packages":locked_packages,"cargo_graph":graph,"cargo_graph_scope":{"features":"all workspace features","filter_platform":host,"runtime_support_claim":false},"metadata_sha256":sha256_file(&directory.join("graph/stdout.log"))?,"declared_compile_targets":TARGETS,"vet_inventory":vet,"unsafe_packages":unsafe_packages,"unsafe_scope":"selected rustleaks-sources all-features Cargo graph; change signal, not safety proof","advisory_database":{"revision":revision,"observed":"default Cargo advisory database after the existing security gate"},"review_status":"unreviewed-comparison-evidence","evidence_tools":evidence_tools}),
+        json!({"schema_version":1,"kind":"dependency-comparison-evidence","source_identity":identity,"locks":locks,"policy":policy,"locked_packages":locked_packages,"cargo_graph":graph,"cargo_graph_scope":{"features":"all workspace features","filter_platform":host,"runtime_support_claim":false},"metadata_sha256":sha256_file(&directory.join("graph/stdout.log"))?,"declared_compile_targets":crate::REQUIRED_TARGETS,"vet_inventory":vet,"unsafe_packages":unsafe_packages,"unsafe_scope":"selected rustleaks-sources all-features Cargo graph; change signal, not safety proof","advisory_database":{"revision":revision,"observed":"default Cargo advisory database after the existing security gate"},"review_status":"unreviewed-comparison-evidence","evidence_tools":evidence_tools}),
     )
 }
 

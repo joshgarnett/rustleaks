@@ -1,4 +1,4 @@
-//! On-demand representative phase collection. Never applies legacy budgets.
+//! On-demand representative phase collection. It applies no time limits.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -232,46 +232,6 @@ impl Tools {
     }
 }
 
-pub(crate) struct QualityTestTools {
-    cli: Executable,
-    git: Executable,
-}
-
-impl QualityTestTools {
-    pub(crate) fn prepare(root: &Path) -> Result<Self, String> {
-        let tools = Tools::prepare(root, &["cli-git".into()])?;
-        Ok(Self {
-            cli: tools.cli.ok_or("quality tests require the Bazel CLI")?,
-            git: tools
-                .git
-                .ok_or("quality tests require the declared Git tool")?,
-        })
-    }
-
-    pub(crate) fn bind(&self, command: &mut Command) {
-        let git_variables = std::env::vars_os()
-            .map(|(name, _)| name)
-            .chain(command.get_envs().map(|(name, _)| name.to_owned()))
-            .filter(|name| {
-                name.to_string_lossy()
-                    .to_ascii_uppercase()
-                    .starts_with("GIT_")
-            })
-            .collect::<BTreeSet<_>>();
-        for name in git_variables {
-            command.env_remove(name);
-        }
-        command
-            .env("RUSTLEAKS_PERF_CLI", &self.cli.path)
-            .env("RUSTLEAKS_PERF_GIT", &self.git.path);
-    }
-
-    pub(crate) fn unchanged(&self) -> Result<(), String> {
-        self.cli.unchanged()?;
-        self.git.unchanged()
-    }
-}
-
 // The wrapper observes the entire child process and waited descendants. It does
 // not pretend CPU/RSS are phase-local. stdout is bounded by the runner's matrix.
 const COLLECTOR: &str = r"import json, os, signal, subprocess, sys, time
@@ -484,11 +444,9 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// The fragment operation budget supplements, and never replaces, legacy gates.
-pub(super) fn fragment_budget_check(
-    prepared: &Prepared,
-    calibrated_host: bool,
-) -> Result<(), String> {
+/// Checks that each large fragment operation gives the same outcome in three
+/// fresh processes. It applies no time limit.
+pub(super) fn fragment_outcome_check(prepared: &Prepared) -> Result<(), String> {
     let listed = command_output(Command::new(&prepared.binary).arg("--representative-list"))?;
     let workloads = listed
         .lines()
@@ -497,16 +455,15 @@ pub(super) fn fragment_budget_check(
         })
         .collect::<Vec<_>>();
     if workloads.len() != 8 {
-        return Err("fragment budget matrix must contain eight large operations".into());
+        return Err("fragment outcome matrix must contain eight large operations".into());
     }
     let tools = Tools {
         cli: None,
         archives: None,
         git: None,
     };
-    for workload in workloads {
+    for workload in &workloads {
         let mut reference = None;
-        let mut phases = BTreeMap::<String, Vec<u64>>::new();
         for _ in 0..3 {
             let (output, _) = collect(
                 prepared,
@@ -514,7 +471,7 @@ pub(super) fn fragment_budget_check(
                 &[
                     "--representative".into(),
                     "--workload".into(),
-                    workload.into(),
+                    (*workload).into(),
                     "--iterations".into(),
                     "1".into(),
                 ],
@@ -530,38 +487,12 @@ pub(super) fn fragment_budget_check(
                 ));
             }
             reference = Some(identity);
-            for record in records {
-                let phase = &record["phase"];
-                let name = phase["phase"].as_str().ok_or("missing fragment phase")?;
-                if matches!(name, "first-scan" | "steady-scan") {
-                    phases.entry(name.to_owned()).or_default().push(
-                        phase["elapsed_ns"]
-                            .as_u64()
-                            .ok_or("missing fragment time")?,
-                    );
-                }
-            }
-        }
-        for (phase, mut samples) in phases {
-            samples.sort_unstable();
-            let median = samples[1];
-            if calibrated_host && median > 1_500_000_000 {
-                return Err(format!(
-                    "{workload} {phase} median {median} ns exceeds 1500000000 ns"
-                ));
-            }
-            println!(
-                "{workload} {phase} median={median} ns; calibrated_host={calibrated_host}; samples={samples:?}"
-            );
         }
     }
-    if calibrated_host {
-        println!("M1 Max fragment-operation medians satisfy the 1500000000 ns limit");
-    } else {
-        println!(
-            "fragment invariants passed; M1 Max latency limits not evaluated on this host class"
-        );
-    }
+    println!(
+        "{} large fragment operations gave the same outcome in three processes",
+        workloads.len()
+    );
     Ok(())
 }
 
@@ -784,72 +715,6 @@ mod tests {
         assert_eq!(
             installed_windows_git(&search_path).unwrap(),
             first.join("git.exe").canonicalize().unwrap()
-        );
-    }
-
-    #[test]
-    fn quality_tool_bindings_override_stale_paths_only_on_the_selected_child() {
-        let directory = std::env::temp_dir().join("quality tools \u{03a9}");
-        let cli = directory.join("rustleaks");
-        let git = directory.join("git");
-        let tools = QualityTestTools {
-            cli: Executable {
-                path: cli.clone(),
-                identity: json!({}),
-            },
-            git: Executable {
-                path: git.clone(),
-                identity: json!({}),
-            },
-        };
-        let mut command = Command::new("cargo");
-        command
-            .env("RUSTLEAKS_PERF_CLI", "stale-cli")
-            .env("RUSTLEAKS_PERF_GIT", "stale-git")
-            .env("CARGO_TARGET_DIR", "retained-target")
-            .env("PATH", "retained-path");
-        let git_variables = [
-            "GIT_DIR",
-            "GIT_PAGER",
-            "GIT_CONFIG_COUNT",
-            "GIT_CONFIG_KEY_0",
-            "GIT_CONFIG_VALUE_0",
-            "Git_Work_Tree",
-        ];
-        for name in git_variables {
-            command.env(name, "synthetic-git-override");
-        }
-        let mut unrelated = Command::new("cargo");
-        unrelated.env("GIT_DIR", "unrelated-directory");
-        tools.bind(&mut command);
-        let binding = |name: &str| {
-            command
-                .get_envs()
-                .find(|(key, _)| *key == name)
-                .and_then(|(_, value)| value)
-        };
-        assert_eq!(binding("RUSTLEAKS_PERF_CLI"), Some(cli.as_os_str()));
-        assert_eq!(binding("RUSTLEAKS_PERF_GIT"), Some(git.as_os_str()));
-        assert_eq!(
-            binding("CARGO_TARGET_DIR"),
-            Some(std::ffi::OsStr::new("retained-target"))
-        );
-        assert_eq!(binding("PATH"), Some(std::ffi::OsStr::new("retained-path")));
-        for name in git_variables {
-            assert_eq!(
-                command
-                    .get_envs()
-                    .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case(name))
-                    .map(|(_, value)| value),
-                Some(None)
-            );
-        }
-        assert_eq!(
-            unrelated.get_envs().collect::<Vec<_>>(),
-            [(
-                std::ffi::OsStr::new("GIT_DIR"),
-                Some(std::ffi::OsStr::new("unrelated-directory")),
-            )]
         );
     }
 

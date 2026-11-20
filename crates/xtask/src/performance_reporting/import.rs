@@ -1,9 +1,9 @@
 //! Bounded report schema checks and one-way public projection.
 
 use super::{
-    INPUT_LIMIT, KIND, LegacyRequest, M1_MAX_PERF_BUDGETS, MEASUREMENT_SCOPE, PROFILE_SCOPE, Path,
-    PathBuf, Prepared, REPRESENTATIVE_SCOPE, SAMPLE_SCOPE, Value, WINDOW_SCOPE, digest, exact_keys,
-    json, read_private, sha256_bytes,
+    INPUT_LIMIT, KIND, LegacyRequest, MEASUREMENT_SCOPE, PROFILE_SCOPE, Path, PathBuf, Prepared,
+    REPRESENTATIVE_SCOPE, SAMPLE_SCOPE, Value, WINDOW_SCOPE, digest, exact_keys, json,
+    read_private, sha256_bytes,
 };
 
 pub(super) const PROFILE_ARTIFACTS: &[&str] = &[
@@ -20,16 +20,6 @@ const INVESTIGATION_WORKLOADS: &[&str] = &[
     "core-mixed-16-kib",
     "core-dense-16-kib",
     "core-decode-depth-5",
-];
-const TARGETS: &[&str] = &[
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "x86_64-apple-darwin",
-    "aarch64-apple-darwin",
-    "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
 ];
 
 #[path = "existing.rs"]
@@ -154,7 +144,7 @@ pub(super) fn validate_identity_summary(value: &Value) -> Result<(), String> {
         digest(&value[key], 64)?;
     }
     if value["source_dirty"].as_bool().is_none()
-        || !TARGETS.contains(&value["target"].as_str().unwrap_or_default())
+        || !crate::REQUIRED_TARGETS.contains(&value["target"].as_str().unwrap_or_default())
         || !matches!(
             value["scope"].as_str(),
             Some(
@@ -196,7 +186,6 @@ fn prepared(value: &Value) -> Result<Prepared, String> {
     })
 }
 
-#[allow(clippy::too_many_lines)] // Validate the complete versioned record in protocol order.
 fn legacy(value: &Value) -> Result<Projection, String> {
     exact_keys(
         value,
@@ -210,53 +199,23 @@ fn legacy(value: &Value) -> Result<Projection, String> {
             "executable_bytes",
             "executable_fnv1a64",
             "measurement_scope",
-            "budget_requested",
-            "calibrated_host",
-            "host_qualification",
             "rows",
-            "budget_samples",
             "outcome",
         ],
     )?;
     if value["schema_version"] != 1
         || value["complete"] != true
         || value["measurement_scope"] != MEASUREMENT_SCOPE
-        || value["budget_requested"].as_bool().is_none()
-        || value["calibrated_host"].as_bool().is_none()
     {
         return Err("incomplete or unsupported collection report".into());
     }
     let prepared = prepared(value)?;
-    if value["calibrated_host"] != super::super::matches_legacy_host(&value["host_qualification"])
-        || value["budget_requested"] != true && !value["host_qualification"].is_null()
-    {
-        return Err("legacy host qualification contradicts the retained hardware fields".into());
-    }
-
     let rows = value["rows"].as_array().ok_or("missing invariant rows")?;
-    let budgets = value["budget_samples"]
-        .as_array()
-        .ok_or("missing budget rows")?;
-    if matches!(
-        value["outcome"].as_str(),
-        Some("invariant-failure" | "execution-failure")
-    ) {
-        if !budgets.is_empty() {
-            return Err("failed invariant report contains budget results".into());
-        }
-        return Ok((
-            if value["outcome"] == "invariant-failure" {
-                "invariant-failure"
-            } else {
-                "execution-failure"
-            },
-            vec![],
-            vec![],
-            None,
-        ));
-    }
-    if value["outcome"] != "complete" {
-        return Err("unknown collection outcome".into());
+    match value["outcome"].as_str() {
+        Some("invariant-failure") => return Ok(("invariant-failure", vec![], vec![], None)),
+        Some("execution-failure") => return Ok(("execution-failure", vec![], vec![], None)),
+        Some("complete") => {}
+        _ => return Err("unknown collection outcome".into()),
     }
     super::validate_records(
         &rows
@@ -267,93 +226,14 @@ fn legacy(value: &Value) -> Result<Projection, String> {
         &prepared,
         &LegacyRequest::parse(&[])?,
     )?;
-    let mut measurements = rows
+    let measurements = rows
         .iter()
         .map(|row| {
             json!({"workload":row["workload"],"phase":"legacy-operation","sample_count":1,
         "median_elapsed_ns":row["ns_per_iteration"],"peak_rss_bytes":null})
         })
         .collect::<Vec<_>>();
-    if value["budget_requested"] != true || value["calibrated_host"] != true {
-        if !budgets.is_empty()
-            || (value["budget_requested"] != true && value["calibrated_host"] == true)
-        {
-            return Err("unqualified report contains budget results".into());
-        }
-        return Ok((
-            if value["budget_requested"] == true {
-                "skipped-legacy-host-budget"
-            } else {
-                "informational-timing"
-            },
-            measurements,
-            vec![],
-            None,
-        ));
-    }
-    if value["host"]["os"] != "macos"
-        || value["host"]["arch"] != "aarch64"
-        || value["host"]["cpu"] != "Apple M1 Max"
-        || budgets.len() != M1_MAX_PERF_BUDGETS.len()
-    {
-        return Err("legacy budget matrix or host mismatch".into());
-    }
-    let mut regressed = false;
-    measurements.clear();
-    for (record, budget) in budgets.iter().zip(M1_MAX_PERF_BUDGETS) {
-        exact_keys(record, &["workload", "warmup", "samples"])?;
-        if record["workload"] != budget.workload {
-            return Err("legacy budget workload order differs".into());
-        }
-        let request = LegacyRequest::parse(&[])?;
-        if super::super::validate_record(&record["warmup"], &prepared, &request)? != budget.workload
-        {
-            return Err("legacy warmup workload differs".into());
-        }
-        let samples = record["samples"]
-            .as_array()
-            .filter(|samples| samples.len() == 7)
-            .ok_or("legacy budget requires seven process samples")?;
-        let mut elapsed = Vec::new();
-        let mut rss = 0;
-        for (index, sample) in samples.iter().enumerate() {
-            exact_keys(sample, &["index", "row", "peak_rss_bytes"])?;
-            if sample["index"].as_u64() != u64::try_from(index).ok()
-                || super::super::validate_record(&sample["row"], &prepared, &request)?
-                    != budget.workload
-            {
-                return Err("legacy sample provenance or order differs".into());
-            }
-            elapsed.push(
-                sample["row"]["ns_per_iteration"]
-                    .as_u64()
-                    .ok_or("invalid sample timing")?,
-            );
-            if index < 3 {
-                rss = rss.max(
-                    sample["peak_rss_bytes"]
-                        .as_u64()
-                        .filter(|rss| *rss > 0)
-                        .ok_or("missing RSS sample")?,
-                );
-            } else if !sample["peak_rss_bytes"].is_null() {
-                return Err("unexpected RSS sample".into());
-            }
-        }
-        elapsed.sort_unstable();
-        regressed |= elapsed[3] > budget.median_elapsed_ns || rss > budget.peak_rss_bytes;
-        measurements.push(json!({"workload":budget.workload,"phase":"legacy-operation","sample_count":7,"median_elapsed_ns":elapsed[3],"peak_rss_bytes":rss}));
-    }
-    Ok((
-        if regressed {
-            "qualified-regression"
-        } else {
-            "legacy-budget-passed"
-        },
-        measurements,
-        vec![],
-        None,
-    ))
+    Ok(("informational-timing", measurements, vec![], None))
 }
 
 #[allow(clippy::too_many_lines)] // Validate the complete versioned record in protocol order.

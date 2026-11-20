@@ -85,11 +85,11 @@ mod tests {
     use base64::Engine as _;
 
     use super::generate_regex_fuzz_seeds;
-    use crate::tooling::support::TempDir;
+    use crate::tooling::support::ScopedTempDir;
 
     #[test]
     fn preserves_binary_bytes_and_portable_names() {
-        let temporary = TempDir::new("seed test ü").unwrap();
+        let temporary = ScopedTempDir::new("seed test ü").unwrap();
         let requests = temporary.path.join("requests ü.jsonl");
         let output = temporary.path.join("output dir ü");
         fs::write(
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_and_oversized_inputs() {
-        let temporary = TempDir::new("seed-negative").unwrap();
+        let temporary = ScopedTempDir::new("seed-negative").unwrap();
         let requests = temporary.path.join("requests.jsonl");
         let output = temporary.path.join("output");
         fs::write(

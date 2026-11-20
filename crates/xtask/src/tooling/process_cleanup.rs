@@ -253,7 +253,7 @@ mod tests {
         ]);
         assert!(bounded_output(&mut oversized, Instant::now() + Duration::from_secs(5)).is_err());
 
-        let temporary = super::super::TempDir::new("cleanup-observer").unwrap();
+        let temporary = super::super::ScopedTempDir::new("cleanup-observer").unwrap();
         let pid_file = temporary.path.join("observer.pid");
         let mut hung = Command::new("/bin/sh");
         hung.args(["-c", "echo $$ > \"$1\"; exec sleep 30", "cleanup-observer"])
@@ -275,7 +275,7 @@ mod tests {
     fn stopped_parent_and_descendant_with_closed_output_are_cleaned_up() {
         use std::os::unix::process::CommandExt as _;
 
-        let temporary = super::super::TempDir::new("cleanup-closed-output").unwrap();
+        let temporary = super::super::ScopedTempDir::new("cleanup-closed-output").unwrap();
         let mut child = Command::new("/bin/sh")
             .args([
                 "-c",

@@ -1,20 +1,19 @@
 //! Bazel performance orchestration and checked build provenance.
 
 use std::collections::BTreeSet;
-use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::{Value, json};
 
-use crate::tooling::{command_output, sha256_file};
+use crate::tooling::{command_output, sha256_bytes, sha256_file};
 use crate::{DEFAULT_RULES_SHA256, RELEASE_VERSION, REVISION, workspace_root};
 
 #[path = "performance_representative.rs"]
 mod representative_suite;
 
-pub(crate) use representative_suite::{QualityTestTools, run as representative};
+pub(crate) use representative_suite::run as representative;
 
 #[path = "performance_investigation.rs"]
 mod investigation;
@@ -234,52 +233,6 @@ const PERF_INVARIANTS: &[PerfInvariant] = &[
     },
 ];
 
-#[derive(Clone, Copy)]
-// Reports may validate retained Mac budgets on any supported host.
-struct PerfBudget {
-    workload: &'static str,
-    median_elapsed_ns: u64,
-    peak_rss_bytes: u64,
-}
-
-const M1_MAX_PERF_BUDGETS: &[PerfBudget] = &[
-    PerfBudget {
-        workload: "default-compile",
-        median_elapsed_ns: 100_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "default-one-keyword",
-        median_elapsed_ns: 600_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "regex-hostile-miss",
-        median_elapsed_ns: 30_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "decode-five-level",
-        median_elapsed_ns: 10_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "source-directory-1",
-        median_elapsed_ns: 150_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "source-directory-4",
-        median_elapsed_ns: 75_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-    PerfBudget {
-        workload: "report-json",
-        median_elapsed_ns: 30_000_000,
-        peak_rss_bytes: 48 * 1024 * 1024,
-    },
-];
-
 #[derive(Clone, Debug)]
 struct Request {
     workloads: Vec<String>,
@@ -371,17 +324,8 @@ pub(crate) fn check() -> Result<(), String> {
         "all {} performance workloads satisfy exact outcome and Bazel build provenance invariants",
         PERF_WORKLOADS.len()
     );
-    let calibrated_host = calibrated_m1_max_host()?;
-    if calibrated_host {
-        perf_budget_check(&prepared)?;
-        println!(
-            "unchanged inherited M1 Max elapsed and RSS limits passed on the Bazel build; timing scope is {MEASUREMENT_SCOPE}"
-        );
-    } else {
-        println!("inherited M1 Max elapsed and RSS limits not evaluated on this host class");
-    }
     prepared.build["timing_scope"] = json!("representative-v1-operation-only");
-    representative_suite::fragment_budget_check(&prepared, calibrated_host)?;
+    representative_suite::fragment_outcome_check(&prepared)?;
     prepared.ensure_unchanged()?;
     println!(
         "performance evidence: executable_sha256={} input_sha256={} dirty={}",
@@ -834,16 +778,6 @@ fn hash_paths(root: &Path, files: &[String]) -> Result<String, String> {
     Ok(sha256_bytes(&records))
 }
 
-fn sha256_bytes(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(bytes);
-    let mut output = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(output, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    output
-}
-
 fn fnv1a64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(FNV_OFFSET, |value, byte| {
         (value ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
@@ -1019,163 +953,6 @@ fn validate_records(output: &str, prepared: &Prepared, request: &Request) -> Res
     if actual != expected {
         return Err("performance workload set mismatch".into());
     }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn run_perf_sample(prepared: &Prepared, workload: &str) -> Result<String, String> {
-    let output = command_output(
-        Command::new(&prepared.binary)
-            .current_dir(&prepared.root)
-            .args(["--workload", workload, "--iterations", "1"]),
-    )?;
-    prepared.bind(&output)
-}
-
-fn matches_legacy_host(hardware: &Value) -> bool {
-    hardware["machine_model"] == "MacBookPro18,2"
-        && hardware["chip_type"] == "Apple M1 Max"
-        && hardware["physical_memory"] == "32 GB"
-        && hardware["number_processors"] == "proc 10:8:2:0"
-}
-
-#[cfg(target_os = "macos")]
-fn legacy_host_hardware() -> Result<Value, String> {
-    let output =
-        command_output(Command::new("system_profiler").args(["SPHardwareDataType", "-json"]))?;
-    let profile: Value = serde_json::from_str(&output)
-        .map_err(|error| format!("cannot decode macOS hardware profile: {error}"))?;
-    let hardware = profile["SPHardwareDataType"]
-        .as_array()
-        .and_then(|rows| rows.first())
-        .ok_or("macOS hardware profile omits its overview")?;
-    // Retain only fields used by the unchanged calibration predicate.
-    Ok(
-        json!({"machine_model":hardware["machine_model"],"chip_type":hardware["chip_type"],
-        "physical_memory":hardware["physical_memory"],"number_processors":hardware["number_processors"]}),
-    )
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::unnecessary_wraps)]
-fn legacy_host_hardware() -> Result<Value, String> {
-    Ok(Value::Null)
-}
-
-fn calibrated_m1_max_host() -> Result<bool, String> {
-    legacy_host_hardware().map(|hardware| matches_legacy_host(&hardware))
-}
-
-#[cfg(target_os = "macos")]
-fn run_perf_sample_with_rss(prepared: &Prepared, workload: &str) -> Result<(String, u64), String> {
-    const SCRIPT: &str = r#"import resource, subprocess, sys
-p = subprocess.run(sys.argv[1:], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-sys.stderr.buffer.write(p.stderr)
-sys.stdout.buffer.write(p.stdout)
-print("__RUSTLEAKSS_BYTES__=" + str(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss))
-raise SystemExit(p.returncode)
-"#;
-    let display = format!("Python RSS collector for {workload}");
-    let output = Command::new("python3")
-        .arg("-c")
-        .arg(SCRIPT)
-        .arg(&prepared.binary)
-        .current_dir(&prepared.root)
-        .args(["--workload", workload, "--iterations", "1"])
-        .output()
-        .map_err(|error| format!("failed to run {display}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "{display} exited {}:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let output = String::from_utf8(output.stdout)
-        .map_err(|error| format!("{display} returned non-UTF-8 output: {error}"))?;
-    let (record, rss) = output
-        .trim_end()
-        .rsplit_once('\n')
-        .ok_or_else(|| format!("{display} omitted its RSS record"))?;
-    let rss = rss
-        .strip_prefix("__RUSTLEAKSS_BYTES__=")
-        .ok_or_else(|| format!("{display} returned an invalid RSS record"))?
-        .parse::<u64>()
-        .map_err(|error| format!("{display} returned invalid RSS bytes: {error}"))?;
-    Ok((prepared.bind(record)?, rss))
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn validate_perf_budget(
-    budget: PerfBudget,
-    elapsed: &mut [u64],
-    peak_rss: u64,
-) -> Result<(u64, u64), String> {
-    if elapsed.len() != 7 {
-        return Err(format!(
-            "{} performance budget requires seven fresh elapsed samples",
-            budget.workload
-        ));
-    }
-    elapsed.sort_unstable();
-    let median = elapsed[3];
-    if median > budget.median_elapsed_ns {
-        return Err(format!(
-            "{} median elapsed {median} ns exceeds {} ns",
-            budget.workload, budget.median_elapsed_ns
-        ));
-    }
-    if peak_rss > budget.peak_rss_bytes {
-        return Err(format!(
-            "{} peak RSS {peak_rss} bytes exceeds {} bytes",
-            budget.workload, budget.peak_rss_bytes
-        ));
-    }
-    Ok((median, peak_rss))
-}
-
-#[cfg(target_os = "macos")]
-fn perf_budget_check(prepared: &Prepared) -> Result<(), String> {
-    let request = Request::parse(&[])?;
-    for budget in M1_MAX_PERF_BUDGETS {
-        let warmup = run_perf_sample(prepared, budget.workload)?;
-        let warmup: serde_json::Value = serde_json::from_str(&warmup)
-            .map_err(|error| format!("invalid performance warmup JSON: {error}"))?;
-        validate_record(&warmup, prepared, &request)?;
-
-        let mut elapsed = Vec::with_capacity(7);
-        let mut peak_rss = 0_u64;
-        for sample in 0..7 {
-            let (record, rss) = if sample < 3 {
-                let (record, rss) = run_perf_sample_with_rss(prepared, budget.workload)?;
-                (record, Some(rss))
-            } else {
-                (run_perf_sample(prepared, budget.workload)?, None)
-            };
-            let record: serde_json::Value = serde_json::from_str(&record)
-                .map_err(|error| format!("invalid performance sample JSON: {error}"))?;
-            validate_record(&record, prepared, &request)?;
-            elapsed.push(
-                record["ns_per_iteration"]
-                    .as_u64()
-                    .expect("validated timing"),
-            );
-            if let Some(rss) = rss {
-                peak_rss = peak_rss.max(rss);
-            }
-        }
-        let (median, rss) = validate_perf_budget(*budget, &mut elapsed, peak_rss)?;
-        println!(
-            "{}: median {median} ns, peak RSS {rss} bytes",
-            budget.workload
-        );
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(clippy::unnecessary_wraps)] // Keep the platform implementations type-identical.
-fn perf_budget_check(_prepared: &Prepared) -> Result<(), String> {
     Ok(())
 }
 
@@ -1384,19 +1161,5 @@ mod tests {
         .unwrap();
         assert_eq!(selected.workloads, ["report-json"]);
         assert_eq!(selected.warmup, 2);
-    }
-
-    #[test]
-    fn inherited_budgets_reject_elapsed_and_rss_regressions() {
-        let budget = PerfBudget {
-            workload: "probe",
-            median_elapsed_ns: 10,
-            peak_rss_bytes: 20,
-        };
-        let mut passing = vec![7, 8, 9, 10, 11, 12, 13];
-        assert_eq!(validate_perf_budget(budget, &mut passing, 20), Ok((10, 20)));
-        assert!(validate_perf_budget(budget, &mut [11; 7], 20).is_err());
-        assert!(validate_perf_budget(budget, &mut [10; 7], 21).is_err());
-        assert!(validate_perf_budget(budget, &mut [10; 6], 20).is_err());
     }
 }

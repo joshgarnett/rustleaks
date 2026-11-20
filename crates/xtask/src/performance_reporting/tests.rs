@@ -22,20 +22,7 @@ fn fixture() -> Value {
     }).collect::<Vec<_>>();
     json!({"schema_version":1,"kind":KIND,"complete":true,"source":source,"build":build,
         "host":host,"executable_bytes":1024,"executable_fnv1a64":"0123456789abcdef",
-        "measurement_scope":MEASUREMENT_SCOPE,"budget_requested":false,"calibrated_host":false,
-        "host_qualification":null,"rows":rows,"budget_samples":[],"outcome":"complete"})
-}
-
-fn with_budgets() -> Value {
-    let mut value = fixture();
-    value["budget_requested"] = json!(true);
-    value["calibrated_host"] = json!(true);
-    value["host_qualification"] = json!({"machine_model":"MacBookPro18,2","chip_type":"Apple M1 Max","physical_memory":"32 GB","number_processors":"proc 10:8:2:0"});
-    value["budget_samples"] = json!(M1_MAX_PERF_BUDGETS.iter().map(|budget| {
-        let row = value["rows"].as_array().unwrap().iter().find(|row| row["workload"]==budget.workload).unwrap();
-        json!({"workload":budget.workload,"warmup":row,"samples":(0..7).map(|index| json!({"index":index,"row":row,"peak_rss_bytes":if index<3 {Some(1024)} else {None}})).collect::<Vec<_>>()})
-    }).collect::<Vec<_>>());
-    value
+        "measurement_scope":MEASUREMENT_SCOPE,"rows":rows,"outcome":"complete"})
 }
 
 fn summary(value: &Value) -> Result<Value, String> {
@@ -43,39 +30,18 @@ fn summary(value: &Value) -> Result<Value, String> {
 }
 
 #[test]
-fn complete_invariants_are_informational_and_unknown_hosts_skip_requested_budgets() {
+fn complete_invariants_are_informational() {
     let mut value = fixture();
     let result = summary(&value).unwrap();
     assert_eq!(result["status"], "informational-timing");
     assert_eq!(result["verification"], "report-consistency-only");
     assert_eq!(result["release_gate"], false);
     validate_public_summary(&result).unwrap();
-    value["budget_requested"] = json!(true);
-    assert_eq!(
-        summary(&value).unwrap()["status"],
-        "skipped-legacy-host-budget"
-    );
+    let mut retired = value.clone();
+    retired["budget_requested"] = json!(true);
+    assert!(summary(&retired).is_err());
     value["outcome"] = json!("invariant-failure");
     assert_eq!(summary(&value).unwrap()["status"], "invariant-failure");
-}
-
-#[test]
-fn inherited_budget_decisions_preserve_median_and_rss_controls() {
-    let mut value = with_budgets();
-    assert_eq!(summary(&value).unwrap()["status"], "legacy-budget-passed");
-    // A single slow sample cannot change a seven-process median.
-    for index in 0..3 {
-        value["budget_samples"][0]["samples"][index]["row"]["elapsed_ns"] = json!(1_000_000_000);
-        value["budget_samples"][0]["samples"][index]["row"]["ns_per_iteration"] =
-            json!(1_000_000_000);
-    }
-    assert_eq!(summary(&value).unwrap()["status"], "legacy-budget-passed");
-    value["budget_samples"][0]["samples"][3]["row"]["elapsed_ns"] = json!(1_000_000_000);
-    value["budget_samples"][0]["samples"][3]["row"]["ns_per_iteration"] = json!(1_000_000_000);
-    assert_eq!(summary(&value).unwrap()["status"], "qualified-regression");
-    let mut value = with_budgets();
-    value["budget_samples"][0]["samples"][0]["peak_rss_bytes"] = json!(100_000_000);
-    assert_eq!(summary(&value).unwrap()["status"], "qualified-regression");
 }
 
 #[test]
@@ -107,15 +73,6 @@ fn incomplete_unknown_and_forged_collection_records_fail_closed() {
     let mut value = fixture();
     let row = value["rows"][0].clone();
     value["rows"].as_array_mut().unwrap().push(row);
-    assert!(summary(&value).is_err());
-    let mut value = with_budgets();
-    value["budget_samples"][0]["samples"]
-        .as_array_mut()
-        .unwrap()
-        .pop();
-    assert!(summary(&value).is_err());
-    let mut value = with_budgets();
-    value["budget_samples"][0]["samples"][2]["peak_rss_bytes"] = Value::Null;
     assert!(summary(&value).is_err());
 }
 
@@ -164,8 +121,9 @@ fn options_reject_missing_values_duplicate_or_mixed_modes() {
             "/private/tmp/output",
             "--input",
             "/private/tmp/input",
-            "--legacy-budget",
+            "--collect-worker",
         ],
+        vec!["--output", "/private/tmp/output", "--legacy-budget"],
     ] {
         assert!(Request::parse(&args.iter().map(ToString::to_string).collect::<Vec<_>>()).is_err());
     }
@@ -277,10 +235,10 @@ fn private_import_checks_complete_artifacts_permissions_missing_and_changed_file
 }
 
 #[test]
-fn structured_native_failure_and_exact_host_qualification_are_preserved() {
+fn structured_native_failure_is_preserved() {
     assert_eq!(
         runner_failure(
-            "Python RSS collector for default-compile exited exit status: 2:\nrustleaks-perf-status: invariant-failure-v1\nprivate details"
+            "performance runner exited exit status: 2:\nrustleaks-perf-status: invariant-failure-v1\nprivate details"
         ),
         "invariant-failure"
     );
@@ -295,16 +253,6 @@ fn structured_native_failure_and_exact_host_qualification_are_preserved() {
     let mut value = fixture();
     value["outcome"] = json!("execution-failure");
     assert_eq!(summary(&value).unwrap()["status"], "execution-failure");
-    for field in [
-        "machine_model",
-        "chip_type",
-        "physical_memory",
-        "number_processors",
-    ] {
-        let mut value = with_budgets();
-        value["host_qualification"][field] = json!("different");
-        assert!(summary(&value).is_err());
-    }
     let mut value = profile_fixture();
     value["result"]["ready"]["provenance"]["build"]["executable_sha256"] = json!("f".repeat(64));
     assert!(summary(&value).is_err());

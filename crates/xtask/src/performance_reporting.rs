@@ -13,8 +13,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::{
-    M1_MAX_PERF_BUDGETS, MEASUREMENT_SCOPE, Prepared, Request as LegacyRequest, prepare,
-    sha256_bytes, validate_records, workspace_root,
+    MEASUREMENT_SCOPE, Prepared, Request as LegacyRequest, prepare, sha256_bytes, validate_records,
+    workspace_root,
 };
 use crate::fuzzing::private;
 
@@ -35,7 +35,6 @@ const PROFILE_SCOPE: &str = "profile-v1-instrumented-steady-loop";
 struct Request {
     output: PathBuf,
     input: Option<PathBuf>,
-    legacy_budget: bool,
     worker: bool,
 }
 
@@ -43,7 +42,6 @@ impl Request {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut output = None;
         let mut input = None;
-        let mut legacy_budget = false;
         let mut worker = false;
         let mut seen = BTreeSet::new();
         let mut args = arguments.iter();
@@ -60,12 +58,11 @@ impl Request {
                 "--input" => {
                     input = Some(PathBuf::from(args.next().ok_or("--input requires a path")?));
                 }
-                "--legacy-budget" => legacy_budget = true,
                 "--collect-worker" => worker = true,
                 _ => return Err("unknown performance report option".into()),
             }
         }
-        if input.is_some() && (legacy_budget || worker) {
+        if input.is_some() && worker {
             return Err("import cannot request native collection".into());
         }
         let output = output.ok_or("performance report requires --output")?;
@@ -75,7 +72,6 @@ impl Request {
         Ok(Self {
             output,
             input,
-            legacy_budget,
             worker,
         })
     }
@@ -100,7 +96,7 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
     if request.worker {
         private::checked_path(&request.output).map_err(|_| "invalid private worker directory")?;
         owner_only(&request.output, true)?;
-        return collect(&request.output, request.legacy_budget);
+        return collect(&request.output);
     }
     let parent = request.output.parent().ok_or("missing output parent")?;
     private::checked_path(parent)
@@ -115,7 +111,7 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             let summary = import::summarize(&value, input.parent(), "report-consistency-only")?;
             Ok((summary, bytes))
         } else {
-            collect_supervised(&request.output, request.legacy_budget)?;
+            collect_supervised(&request.output)?;
             let bytes = read_private(&request.output.join("collection.json"), INPUT_LIMIT)?;
             let value: Value =
                 serde_json::from_slice(&bytes).map_err(|_| "invalid private collection JSON")?;
@@ -144,14 +140,14 @@ fn finish(output: &Path, result: Result<(Value, Vec<u8>), String>) -> Result<(),
     );
     if matches!(
         summary["status"].as_str(),
-        Some("invariant-failure" | "qualified-regression" | "execution-failure")
+        Some("invariant-failure" | "execution-failure")
     ) {
         return Err("performance report recorded a failure; inspect private evidence".into());
     }
     Ok(())
 }
 
-fn collect_supervised(output: &Path, legacy_budget: bool) -> Result<(), String> {
+fn collect_supervised(output: &Path) -> Result<(), String> {
     use crate::fuzzing::process::{Outcome, run_with_files};
     let stdout = private::file(&output.join("collector-stdout.txt"))?;
     let stderr = private::file(&output.join("collector-stderr.txt"))?;
@@ -160,9 +156,6 @@ fn collect_supervised(output: &Path, legacy_budget: bool) -> Result<(), String> 
     command
         .args(["perf", "report", "--collect-worker", "--output"])
         .arg(output);
-    if legacy_budget {
-        command.arg("--legacy-budget");
-    }
     let monitor = || {
         let mut count = 0;
         for entry in fs::read_dir(output).map_err(|_| "cannot inspect collector files")? {
@@ -208,15 +201,14 @@ fn runner_failure(stderr: &str) -> &'static str {
     }
 }
 
-fn collect(output: &Path, legacy_budget: bool) -> Result<(), String> {
+fn collect(output: &Path) -> Result<(), String> {
     // The supervising parent bounds preparation and the entire process tree.
     let prepared = prepare(&workspace_root()?)?;
     let request = LegacyRequest::parse(&[])?;
     let mut record = json!({"schema_version":1,"kind":KIND,"complete":false,
         "source":prepared.source,"build":prepared.build,"host":prepared.host,
         "executable_bytes":prepared.executable_bytes,"executable_fnv1a64":prepared.executable_fnv1a64,
-        "measurement_scope":MEASUREMENT_SCOPE,"budget_requested":legacy_budget,
-        "calibrated_host":false,"host_qualification":null,"rows":[],"budget_samples":[],"outcome":"execution-failure"});
+        "measurement_scope":MEASUREMENT_SCOPE,"rows":[],"outcome":"execution-failure"});
     let runner_stdout = output.join("runner.jsonl");
     let runner_stderr = output.join("runner-stderr.txt");
     let child = Command::new(&prepared.binary)
@@ -253,65 +245,10 @@ fn collect(output: &Path, legacy_budget: bool) -> Result<(), String> {
     };
     if result.is_ok() {
         record["outcome"] = json!("complete");
-        if legacy_budget {
-            let hardware = super::legacy_host_hardware()?;
-            let calibrated = super::matches_legacy_host(&hardware);
-            record["host_qualification"] = hardware;
-            record["calibrated_host"] = json!(calibrated);
-            if calibrated {
-                match collect_budgets(&prepared, output) {
-                    Ok(budgets) => record["budget_samples"] = budgets,
-                    Err(error) => {
-                        private::write(&output.join("budget-failure.txt"), error.as_bytes())?;
-                        record["outcome"] = json!(runner_failure(&error));
-                    }
-                }
-            }
-        }
     }
     prepared.ensure_unchanged()?;
     record["complete"] = json!(true);
     private::json(&output.join("collection.json"), &record)
-}
-
-#[cfg(target_os = "macos")]
-fn collect_budgets(prepared: &Prepared, output: &Path) -> Result<Value, String> {
-    use std::io::Write as _;
-    let mut journal = private::file(&output.join("budget-samples.jsonl"))?;
-    let request = LegacyRequest::parse(&[])?;
-    let mut budgets = Vec::new();
-    for budget in M1_MAX_PERF_BUDGETS {
-        let warmup_raw = super::run_perf_sample(prepared, budget.workload)?;
-        writeln!(
-            journal,
-            "{}",
-            json!({"kind":"warmup","workload":budget.workload,"raw":warmup_raw})
-        )
-        .map_err(|_| "cannot retain budget warmup")?;
-        let warmup: Value =
-            serde_json::from_str(&warmup_raw).map_err(|_| "invalid budget warmup")?;
-        super::validate_record(&warmup, prepared, &request)?;
-        let mut samples = Vec::new();
-        for index in 0..7 {
-            let (raw, rss) = if index < 3 {
-                let (raw, rss) = super::run_perf_sample_with_rss(prepared, budget.workload)?;
-                (raw, Some(rss))
-            } else {
-                (super::run_perf_sample(prepared, budget.workload)?, None)
-            };
-            writeln!(journal, "{}", json!({"kind":"sample","workload":budget.workload,"index":index,"peak_rss_bytes":rss,"raw":raw})).map_err(|_| "cannot retain budget sample")?;
-            let row: Value = serde_json::from_str(&raw).map_err(|_| "invalid budget sample")?;
-            super::validate_record(&row, prepared, &request)?;
-            samples.push(json!({"index":index,"row":row,"peak_rss_bytes":rss}));
-        }
-        budgets.push(json!({"workload":budget.workload,"warmup":warmup,"samples":samples}));
-    }
-    Ok(json!(budgets))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn collect_budgets(_prepared: &Prepared, _output: &Path) -> Result<Value, String> {
-    Err("legacy budget collection is unavailable on this host".into())
 }
 
 fn owner_only(path: &Path, directory: bool) -> Result<(), String> {
@@ -444,9 +381,6 @@ fn validate_public_summary(value: &Value) -> Result<(), String> {
         Some(
             "invariant-failure"
                 | "execution-failure"
-                | "qualified-regression"
-                | "legacy-budget-passed"
-                | "skipped-legacy-host-budget"
                 | "informational-timing"
                 | "unavailable-profile-tool"
                 | "complete-profile"

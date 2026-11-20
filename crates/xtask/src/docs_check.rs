@@ -2,7 +2,9 @@
 //!
 //! The check covers prose style, local Markdown links, Rust documentation
 //! comments, package descriptions, documented commands, and planning or
-//! tracker files that belong outside the repository. Every documentation
+//! tracker files that belong outside the repository. It also checks the
+//! commands that workflows and the justfile run, and that automation does not
+//! restore the retired Go oracle. Every documentation
 //! problem is reported before the check fails. Long sentences are reported as
 //! warnings and do not fail the check. Workflow and I/O errors stop the check
 //! early.
@@ -116,6 +118,7 @@ pub(crate) fn run(root: &Path) -> Result<(), String> {
         return Err("documentation check found no maintained prose surfaces".into());
     }
     let mut problems = tracker_problems(&tree);
+    problems.extend(automation_problems(root, &justfile, &recipes)?);
     let mut warnings = Vec::new();
     let mut prose_files = 0_usize;
     let mut rust_doc_surfaces = 0_usize;
@@ -1116,30 +1119,37 @@ fn backtick_run(bytes: &[u8], start: usize) -> usize {
 
 /// Validates `just`, `cargo xtask`, and Bazel xtask commands found in code.
 fn command_problems(contents: &str, recipes: &BTreeSet<String>) -> Vec<String> {
+    code_snippets(contents)
+        .iter()
+        .flat_map(|snippet| snippet_command_problems(snippet, recipes))
+        .collect()
+}
+
+/// Returns problems for `just` recipes and xtask commands named in one piece of
+/// shell code.
+fn snippet_command_problems(snippet: &str, recipes: &BTreeSet<String>) -> Vec<String> {
     let mut problems = Vec::new();
-    for snippet in code_snippets(contents) {
-        let tokens = command_tokens(&snippet);
-        for (index, token) in tokens.iter().enumerate() {
-            let rest = &tokens[index + 1..];
-            match *token {
-                "just" => {
-                    if let Some(recipe) = rest.first().copied().filter(|word| is_literal(word))
-                        && !recipes.contains(recipe)
-                    {
-                        problems.push(format!("names unknown just recipe `just {recipe}`"));
-                    }
+    let tokens = command_tokens(snippet);
+    for (index, token) in tokens.iter().enumerate() {
+        let rest = &tokens[index + 1..];
+        match *token {
+            "just" => {
+                if let Some(recipe) = rest.first().copied().filter(|word| is_literal(word))
+                    && !recipes.contains(recipe)
+                {
+                    problems.push(format!("names unknown just recipe `just {recipe}`"));
                 }
-                "cargo" if rest.first() == Some(&"xtask") => {
-                    problems.extend(xtask_problems("cargo xtask", &rest[1..]));
-                }
-                "//crates/xtask:xtask" | "@//crates/xtask:xtask" if rest.first() == Some(&"--") => {
-                    problems.extend(xtask_problems(
-                        "bazelisk run //crates/xtask:xtask --",
-                        &rest[1..],
-                    ));
-                }
-                _ => {}
             }
+            "cargo" if rest.first() == Some(&"xtask") => {
+                problems.extend(xtask_problems("cargo xtask", &rest[1..]));
+            }
+            "//crates/xtask:xtask" | "@//crates/xtask:xtask" if rest.first() == Some(&"--") => {
+                problems.extend(xtask_problems(
+                    "bazelisk run //crates/xtask:xtask --",
+                    &rest[1..],
+                ));
+            }
+            _ => {}
         }
     }
     problems
@@ -1202,6 +1212,71 @@ fn xtask_problems(prefix: &str, arguments: &[&str]) -> Vec<String> {
     }
 }
 
+/// Text that automation must not contain. The live Go oracle is retired, and
+/// expected values must never come from a fresh Go run, so automation must not
+/// install or run Go or check out the upstream Gitleaks repository.
+const RETIRED_GO_TEXT: &[&str] = &[
+    "actions/setup-go@",
+    "repository: gitleaks/gitleaks",
+    ".go-version",
+    "package-ecosystem: gomod",
+];
+
+/// Go subcommands that automation must not run. See [`RETIRED_GO_TEXT`].
+const RETIRED_GO_COMMANDS: &[&str] = &["build", "env", "install", "run", "test", "version"];
+
+/// Checks the workflows, the justfile and the Dependabot configuration: every
+/// `just` recipe and xtask command they run must exist, and none may restore Go.
+fn automation_problems(
+    root: &Path,
+    justfile: &str,
+    recipes: &BTreeSet<String>,
+) -> Result<Vec<String>, String> {
+    let mut files = vec![("justfile".to_owned(), justfile.to_owned())];
+    let workflows = root.join(".github/workflows");
+    let mut paths = fs::read_dir(&workflows)
+        .map_err(|error| format!("cannot read {}: {error}", workflows.display()))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("cannot read workflow entry: {error}"))?;
+    paths.retain(|path| path.extension().is_some_and(|extension| extension == "yml"));
+    paths.push(root.join(".github/dependabot.yml"));
+    paths.sort();
+    for path in paths {
+        let contents = fs::read_to_string(&path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        files.push((display(relative), contents));
+    }
+    let mut problems = Vec::new();
+    for (path, contents) in &files {
+        let found = snippet_command_problems(contents, recipes)
+            .into_iter()
+            .chain(retired_go_problems(contents));
+        problems.extend(found.map(|problem| format!("{path}: {problem}")));
+    }
+    if root.join(".go-version").exists() {
+        problems.push(".go-version: the retired Go toolchain pin must not be restored".into());
+    }
+    Ok(problems)
+}
+
+/// Returns problems for text that would restore the retired Go oracle.
+fn retired_go_problems(contents: &str) -> Vec<String> {
+    let mut problems = RETIRED_GO_TEXT
+        .iter()
+        .filter(|text| contents.contains(**text))
+        .map(|text| format!("restores retired Go tooling `{text}`"))
+        .collect::<Vec<_>>();
+    let words = contents.split_whitespace().collect::<Vec<_>>();
+    for pair in words.windows(2) {
+        if pair[0] == "go" && RETIRED_GO_COMMANDS.contains(&pair[1]) {
+            problems.push(format!("restores a host Go command `go {}`", pair[1]));
+        }
+    }
+    problems
+}
+
 /// Formats a relative path with forward slashes on every platform.
 fn display(relative: &Path) -> String {
     relative
@@ -1218,8 +1293,9 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        Checked, Findings, check_document, command_problems, is_command_check_exempt,
-        justfile_recipes, manifest_problems, tracker_problems, walk,
+        Checked, Findings, automation_problems, check_document, command_problems,
+        is_command_check_exempt, justfile_recipes, manifest_problems, retired_go_problems,
+        snippet_command_problems, tracker_problems, walk,
     };
     use crate::ScopedTempDir;
 
@@ -1686,8 +1762,8 @@ mod tests {
             .is_empty()
         );
         assert_eq!(
-            command_problems("`cargo xtask oracle-check`\n", &recipes),
-            ["names unknown xtask command `cargo xtask oracle-check`"]
+            command_problems("`cargo xtask nope-check`\n", &recipes),
+            ["names unknown xtask command `cargo xtask nope-check`"]
         );
         assert_eq!(
             command_problems("`cargo xtask perf compare`\n", &recipes),
@@ -1703,8 +1779,8 @@ mod tests {
         );
         assert!(command_problems("`cargo xtask generate <target>`\n", &recipes).is_empty());
         assert_eq!(
-            command_problems("`cargo xtask generate oracle-corpus`\n", &recipes),
-            ["names unknown xtask generate target `cargo xtask generate oracle-corpus`"]
+            command_problems("`cargo xtask generate nope-corpus`\n", &recipes),
+            ["names unknown xtask generate target `cargo xtask generate nope-corpus`"]
         );
     }
 
@@ -1718,7 +1794,7 @@ mod tests {
             "compat/fixtures/upstream/notes.md"
         )));
         assert!(!is_command_check_exempt(Path::new("docs/TESTING.md")));
-        let retired = "Run `cargo xtask oracle-check`.\n";
+        let retired = "Run `cargo xtask nope-check`.\n";
         assert!(problems("compat/allowlist-corpus/README.md", retired).is_empty());
         assert!(problems("CHANGELOG.md", retired).is_empty());
         assert_eq!(problems("docs/TESTING.md", retired).len(), 1);
@@ -1772,6 +1848,26 @@ mod tests {
             tree.documents
                 .iter()
                 .all(|path| !path.starts_with(".tmp") && !path.starts_with("target"))
+        );
+    }
+
+    #[test]
+    fn automation_commands_and_retired_go_are_checked() {
+        let recipes = recipes();
+        let workflow = "      - run: cargo xtask nope-check\n      - run: just check\n";
+        assert_eq!(
+            snippet_command_problems(workflow, &recipes),
+            ["names unknown xtask command `cargo xtask nope-check`"]
+        );
+        assert!(retired_go_problems("run: bazelisk test //:ci\n").is_empty());
+        assert_eq!(retired_go_problems("run: go version\n").len(), 1);
+        assert_eq!(retired_go_problems("uses: actions/setup-go@v5\n").len(), 1);
+        let root = crate::workspace_root().unwrap();
+        let justfile = fs::read_to_string(root.join("justfile")).unwrap();
+        let recipes = justfile_recipes(&justfile);
+        assert_eq!(
+            automation_problems(&root, &justfile, &recipes).unwrap(),
+            Vec::<String>::new()
         );
     }
 }

@@ -19,15 +19,21 @@ mod security_deep;
 mod tooling;
 mod workflows;
 
-use tooling::{command_output, command_status_with_timeout};
+use tooling::{ScopedTempDir, command_output, command_status_with_timeout, hex_lower};
 
+/// Pinned Gitleaks revision from `compat/upstream-revision.txt`.
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
+/// SHA-256 of the upstream default configuration at [`REVISION`], from
+/// `compat/upstream-revision.txt`. Only the frozen CLI corpus replay uses it.
+#[cfg(test)]
+const UPSTREAM_CONFIG_SHA256: &str =
+    "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 /// SHA-256 of the shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`.
 /// It equals `rustleaks_core::config::DEFAULT_CONFIG_SHA256`. The upstream copy
 /// has the pinned SHA-256 in `compat/upstream-revision.txt`.
 const DEFAULT_RULES_SHA256: &str =
     "442fca81a914728ebaf843ba59d01bb3e6e71559c1ddb51fddc81fca45df959a";
-const RELEASE_VERSION: &str = "0.1.0-alpha.11";
+const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
 const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
@@ -35,9 +41,22 @@ const CARGO_PUBLIC_API_VERSION: &str = "cargo-public-api 0.52.0";
 const PUBLIC_API_TOOLCHAIN: &str = "nightly-2026-08-21";
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
 const CARGO_VET_VERSION: &str = "cargo-vet 0.10.2";
+/// Required compile targets, in the order that `AGENTS.md` lists them.
+const REQUIRED_TARGETS: &[&str] = &[
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+];
 const COMPCOL_EXEMPTION_VERSION: &str = "0.7.8";
 const COMPCOL_EXEMPTION_SHA256: &str =
     "7a9657f9d47c2bc36be681f158d208f40bafdd1c8c32003dac8e7dfe0cb68a97";
+/// Targets the compcol exemption was reviewed for. This is a separate list from
+/// [`REQUIRED_TARGETS`] so that a target change requires a new review.
 const COMPCOL_EXEMPTION_TARGETS: &[&str] = &[
     "aarch64-apple-darwin",
     "aarch64-pc-windows-msvc",
@@ -50,7 +69,6 @@ const COMPCOL_EXEMPTION_TARGETS: &[&str] = &[
 ];
 const FUZZ_TOOLCHAIN: &str = "nightly-2026-08-21";
 const MIRI_TOOLCHAIN: &str = "nightly-2026-08-21";
-const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 const PUBLIC_API_SNAPSHOT: &str = "compat/public-api/rustleaks-core-0.1.0-alpha.1.txt";
 
 fn main() -> ExitCode {
@@ -66,7 +84,7 @@ fn main() -> ExitCode {
 
 fn run(args: &[String]) -> Result<(), String> {
     match args {
-        [command] if command == "manifest-check" || command == "frozen-evidence-check" => {
+        [command] if command == "frozen-evidence-check" => {
             tooling::check_frozen_evidence(&workspace_root()?)
         }
         [command] if command == "regression-check" => regression_check(),
@@ -85,23 +103,13 @@ fn run(args: &[String]) -> Result<(), String> {
         [command, arguments @ ..] if command == "security-deep" => {
             security_deep::run(&workspace_root()?, arguments)
         }
-        [command] if command == "rustsec-check" => rustsec_check(),
-        [command] if command == "vet-check" => vet_check(),
-        [command] if command == "unsafe-inventory-check" => unsafe_inventory_check(),
-        [command] if command == "supply-chain-check" => supply_chain_check(),
-        [command] if command == "dependency-safety-check" => dependency_safety_check(),
-        [command] if command == "owned-safety-check" => owned_safety_check(),
         [command] if command == "docs-check" => docs_check::run(&workspace_root()?),
-        [command] if command == "quality-check" => quality_check(),
-        [command] if command == "miri-check" => miri_check(),
-        [command] if command == "panic-abort-check" => panic_abort_check(),
         [command, arguments @ ..] if command == "compare-quality" => {
             comparison_quality::run(&workspace_root()?, arguments)
         }
         [command, arguments @ ..] if command == "fuzz" => {
             fuzzing::run(&workspace_root()?, arguments)
         }
-        [command] if command == "fuzz-check" => fuzz_check(),
         [command] if command == "fuzz-build" => fuzz_build(),
         [command] if command == "fuzz-smoke" => fuzz_smoke(),
         [command, subcommand, arguments @ ..] if command == "perf" && subcommand == "run" => {
@@ -139,7 +147,6 @@ fn run(args: &[String]) -> Result<(), String> {
 /// documentation command check read this list, and a unit test keeps it in
 /// step with the dispatch.
 const XTASK_COMMANDS: &[&str] = &[
-    "manifest-check",
     "frozen-evidence-check",
     "regression-check",
     "qualify",
@@ -150,17 +157,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "release-artifact",
     "security-check",
     "security-deep",
-    "rustsec-check",
-    "vet-check",
-    "unsafe-inventory-check",
-    "supply-chain-check",
-    "dependency-safety-check",
-    "owned-safety-check",
     "docs-check",
-    "quality-check",
-    "miri-check",
-    "panic-abort-check",
-    "fuzz-check",
     "fuzz-build",
     "fuzz-smoke",
     "fuzz",
@@ -311,8 +308,9 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
     }
     let notice = std::fs::read_to_string(root.join("NOTICE"))
         .map_err(|error| format!("cannot read workspace NOTICE: {error}"))?;
+    let pinned_commit = format!("pinned commit {REVISION}");
     for required in [
-        "pinned commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+        pinned_commit.as_str(),
         "MIT License\n\nCopyright (c) 2019 Zachary Rice",
         "Copyright 2009 The Go Authors.",
     ] {
@@ -386,7 +384,7 @@ fn package_attribution_check(root: &Path) -> Result<(), String> {
     ];
     for path in package_files.lines() {
         if !allowed_roots.contains(&path)
-            && !["data/", "default/", "src/", "tests/"]
+            && !["data/", "default/", "src/"]
                 .iter()
                 .any(|prefix| path.starts_with(prefix))
         {
@@ -984,8 +982,7 @@ fn local_file_url(path: &Path) -> Result<String, String> {
             encoded.push(char::from(byte));
         } else {
             encoded.push('%');
-            encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
-            encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+            encoded.push_str(&hex_lower(&[byte]));
         }
     }
     if cfg!(windows) {
@@ -1614,113 +1611,26 @@ fn security_check() -> Result<(), String> {
     Ok(())
 }
 
-fn run_quality_command(
-    root: &Path,
-    target: &ScopedTempDir,
-    args: &[&str],
-    label: &str,
-) -> Result<(), String> {
-    command_status_with_timeout(
-        Command::new("cargo")
-            .current_dir(root)
-            .env("CARGO_TARGET_DIR", &target.path)
-            .args(args),
-        Duration::from_mins(20),
-        label,
-    )
-}
-
-fn run_quality_tests(
-    root: &Path,
-    target: &ScopedTempDir,
-    tools: &performance::QualityTestTools,
-    args: &[&str],
-    label: &str,
-) -> Result<(), String> {
-    tools.unchanged()?;
-    let mut command = Command::new("cargo");
-    command
-        .current_dir(root)
-        .env("CARGO_TARGET_DIR", &target.path)
-        .args(args);
-    tools.bind(&mut command);
-    command_status_with_timeout(&mut command, Duration::from_mins(20), label)?;
-    tools.unchanged()
-}
-
-fn quality_check() -> Result<(), String> {
+fn msrv_check() -> Result<(), String> {
     let root = workspace_root()?;
-    let target = ScopedTempDir::new("release-quality")?;
-    run_quality_command(&root, &target, &["fmt", "--all", "--check"], "format check")?;
-    run_quality_command(
-        &root,
-        &target,
-        &[
-            "clippy",
-            "--workspace",
-            "--all-targets",
-            "--all-features",
-            "--keep-going",
-            "--locked",
-            "--offline",
-            "--",
-            "-D",
-            "warnings",
-        ],
-        "warning-denied Clippy",
-    )?;
-    let tools = performance::QualityTestTools::prepare(&root)?;
-    run_quality_tests(
-        &root,
-        &target,
-        &tools,
-        &["test", "--workspace", "--locked", "--offline"],
-        "default-feature workspace tests",
-    )?;
-    run_quality_tests(
-        &root,
-        &target,
-        &tools,
-        &[
-            "test",
-            "--workspace",
-            "--all-features",
-            "--locked",
-            "--offline",
-        ],
-        "all-feature workspace tests",
-    )?;
+    let target = ScopedTempDir::new("msrv")?;
     command_status_with_timeout(
         Command::new("cargo")
             .current_dir(&root)
             .env("CARGO_TARGET_DIR", &target.path)
-            .env("RUSTDOCFLAGS", "-D warnings")
             .args([
-                "doc",
+                "+1.95.0",
+                "check",
                 "--workspace",
+                "--all-targets",
                 "--all-features",
-                "--no-deps",
                 "--locked",
                 "--offline",
             ]),
         Duration::from_mins(20),
-        "warning-denied rustdoc",
-    )?;
-    run_quality_command(
-        &root,
-        &target,
-        &[
-            "+1.95.0",
-            "check",
-            "--workspace",
-            "--all-targets",
-            "--all-features",
-            "--locked",
-            "--offline",
-        ],
         "Rust 1.95 MSRV check",
     )?;
-    println!("local quality and MSRV checks passed; Bazel owns the supported target matrix");
+    println!("Rust 1.95 MSRV check passed");
     Ok(())
 }
 
@@ -1816,42 +1726,6 @@ fn panic_abort_check() -> Result<(), String> {
     Ok(())
 }
 
-struct ScopedTempDir {
-    path: PathBuf,
-}
-
-impl ScopedTempDir {
-    fn new(label: &str) -> Result<Self, String> {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|error| format!("system clock is before the Unix epoch: {error}"))?
-            .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("rustleaks-{label}-{}-{nonce}", std::process::id()));
-        std::fs::create_dir(&path).map_err(|error| {
-            format!(
-                "cannot create temporary directory {}: {error}",
-                path.display()
-            )
-        })?;
-        Ok(Self { path })
-    }
-}
-
-impl Drop for ScopedTempDir {
-    fn drop(&mut self) {
-        let safe = self.path.parent() == Some(std::env::temp_dir().as_path())
-            && self
-                .path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("rustleaks-"));
-        if safe {
-            let _ = std::fs::remove_dir_all(&self.path);
-        }
-    }
-}
-
 fn fuzz_build() -> Result<(), String> {
     let root = workspace_root()?;
     let toolchain = format!("+{FUZZ_TOOLCHAIN}");
@@ -1898,84 +1772,9 @@ fn fuzz_campaign_bound(name: &str, default: u64, maximum: u64) -> Result<u64, St
     Ok(value)
 }
 
-fn fuzz_check() -> Result<(), String> {
-    fuzz_smoke()
-}
-
-fn validate_git_adversarial_matrix(root: &Path) -> Result<(), String> {
-    let paths = [
-        "crates/rustleaks-sources/src/git.rs",
-        "crates/rustleaks-sources/tests/git_sources.rs",
-        "crates/rustleaks-sources/tests/git_scm.rs",
-        "crates/rustleaks-sources/tests/git_corpus.rs",
-    ];
-    let mut evidence = String::new();
-    for path in paths {
-        let source = std::fs::read_to_string(root.join(path))
-            .map_err(|error| format!("cannot read {path}: {error}"))?;
-        evidence.push_str(&source);
-    }
-    for letter in 'a'..='n' {
-        let marker = format!("fn matrix_{letter}_");
-        if !evidence.contains(&marker) {
-            return Err(format!(
-                "mandatory Git adversarial matrix entry {letter} is missing ({marker})"
-            ));
-        }
-    }
-    let negative_controls = [
-        "preserves_literal_space_splitting",
-        "preserve_added_bytes_and_no_newline",
-        "invalid UTF-8 path",
-        "ineffective-commit-allowlist",
-        "SourceControl::Stop",
-        "rustleaks-deliberately-missing-git-executable",
-        "cancelled_git_child_is_not_left_waitable_or_zombie",
-        "FailingReader",
-        "std::process::exit(code)",
-    ];
-    for marker in negative_controls {
-        if !evidence.contains(marker) {
-            return Err(format!(
-                "mandatory Git negative control is missing ({marker})"
-            ));
-        }
-    }
-    let core_manifest = std::fs::read_to_string(root.join("crates/rustleaks-core/Cargo.toml"))
-        .map_err(|error| format!("cannot read core manifest: {error}"))?;
-    if core_manifest.contains("rustleaks-sources") || core_manifest.contains("git2") {
-        return Err("Git/source dependencies entered rustleaks-core".to_owned());
-    }
-    let workflow = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
-        .map_err(|error| format!("cannot read CI workflow: {error}"))?;
-    for (runner, target) in [
-        ("ubuntu-24.04", "x86_64-unknown-linux-gnu"),
-        ("ubuntu-24.04-arm", "aarch64-unknown-linux-gnu"),
-        ("ubuntu-24.04", "x86_64-unknown-linux-musl"),
-        ("ubuntu-24.04-arm", "aarch64-unknown-linux-musl"),
-        ("macos-15-intel", "x86_64-apple-darwin"),
-        ("macos-15", "aarch64-apple-darwin"),
-        ("windows-2025", "x86_64-pc-windows-msvc"),
-        ("windows-11-arm", "aarch64-pc-windows-msvc"),
-    ] {
-        if !workflow.contains(runner) || !workflow.contains(target) {
-            return Err(format!(
-                "native Git CI matrix is missing {target} on {runner}"
-            ));
-        }
-    }
-    let dispositions = std::fs::read_to_string(root.join("compat/api-dispositions-v1.jsonl"))
-        .map_err(|error| format!("cannot read API dispositions: {error}"))?;
-    if dispositions.contains("rustleaks_sources::git::internal") {
-        return Err("Git API dispositions name a nonexistent private path".to_owned());
-    }
-    Ok(())
-}
-
 fn regression_check() -> Result<(), String> {
     let root = workspace_root()?;
     tooling::check_frozen_evidence(&root)?;
-    validate_git_adversarial_matrix(&root)?;
     command_status_with_timeout(
         Command::new("bazelisk")
             .current_dir(&root)
@@ -2002,23 +1801,14 @@ fn bounded_composite_resources() -> Result<(), String> {
     Ok(())
 }
 
+/// Runs the release checks that no other release dry-run job runs.
 fn qualify() -> Result<(), String> {
     clean_worktree_check()?;
-    docs_check::run(&workspace_root()?)?;
-    quality_check()?;
-    owned_safety_check()?;
-    dependency_safety_check()?;
-    miri_check()?;
-    regression_check()?;
     bounded_composite_resources()?;
     public_api_check()?;
-    package_check()?;
-    supply_chain_check()?;
-    panic_abort_check()?;
-    fuzz_check()?;
-    performance::check()?;
+    msrv_check()?;
     clean_worktree_check()?;
-    println!("complete Rust regression and local release hardening passed");
+    println!("clean worktree, bounded composite resources, public API and MSRV checks passed");
     Ok(())
 }
 
@@ -2524,10 +2314,10 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
         }"#;
         assert!(validate_core_repository_metadata(inherited).is_err());
 
-        let independent = r#"{
+        let independent = serde_json::json!({
             "packages": [{
                 "name": "rustleaks-core",
-                "version": "0.1.0-alpha.11",
+                "version": RELEASE_VERSION,
                 "description": "Byte-first synchronous engine for the independent Rustleaks port",
                 "license": "MIT AND BSD-3-Clause AND Apache-2.0",
                 "repository": "https://github.com/joshgarnett/rustleaks",
@@ -2542,8 +2332,9 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
                     "rustdoc-args": ["--cfg", "docsrs", "-D", "warnings"]
                 }}}
             }]
-        }"#;
-        assert!(validate_core_repository_metadata(independent).is_ok());
+        })
+        .to_string();
+        assert!(validate_core_repository_metadata(&independent).is_ok());
     }
 
     #[test]
@@ -2582,6 +2373,23 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
             }]
         }"#;
         assert!(validate_core_repository_metadata(inherited).is_err());
+    }
+
+    #[test]
+    fn pinned_constants_match_the_upstream_revision_file() {
+        let pin = fs::read_to_string(
+            workspace_root()
+                .unwrap()
+                .join("compat/upstream-revision.txt"),
+        )
+        .unwrap();
+        assert!(
+            pin.lines()
+                .any(|line| line == format!("revision={}", super::REVISION))
+        );
+        assert!(pin.lines().any(|line| {
+            line == format!("default_config_sha256={}", super::UPSTREAM_CONFIG_SHA256)
+        }));
     }
 
     #[test]

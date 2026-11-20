@@ -9,7 +9,6 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -695,18 +694,8 @@ fn wait(command: &mut Command) -> Result<Option<i32>, String> {
     let mut child = command
         .spawn()
         .map_err(|error| format!("cannot start the CLI: {error}"))?;
-    let deadline = Instant::now() + CHILD_DEADLINE;
-    loop {
-        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-            return Ok(status.code());
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(None);
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
+    let status = crate::tooling::wait_with_deadline(&mut child, CHILD_DEADLINE, "CLI", "CLI")?;
+    Ok(status.and_then(|status| status.code()))
 }
 
 fn read_stderr(path: &Path) -> Result<String, String> {

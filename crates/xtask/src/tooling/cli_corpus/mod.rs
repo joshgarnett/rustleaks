@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use super::presentation::{self, Disposition};
-use super::support::{TempDir, sha256_bytes};
+use super::support::{ScopedTempDir, sha256_bytes};
 
 // Historical corpus bytes are accepted once. A replay never refreshes them
 // from the implementation under test or the retired external oracle.

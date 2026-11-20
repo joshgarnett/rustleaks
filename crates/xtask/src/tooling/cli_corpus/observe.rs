@@ -9,7 +9,7 @@ use std::process::Command;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::Value;
 
-use super::TempDir;
+use super::ScopedTempDir;
 use super::fixture;
 use super::normalize::{self, Spelling};
 use super::process::{self, CASE_TIMEOUT, OUTPUT_LIMIT};
@@ -45,8 +45,8 @@ pub(super) fn observe(
     spec: &Value,
     fake_git_binary: &Path,
 ) -> Result<Observed, String> {
-    let temporary = TempDir::new(&format!("cli-{}", case_id.to_ascii_lowercase()))?;
-    let capture = TempDir::new(&format!("cli-io-{}", case_id.to_ascii_lowercase()))?;
+    let temporary = ScopedTempDir::new(&format!("cli-{}", case_id.to_ascii_lowercase()))?;
+    let capture = ScopedTempDir::new(&format!("cli-io-{}", case_id.to_ascii_lowercase()))?;
     let root = &temporary.path;
     fixture::setup(root, required_str(spec, "setup", case_id)?, &capture)?;
     let prepared = fixture::prepare(

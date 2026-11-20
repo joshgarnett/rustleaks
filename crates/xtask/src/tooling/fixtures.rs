@@ -1,12 +1,9 @@
 //! Verification of the independent pinned-upstream fixture copy.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-
-use sha2::{Digest, Sha256};
 
 use crate::{REVISION, command_output};
 
@@ -83,7 +80,7 @@ pub(crate) fn verify_fixtures(root: &Path) -> Result<(), String> {
             return Err(format!("fixture size mismatch for {relative}"));
         }
         let expected_hash = fixture["sha256"].as_str().ok_or("fixture has no SHA-256")?;
-        if hex_sha256(&actual) != expected_hash {
+        if super::sha256_bytes(&actual) != expected_hash {
             return Err(format!("fixture content mismatch for {relative}"));
         }
         let expected_permissions = if mode == "100755" { 0o755 } else { 0o644 };
@@ -117,7 +114,7 @@ pub(crate) fn verify_fixtures(root: &Path) -> Result<(), String> {
     if symlink_count != 1 {
         return Err(format!("expected one symlink fixture, got {symlink_count}"));
     }
-    let record_hash = hex_sha256(&regular_records);
+    let record_hash = super::sha256_bytes(&regular_records);
     if record_hash != FIXTURE_RECORD_SHA256 {
         return Err(format!(
             "fixture record digest mismatch: expected {FIXTURE_RECORD_SHA256}, got {record_hash}"
@@ -206,15 +203,6 @@ fn symlink_target(path: &Path, label: &str) -> Result<PathBuf, String> {
     }
     fs::read_link(path)
         .map_err(|error| format!("cannot read {label} symlink {}: {error}", path.display()))
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut output = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    output
 }
 
 #[cfg(test)]

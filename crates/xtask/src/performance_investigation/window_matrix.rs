@@ -11,7 +11,8 @@ use super::{Prepared, Request, directory, evidence, run_prepared_window, write};
 const MATRIX_SECONDS: u64 = 3_600;
 const CELL_SECONDS: u64 = 900;
 const IDLE_SECONDS: u64 = 5;
-const WORKLOADS: [&str; 4] = [
+/// Workloads of the observation-window matrix.
+pub(crate) const WORKLOADS: [&str; 4] = [
     "core-dense-16-kib",
     "core-mixed-16-kib",
     "core-default-no-hit-16-kib",

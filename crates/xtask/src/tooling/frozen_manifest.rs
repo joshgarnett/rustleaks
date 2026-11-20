@@ -1,4 +1,4 @@
-//! Immutable historical evidence identities at live-oracle retirement.
+//! Identities of frozen historical evidence.
 //! Extractor source digests inside these files remain historical provenance.
 //! No command regenerates these expected digests from Rust actual output.
 

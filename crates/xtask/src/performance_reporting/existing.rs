@@ -1,4 +1,4 @@
-//! Explicit adapters for previously emitted informational protocols.
+//! Adapters for older informational report formats.
 
 use std::collections::BTreeMap;
 
@@ -346,12 +346,7 @@ pub(super) fn matrix(
         .filter(|cells| cells.len() == 16)
         .ok_or("matrix omitted cells")?;
     let directory = directory.ok_or("matrix import needs its fixed private companions")?;
-    let workloads = [
-        "core-dense-16-kib",
-        "core-mixed-16-kib",
-        "core-default-no-hit-16-kib",
-        "core-decode-depth-5",
-    ];
+    let workloads = investigation::MATRIX_WORKLOADS;
     let mut identities = BTreeMap::new();
     let mut hashes = Vec::new();
     let mut measurements = Vec::new();

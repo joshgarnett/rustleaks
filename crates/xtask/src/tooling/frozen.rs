@@ -1,12 +1,12 @@
 //! Offline integrity of immutable historical compatibility evidence.
 //!
-//! This validates stored evidence and its retained Rust test mappings. It does
-//! not observe upstream code, generate expected outcomes, or claim fresh parity.
+//! It does not observe upstream code, generate expected outcomes, or claim
+//! fresh parity.
 
 #[path = "frozen_manifest.rs"]
 mod manifest;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,46 +22,74 @@ pub(crate) fn frozen_artifact_paths() -> impl Iterator<Item = &'static str> {
     manifest::ARTIFACTS.iter().map(|(path, _, _)| *path)
 }
 
-const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
-const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
-
+/// Checks frozen evidence. The frozen bytes, modes and path sets are pinned by
+/// [`verify_tree`]; the other checks read state that those hashes do not cover:
+/// the Git index modes of the upstream fixtures, the maintained presentation
+/// ledger, and the Rust source symbols that the API dispositions name.
 pub(crate) fn check_frozen_evidence(root: &Path) -> Result<(), String> {
     verify_tree(root, manifest::ARTIFACTS, manifest::DIRECTORIES)?;
     super::presentation::check_ledger(root)?;
     super::fixtures::verify_fixtures(root)?;
-    super::inventory::check_inventory(root, &root.join("compat/test-manifest.toml"))?;
-    super::traceability::api::self_test_api_dispositions(
-        root,
-        &root.join("compat/api-dispositions-v1.jsonl"),
-    )?;
-    super::traceability::generator_samples::check_generator_samples(
-        &root.join("compat/generator-corpus"),
-    )?;
-    let assertion_root = root.join("compat/assertion-corpus");
-    super::traceability::assertions::validate_final_traceability(
-        &read_text(&assertion_root.join("assertions.jsonl"))?,
-        &read_text(&assertion_root.join("benchmark-links.jsonl"))?,
-        &read_text(&assertion_root.join("platform-skips.jsonl"))?,
-    )?;
-    for scope in ["regex", "detect", "allowlist", "decoder"] {
-        let corpus = root.join(format!("compat/{scope}-corpus"));
-        validate_pairs(
-            &read_rows(&corpus.join("requests-v1.jsonl"))?,
-            &read_rows(&corpus.join("outcomes-v1.jsonl"))?,
-            Some(scope),
-        )?;
-    }
-    validate_bootstrap(root)?;
-    super::config::check_config_corpus(root)?;
-    super::composite::check_composite_corpus(root)?;
-    super::session::check_session_corpus(root)?;
-    super::source::check_source_corpus(root)?;
-    super::git_corpus::check_git_corpus(root)?;
-    super::report::check_report_corpus(root)?;
+    check_api_source_symbols(root)?;
     println!(
-        "verified {} immutable evidence files and retained local integrity controls; runtime replays run separately",
+        "verified {} immutable evidence files, fixture Git modes, the presentation ledger and API source symbols; runtime replays run separately",
         manifest::ARTIFACTS.len()
     );
+    Ok(())
+}
+
+/// Checks that the `rustleaks-sources` symbols that implemented API
+/// dispositions name still exist in the current source.
+fn check_api_source_symbols(root: &Path) -> Result<(), String> {
+    let path = root.join("compat/api-dispositions-v1.jsonl");
+    let text = fs::read_to_string(&path)
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    let mut implemented = BTreeSet::new();
+    for line in text.lines() {
+        let row: Value =
+            serde_json::from_str(line).map_err(|error| format!("{}: {error}", path.display()))?;
+        if row["implementation_status"] == "implemented"
+            && let Some(rust_path) = row["rust_path"].as_str()
+        {
+            implemented.insert(rust_path.to_owned());
+        }
+    }
+    for (symbol, relative, needle) in [
+        (
+            "rustleaks_sources::FileSource",
+            "file.rs",
+            "pub struct FileSource",
+        ),
+        (
+            "rustleaks_sources::DirectorySource",
+            "directory.rs",
+            "pub struct DirectorySource",
+        ),
+        (
+            "rustleaks_sources::SourceRunner",
+            "runner.rs",
+            "pub struct SourceRunner",
+        ),
+        (
+            "rustleaks_sources::ArchiveLimits::new",
+            "archive.rs",
+            "pub fn new(",
+        ),
+        (
+            "rustleaks_sources::DirectoryOptions::follow_symlinks",
+            "directory.rs",
+            "pub const fn follow_symlinks(",
+        ),
+    ] {
+        if implemented.contains(symbol) {
+            let path = root.join("crates/rustleaks-sources/src").join(relative);
+            let source = fs::read_to_string(&path)
+                .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+            if !source.contains(needle) {
+                return Err(format!("implemented source symbol disappeared: {symbol}"));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -163,85 +191,15 @@ fn collect_paths(
     Ok(())
 }
 
-fn validate_pairs(
-    requests: &[Value],
-    outcomes: &[Value],
-    mode: Option<&str>,
-) -> Result<(), String> {
-    if requests.is_empty() || requests.len() != outcomes.len() {
-        return Err("frozen request/outcome count mismatch".into());
-    }
-    let mut ids = BTreeSet::new();
-    for (request, outcome) in requests.iter().zip(outcomes) {
-        let id = request["id"].as_str().ok_or("frozen request lacks ID")?;
-        if !ids.insert(id) || outcome["id"].as_str() != Some(id) {
-            return Err(format!(
-                "frozen outcome ID missing, duplicated, or reordered: {id}"
-            ));
-        }
-        if outcome["upstream_revision"] != REVISION
-            || outcome["default_config_sha256"] != CONFIG_SHA256
-            || mode.is_some_and(|mode| outcome["oracle_mode"] != mode)
-        {
-            return Err(format!("frozen outcome provenance changed: {id}"));
-        }
-    }
-    Ok(())
-}
-
-fn validate_bootstrap(root: &Path) -> Result<(), String> {
-    let corpus = root.join("compat/oracle-corpus");
-    let requests = read_rows(&corpus.join("bootstrap-input.jsonl"))?;
-    let outcomes = read_rows(&corpus.join("bootstrap-golden.jsonl"))?;
-    validate_pairs(&requests, &outcomes, None)?;
-    let dispositions = BTreeMap::from([
-        ("custom-basic", "detector-and-source-link"),
-        ("custom-invalid-utf8", "detector"),
-        ("custom-allow-marker", "detector"),
-        ("malformed-regex-panic", "safe-config-error"),
-        ("wrong-protocol", "retired-go-adapter"),
-    ]);
-    if requests.len() != dispositions.len()
-        || requests.iter().any(|request| {
-            !request["id"]
-                .as_str()
-                .is_some_and(|id| dispositions.contains_key(id))
-        })
-    {
-        return Err("bootstrap disposition identity set changed".into());
-    }
-    println!(
-        "bootstrap accounting: 3 Rust detector cases, 1 source-link delegate, 1 safe configuration error, 1 retired Go protocol adapter"
-    );
-    Ok(())
-}
-
-fn read_text(path: &Path) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
-}
-
-fn read_rows(path: &Path) -> Result<Vec<Value>, String> {
-    let text = read_text(path)?;
-    if !text.ends_with('\n') {
-        return Err(format!("{} lacks final newline", path.display()));
-    }
-    text.lines()
-        .map(|line| {
-            serde_json::from_str(line).map_err(|error| format!("{}: {error}", path.display()))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{sha256_bytes, validate_pairs, verify_tree};
-    use crate::tooling::support::TempDir;
-    use serde_json::json;
+    use super::{check_api_source_symbols, sha256_bytes, verify_tree};
+    use crate::tooling::support::ScopedTempDir;
     use std::fs;
 
     #[test]
     fn frozen_tree_rejects_changed_missing_extra_and_substituted_files() {
-        let temporary = TempDir::new("frozen-integrity").unwrap();
+        let temporary = ScopedTempDir::new("frozen-integrity").unwrap();
         let root = &temporary.path;
         fs::create_dir(root.join("corpus")).unwrap();
         fs::write(root.join("corpus/outcomes"), b"accepted\n").unwrap();
@@ -257,42 +215,11 @@ mod tests {
         assert!(verify_tree(root, &entries, &["corpus"]).is_err());
     }
 
-    #[test]
-    fn frozen_identity_join_rejects_missing_swapped_and_duplicate_ids() {
-        let requests = [json!({"id":"first"}), json!({"id":"second"})];
-        let outcomes = requests
-            .iter()
-            .map(|request| {
-                json!({"id":request["id"],
-            "upstream_revision":super::REVISION, "default_config_sha256":super::CONFIG_SHA256,
-            "oracle_mode":"detect"})
-            })
-            .collect::<Vec<_>>();
-        validate_pairs(&requests, &outcomes, Some("detect")).unwrap();
-        assert!(validate_pairs(&requests, &outcomes[..1], Some("detect")).is_err());
-        assert!(
-            validate_pairs(
-                &requests,
-                &[outcomes[1].clone(), outcomes[0].clone()],
-                Some("detect")
-            )
-            .is_err()
-        );
-        assert!(
-            validate_pairs(
-                &[requests[0].clone(), requests[0].clone()],
-                &[outcomes[0].clone(), outcomes[0].clone()],
-                Some("detect")
-            )
-            .is_err()
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn frozen_tree_rejects_executable_and_symlink_mutations() {
         use std::os::unix::fs::{PermissionsExt as _, symlink};
-        let temporary = TempDir::new("frozen-modes").unwrap();
+        let temporary = ScopedTempDir::new("frozen-modes").unwrap();
         let root = &temporary.path;
         fs::create_dir(root.join("corpus")).unwrap();
         fs::write(root.join("corpus/file"), b"frozen").unwrap();
@@ -313,5 +240,10 @@ mod tests {
         fs::remove_file(root.join("corpus/link")).unwrap();
         symlink("elsewhere", root.join("corpus/link")).unwrap();
         assert!(verify_tree(root, &entries, &["corpus"]).is_err());
+    }
+
+    #[test]
+    fn api_source_symbols_exist() {
+        check_api_source_symbols(&crate::workspace_root().unwrap()).unwrap();
     }
 }

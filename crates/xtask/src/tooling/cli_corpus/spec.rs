@@ -10,9 +10,8 @@ use crate::tooling::support::sha256_bytes;
 
 pub(super) const CASE_COUNT: usize = 34;
 pub(super) const VARIANT_COUNT: usize = 119;
-pub(super) const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
-pub(super) const CONFIG_SHA256: &str =
-    "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
+pub(super) const REVISION: &str = crate::REVISION;
+pub(super) const CONFIG_SHA256: &str = crate::UPSTREAM_CONFIG_SHA256;
 pub(super) const BUILD_VERSION: &str = "0.1.0-alpha.5";
 
 pub(super) fn validate_inputs(
