@@ -27,21 +27,11 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-bazelisk: "false"
-      - name: Install pinned fuzz tools
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Hydrate locked fuzz dependencies
-        working-directory: rustleaks
-        run: |
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+          install-fuzz: "true"
       - name: Run slower campaigns
         working-directory: rustleaks
         env:
@@ -59,7 +49,7 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"
