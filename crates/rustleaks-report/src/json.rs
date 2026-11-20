@@ -11,12 +11,7 @@ pub struct JsonReporter;
 
 impl Reporter for JsonReporter {
     fn write(&self, writer: &mut dyn Write, findings: &[Finding]) -> Result<(), ReportError> {
-        if let Some(finding) = findings
-            .iter()
-            .find(|finding| !finding.entropy().is_finite())
-        {
-            return Err(ReportError::NonFiniteEntropy(finding.entropy()));
-        }
+        go_json::check_entropy(findings)?;
         go_json::write_findings(writer, findings, b" ")?;
         writer.write_all(b"\n")?;
         Ok(())

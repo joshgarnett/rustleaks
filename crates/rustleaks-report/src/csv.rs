@@ -98,12 +98,7 @@ fn write_row<'a>(
     writer: &mut dyn Write,
     fields: impl IntoIterator<Item = &'a [u8]>,
 ) -> Result<(), std::io::Error> {
-    for (index, field) in fields.into_iter().enumerate() {
-        if index != 0 {
-            writer.write_all(b",")?;
-        }
-        write_field(writer, field)?;
-    }
+    write_row_prefix(writer, fields)?;
     writer.write_all(b"\n")
 }
 
@@ -171,38 +166,11 @@ fn field_needs_quotes(field: &[u8]) -> bool {
     first_rune_is_go_space(field)
 }
 
+/// Whether the field starts with a valid UTF-8 white space character.
 fn first_rune_is_go_space(field: &[u8]) -> bool {
-    let Some(first_byte) = field.first() else {
-        return false;
-    };
-    let width = match first_byte {
-        0x00..=0x7f => 1,
-        0xc2..=0xdf => 2,
-        0xe0..=0xef => 3,
-        0xf0..=0xf4 => 4,
-        _ => return false,
-    };
-    let Some(candidate) = field.get(..width) else {
-        return false;
-    };
-    let Some(first) = std::str::from_utf8(candidate)
-        .ok()
-        .and_then(|text| text.chars().next())
-    else {
-        return false;
-    };
-    matches!(
-        first,
-        '\u{0009}'..='\u{000d}'
-            | '\u{0020}'
-            | '\u{0085}'
-            | '\u{00a0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-    )
+    field
+        .utf8_chunks()
+        .next()
+        .and_then(|chunk| chunk.valid().chars().next())
+        .is_some_and(char::is_whitespace)
 }
