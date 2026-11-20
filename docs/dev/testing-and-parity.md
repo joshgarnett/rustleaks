@@ -78,9 +78,10 @@ To add an integration test file:
 4. Add the target to `_RUST_TARGETS` in the root `BUILD.bazel`, so that the
    format and Clippy checks cover it.
 
-`cargo xtask build-system-check` fails when a file in `tests/` is missing
-from `BUILD.bazel`. It does not check the suites or `_RUST_TARGETS`, so
-check those by hand.
+`cargo xtask build-system-check` fails when a file in `tests/` has no
+`<name>_test` target in the crate's `all_tests` suite or in `_RUST_TARGETS`.
+In `rustleaks-core`, `all_tests` is built from the grouped test lists in
+`BUILD.bazel`, so add a new test to one list.
 
 ## Compatibility evidence
 
@@ -260,9 +261,10 @@ them. Each lane keeps its CLI regression ledger, which holds no finding
 values, as a workflow artifact. The workflow's `Required` job fails unless
 every lane passes.
 
-Other CI jobs run on one host only. `just ci` and the Cargo stable and MSRV
-checks run on `ubuntu-24.04` (`x86_64`). `cargo xtask regression-check` runs
-on `macos-15` (`aarch64`).
+Other CI jobs run on one host only. `just ci`, the Cargo stable and MSRV
+checks and `cargo xtask frozen-evidence-check` run on `ubuntu-24.04`
+(`x86_64`). The native lanes replay `//:parity` as part of `//:test`. The Git
+adversarial check is an xtask unit test.
 
 Cross-compilation of the eight targets proves only that the code compiles. It
 is not used to claim runtime support. The native lanes run the tests; they do

@@ -8,7 +8,7 @@ check that a value is a valid provider format, or check whether a credential
 works.
 
 `crates/rustleaks-compat/src/evaluation/generator.rs` generates
-`cases-v1.json`, using the separate case catalog in `pilot.rs`. The evaluator
+`cases-v1.json`, using the separate case catalog in `native_cases.rs`. The evaluator
 writes `baseline-v1.json`. Both files are generated; do not edit them by
 hand. All material in this corpus is covered by the repository's MIT license.
 It contains no live credentials and no external data.
@@ -47,7 +47,7 @@ mean that the engine can map the decoded value back to an exact range.
 ## Cases
 
 The corpus has 72 cases: 19 base cases and 53 cases for the
-`rustleaks-extra-v1` pack (from `pilot.rs`).
+`rustleaks-extra-v1` pack (from `native_cases.rs`).
 
 The base cases cover provider patterns, generic assignments, provider and
 generic rules on the same value, repeated values, paired fields, invalid

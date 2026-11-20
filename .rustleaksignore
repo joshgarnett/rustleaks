@@ -6,7 +6,7 @@ crates/rustleaks-compat/src/evaluation/generator.rs:github-pat:3
 crates/rustleaks-compat/src/evaluation/generator.rs:aws-access-token:4
 crates/rustleaks-compat/src/evaluation/generator.rs:private-key:167
 crates/rustleaks-compat/src/evaluation/generator.rs:generic-api-key:217
-crates/rustleaks-compat/src/evaluation/pilot.rs:github-pat:182
+crates/rustleaks-compat/src/evaluation/native_cases.rs:github-pat:182
 crates/rustleaks-core/tests/native_policy.rs:aws-access-token:37
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:340
 
