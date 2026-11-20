@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license = "MIT AND BSD-3-Clause AND Apache-2.0"
-description = "Byte-first synchronous engine for the independent Rustleaks port"
+description = "Synchronous, byte-first secret detection engine for Rustleaks"
 readme = "README.md"
 repository.workspace = true
 homepage = "https://github.com/joshgarnett/rustleaks"
@@ -30,12 +30,6 @@ include = [
     "default/LICENSE.veles",
     "default/NOTICE",
     "src/**/*.rs",
-    "tests/**/*.rs",
-    "tests/support/additional_coverage.json",
-    "tests/support/format_coverage.json",
-    "tests/support/special_coverage.json",
-    "tests/support/association_coverage.json",
-    "tests/support/remaining_verified_rules.json",
     "LICENSE",
     "NOTICE",
     "README.md",
