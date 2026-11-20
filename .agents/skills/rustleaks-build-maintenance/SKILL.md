@@ -27,8 +27,9 @@ the metadata, package, and named-tooling interface.
 Dependency, toolchain and `rules_rust` changes are listed under [Approval
 boundaries](../../../AGENTS.md#approval-boundaries) and need maintainer
 approval before the edit. The crate-universe dependency input counts as a
-dependency change. Ordinary first-party Bazel target and feature maintenance does not add an
-approval boundary, but it must preserve and validate the graph contract.
+dependency change. Ordinary first-party Bazel target and feature
+maintenance needs no approval, but it must keep and check the graph
+contract.
 Use only this public regeneration command after approval:
 
 ```sh

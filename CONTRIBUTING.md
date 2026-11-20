@@ -11,9 +11,7 @@ supported commands keep working, no change loses a secret, and each finding
 difference from Gitleaks is documented and tested. It must also keep the
 boundaries between the core engine, source adapters, reports,
 compatibility tools and CLI described in the
-[architecture](docs/dev/architecture.md). Rustleaks owns its help, usage,
-error wording, logs and other presentation, and may change them with reviewed
-test expectations.
+[architecture](docs/dev/architecture.md).
 
 ## Issues
 
@@ -41,11 +39,14 @@ Search the existing issues and choose the defect, compatibility-gap or
 feature form. Give the exact Rustleaks revision, target, feature set,
 commands and the smallest synthetic reproducer that the form asks for.
 
-A compatibility report compares against Gitleaks commit
-`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and names the functional
+Before filing a compatibility gap, read [Differences from
+Gitleaks](docs/user/gitleaks-differences.md). Differences listed there are
+intended. A compatibility report compares against the pinned Gitleaks
+revision in `compat/upstream-revision.txt` and names the functional
 difference, such as a finding, span, fingerprint, report field or exit code.
-A difference only in help, usage, error wording or log text is not a
-compatibility gap. Report it as a defect or a feature proposal.
+A difference only in presentation, such as help, usage, error wording or log
+text, is not a compatibility gap. Report it as a defect or a feature
+proposal.
 
 Never put a live credential, raw finding, exploit, private repository content
 or non-public vulnerability detail in an issue.
@@ -98,7 +99,7 @@ Then run the broader command that fits the change:
 | Prose, links, Clippy, Rustdoc, build and the eight-target compile check | `just check` |
 | Any code | `just test` |
 | Timers, cancellation, subprocesses, directory traversal, temporary paths or concurrency | `just flake-check` (all ten runs must pass) |
-| Compatibility evidence | `just parity` and `cargo xtask regression-check` |
+| Compatibility evidence | `cargo xtask regression-check` (it includes `just parity`) |
 | Public API, manifests, features, packaged assets or release inputs | `just package-check` |
 | Parser, matcher, decoder, source, report, CLI, resource limit or fuzz input | `just fuzz-build` and `just fuzz-smoke` |
 | Supported compatibility behavior or its evidence | `cargo xtask qualify`, from a clean, committed tree |
@@ -118,7 +119,7 @@ Keep functional assertions apart from performance budgets. See
 [Testing and parity](docs/dev/testing-and-parity.md) for how to add and
 register tests.
 
-Cross-compilation proves only that the code compiles. It does not establish
+Cross-compilation proves only that the code compiles. It does not show
 runtime support for a target.
 
 Use Cargo only for package metadata, crates.io packaging, `cargo xtask`, and
@@ -128,14 +129,15 @@ the Cargo, crate-universe and Bazel module lockfiles.
 
 ## Compatibility and test data
 
-- Do not change the upstream revision, the upstream copy of the default
-  configuration, frozen corpora, fixtures, the public API snapshot or safe
-  Rust dispositions on their own. Follow
+- Change the Gitleaks pin and the upstream copy of the default configuration
+  only with maintainer approval, by following
   [Updating upstream](docs/dev/updating-upstream.md). A change to the shipped
   default rules follows the rule maintenance procedure and is listed in
   [Default rules](docs/user/gitleaks-differences.md#default-rules).
-- Historical Go corpora never change. Their generation commands describe the
-  retired process and do not run.
+- Never edit frozen corpora or copied fixtures. Rustleaks has no Go oracle,
+  and commands named in frozen `compat/` files do not run.
+- Regenerate the public API snapshot as described in
+  `compat/public-api/README.md` when the `rustleaks-core` API changes.
 - New regression tests need findings, spans, fingerprints, report fields,
   exit codes and error classes that are specified independently, positive and
   negative cases, and stable names. Never generate these expected values from
@@ -187,9 +189,10 @@ Choose the narrowest type:
 | `chore` | Narrow maintenance that fits no other type. |
 
 When useful, choose the narrowest stable lowercase scope: `core`, `sources`,
-`report`, `cli`, `compat`, `xtask`, `bazel`, `deps`, `docs`, `ci` or
-`release`. Omit the scope for a change that crosses many areas. Never use a
-goal, agent, review round, ticket or temporary task as a scope.
+`report`, `cli`, `compat`, `xtask`, `bazel`, `deps`, `docs`, `ci`,
+`security` (the security policy and checks) or `release`. Omit the scope for
+a change that crosses many areas. Never use a goal, agent, review round,
+ticket or temporary task as a scope.
 
 Add a body, after a blank line, when the reason, compatibility effect,
 security constraint or a non-obvious decision will matter later. Add only
@@ -221,9 +224,8 @@ presentation changes, and real linked issues.
 The pull request title follows the commit subject grammar, because pull
 requests are squash merged.
 
-Do not merge while required checks, required reviews or blocking review
-conversations are incomplete. An approving review is required only when the
-live repository ruleset requires one or the maintainer asks for an
-independent review. For a pull request by the sole maintainer, a missing
-self-approval is not a blocker. Do not create a self-approval for a
-sole-maintainer pull request.
+Merge only by squash. Do not merge while required checks or blocking review
+conversations are incomplete. The required checks are strict, so a branch
+behind `main` must be updated before it can merge. The ruleset on `main`
+requires no approving review. Get one only when the maintainer asks for an
+independent review. Never approve your own pull request.

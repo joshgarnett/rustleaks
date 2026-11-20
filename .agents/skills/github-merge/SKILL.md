@@ -1,21 +1,22 @@
 ---
 name: github-merge
-description: Assess final Rustleaks pull request readiness and perform an explicitly authorized squash merge. Use for merge decisions and execution, not issue, commit, review, or PR authoring.
+description: Check final Rustleaks pull request readiness and perform an explicitly authorized squash merge. Use for merge decisions and execution, not issue, commit, review or pull request authoring.
 ---
 
 # Rustleaks merges
 
-Merge only a fully qualified pull request with explicit user authorization.
-Authorization may name the exact pull request or cover a named change being
-taken through an end-to-end pull request workflow. It remains valid while
-checks run if the head diff, target branch, and requested scope do not
-materially change. Readiness inspection alone does not authorize a merge, and
-merge authorization does not authorize remote branch deletion.
+[Pull requests](../../../CONTRIBUTING.md#pull-requests) in `CONTRIBUTING.md`
+holds the merge rules. Follow it.
 
-## Prove readiness
+## Authority
 
-Inspect the current pull request state, complete diff, checks, linked issues,
-reviews, conversations, and repository protections:
+Merge only with explicit user authorization. It may name the pull request or
+cover a named change taken through the whole pull request workflow. It stays
+valid while checks run if the head diff, base branch and scope do not
+change. Checking readiness does not authorize a merge, and a merge does not
+authorize deleting the remote branch.
+
+## Check readiness
 
 ```sh
 gh pr view <pr-number>
@@ -23,47 +24,32 @@ gh pr diff <pr-number>
 gh pr checks <pr-number>
 ```
 
-Use structured `gh pr view --json` fields and read-only `gh api` queries when
-needed to establish state rather than inferring it from prose. Confirm every
-condition:
+Use `gh pr view --json` and read-only `gh api` calls for state instead of
+reading it from prose. Merge only when:
 
-- the pull request is open, is not a draft, and targets `main`;
-- the complete change matches its title, body, and linked issue intent;
+- the pull request is open, not a draft, and targets `main`;
+- the diff matches the title, body and linked issues;
 - the title follows the [commit grammar](../../../CONTRIBUTING.md#commits);
-- every check required by the live ruleset is present and successful, with no
-  required job pending, skipped unexpectedly, cancelled, stale, or failing;
-- an eligible approving review exists when the live ruleset requires one or
-  the maintainer explicitly requested independent review;
-- every blocking review conversation is resolved, along with any conversation
-  whose resolution is required by the live ruleset;
-- GitHub reports the pull request mergeable and not conflicted or blocked;
-- issue-closing references are correct;
-- `just ci`, `just security`, and every boundary-specific final validation
-  required by `CONTRIBUTING.md` passed against the reviewed state; and
-- no branch protection, check, review, conversation, or other requirement is
-  being bypassed.
+- every required check passed and none is pending, cancelled or skipped
+  without reason;
+- the branch is up to date with `main`, because required checks are strict;
+- every blocking review conversation is resolved;
+- GitHub reports the pull request as mergeable; and
+- `just ci`, `just security` and the checks that CONTRIBUTING.md requires for
+  the changed boundary passed on the reviewed state.
 
-Refuse to merge when required evidence is missing or uncertain. In particular,
-refuse a draft, failing, pending, stale, closed, conflicted, blocked, or
-unmergeable pull request. A branch being behind its base blocks the merge only
-when the live ruleset requires an update or intervening base changes invalidate
-the reviewed result. When the live ruleset permits a sole-maintainer merge and
-the maintainer did not request independent review, an empty review list is
-positive evidence that no review gate applies, not a missing approval. Do not
-pause to solicit or invent a self-review. Report each actual unmet condition
-and the evidence needed to clear it. Do not use the repository owner's bypass,
-force, or a local merge as a substitute for a failed requirement.
+The ruleset requires no approving review, so an empty review list is not a
+blocker unless the maintainer asked for an independent review. Do not ask
+for or create a self-approval. Report each unmet condition and what would
+clear it. Never use the owner's bypass, a force push or a local merge in
+place of a failed requirement.
 
-## Merge only by squash
-
-After every condition passes and the user authorization still covers the
-unchanged candidate, the permitted merge command is:
+## Merge
 
 ```sh
 gh pr merge <pr-number> --squash
 ```
 
-Never use `--merge`, `--rebase`, or a bypass flag. Afterward, verify the final
-pull request state and accepted commit with `gh pr view <pr-number>`. Remote
-branch deletion is a separate GitHub mutation and requires separate authority
-plus an observed repository convention; never delete an unrelated branch.
+Never use `--merge`, `--rebase` or a bypass flag. Afterward, confirm the
+state with `gh pr view <pr-number>`. Delete a remote branch only with
+separate authorization.

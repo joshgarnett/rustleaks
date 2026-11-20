@@ -1,6 +1,6 @@
 ---
 name: rustleaks-rule-maintenance
-description: Maintain Rustleaks default-rule, custom-rule or native rule pack behavior with grounded positive and negative cases, exact source spans, keyword and entropy behavior, and allowlist coverage. Use for rule semantics, native pack rules and rule tests; use rustleaks-upstream-sync for a new Gitleaks pin.
+description: Maintain Rustleaks default-rule, custom-rule or native rule pack behavior with grounded positive and negative cases, exact source spans, keyword and entropy behavior, and allowlist coverage. Use for rule semantics, native pack rules and rule tests; use rustleaks-compatibility for a new Gitleaks pin.
 ---
 
 # Rustleaks rule maintenance
@@ -18,7 +18,7 @@ Rustleaks test coverage.
 The shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`,
 are Rustleaks-owned and based on the unchanged upstream copy,
 `compat/config-corpus/default-gitleaks.toml`. Never edit the upstream copy; a
-change derived from a new Gitleaks revision uses `rustleaks-upstream-sync`
+change derived from a new Gitleaks revision uses `rustleaks-compatibility`
 and updates the pin, the upstream copy, hashes, generated evidence and
 provenance together.
 
@@ -32,7 +32,7 @@ A Rustleaks change to the shipped default rules needs normal review, and:
   changelog entry;
 - updates of `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and
   `DEFAULT_RULES_SHA256` in `xtask`, and of generated baselines with their
-  maintained commands; and
+  generator commands; and
 - a measurement on a held-out set that was not used to design the change.
 
 A change that makes Rustleaks miss secrets it found before needs maintainer
@@ -127,7 +127,7 @@ change, at least `just ci`. Run `cargo xtask qualify` against a clean,
 committed candidate when supported behavior or its regression evidence
 changes. Treat a behavior fix as a supported-behavior change even when
 unchanged committed evidence already contains the expected outcome. When
-full qualification is not needed, run `just fuzz-smoke` for a parser, regex,
+`cargo xtask qualify` is not needed, run `just fuzz-smoke` for a parser, regex,
 decoder, predicate or hostile-input change. New expectations must be
 specified independently of current Rust output; do not rewrite historical Go
 observations.
