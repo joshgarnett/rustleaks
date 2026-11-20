@@ -476,27 +476,17 @@ fn stdin_source_local_ignore_is_unioned_with_a_custom_ignore_path() {
     fixture.write("config.toml", matching_config());
     fixture.write("custom.ignore", b"# intentionally empty\n");
     fixture.write(".rustleaksignore", b":fixture-token:1\n");
-    let mut child = command(&fixture.0)
-        .args([
+    let result = output_with_stdin(
+        command(&fixture.0).args([
             "stdin",
             "--no-banner",
             "-c",
             "config.toml",
             "--rustleaks-ignore-path",
             "custom.ignore",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"token=AB12\n")
-        .unwrap();
-    let result = child.wait_with_output().unwrap();
+        ]),
+        b"token=AB12\n",
+    );
     assert_eq!(result.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&result.stderr).contains("no leaks found"));
 }

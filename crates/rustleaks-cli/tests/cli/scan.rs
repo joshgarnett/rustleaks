@@ -43,8 +43,8 @@ fn directory_aliases_emit_the_same_json_and_custom_exit() {
 fn stdin_scans_and_rejects_positional_arguments_before_side_effects() {
     let fixture = Fixture::new();
     fixture.write("config.toml", matching_config());
-    let mut child = command(&fixture.0)
-        .args([
+    let result = output_with_stdin(
+        command(&fixture.0).args([
             "stdin",
             "--no-banner",
             "-c",
@@ -53,19 +53,9 @@ fn stdin_scans_and_rejects_positional_arguments_before_side_effects() {
             "-",
             "-f",
             "json",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"token=AB12\n")
-        .unwrap();
-    let result = child.wait_with_output().unwrap();
+        ]),
+        b"token=AB12\n",
+    );
     assert_eq!(result.status.code(), Some(1));
     assert!(result.stdout.starts_with(b"["));
 

@@ -32,15 +32,7 @@ fn args<'a>(prefix: &[&'a str]) -> Vec<&'a str> {
 fn stdin(fixture: &Fixture, bytes: &[u8], extra: &[&str]) -> Output {
     let mut arguments = args(&["stdin"]);
     arguments.extend_from_slice(extra);
-    let mut child = command(&fixture.0)
-        .args(arguments)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(bytes).unwrap();
-    child.wait_with_output().unwrap()
+    output_with_stdin(command(&fixture.0).args(arguments), bytes)
 }
 
 #[test]
@@ -101,8 +93,8 @@ fn native_uri_selection_preserves_global_suppression() {
         ("%B0", true),
     ] {
         let input = format!("mysql://app:{secret}@db.invalid");
-        let mut child = command(&fixture.0)
-            .args([
+        let result = output_with_stdin(
+            command(&fixture.0).args([
                 "stdin",
                 "--native-pack",
                 "rustleaks-connections-v1",
@@ -115,19 +107,9 @@ fn native_uri_selection_preserves_global_suppression() {
                 "-",
                 "--report-format",
                 "json",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-        let result = child.wait_with_output().unwrap();
+            ]),
+            input.as_bytes(),
+        );
         assert_eq!(
             result.status.code(),
             Some(i32::from(found)),
@@ -175,8 +157,8 @@ fn six_builtin_byte_predicates_survive_cli_rule_selection() {
         // not match the default single-letter placeholder allowlist.
         let low = format!("{prefix}{}", "A".repeat(length));
         for (value, count) in [(high, 1), (low, 0)] {
-            let mut child = command(&fixture.0)
-                .args([
+            let result = output_with_stdin(
+                command(&fixture.0).args([
                     "stdin",
                     "--native-pack",
                     "rustleaks-providers-v1",
@@ -189,19 +171,9 @@ fn six_builtin_byte_predicates_survive_cli_rule_selection() {
                     "-",
                     "--report-format",
                     "json",
-                ])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap();
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(value.as_bytes())
-                .unwrap();
-            let result = child.wait_with_output().unwrap();
+                ]),
+                value.as_bytes(),
+            );
             assert_eq!(
                 result.status.code(),
                 Some(count),

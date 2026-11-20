@@ -1,8 +1,9 @@
 //! Fixtures, the process runner and the Bazel runfile resolver.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -94,6 +95,18 @@ pub(crate) fn output(cwd: &Path, arguments: &[&str]) -> Output {
     command(cwd).args(arguments).output().unwrap()
 }
 
+/// Runs `command` with `bytes` on standard input and returns its output.
+pub(crate) fn output_with_stdin(command: &mut Command, bytes: &[u8]) -> Output {
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(bytes).unwrap();
+    child.wait_with_output().unwrap()
+}
+
 pub(crate) fn git(cwd: &Path, arguments: &[&str]) {
     git_stdout(cwd, arguments);
 }
@@ -160,4 +173,88 @@ pub(crate) fn compat_file(name: &str) -> PathBuf {
         return local;
     }
     resolve_runfile(PathBuf::from(format!("compat/{name}")), "compat")
+}
+
+pub(crate) fn tar_named_leaf(name: &[u8], bytes: &[u8]) -> Vec<u8> {
+    assert!(name.len() <= 100);
+    let mut header = [0_u8; 512];
+    header[..name.len()].copy_from_slice(name);
+    header[100..108].copy_from_slice(b"0000644\0");
+    header[108..116].copy_from_slice(b"0000000\0");
+    header[116..124].copy_from_slice(b"0000000\0");
+    header[124..136].copy_from_slice(format!("{:011o}\0", bytes.len()).as_bytes());
+    header[136..148].copy_from_slice(b"00000000000\0");
+    header[148..156].fill(b' ');
+    header[156] = b'0';
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    let checksum = header.iter().map(|byte| usize::from(*byte)).sum::<usize>();
+    header[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+    let mut archive = header.to_vec();
+    archive.extend_from_slice(bytes);
+    archive.resize(512 + bytes.len().div_ceil(512) * 512 + 1024, 0);
+    archive
+}
+
+pub(crate) fn stored_gzip(payload: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(payload.len()).expect("small synthetic gzip payload");
+    let mut bytes = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255, 1];
+    bytes.extend_from_slice(&length.to_le_bytes());
+    bytes.extend_from_slice(&(!length).to_le_bytes());
+    bytes.extend_from_slice(payload);
+    bytes.extend_from_slice(&crc32(payload).to_le_bytes());
+    bytes.extend_from_slice(&u32::from(length).to_le_bytes());
+    bytes
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    !bytes.iter().fold(!0_u32, |state, &byte| {
+        (0..8).fold(state ^ u32::from(byte), |value, _| {
+            (value >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(value & 1))
+        })
+    })
+}
+
+// Minimal stored ZIP writer: a local header, name and data per entry, then
+// the central directory and the end of central directory record.
+pub(crate) fn stored_zip(entries: &[(&[u8], &[u8])]) -> Vec<u8> {
+    let mut data = Vec::new();
+    let mut central = Vec::new();
+    for &(name, body) in entries {
+        let crc = crc32(body).to_le_bytes();
+        let size = u32::try_from(body.len()).unwrap().to_le_bytes();
+        let name_size = u16::try_from(name.len()).unwrap().to_le_bytes();
+        let offset = u32::try_from(data.len()).unwrap().to_le_bytes();
+        let mut local = [0_u8; 30];
+        local[..4].copy_from_slice(b"PK\x03\x04");
+        local[4..6].copy_from_slice(&20_u16.to_le_bytes());
+        local[14..18].copy_from_slice(&crc);
+        local[18..22].copy_from_slice(&size);
+        local[22..26].copy_from_slice(&size);
+        local[26..28].copy_from_slice(&name_size);
+        data.extend_from_slice(&local);
+        data.extend_from_slice(name);
+        data.extend_from_slice(body);
+        let mut entry = [0_u8; 46];
+        entry[..4].copy_from_slice(b"PK\x01\x02");
+        entry[4..6].copy_from_slice(&20_u16.to_le_bytes());
+        entry[6..8].copy_from_slice(&20_u16.to_le_bytes());
+        entry[16..20].copy_from_slice(&crc);
+        entry[20..24].copy_from_slice(&size);
+        entry[24..28].copy_from_slice(&size);
+        entry[28..30].copy_from_slice(&name_size);
+        entry[42..46].copy_from_slice(&offset);
+        central.extend_from_slice(&entry);
+        central.extend_from_slice(name);
+    }
+    let mut end = [0_u8; 22];
+    end[..4].copy_from_slice(b"PK\x05\x06");
+    let count = u16::try_from(entries.len()).unwrap().to_le_bytes();
+    end[8..10].copy_from_slice(&count);
+    end[10..12].copy_from_slice(&count);
+    end[12..16].copy_from_slice(&u32::try_from(central.len()).unwrap().to_le_bytes());
+    end[16..20].copy_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    data.extend_from_slice(&central);
+    data.extend_from_slice(&end);
+    data
 }

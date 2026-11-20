@@ -6,8 +6,8 @@ use super::*;
 fn redaction_and_custom_zero_exit_are_applied_to_reports() {
     let fixture = Fixture::new();
     fixture.write("config.toml", matching_config());
-    let mut child = command(&fixture.0)
-        .args([
+    let result = output_with_stdin(
+        command(&fixture.0).args([
             "stdin",
             "--no-banner",
             "-c",
@@ -19,19 +19,9 @@ fn redaction_and_custom_zero_exit_are_applied_to_reports() {
             "-",
             "-f",
             "json",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"token=AB12\n")
-        .unwrap();
-    let result = child.wait_with_output().unwrap();
+        ]),
+        b"token=AB12\n",
+    );
     assert_eq!(result.status.code(), Some(0));
     assert!(
         result

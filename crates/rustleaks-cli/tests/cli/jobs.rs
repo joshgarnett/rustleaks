@@ -3,7 +3,6 @@
 //! format, and the outputs are compared byte for byte. The expected findings
 //! come from the planted inputs, not from scanner output.
 
-use super::complete_profile::{stored_gzip, stored_zip, tar_named_leaf};
 use super::*;
 
 /// One thread, a few, more than the 64 that a profile allows, and no flag,
