@@ -261,9 +261,10 @@ not an alternative.
   system code, and every dependency.
 - Adds checked arithmetic, fallible growth, Huffman checks, bounded RAR VM
   programs and filters, and output limits set by the caller.
-- Some upstream encoder helpers stay so that the codec tests still work and
-  the code stays easy to compare with upstream. `rustleaks-sources` calls
-  only the RAR3 and RAR5 decoders and the `crc32` module.
+- The RAR3 and RAR5 encoders are compiled only for tests, which encode data
+  and decode it back. They stay in place so the code is easy to compare with
+  upstream. `rustleaks-sources` calls only the RAR3 and RAR5 decoders and the
+  `crc32` module.
 - Container parsing, CRC checks, panic containment and archive limits stay in
   `rustleaks-sources`.
 
