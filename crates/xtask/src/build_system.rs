@@ -6,16 +6,7 @@ use std::path::{Path, PathBuf};
 
 use toml::Value;
 
-const REQUIRED_TARGETS: &[&str] = &[
-    "aarch64-apple-darwin",
-    "aarch64-pc-windows-msvc",
-    "aarch64-unknown-linux-gnu",
-    "aarch64-unknown-linux-musl",
-    "x86_64-apple-darwin",
-    "x86_64-pc-windows-msvc",
-    "x86_64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-];
+use crate::REQUIRED_TARGETS;
 
 pub(crate) fn check(root: &Path) -> Result<(), String> {
     crate::tooling::generate_native_pack_identity(root, true)?;

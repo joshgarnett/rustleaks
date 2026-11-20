@@ -38,8 +38,9 @@ const DEFAULT_RULES_SHA256: &str =
     "442fca81a914728ebaf843ba59d01bb3e6e71559c1ddb51fddc81fca45df959a";
 const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
-/// Required compile targets, in the order that `AGENTS.md` lists them.
-const REQUIRED_TARGETS: &[&str] = &[
+/// Required compile targets, in the order that `docs/dev/testing-and-parity.md`
+/// lists them.
+pub(crate) const REQUIRED_TARGETS: &[&str] = &[
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-musl",

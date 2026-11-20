@@ -14,6 +14,9 @@ changing a release or trusted publishing setting, and using a credential. A succ
 
 - [ ] The maintainer approved the version.
 - [ ] The workspace manifests and `CHANGELOG.md` name that version.
+- [ ] `RUSTLEAKS_VERSION` in `bazel/rust_crate.bzl` and the install examples
+      in `docs/user/getting-started.md`, `docs/user/ci.md` and
+      `docs/user/library.md` name that version.
 - [ ] The Gitleaks revision and default configuration hash agree across the
       package and the compatibility evidence.
 - [ ] The candidate is merged to `main`.
