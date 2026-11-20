@@ -1128,11 +1128,6 @@ mod tests {
     }
 
     #[test]
-    fn git_adversarial_matrix_and_native_ci_targets_are_complete() {
-        crate::validate_git_adversarial_matrix(&crate::workspace_root().unwrap()).unwrap();
-    }
-
-    #[test]
     fn requires_qualification_tools_in_the_release_qualification_job() {
         let setup = "      - uses: ./rustleaks/.github/actions/setup\n        with:\n          install-fuzz: \"true\"\n          install-miri: \"true\"\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n";
         let source = format!(

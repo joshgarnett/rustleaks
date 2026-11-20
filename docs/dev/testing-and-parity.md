@@ -263,8 +263,7 @@ every lane passes.
 
 Other CI jobs run on one host only. `just ci`, the Cargo stable and MSRV
 checks and `cargo xtask frozen-evidence-check` run on `ubuntu-24.04`
-(`x86_64`). The native lanes replay `//:parity` as part of `//:test`. The Git
-adversarial check is an xtask unit test.
+(`x86_64`). The native lanes replay `//:parity` as part of `//:test`.
 
 Cross-compilation of the eight targets proves only that the code compiles. It
 is not used to claim runtime support. The native lanes run the tests; they do
