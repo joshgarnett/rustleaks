@@ -74,7 +74,7 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
       - name: Hydrate locked package dependencies
         working-directory: rustleaks
@@ -87,8 +87,8 @@ jobs:
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
         run: |
-          cargo +1.95.0 doc --locked -p rustleaks-core --all-features --no-deps
-          cargo +1.95.0 test --locked -p rustleaks-core --doc
+          cargo doc --locked -p rustleaks-core --all-features --no-deps
+          cargo test --locked -p rustleaks-core --doc
       - name: Retain the inspected package archive
         working-directory: rustleaks
         env:
@@ -140,7 +140,7 @@ jobs:
           retention-days: 7
 
   acceptance:
-    name: Authoritative repository gate
+    name: Repository gate
     needs: candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -151,7 +151,7 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
       - name: Install the pinned public API tool
         working-directory: rustleaks
@@ -162,7 +162,7 @@ jobs:
       - name: Check native notice source completeness
         working-directory: rustleaks
         run: cargo xtask release-artifact notices --check
-      - name: Run the authoritative repository gate
+      - name: Run the repository gate
         working-directory: rustleaks
         run: just ci
 
@@ -178,31 +178,20 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
+        with:
+          install-fuzz: "true"
+          install-miri: "true"
       - name: Install the pinned public API tool
         working-directory: rustleaks
         run: cargo install cargo-public-api --locked --version 0.52.0
       - name: Install the pinned dependency policy tool
         working-directory: rustleaks
         run: cargo install cargo-deny --locked --version 0.19.9
-      - name: Install the pinned fuzz toolchain
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Install the pinned Miri toolchain
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
-          cargo +nightly-2026-08-21 miri setup
       - name: Hydrate locked qualification dependencies
         working-directory: rustleaks
-        run: |
-          cargo fetch --locked
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+        run: cargo fetch --locked
       - name: Run complete Rust qualification
         working-directory: rustleaks
         run: cargo xtask qualify
@@ -219,8 +208,10 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
+        with:
+          install-miri: "true"
       - name: Install pinned security tools
         working-directory: rustleaks
         run: |
@@ -228,8 +219,6 @@ jobs:
           cargo install cargo-audit --locked --version 0.22.2
           cargo install cargo-vet --locked --version 0.10.2
           cargo install cargo-geiger --locked --version 0.13.0
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
-          cargo +nightly-2026-08-21 miri setup
       - name: Hydrate locked dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
@@ -249,19 +238,10 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
-      - name: Install the pinned fuzz toolchain
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Hydrate locked fuzz dependencies
-        working-directory: rustleaks
-        run: |
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+        with:
+          install-fuzz: "true"
       - name: Run extended AddressSanitizer fuzz campaigns
         working-directory: rustleaks
         env:
@@ -282,7 +262,7 @@ jobs:
           path: rustleaks
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"
@@ -336,7 +316,7 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"
@@ -464,7 +444,7 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"
@@ -567,7 +547,7 @@ jobs:
           ref: ${{ inputs.candidate }}
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"

@@ -2,7 +2,7 @@
 
 use rustleaks_sources::{CancellationToken, GitLimits, fuzz_parse_patch};
 
-use super::campaign_profile::Profile;
+use super::fuzz_profile::Profile;
 use super::source_frame::{GitFrame, MAX_GIT_LINES, MAX_GIT_METADATA_BYTES, MAX_GIT_PATH_BYTES};
 
 #[derive(Debug, Eq, PartialEq)]

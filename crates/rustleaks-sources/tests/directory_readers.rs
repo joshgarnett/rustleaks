@@ -6,6 +6,13 @@
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 
+#[path = "../fuzz/support/archive_frame.rs"]
+#[allow(dead_code)]
+mod archive_frame;
+#[path = "../fuzz/support/archive_seeds.rs"]
+#[allow(dead_code)]
+mod archive_seeds;
+
 use std::fmt::Write as _;
 use std::fs;
 use std::num::NonZeroUsize;
@@ -13,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use archive_seeds::synthetic_tar as tar;
 use rustleaks_core::Engine;
 use rustleaks_core::config::{CompiledConfig, ConfigLoader};
 use rustleaks_core::model::{Finding, ScanOptions};
@@ -109,31 +117,6 @@ fn planted(lines: usize, plants: &[(usize, String)]) -> String {
         }
     }
     text
-}
-
-/// A TAR archive with these members, in order.
-fn tar(members: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut archive = Vec::new();
-    for (name, body) in members {
-        let mut header = [0_u8; 512];
-        header[..name.len()].copy_from_slice(name.as_bytes());
-        header[100..108].copy_from_slice(b"0000644\0");
-        header[108..116].copy_from_slice(b"0000000\0");
-        header[116..124].copy_from_slice(b"0000000\0");
-        header[124..136].copy_from_slice(format!("{:011o}\0", body.len()).as_bytes());
-        header[136..148].copy_from_slice(b"00000000000\0");
-        header[148..156].fill(b' ');
-        header[156] = b'0';
-        header[257..263].copy_from_slice(b"ustar\0");
-        header[263..265].copy_from_slice(b"00");
-        let checksum = header.iter().map(|byte| usize::from(*byte)).sum::<usize>();
-        header[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
-        archive.extend_from_slice(&header);
-        archive.extend_from_slice(body);
-        archive.resize(archive.len().div_ceil(512) * 512, 0);
-    }
-    archive.resize(archive.len() + 1024, 0);
-    archive
 }
 
 /// Builds the mixed tree under `scan/` and returns the findings that a

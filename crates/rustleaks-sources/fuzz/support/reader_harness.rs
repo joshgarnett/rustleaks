@@ -10,7 +10,7 @@ use rustleaks_sources::{
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::campaign_profile::Profile;
+use super::fuzz_profile::Profile;
 use super::source_frame::ReaderFrame;
 
 const MAX_BYTES_PER_SCHEDULED_READ: usize = 15;

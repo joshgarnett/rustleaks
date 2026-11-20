@@ -211,7 +211,7 @@ struct Fixture {
     input: Vec<u8>,
     config: String,
     expected: Vec<Finding>,
-    legacy_fingerprint: Option<u64>,
+    control_fingerprint: Option<u64>,
     expected_rules: usize,
     depth: usize,
     decoded_bytes: usize,
@@ -248,7 +248,7 @@ impl Fixture {
                 // The public API still includes normalization and rule dispatch.
                 config: SIMPLE_CONFIG.replace("token", "absentmarker"),
                 expected: Vec::new(),
-                legacy_fingerprint: None,
+                control_fingerprint: None,
                 expected_rules: 1,
                 depth,
                 decoded_bytes: if depth == 0 { 0 } else { decoded_bytes },
@@ -322,7 +322,7 @@ impl Fixture {
             input,
             config,
             expected,
-            legacy_fingerprint: None,
+            control_fingerprint: None,
             expected_rules,
             depth: 0,
             decoded_bytes: 0,
@@ -343,8 +343,8 @@ impl Fixture {
             input,
             config: String::from_utf8(DEFAULT_CONFIG_BYTES.to_vec())?,
             expected: Vec::new(),
-            legacy_fingerprint: positive.then_some(0x58e4_f5aa_b1da_7b3f),
-            expected_rules: if positive { 1 } else { 222 },
+            control_fingerprint: positive.then_some(0x58e4_f5aa_b1da_7b3f),
+            expected_rules: if positive { 1 } else { crate::DEFAULT_RULES },
             depth: 0,
             decoded_bytes: 0,
             keyword_count: match id {
@@ -358,7 +358,7 @@ impl Fixture {
 
     fn compile(&self) -> Result<CompiledConfig, Box<dyn Error>> {
         let config = ConfigLoader::new().load_toml(&self.config)?;
-        if self.legacy_fingerprint.is_some() {
+        if self.control_fingerprint.is_some() {
             Ok(config.select_rules(["private-key"])?)
         } else {
             Ok(config)
@@ -378,11 +378,11 @@ impl Fixture {
         }) {
             return Err("representative independent work or finding-record count differs".into());
         }
-        if let Some(expected) = self.legacy_fingerprint {
+        if let Some(expected) = self.control_fingerprint {
             if outcome.findings().len() != 1
                 || super::findings_fingerprint(outcome.findings()) != expected
             {
-                return Err("default positive differs from its legacy control".into());
+                return Err("default positive differs from its base workload control".into());
             }
             let range = FindingRange::Exact(ByteRange::new(0, self.input.len())?);
             if outcome.findings()[0].match_range() != range
@@ -495,10 +495,12 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
     if config.rules().len() != fixture.expected_rules {
         return Err("representative compiled-rule count differs".into());
     }
-    if fixture.expected_rules == 222
-        && super::config_metric(&config).fingerprint != 0xbba0_f636_d5a0_2d49
+    if fixture.expected_rules == crate::DEFAULT_RULES
+        && super::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
     {
-        return Err("representative default compiled rules differ from legacy control".into());
+        return Err(
+            "representative default compiled rules differ from the shipped default rules".into(),
+        );
     }
     if fixture.keyword_count > 0 {
         fixture.input = super::keyword_input(&config, fixture.keyword_count, 16 * 1_024)?;
@@ -523,7 +525,7 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
     );
     compile.outcome_fnv1a64 = fingerprint(rule_ids.as_bytes());
     compile.counts["rules"] = json!(fixture.expected_rules);
-    compile.counts["selection_included"] = json!(fixture.legacy_fingerprint.is_some());
+    compile.counts["selection_included"] = json!(fixture.control_fingerprint.is_some());
     let start = Instant::now();
     let detector = black_box(Engine::builder(config).build()?);
     let build_ns = elapsed(start)?;
@@ -643,7 +645,7 @@ fn run_report(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>>
     let config = ConfigLoader::new().load_toml(SIMPLE_CONFIG)?;
     let sarif = SarifReporter::try_from_config(&config)?;
     let is_json = id == "serialize-json-10000";
-    let legacy = super::expected(if is_json {
+    let control = super::expected(if is_json {
         "report-json"
     } else {
         "report-sarif"
@@ -667,10 +669,10 @@ fn run_report(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>>
         }
         black_box(&output);
         result.elapsed_ns += elapsed(start)?;
-        if output.len() as u64 != legacy.output_bytes
-            || fnv_extend(FNV_OFFSET, &output) != legacy.fingerprint
+        if output.len() as u64 != control.output_bytes
+            || fnv_extend(FNV_OFFSET, &output) != control.fingerprint
         {
-            return Err("report differs from exact legacy output bytes".into());
+            return Err("report differs from the base workload output bytes".into());
         }
         result.outcome_fnv1a64 = fingerprint(&output);
         result.counts["output_bytes"] = json!(output.len());

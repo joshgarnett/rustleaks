@@ -1,5 +1,6 @@
 //! Deterministic coverage of the archive fuzz framing and decoder entry points.
 #![cfg(feature = "archives")]
+#![forbid(unsafe_code)]
 
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;
@@ -8,8 +9,8 @@ mod archive_harness;
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
 #[allow(dead_code)]
-#[path = "../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 #[allow(dead_code)] // COPY is exercised by archive_semantics; these seeds use compression.
 #[path = "../fuzz/support/sevenz_seeds.rs"]
 mod sevenz_seeds;

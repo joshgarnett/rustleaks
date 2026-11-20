@@ -12,11 +12,11 @@ const CONNECTIONS: &str = include_str!("native_coverage/connections.toml");
 pub(super) fn generate(root: &Path, check: bool) -> Result<(), String> {
     let reviewed: serde_json::Value = serde_json::from_str(REVIEWED)
         .map_err(|error| format!("invalid additional coverage source contract: {error}"))?;
-    for (name, key, source, count, additional) in [
-        ("rustleaks-providers-v1", "providers", PROVIDERS, 104, 199),
-        ("rustleaks-connections-v1", "connections", CONNECTIONS, 6, 8),
+    for (name, key, source) in [
+        ("rustleaks-providers-v1", "providers", PROVIDERS),
+        ("rustleaks-connections-v1", "connections", CONNECTIONS),
     ] {
-        validate_source(&reviewed, key, source, additional)?;
+        validate_source(&reviewed, key, source)?;
         let pack = root.join(DIRECTORY).join(format!("{name}.toml"));
         let current = std::fs::read_to_string(&pack)
             .map_err(|error| format!("cannot read {name}: {error}"))?;
@@ -26,6 +26,7 @@ pub(super) fn generate(root: &Path, check: bool) -> Result<(), String> {
         if super::sha256_bytes(prior.as_bytes()) != reviewed[format!("{key}_legacy_toml_sha256")] {
             return Err(format!("{name} prior rule bytes changed"));
         }
+        let count = prior_rule_count(name, prior)?;
         let expected = format!("{prior}{MARKER}{source}");
         write_or_check(&pack, &current, &expected, check)?;
 
@@ -43,22 +44,29 @@ pub(super) fn generate(root: &Path, check: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_source(
-    reviewed: &serde_json::Value,
-    key: &str,
-    source: &str,
-    count: usize,
-) -> Result<(), String> {
-    let source: toml::Value = toml::from_str(source)
-        .map_err(|error| format!("invalid additional {key} TOML: {error}"))?;
-    validate_rules(reviewed, key, &source, count)
+/// Returns the number of rules before the generated marker. The caller has
+/// already checked these bytes against their pinned SHA-256.
+fn prior_rule_count(name: &str, prior: &str) -> Result<usize, String> {
+    let prior: toml::Value =
+        toml::from_str(prior).map_err(|error| format!("invalid {name} prior rules: {error}"))?;
+    prior["rules"]
+        .as_array()
+        .map(Vec::len)
+        .ok_or_else(|| format!("{name} prior rules missing"))
 }
 
+fn validate_source(reviewed: &serde_json::Value, key: &str, source: &str) -> Result<(), String> {
+    let source: toml::Value = toml::from_str(source)
+        .map_err(|error| format!("invalid additional {key} TOML: {error}"))?;
+    validate_rules(reviewed, key, &source)
+}
+
+/// Checks that each rule in the generated part equals the `native` object of
+/// its `reviewed.json` record, in the same order and with the same count.
 fn validate_rules(
     reviewed: &serde_json::Value,
     key: &str,
     source: &toml::Value,
-    count: usize,
 ) -> Result<(), String> {
     let rules = source["rules"]
         .as_array()
@@ -66,7 +74,7 @@ fn validate_rules(
     let expected = reviewed[key]
         .as_array()
         .ok_or("additional origins missing")?;
-    if rules.len() != count || expected.len() != count {
+    if rules.len() != expected.len() {
         return Err(format!("additional {key} inventory differs"));
     }
     let prefix = &reviewed["preserved_prefixes"][key];
@@ -164,17 +172,15 @@ mod tests {
     #[test]
     fn additional_contract_rejects_dropped_filters_paths_and_source_attribution() {
         let reviewed: serde_json::Value = serde_json::from_str(REVIEWED).unwrap();
-        for (key, source, count) in [
-            ("providers", PROVIDERS, 199),
-            ("connections", CONNECTIONS, 8),
-        ] {
-            assert!(validate_source(&reviewed, key, source, count).is_ok());
+        for (key, source) in [("providers", PROVIDERS), ("connections", CONNECTIONS)] {
+            assert!(validate_source(&reviewed, key, source).is_ok());
             let original: toml::Value = toml::from_str(source).unwrap();
             // Encoding preserves every unchanged rule, so each mutated rule is
             // checked through its own encoding against its reviewed contract.
             let encoded = toml::to_string(&original).unwrap();
             assert_eq!(toml::from_str::<toml::Value>(&encoded).unwrap(), original);
             let expected = reviewed[key].as_array().unwrap();
+            let count = expected.len();
             for index in 0..count {
                 for field in [
                     "regex",
@@ -206,7 +212,7 @@ mod tests {
                         document["rules"][index] = changed.clone();
                         let document = toml::to_string(&document).unwrap();
                         assert!(
-                            validate_source(&reviewed, key, &document, count).is_err(),
+                            validate_source(&reviewed, key, &document).is_err(),
                             "{key} {index} {field}"
                         );
                     }
@@ -221,6 +227,15 @@ mod tests {
         let original = std::fs::read_to_string(path).unwrap();
         let mut changed: serde_json::Value = serde_json::from_str(&original).unwrap();
         changed["rules"][0]["source_pattern"] = serde_json::json!("unreviewed");
-        assert!(provenance(&reviewed, "providers", &changed.to_string(), 104).is_err());
+        let pack =
+            std::fs::read_to_string(root.join(DIRECTORY).join("rustleaks-providers-v1.toml"))
+                .unwrap();
+        let prior = pack.split_once(MARKER).unwrap().0;
+        let count = prior_rule_count("rustleaks-providers-v1", prior).unwrap();
+        assert_eq!(count, 104);
+        assert!(provenance(&reviewed, "providers", &changed.to_string(), count).is_err());
+        let mut extra = reviewed.clone();
+        extra["providers"].as_array_mut().unwrap().pop();
+        assert!(validate_source(&extra, "providers", PROVIDERS).is_err());
     }
 }

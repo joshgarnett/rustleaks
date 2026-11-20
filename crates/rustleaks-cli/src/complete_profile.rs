@@ -18,40 +18,50 @@ const MAX_PROFILE_BYTES: usize = 16 * 1024;
 // These are scheduling guards, not a process memory quota.
 const MAX_WORKERS: usize = 64;
 const MAX_QUEUE_CAPACITY: usize = 1024;
-const KEYS: &[&str] = &[
-    "version",
-    "target_bytes",
-    "operation_original_bytes",
-    "operation_fragments",
-    "operation_issues",
-    "workers",
-    "queue_capacity",
-    "fragment_decoded_bytes",
-    "operation_decoded_bytes",
-    "fragment_work_units",
-    "operation_work_units",
-    "fragment_finding_records",
-    "operation_finding_records",
-    "fragment_finding_payload_bytes",
-    "operation_finding_payload_bytes",
-    "fragment_collected_spans",
-    "operation_collected_spans",
-    "fragment_normalization_bytes",
-    "operation_normalization_bytes",
-    "archive_entries",
-    "archive_member_bytes",
-    "archive_total_bytes",
-    "archive_spool_bytes",
-    "git_patch_bytes",
-    "git_patch_lines",
-    "git_stderr_bytes",
-    "git_blob_bytes",
-    "git_metadata_bytes",
-    "git_path_bytes",
-    "git_files",
-    "git_hunks",
-    "scm_link_bytes",
-    "operation_scm_link_bytes",
+
+/// What a profile field must hold, besides a whole number.
+#[derive(Clone, Copy)]
+enum Check {
+    Any,
+    Positive,
+    PositiveAtMost(usize),
+}
+
+/// Every profile field, in the order that missing fields are reported.
+const FIELDS: &[(&str, Check)] = &[
+    ("version", Check::Any),
+    ("target_bytes", Check::Positive),
+    ("operation_original_bytes", Check::Any),
+    ("operation_fragments", Check::Any),
+    ("operation_issues", Check::Any),
+    ("workers", Check::PositiveAtMost(MAX_WORKERS)),
+    ("queue_capacity", Check::PositiveAtMost(MAX_QUEUE_CAPACITY)),
+    ("fragment_decoded_bytes", Check::Any),
+    ("operation_decoded_bytes", Check::Any),
+    ("fragment_work_units", Check::Any),
+    ("operation_work_units", Check::Any),
+    ("fragment_finding_records", Check::Any),
+    ("operation_finding_records", Check::Any),
+    ("fragment_finding_payload_bytes", Check::Any),
+    ("operation_finding_payload_bytes", Check::Any),
+    ("fragment_collected_spans", Check::Any),
+    ("operation_collected_spans", Check::Any),
+    ("fragment_normalization_bytes", Check::Any),
+    ("operation_normalization_bytes", Check::Any),
+    ("archive_entries", Check::Positive),
+    ("archive_member_bytes", Check::Positive),
+    ("archive_total_bytes", Check::Positive),
+    ("archive_spool_bytes", Check::Positive),
+    ("git_patch_bytes", Check::Positive),
+    ("git_patch_lines", Check::Positive),
+    ("git_stderr_bytes", Check::Positive),
+    ("git_blob_bytes", Check::Positive),
+    ("git_metadata_bytes", Check::Positive),
+    ("git_path_bytes", Check::Positive),
+    ("git_files", Check::Positive),
+    ("git_hunks", Check::Positive),
+    ("scm_link_bytes", Check::Positive),
+    ("operation_scm_link_bytes", Check::Positive),
 ];
 
 #[derive(Clone, Debug)]
@@ -105,7 +115,9 @@ impl CompleteProfile {
         let mut length = 0;
         loop {
             if length == bytes.len() {
-                return Err("complete profile exceeds 16384 bytes".to_owned());
+                return Err(format!(
+                    "complete profile exceeds {MAX_PROFILE_BYTES} bytes"
+                ));
             }
             match reader.read(&mut bytes[length..]) {
                 Ok(0) => return Self::parse(&bytes[..length]),
@@ -123,7 +135,7 @@ impl CompleteProfile {
         }
         let text = std::str::from_utf8(bytes)
             .map_err(|_| "complete profile must contain ASCII only".to_owned())?;
-        let mut values = [None; KEYS.len()];
+        let mut values = [None; FIELDS.len()];
         for (line_index, line) in text.lines().enumerate() {
             let line = line.trim_matches([' ', '\t', '\r']);
             if line.is_empty() || line.starts_with('#') {
@@ -133,9 +145,9 @@ impl CompleteProfile {
             let (key, value) = line.split_once('=').ok_or_else(invalid)?;
             let key = key.trim_matches([' ', '\t']);
             let value = value.trim_matches([' ', '\t']);
-            let index = KEYS
+            let index = FIELDS
                 .iter()
-                .position(|known| *known == key)
+                .position(|(known, _)| *known == key)
                 .ok_or_else(invalid)?;
             if values[index].is_some()
                 || value.is_empty()
@@ -146,66 +158,69 @@ impl CompleteProfile {
             let parsed = value.parse::<u64>().map_err(|_| invalid())?;
             values[index] = Some(usize::try_from(parsed).map_err(|_| invalid())?);
         }
-        for (key, value) in KEYS.iter().zip(values) {
+        for ((key, _), value) in FIELDS.iter().zip(values) {
             if value.is_none() {
                 return Err(format!("missing complete profile field: {key}"));
             }
         }
         let values = values.map(|value| value.expect("all required fields were checked"));
-        if values[0] != 1 {
+        let get = |name: &str| {
+            FIELDS
+                .iter()
+                .position(|(key, _)| *key == name)
+                .map(|index| values[index])
+                .expect("every field name is in FIELDS")
+        };
+        if get("version") != 1 {
             return Err("unsupported complete profile version".to_owned());
         }
-        for index in [
-            1, 5, 6, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-        ] {
-            if values[index] == 0 {
-                return Err(format!(
-                    "complete profile field {} must be positive",
-                    KEYS[index]
-                ));
+        for ((key, check), value) in FIELDS.iter().zip(values) {
+            if matches!(check, Check::Positive | Check::PositiveAtMost(_)) && value == 0 {
+                return Err(format!("complete profile field {key} must be positive"));
             }
         }
-        for (index, maximum) in [(5, MAX_WORKERS), (6, MAX_QUEUE_CAPACITY)] {
-            if values[index] > maximum {
+        for ((key, check), value) in FIELDS.iter().zip(values) {
+            if let Check::PositiveAtMost(maximum) = check
+                && value > *maximum
+            {
                 return Err(format!(
-                    "complete profile field {} exceeds maximum {maximum}",
-                    KEYS[index]
+                    "complete profile field {key} exceeds maximum {maximum}"
                 ));
             }
         }
         Ok(Self {
-            target_bytes: values[1],
-            operation_original_bytes: values[2],
-            operation_fragments: values[3],
-            operation_issues: values[4],
-            workers: values[5],
-            queue_capacity: values[6],
-            fragment_decoded_bytes: values[7],
-            operation_decoded_bytes: values[8],
-            fragment_work_units: values[9],
-            operation_work_units: values[10],
-            fragment_finding_records: values[11],
-            operation_finding_records: values[12],
-            fragment_finding_payload_bytes: values[13],
-            operation_finding_payload_bytes: values[14],
-            fragment_collected_spans: values[15],
-            operation_collected_spans: values[16],
-            fragment_normalization_bytes: values[17],
-            operation_normalization_bytes: values[18],
-            archive_entries: values[19],
-            archive_member_bytes: values[20],
-            archive_total_bytes: values[21],
-            archive_spool_bytes: values[22],
-            git_patch_bytes: values[23],
-            git_patch_lines: values[24],
-            git_stderr_bytes: values[25],
-            git_blob_bytes: values[26],
-            git_metadata_bytes: values[27],
-            git_path_bytes: values[28],
-            git_files: values[29],
-            git_hunks: values[30],
-            scm_link_bytes: values[31],
-            operation_scm_link_bytes: values[32],
+            target_bytes: get("target_bytes"),
+            operation_original_bytes: get("operation_original_bytes"),
+            operation_fragments: get("operation_fragments"),
+            operation_issues: get("operation_issues"),
+            workers: get("workers"),
+            queue_capacity: get("queue_capacity"),
+            fragment_decoded_bytes: get("fragment_decoded_bytes"),
+            operation_decoded_bytes: get("operation_decoded_bytes"),
+            fragment_work_units: get("fragment_work_units"),
+            operation_work_units: get("operation_work_units"),
+            fragment_finding_records: get("fragment_finding_records"),
+            operation_finding_records: get("operation_finding_records"),
+            fragment_finding_payload_bytes: get("fragment_finding_payload_bytes"),
+            operation_finding_payload_bytes: get("operation_finding_payload_bytes"),
+            fragment_collected_spans: get("fragment_collected_spans"),
+            operation_collected_spans: get("operation_collected_spans"),
+            fragment_normalization_bytes: get("fragment_normalization_bytes"),
+            operation_normalization_bytes: get("operation_normalization_bytes"),
+            archive_entries: get("archive_entries"),
+            archive_member_bytes: get("archive_member_bytes"),
+            archive_total_bytes: get("archive_total_bytes"),
+            archive_spool_bytes: get("archive_spool_bytes"),
+            git_patch_bytes: get("git_patch_bytes"),
+            git_patch_lines: get("git_patch_lines"),
+            git_stderr_bytes: get("git_stderr_bytes"),
+            git_blob_bytes: get("git_blob_bytes"),
+            git_metadata_bytes: get("git_metadata_bytes"),
+            git_path_bytes: get("git_path_bytes"),
+            git_files: get("git_files"),
+            git_hunks: get("git_hunks"),
+            scm_link_bytes: get("scm_link_bytes"),
+            operation_scm_link_bytes: get("operation_scm_link_bytes"),
         })
     }
 
@@ -337,8 +352,8 @@ pub(crate) struct CompletionStatus {
     pub reason: CompletionReason,
     usage: Option<SourceUsage>,
     failure: Option<LimitFailure>,
-    pub scm_link_bytes: usize,
-    pub findings: usize,
+    scm_link_bytes: usize,
+    findings: usize,
     issues: usize,
 }
 
@@ -482,7 +497,7 @@ impl CompletionStatus {
     }
 }
 
-const fn resource_name(kind: SourceBudgetKind) -> &'static str {
+pub(crate) const fn resource_name(kind: SourceBudgetKind) -> &'static str {
     match kind {
         SourceBudgetKind::OriginalBytes => "original_bytes",
         SourceBudgetKind::Fragments => "fragments",

@@ -12,7 +12,6 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rustleaks_core::Engine;
@@ -139,36 +138,7 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
 
 // Shared scratch, engine, and comparison helpers.
 
-pub(super) struct Scratch(pub(super) PathBuf);
-
-impl Scratch {
-    pub(super) fn new() -> Result<Self> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        // A test deliberately leaves its shared repository behind, and a later
-        // run can reuse the process ID, so a taken name moves to the next one.
-        let root = loop {
-            let root = std::env::temp_dir().join(format!(
-                "rustleaks-perf-scale-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            match fs::create_dir(&root) {
-                Ok(()) => break root,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error.into()),
-            }
-        };
-        fs::create_dir(root.join("empty"))?;
-        fs::write(root.join("empty-config"), b"")?;
-        Ok(Self(root))
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+pub(super) use crate::Scratch;
 
 fn simple_engine() -> Result<Engine> {
     Ok(Engine::builder(ConfigLoader::new().load_toml(SIMPLE_CONFIG)?).build()?)
@@ -578,7 +548,7 @@ fn finish_directory_fixture(
     mut findings: Vec<FindingKey>,
     config: CompiledConfigKind,
 ) -> Result<DirectoryFixture> {
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     let input = scratch.0.join("input");
     fs::create_dir(&input)?;
     write_tree(&input, &files)?;
@@ -1343,7 +1313,7 @@ pub(super) struct GitFixture {
 /// the commit IDs in plan order and the fast-import stream.
 pub(super) fn import_commits(plan: &GitPlan) -> Result<(Scratch, Vec<String>, Vec<u8>)> {
     let executable = representative_io::executable("RUSTLEAKS_PERF_GIT")?;
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     let repository = scratch.0.join("repo");
     let mut init = representative_io::command(&executable, &scratch.0);
     init.arg("init")
@@ -1584,7 +1554,7 @@ fn report_keys(report: &[Value]) -> Result<Vec<FindingKey>> {
 /// Exact diagnostics produced for files over `--max-target-megabytes`.
 fn cli_many_issues(iterations: usize) -> Result<Vec<Phase>> {
     let cli = representative_io::executable("RUSTLEAKS_PERF_CLI")?;
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     let input = scratch.0.join("input");
     fs::create_dir(&input)?;
     fs::write(scratch.0.join("config.toml"), SIMPLE_CONFIG)?;
@@ -1694,7 +1664,7 @@ fn output_chunked(mut command: Command, input: &[u8], write_size: usize) -> Resu
 
 fn cli_stdin_chunked(iterations: usize) -> Result<Vec<Phase>> {
     let cli = representative_io::executable("RUSTLEAKS_PERF_CLI")?;
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     fs::write(scratch.0.join("config.toml"), SIMPLE_CONFIG)?;
     let (input, expected) = stdin_chunked_input();
     let input_fingerprint = fingerprint(&input);
@@ -1762,7 +1732,7 @@ fn cli_stdin_chunked(iterations: usize) -> Result<Vec<Phase>> {
 
 fn cli_enable_rule_startup(iterations: usize) -> Result<Vec<Phase>> {
     let cli = representative_io::executable("RUSTLEAKS_PERF_CLI")?;
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     let input_fingerprint = fingerprint(b"empty-stdin");
     let mut phases = Vec::new();
     for (phase, rule_arguments, expected_info) in [

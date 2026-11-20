@@ -76,7 +76,7 @@ keywords = ["key"]
             .is_empty()
     );
 
-    let ignore_marker = ScanOptions::builder().honor_gitleaks_allow(false).build();
+    let ignore_marker = ScanOptions::builder().honor_allow_markers(false).build();
     let findings = engine.scan_fragment(&allowed, &ignore_marker);
     assert_eq!(findings.findings()[0].secret().as_bytes(), b"AB12");
     assert_eq!(

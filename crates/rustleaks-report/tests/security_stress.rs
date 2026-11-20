@@ -3,10 +3,10 @@
 #![allow(missing_docs)]
 
 #[allow(dead_code)]
-#[path = "../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 
-use campaign_profile::{Profile, deep_seed};
+use fuzz_profile::{Profile, deep_seed};
 use rustleaks_core::model::{Finding, Location};
 use rustleaks_report::{TemplateError, TemplateLimits, TemplateReporter};
 use serde_json::json;
@@ -23,10 +23,10 @@ fn finding(description: &[u8]) -> Finding {
 #[test]
 fn deep_template_frame_retains_source_past_the_smoke_boundary() {
     let seed = deep_seed("template").unwrap();
-    let (_, template, findings) = campaign_profile::template_parts(&seed, Profile::Deep);
+    let (_, template, findings) = fuzz_profile::template_parts(&seed, Profile::Deep);
     assert_eq!(template.len(), 16 * 1024);
     assert_eq!(findings, b"synthetic-finding");
-    let (_, smoke, _) = campaign_profile::template_parts(&seed, Profile::Smoke);
+    let (_, smoke, _) = fuzz_profile::template_parts(&seed, Profile::Smoke);
     assert_eq!(smoke.len(), 4 * 1024);
     let limits = Profile::Deep.template();
     assert_eq!(

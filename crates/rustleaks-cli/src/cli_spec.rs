@@ -124,6 +124,8 @@ pub(crate) struct Flag {
     pub short: Option<char>,
     pub value: Value,
     pub repeatable: bool,
+    /// The help section of a shared scan flag. Help ignores it for other
+    /// flags, which it lists under their command.
     pub group: Group,
     /// Help lines. The first line is also the short description in
     /// completion scripts.
@@ -353,7 +355,7 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         &[
             "Choose how to find base64 text.",
             "Modes: compatible and extended. Default: compatible.",
-            "compatible keeps the pinned Gitleaks behavior.",
+            "compatible finds the same base64 text as Gitleaks.",
             "extended also finds URL-safe base64, base64 without",
             "padding, and base64 of binary data.",
         ],
@@ -790,6 +792,22 @@ mod tests {
         }
         for name in command_names() {
             assert!(name.bytes().all(|byte| byte.is_ascii_lowercase()));
+        }
+    }
+
+    #[test]
+    fn help_names_every_value_of_a_choice_flag() {
+        let all = COMMANDS
+            .iter()
+            .flat_map(|command| command.flags.iter())
+            .chain(SCAN_FLAGS);
+        for flag in all {
+            if let Value::Choice(_, values) = flag.value {
+                let help = flag.help.join(" ");
+                for value in values {
+                    assert!(help.contains(value), "--{} help omits {value}", flag.long);
+                }
+            }
         }
     }
 

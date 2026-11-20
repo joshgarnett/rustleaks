@@ -1,9 +1,10 @@
 //! Synthetic 7z fixtures with explicit member bytes and uncompressed headers.
 //!
 //! Container construction follows the 7z Header/PackInfo/UnpackInfo/FilesInfo
-//! layout. Compression uses the maintained miniz and LZ4 encoders; expected
-//! decoded bytes are supplied independently by each caller. No fixture bytes
-//! are copied from an upstream archive.
+//! layout. Compression uses the maintained miniz and LZ4 encoders, and LZMA2
+//! members use uncompressed LZMA2 chunks; expected decoded bytes are supplied
+//! independently by each caller. No fixture bytes are copied from an upstream
+//! archive.
 
 use std::io::Write;
 
@@ -12,6 +13,9 @@ pub enum Method {
     Copy,
     Deflate,
     Lz4,
+    /// LZMA2 with this dictionary-size property byte. The dictionary size
+    /// sets the memory that the decoder needs.
+    Lzma2(u8),
 }
 
 impl Method {
@@ -20,6 +24,24 @@ impl Method {
             Self::Copy => &[0],
             Self::Deflate => &[4, 1, 8],
             Self::Lz4 => &[4, 0xf7, 0x11, 4],
+            Self::Lzma2(_) => &[0x21],
+        }
+    }
+
+    /// Writes the coder flags, method ID and properties of a simple coder.
+    fn write_coder(self, output: &mut Vec<u8>) {
+        let id = self.id();
+        let size = u8::try_from(id.len()).expect("small method ID");
+        match self {
+            Self::Lzma2(dictionary) => {
+                output.push(size | 0x20); // The coder has properties.
+                output.extend_from_slice(id);
+                output.extend_from_slice(&[1, dictionary]);
+            }
+            Self::Copy | Self::Deflate | Self::Lz4 => {
+                output.push(size);
+                output.extend_from_slice(id);
+            }
         }
     }
 
@@ -31,6 +53,19 @@ impl Method {
                 let mut encoder = lz4_flex::frame::FrameEncoder::new(Vec::new());
                 encoder.write_all(bytes).expect("encode synthetic LZ4");
                 encoder.finish().expect("finish synthetic LZ4")
+            }
+            Self::Lzma2(_) => {
+                // Uncompressed chunks of at most 64 KiB. The first chunk
+                // resets the dictionary, and a zero byte ends the stream.
+                let mut encoded = Vec::new();
+                for (index, chunk) in bytes.chunks(64 * 1024).enumerate() {
+                    encoded.push(if index == 0 { 1 } else { 2 });
+                    let size = u16::try_from(chunk.len() - 1).expect("chunk size");
+                    encoded.extend_from_slice(&size.to_be_bytes());
+                    encoded.extend_from_slice(chunk);
+                }
+                encoded.push(0);
+                encoded
             }
         }
     }
@@ -70,8 +105,7 @@ pub fn archive(members: &[Member<'_>]) -> Vec<u8> {
     next.push(0); // Inline folders.
     for member in members {
         next.push(1); // One coder, one input, one output.
-        next.push(u8::try_from(member.method.id().len()).expect("small method ID"));
-        next.extend_from_slice(member.method.id());
+        member.method.write_coder(&mut next);
     }
     next.push(12); // CodersUnpackSize.
     for member in members {
@@ -198,8 +232,7 @@ fn folder_streams(folders: &[Folder<'_>]) -> Vec<u8> {
     for folder in folders {
         number(&mut next, folder.methods.len());
         for method in &folder.methods {
-            next.push(u8::try_from(method.id().len()).expect("small method ID"));
-            next.extend_from_slice(method.id());
+            method.write_coder(&mut next);
         }
         for &(input, output) in &folder.bind_pairs {
             number(&mut next, input);

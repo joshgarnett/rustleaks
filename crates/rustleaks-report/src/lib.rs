@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Reusable Rustleaks report writers with pinned upstream byte compatibility.
+//! Report writers for JSON, CSV, JUnit, SARIF and templates.
 
 mod csv;
 mod go_json;
@@ -7,7 +7,6 @@ mod json;
 mod junit;
 mod sarif;
 mod template;
-pub mod triage;
 
 use std::collections::TryReserveError;
 use std::io;
@@ -20,7 +19,8 @@ pub use template::{SAFE_TEMPLATE_PROFILE, TemplateError, TemplateLimits, Templat
 
 use rustleaks_core::model::Finding;
 
-/// The weakness classification emitted by upstream-compatible SARIF reports.
+/// CWE for hard-coded credentials, for callers that label findings. Reports
+/// do not include it.
 pub const CWE: &str = "CWE-798";
 
 /// Human-readable description for [`CWE`].
@@ -46,24 +46,10 @@ pub enum ReportError {
     /// A report-owned buffer could not be reserved fallibly.
     #[error("could not allocate report buffer")]
     Allocation(#[source] TryReserveError),
-    /// JSON serialization failed.
-    #[error("could not serialize report JSON: {0}")]
-    Json(#[from] serde_json::Error),
     /// Safe-template parsing or rendering failed.
     #[error(transparent)]
     Template(#[from] TemplateError),
-    /// A Unicode-only format received a byte-preserving non-UTF-8 value.
-    #[error("{format} field {field} is not valid UTF-8")]
-    InvalidUtf8 {
-        /// Report format being produced.
-        format: &'static str,
-        /// Finding field that could not be represented.
-        field: &'static str,
-    },
     /// JSON cannot represent a non-finite entropy value.
     #[error("could not serialize non-finite finding entropy {0}")]
     NonFiniteEntropy(f32),
 }
-
-/// Confirms reporters are linked to the expected engine profile.
-pub const UPSTREAM_REVISION: &str = rustleaks_core::UPSTREAM_REVISION;

@@ -1,13 +1,12 @@
-//! Private Go compatibility and explicit native byte-regex matchers.
+//! Private Go-syntax and native byte-regex matchers.
 //!
-//! The public crate deliberately exposes pattern source strings, not this
-//! backend or any `regex` crate type. The translator covers the RE2 syntax used
-//! by the pinned upstream compatibility target while retaining byte offsets
-//! for arbitrary source content.
+//! The public crate exposes pattern source strings, not this backend or any
+//! `regex` crate type. The translator covers the Go RE2 syntax that Gitleaks
+//! configurations use and keeps byte offsets for arbitrary source content.
 
 #![forbid(unsafe_code)]
-// Some compatibility helpers are exercised only by tests or feature-specific
-// consumers.
+// The `go_regex` fuzz target compiles this module on its own and calls helpers
+// that the library does not, so dead-code warnings are off outside tests.
 #![cfg_attr(not(test), allow(dead_code))]
 
 #[cfg(test)]
@@ -57,7 +56,9 @@ const DEEP_COMPILE_THRESHOLD: usize = 200;
 const DEEP_COMPILE_STACK_SIZE: usize = 32 << 20;
 const BACKEND_VERSION: &str = "regex-automata-meta/^0.4.12;regex-syntax/^0.8.5";
 
-/// Private backend requirements retained for compatibility traceability.
+/// The `regex-automata` and `regex-syntax` requirements in `Cargo.toml`. The
+/// traceability inventory maps Go's `regexp` version to this function, and a
+/// unit test keeps it equal to the manifest.
 pub(crate) const fn backend_version() -> &'static str {
     BACKEND_VERSION
 }
@@ -620,7 +621,8 @@ impl GoRegex {
                 .nest_limit(NEST_LIMIT),
         )
         .map_err(|_| GoRegexError::Backend {
-            // Retain the former Thompson compiler's public error text.
+            // Keep the error text `error parsing regex`; it is part of the
+            // reported error.
             message: "error parsing regex".into(),
         })?;
         let hir = if whole_input {
@@ -680,10 +682,10 @@ impl GoRegex {
             .build_from_hir(hir);
         let result = match result {
             Err(error) if error.size_limit() == Some(nfa_size_limit) => {
-                // The identical forward NFA already passed its limit.
-                // A larger reverse NFA must not reject a formerly accepted
-                // expression. Retry without building a reverse NFA; every
-                // NFA still obeys the same cap.
+                // The identical forward NFA already passed its limit, so a
+                // larger reverse NFA must not reject the expression. Retry
+                // without building a reverse NFA; every NFA still obeys the
+                // same cap.
                 Regex::builder()
                     .configure(config.hybrid(false))
                     .build_from_hir(hir)
@@ -758,8 +760,8 @@ impl GoRegex {
             let mut accept = true;
             if whole.end() == position {
                 // Go suppresses an empty match at the preceding match end,
-                // then advances one decoded rune. The legacy wrapper supplies
-                // no admission callback, preserving its work checkpoints.
+                // then advances one decoded rune. `find_all_normalized`
+                // passes a no-op admission callback, so it adds no checkpoints.
                 if previous_match_end == Some(whole.start()) {
                     accept = false;
                 }
@@ -1089,6 +1091,10 @@ impl<'a> NormalizedHaystack<'a> {
 
 /// Returns Go `utf8.DecodeRune`'s width for the first rune in `bytes`.
 /// Invalid and truncated encodings consume one byte as `utf8.RuneError`.
+///
+/// `go_unicode::decode_rune` does the same for the rest of the crate. The
+/// `go_regex` fuzz target compiles this module without the rest of the crate,
+/// so it keeps its own copy.
 fn utf8_rune_width(bytes: &[u8]) -> usize {
     let Some(&first) = bytes.first() else {
         return 0;
@@ -2284,10 +2290,21 @@ mod tests {
     }
 
     #[test]
-    fn identifies_the_private_backend_requirements() {
+    fn backend_version_matches_the_manifest_requirements() {
+        let manifest: toml::Table = toml::from_str(include_str!("../../Cargo.toml")).unwrap();
+        let dependencies = manifest["dependencies"].as_table().unwrap();
+        let requirement = |name: &str| match &dependencies[name] {
+            toml::Value::String(version) => version.clone(),
+            toml::Value::Table(table) => table["version"].as_str().unwrap().to_owned(),
+            other => panic!("unexpected requirement for {name}: {other:?}"),
+        };
         assert_eq!(
             backend_version(),
-            "regex-automata-meta/^0.4.12;regex-syntax/^0.8.5"
+            format!(
+                "regex-automata-meta/^{};regex-syntax/^{}",
+                requirement("regex-automata"),
+                requirement("regex-syntax"),
+            )
         );
     }
 
@@ -2863,8 +2880,8 @@ mod tests {
         }
     }
 
-    // Frozen former per-byte normalization and mapping. Keep it independent
-    // of UTF-8 chunks and sparse checkpoints used by the production path.
+    // A per-byte normalization and mapping, independent of the UTF-8 chunks
+    // and sparse checkpoints that the production path uses.
     fn per_byte_normalization(original: &[u8]) -> (Vec<u8>, Vec<usize>) {
         let mut bytes = Vec::with_capacity(original.len());
         let mut boundaries = Vec::with_capacity(original.len() + 1);
@@ -2954,7 +2971,7 @@ mod tests {
     }
 
     #[test]
-    fn compiles_formerly_default_size_limited_patterns() {
+    fn compiles_large_repetition_patterns_from_the_default_rules() {
         let patterns = [
             r#"(?i)[\w.-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:[ \t\w.-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([\w.=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nr]|$)"#,
             r"pypi-AgEIcHlwaS5vcmc[\w-]{50,1000}",

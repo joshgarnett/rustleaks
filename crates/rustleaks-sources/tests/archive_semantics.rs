@@ -201,6 +201,7 @@ fn crc_corruption_reports_a_decode_issue_and_container_truncation_publishes_noth
         match method {
             Method::Copy | Method::Lz4 => broken.packed[0] ^= 1,
             Method::Deflate => broken.packed[0] |= 0b110, // Reserved block type.
+            Method::Lzma2(_) => broken.packed[0] = 3,     // Reserved chunk type.
         }
         let events = collect(archive(&[broken]), limits(1, 1 << 20));
         assert!(events.members.len() <= 1, "{method:?}");
@@ -380,6 +381,27 @@ fn decoded_member_limits_are_inclusive_for_each_method() {
             }
         }
     }
+}
+
+#[test]
+fn decoder_memory_over_the_memory_limit_is_a_limit_issue() {
+    let content = payload(7000);
+    // A 4 KiB dictionary fits the 1 MiB memory limit that a 1 MiB member
+    // limit sets. A 16 MiB dictionary does not.
+    let small = archive(&[Member::new("value.txt", &content, Method::Lzma2(0))]);
+    let events = collect(small, limits(1, 1 << 20));
+    assert!(events.issues.is_empty());
+    assert_eq!(
+        events.members,
+        [(b"fixture.7z!value.txt".to_vec(), content.clone())]
+    );
+    let large = archive(&[Member::new("value.txt", &content, Method::Lzma2(24))]);
+    let events = collect(large, limits(1, 1 << 20));
+    assert!(events.members.is_empty());
+    assert_eq!(
+        events.issues,
+        [(SourceStage::Limit, SourceIssueKind::Limit)]
+    );
 }
 
 fn graph_collect(bytes: Vec<u8>, limits: ArchiveLimits, strict: bool) -> Events {

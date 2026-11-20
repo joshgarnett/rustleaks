@@ -8,11 +8,11 @@ use rustleaks_core::model::Fragment;
 use serde_json::{Value, json};
 
 use super::{
-    Context, Expected, Fallible, Forbidden, GENERIC_RULE, GITHUB_PAT_RULE, KIB, Killer, Lcg, Plan,
-    Plant, Scan, Script, TOKEN_ALPHABET, VALUE_ALPHABET, admission, all_admitted, ascii_scan,
-    census, ensure, filler, generic_value, ghp_token, go_entropy, groupless_private_key,
-    groupless_tokens, keyword_run_blob, keyword_run_repeat, multibyte, near_miss, prefix_storm,
-    prose, single, thrash_generic,
+    Context, DefaultRuleRng, Expected, Fallible, Forbidden, GENERIC_RULE, GITHUB_PAT_RULE, KIB,
+    Killer, Plan, Plant, Scan, Script, TOKEN_ALPHABET, VALUE_ALPHABET, admission, all_admitted,
+    ascii_scan, census, ensure, filler, generic_value, ghp_token, go_entropy,
+    groupless_private_key, groupless_tokens, keyword_run_blob, keyword_run_repeat, multibyte,
+    near_miss, prefix_storm, prose, single, thrash_generic,
 };
 
 const REALISTIC_SIZE: usize = 256 * KIB;
@@ -71,7 +71,7 @@ pub(super) fn lockfile(
     let mut raw =
         b"{\n  \"name\": \"demo-workspace\",\n  \"lockfileVersion\": 3,\n  \"packages\": {\n"
             .to_vec();
-    let mut rng = Lcg::new(0x6c6f_636b);
+    let mut rng = DefaultRuleRng::new(0x6c6f_636b);
     let mut entries = 0;
     while raw.len() < size {
         let digest = String::from_utf8(rng.string(DIGEST_ALPHABET, 86))?;
@@ -110,7 +110,7 @@ pub(super) fn env_file(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Va
     const NAMES: [&str; 4] = ["API_KEY", "AUTH_TOKEN", "DB_PASSWORD", "CLIENT_SECRET"];
     let rule = ctx.rule_index(GENERIC_RULE)?;
     let forbidden = Forbidden::new(ctx.config, &[VALUE_ALPHABET])?;
-    let mut rng = Lcg::new(0x656e_7631);
+    let mut rng = DefaultRuleRng::new(0x656e_7631);
     let mut raw = Vec::with_capacity(size);
     let mut plants = Vec::new();
     let mut line = 0;
@@ -146,7 +146,7 @@ pub(super) fn env_file(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Va
 pub(super) fn k8s_yaml(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
     let rule = ctx.rule_index(GENERIC_RULE)?;
     let forbidden = Forbidden::new(ctx.config, &[VALUE_ALPHABET])?;
-    let mut rng = Lcg::new(0x6b38_7331);
+    let mut rng = DefaultRuleRng::new(0x6b38_7331);
     let mut raw = Vec::with_capacity(size);
     let mut plants = Vec::new();
     let mut manifests = 0;
@@ -184,7 +184,7 @@ pub(super) fn k8s_yaml(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Va
 
 /// An unsigned synthetic token in JWT shape, for the `jwt` rule. The header is
 /// the base64url form of `{"alg":"HS256"}`; payload and signature are random.
-fn synthetic_jwt(rng: &mut Lcg) -> Vec<u8> {
+fn synthetic_jwt(rng: &mut DefaultRuleRng) -> Vec<u8> {
     let mut alphabet = TOKEN_ALPHABET.to_vec();
     alphabet.extend_from_slice(b"-_");
     let mut token = b"eyJhbGciOiJIUzI1NiJ9.eyJ".to_vec();
@@ -199,7 +199,7 @@ fn synthetic_jwt(rng: &mut Lcg) -> Vec<u8> {
 /// which stays in the match because only newlines are trimmed.
 pub(super) fn jwt_log(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
     let rule = ctx.rule_index("jwt")?;
-    let mut rng = Lcg::new(0x6a77_746c);
+    let mut rng = DefaultRuleRng::new(0x6a77_746c);
     let mut raw = Vec::with_capacity(size);
     let mut plants = Vec::new();
     let mut line = 0_usize;
@@ -262,7 +262,7 @@ pub(super) fn multi_language(ctx: &mut Context<'_>, size: usize) -> Fallible<(Sc
     ];
     let rule = ctx.rule_index(GENERIC_RULE)?;
     let forbidden = Forbidden::new(ctx.config, &[VALUE_ALPHABET])?;
-    let mut rng = Lcg::new(0x6c61_6e67);
+    let mut rng = DefaultRuleRng::new(0x6c61_6e67);
     let mut raw = Vec::with_capacity(size);
     let mut plants = Vec::new();
     let mut line = 0;
@@ -298,7 +298,7 @@ pub(super) fn multi_language(ctx: &mut Context<'_>, size: usize) -> Fallible<(Sc
 /// zero and its line is the whole fragment.
 pub(super) fn binary(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
     let rule = ctx.rule_index(GITHUB_PAT_RULE)?;
-    let mut rng = Lcg::new(0x6269_6e31);
+    let mut rng = DefaultRuleRng::new(0x6269_6e31);
     let mut raw = (0..size)
         .map(|_| {
             // Zero stays NUL; the rest map onto 0x80..=0xFF.

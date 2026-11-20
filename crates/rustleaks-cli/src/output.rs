@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rustleaks_core::config::CompiledConfig;
-use rustleaks_core::model::{ByteText, Finding};
+use rustleaks_core::model::{ByteText, Finding, Location};
 use rustleaks_report::{
     CsvReporter, JsonReporter, JunitReporter, ReportError, Reporter, SarifReporter, TemplateLimits,
     TemplateReporter,
 };
 
 use crate::args::Options;
+use crate::config::resolve;
 
 const BANNER: &str = "\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    rustleaks\n\n";
 const STDOUT_REPORT_BUFFER_BYTES: usize = 64 * 1024;
@@ -50,7 +51,48 @@ fn diagnostic(
 pub(crate) struct ReportPlan {
     target: ReportTarget,
     reporter: Box<dyn Reporter>,
-    pub format: &'static str,
+    pub format: ReportFormat,
+}
+
+/// A report format that `--report-format` names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReportFormat {
+    Json,
+    Csv,
+    Junit,
+    Sarif,
+    Template,
+}
+
+impl ReportFormat {
+    /// Every format, in the order of `cli_spec::REPORT_FORMATS`.
+    const ALL: [Self; 5] = [
+        Self::Json,
+        Self::Csv,
+        Self::Junit,
+        Self::Sarif,
+        Self::Template,
+    ];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Csv => "csv",
+            Self::Junit => "junit",
+            Self::Sarif => "sarif",
+            Self::Template => "template",
+        }
+    }
+
+    fn from_name(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|format| format.name() == value)
+    }
+}
+
+impl std::fmt::Display for ReportFormat {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
 }
 
 enum ReportTarget {
@@ -74,11 +116,12 @@ impl ReportPlan {
         };
         let normalized = options.report_format.as_deref().map(normalize_format);
         let format = match normalized.as_deref() {
-            Some(value) if !value.is_empty() => format_name(value)?,
+            Some(value) if !value.is_empty() => ReportFormat::from_name(value)
+                .ok_or_else(|| format!("unknown report format {value:?}"))?,
             _ => infer(path)?,
         };
-        // The pinned command validates this flag against the raw pflag value,
-        // before its later trim/lowercase routing step.
+        // This check uses the format exactly as typed, before trimming and
+        // lowercasing, so `--report-format Template` is rejected here.
         if options.report_template.is_some() && options.report_format.as_deref() != Some("template")
         {
             return Err(
@@ -86,13 +129,13 @@ impl ReportPlan {
             );
         }
         let reporter: Box<dyn Reporter> = match format {
-            "json" => Box::new(JsonReporter),
-            "csv" => Box::new(CsvReporter),
-            "junit" => Box::new(JunitReporter),
-            "sarif" => {
+            ReportFormat::Json => Box::new(JsonReporter),
+            ReportFormat::Csv => Box::new(CsvReporter),
+            ReportFormat::Junit => Box::new(JunitReporter),
+            ReportFormat::Sarif => {
                 Box::new(SarifReporter::try_from_config(config).map_err(|error| error.to_string())?)
             }
-            "template" => {
+            ReportFormat::Template => {
                 let template = options
                     .report_template
                     .as_ref()
@@ -102,7 +145,6 @@ impl ReportPlan {
                         .map_err(|error| error.to_string())?,
                 )
             }
-            _ => return Err(format!("unsupported report format {format}")),
         };
         if let ReportTarget::File(path) = &target
             && let Some(parent) = path
@@ -131,7 +173,7 @@ impl ReportPlan {
 
     pub fn write(&self, stdout: &mut dyn Write, findings: &[Finding]) -> Result<(), String> {
         match &self.target {
-            ReportTarget::Stdout if self.format == "template" => {
+            ReportTarget::Stdout if self.format == ReportFormat::Template => {
                 // Templates can fail after writing a prefix. Preserve their write
                 // sequence and error precedence through caller-owned buffered sinks.
                 self.reporter
@@ -176,18 +218,7 @@ impl ReportPlan {
     }
 }
 
-fn format_name(value: &str) -> Result<&'static str, String> {
-    match value {
-        "json" => Ok("json"),
-        "csv" => Ok("csv"),
-        "junit" => Ok("junit"),
-        "sarif" => Ok("sarif"),
-        "template" => Ok("template"),
-        _ => Err(format!("unknown report format {value:?}")),
-    }
-}
-
-fn infer(path: &Path) -> Result<&'static str, String> {
+fn infer(path: &Path) -> Result<ReportFormat, String> {
     if path == Path::new("-") {
         return Err("report format is required when report path is '-'".to_owned());
     }
@@ -197,9 +228,9 @@ fn infer(path: &Path) -> Result<&'static str, String> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     match extension.as_str() {
-        "json" => Ok("json"),
-        "csv" => Ok("csv"),
-        "sarif" => Ok("sarif"),
+        "json" => Ok(ReportFormat::Json),
+        "csv" => Ok(ReportFormat::Csv),
+        "sarif" => Ok(ReportFormat::Sarif),
         _ => Err(format!(
             "could not infer report format from {}",
             path.display()
@@ -207,32 +238,31 @@ fn infer(path: &Path) -> Result<&'static str, String> {
     }
 }
 
-fn resolve(cwd: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.join(path)
-    }
-}
-
 fn normalize_format(value: &str) -> String {
-    trim_go_space(value).to_lowercase()
+    value.trim().to_lowercase()
 }
 
-pub(crate) fn verbose(writer: &mut dyn Write, findings: &[Finding]) -> io::Result<()> {
+/// Prints each finding for `--verbose`. A `redact` percent above zero also
+/// masks the helper values on `Required:` lines. The engine masks only the
+/// primary secret of a finding.
+pub(crate) fn verbose(
+    writer: &mut dyn Write,
+    findings: &[Finding],
+    redact: usize,
+) -> io::Result<()> {
     for finding in findings {
-        verbose_finding(writer, finding)?;
+        verbose_finding(writer, finding, redact)?;
     }
     Ok(())
 }
 
-fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
+fn verbose_finding(writer: &mut dyn Write, finding: &Finding, redact: usize) -> io::Result<()> {
     label(writer, "Finding:", trim_bytes(finding.match_text()))?;
     label(writer, "Secret:", trim_bytes(finding.secret()))?;
     label(writer, "RuleID:", finding.rule_id().to_string_lossy())?;
     writeln!(writer, "{:<12} {:.6}", "Entropy:", finding.entropy())?;
     if finding.file().is_empty() {
-        required(writer, finding)?;
+        required(writer, finding, redact)?;
         return writeln!(writer);
     }
     if !finding.tags().is_empty() {
@@ -258,7 +288,7 @@ fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> 
             "Fingerprint:",
             finding.fingerprint().to_string_lossy(),
         )?;
-        required(writer, finding)?;
+        required(writer, finding, redact)?;
         return writeln!(writer);
     }
     label(writer, "Commit:", finding.commit().to_string_lossy())?;
@@ -273,13 +303,20 @@ fn verbose_finding(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> 
     if !finding.link().is_empty() {
         label(writer, "Link:", finding.link().to_string_lossy())?;
     }
-    required(writer, finding)?;
+    required(writer, finding, redact)?;
     writeln!(writer)
 }
 
-fn required(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
+fn required(writer: &mut dyn Write, finding: &Finding, redact: usize) -> io::Result<()> {
     for (index, value) in finding.required_findings().iter().enumerate() {
-        let bytes = trim_raw(value.secret().as_bytes());
+        let masked;
+        let secret = if redact > 0 {
+            masked = redact_secret(value.secret(), redact);
+            masked.as_bytes()
+        } else {
+            value.secret().as_bytes()
+        };
+        let bytes = trim_raw(secret);
         let shown = if bytes.len() > 40 {
             [&bytes[..37], b"..."].concat()
         } else {
@@ -293,6 +330,20 @@ fn required(writer: &mut dyn Write, finding: &Finding) -> io::Result<()> {
         writer.write_all(b"\n")?;
     }
     Ok(())
+}
+
+/// Masks a helper value with the rule of `Finding::redacted`, so a helper
+/// value and the primary secret are hidden the same way.
+fn redact_secret(secret: &ByteText, percent: usize) -> ByteText {
+    Finding::builder()
+        .rule_id("")
+        .location(Location::default())
+        .secret(secret.clone())
+        .build()
+        .map_or_else(
+            |_| ByteText::from("REDACTED"),
+            |finding| finding.redacted(percent).secret().clone(),
+        )
 }
 
 fn label(writer: &mut dyn Write, name: &str, value: impl std::fmt::Display) -> io::Result<()> {
@@ -342,22 +393,9 @@ fn escape_terminal_text(output: &mut String, value: &str) {
         }
     }
 }
+/// Trims Unicode white space from UTF-8 text. Other bytes stay as they are.
 fn trim_raw(bytes: &[u8]) -> &[u8] {
-    let Ok(value) = std::str::from_utf8(bytes) else {
-        return bytes;
-    };
-    let without_leading = value.trim_start_matches(is_go_space);
-    let start = value.len() - without_leading.len();
-    let trimmed = without_leading.trim_end_matches(is_go_space);
-    &bytes[start..start + trimmed.len()]
-}
-
-fn trim_go_space(value: &str) -> &str {
-    value.trim_matches(is_go_space)
-}
-
-fn is_go_space(character: char) -> bool {
-    matches!(character as u32, 0x0009..=0x000d | 0x0020 | 0x0085 | 0x00a0 | 0x1680 | 0x2000..=0x200a | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000)
+    std::str::from_utf8(bytes).map_or(bytes, |value| value.trim().as_bytes())
 }
 
 pub(crate) fn summary(
@@ -412,7 +450,7 @@ pub(crate) fn summary(
 
 #[allow(
     clippy::cast_precision_loss,
-    reason = "the pinned CLI intentionally performs byte-unit formatting through float32"
+    reason = "byte units are rounded through f32, as in Gitleaks"
 )]
 fn human_bytes(bytes: u64) -> String {
     if bytes == 0 {
@@ -462,11 +500,47 @@ mod tests {
     }
 
     #[test]
+    fn trimmed_white_space_is_the_unicode_white_space_set() {
+        // The Unicode White_Space property, which Go's unicode.IsSpace uses.
+        let table = |character: char| matches!(character as u32, 0x0009..=0x000d | 0x0020 | 0x0085 | 0x00a0 | 0x1680 | 0x2000..=0x200a | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000);
+        for character in (0..=u32::from(char::MAX)).filter_map(char::from_u32) {
+            assert_eq!(character.is_whitespace(), table(character), "{character:?}");
+        }
+        assert_eq!(trim_raw("\u{3000} value\t\u{85}".as_bytes()), b"value");
+        assert_eq!(trim_raw(b" \xff "), b" \xff ");
+    }
+
+    #[test]
+    fn report_format_names_match_the_help_list() {
+        assert_eq!(
+            ReportFormat::ALL.map(ReportFormat::name).as_slice(),
+            crate::cli_spec::REPORT_FORMATS
+        );
+    }
+
+    #[test]
     fn byte_units_use_decimal_and_trim_only_dot_zero_zero() {
         assert_eq!(human_bytes(0), "0");
         assert_eq!(human_bytes(1_000), "1 KB");
         assert_eq!(human_bytes(1_250), "1.25 KB");
         assert_eq!(human_bytes(1_200), "1.20 KB");
+    }
+
+    #[test]
+    fn helper_values_are_masked_like_the_primary_secret() {
+        let secret = ByteText::from("helperclient42");
+        for (percent, expected) in [
+            (10, "helperclient4..."),
+            (50, "helperc..."),
+            (99, "..."),
+            (100, "REDACTED"),
+            (250, "REDACTED"),
+        ] {
+            assert_eq!(
+                redact_secret(&secret, percent).as_bytes(),
+                expected.as_bytes()
+            );
+        }
     }
 
     #[test]
@@ -587,7 +661,7 @@ mod tests {
             .build()
             .unwrap();
         let mut output = Vec::new();
-        verbose(&mut output, &[finding]).unwrap();
+        verbose(&mut output, &[finding], 0).unwrap();
         assert!(!output.contains(&0x1b));
         assert!(
             output
@@ -617,13 +691,13 @@ mod tests {
     }
 
     fn report_plans() -> [ReportPlan; 5] {
-        let reporters: [(&str, Box<dyn Reporter>); 5] = [
-            ("json", Box::new(JsonReporter)),
-            ("csv", Box::new(CsvReporter)),
-            ("junit", Box::new(JunitReporter)),
-            ("sarif", Box::new(SarifReporter::default())),
+        let reporters: [(ReportFormat, Box<dyn Reporter>); 5] = [
+            (ReportFormat::Json, Box::new(JsonReporter)),
+            (ReportFormat::Csv, Box::new(CsvReporter)),
+            (ReportFormat::Junit, Box::new(JunitReporter)),
+            (ReportFormat::Sarif, Box::new(SarifReporter::default())),
             (
-                "template",
+                ReportFormat::Template,
                 Box::new(
                     TemplateReporter::from_str(
                         "{{range .}}{{.RuleID}}\t{{.Secret}}\n{{end}}tail",
@@ -676,7 +750,7 @@ mod tests {
                 assert_eq!(sink.flushes, 1, "{}: {count}", report.format);
                 // Require batching across many report lines without depending on
                 // the exact buffer capacity or reporter's individual write calls.
-                if report.format != "template" {
+                if report.format != ReportFormat::Template {
                     assert!(
                         sink.writes <= expected.len() / 1024 + 2,
                         "{}: {count}: {} writes for {} bytes",
@@ -767,7 +841,7 @@ mod tests {
                 let result = report.write(&mut sink, &findings);
                 if let Some(limit) = fail_after {
                     let error = result.expect_err("a write failure must be visible");
-                    let prefix = if report.format == "template" {
+                    let prefix = if report.format == ReportFormat::Template {
                         "could not write template report"
                     } else {
                         "could not write report"
@@ -790,7 +864,7 @@ mod tests {
         let findings = report_findings();
         for report in report_plans()
             .into_iter()
-            .filter(|report| report.format != "template")
+            .filter(|report| report.format != ReportFormat::Template)
         {
             for count in [0, findings.len()] {
                 let findings = &findings[..count];
@@ -829,12 +903,12 @@ mod tests {
         let findings = report_findings();
         for report in report_plans()
             .into_iter()
-            .filter(|report| report.format != "template")
+            .filter(|report| report.format != ReportFormat::Template)
         {
             // A small report drains at completion; a large report also drains
             // during rendering. Empty CSV emits no bytes and cannot hit WriteZero.
             for count in [0, 1, findings.len()] {
-                if count == 0 && report.format == "csv" {
+                if count == 0 && report.format == ReportFormat::Csv {
                     continue;
                 }
                 for fault in [WriteFault::ZeroProgress, WriteFault::CustomWriteZero] {
@@ -883,7 +957,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            format: "template",
+            format: ReportFormat::Template,
         };
         let mut sink = CountingWriter::default();
         let error = report.write(&mut sink, &report_findings()).unwrap_err();
@@ -911,7 +985,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            format: "template",
+            format: ReportFormat::Template,
         };
         let sink = ShortWriter::new(Some(2), WriteFault::Injected);
         let mut stdout = io::LineWriter::with_capacity(1024, sink);
@@ -935,7 +1009,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            format: "template",
+            format: ReportFormat::Template,
         };
         let findings = vec![report_findings().remove(0); 1500];
         let sink = ShortWriter::new(Some(1100), WriteFault::Injected);

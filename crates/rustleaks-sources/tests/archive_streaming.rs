@@ -1,13 +1,11 @@
-//! Streamed archive members give the fragments and findings that whole
-//! members gave before archives were streamed, and large archives scan with
-//! bounded storage.
+//! Streamed archive members give fixed fragments and findings, and large
+//! archives scan with bounded storage.
 //!
-//! Before streaming, every member except a 7z member was read into memory
-//! and scanned from a cursor, so each read returned as many bytes as asked
-//! for. A 7z member was read with reads of one chunk, and the scanner saw
-//! those read sizes again. The reference functions below rebuild those two
-//! inputs from the member bytes and the 7z decoder, independently of the
-//! archive source, and the tests compare fragments and findings.
+//! Member reads fill the buffer unless the member ends, so fragments do not
+//! depend on how a decoder splits its output. 7z members are read one chunk
+//! at a time. The reference functions below rebuild both read patterns from
+//! the member bytes and the 7z decoder, independently of the archive source,
+//! and the tests compare fragments and findings.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 
@@ -152,11 +150,7 @@ impl Read for Chunked {
 
 /// The fragments of each 7z member read with chunk-sized reads, by name.
 fn seven_reference(archive: &[u8], prefix: &str) -> Vec<(String, usize, Vec<u8>)> {
-    let mut reader = rustleaks_sevenz::ArchiveReader::new(
-        Cursor::new(archive.to_vec()),
-        rustleaks_sevenz::Password::empty(),
-    )
-    .unwrap();
+    let mut reader = rustleaks_sevenz::ArchiveReader::new(Cursor::new(archive.to_vec())).unwrap();
     let mut members = Vec::new();
     reader
         .for_each_entries(|entry, stream| {

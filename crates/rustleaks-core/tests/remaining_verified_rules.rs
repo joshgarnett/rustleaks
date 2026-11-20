@@ -6,15 +6,20 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use rustleaks_core::config::{CompiledConfig, ConfigLoader};
-use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
-use rustleaks_core::native::{
-    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
-};
+use rustleaks_core::model::{Finding, Fragment, ScanOptions};
+use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanTermination};
 use serde::Deserialize;
+
+#[allow(dead_code)]
+#[path = "support/native_harness.rs"]
+mod native_harness;
+
+use native_harness::{
+    all_packs_config, base64_bytes as bytes, byte_entropy, coordinates, optional_range as range,
+    scan_with_depth,
+};
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -82,18 +87,15 @@ fn fixture() -> &'static Fixture {
 }
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        NativePolicy::builder()
-            .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
-            .unwrap()
-            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
-            .unwrap()
-            .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-            .unwrap()
-            .compile()
-            .unwrap()
-            .0
-    })
+    CONFIG.get_or_init(all_packs_config)
+}
+fn scan(engine: &Engine, case: &Case) -> Vec<Finding> {
+    scan_with_depth(
+        engine,
+        &bytes(&case.input_base64),
+        &case.path,
+        case.decode_depth,
+    )
 }
 fn engines() -> &'static BTreeMap<String, Engine> {
     static ENGINES: OnceLock<BTreeMap<String, Engine>> = OnceLock::new();
@@ -111,36 +113,6 @@ fn engines() -> &'static BTreeMap<String, Engine> {
             })
             .collect()
     })
-}
-fn bytes(s: &str) -> Vec<u8> {
-    STANDARD.decode(s).unwrap()
-}
-fn range(r: Option<[usize; 2]>) -> FindingRange {
-    r.map_or(FindingRange::Unavailable, |[a, z]| {
-        FindingRange::Exact(ByteRange::new(a, z).unwrap())
-    })
-}
-fn coordinates(l: Location) -> [usize; 4] {
-    [
-        l.start_line(),
-        l.end_line(),
-        l.start_column(),
-        l.end_column(),
-    ]
-}
-fn scan(engine: &Engine, case: &Case) -> Vec<Finding> {
-    let input = bytes(&case.input_base64);
-    let fragment = Fragment::builder(input.as_slice())
-        .file_path(case.path.as_str())
-        .build();
-    let outcome = engine.scan_fragment(
-        &fragment,
-        &ScanOptions::builder()
-            .max_decode_depth(case.decode_depth)
-            .build(),
-    );
-    assert!(outcome.is_complete(), "{}", case.name);
-    outcome.findings().to_vec()
 }
 fn assert_case(case: &Case, findings: &[Finding]) {
     let mut actual: Vec<_> = findings
@@ -366,12 +338,11 @@ fn source_filters_are_unmasked_and_bound_to_the_exact_fields() {
             source["allowlists"][1]["paths"].as_array().unwrap().len(),
             23
         );
-        for sample in &fixture().source_secret_samples {
+        for (index, sample) in fixture().source_secret_samples.iter().enumerate() {
             assert_eq!(
                 local_count(source.clone(), &sample.value, "src/settings.txt"),
                 0,
-                "{id} {}",
-                sample.value
+                "{id} sample {index}"
             );
             let mut changed = source.clone();
             let regexes = changed["allowlists"][0]["regexes"].as_array_mut().unwrap();
@@ -383,8 +354,7 @@ fn source_filters_are_unmasked_and_bound_to_the_exact_fields() {
             assert_eq!(
                 local_count(changed, &sample.value, "src/settings.txt"),
                 1,
-                "{id} {}",
-                sample.value
+                "{id} sample {index}"
             );
         }
         for value in &fixture().source_stopwords {
@@ -424,21 +394,6 @@ fn actual_rules_keep_every_source_path_filter() {
     }
 }
 
-#[allow(clippy::cast_precision_loss)] // Test inputs are far below 2^52 bytes.
-fn byte_entropy(bytes: &[u8]) -> f64 {
-    let mut histogram = [0usize; 256];
-    for b in bytes {
-        histogram[usize::from(*b)] += 1;
-    }
-    histogram
-        .into_iter()
-        .filter(|n| *n != 0)
-        .map(|n| {
-            let p = n as f64 / bytes.len() as f64;
-            -p * p.log2()
-        })
-        .sum()
-}
 #[test]
 fn real_secret_entropy_comparators_keep_equality_behavior() {
     for case in primary() {

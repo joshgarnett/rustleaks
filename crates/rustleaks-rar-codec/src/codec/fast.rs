@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(crate) fn match_length(input: &[u8], pos: usize, distance: usize, max_length: usize) -> usize {
     if distance == 0 || distance > pos {
         return 0;
@@ -7,6 +8,7 @@ pub(crate) fn match_length(input: &[u8], pos: usize, distance: usize, max_length
     match_length_scalar(input, pos, distance, max_length, 0)
 }
 
+#[cfg(test)]
 fn match_length_scalar(
     input: &[u8],
     pos: usize,

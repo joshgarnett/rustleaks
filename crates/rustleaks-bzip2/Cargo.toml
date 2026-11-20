@@ -9,10 +9,3 @@ publish = false
 
 [dependencies]
 tinyvec = { version = "=1.13.3", default-features = false }
-
-[features]
-default = []
-nightly = ["rustc_1_40"]
-rustc_1_37 = []
-rustc_1_40 = ["rustc_1_37", "tinyvec/rustc_1_40"]
-rustc_1_51 = []

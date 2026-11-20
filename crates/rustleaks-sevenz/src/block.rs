@@ -40,19 +40,6 @@ impl Block {
         0
     }
 
-    /// Returns the uncompressed size for a specific coder within this block.
-    ///
-    /// # Arguments
-    /// * `coder` - The coder to get the unpack size for
-    pub fn get_unpack_size_for_coder(&self, coder: &Coder) -> u64 {
-        for i in 0..self.coders.len() {
-            if std::ptr::eq(&self.coders[i], coder) {
-                return self.unpack_sizes[i];
-            }
-        }
-        0
-    }
-
     /// Returns the uncompressed size for the coder at the specified index.
     ///
     /// # Arguments

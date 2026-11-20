@@ -14,6 +14,7 @@ pub(crate) struct DeltaErrorMessages {
     pub truncated_source: &'static str,
 }
 
+#[cfg(test)]
 pub(crate) fn encode_in_place(
     op: FilterOp,
     data: &mut [u8],
@@ -87,6 +88,7 @@ pub(crate) fn e8e9_decode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn e8e9_encode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     if data.len() <= 4 {
         return;
@@ -163,6 +165,7 @@ pub(crate) fn delta_decode_with_cancel(
     Ok(out)
 }
 
+#[cfg(test)]
 pub(crate) fn delta_encode(
     data: &[u8],
     channels: usize,

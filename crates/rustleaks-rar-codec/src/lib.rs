@@ -1,17 +1,22 @@
 #![forbid(unsafe_code)]
-#![allow(dead_code, missing_docs)]
+#![allow(missing_docs)]
 // The decoder is retained close to its pinned upstream form so provenance and
 // differential review remain mechanical. Workspace style lints are enforced
 // at the checked container boundary instead of rewriting format arithmetic.
 #![allow(clippy::all, clippy::pedantic)]
-//! Safe RAR3 and RAR5 compression codecs.
+//! Safe RAR3 and RAR5 decoders and the RAR CRC-32.
+//!
+//! The RAR3 and RAR5 encoders, and the filter and error types below, are
+//! compiled only for tests. The tests encode data and decode it back.
 
+#[cfg(test)]
 use std::ops::Range;
 
 pub mod codec;
 pub mod crc32;
 
 /// A reversible transform carried by a compressed RAR member.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FilterKind {
     /// Channel delta transform.
@@ -31,6 +36,7 @@ pub enum FilterKind {
 }
 
 /// A transform and the member byte range it covers.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FilterSpec {
     /// Transform kind.
@@ -39,6 +45,7 @@ pub struct FilterSpec {
     pub range: Option<Range<usize>>,
 }
 
+#[cfg(test)]
 impl FilterSpec {
     /// Covers a whole member.
     pub const fn whole(kind: FilterKind) -> Self {
@@ -54,6 +61,7 @@ impl FilterSpec {
     }
 }
 
+#[cfg(test)]
 impl From<FilterKind> for FilterSpec {
     fn from(kind: FilterKind) -> Self {
         Self::whole(kind)
@@ -61,10 +69,12 @@ impl From<FilterKind> for FilterSpec {
 }
 
 /// A transform the selected RAR family cannot encode.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnsupportedFilterKind(pub FilterKind);
 
-/// Compatibility error used only by retained private encoder helpers.
+/// Error returned by the test-only encoders.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     /// An operation was cancelled.
@@ -73,17 +83,20 @@ pub enum Error {
     InvalidHeader(&'static str),
 }
 
+#[cfg(test)]
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
         Self::InvalidHeader("RAR codec I/O failed")
     }
 }
 
+#[cfg(test)]
 impl From<codec::Error> for Error {
     fn from(_: codec::Error) -> Self {
         Self::InvalidHeader("RAR codec encoding failed")
     }
 }
 
-/// Compatibility result used only by retained private encoder helpers.
+/// Result returned by the test-only encoders.
+#[cfg(test)]
 pub type Result<T> = std::result::Result<T, Error>;

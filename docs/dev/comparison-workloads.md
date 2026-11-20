@@ -20,6 +20,7 @@ repository holds only the manifests under
 | `cargo xtask compare-workloads generate --cache DIR` | Generates the synthetic workloads and their labels |
 | `cargo xtask compare-workloads matrix --cache DIR` | Builds the home-fixtures matrix from pinned upstream sources |
 | `cargo xtask compare-workloads verify --cache DIR` | Checks cached workloads before a run |
+| `cargo xtask compare-workloads self-test` | Checks the commands offline on tiny synthetic data |
 
 Options:
 
@@ -77,7 +78,7 @@ repositories have a `paths` field with the `dir` and `git` scan targets.
 `public-repos.json` lists 14 repositories pinned by full commit on
 2026-11-17. Each pin is the latest release tag at that date, resolved with
 `git ls-remote`. Nine are the repositories of Kingfisher's cross-tool
-benchmark (K1). The others fill the size classes, so that each class has more
+benchmark. The others fill the size classes, so that each class has more
 than one repository, several languages, lockfiles, minified assets and
 binary files.
 
@@ -88,7 +89,7 @@ GitHub API at the pinned commit. For mongo, TypeScript and linux the tree
 listing was truncated, so their file and lockfile counts are lower bounds.
 `fetch` records exact counts in `fetch.json`.
 
-| ID | Class | Languages | Tag | Packed size | Commits | Lockfiles, minified, binaries | K1 |
+| ID | Class | Languages | Tag | Packed size | Commits | Lockfiles, minified, binaries | Kingfisher benchmark |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | croc | small | Go | v11.6.5 | 13 MB | 2,577 | 2, 0, 42 | yes |
 | flask | small | Python | 3.1.3 | 13 MB | 5,463 | 2, 0, 5 | no |
@@ -108,12 +109,12 @@ listing was truncated, so their file and lockfile counts are lower bounds.
 The GitLab API reports no repository size without signing in. Kingfisher
 issue 241 reports about 1.75 million blobs in GitLab's full history.
 
-Kingfisher's K1 benchmark cloned each default branch without recording
-commits. These pins use release tags instead, so the trees are not the trees
-Kingfisher measured. The manifest marks the K1 repositories with
-`kingfisher_k1: true`. Reports must show K1 and other repositories as
-separate groups, so that results on Kingfisher's own benchmark set can be
-told apart.
+Kingfisher's cross-tool benchmark cloned each default branch without
+recording commits. These pins use release tags instead, so the trees are not
+the trees Kingfisher measured. The manifest marks the repositories of that
+benchmark with `kingfisher_k1: true`. Reports must show them and the other
+repositories as separate groups, so that results on Kingfisher's own
+benchmark set can be told apart.
 
 ### How a repository is fetched
 
@@ -167,8 +168,7 @@ seed, so a fresh `generate` gives the same bytes and the same Git commit IDs
 on every host. `verify` compares each workload with the hashes in the
 manifest. The manifest sizes add up to about 6.2 GB. Git workloads list only
 their checked-out files, so with Git storage and labels the cache holds
-about 6.6 GB. Generating the full set took about two minutes on the
-development host.
+about 6.6 GB.
 
 File modes come from the generator, not from the file system: inventories
 hash file bytes only, and generated workloads record their executable paths
@@ -176,9 +176,8 @@ separately. Stored archives are written as made on Unix.
 
 ### Tuned workloads
 
-The first 19 entries are the workloads of the earlier cross-scanner harness
-(recipe `cli-synthetic-v1`), kept byte for byte. Rustleaks was tuned on
-these inputs, including `heldout-mixed-8mib`, so the manifest marks them
+The first 19 entries (recipe `cli-synthetic-v1`) are kept byte for byte.
+Rustleaks was tuned on these inputs, including `heldout-mixed-8mib`, so the manifest marks them
 `tuned: true` and reports must say so. They plant only three token shapes
 (GitHub, AWS and Slack) in repetitive filler, which favors designs that skip
 work when no keyword is present. Their GitHub tokens do not carry a valid
@@ -198,7 +197,7 @@ checksum.
 
 ### Realistic shapes
 
-These workloads are new (recipe `rustleaks-synthetic-v2`) and marked
+These workloads (recipe `rustleaks-synthetic-v2`) are marked
 `tuned: false`. Each main shape has a size series of 1, 16, 128 and 1,024 MiB,
 so that startup cost and throughput can be separated. Files stay at or below
 2 MiB, under every tool's default file size limit.
@@ -239,7 +238,7 @@ tool's rule favors no tool by itself, but reports should keep it in mind.
 | `ghp_`, 30 letters or digits, and a 6-character checksum | GitHub, [Behind GitHub's new authentication token formats](https://github.blog/security/application-security/behind-githubs-new-authentication-token-formats/), which describes the prefix and the CRC32 checksum | The total shape is the Gitleaks `github-pat` shape. The checksum is the CRC32 of the 30 characters in base62 (0 to 9, A to Z, a to z), padded to 6 characters; the published example in Kingfisher 1.113.0 `github.yml` reproduces with this reading. |
 | `glpat-` and 20 characters | GitLab, [Personal access tokens API](https://docs.gitlab.com/api/personal_access_tokens/) | Length 20 is the Gitleaks `gitlab-pat` length. Newer GitLab tokens can be longer. |
 | `AKIA` and 16 characters from A to Z and 2 to 7, 20 in all | AWS, [Manage access keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) for the prefix and the 20-character example | AWS does not state the alphabet; the Base32 alphabet is the Gitleaks `aws-access-token` alphabet. |
-| `xoxb-`, two 12-digit groups and 24 characters | Slack, [Token types](https://api.slack.com/authentication/token-types) for the prefix | The group lengths come from the earlier harness and fall inside the Gitleaks `slack-bot-token` bounds. |
+| `xoxb-`, two 12-digit groups and 24 characters | Slack, [Token types](https://api.slack.com/authentication/token-types) for the prefix | The group lengths fall inside the Gitleaks `slack-bot-token` bounds. |
 | `sk_live_` and 24 characters | Stripe, [Authentication](https://stripe.com/docs/api/authentication) | Inside the Gitleaks `stripe-access-token` length range. Current Stripe keys can be longer. |
 | `npm_`, 30 letters or digits, and a 6-character checksum | npm, [About access tokens](https://docs.npmjs.com/about-access-tokens) for the prefix | Same checksum as GitHub tokens; the published example in Kingfisher 1.113.0 `npm.yml` reproduces with it. Gitleaks `npm-access-token` matches the shape without a checksum. |
 | `pypi-AgEIcHlwaS5vcmc` and 70 characters | PyPI, [API tokens](https://pypi.org/help/#apitoken); the fixed part encodes `pypi.org` | Inside the Gitleaks `pypi-upload-token` length range. |
@@ -256,7 +255,7 @@ and the `EXAMPLE` suffix of the AWS documentation key.
 
 ### Dense findings and long lines
 
-After Kingfisher's dense findings benchmark (K2), five cases at 25, 50, 100,
+After Kingfisher's dense findings benchmark, five cases at 25, 50, 100,
 200 and 400 KB, one file each. Use the time ratio between doublings to find
 super-linear cost.
 
@@ -294,8 +293,7 @@ design.
 ## Home-fixtures matrix
 
 `matrix` writes every tool's own rule examples as one workload per tool, so
-that every tool can be run on every other tool's examples. This replaces a
-one-sided lane built from Rustleaks fixtures only.
+that every tool can be run on every other tool's examples.
 
 | Tool | Source | Pin | License | Cases |
 | --- | --- | --- | --- | --- |
@@ -331,11 +329,12 @@ Rules that match on the full path from the scan root may behave differently
 because of the case folder.
 
 Cases whose path has a `.git` component, such as `repo/.git/config`, go to a
-separate `-dotgit` workload. Today only Rustleaks has such cases (57). Report
+separate `-dotgit` workload. Only the Rustleaks source has such cases. Report
 them as their own row: Rustleaks and Gitleaks skip `.git` in `dir` mode,
 while Kingfisher scans it.
 
-Labels:
+Labels for the matrix (the format is in
+[Labels](comparison.md#labels)):
 
 - A positive example with a stated secret that occurs in the input gets a
   `secret` label on that exact span (`span: secret`).
@@ -345,7 +344,8 @@ Labels:
 - A negative example gets a `not-secret` label on the whole case.
 - `expected` gives the home tool's contract: `exact`, `at_least_one`,
   `exactly_one`, `count` or `none`. For `count`, `expected_count` gives the
-  number of findings the home tool expects.
+  number of findings the home tool expects. The scorer uses only
+  `exactly_one`, `count` and `none`.
 - `fixture_tool`, `fixture_rule`, `fixture_case` and `fixture_origin` name
   the source.
 
@@ -359,38 +359,13 @@ Kingfisher catalogs share upstream rule sources; reports must say so.
 
 ## Labels
 
-Labels are JSON Lines, one object per labeled item, with these fields:
-
-| Field | Meaning |
-| --- | --- |
-| `workload` | Workload ID |
-| `path` | Path relative to the workload folder |
-| `commit` | Commit ID for Git workloads, otherwise null |
-| `start`, `end` | Byte offsets into the file at that commit; see below for encoded and staged values |
-| `line`, `end_line` | 1-based lines of `start` and of the last labeled byte |
-| `secret_sha256` | SHA-256 of the secret value; for encoded text, of the decoded value |
-| `category` | Credential family, such as `vcs-token`, or the rule ID for fixtures |
-| `label` | `secret` or `not-secret` |
-| `source` | `constructed` for synthetic data, `fixture` for the matrix |
-
-Optional fields include `kind`, `encoding`, `decoded_start`,
-`decoded_end`, `staged`, `in_binary`, `reachable_from_head`,
-`introduced_by`, `span`, `expected` and `expected_count`. Labels never hold
-secret text.
-
-Offsets for special values:
-
-- `encoding: base64`: `start` and `end` cover the Base64 text in the file.
-  `decoded_start` and `decoded_end` locate the secret in the decoded bytes.
-- `encoding: zstd`: `start` and `end` index the decompressed member, not the
-  compressed file.
-- `staged: true`: the offsets index the staged blob in the Git index, not the
-  file in the worktree, and `commit` is null.
-
-Synthetic labels come from construction, never from scanner output. In a
-synthetic workload every byte outside a `secret` label is non-secret by
-construction, so a finding there is a false positive. The `not-secret`
-labels mark selected hard negatives so that reports can name them.
+The label format is described in [Labels](comparison.md#labels). Synthetic
+labels set `source` to `constructed`, and matrix labels set it to
+`fixture`. Synthetic labels come from construction, never from scanner
+output. In a synthetic workload every byte outside a `secret` label is
+non-secret by construction, so a finding there is a false positive. The
+`not-secret` labels mark selected hard negatives so that reports can name
+them.
 
 ## Verification
 

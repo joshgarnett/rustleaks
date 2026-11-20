@@ -3,19 +3,20 @@ use super::{Error, Result};
 const MAX_FREQ: u32 = 124;
 const MIN_MODEL_CONTEXTS: usize = 1;
 
-// PPMd-H suballocator parameters, per the format-level spec at
-// rar-research/doc/PPMD_ALGORITHM_SPECIFICATION.md §4.
+// Ports the PPMd var.H model and suballocator of 7-Zip's `Ppmd7.c`. The
+// `Ppmd7_*` function names in the comments below refer to that file.
+
+// Suballocator parameters.
 const ALLOC_UNIT_BYTES: usize = 12;
 const N_BUCKETS: usize = 38;
 const MAX_BUCKET_UNITS: usize = 128;
-// Spec §4.3: countdown reset value after a successful glue pass.
+// Countdown reset value after a glue pass, as in Ppmd7_GlueFreeBlocks.
 const GLUE_RESET: u32 = 255;
 // Sentinel offset for "no allocation" (binary contexts carry their state
 // inline; their array_offset field is unused but typed `u32`).
 const NULL_OFFSET: u32 = u32::MAX;
 
-// Lookup tables built once from the spec's bucket-construction algorithm
-// (§4.2):
+// Lookup tables built once with the bucket construction of Ppmd7_Construct:
 //   for i in 0..38: step = if i >= 12 { 4 } else { i / 4 + 1 }
 //                   repeat step times: units_to_index[k++] = i
 //                   index_to_units[i] = k
@@ -50,7 +51,7 @@ fn alloc_tables() -> &'static AllocTables {
     TABLES.get_or_init(build_alloc_tables)
 }
 
-// Spec §4.1 layout: contexts grow downward from `hi_unit`, state arrays
+// Pool layout: contexts grow downward from `hi_unit`, state arrays
 // grow upward from `lo_unit`. Tracking the side matters for adjacency
 // patterns (gluing) and for which bump pointer advances.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,8 +63,8 @@ enum AllocSide {
 #[derive(Debug, Clone)]
 struct Suballocator {
     // Original pool size in bytes (C's p->Size). Preserved across restarts so
-    // the text/units split — which depends on the exact byte size, not the
-    // unit-truncated one — stays identical to the reference each restart.
+    // the text/units split (which depends on the exact byte size, not the
+    // unit-truncated one) stays identical to the reference each restart.
     size_bytes: usize,
     // Total unit budget (= dict_mb * 1 MiB / 12, capped at u32::MAX).
     pool_units: u32,
@@ -83,11 +84,12 @@ struct Suballocator {
     hi_bump: u32,
     // Free lists hold released block offsets (in units), one list per bucket.
     free_lists: [Vec<u32>; N_BUCKETS],
-    // Countdown for the glue pass (spec §4.3). Starts at 0, gets refreshed
-    // to GLUE_RESET after each successful glue.
+    // Countdown for the glue pass (GlueCount in the reference). Starts at 0,
+    // gets refreshed to GLUE_RESET after each successful glue.
     glue_count: u32,
-    // Test escape hatch: when reset hasn't been called (pool_units == 0),
-    // act as unbounded so unit tests bypassing decode_init still work.
+    // Unbounded until `reset` is called with a nonzero size. Decoding always
+    // calls `reset` through decode_init; unit tests that skip decode_init
+    // use the unbounded mode.
     unbounded: bool,
 }
 
@@ -120,9 +122,7 @@ impl Suballocator {
         //   UnitsStart  = HiUnit - 7 * text_units * UNIT_SIZE
         // i.e. the units region is exactly 7*text_units units carved off the
         // top; the leftover slack (Size % 96, plus Size % 12) all stays in the
-        // text region. The previous code took `pool_units / 8` for text and
-        // gave the slack to the units region — 5+ extra bump units versus the
-        // reference, which desynchronised restart timing on large inputs.
+        // text region. Restart timing depends on this split.
         let text_units = (pool_bytes / 8 / ALLOC_UNIT_BYTES) as u32;
         let units_region = text_units.saturating_mul(7).min(pool_units);
         self.size_bytes = pool_bytes;
@@ -203,7 +203,7 @@ impl Suballocator {
         self.fallback_bump(bucket, text_len_bytes)
     }
 
-    // Spec / ref Ppmd7_AllocUnitsRare bump-fallback: when no free block at
+    // Ppmd7_AllocUnitsRare bump fallback: when no free block at
     // any bucket size satisfies the request, shrink `units_start` downward
     // (into the text-reservation zone). Succeeds only if the new units
     // floor would still sit above the current text-write position.
@@ -267,7 +267,7 @@ impl Suballocator {
     // to `new_units` (bucket I2U value) in place. The first `new_units`
     // stay at `base_offset`; the (old_units - new_units) residue is pushed
     // onto the appropriate smaller bucket(s). The "kept" prefix is NOT
-    // pushed — the caller is still using it as live storage.
+    // pushed, because the caller is still using it as live storage.
     fn split_in_place(&mut self, base_offset: u32, old_units: u32, new_units: u32) {
         let nu = old_units - new_units;
         let residue_offset = base_offset + new_units;
@@ -287,39 +287,20 @@ impl Suballocator {
         self.free_lists[i].push(residue_offset);
     }
 
-    fn glue(&mut self) {
-        self.glue_inner()
-    }
-
-    // Faithful port of Ppmd7_GlueFreeBlocks (§4.4). The earlier
-    // sort-by-offset version diverged from the reference in three ways that
-    // all change the resulting free-list state — and therefore the timing of
-    // the next allocation failure / model restart:
+    // Port of Ppmd7_GlueFreeBlocks. Three details change the resulting
+    // free-list state, and so the timing of the next allocation failure or
+    // model restart:
     //   1. Threading order: the reference walks free_list[0..38], each list
     //      head-first (most-recent first), prepending every node to a single
     //      glue list. We rebuild that exact order so the fill pass re-buckets
     //      runs in the same sequence (per-bucket LIFO must match).
     //   2. Merge cap: a merged run may not reach 0x10000 units (NU is 16-bit).
     //   3. Fill split: runs are emitted as repeated 128-unit blocks, then the
-    //      <=128 remainder via Ppmd7_SplitBlock's exact-or-two-piece rule —
-    //      not "largest bucket fitting" greedily.
-    fn glue_inner(&mut self) {
+    //      <=128 remainder via Ppmd7_SplitBlock's exact-or-two-piece rule,
+    //      not the largest bucket that fits.
+    fn glue(&mut self) {
         use std::collections::HashMap;
-        // Step 1: thread free blocks into the reference's list order.
-        // list[k] = (offset, nu). Reference prepends; we emulate with a
-        // front-growing build then it is naturally bucket-37-first.
-        let mut list: Vec<(u32, u32)> = Vec::new();
-        for bucket in 0..N_BUCKETS {
-            let nu = Self::bucket_units(bucket) as u32;
-            // Reference walks the bucket list head-first (recent->oldest) and
-            // prepends each node. Iterating our Vec recent->oldest and
-            // prepending reproduces that; doing it per-bucket with the whole
-            // bucket prepended keeps later buckets in front.
-            for &off in self.free_lists[bucket].iter().rev() {
-                list.insert(0, (off, nu));
-            }
-            self.free_lists[bucket].clear();
-        }
+        let list = self.thread_free_blocks();
         if list.is_empty() {
             return;
         }
@@ -388,14 +369,32 @@ impl Suballocator {
         self.push_free(i, offset);
     }
 
+    // Step 1 of the glue pass: empty the free lists into one list of
+    // (offset, nu) in the reference's order. The reference walks each bucket
+    // list head-first (most recent first) and prepends every node, so the
+    // result starts with the oldest block of the last bucket and ends with
+    // the newest block of bucket 0. Pushing in walk order and reversing once
+    // gives the same order in linear time.
+    fn thread_free_blocks(&mut self) -> Vec<(u32, u32)> {
+        let total = self.free_lists.iter().map(Vec::len).sum();
+        let mut list: Vec<(u32, u32)> = Vec::with_capacity(total);
+        for bucket in 0..N_BUCKETS {
+            let nu = Self::bucket_units(bucket) as u32;
+            list.extend(self.free_lists[bucket].iter().rev().map(|&off| (off, nu)));
+            self.free_lists[bucket].clear();
+        }
+        list.reverse();
+        list
+    }
+
     fn push_free(&mut self, bucket: usize, offset: u32) {
         self.free_lists[bucket].push(offset);
     }
 
     fn text_has_room(&self, text_len: usize) -> bool {
-        // When pool isn't initialised (test fixtures that bypass decode_init),
-        // text_capacity is 0 — treat that as "unbounded" so we don't break
-        // out-of-band callers.
+        // Before `reset` sets a pool size, text_capacity is 0 and the text
+        // region is unbounded. Decoding always calls `reset`; unit tests that
+        // skip decode_init use the unbounded mode.
         self.text_capacity_bytes == 0 || text_len < self.text_capacity_bytes
     }
 }
@@ -438,6 +437,7 @@ pub struct PpmdDecoder {
     suballoc: Suballocator,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct PpmdEncoder {
     model: PpmdDecoder,
@@ -450,7 +450,7 @@ struct Context {
     states: Vec<State>,
     summ_freq: u16,
     suffix: Option<usize>,
-    // Simulated suballoc offsets so gluing (spec §4.3) can detect adjacency.
+    // Simulated suballoc offsets so gluing can detect adjacency.
     // header_offset: from Hi side (1 unit). array_offset: from Lo side,
     // set to NULL_OFFSET for binary contexts (states.len() == 1) which
     // carry their state inline.
@@ -729,6 +729,7 @@ impl PpmdDecoder {
         }
     }
 
+    #[cfg(test)]
     fn encode_symbol(&mut self, symbol: u8, output: &mut RangeEncoder) -> Result<()> {
         let mut mask = [true; 256];
         let min = self.min_context;
@@ -847,7 +848,7 @@ impl PpmdDecoder {
     fn init_model(&mut self, max_order: usize) {
         self.contexts.clear();
         self.text.clear();
-        // Spec §5.2 RestartModel: clear free lists, reserve root context
+        // As in Ppmd7_RestartModel: clear free lists, reserve root context
         // (1 unit from Hi) + its 256-state array (128 units from Lo).
         // Reuse the exact original byte size (C's p->Size) so the text/units
         // split and the pool-top remainder survive the restart unchanged.
@@ -948,7 +949,7 @@ impl PpmdDecoder {
             .ok_or(Error::InvalidData("RAR PPMd masked-state count is invalid"))?;
         let suffix = self.contexts[mc].suffix.unwrap_or(mc);
         let suffix_stats = self.contexts[suffix].states.len();
-        // Spec §9.1: the subtraction is unsigned C wraparound — when
+        // The subtraction wraps as unsigned C arithmetic does: when
         // `suffix.num_stats < min_context.num_stats`, the underflow yields a
         // very large value and the `non_masked < suffix_delta` comparison
         // evaluates to TRUE. Replicate the wraparound here.
@@ -1096,11 +1097,9 @@ impl PpmdDecoder {
             return Ok(());
         }
 
-        // Match Ppmd7_UpdateModel exactly: advance text first, then check
-        // `text >= UnitsStart`. The previous "check then push" version
-        // restarted one symbol later than the reference, advancing the range
-        // coder by one extra symbol before resetting — which left the
-        // post-restart state out of sync.
+        // As in Ppmd7_UpdateModel, advance the text pointer before checking
+        // it against `UnitsStart`, so a restart happens on the same symbol as
+        // in the reference.
         self.text.push(found_symbol);
         let max_successor = Successor::Raw(self.text.len());
         if !self.suballoc.text_has_room(self.text.len()) {
@@ -1332,16 +1331,16 @@ impl PpmdDecoder {
         true
     }
 
-    // Rescale shrinks a state array. Mirrors Ppmd7_Rescale's branch at
-    // Ppmd7.c:901-919: if the target bucket has a free block, swap to it
-    // (pop i1, push old to i0); otherwise SplitBlock the existing block in
-    // place — the first i1 units stay at the current address as the new
+    // Rescale shrinks a state array. Mirrors Ppmd7_Rescale's shrink branch:
+    // if the target bucket has a free block, swap to it (pop i1, push old to
+    // i0); otherwise SplitBlock the existing block in place. The first i1
+    // units stay at the current address as the new
     // array, the (i0 - i1)-unit residue is bucketed onto smaller free lists.
     // No bump is consumed on the in-place path, which matters because over
     // many rescales the reference never grows lo_bump from shrinks.
     //
     // Collapse-to-unary (new_n == 1, new_units == 0) is handled by Rescale's
-    // earlier branch (Ppmd7.c:881-898), which frees `stats` at bucket
+    // earlier branch, which frees `stats` at bucket
     // U2I(n0) and copies the surviving state into the inline OneState slot.
     fn shrink_state_array(&mut self, ctx_idx: usize, old_n: usize, new_n: usize) {
         let old_units = Self::state_array_units(old_n);
@@ -1447,6 +1446,7 @@ impl PpmdDecoder {
     }
 }
 
+#[cfg(test)]
 impl PpmdEncoder {
     pub fn new(max_order: usize, esc_char: u8, dictionary_mb: usize) -> Result<Self> {
         if !(2..=64).contains(&max_order) {
@@ -1615,6 +1615,7 @@ impl RangeDecoder {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 struct RangeEncoder {
     low: u32,
@@ -1622,6 +1623,7 @@ struct RangeEncoder {
     out: Vec<u8>,
 }
 
+#[cfg(test)]
 impl RangeEncoder {
     fn new() -> Self {
         Self {
@@ -1677,14 +1679,13 @@ fn hi_bits_flag(symbol: u8, bits: u32) -> u32 {
 }
 
 // Upper bound on the number of live context records. The C reference
-// (Ppmd7.c) has NO independent context cap — model restart is driven solely
+// (Ppmd7.c) has no independent context cap: model restart is driven solely
 // by suballocator exhaustion (`Ppmd7_AllocUnits`/`AllocUnitsRare` returning
 // NULL). A context header is one 12-byte unit, and headers + state arrays
 // share the pool, so the live context count can never exceed `pool_units`
 // (= Size / UNIT_SIZE). Sizing the cap to that makes the suballocator the
 // binding constraint, exactly as in the reference, while still bounding Vec
-// growth defensively. A smaller cap (the old Size/16) forced a premature
-// RestartModel that desynchronised the decoder from the reference.
+// growth defensively.
 fn model_context_limit(dictionary_mb: usize) -> usize {
     dictionary_mb
         .saturating_mul(1024 * 1024)
@@ -1700,7 +1701,7 @@ mod tests {
     #[test]
     fn alloc_tables_match_spec_pattern() {
         let t = alloc_tables();
-        // Spec §4.2: bucket sizes are 1,2,3,4 then groups of 4 at strides 1,2,3,4.
+        // As in Ppmd7_Construct: bucket sizes are 1,2,3,4 then groups of 4 at strides 1,2,3,4.
         // First 12 buckets cover 1..4, then 6,8,10,12, then 15,18,21,24.
         assert_eq!(t.index_to_units[0], 1);
         assert_eq!(t.index_to_units[1], 2);
@@ -1752,6 +1753,32 @@ mod tests {
     }
 
     #[test]
+    fn thread_free_blocks_matches_reference_prepend_order() {
+        let mut s = Suballocator::default();
+        for bucket in [0, 1, 5, 17, 37] {
+            for k in 0..4 {
+                s.free_lists[bucket].push((bucket * 100 + k) as u32);
+            }
+        }
+        // The reference prepends each node while it walks every bucket list
+        // head-first (most recent first).
+        let mut expected: Vec<(u32, u32)> = Vec::new();
+        for bucket in 0..N_BUCKETS {
+            let nu = Suballocator::bucket_units(bucket) as u32;
+            for &off in s.free_lists[bucket].iter().rev() {
+                expected.insert(0, (off, nu));
+            }
+        }
+        let list = s.thread_free_blocks();
+        assert_eq!(list, expected);
+        assert_eq!(list.len(), 20);
+        assert_eq!(list[0], (3700, 128));
+        assert_eq!(list[3], (3703, 128));
+        assert_eq!(list[19], (3, 1));
+        assert!(s.free_lists.iter().all(Vec::is_empty));
+    }
+
+    #[test]
     fn suballoc_uninitialised_pool_acts_unbounded() {
         let mut s = Suballocator::default();
         // pool_bytes=0; the suballoc shouldn't reject any allocation since the
@@ -1762,7 +1789,7 @@ mod tests {
         assert!(s.text_has_room(usize::MAX / 2));
     }
 
-    // Spec §4.3: free blocks that are address-adjacent should merge into a
+    // Free blocks that are address-adjacent should merge into a
     // larger run during glue, and that merged run should be visible in the
     // bucket whose size matches.
     #[test]
@@ -1779,7 +1806,7 @@ mod tests {
         assert_eq!(b, a + 1);
         assert_eq!(c, a + 2);
         assert_eq!(d, a + 3);
-        // Free them — bucket 0 now has 4 entries, bucket 3 (size 4) has none.
+        // Free them: bucket 0 now has 4 entries, bucket 3 (size 4) has none.
         s.free(a, 1);
         s.free(b, 1);
         s.free(c, 1);
@@ -1816,12 +1843,12 @@ mod tests {
     #[test]
     fn glue_splits_oversized_run_into_buckets() {
         // 256-unit pool (text=32, bumpable=224). Adjacent 64-unit + 64-unit
-        // blocks combine to 128, which is the biggest bucket — exactly one
+        // blocks combine to 128, which is the biggest bucket, so exactly one
         // entry. Push it to 192 and we get a 128 + a 64 (closest bucket).
         let mut s = Suballocator::default();
         s.reset(256 * ALLOC_UNIT_BYTES);
         // Three adjacent 64-unit allocs → run of 192 units after freeing.
-        // 64 is bucket 18 in the spec table.
+        // 64 is bucket 18 in the bucket table.
         let bucket_64 = Suballocator::bucket_for(64).unwrap();
         assert_eq!(Suballocator::bucket_units(bucket_64), 64);
         let a = s.alloc(64, AllocSide::Lo, 0).unwrap();
@@ -1849,7 +1876,7 @@ mod tests {
         let mut s = Suballocator::default();
         s.reset(16 * ALLOC_UNIT_BYTES);
         // Fill the pool to capacity (14 bumpable units in a 16-unit pool;
-        // text region is 2 units). All 14 calls succeed — glue_count stays 0.
+        // text region is 2 units). All 14 calls succeed and glue_count stays 0.
         // Pass a text_len that occupies the entire 2-unit text region so
         // the fallback_bump path can't grab any more.
         let text_len_full = 2 * ALLOC_UNIT_BYTES;

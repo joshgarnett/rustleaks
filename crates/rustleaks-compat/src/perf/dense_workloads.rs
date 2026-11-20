@@ -28,8 +28,7 @@ use serde_json::json;
 
 use super::source_scale_workloads::{FindingKey, GITHUB_RULE, Scratch, key, verify_findings};
 use super::suite_support::{
-    DATABASE_URI_RULE, Lcg, Result, checked_github_token, keyword_census, pack_config,
-    shannon_entropy,
+    DATABASE_URI_RULE, Lcg, Result, checked_github_token, go_entropy, keyword_census, pack_config,
 };
 use super::{Phase, elapsed, fingerprint, outcome_signature, phase};
 
@@ -340,7 +339,7 @@ fn planetscale_pairs(size: usize) -> Result<Shape> {
         bytes.push(b'\n');
         let mut token = b"pscale_tkn_".to_vec();
         token.extend_from_slice(&rng.string(TOKEN_ALPHABET, 32));
-        if shannon_entropy(&token) < 3.5 {
+        if go_entropy(&token)? < 3.5 {
             return Err("synthetic PlanetScale token has too little entropy".into());
         }
         for rule in [PLANETSCALE_RULE, PLANETSCALE_ASSOCIATION_RULE] {
@@ -642,7 +641,7 @@ fn many_findings(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     });
     let mut phases = vec![scan];
     if id == "memory-many-findings-json" {
-        let scratch = Scratch::new()?;
+        let scratch = Scratch::new("scale")?;
         let path = scratch.0.join("report.json");
         let mut report = phase(
             "report-json-file",

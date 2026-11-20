@@ -15,6 +15,7 @@ use rustleaks_sources::{
 use crate::args::{CommandKind, Invocation};
 use crate::complete_profile::CompleteProfile;
 use crate::config::resolve;
+use crate::limits::ScanLimits;
 
 pub(crate) struct BuiltSource {
     source: InnerSource,
@@ -70,10 +71,10 @@ impl CommitCounter {
             )));
         }
         self.values.try_reserve(1).map_err(|error| {
-            CallbackError::new(format!("could not retain excluded commit: {error}"))
+            CallbackError::new(format!("not enough memory for excluded commit: {error}"))
         })?;
         self.index.try_reserve(1).map_err(|error| {
-            CallbackError::new(format!("could not retain excluded commit: {error}"))
+            CallbackError::new(format!("not enough memory for excluded commit: {error}"))
         })?;
         let retained = copy_commit(value)?;
         let indexed = copy_commit(value)?;
@@ -95,9 +96,6 @@ fn copy_commit(value: &ByteText) -> Result<ByteText, CallbackError> {
 impl BuiltSource {
     pub fn excluded_bytes(&self) -> u64 {
         self.excluded_bytes
-    }
-    pub fn excluded_commit_count(&self) -> usize {
-        self.excluded_commits().len()
     }
     pub fn excluded_commits(&self) -> &[ByteText] {
         &self.excluded_commits.values
@@ -143,20 +141,29 @@ impl Source for BuiltSource {
 }
 
 fn is_excluded(excluded: &[ByteText], fragment: &Fragment) -> bool {
-    // The pinned detector compares config and baseline self-exclusions only
-    // with its slash-normalized FilePath, not its retained WindowsFilePath.
+    // Self-exclusions compare only the slash-normalized path, not the
+    // Windows spelling.
     excluded.iter().any(|path| path == fragment.file_path())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each argument is a separate input that the scan command has already built"
+)]
 pub(crate) fn build<R: Read + Send + 'static>(
     invocation: &Invocation,
     stdin: R,
     full_config: &Arc<CompiledConfig>,
     excluded: Vec<ByteText>,
     cwd: &Path,
+    limits: &ScanLimits,
     profile: Option<&CompleteProfile>,
     git_history_processes: NonZeroUsize,
 ) -> Result<BuiltSource, String> {
+    // Sources name the physical path in issue and Git messages. When the
+    // injected directory is the process directory, the path stays as typed,
+    // so those messages show the path that the user gave. Otherwise it is
+    // resolved against the injected directory.
     let injected_cwd_differs = match std::env::current_dir() {
         Ok(current) => current != cwd,
         Err(_) => true,
@@ -168,25 +175,22 @@ pub(crate) fn build<R: Read + Send + 'static>(
     };
     let logical_root =
         (invocation.command == CommandKind::Directory).then(|| invocation.source.clone());
-    let early_config = Some(Arc::clone(full_config));
     let file_options = profile.map_or_else(
         || Ok(rustleaks_sources::FileOptions::default()),
         CompleteProfile::file_options,
     )?;
-    let archive = archive_options(invocation, early_config.clone(), profile)?;
+    let archive = archive_options(limits.archive_depth, full_config, profile)?;
     let source = match invocation.command {
         CommandKind::Directory => {
             let mut options = DirectoryOptions::default()
                 .file_options(file_options)
                 .follow_symlinks(invocation.options.follow_symlinks)
                 .scan_git_metadata(invocation.options.scan_git_metadata)
-                .max_file_size(source_maximum(invocation)?)
+                .max_file_size(limits.source_max)
+                .path_config(Arc::clone(full_config))
                 .emit_limit_issues(true);
             if profile.is_some() {
                 options = options.exclude_paths(excluded.clone());
-            }
-            if let Some(config) = early_config {
-                options = options.path_config(config);
             }
             if let Some(logical_root) = logical_root {
                 options = options.logical_root(logical_root);
@@ -247,28 +251,14 @@ pub(crate) fn build<R: Read + Send + 'static>(
     })
 }
 
-fn source_maximum(invocation: &Invocation) -> Result<Option<u64>, String> {
-    let value = invocation.options.max_target_megabytes;
-    if value <= 0 {
-        return Ok(None);
-    }
-    u64::try_from(value)
-        .ok()
-        .and_then(|value| value.checked_mul(1_000_000))
-        .map(Some)
-        .ok_or_else(|| "--max-target-megabytes overflows the source byte domain".to_owned())
-}
-
 fn archive_options(
-    invocation: &Invocation,
-    config: Option<Arc<CompiledConfig>>,
+    depth: usize,
+    config: &Arc<CompiledConfig>,
     profile: Option<&CompleteProfile>,
 ) -> Result<Option<ArchiveOptions>, String> {
-    if invocation.options.max_archive_depth <= 0 {
+    if depth == 0 {
         return Ok(None);
     }
-    let depth = usize::try_from(invocation.options.max_archive_depth)
-        .map_err(|_| "--max-archive-depth is out of range".to_owned())?;
     let defaults = ArchiveLimits::default();
     let limits = if let Some(profile) = profile {
         profile.archive_limits(depth)?
@@ -282,46 +272,16 @@ fn archive_options(
         )
         .map_err(|error| error.to_string())?
     };
-    let mut options = ArchiveOptions::new(limits).emit_limit_issues(true);
-    if let Some(config) = config {
-        options = options.path_config(config);
-    }
-    Ok(Some(options))
-}
-
-pub(crate) fn engine_maximum(invocation: &Invocation) -> Result<Option<usize>, String> {
-    let value = invocation.options.max_target_megabytes;
-    if value <= 0 {
-        return Ok(None);
-    }
-    usize::try_from(value)
-        .ok()
-        .and_then(|value| value.checked_add(1))
-        .and_then(|value| value.checked_mul(1_000_000))
-        .and_then(|value| value.checked_sub(1))
-        .map(Some)
-        .ok_or_else(|| "--max-target-megabytes overflows the engine byte domain".to_owned())
+    Ok(Some(
+        ArchiveOptions::new(limits)
+            .emit_limit_issues(true)
+            .path_config(Arc::clone(config)),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::args::Options;
-    use std::path::PathBuf;
-
-    #[test]
-    fn megabyte_thresholds_match_source_and_engine_quirk() {
-        let invocation = Invocation {
-            command: CommandKind::Directory,
-            source: PathBuf::from("."),
-            options: Options {
-                max_target_megabytes: 2,
-                ..Options::default()
-            },
-        };
-        assert_eq!(source_maximum(&invocation).unwrap(), Some(2_000_000));
-        assert_eq!(engine_maximum(&invocation).unwrap(), Some(2_999_999));
-    }
 
     #[test]
     fn excluded_commit_counter_has_a_deterministic_growth_limit() {

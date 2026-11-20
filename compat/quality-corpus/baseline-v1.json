@@ -7,9 +7,9 @@
   "loaded_config_fnv1a64": "dba40ed0da66db17",
   "native_pack": "rustleaks-extra-v1",
   "native_pack_fnv1a64": "e45bd890e26a3603",
-  "corpus_fnv1a64": "ea0762d5634bb446",
-  "evaluator_source_fnv1a64": "f0c1cc9fd0bc0a4d",
-  "generator_source_fnv1a64": "363ec799159e8647",
+  "corpus_fnv1a64": "147cee6b0c10c90b",
+  "evaluator_source_fnv1a64": "93fd70b2789ed648",
+  "generator_source_fnv1a64": "bc0460de3e6a9385",
   "fingerprint_purpose": "FNV-1a fingerprints detect accidental drift; they are not authenticity or collision-resistance guarantees. Source and build revision must accompany release evidence.",
   "assessments": [
     {
@@ -709,7 +709,7 @@
         {
           "case_id": "azure-servicebus-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -743,7 +743,7 @@
         {
           "case_id": "azure-servicebus-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -777,7 +777,7 @@
         {
           "case_id": "azure-servicebus-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -811,7 +811,7 @@
         {
           "case_id": "azure-servicebus-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -845,7 +845,7 @@
         {
           "case_id": "azure-servicebus-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -879,7 +879,7 @@
         {
           "case_id": "azure-servicebus-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -913,7 +913,7 @@
         {
           "case_id": "azure-servicebus-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -947,7 +947,7 @@
         {
           "case_id": "azure-servicebus-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -981,7 +981,7 @@
         {
           "case_id": "azure-servicebus-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1016,7 +1016,7 @@
         {
           "case_id": "azure-servicebus-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1052,7 +1052,7 @@
         {
           "case_id": "azure-app-configuration-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1086,7 +1086,7 @@
         {
           "case_id": "azure-app-configuration-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1120,7 +1120,7 @@
         {
           "case_id": "azure-app-configuration-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1154,7 +1154,7 @@
         {
           "case_id": "azure-app-configuration-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1188,7 +1188,7 @@
         {
           "case_id": "azure-app-configuration-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1222,7 +1222,7 @@
         {
           "case_id": "azure-app-configuration-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1256,7 +1256,7 @@
         {
           "case_id": "azure-app-configuration-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1290,7 +1290,7 @@
         {
           "case_id": "azure-app-configuration-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1324,7 +1324,7 @@
         {
           "case_id": "azure-app-configuration-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1359,7 +1359,7 @@
         {
           "case_id": "azure-app-configuration-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1395,7 +1395,7 @@
         {
           "case_id": "azure-eventhub-entity-path",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1429,7 +1429,7 @@
         {
           "case_id": "mongodb-standard",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1465,7 +1465,7 @@
         {
           "case_id": "mongodb-srv",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1501,7 +1501,7 @@
         {
           "case_id": "mongodb-host-list",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1537,7 +1537,7 @@
         {
           "case_id": "mongodb-percent-userinfo",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1573,7 +1573,7 @@
         {
           "case_id": "mongodb-short-password",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1643,7 +1643,7 @@
         {
           "case_id": "mongodb-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1679,7 +1679,7 @@
         {
           "case_id": "mongodb-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1717,7 +1717,7 @@
         {
           "case_id": "mongodb-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1753,7 +1753,7 @@
         {
           "case_id": "servicebus-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1787,7 +1787,7 @@
         {
           "case_id": "appconfiguration-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -1821,7 +1821,7 @@
         {
           "case_id": "mongodb-ipv6-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3193,7 +3193,7 @@
         {
           "case_id": "azure-servicebus-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3227,7 +3227,7 @@
         {
           "case_id": "azure-servicebus-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3261,7 +3261,7 @@
         {
           "case_id": "azure-servicebus-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3295,7 +3295,7 @@
         {
           "case_id": "azure-servicebus-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3329,7 +3329,7 @@
         {
           "case_id": "azure-servicebus-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3363,7 +3363,7 @@
         {
           "case_id": "azure-servicebus-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3397,7 +3397,7 @@
         {
           "case_id": "azure-servicebus-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3431,7 +3431,7 @@
         {
           "case_id": "azure-servicebus-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3465,7 +3465,7 @@
         {
           "case_id": "azure-servicebus-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3500,7 +3500,7 @@
         {
           "case_id": "azure-servicebus-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3536,7 +3536,7 @@
         {
           "case_id": "azure-app-configuration-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3570,7 +3570,7 @@
         {
           "case_id": "azure-app-configuration-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3604,7 +3604,7 @@
         {
           "case_id": "azure-app-configuration-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3638,7 +3638,7 @@
         {
           "case_id": "azure-app-configuration-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3672,7 +3672,7 @@
         {
           "case_id": "azure-app-configuration-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3706,7 +3706,7 @@
         {
           "case_id": "azure-app-configuration-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3740,7 +3740,7 @@
         {
           "case_id": "azure-app-configuration-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3774,7 +3774,7 @@
         {
           "case_id": "azure-app-configuration-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3808,7 +3808,7 @@
         {
           "case_id": "azure-app-configuration-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3843,7 +3843,7 @@
         {
           "case_id": "azure-app-configuration-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3879,7 +3879,7 @@
         {
           "case_id": "azure-eventhub-entity-path",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3913,7 +3913,7 @@
         {
           "case_id": "mongodb-standard",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3947,7 +3947,7 @@
         {
           "case_id": "mongodb-srv",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -3981,7 +3981,7 @@
         {
           "case_id": "mongodb-host-list",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4015,7 +4015,7 @@
         {
           "case_id": "mongodb-percent-userinfo",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4049,7 +4049,7 @@
         {
           "case_id": "mongodb-short-password",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4117,7 +4117,7 @@
         {
           "case_id": "mongodb-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4151,7 +4151,7 @@
         {
           "case_id": "mongodb-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4186,7 +4186,7 @@
         {
           "case_id": "mongodb-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4222,7 +4222,7 @@
         {
           "case_id": "servicebus-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4256,7 +4256,7 @@
         {
           "case_id": "appconfiguration-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -4290,7 +4290,7 @@
         {
           "case_id": "mongodb-ipv6-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -5400,7 +5400,7 @@
         {
           "case_id": "azure-servicebus-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5432,7 +5432,7 @@
         {
           "case_id": "azure-servicebus-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5464,7 +5464,7 @@
         {
           "case_id": "azure-servicebus-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5496,7 +5496,7 @@
         {
           "case_id": "azure-servicebus-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5528,7 +5528,7 @@
         {
           "case_id": "azure-servicebus-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5560,7 +5560,7 @@
         {
           "case_id": "azure-servicebus-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5592,7 +5592,7 @@
         {
           "case_id": "azure-servicebus-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5624,7 +5624,7 @@
         {
           "case_id": "azure-servicebus-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5656,7 +5656,7 @@
         {
           "case_id": "azure-servicebus-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5688,7 +5688,7 @@
         {
           "case_id": "azure-servicebus-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5720,7 +5720,7 @@
         {
           "case_id": "azure-app-configuration-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5752,7 +5752,7 @@
         {
           "case_id": "azure-app-configuration-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5784,7 +5784,7 @@
         {
           "case_id": "azure-app-configuration-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5816,7 +5816,7 @@
         {
           "case_id": "azure-app-configuration-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5848,7 +5848,7 @@
         {
           "case_id": "azure-app-configuration-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5880,7 +5880,7 @@
         {
           "case_id": "azure-app-configuration-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5912,7 +5912,7 @@
         {
           "case_id": "azure-app-configuration-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5944,7 +5944,7 @@
         {
           "case_id": "azure-app-configuration-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -5976,7 +5976,7 @@
         {
           "case_id": "azure-app-configuration-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6008,7 +6008,7 @@
         {
           "case_id": "azure-app-configuration-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6040,7 +6040,7 @@
         {
           "case_id": "azure-eventhub-entity-path",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6072,7 +6072,7 @@
         {
           "case_id": "mongodb-standard",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6104,7 +6104,7 @@
         {
           "case_id": "mongodb-srv",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6136,7 +6136,7 @@
         {
           "case_id": "mongodb-host-list",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6168,7 +6168,7 @@
         {
           "case_id": "mongodb-percent-userinfo",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6200,7 +6200,7 @@
         {
           "case_id": "mongodb-short-password",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6264,7 +6264,7 @@
         {
           "case_id": "mongodb-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6296,7 +6296,7 @@
         {
           "case_id": "mongodb-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6328,7 +6328,7 @@
         {
           "case_id": "mongodb-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6360,7 +6360,7 @@
         {
           "case_id": "servicebus-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6392,7 +6392,7 @@
         {
           "case_id": "appconfiguration-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -6424,7 +6424,7 @@
         {
           "case_id": "mongodb-ipv6-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [],
@@ -7589,7 +7589,7 @@
         {
           "case_id": "azure-app-configuration-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7623,7 +7623,7 @@
         {
           "case_id": "azure-app-configuration-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7657,7 +7657,7 @@
         {
           "case_id": "azure-app-configuration-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7691,7 +7691,7 @@
         {
           "case_id": "azure-app-configuration-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7725,7 +7725,7 @@
         {
           "case_id": "azure-app-configuration-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7759,7 +7759,7 @@
         {
           "case_id": "azure-app-configuration-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7793,7 +7793,7 @@
         {
           "case_id": "azure-app-configuration-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7827,7 +7827,7 @@
         {
           "case_id": "azure-app-configuration-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7861,7 +7861,7 @@
         {
           "case_id": "azure-app-configuration-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7896,7 +7896,7 @@
         {
           "case_id": "azure-app-configuration-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -7932,7 +7932,7 @@
         {
           "case_id": "appconfiguration-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8134,7 +8134,7 @@
         {
           "case_id": "azure-servicebus-order-0",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8168,7 +8168,7 @@
         {
           "case_id": "azure-servicebus-order-1",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8202,7 +8202,7 @@
         {
           "case_id": "azure-servicebus-order-2",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8236,7 +8236,7 @@
         {
           "case_id": "azure-servicebus-order-3",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8270,7 +8270,7 @@
         {
           "case_id": "azure-servicebus-order-4",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8304,7 +8304,7 @@
         {
           "case_id": "azure-servicebus-order-5",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8338,7 +8338,7 @@
         {
           "case_id": "azure-servicebus-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8372,7 +8372,7 @@
         {
           "case_id": "azure-servicebus-field-spacing",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8406,7 +8406,7 @@
         {
           "case_id": "azure-servicebus-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8441,7 +8441,7 @@
         {
           "case_id": "azure-servicebus-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8477,7 +8477,7 @@
         {
           "case_id": "azure-eventhub-entity-path",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8511,7 +8511,7 @@
         {
           "case_id": "servicebus-sovereign-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8745,7 +8745,7 @@
         {
           "case_id": "mongodb-standard",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8779,7 +8779,7 @@
         {
           "case_id": "mongodb-srv",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8813,7 +8813,7 @@
         {
           "case_id": "mongodb-host-list",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8847,7 +8847,7 @@
         {
           "case_id": "mongodb-percent-userinfo",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8881,7 +8881,7 @@
         {
           "case_id": "mongodb-short-password",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8949,7 +8949,7 @@
         {
           "case_id": "mongodb-invalid-bytes",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -8983,7 +8983,7 @@
         {
           "case_id": "mongodb-repeated",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -9018,7 +9018,7 @@
         {
           "case_id": "mongodb-percent-envelope",
           "split": "holdout",
-          "stratum": "native-pilot",
+          "stratum": "native",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [
@@ -9054,7 +9054,7 @@
         {
           "case_id": "mongodb-ipv6-gap",
           "split": "holdout",
-          "stratum": "native-pilot-gap",
+          "stratum": "native-gap",
           "scan_complete": true,
           "termination": null,
           "scored_positive_indices": [

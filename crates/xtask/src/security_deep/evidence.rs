@@ -28,16 +28,6 @@ const POLICY: &[&str] = &[
     "docs/dev/dependencies.md",
     "MODULE.bazel",
 ];
-const TARGETS: &[&str] = &[
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "x86_64-apple-darwin",
-    "aarch64-apple-darwin",
-    "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
-];
 
 #[allow(clippy::too_many_lines)] // Keep each evidence source beside its validation and final record.
 pub(super) fn snapshot(
@@ -94,7 +84,7 @@ pub(super) fn snapshot(
         )?)?;
         let version = fs::read_to_string(directory.join(label).join("stdout.log"))
             .map_err(|error| error.to_string())?;
-        if label == "geiger-version" && version.trim() != crate::CARGO_GEIGER_VERSION {
+        if label == "geiger-version" && version.trim() != crate::security::CARGO_GEIGER_VERSION {
             return Err("unsafe inventory tool version drift".into());
         }
         evidence_tools.insert(label, version.trim().to_owned());
@@ -203,7 +193,7 @@ pub(super) fn snapshot(
         let version = id["version"]
             .as_str()
             .ok_or("unsafe package omits version")?;
-        unsafe_packages.insert(format!("{name}@{version}"),json!({"used_unsafe":crate::unsafe_count(&row["unsafety"]["used"]),"forbids_unsafe":row["unsafety"]["forbids_unsafe"],"source":if id["source"].is_null() || id["source"].get("Path").is_some() {json!("workspace")} else {id["source"].clone()}}));
+        unsafe_packages.insert(format!("{name}@{version}"),json!({"used_unsafe":crate::security::unsafe_count(&row["unsafety"]["used"]),"forbids_unsafe":row["unsafety"]["forbids_unsafe"],"source":if id["source"].is_null() || id["source"].get("Path").is_some() {json!("workspace")} else {id["source"].clone()}}));
     }
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(std::path::PathBuf::from)
@@ -235,7 +225,7 @@ pub(super) fn snapshot(
         return Err("invalid advisory database revision".into());
     }
     Ok(
-        json!({"schema_version":1,"kind":"dependency-comparison-evidence","source_identity":identity,"locks":locks,"policy":policy,"locked_packages":locked_packages,"cargo_graph":graph,"cargo_graph_scope":{"features":"all workspace features","filter_platform":host,"runtime_support_claim":false},"metadata_sha256":sha256_file(&directory.join("graph/stdout.log"))?,"declared_compile_targets":TARGETS,"vet_inventory":vet,"unsafe_packages":unsafe_packages,"unsafe_scope":"selected rustleaks-sources all-features Cargo graph; change signal, not safety proof","advisory_database":{"revision":revision,"observed":"default Cargo advisory database after the existing security gate"},"review_status":"unreviewed-comparison-evidence","evidence_tools":evidence_tools}),
+        json!({"schema_version":1,"kind":"dependency-comparison-evidence","source_identity":identity,"locks":locks,"policy":policy,"locked_packages":locked_packages,"cargo_graph":graph,"cargo_graph_scope":{"features":"all workspace features","filter_platform":host,"runtime_support_claim":false},"metadata_sha256":sha256_file(&directory.join("graph/stdout.log"))?,"declared_compile_targets":crate::REQUIRED_TARGETS,"vet_inventory":vet,"unsafe_packages":unsafe_packages,"unsafe_scope":"selected rustleaks-sources all-features Cargo graph; change signal, not safety proof","advisory_database":{"revision":revision,"observed":"default Cargo advisory database after the existing security gate"},"review_status":"unreviewed-comparison-evidence","evidence_tools":evidence_tools}),
     )
 }
 

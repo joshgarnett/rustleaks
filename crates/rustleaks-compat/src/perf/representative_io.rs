@@ -7,7 +7,6 @@ use std::hint::black_box;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rustleaks_core::Engine;
@@ -24,6 +23,7 @@ use rustleaks_sources::{
 };
 use serde_json::{Value, json};
 
+use super::Scratch;
 use super::representative::{Phase, fingerprint};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -90,35 +90,6 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     }
 }
 
-struct Scratch(PathBuf);
-impl Scratch {
-    fn new() -> Result<Self> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        // A later run can reuse the process ID of a run that left a folder
-        // behind, so a taken name moves to the next one.
-        let root = loop {
-            let root = std::env::temp_dir().join(format!(
-                "rustleaks-perf-io-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            match fs::create_dir(&root) {
-                Ok(()) => break root,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error.into()),
-            }
-        };
-        fs::create_dir(root.join("empty"))?;
-        fs::write(root.join("empty-config"), b"")?;
-        Ok(Self(root))
-    }
-}
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
 struct Fixture {
     scratch: Scratch,
     fragments: Vec<Fragment>,
@@ -127,7 +98,7 @@ struct Fixture {
 }
 impl Fixture {
     fn directory(files: usize, bytes: usize) -> Result<Self> {
-        let scratch = Scratch::new()?;
+        let scratch = Scratch::new("io")?;
         fs::create_dir(scratch.0.join("input"))?;
         let mut fragments = Vec::new();
         for index in 0..files {
@@ -566,7 +537,7 @@ pub(super) fn output(mut command: Command, input: Option<&[u8]>) -> Result<Outpu
 
 fn setup_git() -> Result<Fixture> {
     let executable = executable("RUSTLEAKS_PERF_GIT")?;
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("io")?;
     let repository = scratch.0.join("repo");
     let mut init = command(&executable, &scratch.0);
     init.arg("init")

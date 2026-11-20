@@ -1,5 +1,4 @@
 use std::ffi::OsString;
-use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -48,7 +47,7 @@ pub(crate) struct ConfigAssembly {
     pub native_policy_reference: Option<String>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct ConfigEnvironment<'a> {
     pub path: Option<&'a OsString>,
     pub inline: Option<&'a OsString>,
@@ -86,7 +85,10 @@ fn read_config_file(path: &Path) -> io::Result<String> {
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_CONFIG_FILE_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "configuration file is larger than the 16 MiB limit",
+            format!(
+                "configuration file is larger than the {} MiB limit",
+                MAX_CONFIG_FILE_BYTES / (1024 * 1024)
+            ),
         ));
     }
     String::from_utf8(bytes).map_err(|_| {
@@ -103,7 +105,6 @@ pub(crate) fn assemble(
     cwd: &Path,
     enabled_rules: &mut dyn FnMut(&[String]),
 ) -> Result<ConfigAssembly, String> {
-    validate_numbers(invocation)?;
     let loader = ConfigLoader::new()
         .with_current_version(IMPLEMENTED_GITLEAKS_VERSION)
         .map_err(|error| format!("could not configure current version: {error}"))?
@@ -124,12 +125,9 @@ pub(crate) fn assemble(
     let mut ignores = IgnoreSet::default();
     let mut warnings = Vec::new();
     if full.requires_newer_version() {
-        warnings
-            .try_reserve(1)
-            .map_err(|error| format!("could not retain config warning: {error}"))?;
-        warnings.push(minimum_version_warning(&full, &origin)?);
+        warnings.push(minimum_version_warning(&full, &origin));
     }
-    let mut errors = missing_required_rule_errors(&selected)?;
+    let mut errors = missing_required_rule_errors(&selected);
     let named = invocation.options.ignore_path.as_path();
     let source = if invocation.command == CommandKind::Stdin {
         Path::new(".")
@@ -160,7 +158,9 @@ pub(crate) fn assemble(
                     policy = policy.baseline(baseline);
                     excluded_paths.push(exclusion);
                 }
-                Err(error) => errors.push(format!("could not relativize baseline: {error}")),
+                Err(error) => errors.push(format!(
+                    "could not find the baseline path relative to the scanned path: {error}"
+                )),
             },
             Err(error) => errors.push(format!(
                 "could not load baseline {}: {error}",
@@ -180,35 +180,18 @@ pub(crate) fn assemble(
     })
 }
 
-fn minimum_version_warning(config: &CompiledConfig, origin: &str) -> Result<String, String> {
-    const PREFIX: &str = "config requires Gitleaks ";
-    const IMPLEMENTED: &str = " or later; Rustleaks implements Gitleaks ";
-    const SUFFIX: &str = ", so newer settings may not be supported; config path=";
-    let capacity = PREFIX
-        .len()
-        .checked_add(config.min_version().len())
-        .and_then(|value| value.checked_add(IMPLEMENTED.len()))
-        .and_then(|value| value.checked_add(IMPLEMENTED_GITLEAKS_VERSION.len()))
-        .and_then(|value| value.checked_add(SUFFIX.len()))
-        .and_then(|value| value.checked_add(origin.len()))
-        .ok_or_else(|| "config warning length overflowed".to_owned())?;
-    let mut warning = String::new();
-    warning
-        .try_reserve(capacity)
-        .map_err(|error| format!("could not allocate config warning: {error}"))?;
-    write!(
-        warning,
-        "{PREFIX}{}{IMPLEMENTED}{IMPLEMENTED_GITLEAKS_VERSION}{SUFFIX}{origin}",
+fn minimum_version_warning(config: &CompiledConfig, origin: &str) -> String {
+    format!(
+        "config requires Gitleaks {} or later; Rustleaks implements Gitleaks \
+         {IMPLEMENTED_GITLEAKS_VERSION}, so newer settings may not be supported; config path={origin}",
         config.min_version(),
     )
-    .map_err(|_| "could not render config warning".to_owned())?;
-    Ok(warning)
 }
 
-fn missing_required_rule_errors(config: &CompiledConfig) -> Result<Vec<String>, String> {
-    const PREFIX: &str = "required rule not found in config path=";
-    const REQUIRED: &str = " rule-id=";
-    let missing = config
+/// One error for each required rule that a selected rule names but the
+/// selected configuration does not contain.
+fn missing_required_rule_errors(config: &CompiledConfig) -> Vec<String> {
+    config
         .rules()
         .iter()
         .flat_map(|(primary_id, rule)| {
@@ -216,33 +199,14 @@ fn missing_required_rule_errors(config: &CompiledConfig) -> Result<Vec<String>, 
                 .iter()
                 .map(move |required| (primary_id, required))
         })
-        .filter(|(_, required)| config.rule(&required.id).is_none());
-    let (minimum, _) = missing.size_hint();
-    let mut errors = Vec::new();
-    errors
-        .try_reserve(minimum)
-        .map_err(|error| format!("could not retain required-rule diagnostics: {error}"))?;
-    for (primary_id, required) in missing {
-        errors
-            .try_reserve(1)
-            .map_err(|error| format!("could not retain required-rule diagnostic: {error}"))?;
-        let capacity = PREFIX
-            .len()
-            .checked_add(primary_id.len())
-            .and_then(|value| value.checked_add(REQUIRED.len()))
-            .and_then(|value| value.checked_add(required.id.len()))
-            .ok_or_else(|| "required-rule diagnostic length overflowed".to_owned())?;
-        let mut message = String::new();
-        message
-            .try_reserve(capacity)
-            .map_err(|error| format!("could not allocate required-rule diagnostic: {error}"))?;
-        message.push_str(PREFIX);
-        message.push_str(primary_id);
-        message.push_str(REQUIRED);
-        message.push_str(&required.id);
-        errors.push(message);
-    }
-    Ok(errors)
+        .filter(|(_, required)| config.rule(&required.id).is_none())
+        .map(|(primary_id, required)| {
+            format!(
+                "rule {primary_id} requires rule {}, which is not in the configuration",
+                required.id
+            )
+        })
+        .collect()
 }
 
 enum ConfigSource<'a> {
@@ -357,7 +321,7 @@ fn compile_selected_config(
     }
     if !matches!(source, ConfigSource::EmbeddedDefault) {
         return Err(format!(
-            "--native-pack requires embedded-default configuration; a configuration was selected from {}; custom-base composition is not supported",
+            "--native-pack works only with the default configuration, but a configuration was set by {}",
             source.category(),
         ));
     }
@@ -365,15 +329,22 @@ fn compile_selected_config(
     Ok((full, "<embedded-default>".to_owned(), Some(reference)))
 }
 
+/// The rules of a built-in rule pack. `cli_spec::NATIVE_PACKS` lists the
+/// same names for help and completion.
+fn native_pack_contents(id: &str) -> Option<&'static str> {
+    match id {
+        "rustleaks-extra-v1" => Some(EXTRA_RULES_V1),
+        "rustleaks-providers-v1" => Some(PROVIDER_RULES_V1),
+        "rustleaks-connections-v1" => Some(CONNECTION_RULES_V1),
+        _ => None,
+    }
+}
+
 fn compile_native_packs(ids: &[String]) -> Result<(CompiledConfig, String), String> {
     let mut policy = NativePolicy::builder();
     for id in ids {
-        let contents = match id.as_str() {
-            "rustleaks-extra-v1" => EXTRA_RULES_V1,
-            "rustleaks-providers-v1" => PROVIDER_RULES_V1,
-            "rustleaks-connections-v1" => CONNECTION_RULES_V1,
-            _ => return Err("unknown builtin native pack identifier".to_owned()),
-        };
+        let contents =
+            native_pack_contents(id).ok_or_else(|| "unknown built-in rule pack".to_owned())?;
         policy = policy
             .with_pack(id, contents)
             .map_err(native_policy_error)?;
@@ -381,7 +352,7 @@ fn compile_native_packs(ids: &[String]) -> Result<(CompiledConfig, String), Stri
     let (config, identity) = policy.compile().map_err(native_policy_error)?;
     let reference = identity
         .builtin_review_reference()
-        .ok_or_else(|| "builtin native policy has no review reference".to_owned())?
+        .ok_or_else(|| "the built-in rule packs have no review reference".to_owned())?
         .to_owned();
     Ok((config, reference))
 }
@@ -393,7 +364,7 @@ fn native_policy_error(error: NativePolicyError) -> String {
         NativePolicyError::Engine(_) => "engine compilation error".to_owned(),
         error => error.to_string(),
     };
-    format!("could not compile builtin native policy ({category})")
+    format!("could not compile the built-in rule packs ({category})")
 }
 
 fn config_error_category(error: &ConfigError) -> &'static str {
@@ -428,36 +399,6 @@ fn load_path(
                 path.display()
             )
         })
-}
-
-fn validate_numbers(invocation: &Invocation) -> Result<(), String> {
-    let options = &invocation.options;
-    if options.max_target_megabytes > 0 {
-        let megabytes = usize::try_from(options.max_target_megabytes)
-            .map_err(|_| "--max-target-megabytes is out of range".to_owned())?;
-        megabytes
-            .checked_add(1)
-            .and_then(|value| value.checked_mul(1_000_000))
-            .and_then(|value| value.checked_sub(1))
-            .ok_or_else(|| "--max-target-megabytes overflows the native byte domain".to_owned())?;
-        u64::try_from(megabytes)
-            .ok()
-            .and_then(|value| value.checked_mul(1_000_000))
-            .ok_or_else(|| "--max-target-megabytes overflows the source byte domain".to_owned())?;
-    }
-    for (name, value) in [
-        ("--max-decode-depth", options.max_decode_depth),
-        ("--max-archive-depth", options.max_archive_depth),
-    ] {
-        if value > 0 {
-            usize::try_from(value).map_err(|_| format!("{name} is out of range"))?;
-        }
-    }
-    if options.timeout_seconds > 0 {
-        u64::try_from(options.timeout_seconds)
-            .map_err(|_| "--timeout is out of range".to_owned())?;
-    }
-    Ok(())
 }
 
 /// Loads ignore files and reports each physical file at most once.
@@ -501,7 +442,7 @@ impl IgnoreLoader<'_> {
         }
         self.loaded
             .try_reserve(1)
-            .map_err(|error| format!("could not retain ignore file path: {error}"))?;
+            .map_err(|error| format!("not enough memory for ignore file path: {error}"))?;
         self.loaded.push(canonical);
         let read_error =
             |error: io::Error| format!("could not read ignore file {}: {error}", shown.display());
@@ -539,14 +480,15 @@ impl IgnoreLoader<'_> {
                     IgnoreIssue::TokenTooLong { .. } => {
                         stop = true;
                         format!(
-                            "ignore file line is 64 KiB or longer, so it and later \
-                             lines are skipped file={file} line={line_number}"
+                            "ignore file line is {} KiB or longer, so it and later \
+                             lines are skipped file={file} line={line_number}",
+                            IGNORE_LINE_LIMIT / 1024
                         )
                     }
                 };
                 self.warnings
                     .try_reserve(1)
-                    .map_err(|error| format!("could not retain ignore warning: {error}"))?;
+                    .map_err(|error| format!("not enough memory for ignore warning: {error}"))?;
                 self.warnings.push(warning);
             }
             if stop {
@@ -606,10 +548,12 @@ fn logical_native(path: &Path) -> ByteText {
     LogicalPath::from_native(path).normalized().clone()
 }
 
+/// Most components in a path that the path helpers accept.
+const MAX_PATH_COMPONENTS: usize = 4_096;
+
 fn clean_native_path(path: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
 
-    const MAX_PATH_COMPONENTS: usize = 4_096;
     let mut prefix = None;
     let mut rooted = false;
     let mut parts = Vec::new();
@@ -629,7 +573,7 @@ fn clean_native_path(path: &Path) -> Result<PathBuf, String> {
                     }
                     parts
                         .try_reserve(1)
-                        .map_err(|error| format!("could not retain clean path: {error}"))?;
+                        .map_err(|error| format!("not enough memory for clean path: {error}"))?;
                     parts.push(OsString::from(".."));
                 }
             }
@@ -641,7 +585,7 @@ fn clean_native_path(path: &Path) -> Result<PathBuf, String> {
                 }
                 parts
                     .try_reserve(1)
-                    .map_err(|error| format!("could not retain clean path: {error}"))?;
+                    .map_err(|error| format!("not enough memory for clean path: {error}"))?;
                 parts.push(value.to_os_string());
             }
         }
@@ -668,7 +612,6 @@ fn clean_native_path(path: &Path) -> Result<PathBuf, String> {
 fn relative_native_path(from: &Path, to: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
 
-    const MAX_PATH_COMPONENTS: usize = 4_096;
     fn components(path: &Path) -> Result<Vec<Component<'_>>, String> {
         let mut retained = Vec::new();
         for component in path.components() {
@@ -679,7 +622,7 @@ fn relative_native_path(from: &Path, to: &Path) -> Result<PathBuf, String> {
             }
             retained
                 .try_reserve(1)
-                .map_err(|error| format!("could not retain path components: {error}"))?;
+                .map_err(|error| format!("not enough memory for path components: {error}"))?;
             retained.push(component);
         }
         Ok(retained)
@@ -761,10 +704,8 @@ mod tests {
         assemble(
             &invocation,
             ConfigEnvironment {
-                path: None,
                 inline: inline.as_ref(),
-                legacy_path: None,
-                legacy_inline: None,
+                ..ConfigEnvironment::default()
             },
             root,
             &mut |_| {},
@@ -908,17 +849,7 @@ mod tests {
             source: root.to_path_buf(),
             options: Options::default(),
         };
-        assemble(
-            &invocation,
-            ConfigEnvironment {
-                path: None,
-                inline: None,
-                legacy_path: None,
-                legacy_inline: None,
-            },
-            root,
-            &mut |_| {},
-        )
+        assemble(&invocation, ConfigEnvironment::default(), root, &mut |_| {})
     }
 
     fn padded_config(length: usize) -> Vec<u8> {
@@ -1071,34 +1002,16 @@ mod tests {
         };
         let assembly = assemble(
             &invocation,
-            ConfigEnvironment {
-                path: None,
-                inline: None,
-                legacy_path: None,
-                legacy_inline: None,
-            },
+            ConfigEnvironment::default(),
             &root,
             &mut |_| {},
         )
         .unwrap();
         assert_eq!(
             assembly.errors,
-            ["required rule not found in config path=primary rule-id=secondary"]
+            ["rule primary requires rule secondary, which is not in the configuration"]
         );
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn checked_megabyte_math_rejects_overflow() {
-        let invocation = Invocation {
-            command: CommandKind::Directory,
-            source: PathBuf::from("."),
-            options: Options {
-                max_target_megabytes: i64::MAX,
-                ..Options::default()
-            },
-        };
-        assert!(validate_numbers(&invocation).is_err());
     }
 
     #[test]
@@ -1222,11 +1135,14 @@ mod tests {
             PathBuf::from(r"..\baseline.json")
         );
     }
-}
 
-#[cfg(test)]
-mod native_entropy_tests {
-    use super::*;
+    #[test]
+    fn every_listed_rule_pack_has_rules() {
+        for id in crate::cli_spec::NATIVE_PACKS {
+            assert!(native_pack_contents(id).is_some(), "{id}");
+        }
+        assert_eq!(native_pack_contents("rustleaks-missing-v1"), None);
+    }
 
     #[test]
     fn cli_compiles_and_projects_the_requested_byte_predicates() {

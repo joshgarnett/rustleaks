@@ -1,9 +1,12 @@
-use super::filters::{self, DeltaErrorMessages, FilterOp};
-use super::{huffman, match_finder, Error, Result};
+#[cfg(test)]
+use super::filters::FilterOp;
+use super::filters::{self, DeltaErrorMessages};
+#[cfg(test)]
+use super::{huffman, match_finder};
+use super::{validate_huffman_counts, Error, Result};
 use std::collections::VecDeque;
 use std::io::Read;
 #[cfg(test)]
-use std::io::Write;
 use std::ops::Range;
 
 pub const LEVEL_TABLE_SIZE: usize = 20;
@@ -13,9 +16,10 @@ pub const DISTANCE_TABLE_SIZE_70: usize = 80;
 pub const ALIGN_TABLE_SIZE: usize = 16;
 pub const LENGTH_TABLE_SIZE: usize = 44;
 const DEFAULT_DICTIONARY_SIZE: usize = 4 * 1024 * 1024;
-const MAX_INITIAL_OUTPUT_CAPACITY: usize = 1024 * 1024;
 const STREAM_FLUSH_THRESHOLD: usize = 64 * 1024;
+#[cfg(test)]
 const MAX_ENCODER_MATCH_OFFSET: usize = DEFAULT_DICTIONARY_SIZE;
+#[cfg(test)]
 const MAX_ENCODER_MATCH_LENGTH: usize = 4096;
 /// The largest block the format allows a writer to emit.
 const MAX_COMPRESSED_BLOCK_OUTPUT: usize = 4 * 1024 * 1024;
@@ -26,8 +30,7 @@ const MAX_COMPRESSED_BLOCK_OUTPUT: usize = 4 * 1024 * 1024;
 /// still reach back across boundaries into the history, so shortening a block
 /// costs no match range. Measured over the corpus, 64 KiB packs 6.4% smaller
 /// than a mebibyte and within 0.2% of the best size tried at any point between
-/// 16 KiB and 256 KiB. The streaming writer reads in the same units, so both
-/// paths produce the same blocks for the same input.
+/// 16 KiB and 256 KiB.
 pub(crate) const LZ_BLOCK_SIZE: usize = 64 * 1024;
 const _: () = assert!(LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 
@@ -65,33 +68,34 @@ const _: () = assert!(MAX_LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 /// that does move sits four and a half times above it. That gap is the whole
 /// design: a block grows over data a fresh table set could not describe any
 /// better, and over nothing else.
+#[cfg(test)]
 const BLOCK_DRIFT_DIVISOR: u64 = 128;
 
 /// Decides where one block ends, from the raw bytes alone.
 ///
-/// Both writers have to cut a member the same way or the same input packs to
-/// different archives, and they see it differently: the buffered path holds
-/// the whole member while the streaming path reads it a chunk at a time and
-/// compresses a wave of blocks in parallel. So the rule reads only the bytes
-/// already folded into the open block plus the chunk being considered, which
-/// both of them have at the moment they have to decide.
+/// The rule reads only the bytes already folded into the open block plus the
+/// chunk being considered, so the same input is cut the same way however it
+/// is split into chunks.
 ///
 /// Every block still carries its own tables. Extending a block is what WinRAR
 /// does on data like this; the format's table-reuse flag would say the same
 /// thing more directly, but no archive WinRAR writes sets it, so no third
 /// party decoder is known to have been tested against one that does.
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct BlockSplitter {
     counts: [u32; 256],
     total: u64,
 }
 
+#[cfg(test)]
 impl Default for BlockSplitter {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 impl BlockSplitter {
     pub(crate) const fn new() -> Self {
         Self {
@@ -141,9 +145,11 @@ impl BlockSplitter {
         misplaced / open <= chunk_len / BLOCK_DRIFT_DIVISOR
     }
 }
+#[cfg(test)]
 const MAX_FILTER_BLOCK_LENGTH: usize = 0x3ffff;
 /// The most channels a RAR 5 delta filter record can name. The count is written
 /// as five bits biased by one, so this is what the format can say, not a policy.
+#[cfg(test)]
 pub(crate) const MAX_DELTA_CHANNELS: usize = 32;
 /// How much input goes into one compressed block once a filter is carried.
 ///
@@ -151,8 +157,8 @@ pub(crate) const MAX_DELTA_CHANNELS: usize = 32;
 /// so this is the smaller of that ceiling and the plain block size. Splitting a
 /// filtered range across blocks costs one more record per block and converts
 /// the same bytes either way: the transform reads an absolute file offset, and
-/// an instruction straddling a boundary was already left alone at the old
-/// 256 KiB one.
+/// an instruction that straddles a block boundary is left alone.
+#[cfg(test)]
 const FILTERED_LZ_BLOCK_SIZE: usize = if LZ_BLOCK_SIZE < MAX_FILTER_BLOCK_LENGTH {
     LZ_BLOCK_SIZE
 } else {
@@ -175,13 +181,17 @@ const FILTERED_LZ_BLOCK_SIZE: usize = if LZ_BLOCK_SIZE < MAX_FILTER_BLOCK_LENGTH
 /// buy time, and it is not worth it: at 128 the source packs 0.16% larger for
 /// 1.2x, at 64 it packs 0.47% larger for 1.5x, and neither closes the distance
 /// to WinRAR.
+#[cfg(test)]
 const NICE_MATCH_LENGTH: usize = 512;
 
 /// Matches shorter than 4 bytes are never emitted, so candidate positions are
 /// chained by a hash of their first 4 bytes.
+#[cfg(test)]
 type Rar50MatchFinder = match_finder::MatchFinder<4>;
+#[cfg(test)]
 const MAX_MATCH_CANDIDATES: usize = 256;
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompressedBlock {
     pub header: CompressedBlockHeader,
@@ -275,6 +285,7 @@ impl DecodeMode {
     }
 }
 
+#[cfg(test)]
 pub fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
     if input.len() < 3 {
         return Err(Error::NeedMoreInput);
@@ -442,10 +453,7 @@ pub fn read_table_lengths(input: &[u8], algorithm_version: u8) -> Result<(TableL
     ))
 }
 
-pub fn encode_table_lengths(lengths: &TableLengths, algorithm_version: u8) -> Result<Vec<u8>> {
-    encode_table_lengths_with_bit_count(lengths, algorithm_version).map(|(data, _)| data)
-}
-
+#[cfg(test)]
 pub fn encode_table_lengths_with_bit_count(
     lengths: &TableLengths,
     algorithm_version: u8,
@@ -500,6 +508,7 @@ pub fn encode_table_lengths_with_bit_count(
     Ok((writer.finish(), bit_count))
 }
 
+#[cfg(test)]
 pub fn encode_compressed_block(
     payload: &[u8],
     payload_bits: usize,
@@ -562,6 +571,7 @@ pub fn encode_compressed_block(
     Ok(out)
 }
 
+#[cfg(test)]
 pub fn decode_literal_only(
     input: &[u8],
     algorithm_version: u8,
@@ -577,11 +587,13 @@ pub fn decode_literal_only(
     )
 }
 
+#[cfg(test)]
 pub fn decode_lz(input: &[u8], algorithm_version: u8, output_size: usize) -> Result<Vec<u8>> {
     let mut decoder = Unpack50Decoder::new();
     decoder.decode_member(input, algorithm_version, output_size, false, DecodeMode::Lz)
 }
 
+#[cfg(test)]
 pub fn encode_literal_only(data: &[u8], algorithm_version: u8) -> Result<Vec<u8>> {
     let distance_size = match algorithm_version {
         0 => DISTANCE_TABLE_SIZE_50,
@@ -622,10 +634,12 @@ pub fn encode_literal_only(data: &[u8], algorithm_version: u8) -> Result<Vec<u8>
     encode_compressed_block(&writer.finish(), payload_bits, true, true)
 }
 
+#[cfg(test)]
 pub fn encode_lz_member(data: &[u8], algorithm_version: u8) -> Result<Vec<u8>> {
     encode_lz_member_with_history(data, &[], algorithm_version)
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct EncodeOptions {
@@ -636,6 +650,7 @@ pub struct EncodeOptions {
     pub optimal_parse: bool,
 }
 
+#[cfg(test)]
 impl EncodeOptions {
     pub const fn new(max_match_candidates: usize) -> Self {
         Self {
@@ -668,12 +683,14 @@ impl EncodeOptions {
     }
 }
 
+#[cfg(test)]
 impl Default for EncodeOptions {
     fn default() -> Self {
         Self::new(MAX_MATCH_CANDIDATES)
     }
 }
 
+#[cfg(test)]
 pub fn encode_lz_member_with_history(
     data: &[u8],
     history: &[u8],
@@ -689,6 +706,7 @@ pub fn encode_lz_member_with_history(
     )
 }
 
+#[cfg(test)]
 pub fn encode_lz_member_with_options(
     data: &[u8],
     algorithm_version: u8,
@@ -697,116 +715,7 @@ pub fn encode_lz_member_with_options(
     encode_lz_member_with_history_and_options(data, &[], algorithm_version, options)
 }
 
-pub(crate) fn encode_lz_member_with_options_and_progress(
-    data: &[u8],
-    algorithm_version: u8,
-    options: EncodeOptions,
-    progress: &mut dyn FnMut(usize) -> bool,
-) -> Result<Vec<u8>> {
-    encode_lz_member_inner(data, &[], algorithm_version, &[], options, Some(progress))
-}
-
 #[cfg(test)]
-pub(crate) fn encode_lz_reader_to(
-    reader: &mut dyn Read,
-    input_size: u64,
-    output: &mut dyn Write,
-    algorithm_version: u8,
-    options: EncodeOptions,
-    block_size: usize,
-    mut progress: Option<&mut dyn FnMut(u64) -> bool>,
-) -> crate::Result<()> {
-    if block_size == 0 {
-        return Err(crate::Error::InvalidHeader(
-            "RAR 5 streaming block size is zero",
-        ));
-    }
-    let block_size = block_size.min(MAX_COMPRESSED_BLOCK_OUTPUT);
-    let mut history = Vec::new();
-    let mut chunk = vec![0; block_size];
-    let mut block = Vec::new();
-    let mut remaining = input_size;
-    let mut completed = 0u64;
-    let mut held: Option<Vec<u8>> = None;
-    while remaining != 0 || held.is_some() {
-        // One chunk, then further chunks while the data is not moving, which is
-        // the cut [`BlockSplitter`] makes for the other two writers. Deciding
-        // needs the chunk in hand, so the one that ends a block is held over.
-        let mut splitter = BlockSplitter::new();
-        block.clear();
-        match held.take() {
-            Some(first) => block.extend_from_slice(&first),
-            None => {
-                let wanted = usize::try_from(remaining.min(block_size as u64))
-                    .map_err(|_| crate::Error::InvalidHeader("RAR 5 block size overflows usize"))?;
-                reader.read_exact(&mut chunk[..wanted])?;
-                remaining -= wanted as u64;
-                block.extend_from_slice(&chunk[..wanted]);
-            }
-        }
-        splitter.accept(&block);
-        while remaining != 0 {
-            let wanted = usize::try_from(remaining.min(block_size as u64))
-                .map_err(|_| crate::Error::InvalidHeader("RAR 5 block size overflows usize"))?;
-            reader.read_exact(&mut chunk[..wanted])?;
-            remaining -= wanted as u64;
-            if !splitter.extends(&chunk[..wanted]) {
-                held = Some(chunk[..wanted].to_vec());
-                break;
-            }
-            splitter.accept(&chunk[..wanted]);
-            block.extend_from_slice(&chunk[..wanted]);
-        }
-        let packed = encode_lz_block(
-            &block,
-            &history,
-            algorithm_version,
-            &[],
-            options,
-            remaining == 0 && held.is_none(),
-            None,
-        )?;
-        output.write_all(&packed)?;
-        history.extend_from_slice(&block);
-        let keep_from = history.len().saturating_sub(options.max_match_distance);
-        if keep_from != 0 {
-            history.drain(..keep_from);
-        }
-        completed += block.len() as u64;
-        if progress
-            .as_deref_mut()
-            .is_some_and(|report| !report(completed))
-        {
-            return Err(crate::Error::Cancelled);
-        }
-    }
-    let mut trailing = [0u8; 1];
-    if reader.read(&mut trailing)? != 0 {
-        return Err(crate::Error::InvalidHeader(
-            "entry source size changed while compressing",
-        ));
-    }
-    Ok(())
-}
-
-pub(crate) fn encode_lz_streaming_block(
-    data: &[u8],
-    history: &[u8],
-    algorithm_version: u8,
-    options: EncodeOptions,
-    is_last: bool,
-) -> Result<Vec<u8>> {
-    encode_lz_block(
-        data,
-        history,
-        algorithm_version,
-        &[],
-        options,
-        is_last,
-        None,
-    )
-}
-
 pub fn encode_lz_member_with_history_and_options(
     data: &[u8],
     history: &[u8],
@@ -821,6 +730,7 @@ pub fn encode_lz_member_with_history_and_options(
 /// Narrower than [`crate::FilterKind`], which names every filter any format
 /// can apply. The conversion below is where a filter RAR 5 cannot encode is
 /// turned away.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Rar50Filter {
     Delta { channels: usize },
@@ -831,11 +741,13 @@ pub(crate) enum Rar50Filter {
 
 /// The writer rejects these before compressing anything, so reaching this is
 /// either a direct `codec` caller or a bug. Either way the codec stays total.
+#[cfg(test)]
 fn rar50_filter(kind: crate::FilterKind) -> Result<Rar50Filter> {
     Rar50Filter::try_from(kind)
         .map_err(|_| Error::InvalidData("RAR 5 has no builtin type for this filter"))
 }
 
+#[cfg(test)]
 impl TryFrom<crate::FilterKind> for Rar50Filter {
     type Error = crate::UnsupportedFilterKind;
 
@@ -856,6 +768,7 @@ impl TryFrom<crate::FilterKind> for Rar50Filter {
 
 /// Applies `filters` to a copy of `data`, returning the transformed bytes and
 /// the records that describe them.
+#[cfg(test)]
 pub(crate) fn filtered_lz_member(
     data: &[u8],
     filters: &[crate::FilterSpec],
@@ -884,6 +797,7 @@ pub(crate) fn filtered_lz_member(
     Ok((filtered, records))
 }
 
+#[cfg(test)]
 fn encode_filter_data(
     kind: Rar50Filter,
     data: &mut [u8],
@@ -928,11 +842,12 @@ fn encode_filter_data(
 /// transformed alone: the transform reads an absolute file offset, which the
 /// cut does not change.
 ///
-/// Blocks used to be compressed one at a time, each against a fresh copy of
-/// the history behind it and a finder rebuilt from that copy. That is the
-/// cost [`encode_lz_member_inner`] took off the unfiltered path and left
-/// here: at 64 KiB a block, a four-megabyte member re-copied and re-inserted
-/// 126 MiB of history, thirty-one times what it holds.
+/// All blocks share one history window and one finder, as on the unfiltered
+/// path in [`encode_lz_member_inner`]. Compressing each block against a fresh
+/// copy of the history behind it would, at 64 KiB a block, re-copy and
+/// re-insert 126 MiB of history for a four-megabyte member, thirty-one times
+/// what it holds.
+#[cfg(test)]
 fn filtered_lz_blocks(
     data: &[u8],
     filters: &[crate::FilterSpec],
@@ -1006,12 +921,14 @@ fn filtered_lz_blocks(
     Ok(out)
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NormalizedFilterSpec {
     kind: Rar50Filter,
     range: Range<usize>,
 }
 
+#[cfg(test)]
 fn normalized_filter_specs(
     data_len: usize,
     filters: &[crate::FilterSpec],
@@ -1030,6 +947,7 @@ fn normalized_filter_specs(
     Ok(normalized)
 }
 
+#[cfg(test)]
 fn encode_lz_member_inner(
     data: &[u8],
     history: &[u8],
@@ -1039,11 +957,10 @@ fn encode_lz_member_inner(
     mut progress: Option<&mut dyn FnMut(usize) -> bool>,
 ) -> Result<Vec<u8>> {
     if data.len() > LZ_BLOCK_SIZE && initial_filters.is_empty() {
-        // One search state for the whole member. It used to be built per
-        // block, which meant rehashing a window of history every 64 KiB: on a
-        // 16 MiB member that was half the encode. The optimal parse used to be
-        // worse still, rebuilding per pass; its collector searches each block
-        // once and lets the passes replay the answers.
+        // One search state for the whole member. Building it per block would
+        // rehash a window of history every 64 KiB. The optimal parse's
+        // collector searches each block once and lets the passes replay the
+        // answers.
         let (combined, start) = member_window(data, history, options);
         let mut lazy = (!options.optimal_parse).then(|| member_finder(&combined, start, options));
         let mut collector = options
@@ -1113,6 +1030,7 @@ fn encode_lz_member_inner(
 /// sets the window instead: asking for `--dict-size 32m` on a one-megabyte
 /// member should not reserve thirty-two megabytes of links that can never name
 /// a position.
+#[cfg(test)]
 fn finder_window(options: EncodeOptions, reach: usize) -> usize {
     options.max_match_distance.min(reach).max(LZ_BLOCK_SIZE)
 }
@@ -1120,6 +1038,7 @@ fn finder_window(options: EncodeOptions, reach: usize) -> usize {
 /// A finder for the whole member, seeded with the history it carries in. It
 /// keeps growing as the blocks are parsed, so it is sized to the widest window
 /// the member could ever want rather than to any one block.
+#[cfg(test)]
 fn member_finder(combined: &[u8], start: usize, options: EncodeOptions) -> Rar50MatchFinder {
     let mut finder = Rar50MatchFinder::new(finder_window(options, combined.len()));
     for pos in 0..start {
@@ -1130,6 +1049,7 @@ fn member_finder(combined: &[u8], start: usize, options: EncodeOptions) -> Rar50
 
 /// A finder holding everything a parse of `block` may reach back to, and
 /// nothing older.
+#[cfg(test)]
 fn seeded_finder(
     combined: &[u8],
     block: std::ops::Range<usize>,
@@ -1147,6 +1067,7 @@ fn seeded_finder(
 }
 
 /// The search state a member shares across its blocks, when it has any.
+#[cfg(test)]
 enum MemberSearch<'a> {
     /// Nothing shared: the block builds what it needs and drops it.
     Fresh,
@@ -1167,6 +1088,7 @@ enum MemberSearch<'a> {
 /// approaches that: the worst measured is about six runs per position, on a
 /// mebibyte of two-symbol noise, where every position has many candidates whose
 /// lengths creep up one byte at a time. That block cost three megabytes.
+#[cfg(test)]
 struct BlockMatches {
     /// Every position's runs, one position after another.
     runs: Vec<(u32, u32)>,
@@ -1175,6 +1097,7 @@ struct BlockMatches {
     starts: Vec<u32>,
 }
 
+#[cfg(test)]
 impl BlockMatches {
     fn at(&self, index: usize) -> &[(u32, u32)] {
         &self.runs[self.starts[index] as usize..self.starts[index + 1] as usize]
@@ -1185,10 +1108,8 @@ impl BlockMatches {
 /// it about each block once.
 ///
 /// The parse prices each block [`OPTIMAL_PARSE_PASSES`] times, but nothing the
-/// finder answers depends on the prices, so it used to be asked the same
-/// questions once per pass, through a finder rebuilt and reseeded once per
-/// pass. Collecting the answers first and replaying them lets every pass after
-/// the first skip the finder entirely.
+/// finder answers depends on the prices. Collecting the answers first and
+/// replaying them lets every pass after the first skip the finder entirely.
 ///
 /// Searching once is also what makes the tree finder affordable, and the tree
 /// is where the speed is: pricing every position means searching at every
@@ -1197,15 +1118,18 @@ impl BlockMatches {
 /// history keeps the chains, because the only way into a tree is a descent per
 /// position, and paying that across a dictionary of history would cost more
 /// than the chains ever did.
+#[cfg(test)]
 struct OptimalCollector {
     finder: CollectorFinder,
 }
 
+#[cfg(test)]
 enum CollectorFinder {
     Tree(match_finder::TreeMatchFinder),
     Chains(Rar50MatchFinder),
 }
 
+#[cfg(test)]
 impl OptimalCollector {
     fn new(combined: &[u8], start: usize, options: EncodeOptions) -> Self {
         let finder = if start == 0 {
@@ -1226,9 +1150,9 @@ impl OptimalCollector {
     ///
     /// Searching stops where the parse stops pricing. A match that reaches
     /// [`NICE_MATCH_LENGTH`] is one the parse commits to and steps over, so the
-    /// positions it covers are not searched from either. Skipping the pricing
-    /// alone would have left the search doing all the work it used to: on a
-    /// mebibyte that repeats, one search per 4 KiB became a million.
+    /// positions it covers are not searched from either. Skipping only the
+    /// pricing would still search at every position: on a mebibyte that
+    /// repeats, a million searches instead of one per 4 KiB.
     fn collect(
         &mut self,
         combined: &[u8],
@@ -1343,6 +1267,7 @@ impl OptimalCollector {
 ///
 /// A member with no history to carry borrows its own data rather than copying
 /// it, which is every member of a non-solid archive.
+#[cfg(test)]
 fn member_window<'a>(
     data: &'a [u8],
     history: &[u8],
@@ -1361,6 +1286,7 @@ fn member_window<'a>(
 /// One block, with its own history and its own finder. The member path shares
 /// a finder across blocks instead; this is for the callers that encode a block
 /// on its own, which are the filtered path and the tests.
+#[cfg(test)]
 fn encode_lz_block(
     data: &[u8],
     history: &[u8],
@@ -1383,6 +1309,7 @@ fn encode_lz_block(
     )
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn encode_lz_block_in_window(
     combined: &[u8],
@@ -1492,12 +1419,14 @@ fn encode_lz_block_in_window(
     encode_compressed_block(&writer.finish(), payload_bits, true, is_last)
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub struct Unpack50Encoder {
     history: Vec<u8>,
     options: EncodeOptions,
 }
 
+#[cfg(test)]
 impl Unpack50Encoder {
     pub fn new() -> Self {
         Self::default()
@@ -1508,17 +1437,6 @@ impl Unpack50Encoder {
             history: Vec::new(),
             options,
         }
-    }
-
-    pub fn encode_member(&mut self, input: &[u8], algorithm_version: u8) -> Result<Vec<u8>> {
-        let packed = encode_lz_member_with_history_and_options(
-            input,
-            &self.history,
-            algorithm_version,
-            self.options,
-        )?;
-        self.remember(input);
-        Ok(packed)
     }
 
     pub fn encode_member_with_filter(
@@ -1566,37 +1484,6 @@ impl Unpack50Encoder {
         Ok(packed)
     }
 
-    pub(crate) fn encode_member_with_filters_and_progress(
-        &mut self,
-        input: &[u8],
-        algorithm_version: u8,
-        filters: &[crate::FilterSpec],
-        progress: &mut dyn FnMut(usize) -> bool,
-    ) -> Result<Vec<u8>> {
-        let packed = if input.len() > FILTERED_LZ_BLOCK_SIZE {
-            filtered_lz_blocks(
-                input,
-                filters,
-                &self.history,
-                algorithm_version,
-                self.options,
-                Some(progress),
-            )?
-        } else {
-            let (filtered, records) = filtered_lz_member(input, filters)?;
-            encode_lz_member_inner(
-                &filtered,
-                &self.history,
-                algorithm_version,
-                &records,
-                self.options,
-                Some(progress),
-            )?
-        };
-        self.remember(input);
-        Ok(packed)
-    }
-
     fn remember(&mut self, input: &[u8]) {
         self.history.extend_from_slice(input);
         let keep_from = self
@@ -1609,6 +1496,7 @@ impl Unpack50Encoder {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 enum EncodeToken {
     Filter(EncodeFilter),
@@ -1616,6 +1504,7 @@ enum EncodeToken {
     Match { length: usize, distance: usize },
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EncodeFilter {
     offset: usize,
@@ -1624,12 +1513,14 @@ pub(crate) struct EncodeFilter {
     channels: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, Default)]
 struct EncoderMatchState {
     reps: [usize; 4],
     last_length: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EncodedMatch {
     LastLengthRepeat,
@@ -1647,6 +1538,7 @@ enum EncodedMatch {
     },
 }
 
+#[cfg(test)]
 impl EncoderMatchState {
     fn encode_match(
         &self,
@@ -1706,6 +1598,7 @@ impl EncoderMatchState {
 /// The Huffman code lengths a block of tokens produces. The block writer needs
 /// these to emit the tables; the optimal parse needs them to know what each
 /// token it is considering will actually cost.
+#[cfg(test)]
 fn table_lengths_for_tokens(tokens: &[EncodeToken], distance_size: usize) -> Result<TableLengths> {
     let mut main_frequencies = vec![0usize; MAIN_TABLE_SIZE];
     let mut distance_frequencies = vec![0usize; distance_size];
@@ -1756,24 +1649,29 @@ fn table_lengths_for_tokens(tokens: &[EncodeToken], distance_size: usize) -> Res
 /// same bit units [`estimated_match_cost`] reports. A literal is one main-table
 /// symbol out of 256 plus the odds that the table is skewed, so eight is the
 /// floor and nine is what real blocks measure.
+#[cfg(test)]
 const ESTIMATED_LITERAL_COST: u32 = 9;
 
 /// How many times the optimal parse runs over a block. The first pass guesses
 /// prices; the rest reprice against the tables the pass before produced.
+#[cfg(test)]
 const OPTIMAL_PARSE_PASSES: usize = 3;
 
 /// What a symbol the first pass never used is assumed to cost. Reaching for
 /// one is not forbidden, only expensive: the tables are rebuilt from whatever
 /// the last pass chose, so a symbol that earns its place gets a real code.
+#[cfg(test)]
 const UNUSED_SYMBOL_COST: usize = 15;
 
 /// Prices a token against the code lengths a previous pass produced, which is
 /// what the block will really spend, rather than against the flat guess in
 /// [`estimated_match_cost`].
+#[cfg(test)]
 struct TokenPrices<'a> {
     lengths: &'a TableLengths,
 }
 
+#[cfg(test)]
 impl TokenPrices<'_> {
     fn code(bits: u8) -> usize {
         if bits == 0 {
@@ -1843,6 +1741,7 @@ impl TokenPrices<'_> {
 /// Does no searching of its own: `matches` holds what an [`OptimalCollector`]
 /// found at each position of this block, and prices never change what a
 /// search would find, so every pass prices the same collection.
+#[cfg(test)]
 fn optimal_tokens(
     combined: &[u8],
     block: std::ops::Range<usize>,
@@ -2005,6 +1904,7 @@ fn optimal_tokens(
 /// `length` costs. Only the length slot varies with length, and a slot covers
 /// a run of consecutive lengths, so the end of that run is the last length
 /// worth pricing.
+#[cfg(test)]
 fn same_price_run_end(
     state: &EncoderMatchState,
     length: usize,
@@ -2043,6 +1943,7 @@ fn same_price_run_end(
     end.max(length).min(MAX_ENCODER_MATCH_LENGTH)
 }
 
+#[cfg(test)]
 fn encode_tokens_with_progress(
     combined: &[u8],
     block: std::ops::Range<usize>,
@@ -2162,6 +2063,7 @@ fn encode_tokens_with_progress(
 /// better match starts within the lazy lookahead window. Also returns the
 /// match found one byte ahead (when computed) so the caller can reuse it for
 /// the next position instead of searching again.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn lazy_match_decision(
     input: &[u8],
@@ -2202,6 +2104,7 @@ fn lazy_match_decision(
     (false, None)
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MatchCandidate {
     length: usize,
@@ -2210,6 +2113,7 @@ struct MatchCandidate {
     cost: usize,
 }
 
+#[cfg(test)]
 fn best_match(
     input: &[u8],
     pos: usize,
@@ -2273,10 +2177,12 @@ fn best_match(
     best
 }
 
+#[cfg(test)]
 fn match_length(input: &[u8], pos: usize, distance: usize, max_length: usize) -> usize {
     super::fast::match_length(input, pos, distance, max_length)
 }
 
+#[cfg(test)]
 fn consider_match_candidate(
     best: &mut Option<MatchCandidate>,
     state: &EncoderMatchState,
@@ -2309,6 +2215,7 @@ fn consider_match_candidate(
     }
 }
 
+#[cfg(test)]
 fn estimated_match_cost(
     state: &EncoderMatchState,
     length: usize,
@@ -2337,6 +2244,7 @@ fn estimated_match_cost(
         + distance_slot_bit_count(distance_slot)?)
 }
 
+#[cfg(test)]
 fn length_slot_for_match(length: usize) -> Result<(usize, usize)> {
     if length < 2 {
         return Err(Error::InvalidData("RAR 5 match length is too short"));
@@ -2353,6 +2261,7 @@ fn length_slot_for_match(length: usize) -> Result<(usize, usize)> {
     Ok((slot, value & ((1 << bit_count) - 1)))
 }
 
+#[cfg(test)]
 fn distance_slot_for_match(distance: usize, distance_size: usize) -> Result<(usize, usize)> {
     if distance == 0 {
         return Err(Error::InvalidData("RAR 5 match distance is zero"));
@@ -2372,6 +2281,7 @@ fn distance_slot_for_match(distance: usize, distance_size: usize) -> Result<(usi
     Ok((slot, value & ((1 << bit_count) - 1)))
 }
 
+#[cfg(test)]
 fn literal_presence(data: &[u8]) -> [bool; 256] {
     let mut present = [false; 256];
     for &byte in data {
@@ -3134,6 +3044,7 @@ fn read_filter_data(bits: &mut BitReader<'_>) -> Result<u32> {
     Ok(data)
 }
 
+#[cfg(test)]
 fn write_filter(writer: &mut BitWriter, filter: EncodeFilter) -> Result<()> {
     if filter.offset > u32::MAX as usize {
         return Err(Error::InvalidData("RAR 5 filter offset is too large"));
@@ -3160,6 +3071,7 @@ fn write_filter(writer: &mut BitWriter, filter: EncodeFilter) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn write_filter_data(writer: &mut BitWriter, value: u32) {
     let byte_count = if value <= 0xff {
         1
@@ -3174,10 +3086,6 @@ fn write_filter_data(writer: &mut BitWriter, value: u32) {
     for index in 0..byte_count {
         writer.write_bits(((value >> (index * 8)) & 0xff) as usize, 8);
     }
-}
-
-fn apply_filters(output: &mut [u8], filters: &[PendingFilter]) -> Result<()> {
-    apply_filters_with_cancel(output, filters, &mut || false)
 }
 
 fn apply_filters_with_cancel(
@@ -3252,6 +3160,7 @@ fn e8e9_decode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     }
 }
 
+#[cfg(test)]
 fn e8e9_encode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     if data.len() <= 4 {
         return;
@@ -3301,6 +3210,7 @@ fn arm_decode(data: &mut [u8], file_offset: u32) {
     }
 }
 
+#[cfg(test)]
 fn arm_encode(data: &mut [u8], file_offset: u32) {
     let mut pos = 0usize;
     while pos + 3 < data.len() {
@@ -3408,7 +3318,7 @@ impl HuffmanTable {
                 count[length as usize] += 1;
             }
         }
-        validate_huffman_counts(&count)?;
+        validate_huffman_counts(&count, "RAR 5 oversubscribed Huffman table")?;
 
         let mut first_code = [0u16; 16];
         let mut next_code = [0u16; 16];
@@ -3448,6 +3358,7 @@ impl HuffmanTable {
         })
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.symbols.is_empty()
     }
@@ -3472,6 +3383,7 @@ impl HuffmanTable {
         Err(Error::InvalidData("RAR 5 invalid Huffman code"))
     }
 
+    #[cfg(test)]
     fn code_for_symbol(&self, symbol: usize) -> Result<(u16, u8)> {
         self.symbols
             .iter()
@@ -3522,11 +3434,13 @@ impl<'a> BitReader<'a> {
     }
 }
 
+#[cfg(test)]
 struct BitWriter {
     bytes: Vec<u8>,
     bit_pos: usize,
 }
 
+#[cfg(test)]
 impl BitWriter {
     fn new() -> Self {
         Self {
@@ -3553,17 +3467,7 @@ impl BitWriter {
     }
 }
 
-fn validate_huffman_counts(count: &[u16; 16]) -> Result<()> {
-    let mut available = 1i32;
-    for &len_count in count.iter().skip(1) {
-        available = (available << 1) - i32::from(len_count);
-        if available < 0 {
-            return Err(Error::InvalidData("RAR 5 oversubscribed Huffman table"));
-        }
-    }
-    Ok(())
-}
-
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LevelToken {
     symbol: usize,
@@ -3571,6 +3475,7 @@ struct LevelToken {
     extra_value: u8,
 }
 
+#[cfg(test)]
 impl LevelToken {
     const fn plain(symbol: usize) -> Self {
         Self {
@@ -3613,6 +3518,7 @@ impl LevelToken {
     }
 }
 
+#[cfg(test)]
 fn encode_table_level_tokens(lengths: &[u8]) -> Vec<LevelToken> {
     let mut tokens = Vec::new();
     let mut pos = 0usize;
@@ -3644,6 +3550,7 @@ fn encode_table_level_tokens(lengths: &[u8]) -> Vec<LevelToken> {
     tokens
 }
 
+#[cfg(test)]
 fn emit_repeat_level_run(tokens: &mut Vec<LevelToken>, mut run: usize) {
     while run != 0 {
         if run >= 11 {
@@ -3663,6 +3570,7 @@ fn emit_repeat_level_run(tokens: &mut Vec<LevelToken>, mut run: usize) {
     }
 }
 
+#[cfg(test)]
 fn emit_zero_level_run(tokens: &mut Vec<LevelToken>, mut run: usize) {
     while run != 0 {
         if run >= 11 {
@@ -3697,6 +3605,7 @@ fn emit_zero_level_run(tokens: &mut Vec<LevelToken>, mut run: usize) {
 /// gives Kraft equality by construction once two symbols are in play, and the
 /// flat assignment is only valid when the used-symbol count is a power of two,
 /// which is what `assign_flat_complete_code` arranges.
+#[cfg(test)]
 fn level_code_lengths_for_tokens(tokens: &[LevelToken]) -> [u8; LEVEL_TABLE_SIZE] {
     let mut frequencies = [0usize; LEVEL_TABLE_SIZE];
     for token in tokens {
@@ -3725,6 +3634,7 @@ fn level_code_lengths_for_tokens(tokens: &[LevelToken]) -> [u8; LEVEL_TABLE_SIZE
 /// [`write_level_lengths`] will write them, plus the tokens they code.
 ///
 /// The tokens' own extra bits are the same under either code and are left out.
+#[cfg(test)]
 fn level_code_cost(
     lengths: &[u8; LEVEL_TABLE_SIZE],
     frequencies: &[usize; LEVEL_TABLE_SIZE],
@@ -3753,6 +3663,7 @@ fn level_code_cost(
         .sum::<usize>()
 }
 
+#[cfg(test)]
 fn write_level_lengths(writer: &mut BitWriter, lengths: &[u8; LEVEL_TABLE_SIZE]) {
     let mut pos = 0usize;
     while pos < LEVEL_TABLE_SIZE {
@@ -4809,8 +4720,8 @@ mod tests {
 
     #[test]
     fn the_splitter_reads_only_what_both_writers_can_see() {
-        // The streaming writer decides with the open block's bytes and the next
-        // chunk, and nothing else. Same bytes in, same answer, however the
+        // The splitter decides with the open block's bytes and the next chunk,
+        // and nothing else. Same bytes in, same answer, however the
         // chunks were handed over.
         let mut whole = BlockSplitter::new();
         whole.accept(&vec![7u8; 4096]);
@@ -5037,8 +4948,7 @@ mod tests {
         // Four stretches, one block each, every one drawing from its own
         // sixteen bytes. A table per block codes sixteen symbols; one table
         // over the member codes sixty-four. Raising LZ_BLOCK_SIZE trades the
-        // first for the second, which is what cost the corpus 6.4% until the
-        // block came down from a mebibyte.
+        // first for the second.
         let stretch_len = 64 * 1024;
         let mut data = Vec::with_capacity(stretch_len * 4);
         let mut noise = 0x2545_f491_4f6c_dd1du64;
@@ -5104,9 +5014,7 @@ mod tests {
 
     /// The window a filtered member is parsed in reaches back into the
     /// history the solid stream carries, and keeps reaching for every block
-    /// of it rather than only the first. Each block used to be handed its own
-    /// copy of that history and its own finder rebuilt from it, which cost
-    /// the member a re-insert per block and reached exactly this far.
+    /// of it rather than only the first.
     #[test]
     fn a_solid_filtered_member_matches_history_from_every_block() {
         // Bytes that do not compress on their own, so matching the history is

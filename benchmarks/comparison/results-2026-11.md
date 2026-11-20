@@ -3,16 +3,19 @@
 These are the results of the runs fixed in [PROTOCOL.md](PROTOCOL.md), made
 on 2026-11-19. They apply only to that host, those tool versions and those
 inputs. Raw samples, reports and logs are private and are not in the
-repository.
+repository. The default rules changed after these runs (see the
+[changelog](../../CHANGELOG.md)), so the quality rows describe the rules of
+the measured builds.
 
 ## How to read the tables
 
 - Each cell is median wall time, median peak RSS and the finding count of the
   last measured run, from 1 warmup and 3 measured runs. Quality runs use one
   run and report no time.
-- "Rustleaks new" is the `rustleaks-main` build named in the protocol: #162
-  (`--jobs`, up to 12 detection threads by default) and #163 (parallel
-  history and folder reading). "Rustleaks 0.1.0-alpha.9" is the last release.
+- "Rustleaks new" is the `rustleaks-main` build named in the protocol. It
+  has `--jobs` (up to 12 detection threads by default) and parallel history
+  and folder reading, which were released in 0.1.0-alpha.10. "Rustleaks
+  0.1.0-alpha.9" was the latest release at the time of the runs.
 - Finding counts are not comparable as a measure of quality. Tools use
   different rules, and Kingfisher reports each distinct value once by
   default. Quality is in its own section, measured against labels that no
@@ -25,20 +28,20 @@ repository.
 
 - **A hang in the measured Rustleaks build.** One of four bootstrap history
   samples of `rustleaks-main` did not finish and was stopped at the one-hour
-  sample limit. The cause was a race when several threads start `git`
-  processes on macOS. The standard library creates a pipe and marks it
-  close-on-exec in a second step. A `git log` started between those steps
-  could inherit another `git log`'s pipe, and two that held each other's
-  standard input open waited forever. The fix (start child processes one at a
-  time) was merged with #163 before #163 reached `main`. The protocol does
-  not allow a code change within a comparison, so the tables below report
-  the measured build as it ran, and the history scans of the fixed build are
-  given separately under "History scans with the fixed build".
+  sample limit. The cause was a pipe that one `git log` process inherited
+  from another when several threads started them at the same time on macOS
+  (see the [threat model](../../docs/dev/threat-model.md#git-and-links)).
+  The fix, which starts child processes one at a time, was in the build
+  before it reached `main`. The protocol does not allow a code change within
+  a comparison, so the tables below report the measured build as it ran, and
+  the history scans of the fixed build are given separately under "History
+  scans with the fixed build".
 - **Rustleaks 0.1.0-alpha.9 history scans.** On croc, rails, django, ruby,
   lucene, bootstrap, prometheus, mongo and typescript, the release stopped at
   its limit on Git patch output ("Git patch output exceeded its configured
   byte ceiling") with exit code 1 and no findings. The harness counts these
-  as failed cells. The streaming work in #161 removed that limit.
+  as failed cells. From 0.1.0-alpha.10, Rustleaks reads Git output while
+  Git runs, and this limit no longer exists.
 - R6 thread cells use 1, 4 and all threads, the harness default; R5 adds 12.
 - No other cell failed, timed out or was skipped. The harness checked every
   tool hash before and after each run, and no other work ran on the host
@@ -86,7 +89,7 @@ cache exists.
 
 Rustleaks new is the fastest on 13 of 14 repositories. On typescript
 (136,381 files) Betterleaks 1.10.1 is 6% faster. Rustleaks new uses more
-memory than the last release because it runs up to 12 detection threads. On
+memory than 0.1.0-alpha.9 because it runs up to 12 detection threads. On
 gitlab, mongo and linux, Gitleaks uses less memory than Rustleaks new; on
 the other 11 repositories, Rustleaks new uses the least of the five current
 tools.
@@ -126,12 +129,11 @@ croc, django and typescript, and uses 12% to 44% of its peak memory.
 Kingfisher scans blobs, while Gitleaks, Betterleaks and Rustleaks scan each
 commit's patch (see the scope differences in the protocol). It reports
 different findings: none on bootstrap and typescript, where the patch
-scanners report 7 to 432. Rustleaks keeps the patch model because its
-findings must match Gitleaks.
+scanners report 7 to 432. Rustleaks scans patches, like Gitleaks.
 
 ## History scans with the fixed build
 
-After #163 merged with the fix, the R2 command was run again on the same
+After the fix reached `main`, the R2 command was run again on the same
 day with the `main` build (SHA-256
 `e274ffe6e06c389035aef21b2aad54cf93d666a364700f07683d3691caab2fb4`, the same
 tree as `main` at `164243b`), with Betterleaks 2.0.0-rc.8 and Kingfisher
@@ -353,6 +355,6 @@ The quality runs, which match each value, found two differences:
   name contains an archive or compression extension anywhere, such as `.br`
   in `.branch`, `.gz` or `.zip`, without reading it. Rustleaks reads these
   files as plain text at depth 0. Rustleaks 0.1.0-alpha.9 behaves the same
-  way. The maintainer chose to keep this behavior, and it is now listed in
+  way. This behavior is intended and is listed in
   [Differences from Gitleaks](../../docs/user/gitleaks-differences.md#archives).
   No Rustleaks code changed in response to the held-out result.

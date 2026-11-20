@@ -675,7 +675,7 @@ impl Fragment {
         &self.windows_file_path
     }
 
-    /// Returns the legacy commit SHA field, or an empty value.
+    /// Returns the fragment commit SHA, or an empty value.
     #[must_use]
     pub const fn commit(&self) -> &ByteText {
         &self.commit
@@ -757,7 +757,7 @@ impl FragmentBuilder {
         self
     }
 
-    /// Sets the legacy commit SHA field.
+    /// Sets the fragment commit SHA.
     #[must_use]
     pub fn commit(mut self, value: impl Into<ByteText>) -> Self {
         self.fragment.commit = value.into();
@@ -1419,7 +1419,7 @@ fn replace_all_bytes(haystack: &[u8], needle: &[u8], replacement: &[u8]) -> Byte
         output.extend_from_slice(replacement);
         let mut offset = 0;
         while offset < haystack.len() {
-            let width = next_go_utf8_rune_width(&haystack[offset..]);
+            let (_, width) = crate::go_unicode::decode_rune(&haystack[offset..]);
             output.extend_from_slice(&haystack[offset..offset + width]);
             output.extend_from_slice(replacement);
             offset += width;
@@ -1439,24 +1439,6 @@ fn replace_all_bytes(haystack: &[u8], needle: &[u8], replacement: &[u8]) -> Byte
     }
     output.extend_from_slice(&haystack[offset..]);
     output.into()
-}
-
-fn next_go_utf8_rune_width(bytes: &[u8]) -> usize {
-    let Some(&first) = bytes.first() else {
-        return 0;
-    };
-    let width = match first {
-        0x00..=0x7f => 1,
-        0xc2..=0xdf => 2,
-        0xe0..=0xef => 3,
-        0xf0..=0xf4 => 4,
-        _ => return 1,
-    };
-    if bytes.len() >= width && std::str::from_utf8(&bytes[..width]).is_ok() {
-        width
-    } else {
-        1
-    }
 }
 
 #[cfg(test)]
@@ -1837,7 +1819,7 @@ pub struct ScanOptions {
     max_decode_depth: usize,
     max_target_bytes: Option<usize>,
     redaction_percent: usize,
-    honor_gitleaks_allow: bool,
+    honor_allow_markers: bool,
 }
 
 impl ScanOptions {
@@ -1884,19 +1866,18 @@ impl ScanOptions {
 
     /// Returns whether source lines containing a supported allow marker are honored.
     ///
-    /// The native marker is `rustleaks:allow`. The legacy `gitleaks:allow`
-    /// spelling is also recognized for backward compatibility.
+    /// The native marker is `rustleaks:allow`. The `gitleaks:allow` spelling
+    /// is also recognized.
     #[must_use]
     pub const fn honor_allow_markers(self) -> bool {
-        self.honor_gitleaks_allow
+        self.honor_allow_markers
     }
 
-    /// Returns whether backward-compatible `gitleaks:allow` lines are honored.
-    ///
-    /// This is an upstream-compatible alias for [`Self::honor_allow_markers`].
+    /// Deprecated alias for [`Self::honor_allow_markers`].
+    #[deprecated(note = "use honor_allow_markers")]
     #[must_use]
     pub const fn honor_gitleaks_allow(self) -> bool {
-        self.honor_gitleaks_allow
+        self.honor_allow_markers
     }
 }
 
@@ -1908,7 +1889,7 @@ impl Default for ScanOptions {
             max_decode_depth: 0,
             max_target_bytes: None,
             redaction_percent: 0,
-            honor_gitleaks_allow: true,
+            honor_allow_markers: true,
         }
     }
 }
@@ -1957,17 +1938,15 @@ impl ScanOptionsBuilder {
     /// `gitleaks:allow` spelling.
     #[must_use]
     pub const fn honor_allow_markers(mut self, value: bool) -> Self {
-        self.options.honor_gitleaks_allow = value;
+        self.options.honor_allow_markers = value;
         self
     }
 
-    /// Selects whether backward-compatible `gitleaks:allow` lines are honored.
-    ///
-    /// This is an upstream-compatible alias for [`Self::honor_allow_markers`].
+    /// Deprecated alias for [`Self::honor_allow_markers`].
+    #[deprecated(note = "use honor_allow_markers")]
     #[must_use]
-    pub const fn honor_gitleaks_allow(mut self, value: bool) -> Self {
-        self.options.honor_gitleaks_allow = value;
-        self
+    pub const fn honor_gitleaks_allow(self, value: bool) -> Self {
+        self.honor_allow_markers(value)
     }
 
     /// Builds the options.

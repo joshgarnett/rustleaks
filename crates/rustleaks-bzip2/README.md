@@ -1,16 +1,15 @@
 # rustleaks-bzip2
 
-This crate is derived from the
-[`bzip2-rs` 0.1.2 decoder](https://github.com/paolobarbolini/bzip2-rs) and is
-maintained in-tree under its MIT/Apache-2.0 terms. The local fork replaces
-decoder `unwrap`, `unreachable!`, and input-consumption assertions with
-structured failures, replaces `crc32fast` with a safe, table-free
-implementation of the non-reflected BZip2 CRC-32, and adopts the workspace's
-Rust 1.95 policy.
+A safe BZip2 decoder for the Rustleaks archive sources. Invalid input fails
+with a structured error instead of a panic.
 
-Using `bzip2-rs` directly would restore those panic paths on hostile input.
-Using `bzip2 0.6.1` instead would introduce its `libbz2-rs-sys` unsafe boundary
-without cargo-vet coverage. Neither gap can be corrected by an extension trait
-because the relevant state transitions and CRC implementation are private to
-the upstream crates. Keeping this fork in-tree makes the required boundary
-enforceable by the workspace.
+The crate is internal to Rustleaks and is not published. Only
+`rustleaks-sources` (behind its `archives` feature) and `rustleaks-sevenz` use
+it. No type from this crate appears in a public API.
+
+- Upstream: [`bzip2-rs`](https://github.com/paolobarbolini/bzip2-rs) 0.1.2.
+- License: MIT or Apache-2.0, in `LICENSE-MIT` and `LICENSE-APACHE`.
+
+See [Dependencies](../../docs/dev/dependencies.md#archive-codec-decision) for
+the upstream commit and archive SHA-256, the changes from upstream, the reason
+for the fork and the conditions for replacing it.

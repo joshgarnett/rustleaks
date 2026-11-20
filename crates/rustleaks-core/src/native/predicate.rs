@@ -175,7 +175,7 @@ pub(super) fn extract(
             return Ok(None);
         };
         // A valid descriptor must fail closed through the ordinary loader.
-        // Typed byte regexes cannot deserialize as legacy string regexes.
+        // Typed byte regexes cannot deserialize as plain string regexes.
         let regex = table
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case("regex"))

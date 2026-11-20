@@ -179,7 +179,6 @@ name = "rustleaks-report"
 version = "0.1.0-alpha.11"
 dependencies = [
  "rustleaks-core",
- "serde_json",
  "thiserror",
 ]
 

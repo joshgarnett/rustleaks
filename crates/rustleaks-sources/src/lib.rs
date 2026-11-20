@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Synchronous source adapters for the Rustleaks compatibility engine.
+//! Synchronous source adapters for the Rustleaks engine.
 //!
 //! Source production is intentionally separate from detection. [`Source`]
 //! implementations emit owned fragments and structured recoverable issues,
@@ -15,12 +15,8 @@ mod git;
 mod mime;
 mod path;
 mod process;
-#[cfg(feature = "archives")]
-mod rar;
 mod runner;
 mod scm;
-#[cfg(feature = "archives")]
-mod snappy;
 mod source;
 
 #[cfg(feature = "archives")]
@@ -45,6 +41,3 @@ pub use source::{
     CallbackError, Source, SourceConfigError, SourceControl, SourceError, SourceEvent, SourceIssue,
     SourceIssueDisposition, SourceIssueKind, SourceStage,
 };
-
-/// Confirms the source adapter is linked to the expected engine profile.
-pub const UPSTREAM_REVISION: &str = rustleaks_core::UPSTREAM_REVISION;

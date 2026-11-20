@@ -11,12 +11,7 @@ pub struct JunitReporter;
 
 impl Reporter for JunitReporter {
     fn write(&self, writer: &mut dyn Write, findings: &[Finding]) -> Result<(), ReportError> {
-        if let Some(finding) = findings
-            .iter()
-            .find(|finding| !finding.entropy().is_finite())
-        {
-            return Err(ReportError::NonFiniteEntropy(finding.entropy()));
-        }
+        go_json::check_entropy(findings)?;
         writer.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n")?;
         write!(
             writer,
@@ -102,12 +97,7 @@ fn write_xml(writer: &mut dyn Write, bytes: &[u8]) -> Result<(), std::io::Error>
             offset += 1;
             continue;
         }
-        let width = match byte {
-            0xc2..=0xdf => 2,
-            0xe0..=0xef => 3,
-            0xf0..=0xf4 => 4,
-            _ => 0,
-        };
+        let width = go_json::utf8_width(byte);
         let candidate = bytes.get(offset..offset.saturating_add(width));
         let decoded = candidate
             .and_then(|part| std::str::from_utf8(part).ok())

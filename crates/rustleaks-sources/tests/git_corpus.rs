@@ -1,5 +1,6 @@
 //! Differential replay of the pinned fresh-process Git source corpus.
 #![cfg(feature = "archives")]
+#![forbid(unsafe_code)]
 
 mod support;
 

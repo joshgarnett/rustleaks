@@ -15,8 +15,8 @@ mod archive_harness;
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
 #[allow(dead_code)]
-#[path = "../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -18,7 +18,7 @@ rules for what may change are in the
 - Use synthetic values or reviewed upstream fixtures. Never use a live
   credential.
 - Give each case a stable name.
-- Keep functional assertions apart from timing. Performance budgets belong to
+- Keep functional assertions apart from timing. Timing measurements belong to
   the performance tools. See [Performance](performance.md).
 - Do not add a second test for something that a maintained test already
   covers.
@@ -50,9 +50,9 @@ Run all commands from the repository root.
 Run `just flake-check` after a change to timers, cancellation, subprocesses,
 directory traversal, temporary paths or concurrency. Every run must pass.
 
-`cargo xtask qualify` runs from a clean, committed tree. It adds package,
-external consumer, fuzz, Miri and performance checks to the regression check.
-Use it when supported compatibility behavior or its evidence changes.
+Run `cargo xtask regression-check` when supported compatibility behavior or
+its evidence changes. `cargo xtask qualify` is a release candidate check; see
+[Releasing](releasing.md).
 
 Neither Go nor a Gitleaks checkout is needed for any of these commands.
 
@@ -71,25 +71,27 @@ To add an integration test file:
    `compile_data`, `srcs` or `data`. A file read with `include_str!` or
    `include_bytes!` must be listed in `compile_data`.
 2. Add the target to the crate's `all_tests` suite. `just test` runs
-   `//:test`, which runs every crate's `all_tests`.
+   `//:test`, which lists every crate's `all_tests` suite, or its unit and
+   doc test targets for crates without one.
 3. If the test replays frozen evidence, also add it to the crate's
    `parity_tests` suite. `just parity` runs `//:parity`.
 4. Add the target to `_RUST_TARGETS` in the root `BUILD.bazel`, so that the
    format and Clippy checks cover it.
 
-`cargo xtask build-system-check` fails when a file in `tests/` is missing
-from `BUILD.bazel`. It does not check the suites or `_RUST_TARGETS`, so
-check those by hand.
+`cargo xtask build-system-check` fails when a file in `tests/` has no
+`<name>_test` target in the crate's `all_tests` suite or in `_RUST_TARGETS`.
+In `rustleaks-core`, `all_tests` is built from the grouped test lists in
+`BUILD.bazel`, so add a new test to one list.
 
 ## Compatibility evidence
 
 The [`compat/` README](../../compat/README.md) lists every file in
 `compat/`, says which files are frozen and how to regenerate the others.
 
-Frozen files record what Gitleaks did at the pinned revision. They are
-history and never change. `crates/xtask/src/tooling/frozen_manifest.rs`
-lists their paths, modes and SHA-256 hashes. Commands named inside frozen
-READMEs describe the retired Go workflow and no longer run.
+Frozen files record what Gitleaks did at the pinned revision and never
+change. The [`compat/` README](../../compat/README.md#frozen-evidence)
+explains how they are checked and which commands named in them no longer
+run.
 
 The committed evidence includes:
 
@@ -144,12 +146,12 @@ For the three `CLI-BB-001` version outputs, the replay first checks the
 historical fields exactly, then expects the current build version from
 package metadata.
 
-The two `CLI-BB-007` embedded configuration variants recorded a minimum
-version warning, because the historical build compared the configuration
-`minVersion` with its own crate version. Rustleaks now compares `minVersion`
-with the implemented Gitleaks version, 8.30.0, so the warning is not printed.
-The replay checks the historical warning, which is event 0, and then expects
-it to be absent.
+Rustleaks compares the configuration `minVersion` with the implemented
+Gitleaks version, 8.30.0 (`IMPLEMENTED_GITLEAKS_VERSION` in
+`crates/rustleaks-cli/src/config.rs`). So the minimum version warning
+recorded as event 0 of the two `CLI-BB-007` embedded configuration variants
+is not printed. The replay checks the historical warning and then expects it
+to be absent.
 
 All other fields stay exact unless a presentation disposition replaces them.
 The execution ledger names the historical and current build versions and
@@ -259,9 +261,9 @@ them. Each lane keeps its CLI regression ledger, which holds no finding
 values, as a workflow artifact. The workflow's `Required` job fails unless
 every lane passes.
 
-Other CI jobs run on one host only. `just ci` and the Cargo stable and MSRV
-checks run on `ubuntu-24.04` (`x86_64`). `cargo xtask regression-check` runs
-on `macos-15` (`aarch64`).
+Other CI jobs run on one host only. `just ci`, the Cargo stable and MSRV
+checks and `cargo xtask frozen-evidence-check` run on `ubuntu-24.04`
+(`x86_64`). The native lanes replay `//:parity` as part of `//:test`.
 
 Cross-compilation of the eight targets proves only that the code compiles. It
 is not used to claim runtime support. The native lanes run the tests; they do

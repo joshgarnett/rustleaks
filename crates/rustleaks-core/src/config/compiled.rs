@@ -97,29 +97,6 @@ impl CompiledAllowlist {
                 .is_some_and(|matcher| matcher.is_match(target))
     }
 
-    /// Returns the pinned trie's first matched lowercase input substring.
-    ///
-    /// The upstream walk selects the earliest ending match and, at a shared
-    /// end position, the direct (longest) terminal before suffix links.
-    #[cfg_attr(not(test), allow(dead_code))] // Retain the selected-match compatibility helper.
-    pub(crate) fn matched_stop_word(&self, secret: &[u8]) -> Option<Vec<u8>> {
-        if secret.is_empty() {
-            return None;
-        }
-        let normalized = go_lowercase_bytes(secret);
-        let matcher = self.stopword_matcher.as_ref()?;
-        let selected = matcher
-            .find_overlapping_iter(&normalized)
-            .min_by(|left, right| {
-                left.end()
-                    .cmp(&right.end())
-                    .then_with(|| right.len().cmp(&left.len()))
-            })?;
-        normalized
-            .get(selected.start()..selected.end())
-            .map(<[u8]>::to_vec)
-    }
-
     pub(crate) fn contains_stop_word(&self, secret: &[u8]) -> bool {
         if secret.is_empty() {
             return false;
@@ -128,7 +105,6 @@ impl CompiledAllowlist {
             return false;
         };
         let normalized = go_lowercase_bytes(secret);
-        // Presence does not require the selected match's ordering or bytes.
         matcher.is_match(&normalized)
     }
 }
@@ -219,7 +195,7 @@ impl CompiledRule {
         self.secret_group
     }
 
-    /// Returns the configured legacy minimum entropy.
+    /// Returns the configured scalar minimum entropy.
     ///
     /// This is zero for a native byte-entropy predicate. Inspect
     /// [`Self::native_entropy`] for that predicate's complete metadata.
@@ -498,8 +474,8 @@ impl CompiledConfig {
     /// Returns whether an early source-adapter path check matches any global
     /// allowlist path expression.
     ///
-    /// This deliberately tests only path expressions. The pinned file walker
-    /// uses this as an I/O pruning optimization before commit, content, and
+    /// This deliberately tests only path expressions. The file walker uses
+    /// this as an I/O pruning optimization before commit, content, and
     /// stop-word criteria exist, so an allowlist's combination condition does
     /// not participate. `windows_path` is the original native spelling used by
     /// Windows in addition to the slash-normalized logical path.
@@ -690,8 +666,6 @@ mod tests {
         ] {
             assert_eq!(compiled.contains_stop_word(input), expected, "{input:?}");
         }
-        // The selected-match helper retains its independent tie-breaking contract.
-        assert_eq!(compiled.matched_stop_word(b"she"), Some(b"she".to_vec()));
 
         let overlapping = allowlist(r#"stopwords = ["a", "aa", "aaa", "aaaa"]"#);
         assert!(overlapping.contains_stop_word(b"aaaaaaaaaaaaaaaa"));

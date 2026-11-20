@@ -1,0 +1,807 @@
+//! On-demand representative phase collection. It applies no time limits.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde_json::{Value, json};
+
+use super::{
+    Prepared, action_identity_for, argument_file_identity, bazel, command_output, prepare,
+    sha256_bytes, sha256_file, workspace_root,
+};
+mod groups;
+mod source_scale;
+
+const SCOPE: &str = "representative-v1-operation-only";
+const CLI: &str = "//crates/rustleaks-cli:rustleaks";
+const ARCHIVES: &str = "//crates/rustleaks-sources:perf_archives_test";
+const MAX_ITERATIONS: u64 = 1_000;
+const MAX_SAMPLES: u64 = 31;
+const PROCESS_DEADLINE_SECONDS: u64 = 600;
+const DECODE_REPORT_WORKLOADS: &[&str] = &[
+    "core-decode-many-base64-depth-1",
+    "core-decode-many-base64-depth-2",
+    "core-decode-long-line-many-findings",
+    "core-decode-long-line-allowlisted",
+    "core-decode-lookalike-4-mib-depth-1",
+    "core-decode-none-4-mib-depth-5",
+    "core-decode-nested-needle-4-mib-depth-5",
+    "core-decode-hex-unicode-256-kib",
+    "session-classify-baseline-10000x10000",
+    "serialize-json-escape-heavy",
+    "serialize-csv-10000",
+    "serialize-junit-10000",
+    "config-compile-extend-default",
+    "config-compile-allowlist-heavy",
+];
+/// The `default-rules` group selector: synthetic default-config scan workloads.
+const DEFAULT_RULE_PREFIXES: &[&str] = &[
+    "core-admission-",
+    "core-prose-",
+    "core-near-miss-",
+    "core-tiny-",
+    "core-all-admitted-",
+    "core-keyword-run-",
+    "core-prefix-storm-",
+    "core-thrash-",
+    "core-multibyte-",
+    "core-groupless-",
+    "core-generic-filter-",
+    "core-minified-findings-",
+    "core-realistic-",
+    "core-custom-config-",
+    "core-long-lived-",
+    "core-contention-",
+];
+
+struct Request {
+    workload: Option<String>,
+    samples: u64,
+    iterations: u64,
+}
+
+impl Request {
+    fn parse(arguments: &[String]) -> Result<Self, String> {
+        let mut request = Self {
+            workload: None,
+            samples: 7,
+            iterations: 25,
+        };
+        let mut arguments = arguments.iter();
+        while let Some(argument) = arguments.next() {
+            let value = arguments
+                .next()
+                .ok_or_else(|| format!("{argument} needs a value"))?;
+            match argument.as_str() {
+                "--workload" => request.workload = Some(value.clone()),
+                "--samples" => request.samples = bounded(value, 3, MAX_SAMPLES, "samples")?,
+                "--iterations" => {
+                    request.iterations = bounded(value, 1, MAX_ITERATIONS, "iterations")?;
+                }
+                _ => return Err(format!("unknown representative option {argument}")),
+            }
+        }
+        Ok(request)
+    }
+}
+
+fn bounded(value: &str, minimum: u64, maximum: u64, name: &str) -> Result<u64, String> {
+    let value = value
+        .parse::<u64>()
+        .map_err(|_| format!("invalid {name}"))?;
+    if !(minimum..=maximum).contains(&value) {
+        return Err(format!("{name} must be in {minimum}..={maximum}"));
+    }
+    Ok(value)
+}
+
+struct Executable {
+    path: PathBuf,
+    identity: Value,
+}
+
+impl Executable {
+    fn unchanged(&self) -> Result<(), String> {
+        if self.identity["executable_sha256"] != sha256_file(&self.path)? {
+            return Err("representative auxiliary executable changed; discard this run".into());
+        }
+        Ok(())
+    }
+}
+
+fn build_executable(root: &Path, label: &str, basename: &str) -> Result<Executable, String> {
+    command_output(bazel(root, "build").arg(label))?;
+    let execution_root = PathBuf::from(command_output(
+        Command::new("bazelisk")
+            .current_dir(root)
+            .args(["info", "execution_root"]),
+    )?);
+    let outputs = command_output(bazel(root, "cquery").args([label, "--output=files"]))?;
+    let filename = format!("{basename}{}", std::env::consts::EXE_SUFFIX);
+    let candidates = outputs
+        .lines()
+        .filter(|line| {
+            Path::new(line)
+                .file_name()
+                .is_some_and(|name| name == filename.as_str())
+        })
+        .collect::<Vec<_>>();
+    let [relative] = candidates.as_slice() else {
+        return Err(format!("{label} must identify exactly one executable"));
+    };
+    let path = execution_root.join(relative);
+    let graph = command_output(bazel(root, "aquery").args([
+        &format!("mnemonic(\"Rustc\", deps({label}))"),
+        "--output=jsonproto",
+    ]))?;
+    let graph: Value = serde_json::from_str(&graph).map_err(|error| error.to_string())?;
+    let mut identity = action_identity_for(&graph, label, basename, SCOPE)?;
+    let compiler_path = execution_root.join(
+        identity["compiler_path"]
+            .as_str()
+            .ok_or("missing compiler")?,
+    );
+    identity
+        .as_object_mut()
+        .ok_or("invalid action identity")?
+        .remove("compiler_path");
+    identity["compiler_sha256"] = json!(sha256_file(&compiler_path)?);
+    identity["compiler_version"] = json!(command_output(Command::new(&compiler_path).arg("-Vv"))?);
+    identity["argument_files"] = argument_file_identity(&graph, &execution_root)?;
+    identity["executable_sha256"] = json!(sha256_file(&path)?);
+    Ok(Executable { path, identity })
+}
+
+fn git_executable(root: &Path) -> Result<Executable, String> {
+    if cfg!(windows) {
+        // Match the installed-Git policy of the Windows compatibility test target.
+        let search_path = std::env::var_os("PATH").ok_or("PATH unavailable for Windows Git")?;
+        let path = installed_windows_git(&search_path)?;
+        let version = command_output(Command::new(&path).arg("--version"))?;
+        if !version.starts_with("git version ") || version.lines().count() != 1 {
+            return Err("installed Windows Git returned an invalid version".into());
+        }
+        let identity = json!({"label":"installed-windows-git", "executable_sha256":sha256_file(&path)?, "version":version});
+        return Ok(Executable { path, identity });
+    }
+    command_output(bazel(root, "build").arg("//bazel:git"))?;
+    let execution_root = PathBuf::from(command_output(
+        Command::new("bazelisk")
+            .current_dir(root)
+            .args(["info", "execution_root"]),
+    )?);
+    let outputs = command_output(bazel(root, "cquery").args(["//bazel:git", "--output=files"]))?;
+    let paths = outputs.lines().collect::<Vec<_>>();
+    let [path] = paths.as_slice() else {
+        return Err("Bazel Git target must identify one executable".into());
+    };
+    let path = execution_root.join(path);
+    let identity = json!({"label":"//bazel:git", "executable_sha256":sha256_file(&path)?, "version":command_output(Command::new(&path).arg("--version"))?});
+    Ok(Executable { path, identity })
+}
+
+fn installed_windows_git(search_path: &std::ffi::OsStr) -> Result<PathBuf, String> {
+    for directory in std::env::split_paths(search_path) {
+        let path = directory.join("git.exe");
+        if path.is_file() {
+            return path.canonicalize().map_err(|error| error.to_string());
+        }
+    }
+    Err("PATH does not contain an installed git.exe".into())
+}
+
+struct Tools {
+    cli: Option<Executable>,
+    archives: Option<Executable>,
+    git: Option<Executable>,
+}
+
+impl Tools {
+    fn prepare(root: &Path, workloads: &[String]) -> Result<Self, String> {
+        let needs_cli = workloads.iter().any(|id| id.starts_with("cli-"));
+        let needs_git = workloads
+            .iter()
+            .any(|id| id.starts_with("git-") || id == "cli-git" || groups::needs_git(id));
+        let needs_archives = workloads.iter().any(|id| {
+            id == "archives-all-formats" || id.starts_with("archive-") || id == "git-archive-blobs"
+        });
+        Ok(Self {
+            cli: needs_cli
+                .then(|| build_executable(root, CLI, "rustleaks"))
+                .transpose()?,
+            archives: needs_archives
+                .then(|| build_executable(root, ARCHIVES, "perf_archives_test"))
+                .transpose()?,
+            git: needs_git.then(|| git_executable(root)).transpose()?,
+        })
+    }
+
+    fn identities(&self) -> Value {
+        json!({"cli": self.cli.as_ref().map(|tool| &tool.identity), "archives": self.archives.as_ref().map(|tool| &tool.identity), "git": self.git.as_ref().map(|tool| &tool.identity)})
+    }
+
+    fn unchanged(&self) -> Result<(), String> {
+        for tool in [&self.cli, &self.archives, &self.git].into_iter().flatten() {
+            tool.unchanged()?;
+        }
+        Ok(())
+    }
+}
+
+// The wrapper observes the entire child process and waited descendants. It does
+// not pretend CPU/RSS are phase-local. stdout is bounded by the runner's matrix.
+const COLLECTOR: &str = r"import json, os, signal, subprocess, sys, time
+try:
+ import resource
+except ImportError:
+ resource = None
+before = resource.getrusage(resource.RUSAGE_CHILDREN) if resource else None
+start = time.perf_counter_ns()
+p = subprocess.Popen(sys.argv[2:], stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=(os.name == 'posix'))
+try:
+ out, err = p.communicate(timeout=int(sys.argv[1]))
+except subprocess.TimeoutExpired:
+ if os.name == 'posix': os.killpg(p.pid, signal.SIGKILL)
+ else: p.kill()
+ p.communicate()
+ raise SystemExit('representative child exceeded its wall deadline')
+wall = time.perf_counter_ns() - start
+if len(out) > 4194304 or len(err) > 65536: raise SystemExit('representative output exceeds collector bounds')
+if p.returncode:
+ sys.stderr.buffer.write(err)
+ raise SystemExit(p.returncode)
+after = resource.getrusage(resource.RUSAGE_CHILDREN) if resource else None
+print(json.dumps({'stdout':out.decode('utf-8'), 'process':{'wall_ns':wall, 'user_cpu_ns':round((after.ru_utime-before.ru_utime)*1e9) if resource else None, 'system_cpu_ns':round((after.ru_stime-before.ru_stime)*1e9) if resource else None, 'peak_rss_bytes':round(after.ru_maxrss*(1 if sys.platform == 'darwin' else 1024)) if resource else None, 'scope':'whole-child-process-and-waited-descendants-includes-fixtures-verification-and-destruction', 'collector':'python-resource-v1', 'deadline_seconds':int(sys.argv[1]), 'allocation_counts':None}}))
+";
+
+fn collect(
+    prepared: &Prepared,
+    tools: &Tools,
+    arguments: &[String],
+) -> Result<(String, Value), String> {
+    let mut command = Command::new("python3");
+    command
+        .current_dir(&prepared.root)
+        .arg("-c")
+        .arg(COLLECTOR)
+        .arg(PROCESS_DEADLINE_SECONDS.to_string())
+        .arg(&prepared.binary)
+        .args(arguments);
+    // No ambient Git configuration can change the synthetic corpus or Git scans.
+    let path = std::env::var_os("PATH").ok_or("PATH unavailable for collector")?;
+    let path = if let Some(git) = &tools.git {
+        let parent = git.path.parent().ok_or("Git executable has no parent")?;
+        std::env::join_paths(std::iter::once(parent.to_owned()).chain(std::env::split_paths(&path)))
+            .map_err(|error| error.to_string())?
+    } else {
+        path
+    };
+    command
+        .env_clear()
+        .env("PATH", path)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env(
+            "GIT_CONFIG_GLOBAL",
+            if cfg!(windows) { "NUL" } else { "/dev/null" },
+        );
+    for name in ["SystemRoot", "WINDIR", "TMPDIR", "TEMP", "TMP"] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    for (name, tool) in [
+        ("RUSTLEAKS_PERF_CLI", &tools.cli),
+        ("RUSTLEAKS_PERF_GIT", &tools.git),
+        ("RUSTLEAKS_PERF_ARCHIVE_DRIVER", &tools.archives),
+    ] {
+        if let Some(tool) = tool {
+            command.env(name, &tool.path);
+        }
+    }
+    command.env("RUSTLEAKS_PERF_ROOT", &prepared.root);
+    let collected = command_output(&mut command)?;
+    let value: Value = serde_json::from_str(&collected)
+        .map_err(|error| format!("invalid collector JSON: {error}"))?;
+    let output = value["stdout"]
+        .as_str()
+        .ok_or("collector omitted stdout")?
+        .to_owned();
+    if value["process"]["wall_ns"].as_u64().is_none() {
+        return Err("collector omitted process wall time".into());
+    }
+    Ok((output, value["process"].clone()))
+}
+
+#[allow(clippy::too_many_lines)] // Keep sample validation and final stability checks in one flow.
+pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
+    let request = Request::parse(arguments)?;
+    let mut prepared = prepare(&workspace_root()?)?;
+    prepared.build["timing_scope"] = json!(SCOPE);
+    let listed = command_output(Command::new(&prepared.binary).arg("--representative-list"))?;
+    let available = listed.lines().map(str::to_owned).collect::<Vec<_>>();
+    if available.len() != available.iter().collect::<BTreeSet<_>>().len() || available.is_empty() {
+        return Err("representative workload list is empty or duplicated".into());
+    }
+    let grouped = request
+        .workload
+        .as_deref()
+        .and_then(|id| groups::workloads(id, &available))
+        .transpose()?;
+    let workloads = match request.workload {
+        Some(ref id) if id == "fragments" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-fragments-"))
+            .collect(),
+        Some(ref id) if id == "edges" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-edge-") || id.starts_with("core-normalization-"))
+            .collect(),
+        Some(ref id) if id == "workers" => available
+            .into_iter()
+            .filter(|id| id.starts_with("core-workers-"))
+            .collect(),
+        Some(ref id) if id == "decode-report" => available
+            .into_iter()
+            .filter(|id| DECODE_REPORT_WORKLOADS.contains(&id.as_str()))
+            .collect(),
+        Some(ref id) if id == source_scale::GROUP => source_scale::workloads(&available)?,
+        Some(_) if grouped.is_some() => grouped.unwrap_or_default(),
+        Some(ref id) if id == "default-rules" => available
+            .into_iter()
+            .filter(|id| {
+                DEFAULT_RULE_PREFIXES
+                    .iter()
+                    .any(|prefix| id.starts_with(prefix))
+            })
+            .collect(),
+        Some(ref id) if available.contains(id) => vec![id.clone()],
+        Some(ref id) => return Err(format!("unknown representative workload {id}")),
+        None => available,
+    };
+    let tools = Tools::prepare(&prepared.root, &workloads)?;
+    prepared.ensure_unchanged()?;
+    // No build work occurs after this point.
+    for workload in workloads {
+        let mut reference = None;
+        let mut elapsed_by_phase: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+        for sample in 0..request.samples {
+            let (startup, startup_process) =
+                collect(&prepared, &tools, &["--representative-startup".into()])?;
+            if startup.trim() != "rustleaks-representative-startup-v1" {
+                return Err("startup control returned wrong marker".into());
+            }
+            let (output, process) = collect(
+                &prepared,
+                &tools,
+                &[
+                    "--representative".into(),
+                    "--workload".into(),
+                    workload.clone(),
+                    "--iterations".into(),
+                    request.iterations.to_string(),
+                ],
+            )?;
+            let bound = prepared.bind(&output)?;
+            let records = validate(&bound, &prepared, &workload, request.iterations)?;
+            let invariants = records.iter().map(stable_identity).collect::<Vec<_>>();
+            if reference
+                .as_ref()
+                .is_some_and(|expected| expected != &invariants)
+            {
+                return Err(format!(
+                    "{workload} corpus, exact outcome or counts changed between processes"
+                ));
+            }
+            reference = Some(invariants);
+            for mut record in records {
+                let phase = record["phase"]["phase"]
+                    .as_str()
+                    .ok_or("phase omitted name")?
+                    .to_owned();
+                let elapsed = record["phase"]["elapsed_ns"]
+                    .as_u64()
+                    .ok_or("phase omitted elapsed time")?;
+                let iterations = record["phase"]["iterations"]
+                    .as_u64()
+                    .ok_or("phase omitted iterations")?;
+                let units = record["phase"]["logical_units_per_iteration"]
+                    .as_u64()
+                    .ok_or("phase omitted units")?;
+                elapsed_by_phase
+                    .entry(phase)
+                    .or_default()
+                    .push(elapsed / iterations);
+                record["sample_index"] = json!(sample);
+                record["sample_count"] = json!(request.samples);
+                record["ns_per_iteration"] = json!(elapsed / iterations);
+                record["logical_units_per_second"] = throughput(units, iterations, elapsed);
+                record["process"] = process.clone();
+                record["startup_control_process"] = startup_process.clone();
+                record["provenance"]["auxiliary_executables"] = tools.identities();
+                record["provenance"]["collector_sha256"] =
+                    json!(sha256_bytes(COLLECTOR.as_bytes()));
+                record["threshold_evaluation"] = json!("none-uncalibrated");
+                println!("{record}");
+            }
+        }
+        for (phase, samples) in elapsed_by_phase {
+            println!(
+                "{}",
+                json!({"schema_version":3,"suite":"representative-v1","kind":"summary","workload":workload,"phase":phase,"measurement_scope":SCOPE,"statistics":statistics(samples)?,"p95":null,"threshold_evaluation":"none-uncalibrated","source":prepared.source,"build":prepared.build,"host":prepared.host})
+            );
+        }
+    }
+    prepared.ensure_unchanged()?;
+    tools.unchanged()?;
+    println!(
+        "{}",
+        json!({"schema_version":3,"suite":"representative-v1","kind":"run-complete","source":prepared.source,"executable_sha256":prepared.build["executable_sha256"],"baseline_eligible":prepared.source["dirty"] == false})
+    );
+    Ok(())
+}
+
+/// Checks that each large fragment operation gives the same outcome in three
+/// fresh processes. It applies no time limit.
+pub(super) fn fragment_outcome_check(prepared: &Prepared) -> Result<(), String> {
+    let listed = command_output(Command::new(&prepared.binary).arg("--representative-list"))?;
+    let workloads = listed
+        .lines()
+        .filter(|id| {
+            id.starts_with("core-fragments-") && (id.ends_with("4-mib") || id.contains("12-mib-by"))
+        })
+        .collect::<Vec<_>>();
+    if workloads.len() != 8 {
+        return Err("fragment outcome matrix must contain eight large operations".into());
+    }
+    let tools = Tools {
+        cli: None,
+        archives: None,
+        git: None,
+    };
+    for workload in &workloads {
+        let mut reference = None;
+        for _ in 0..3 {
+            let (output, _) = collect(
+                prepared,
+                &tools,
+                &[
+                    "--representative".into(),
+                    "--workload".into(),
+                    (*workload).into(),
+                    "--iterations".into(),
+                    "1".into(),
+                ],
+            )?;
+            let records = validate(&prepared.bind(&output)?, prepared, workload, 1)?;
+            let identity = records.iter().map(stable_identity).collect::<Vec<_>>();
+            if reference
+                .as_ref()
+                .is_some_and(|expected| expected != &identity)
+            {
+                return Err(format!(
+                    "{workload} fragment invariants changed across samples"
+                ));
+            }
+            reference = Some(identity);
+        }
+    }
+    println!(
+        "{} large fragment operations gave the same outcome in three processes",
+        workloads.len()
+    );
+    Ok(())
+}
+
+pub(super) fn required_phases(workload: &str) -> Result<Vec<&'static str>, String> {
+    if let Some(phases) = source_scale::required_phases(workload) {
+        return Ok(phases);
+    }
+    if let Some(phases) = groups::required_phases(workload) {
+        return Ok(phases);
+    }
+    if workload.starts_with("core-workers-") {
+        return Ok(vec![
+            "config-parse-and-compile",
+            "engine-construction",
+            "engine-clone-setup",
+            "first-scan",
+            "steady-scan",
+        ]);
+    }
+    if workload.starts_with("core-") {
+        return Ok(vec![
+            "config-parse-and-compile",
+            "engine-construction",
+            "first-scan",
+            "steady-scan",
+        ]);
+    }
+    if workload.starts_with("source-") {
+        return Ok(vec![
+            "traversal-and-read",
+            "runner-detection-and-session",
+            "traversal-and-detection",
+        ]);
+    }
+    match workload {
+        "session-merge-10000" => Ok(vec!["session-merge"]),
+        "session-classify-baseline-10000x10000" => Ok(vec!["session-classify"]),
+        "serialize-json-10000"
+        | "serialize-sarif-10000"
+        | "serialize-json-escape-heavy"
+        | "serialize-csv-10000"
+        | "serialize-junit-10000" => Ok(vec!["report-serialization"]),
+        "config-compile-extend-default" | "config-compile-allowlist-heavy" => {
+            Ok(vec!["config-compile"])
+        }
+        "git-repeated-blobs" => Ok(vec!["git-history-and-parse", "git-history-and-detection"]),
+        "cli-startup" => Ok(vec!["cold-process-version"]),
+        "cli-dir" | "cli-stdin" | "cli-git" => Ok(vec!["cold-cli-startup-config-scan-report"]),
+        "archives-all-formats" => Ok(vec![
+            "archive-expand/tar-two-members",
+            "archive-expand/zip",
+            "archive-expand/7z-stored",
+            "archive-expand/rar5-stored",
+            "archive-expand/tar-gzip-two-members",
+            "archive-expand/gzip",
+            "archive-expand/tar-xz-two-members",
+            "archive-expand/xz",
+            "archive-expand/bzip2",
+            "archive-expand/brotli",
+            "archive-expand/lz4",
+            "archive-expand/snappy",
+            "archive-expand/minlz",
+            "archive-expand/zstd",
+            "archive-expand/zlib",
+            "archive-expand/lzip",
+            "archive-expand/s2",
+            "archive-expand/rar5-compressed",
+            "archive-expand/rar2-compressed",
+            "archive-expand/rar3-compressed",
+            "archive-expand/7z-compressed",
+            "archive-expand/gzip-compressed",
+            "archive-expand/zlib-compressed",
+        ]),
+        _ => Err(format!("unrecognized representative workload {workload}")),
+    }
+}
+
+fn valid_fingerprint(value: &Value) -> bool {
+    value.as_str().is_some_and(|value| {
+        value.len() == 16
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
+}
+
+pub(super) fn validate(
+    output: &str,
+    prepared: &Prepared,
+    workload: &str,
+    iterations: u64,
+) -> Result<Vec<Value>, String> {
+    let mut records = Vec::new();
+    let mut seen = BTreeSet::new();
+    for line in output.lines() {
+        let record: Value = serde_json::from_str(line).map_err(|error| error.to_string())?;
+        let phase = &record["phase"];
+        let name = phase["phase"].as_str().ok_or("missing phase name")?;
+        let expected_iterations = if [
+            "config-parse-and-compile",
+            "engine-construction",
+            "engine-clone-setup",
+            "first-scan",
+        ]
+        .contains(&name)
+        {
+            1
+        } else {
+            iterations
+        };
+        if record["schema_version"] != 3
+            || record["suite"] != "representative-v1"
+            || record["workload"] != workload
+            || record["measurement_scope"] != SCOPE
+            || phase["scope"] != SCOPE
+            || phase["iterations"] != expected_iterations
+            || phase["complete"] != true
+            || phase["errors"] != 0
+            || !seen.insert(name.to_owned())
+            || phase["elapsed_ns"].as_u64().is_none()
+            || phase["findings"].as_u64().is_none()
+            || phase["logical_units_per_iteration"].as_u64().is_none()
+            || phase["logical_unit"].as_str().is_none_or(str::is_empty)
+            || !phase["counts"].is_object()
+        {
+            return Err(
+                "representative row has incomplete outcome, invalid phase, scope, counts or timing"
+                    .into(),
+            );
+        }
+        for key in ["input_fnv1a64", "config_fnv1a64", "outcome_fnv1a64"] {
+            if !valid_fingerprint(&phase[key]) {
+                return Err(format!("representative phase omits {key}"));
+            }
+        }
+        let provenance = &record["provenance"];
+        if provenance["binding"] != "bazel-action-graph"
+            || provenance["build"] != prepared.build
+            || provenance["source"] != prepared.source
+            || provenance["host"] != prepared.host
+            || provenance["baseline_eligible"] != (prepared.source["dirty"] == false)
+            || provenance["executable_bytes"] != prepared.executable_bytes
+            || provenance["executable_fnv1a64"] != prepared.executable_fnv1a64
+            || provenance["upstream_revision"] != crate::REVISION
+            || provenance["default_config_sha256"] != crate::DEFAULT_RULES_SHA256
+            || provenance["package_version"] != crate::RELEASE_VERSION
+            || provenance["target_os"] != prepared.host["os"]
+            || provenance["target_arch"] != prepared.host["arch"]
+        {
+            return Err("representative row has mismatched build/source provenance".into());
+        }
+        records.push(record);
+    }
+    let expected = required_phases(workload)?;
+    if records.is_empty()
+        || (!expected.is_empty()
+            && seen != expected.iter().map(|name| (*name).to_owned()).collect())
+    {
+        return Err(format!(
+            "representative {workload} omitted or added a phase"
+        ));
+    }
+    Ok(records)
+}
+
+pub(super) fn stable_identity(record: &Value) -> Value {
+    let mut phase = record["phase"].clone();
+    phase
+        .as_object_mut()
+        .expect("validated phase is an object")
+        .remove("elapsed_ns");
+    phase
+}
+
+#[allow(clippy::cast_precision_loss)] // Throughput is an approximate display; exact counts are retained.
+fn throughput(units: u64, iterations: u64, elapsed: u64) -> Value {
+    if elapsed == 0 {
+        Value::Null
+    } else {
+        json!((units as f64 * iterations as f64 * 1e9) / elapsed as f64)
+    }
+}
+
+pub(super) fn statistics(mut samples: Vec<u64>) -> Result<Value, String> {
+    if !(3..=31).contains(&samples.len()) {
+        return Err("summary requires 3..=31 independent process samples".into());
+    }
+    samples.sort_unstable();
+    let median = samples[samples.len() / 2];
+    let mut deviations = samples
+        .iter()
+        .map(|sample| sample.abs_diff(median))
+        .collect::<Vec<_>>();
+    deviations.sort_unstable();
+    Ok(
+        json!({"samples":samples.len(),"median_ns":median,"minimum_ns":samples[0],"maximum_ns":samples[samples.len()-1],"median_absolute_deviation_ns":deviations[deviations.len()/2],"median_definition":"upper-middle-order-statistic","raw_ns_per_iteration":samples}),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_windows_git_requires_a_file_and_preserves_path_precedence() {
+        let scratch = crate::tooling::ScopedTempDir::new("windows-git-selection").unwrap();
+        let first = scratch.path.join("first installation \u{03a9}");
+        let second = scratch.path.join("second installation");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        let search_path = std::env::join_paths([&first, &second]).unwrap();
+        assert!(installed_windows_git(&search_path).is_err());
+        std::fs::create_dir(first.join("git.exe")).unwrap();
+        std::fs::write(second.join("git.exe"), b"synthetic selection fixture").unwrap();
+        let expected = second.join("git.exe").canonicalize().unwrap();
+        assert!(expected.is_absolute());
+        assert_eq!(installed_windows_git(&search_path).unwrap(), expected);
+        std::fs::remove_dir(first.join("git.exe")).unwrap();
+        std::fs::write(first.join("git.exe"), b"synthetic selection fixture").unwrap();
+        assert_eq!(
+            installed_windows_git(&search_path).unwrap(),
+            first.join("git.exe").canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn decode_report_group_is_unique_and_has_required_phases() {
+        let unique = DECODE_REPORT_WORKLOADS.iter().collect::<BTreeSet<_>>();
+        assert_eq!(unique.len(), DECODE_REPORT_WORKLOADS.len());
+        for workload in DECODE_REPORT_WORKLOADS {
+            assert!(!required_phases(workload).unwrap().is_empty(), "{workload}");
+        }
+    }
+
+    #[test]
+    fn representative_bounds_and_dispersion_are_explicit() {
+        assert!(Request::parse(&["--samples".into(), "2".into()]).is_err());
+        assert!(Request::parse(&["--iterations".into(), "1001".into()]).is_err());
+        let result = statistics(vec![90, 10, 20, 30, 40, 50, 60]).unwrap();
+        assert_eq!(result["median_ns"], 40);
+        assert_eq!(result["median_absolute_deviation_ns"], 20);
+        assert!(result.get("p95").is_none());
+        assert!(statistics(vec![1, 2]).is_err());
+    }
+
+    #[test]
+    fn representative_identity_rejects_skipped_work_counts() {
+        let mut record = json!({"phase":{"phase":"steady-scan","elapsed_ns":1,"logical_units_per_iteration":1024,"findings":1,"input_fnv1a64":"1234567890abcdef","complete":true}});
+        let expected = stable_identity(&record);
+        record["phase"]["elapsed_ns"] = json!(2);
+        assert_eq!(expected, stable_identity(&record));
+        record["phase"]["logical_units_per_iteration"] = json!(0);
+        assert_ne!(expected, stable_identity(&record));
+        record["phase"]["logical_units_per_iteration"] = json!(1024);
+        record["phase"]["findings"] = json!(0);
+        assert_ne!(expected, stable_identity(&record));
+    }
+
+    #[test]
+    fn representative_gate_rejects_missing_phases_incomplete_work_and_wrong_provenance() {
+        let prepared = Prepared {
+            root: PathBuf::new(),
+            binary: PathBuf::new(),
+            source: json!({"dirty": false, "input_sha256":"source"}),
+            build: json!({"timing_scope": SCOPE, "workload_definition_sha256":"definitions"}),
+            host: json!({"os":"test-os", "arch":"test-arch"}),
+            executable_bytes: 1,
+            executable_fnv1a64: "0123456789abcdef".into(),
+        };
+        let records = required_phases("core-mixed-1-kib").unwrap().iter().map(|phase| json!({
+            "schema_version":3,"suite":"representative-v1","workload":"core-mixed-1-kib","measurement_scope":SCOPE,
+            "phase":{"phase":phase,"scope":SCOPE,"iterations":1,"complete":true,"errors":0,"findings":1,"elapsed_ns":1,"logical_units_per_iteration":1024,"logical_unit":"input-bytes","counts":{"workers":1},"input_fnv1a64":"0123456789abcdef","config_fnv1a64":"0123456789abcdef","outcome_fnv1a64":"0123456789abcdef"},
+            "provenance":{"binding":"bazel-action-graph","build":prepared.build,"source":prepared.source,"host":prepared.host,"baseline_eligible":true,"executable_bytes":1,"executable_fnv1a64":prepared.executable_fnv1a64,"upstream_revision":crate::REVISION,"default_config_sha256":crate::DEFAULT_RULES_SHA256,"package_version":crate::RELEASE_VERSION,"target_os":"test-os","target_arch":"test-arch"}
+        })).collect::<Vec<_>>();
+        let encode = |records: &[Value]| {
+            records
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        validate(&encode(&records), &prepared, "core-mixed-1-kib", 1).unwrap();
+        assert!(validate(&encode(&records[..3]), &prepared, "core-mixed-1-kib", 1).is_err());
+        for pointer in [
+            "/phase/complete",
+            "/phase/scope",
+            "/provenance/build/workload_definition_sha256",
+            "/provenance/source/input_sha256",
+            "/phase/input_fnv1a64",
+        ] {
+            let mut changed = records.clone();
+            *changed[0].pointer_mut(pointer).unwrap() = json!("invalid");
+            assert!(
+                validate(&encode(&changed), &prepared, "core-mixed-1-kib", 1).is_err(),
+                "accepted mutation {pointer}"
+            );
+        }
+
+        let workload = "core-workers-default-cloned-4";
+        let mut worker_records = records.clone();
+        for record in &mut worker_records {
+            record["workload"] = json!(workload);
+        }
+        let mut cloning = worker_records[1].clone();
+        cloning["phase"]["phase"] = json!("engine-clone-setup");
+        worker_records.insert(2, cloning);
+        worker_records[4]["phase"]["iterations"] = json!(3);
+        validate(&encode(&worker_records), &prepared, workload, 3).unwrap();
+        let mut repeated_setup = worker_records.clone();
+        repeated_setup[2]["phase"]["iterations"] = json!(3);
+        assert!(validate(&encode(&repeated_setup), &prepared, workload, 3).is_err());
+        worker_records.remove(2);
+        assert!(validate(&encode(&worker_records), &prepared, workload, 3).is_err());
+    }
+}

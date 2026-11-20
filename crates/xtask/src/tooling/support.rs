@@ -2,28 +2,27 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
-#[cfg(test)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use std::process::Stdio;
 use std::process::{Child, Command, ExitStatus};
-#[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::{Duration, Instant};
-#[cfg(test)]
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
-pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut output = String::with_capacity(digest.len() * 2);
-    for byte in digest {
+/// Encodes bytes as lowercase hexadecimal.
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
+}
+
+pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
+    hex_lower(&Sha256::digest(bytes))
 }
 
 pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
@@ -80,7 +79,6 @@ pub(crate) fn command_status_with_timeout(
 }
 
 #[cfg(unix)]
-#[path = "process_cleanup.rs"]
 mod process_cleanup;
 
 pub(crate) fn terminate_process_tree(
@@ -176,20 +174,39 @@ impl TimeoutChild for Child {
     }
 }
 
+/// Waits for `child` to exit and fails unless it exits successfully within
+/// `timeout`.
 pub(crate) fn wait_for_child_with_timeout(
     child: &mut impl TimeoutChild,
     timeout: Duration,
     label: &str,
     display: &str,
 ) -> Result<(), String> {
+    match wait_with_deadline(child, timeout, label, display)? {
+        Some(status) if status.success() => Ok(()),
+        Some(status) => Err(format!("{label} ({display}) exited {status}")),
+        None => Err(format!(
+            "{label} exceeded its external {} second deadline",
+            timeout.as_secs()
+        )),
+    }
+}
+
+/// Waits for `child` to exit. After `timeout`, kills and reaps the child and
+/// returns `Ok(None)`.
+pub(crate) fn wait_with_deadline(
+    child: &mut impl TimeoutChild,
+    timeout: Duration,
+    label: &str,
+    display: &str,
+) -> Result<Option<ExitStatus>, String> {
     let started = Instant::now();
     loop {
         match child
             .try_wait()
             .map_err(|error| format!("failed to poll {label} ({display}): {error}"))?
         {
-            Some(status) if status.success() => return Ok(()),
-            Some(status) => return Err(format!("{label} ({display}) exited {status}")),
+            Some(status) => return Ok(Some(status)),
             None if started.elapsed() >= timeout => {
                 child
                     .kill()
@@ -197,28 +214,26 @@ pub(crate) fn wait_for_child_with_timeout(
                 child
                     .reap()
                     .map_err(|error| format!("failed to reap timed-out {label}: {error}"))?;
-                return Err(format!(
-                    "{label} exceeded its external {} second deadline",
-                    timeout.as_secs()
-                ));
+                return Ok(None);
             }
             None => thread::sleep(Duration::from_millis(10)),
         }
     }
 }
 
-#[cfg(test)]
-pub(super) struct TempDir {
-    pub(super) path: PathBuf,
+/// A uniquely named directory under the system temporary directory that is
+/// removed on drop. Removal only applies to paths named `rustleaks-*` directly
+/// under the temporary directory.
+pub(crate) struct ScopedTempDir {
+    pub(crate) path: PathBuf,
 }
 
-#[cfg(test)]
-impl TempDir {
-    pub(super) fn new(label: &str) -> Result<Self, String> {
+impl ScopedTempDir {
+    pub(crate) fn new(label: &str) -> Result<Self, String> {
         static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|error| format!("system clock is before Unix epoch: {error}"))?
+            .map_err(|error| format!("system clock is before the Unix epoch: {error}"))?
             .as_nanos();
         let sequence = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
@@ -235,8 +250,7 @@ impl TempDir {
     }
 }
 
-#[cfg(test)]
-impl Drop for TempDir {
+impl Drop for ScopedTempDir {
     fn drop(&mut self) {
         let is_scoped = self.path.parent() == Some(std::env::temp_dir().as_path())
             && self

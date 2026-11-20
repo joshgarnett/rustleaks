@@ -1,96 +1,53 @@
 ---
 name: github-review
-description: Review Rustleaks working-tree changes, a complete branch diff, or a GitHub pull request and report evidence-based findings. Use for code review and pre-PR review, not commit, PR, or merge execution.
+description: Review Rustleaks working-tree changes, a complete branch diff or a GitHub pull request and report findings backed by evidence. Use for code review and review before a pull request, not commit, pull request or merge execution.
 ---
 
 # Rustleaks review
 
-Treat review as a separate engineering task. Inspect intent, complete changed
-content, surrounding code, tests, and repository invariants. Do not create a
-commit, pull request, review submission, or merge unless the user separately
-requests the matching workflow.
+Review is separate from committing, opening a pull request and merging. Do
+not do those unless the user asks. A read-only review posts nothing to
+GitHub. Use `gh pr review` only when the user asks for that exact submission,
+and never approve your own pull request. The merge rules are in [Pull
+requests](../../../CONTRIBUTING.md#pull-requests).
 
-An evidence-based local review can qualify a sole-maintainer change when the
-live ruleset requires no approving review. Do not attempt to approve your own
-pull request or represent local review as an eligible GitHub approval.
+## What to read
 
-## Select one mode
+- Working tree: `git status --short`, `git diff`, `git diff --cached` and
+  `git ls-files --others --exclude-standard`, then read each new file.
+- Branch: the complete diff from `git merge-base HEAD origin/main`, not only
+  the last commit.
+- Pull request: `gh pr view`, `gh pr diff` and `gh pr checks`, and each
+  linked issue that defines the intent.
 
-### Working tree
+## What to check
 
-Inspect unstaged, staged, and untracked content:
+In order: correctness, security, data loss, concurrency, error semantics,
+public API, the [compatibility
+policy](../../../docs/user/gitleaks-differences.md#compatibility-policy) (no
+lost secret, each finding difference documented and tested), cleanup,
+performance, test quality, maintainability and documentation.
 
-```sh
-git status --short
-git diff
-git diff --cached
-git ls-files --others --exclude-standard
-```
+For this repository, also check:
 
-Read every relevant new file directly.
+- the [invariants](../../../AGENTS.md#invariants), including the synchronous
+  in-memory core and the ban on unsafe code in owned crates;
+- that expected findings, spans, fingerprints, report fields, exit codes and
+  error classes come from the intended behavior, not from current output;
+- that a presentation change has an updated expectation that matches its
+  stated intent; and
+- for Bazel, target boundaries, visibility, direct dependencies and
+  generated files.
 
-### Branch
+Use the matching `rustleaks-*` skill when the change crosses its boundary.
+Run a focused target, such as
+`bazelisk test //crates/rustleaks-core:engine_test`, when it tests the
+concern. Never claim an unrun command passed.
 
-Determine the default and base branch from repository and remote evidence;
-normally this repository uses `origin/main`. Refresh read-only remote refs when
-needed. Record the merge base, then review the complete diff and useful commit
-context, not only the latest commit:
+## Report
 
-```sh
-git merge-base HEAD origin/main
-git diff <merge-base>..HEAD
-git log --oneline <merge-base>..HEAD
-```
-
-### Pull request
-
-Inspect the pull request, complete diff, and checks with GitHub CLI:
-
-```sh
-gh pr view <pr-number>
-gh pr diff <pr-number>
-gh pr checks <pr-number>
-```
-
-Inspect each linked issue with `gh issue view <issue-number>` when it defines
-intent or acceptance criteria. A read-only review does not post to GitHub. Use
-`gh pr review <pr-number> --approve`, `--comment`, or `--request-changes` only
-when the current user request explicitly authorizes that exact submission.
-
-## Review the relevant boundary
-
-Prioritize correctness, security, data loss, concurrency, error semantics,
-public API and pinned Gitleaks compatibility, cleanup, meaningful performance,
-test quality, maintainability, documentation, and enforced style in that
-order when applicable.
-
-For Rust, inspect relevant ownership and lifetime assumptions, unnecessary
-cloning, panic and ignored-result paths, integer and path handling, platform
-assumptions, cancellation and resource budgets, `Send + Sync`, and the owned
-crates' unsafe prohibition. Preserve findings, spans, fingerprints, error
-classes, exit codes, report fields, and the synchronous in-memory core
-boundary. Check that each change to help, usage, error wording, or log text has
-an updated expectation that matches its stated intent. For Bazel, inspect
-target boundaries, visibility, direct dependencies, hermeticity, feature
-representation, generated artifacts, and nearby BUILD conventions. Apply the
-matching Rustleaks maintenance skill when the change crosses its specialized
-boundary.
-
-Verify suspected defects against surrounding code and existing tests when
-practical. Run focused targets such as
-`bazelisk test //crates/rustleaks-core:engine_test` only when they materially
-test the reviewed concern. Do not claim an unrun command passed.
-
-## Report findings first
-
-For every finding, provide `critical`, `high`, `medium`, or `low` severity; the
-file and precise location; the defect; why it matters; and a concrete
-remediation direction when useful. Separate blocking findings from
-non-blocking suggestions. Do not inflate severity, invent findings, or block
-on subjective style.
-
-If there are no meaningful findings, say so directly. In all cases, state:
-
-- which mode, base, commit range, paths, or pull request was reviewed;
-- which commands or checks succeeded against that state; and
-- what was not validated and why.
+Give each finding a severity (`critical`, `high`, `medium` or `low`), the file
+and line, the defect, why it matters and a fix when useful. Separate blocking
+findings from suggestions. Do not block on style. If there are no findings,
+say so. Always state what was reviewed, which checks passed on that state,
+and what was not checked.

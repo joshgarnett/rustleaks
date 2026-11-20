@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Synchronous Rustleaks CLI orchestration with pinned backward compatibility.
+//! The Rustleaks command line: argument parsing, configuration, scans and output.
 
 mod args;
 mod cli_spec;
@@ -7,6 +7,7 @@ mod complete_profile;
 mod completion;
 mod config;
 mod help;
+mod limits;
 mod output;
 mod run;
 mod source;

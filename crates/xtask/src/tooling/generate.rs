@@ -4,7 +4,6 @@ use std::path::Path;
 /// Generator targets accepted by [`run`]. The documentation command check
 /// reads this list, and a unit test keeps it in step with the dispatch.
 pub(crate) const GENERATE_TARGETS: &[&str] = &[
-    "api-dispositions",
     "native-pack-identity",
     "archive-fuzz-seeds",
     "regex-fuzz-seeds",
@@ -21,12 +20,7 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         [target] if target == "vet-inventory" => super::write_vet_inventory(root, &root.join("supply-chain/inventory-v1.json")),
         [target, flag] if target == "vet-inventory" && flag == "--check" => super::check_vet_inventory(root, &root.join("supply-chain/inventory-v1.json")),
         [target, flag, output] if target == "vet-inventory" && flag == "--output" => super::write_vet_inventory(root, Path::new(output)),
-        [target] if target == "api-dispositions" => super::write_api_dispositions(root, &root.join("compat/api-dispositions-v1.jsonl")).map(|summary| print!("{summary}")),
-        [target, flag] if target == "api-dispositions" && flag == "--check" => super::check_api_dispositions(root, &root.join("compat/api-dispositions-v1.jsonl")).map(|summary| print!("{summary}")),
-        [target, flag] if target == "api-dispositions" && flag == "--self-test" => super::self_test_api_dispositions(root, &root.join("compat/api-dispositions-v1.jsonl")).map(|summary| print!("{summary}")),
-        [target, flag] if target == "api-dispositions" && flag == "--summary" => super::summarize_api_dispositions(root, &root.join("compat/api-dispositions-v1.jsonl")).map(|summary| print!("{summary}")),
-        [target, flag, output] if target == "api-dispositions" && flag == "--output" => super::write_api_dispositions(root, Path::new(output)).map(|summary| print!("{summary}")),
-        _ => Err("usage: cargo xtask generate <api-dispositions [--check|--self-test|--summary|--output PATH]|native-pack-identity [--check]|archive-fuzz-seeds OUTPUT [--check]|regex-fuzz-seeds REQUESTS OUTPUT|vet-inventory [--check|--output PATH]>; live Go generation is retired; use regression-check for frozen evidence".into()),
+        _ => Err("usage: cargo xtask generate <native-pack-identity [--check]|archive-fuzz-seeds OUTPUT [--check]|regex-fuzz-seeds REQUESTS OUTPUT|vet-inventory [--check|--output PATH]>".into()),
     }
 }
 

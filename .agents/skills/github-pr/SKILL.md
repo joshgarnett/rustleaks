@@ -1,29 +1,18 @@
 ---
 name: github-pr
-description: Assess, create, or update a Rustleaks pull request from a complete branch diff with truthful validation and issue linkage. Use for PR preparation and mutation, not issue authoring, commit creation, substantive review, or merging.
+description: Check, create or update a Rustleaks pull request from a complete branch diff with accurate check results and issue links. Use for pull request preparation and changes, not issue authoring, commit creation, substantive review or merging.
 ---
 
 # Rustleaks pull requests
 
-Prepare one logical change for review. Use `github-issue` for issue content,
-`github-commit` for local commits, `github-review` for substantive pre-PR
-review, and `github-merge` for final readiness and merge execution.
+[Pull requests](../../../CONTRIBUTING.md#pull-requests) in `CONTRIBUTING.md`
+holds the rules. Use `github-commit` for commits, `github-review` for review
+and `github-merge` to merge.
 
-## Establish the candidate
+## Prepare
 
-Confirm the repository, current branch, default base, working tree, and
-existing pull request state:
-
-```sh
-gh repo view
-git branch --show-current
-git status --short
-gh pr status
-```
-
-Do not open a pull request from `main`. Determine the base from live repository
-evidence, normally `main`, and inspect the complete branch change from its
-merge base:
+Never open a pull request from `main`. Review the complete branch change from
+its merge base with `origin/main`, not only the last commit:
 
 ```sh
 git merge-base HEAD origin/main
@@ -31,61 +20,34 @@ git diff <merge-base>..HEAD
 git log --oneline <merge-base>..HEAD
 ```
 
-Observed topic branches use narrow prefixes such as `ci/`, `fix/`, and
-`docs/`, but no repository file mandates a branch grammar. Do not invent or
-enforce one.
+Do not call the branch ready while it has unrelated changes, missing
+generated files or unexplained failures. No branch naming rule exists; do not
+invent one.
 
-Compare the complete change with each linked issue and the stated intent.
-Resolve substantive findings through `github-review`. Do not describe the
-branch as ready while unrelated changes, missing generated artifacts, or
-unexplained failures remain.
+## Check and write
 
-## Validate and write the pull request
+Run `just ci` and `just security`, and add the package, fuzz or maintenance
+checks that the [local workflow](../../../CONTRIBUTING.md#local-workflow)
+table requires for the changed boundary. List the exact commands that passed
+and explain any required check that did not run. Never copy a result from a
+different tree.
 
-Before opening a pull request, run the repository-required local gates:
+The title becomes the squash commit subject, so it follows the [commit
+grammar](../../../CONTRIBUTING.md#commits). Fill in every section of
+`.github/pull_request_template.md`. Link only real issues.
 
-```sh
-just ci
-just security
-```
+## Authority
 
-Add the conditional package, fuzz, fresh parity, or maintenance gates required
-by `CONTRIBUTING.md` for the changed boundary. Record exact successful commands
-and explain a required command that was not run. Never copy a result from a
-different tree or claim an unrun command passed.
-
-The title becomes the permanent squash commit subject. Follow the [commit
-grammar](../../../CONTRIBUTING.md#commits) and the [pull request
-rules](../../../CONTRIBUTING.md#pull-requests). Follow
-`.github/pull_request_template.md` with `Summary`, `Rationale`, `Validation`,
-`Compatibility and security`, and `Issues` sections. Use
-`Closes #<issue-number>` only when the pull request fully resolves that real
-issue; use `Refs #<issue-number>` otherwise. Do not invent issue linkage.
-
-## Respect authority and verify
-
-Read-only inspection and a local draft do not authorize a push or pull request
-mutation. A request to create or update a pull request, or to take a named
-change through an end-to-end pull request workflow, authorizes the ordinary
-push and pull request create or edit operations needed for that workflow. It
-does not authorize a force-push, protection bypass, unrelated edit, or remote
-branch deletion. Prefer:
+Reading and a local draft do not authorize a push. A request to create or
+update a pull request, or to take a named change through the pull request
+workflow, authorizes the normal push and `gh pr create` or `gh pr edit`. It
+does not authorize a force push, a bypass, unrelated edits or deleting a
+remote branch.
 
 ```sh
 git push --set-upstream origin <branch>
 gh pr create --base main --title "<title>" --body-file <body-file>
-gh pr edit <pr-number> --title "<title>" --body-file <body-file>
 ```
 
-Do not force-push or bypass protections. After an authorized create or edit,
-verify the title, base, head, body, draft state, URL, and checks with:
-
-```sh
-gh pr view <pr-number>
-gh pr checks <pr-number>
-```
-
-For `main`, reconcile every context required by the live ruleset and confirm
-that the maintained CI and native target lanes expected for the changed
-boundary ran. Report missing, pending, stale, or failing checks as such, not as
-completed validation.
+Afterward, check the title, base, body and checks with `gh pr view` and
+`gh pr checks`. Report pending or failing checks as such.

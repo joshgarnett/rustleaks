@@ -243,7 +243,7 @@ fn changed_loaded_default_bytes_fail_identity_check() {
 }
 
 #[test]
-fn native_pilot_preserves_held_out_coverage_and_reviewed_negative_alerts() {
+fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
     use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
     let corpus = generator::corpus();
     model::validate(&corpus).unwrap();
@@ -294,7 +294,7 @@ fn native_pilot_preserves_held_out_coverage_and_reviewed_negative_alerts() {
         }
     }
     for case in &corpus.cases {
-        if case.stratum != "native-pilot" {
+        if case.stratum != "native" {
             continue;
         }
         let actual = candidate
@@ -305,13 +305,13 @@ fn native_pilot_preserves_held_out_coverage_and_reviewed_negative_alerts() {
         assert_eq!(
             actual.counts.recognized_case_distinct_values,
             actual.counts.expected_case_distinct_values,
-            "{} misses a pilot value",
+            "{} misses a native case value",
             case.id
         );
         if case.decode_depth == 0 {
             assert_eq!(
                 actual.counts.false_negatives, 0,
-                "{} misses a pilot occurrence",
+                "{} misses a native case occurrence",
                 case.id
             );
             assert_eq!(

@@ -1,10 +1,8 @@
-use std::io::{Cursor, Read};
+use std::io::Read;
 
-use crate::{ByteReader, Error};
+use super::skippable::{FrameFormat, InnerReader, SKIPPABLE_FRAME_MAGIC};
+use crate::Error;
 use lz4_flex::frame::FrameDecoder;
-
-/// Magic bytes of a skippable frame as used in LZ4 by zstdmt.
-const SKIPPABLE_FRAME_MAGIC: u32 = 0x184D2A50;
 
 /// Custom decoder to support the custom format first implemented by zstdmt, which allows to have
 /// optional skippable frames.
@@ -25,14 +23,14 @@ impl<R: Read> Lz4Decoder<R> {
 
         let inner_reader = if magic_value == SKIPPABLE_FRAME_MAGIC && header_read >= 12 {
             let skippable_size = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-            if skippable_size != 4 {
+            if skippable_size != FrameFormat::Lz4.skippable_size() {
                 return Err(Error::other("Invalid lz4 skippable frame size"));
             }
 
             let compressed_size =
                 u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
 
-            InnerReader::new_skippable(input, compressed_size)
+            InnerReader::new_skippable(input, FrameFormat::Lz4, compressed_size)
         } else {
             InnerReader::new_standard(input, header[..header_read].to_vec())
         };
@@ -54,9 +52,9 @@ impl<R: Read> Read for Lz4Decoder<R> {
 
                     if inner_reader.read_next_frame_header()? {
                         let reader = std::mem::replace(inner_reader, InnerReader::empty());
-                        let mut deencoder = FrameDecoder::new(reader);
-                        let result = deencoder.read(buf);
-                        self.inner = Some(deencoder);
+                        let mut decoder = FrameDecoder::new(reader);
+                        let result = decoder.read(buf);
+                        self.inner = Some(decoder);
                         result
                     } else {
                         self.inner = None;
@@ -71,122 +69,58 @@ impl<R: Read> Read for Lz4Decoder<R> {
     }
 }
 
-enum InnerReader<R: Read> {
-    Empty,
-    Standard {
-        reader: R,
-        header_buffer: Cursor<Vec<u8>>,
-        header_finished: bool,
-    },
-    Skippable {
-        reader: R,
-        remaining_in_frame: u32,
-        frame_finished: bool,
-    },
-}
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
 
-impl<R: Read> InnerReader<R> {
-    fn empty() -> Self {
-        InnerReader::Empty
+    use lz4_flex::frame::FrameEncoder;
+
+    use super::*;
+
+    fn lz4_frame(data: &[u8]) -> Vec<u8> {
+        let mut encoder = FrameEncoder::new(Vec::new());
+        encoder.write_all(data).expect("encode");
+        encoder.finish().expect("finish")
     }
 
-    fn new_standard(reader: R, header: Vec<u8>) -> Self {
-        InnerReader::Standard {
-            reader,
-            header_buffer: Cursor::new(header),
-            header_finished: false,
-        }
+    fn skippable_frame(skippable_size: u32, compressed: &[u8]) -> Vec<u8> {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&SKIPPABLE_FRAME_MAGIC.to_le_bytes());
+        frame.extend_from_slice(&skippable_size.to_le_bytes());
+        frame.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        frame.extend_from_slice(compressed);
+        frame
     }
 
-    fn new_skippable(reader: R, remaining_in_frame: u32) -> Self {
-        InnerReader::Skippable {
-            reader,
-            remaining_in_frame,
-            frame_finished: false,
-        }
+    fn decode(input: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut decoder = Lz4Decoder::new(input)?;
+        let mut output = Vec::new();
+        decoder.read_to_end(&mut output)?;
+        Ok(output)
     }
 
-    fn read_next_frame_header(&mut self) -> std::io::Result<bool> {
-        match self {
-            InnerReader::Empty => Ok(false),
-            InnerReader::Standard { .. } => Ok(false),
-            InnerReader::Skippable {
-                reader,
-                remaining_in_frame,
-                frame_finished,
-            } => {
-                if !*frame_finished {
-                    return Ok(false);
-                }
-
-                match reader.read_u32() {
-                    Ok(magic) => {
-                        if magic != SKIPPABLE_FRAME_MAGIC {
-                            return Ok(false);
-                        }
-
-                        let skippable_size = reader.read_u32()?;
-                        if skippable_size != 4 {
-                            return Ok(false);
-                        }
-
-                        let compressed_size = reader.read_u32()?;
-
-                        *remaining_in_frame = compressed_size;
-                        *frame_finished = false;
-
-                        Ok(true)
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-                    Err(e) => Err(e),
-                }
-            }
-        }
+    #[test]
+    fn decodes_a_standard_frame() {
+        assert_eq!(decode(&lz4_frame(b"plain frame")).unwrap(), b"plain frame");
     }
-}
 
-impl<R: Read> Read for InnerReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            InnerReader::Empty => Ok(0),
-            InnerReader::Standard {
-                reader,
-                header_buffer,
-                header_finished,
-            } => {
-                if !*header_finished {
-                    let bytes_read = header_buffer.read(buf)?;
-                    if bytes_read > 0 {
-                        return Ok(bytes_read);
-                    }
-                    *header_finished = true;
-                }
-                reader.read(buf)
-            }
-            InnerReader::Skippable {
-                reader,
-                remaining_in_frame,
-                frame_finished,
-            } => {
-                if *frame_finished || *remaining_in_frame == 0 {
-                    return Ok(0);
-                }
+    #[test]
+    fn decodes_every_skippable_frame() {
+        let mut input = skippable_frame(4, &lz4_frame(b"first "));
+        input.extend(skippable_frame(4, &lz4_frame(b"second")));
+        assert_eq!(decode(&input).unwrap(), b"first second");
+    }
 
-                let bytes_to_read = std::cmp::min(*remaining_in_frame as usize, buf.len());
-                let bytes_read = reader.read(&mut buf[..bytes_to_read])?;
+    #[test]
+    fn stops_at_a_frame_header_of_another_format() {
+        let mut input = skippable_frame(4, &lz4_frame(b"first"));
+        input.extend(skippable_frame(8, &lz4_frame(b"ignored")));
+        assert_eq!(decode(&input).unwrap(), b"first");
+    }
 
-                if bytes_read == 0 {
-                    *frame_finished = true;
-                    return Ok(0);
-                }
-
-                *remaining_in_frame -= bytes_read as u32;
-                if *remaining_in_frame == 0 {
-                    *frame_finished = true;
-                }
-
-                Ok(bytes_read)
-            }
-        }
+    #[test]
+    fn rejects_a_first_frame_with_the_wrong_header_size() {
+        let input = skippable_frame(8, &lz4_frame(b"data"));
+        assert!(decode(&input).is_err());
     }
 }

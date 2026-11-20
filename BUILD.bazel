@@ -17,7 +17,6 @@ filegroup(
         "*.md",
         "benchmarks/**",
         "*.toml",
-        "benchmarks/**",
         "docs/**",
         "release/**",
     ]) + [
@@ -61,13 +60,11 @@ filegroup(
 filegroup(
     name = "libraries",
     srcs = [
-        "//crates/rustleaks-bzip2:feature_profiles",
         "//crates/rustleaks-bzip2:rustleaks_bzip2",
         "//crates/rustleaks-compat:rustleaks_compat",
         "//crates/rustleaks-core:rustleaks_core",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
         "//crates/rustleaks-report:rustleaks_report",
-        "//crates/rustleaks-sevenz:feature_profiles",
         "//crates/rustleaks-sevenz:rustleaks_sevenz",
         "//crates/rustleaks-sources:feature_profiles",
         "//crates/rustleaks-sources:rustleaks_sources",
@@ -136,7 +133,6 @@ filegroup(
     srcs = [
         "//crates/rustleaks-bzip2:rustleaks_bzip2_docs",
         "//crates/rustleaks-cli:rustleaks_cli_docs",
-        "//crates/rustleaks-compat:rustleaks_compat_docs",
         "//crates/rustleaks-core:rustleaks_core_docs",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec_docs",
         "//crates/rustleaks-report:rustleaks_report_docs",
@@ -148,7 +144,6 @@ filegroup(
 )
 
 _RUST_TARGETS = [
-    "//crates/rustleaks-report:triage_test",
 
     "//crates/rustleaks-core:native_policy_test",
     "//crates/rustleaks-core:native_predicates_test",
@@ -164,11 +159,6 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:connection_rules_test",
     "//crates/rustleaks-core:triage_test",
 
-    "//crates/rustleaks-bzip2:profile_default",
-    "//crates/rustleaks-bzip2:profile_nightly",
-    "//crates/rustleaks-bzip2:profile_rustc_1_37",
-    "//crates/rustleaks-bzip2:profile_rustc_1_40",
-    "//crates/rustleaks-bzip2:profile_rustc_1_51",
     "//crates/rustleaks-bzip2:rustleaks_bzip2",
     "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
     "//crates/rustleaks-cli:cli_test",
@@ -187,6 +177,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:controlled_scan_test",
     "//crates/rustleaks-core:default_rule_cases_test",
     "//crates/rustleaks-core:default_rule_corpus_test",
+    "//crates/rustleaks-core:default_rules_test",
     "//crates/rustleaks-core:decoded_locations_test",
     "//crates/rustleaks-core:location_lookup_test",
     "//crates/rustleaks-core:detect_corpus_test",
@@ -209,7 +200,6 @@ _RUST_TARGETS = [
     "//crates/rustleaks-report:security_stress_test",
     "//crates/rustleaks-report:template_test",
     "//crates/rustleaks-sevenz:oracle_codecs_test",
-    "//crates/rustleaks-sevenz:profile_minimal",
     "//crates/rustleaks-sevenz:rustleaks_sevenz",
     "//crates/rustleaks-sevenz:rustleaks_sevenz_unit_test",
     "//crates/rustleaks-sources:archive_sources_test",

@@ -1,5 +1,8 @@
 name: Publish GitHub Release
 
+# This workflow publishes prereleases only; its version pattern requires a
+# prerelease suffix.
+
 on:
   workflow_dispatch:
     inputs:
@@ -44,12 +47,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up the Rust toolchain
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.95.0 --profile minimal
-          rustup default 1.95.0
-          rustc -vV
-          cargo -vV
+        uses: ./.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
       - name: Require the current protected branch version
         env:
           CANDIDATE: ${{ inputs.candidate }}
@@ -301,13 +303,15 @@ jobs:
           ref: ${{ inputs.candidate }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up the existing verification toolchain
+      - name: Set up the verification toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Hydrate locked dependencies
         shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.95.0 --profile minimal
-          rustup default 1.95.0
-          cargo fetch --locked
+        run: cargo fetch --locked
       - name: Verify public bundle on Linux and macOS
         if: runner.os != 'Windows'
         shell: bash

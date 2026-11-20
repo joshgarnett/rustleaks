@@ -73,58 +73,33 @@ before that point.
 One `git log` process uses about one CPU, so it limits how fast a history
 scan can be. With more than one detection thread, Rustleaks reads the
 history with several `git log` processes at the same time: one for each
-detection thread, up to 6. `--jobs 1` uses one process.
+detection thread, up to 6. Each process reads a part of the history, and
+Rustleaks reads their output in history order. So findings, their order,
+reports, warnings and exit codes do not change.
 
-1. `git rev-list --full-history --all` lists the commits in the order that
-   `git log` shows them.
-2. The list is split into batches of 250 commits that follow each other in
-   the list.
-3. A separate `git log` process shows the commits of each batch.
-4. Rustleaks reads the output of the batches in list order, so it reads the
-   same text as from one `git log` process.
+Rustleaks uses one process with `--jobs 1` or the profile key `workers=1`,
+and with `--log-opts`, `--staged` or `--pre-commit`, because those options
+can change which commits Git shows. It also uses one process for a short
+history, for a history of more than 10,000,000 commits, and when a Git
+setting or a Git warning could change how the parts join.
 
-So findings, their order, reports, warnings and exit codes do not change.
 When Git fails, or a commit reaches a limit, the report holds findings from
 the same commits as with one process. The Git error text in the log line
 comes from the process that failed, so it can differ. When the error output
 limit is reached, the findings before the stop depend on timing, as with one
 process.
 
-Rustleaks uses one process when:
-
-- `--jobs 1` or the profile key `workers=1` sets one detection thread;
-- `--log-opts` with a value, `--staged` or `--pre-commit` is used, because
-  options such as a path, `--follow`, `--reverse` or `-n` change which
-  commits Git shows or how it shows them;
-- `git rev-list` fails or writes any error output, such as a warning about a
-  broken reference or a graft file, because each `git log` process would
-  repeat the warning;
-- the Git setting `format.pretty` is set, because some formats change how
-  Git separates commits;
-- the history fits in one batch; or
-- the history has more than 10,000,000 commits.
-
-Memory:
+Memory and error output:
 
 - Each `git log` process maps the pack files of the repository and keeps its
   own caches. For large histories, one process can use from hundreds of
-  megabytes to more than 2 GB. A process for one batch reads fewer commits,
-  so it usually uses less than one process for the whole history.
-- Output that Git writes before Rustleaks reads it waits in memory: up to
-  4 MiB for the batch that Rustleaks reads, and up to 128 MiB for all later
-  batches together. A `git log` process whose output does not fit waits.
-- The commit list uses about 41 bytes for each commit.
+  megabytes to more than 2 GB. A process for one part of the history usually
+  uses less than one process for the whole history. To use less memory, set
+  a lower `--jobs` value.
 - The error output of all `git log` processes counts toward
   `git_stderr_bytes` together. A warning that each process writes, such as
   the one about a too low `diff.renameLimit`, counts once for each process
   that writes it.
-
-On a 36-CPU host with 12 detection threads, history scans of six public
-repositories, from 5,000 to 100,000 commits, took 0.3 to 0.6 times as long
-as with one Git process. All Git processes together used about as much
-memory as one Git process for the whole history, or less. Rustleaks itself
-used up to about 0.45 GB more, because more pieces of input wait for the
-detection threads and more Git output waits for the parser.
 
 ### Detection threads
 
@@ -144,20 +119,17 @@ Findings, their order, reports, warnings and exit codes are the same for any
 number of threads. A scan that stops early, because of `--timeout` or a
 profile limit, can have different findings.
 
-One thread reads the input and splits it into pieces. In a `dir` scan with
-two or more detection threads, that thread walks the folder, and two more
-threads open and read the files that it finds. See [Reading
-files](#reading-files). Each detection thread scans one piece at a time.
-Without a profile, up to N pieces wait for a thread, but never more than
-1,024. With a profile, `queue_capacity` sets this number. So memory grows
-with the thread count:
+One thread reads the input and splits it into pieces. Each detection thread
+scans one piece at a time. Without a profile, up to N pieces wait for a
+thread, but never more than 1,024. With a profile, `queue_capacity` sets
+this number. So memory grows with the thread count:
 
 - At most 2 times N plus 1 pieces are in memory when the queue holds N. A
   piece of a file is about 100,000 bytes. A piece of Git history is one diff
   hunk, which can be as large as one changed file.
-- In a `dir` scan, the two threads that read files hold at most 18 more
-  pieces and one read buffer of 100,000 bytes each.
-- Each thread that searches keeps its own pattern search caches.
+- In a `dir` scan, the threads that read files hold a few more pieces. See
+  [Reading files](#reading-files).
+- Each detection thread keeps its own pattern search caches.
 
 With `--complete-profile`, a piece of a file is the whole file, up to
 `target_bytes`.
@@ -171,16 +143,9 @@ pass and split them into pieces. The pieces and the warnings reach the
 detection threads in walk order, so findings, their order, reports, warnings
 and exit codes are the same as with one thread.
 
-- The walk stays at most 16 files and warnings ahead of the pieces that the
-  detection threads have received. A large file is read one piece at a
-  time.
-- Archives, and compressed files such as `app.log.gz`, are read by the
-  walking thread, so a scan still reads one archive at a time.
-- With `--jobs 1`, the walking thread reads every file itself, as before.
-  With one detection thread, detection is the limit, and a second reading
-  thread made scans at most a few percent faster for much more CPU time.
-- If a reading thread cannot start, the threads that did start read the
-  files, or the walking thread reads them when none started.
+Archives, and compressed files such as `app.log.gz`, are read by the walking
+thread, so a scan still reads one archive at a time. With `--jobs 1`, the
+walking thread reads every file itself.
 
 #### More threads are not always faster
 
@@ -191,8 +156,7 @@ detection threads do not speed up:
 - For a folder, two threads read the files. When the detection threads scan
   pieces faster than these threads can open and read files, added threads
   wait. This happens first on folders with many small files, where opening
-  each file takes most of the time. More reading threads did not open files
-  faster on the host below.
+  each file takes most of the time.
 - For Git history, `git log -p` produces the input. Up to 6 `git log`
   processes run at the same time, one for each detection thread. Past that,
   history scans are usually limited by Git, not by detection threads. See
@@ -200,24 +164,19 @@ detection threads do not speed up:
 - Input with many matches, such as files dense with keywords, keeps gaining
   from more threads for longer, because detection is most of the work.
 
-On a 36-CPU host, `dir` scans of large public repositories were within 4
-percent of their best time at 12 threads and used about half the memory of
-36 threads. A folder of 100,000 small files was no faster with more than
-two threads. This is why the default stops at 12. To find the best value for
-your input, time a scan at a few `--jobs` values. To use less memory, set a
-lower value.
+To find the best value for your input, time a scan at a few `--jobs` values.
+To use less memory, set a lower value.
 
 ### Archives
 
 Rustleaks reads archives as streams. It decompresses and scans each member
 while it reads it, so memory does not grow with the size of a member or of
-the archive. Members are split into the same pieces as when Rustleaks read
-each member into memory first, so findings for those members do not change.
+the archive. A member is split into pieces in the same way as a file.
 
 ZIP and 7z archives need random access. An archive file found by `dir` is
 read in place. Any other ZIP or 7z input, such as one inside another archive
-or one read from Git, is first copied to
-temporary storage: in memory up to 1 MiB, and otherwise to a temporary file.
+or one read from Git, is first copied to temporary storage: in memory up to
+1 MiB, and otherwise to a temporary file.
 Zstandard and LZ4 streams that are not files on disk are copied in the same
 way, because Rustleaks checks their frame structure before it decodes them.
 TAR and the other compressed formats need no temporary storage.
@@ -296,45 +255,19 @@ A configuration or rule pack that exceeds these limits fails to load.
 
 ## Large inputs under the example profile
 
-This section shows what the [example
-profile](complete-scanning.md#the-profile-file) does with some large inputs.
-Use it to judge whether that profile fits your input. It is not a promise
-about other inputs, rules or releases.
+Some inputs need much more work or finding memory than their size suggests.
+Under the [example profile](complete-scanning.md#the-profile-file), they can
+stop a complete scan:
+
+- Many encoded values, such as one Base64 value on each line, can reach
+  `fragment_work_units` or `operation_work_units`. The native rule packs add
+  more work for each value.
+- Many findings on one long line can reach `fragment_finding_payload_bytes`,
+  because each finding keeps a copy of the whole line.
 
 A scan that stops at a limit is incomplete. It exits with 2, and its report
-can miss secrets. It is not a pass. In the runs below, a stopped scan reported
-none or only some of the GitHub tokens planted in its input.
-
-How the scans were run:
-
-- An optimized build from source.
-- All rules: the default rules plus the `rustleaks-extra-v1`,
-  `rustleaks-providers-v1` and `rustleaks-connections-v1` native packs.
-- `--complete-profile` with the example profile, `--max-decode-depth 5`,
-  `--max-archive-depth 0` and `--base64-mode compatible`.
-- Synthetic inputs with known GitHub tokens. Each row is one scan of one file,
-  or of one folder where the row says so.
-
-| Input | Size | Result | Limit that stopped the scan |
-| --- | --- | --- | --- |
-| A folder of 132 files with plain tokens, or of 186 files with Base64 tokens. Each file has one token, or one almost valid token, across byte 4,096. | 4,160 to 4,216 bytes per file | Complete. Every planted token was found once, on the right line. | None |
-| The same, with the token across byte 65,536, 100,000, 125,000, 153,672 or 182,344 | 65,600 to 182,464 bytes per file | Stopped. Each scan reported 7 to 16 of its 50 or 72 planted tokens. | `operation_work_units`, the limit for the whole scan |
-| One 64-byte JSON record per line. A token on every line, on every other line, or on no line. | 512 KiB and 2 MiB | Stopped. No planted token was reported. | `fragment_work_units`, the limit for one file |
-| The same records on one long line, with tokens | 512 KiB and 2 MiB | Stopped. No planted token was reported. | `fragment_finding_payload_bytes`, because each finding keeps a copy of the whole line |
-| The same records on one long line, without valid tokens | 512 KiB and 2 MiB | Stopped | `fragment_work_units` |
-| One Base64 value that holds 4,096 records, encoded once or twice | 289,467 and 385,951 bytes | Stopped. No planted token was reported. | `fragment_work_units` |
-| 20,000 lines, each the Base64 form of one token | 1,140,021 bytes | Stopped. No planted token was reported. | `fragment_work_units` |
-
-The last row comes from a separate scan, not from the fixture check that
-produced the other rows. It used the same options. A second run of that input
-with a much larger profile completed. It needed about 71 million work units in one file with `--base64-mode compatible`,
-and about 95 million with `--base64-mode extended`. The example profile allows
-10 million for one file. With the default rules alone, the same input
-completed under the example profile in both modes and needed less than 250,000
-work units.
-
-If your input looks like a stopped row, raise the limit that the status line
-names, run the scan again, and check that the status line says
+can miss secrets. It is not a pass. If this happens, raise the limit that the
+status line names, run the scan again, and check that the status line says
 `status=complete`. See [Complete scanning](complete-scanning.md#the-status-line).
 
 ## Memory

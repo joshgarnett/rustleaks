@@ -1,5 +1,5 @@
 //! Separate steady-operation protocol for profiling and calibration.
-//! This does not change representative or legacy measurements.
+//! This does not change representative or base workload measurements.
 
 use std::error::Error;
 use std::hint::black_box;
@@ -37,8 +37,8 @@ impl RepresentativeWorker {
         let mut fixture = Fixture::new(workload)?;
         let config = fixture.compile()?;
         if config.rules().len() != fixture.expected_rules
-            || fixture.expected_rules == 222
-                && super::super::config_metric(&config).fingerprint != 0xbba0_f636_d5a0_2d49
+            || fixture.expected_rules == crate::DEFAULT_RULES
+                && crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
         {
             return Err("investigation compiled rules differ".into());
         }
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn window_emits_ordered_legacy_samples_and_only_then_completion() {
+    fn window_emits_ordered_samples_and_only_then_completion() {
         let worker = Worker::new("core-mixed-1-kib").unwrap();
         for (blocks, extra, expected_scans) in [(1, 0, 1), (10, 1, 20)] {
             let mut records = Vec::new();

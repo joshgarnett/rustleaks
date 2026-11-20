@@ -184,6 +184,9 @@ def write_creddata(cache_root, checkout, max_problems, force):
             'path': data_relative,
             'size': {'bytes': total, 'files': file_count, 'commits': 0},
             'labels': CREDDATA_WORKLOAD + '/labels.jsonl',
+            # CredData labels only the lines its source tools reported, so a
+            # finding on an unlabeled line is unknown, not a false positive.
+            'labels_complete': False,
             'tuned': False,
         }],
     }

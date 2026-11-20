@@ -19,19 +19,16 @@ rustleaks_library(
     crate_name = "rustleaks_sources",
     deps = ["//crates/rustleaks-core:rustleaks_core"],
     edition = "2024",
-    version = "0.1.0-alpha.11",
 )
 
 rustleaks_library(
     name = "rustleaks_sources_archives",
-    aliases_extra = {"//crates/rustleaks-bzip2:rustleaks_bzip2": "bzip2_rs"},
     compile_data = ["//compat:fixtures"],
     crate_features = _ARCHIVE_FEATURES,
     crate_name = "rustleaks_sources",
     data = ["//compat:all"],
     deps = _ARCHIVE_DEPS,
     edition = "2024",
-    version = "0.1.0-alpha.11",
 )
 
 rustleaks_library(
@@ -41,7 +38,6 @@ rustleaks_library(
     docs = False,
     edition = "2024",
     unit_test = False,
-    version = "0.1.0-alpha.11",
     visibility = ["//visibility:public"],
 )
 
@@ -53,7 +49,6 @@ rustleaks_library(
     docs = False,
     edition = "2024",
     unit_test = False,
-    version = "0.1.0-alpha.11",
     visibility = ["//visibility:public"],
 )
 
@@ -109,7 +104,7 @@ rustleaks_integration_test(
         "fuzz/seeds/archive/zip-header.txt",
     ],
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -118,7 +113,7 @@ rustleaks_integration_test(
     crate_features = _ARCHIVE_FEATURES,
     data = ["//compat:all"],
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -130,7 +125,7 @@ rustleaks_integration_test(
     ],
     crate_features = _FUZZING_FEATURES,
     deps = [":profile_fuzzing"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -138,7 +133,7 @@ rustleaks_integration_test(
     src = "tests/security_stress.rs",
     crate_features = _ARCHIVE_FEATURES,
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
-    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:campaign_profile_support"],
+    srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 rustleaks_integration_test(
@@ -179,6 +174,7 @@ rustleaks_integration_test(
     src = "tests/directory_readers.rs",
     crate_features = _ARCHIVE_FEATURES,
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
+    srcs = [":archive_fuzz_support"],
 )
 
 rustleaks_integration_test(
@@ -200,7 +196,7 @@ rustleaks_integration_test(
         ] + _GIT_TEST_DATA + (["tests/support/git-fixture.sh"] if test == "git_sources" else []),
         deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
         env = _GIT_TEST_ENV,
-        srcs = ["tests/support/mod.rs"],
+        srcs = ["tests/support/mod.rs"] + ([":archive_fuzz_support"] if test in ["archive_sources", "git_history"] else []),
     )
     for test in [
         "archive_sources",

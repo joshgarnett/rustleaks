@@ -10,7 +10,7 @@ use rustleaks_sources::{
 };
 
 use super::archive_frame::{FORMAT_NAMES, Frame, HEADER_BYTES};
-use super::campaign_profile::Profile;
+use super::fuzz_profile::Profile;
 
 // Decoder memory caps use the member-byte limit. LZIP needs at least 42 KiB;
 // the reviewed compressed RAR3/RAR5 seeds declare 128 KiB windows. Keep the
@@ -100,7 +100,7 @@ pub fn exercise_with_profile(
 
 fn run(
     frame: &Frame<'_>,
-    caps: super::campaign_profile::ArchiveProfile,
+    caps: super::fuzz_profile::ArchiveProfile,
     input: impl Read + Send + 'static,
     observe: &mut dyn FnMut(&SourceEvent),
 ) -> (Observation, Vec<Recorded>) {

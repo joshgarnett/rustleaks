@@ -8,7 +8,6 @@ rustleaks_library(
     crate_name = "rustleaks_report",
     deps = ["//crates/rustleaks-core:rustleaks_core"],
     edition = "2024",
-    version = "0.1.0-alpha.11",
 )
 
 [
@@ -23,8 +22,6 @@ rustleaks_library(
         ],
     )
     for test in [
-        "triage",
-
         "report_corpus",
         "reporters",
         "template",
@@ -35,7 +32,7 @@ rustleaks_integration_test(
     name = "security_stress_test",
     src = "tests/security_stress.rs",
     deps = [":rustleaks_report", "//crates/rustleaks-core:rustleaks_core"],
-    srcs = ["//crates/rustleaks-core:campaign_profile_support"],
+    srcs = ["//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 test_suite(
@@ -50,8 +47,6 @@ test_suite(
 test_suite(
     name = "all_tests",
     tests = [
-        ":triage_test",
-
         ":report_corpus_test",
         ":reporters_test",
         ":rustleaks_report_doc_test",

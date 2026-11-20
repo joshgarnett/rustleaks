@@ -17,8 +17,11 @@ The packs live in `crates/rustleaks-core/default/` and are built into
 | `rustleaks-connections-v1` | 14 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
 
 - `<pack>.toml` holds the rules.
-- `<pack>.md` describes the pack: selection, rules, shared boundaries,
-  provenance, license and maintenance.
+- `<pack>.md` describes the pack for users: selection, rules, shared
+  boundaries, provenance and license. It ships in the crate package, so a
+  link that leaves the crate uses an absolute
+  `https://github.com/joshgarnett/rustleaks/blob/main/...` URL. Maintenance
+  notes for each pack are in [Notes for each pack](#notes-for-each-pack).
 - `<pack>.sha256` is the SHA-256 of the TOML file. It is generated. Never
   edit it by hand.
 - `<pack>.provenance.json` records, for each imported rule, the source,
@@ -282,8 +285,10 @@ any of these needs a concrete user need and a reviewed safety design.
   and `rustleaks-extra-v1` for the small first-party set.
 - A change that alters what an existing published pack detects needs a new
   pack ID. Ask the maintainer before you start.
-- Never edit the packaged default rules (`gitleaks.toml`). See
-  [Updating upstream](updating-upstream.md).
+- Changes to the shipped default rules
+  (`crates/rustleaks-core/default/gitleaks.toml`) follow [A detection
+  rule](architecture.md#a-detection-rule). Never edit the upstream copy in
+  `compat/config-corpus/default-gitleaks.toml`.
 
 ### Imported rules
 
@@ -314,15 +319,13 @@ To add or change a rule in the generated part:
 1. Edit the rule in `native_coverage/providers.toml` or `connections.toml`.
 2. Add or update its record in `native_coverage/reviewed.json`. The `native`
    object must equal the TOML rule, and `origin` holds the source details.
-3. Update the rule counts in
-   `crates/xtask/src/tooling/native_coverage_assets.rs` when you add a rule.
-4. Regenerate the pack, its provenance and the identity:
+3. Regenerate the pack, its provenance and the identity:
 
    ```sh
    cargo xtask generate native-pack-identity
    ```
 
-5. Check that the committed files match:
+4. Check that the committed files match:
 
    ```sh
    cargo xtask generate native-pack-identity --check
@@ -374,6 +377,72 @@ just quality-eval
 
 Never change a label to improve a detector result. See the
 [quality corpus README](../../compat/quality-corpus/README.md).
+
+### Notes for each pack
+
+These notes add to the steps above. A change in what a published pack
+detects needs a new pack ID.
+
+#### rustleaks-extra-v1
+
+- Tests: `native_rules.rs`, with the native loader and identity in
+  `native_policy.rs`.
+- Edit `rustleaks-extra-v1.toml` by hand, then regenerate the `.sha256`
+  identity with the generator. Never edit the digest by hand. The build
+  checks that it matches the TOML bytes.
+- A refresh needs a review of provider format changes, new independent test
+  cases and a new run of the quality comparison. Nothing is downloaded.
+- Quality evaluation: the [quality
+  corpus](../../compat/quality-corpus/README.md) compares the default rules
+  with and without this pack on the same inputs. It has Azure field orders,
+  repeats, invalid bytes, percent-encoded wrappers, MongoDB percent-encoded
+  user information, short passwords, templates and near misses. Sovereign
+  Azure endpoints and MongoDB IPv6 inputs are positive gap cases, not
+  negative examples.
+- The pack is accepted only when the comparison shows no lost held-out
+  positives, no new alerts on reviewed negatives and no unreviewed duplicate
+  alerts. The one reviewed duplicate is the `mongodb-provider-overlap` case,
+  where a synthetic MongoDB password has the shape of a GitHub token. These
+  cases are small structural controls, not a measure of accuracy on real
+  data.
+- Run `just quality-eval` for the current counts. A change must cite that
+  report and its source and configuration identity. A report that runs
+  successfully is not by itself an acceptance decision.
+
+#### rustleaks-providers-v1
+
+- Tests: `provider_rules.rs` covers the rules before the generated part, and
+  the Alibaba, Slack access and xAI supplements. The other files are in the
+  table under [Tests](#tests).
+- The tests use synthetic positives, near misses, entropy boundaries, exact
+  locations, ASCII and Unicode differences, invalid bytes, allowlists, old
+  and new format unions, generic overlap, identity and scan budgets. Some
+  tests compare with fixed smaller rule compositions and check that existing
+  specific findings stay. Fixtures are written by hand and never sent to a
+  provider. The tests are a regression contract, not a measure of accuracy
+  on real data.
+- All 3 packs with the default rules give 542 rules, including 32 hidden
+  helpers.
+- The build checks both pack digests and that the provider provenance is
+  consistent. Nothing is downloaded at build or run time.
+- A refresh needs a review of source changes, exact provenance and license
+  bytes, and an evaluation of changed predicates and overlaps.
+
+#### rustleaks-connections-v1
+
+- Tests: `connection_rules.rs` covers the 6 connection string forms, the
+  libpq forms, and quoted and braced controls. It also checks exact
+  locations, bounds, ASCII and Unicode differences, stopwords and findings
+  on the same line. Other cases cover adjacent connections, host-key
+  boundaries, allowlists, generic and provider overlap, composition
+  identity, decoding and scan budgets. The generated rules are also covered
+  by the coverage tests in the table under [Tests](#tests). These synthetic
+  tests are a regression contract, not a measure of accuracy on real data.
+- The generator checks the reviewed inventory and provenance before it
+  writes the hash. Check mode rejects changed patterns, missing predicates,
+  added rule fields, changed identities and license changes.
+- A change needs a source review, new independent expected results and a
+  versioned policy decision.
 
 ### Documentation and review
 

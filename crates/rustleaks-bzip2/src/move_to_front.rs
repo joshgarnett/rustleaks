@@ -19,13 +19,7 @@ impl MoveToFrontDecoder {
 
     pub fn decode(&mut self, n: u8) -> u8 {
         let b = self.symbols[usize::from(n)];
-        #[cfg(feature = "rustc_1_37")]
         self.symbols.copy_within(..usize::from(n), 1);
-        #[cfg(not(feature = "rustc_1_37"))]
-        {
-            let symbols = self.symbols;
-            self.symbols[1..=usize::from(n)].copy_from_slice(&symbols[..usize::from(n)]);
-        }
         self.symbols[0] = b;
 
         b

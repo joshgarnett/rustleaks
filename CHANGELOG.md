@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+- Fix `--redact` with `--verbose`: the `Required:` lines of composite rules
+  (`[[rules.required]]`) printed helper values, such as client IDs, in full.
+  They are now masked with the same percent as the main secret. Reports did
+  not include these values and do not change.
+- A 7z archive that needs more memory than its limit is now reported as a
+  limit warning, like other limits. It was reported as a decode error, which
+  looked like a broken archive. Findings and exit codes do not change.
+- The error for a missing required rule no longer shows the rule ID after
+  `config path=`. Some other CLI messages use plainer words.
+- `ScanOptions::honor_gitleaks_allow` and
+  `ScanOptionsBuilder::honor_gitleaks_allow` are deprecated. Use
+  `honor_allow_markers`, which has the same meaning.
+- The `rustleaks-core` package no longer includes the test suite, which
+  needed files outside the package. The crate documentation on docs.rs now
+  starts with the README.
+- The 7z, bzip2 and RAR decoder forks keep only the code that
+  `rustleaks-sources` uses. Decoding does not change.
+- Maintainer tools: `cargo xtask qualify` now checks only a clean candidate
+  tree, the bounded composite resource tests, the public API snapshot and the
+  minimum Rust version, since other gates run the rest. The performance
+  budgets for one host class are removed; releases compare the previous
+  release with the candidate using the scanner comparison instead. Eleven
+  unused `cargo xtask` commands and checks that repeated hash-pinned evidence
+  checks are removed. The CredData comparison workload scores findings on
+  unlabeled lines as unknown, not as false positives. `default_rules_test`
+  now runs with the other tests.
+- The documentation separates user guides from developer guides, describes
+  the current compatibility policy and lists the developer docs in
+  `docs/dev/README.md`.
+
 ## [0.1.0-alpha.11] - 2026-11-20
 
 - Use less CPU with several detection threads. Idle threads used to queue on

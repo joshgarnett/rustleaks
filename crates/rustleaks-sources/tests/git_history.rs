@@ -5,7 +5,14 @@
 //! with one process, and scans it again with several processes and small
 //! batches. `GIT_TRACE` records which Git commands ran, so each test also
 //! checks whether batches were used.
+#![forbid(unsafe_code)]
 
+#[path = "../fuzz/support/archive_frame.rs"]
+#[allow(dead_code)]
+mod archive_frame;
+#[path = "../fuzz/support/archive_seeds.rs"]
+#[allow(dead_code)]
+mod archive_seeds;
 mod support;
 
 use std::ffi::OsString;
@@ -17,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use archive_seeds::synthetic_tar;
 use rustleaks_sources::{
     ArchiveLimits, ArchiveOptions, CancellationToken, GitLimits, GitMode, GitSource, Source,
     SourceControl, SourceError, SourceEvent, SourceIssueKind, SourceStage,
@@ -267,27 +275,6 @@ fn lines(label: &str, count: usize) -> Vec<u8> {
     text.into_bytes()
 }
 
-/// A TAR archive with one member.
-fn tar(name: &[u8], body: &[u8]) -> Vec<u8> {
-    let mut header = [0_u8; 512];
-    header[..name.len()].copy_from_slice(name);
-    header[100..107].copy_from_slice(b"0000644");
-    header[108..115].copy_from_slice(b"0000000");
-    header[116..123].copy_from_slice(b"0000000");
-    header[124..135].copy_from_slice(format!("{:011o}", body.len()).as_bytes());
-    header[136..147].copy_from_slice(b"00000000000");
-    header[156] = b'0';
-    header[257..263].copy_from_slice(b"ustar\0");
-    header[263..265].copy_from_slice(b"00");
-    header[148..156].fill(b' ');
-    let sum: u32 = header.iter().map(|byte| u32::from(*byte)).sum();
-    header[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
-    let mut archive = header.to_vec();
-    archive.extend_from_slice(body);
-    archive.resize(archive.len().next_multiple_of(512) + 1024, 0);
-    archive
-}
-
 /// A history with merges, renames, copies, binary files, CRLF, quoted paths,
 /// a symbolic link, mode and delete-only commits, an empty commit, two roots,
 /// several branches, a tag that only `--all` reaches, and commit dates out of
@@ -353,7 +340,7 @@ fn rich_history() -> History {
             19 => Vec::new(),
             21 => vec![write(
                 b"pkg/bundle.tar",
-                tar(b"inner.txt", b"archived value=SYNTHETICTAR0001\n"),
+                synthetic_tar(&[("inner.txt", b"archived value=SYNTHETICTAR0001\n")]),
             )],
             23 => vec![write(b"no-newline.txt", b"last line value=SYNTHETICEOF")],
             _ => vec![write(b"src/main.txt", &grown)],

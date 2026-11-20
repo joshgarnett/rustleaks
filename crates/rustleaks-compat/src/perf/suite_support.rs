@@ -16,9 +16,6 @@ use super::source_scale_workloads::github_token;
 
 pub(super) type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// Rules in the pinned default configuration.
-pub(super) const DEFAULT_RULES: usize = 222;
-
 /// The packaged native rule packs, in the order the CLI documents them.
 pub(super) const PACKS: [(&str, &str); 3] = [
     ("rustleaks-extra-v1", EXTRA_RULES_V1),
@@ -110,33 +107,36 @@ pub(super) fn keyword_census(config: &CompiledConfig, filler: &[u8]) -> Result<(
     Ok(())
 }
 
-/// Go `shannonEntropy` over bytes, used only to check that planted values pass
-/// the `github-pat` entropy threshold of 3.
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "byte counts are small and the check uses a wide margin"
-)]
-pub(super) fn shannon_entropy(value: &[u8]) -> f64 {
-    let mut counts = [0_usize; 256];
-    for byte in value {
+/// Upstream `shannonEntropy`, summed in ascending symbol order. Go iterates a
+/// map, so that order is the canonical choice among Go's admissible results.
+/// Every planted secret is ASCII, which makes bytes and runes equivalent.
+pub(super) fn go_entropy(secret: &[u8]) -> Result<f64> {
+    if !secret.is_ascii() {
+        return Err("planted secret must be ASCII".into());
+    }
+    if secret.is_empty() {
+        return Ok(0.0);
+    }
+    let mut counts = [0_u32; 128];
+    for byte in secret {
         counts[usize::from(*byte)] += 1;
     }
-    let length = value.len() as f64;
-    counts
+    #[allow(clippy::cast_precision_loss)] // Secret lengths are far below 2^52.
+    let inverse_length = 1.0 / secret.len() as f64;
+    Ok(counts
         .iter()
         .filter(|count| **count > 0)
-        .map(|count| {
-            let frequency = *count as f64 / length;
-            -frequency * frequency.log2()
-        })
-        .sum()
+        .fold(0.0, |entropy, count| {
+            let frequency = f64::from(*count) * inverse_length;
+            entropy - frequency * frequency.log2()
+        }))
 }
 
 /// A GitHub classic token from the shared generator, checked against the
 /// `github-pat` entropy threshold with a wide margin.
 pub(super) fn checked_github_token(index: usize) -> Result<Vec<u8>> {
     let token = github_token(index);
-    if shannon_entropy(&token) < 3.5 {
+    if go_entropy(&token)? < 3.5 {
         return Err("synthetic GitHub token has too little entropy".into());
     }
     Ok(token)
@@ -175,7 +175,7 @@ pub(super) struct PackSelection {
 
 pub(super) fn pack_selection(ids: &[&str]) -> Result<PackSelection> {
     let mut packs = Vec::with_capacity(ids.len());
-    let mut rules = DEFAULT_RULES;
+    let mut rules = crate::DEFAULT_RULES;
     let mut identity = b"default".to_vec();
     for id in ids {
         let (name, contents) = *PACKS
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn entropy_matches_known_values() {
-        assert!((shannon_entropy(b"aaaa") - 0.0).abs() < 1e-12);
-        assert!((shannon_entropy(b"abcd") - 2.0).abs() < 1e-12);
+        assert!((go_entropy(b"aaaa").unwrap() - 0.0).abs() < 1e-12);
+        assert!((go_entropy(b"abcd").unwrap() - 2.0).abs() < 1e-12);
     }
 }

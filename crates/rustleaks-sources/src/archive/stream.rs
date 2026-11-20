@@ -72,6 +72,17 @@ impl Failure {
     }
 }
 
+/// Returns the message of a wrapped [`Failure::Limit`].
+pub(super) fn limit(error: &io::Error) -> Option<&str> {
+    match error
+        .get_ref()
+        .and_then(<dyn std::error::Error + Send + Sync>::downcast_ref::<Failure>)
+    {
+        Some(Failure::Limit(message)) => Some(message),
+        _ => None,
+    }
+}
+
 fn is_failure(error: &io::Error) -> bool {
     error
         .get_ref()
@@ -207,25 +218,25 @@ impl Read for Body<'_> {
 
 /// Feeds one member to the file scanner and keeps its first failure.
 ///
-/// With `fill`, each read fills the buffer unless the member ends, which is
-/// how an in-memory member was read, so fragments do not depend on how the
-/// decoder splits its output. Without `fill`, read sizes pass through. A
-/// failure ends the member: a legacy scan sees the end of input and keeps
-/// the bytes before it, and a complete scan sees an error.
+/// With `fill`, each read fills the buffer unless the member ends, so
+/// fragments do not depend on how the decoder splits its output. Without
+/// `fill`, read sizes pass through. A failure ends the member: a chunked scan
+/// sees the end of input and keeps the bytes before it. With `complete`, the
+/// reader is part of a complete scan, which sees an error.
 pub(super) struct MemberReader<'a> {
     inner: &'a mut dyn Read,
     fill: bool,
-    loud: bool,
+    complete: bool,
     ended: bool,
     failure: Option<Failure>,
 }
 
 impl<'a> MemberReader<'a> {
-    pub(super) fn new(inner: &'a mut dyn Read, fill: bool, loud: bool) -> Self {
+    pub(super) fn new(inner: &'a mut dyn Read, fill: bool, complete: bool) -> Self {
         Self {
             inner,
             fill,
-            loud,
+            complete,
             ended: false,
             failure: None,
         }
@@ -238,7 +249,7 @@ impl<'a> MemberReader<'a> {
     fn fail(&mut self, error: io::Error) -> io::Result<()> {
         self.ended = true;
         self.failure = Some(Failure::from_io(error));
-        if self.loud {
+        if self.complete {
             return Err(io::Error::other("archive member could not be read"));
         }
         Ok(())
@@ -357,9 +368,9 @@ impl Read for Metered<'_> {
 
 /// Reads a 7z member in reads of one chunk, as the decoder returns them.
 ///
-/// A 7z member was first read into memory with chunk-sized reads, and the
-/// file scanner then saw those read sizes again. This reader keeps one chunk
-/// and gives the scanner the same read sizes without holding the member.
+/// The file scanner sees reads of one chunk from a 7z member. This reader
+/// keeps one chunk and gives the scanner those read sizes without holding
+/// the whole member.
 pub(super) struct Replay<'a> {
     inner: &'a mut dyn Read,
     chunk: Vec<u8>,

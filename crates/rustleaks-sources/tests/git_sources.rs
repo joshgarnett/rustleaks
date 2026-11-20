@@ -1,4 +1,5 @@
 //! Isolated native Git subprocess coverage.
+#![forbid(unsafe_code)]
 
 mod support;
 
@@ -6,13 +7,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use rustleaks_core::model::Fragment;
 #[cfg(feature = "archives")]
 use rustleaks_sources::ArchiveOptions;
 use rustleaks_sources::{
     CallbackError, CancellationToken, GitLimits, GitMode, Source, SourceControl, SourceError,
     SourceEvent, SourceIssueKind, SourceStage,
 };
+
+use support::collect;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -59,27 +61,6 @@ fn copy_tree(source: &Path, destination: &Path) {
             fs::copy(entry.path(), target).expect("copy fixture file");
         }
     }
-}
-
-fn collect(source: &mut dyn Source) -> (Vec<Fragment>, Vec<SourceIssueKind>) {
-    let mut fragments = Vec::new();
-    let mut issues = Vec::new();
-    source
-        .visit(&CancellationToken::new(), &mut |event| {
-            match event {
-                SourceEvent::Fragment { fragment, issue } => {
-                    fragments.push(*fragment);
-                    if let Some(issue) = issue {
-                        issues.push(issue.kind());
-                    }
-                }
-                SourceEvent::Issue(issue) => issues.push(issue.kind()),
-                _ => panic!("unexpected future Git source event"),
-            }
-            Ok(SourceControl::Continue)
-        })
-        .expect("Git source succeeds");
-    (fragments, issues)
 }
 
 #[cfg(unix)]

@@ -1,7 +1,7 @@
 {
  "generators": {
-  "cli-synthetic-v1": "crates/xtask/src/comparison_workloads/legacy.txt",
-  "rustleaks-synthetic-v2": "crates/xtask/src/comparison_workloads/synthetic.txt"
+  "cli-synthetic-v1": "crates/xtask/src/comparison_workloads/tuned_synthetic.py",
+  "rustleaks-synthetic-v2": "crates/xtask/src/comparison_workloads/synthetic.py"
  },
  "regenerate": "cargo xtask compare-workloads generate --cache DIR --write-manifest",
  "schema": "rustleaks-comparison-workloads-v1",

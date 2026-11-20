@@ -66,7 +66,7 @@ impl Hasher {
         self.value = crc;
     }
 
-    pub const fn finalyze(&self) -> u32 {
+    pub const fn finalize(&self) -> u32 {
         !self.value
     }
 }
@@ -103,14 +103,14 @@ mod tests {
     fn matches_the_bzip2_check_value() {
         let mut hasher = Hasher::new();
         hasher.update(b"123456789");
-        assert_eq!(hasher.finalyze(), 0xfc89_1918);
+        assert_eq!(hasher.finalize(), 0xfc89_1918);
     }
 
     #[test]
     fn matches_the_bzip2_empty_input_value() {
         let mut hasher = Hasher::new();
         hasher.update(b"");
-        assert_eq!(hasher.finalyze(), 0);
+        assert_eq!(hasher.finalize(), 0);
     }
 
     #[test]

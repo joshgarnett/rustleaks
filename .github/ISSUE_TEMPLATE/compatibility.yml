@@ -1,11 +1,11 @@
 name: Compatibility gap
-description: Report a functional difference between Rustleaks and the pinned Gitleaks revision.
+description: Report a Gitleaks configuration, ignore file, baseline, report field or exit code that Rustleaks does not handle as documented, or a finding difference that loses a secret or is not listed in Differences from Gitleaks.
 title: "compat: "
 body:
   - type: markdown
     attributes:
       value: |
-        The compatibility policy is in docs/user/gitleaks-differences.md. Use this form for functional differences, such as findings, spans, fingerprints, report fields, configuration meaning, or exit codes. A difference only in help, usage, error wording, or log text is not a compatibility gap; use the defect or feature form. Do not include live credentials or private vulnerability details.
+        Read docs/user/gitleaks-differences.md first. Differences listed there are intended. Use this form when Rustleaks does not handle a Gitleaks configuration, ignore file, baseline, report field or exit code as documented, or when a finding difference loses a secret or is not listed there. A difference only in help, usage, error wording or log text is not a compatibility gap; use the defect or feature form. Do not include live credentials or private vulnerability details.
   - type: dropdown
     id: domain
     attributes:

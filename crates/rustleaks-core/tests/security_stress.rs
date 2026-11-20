@@ -3,11 +3,11 @@
 #![allow(missing_docs)]
 
 #[allow(dead_code)]
-#[path = "support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "support/fuzz_profile.rs"]
+mod fuzz_profile;
 
 use base64::Engine as _;
-use campaign_profile::{DEEP_INPUT_BYTES, Profile, TARGETS, deep_seed};
+use fuzz_profile::{DEEP_INPUT_BYTES, Profile, TARGETS, deep_seed};
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, RawConfig, RuleSpec};
 use rustleaks_core::model::{Finding, Fragment, Location, ScanOptions};
 use rustleaks_core::session::{Baseline, SessionPolicy, SuppressionReason};
@@ -84,7 +84,7 @@ fn security_stress_driver() {
 
 fn regex_tail_is_scanned() {
     let input = deep_seed("go_regex").unwrap();
-    let (pattern, haystack) = campaign_profile::regex_parts(&input, Profile::Deep).unwrap();
+    let (pattern, haystack) = fuzz_profile::regex_parts(&input, Profile::Deep).unwrap();
     let engine = engine(std::str::from_utf8(pattern).unwrap());
     let outcome = engine.scan_fragment(&Fragment::new(haystack), &ScanOptions::default());
     assert!(outcome.is_complete());
@@ -93,7 +93,7 @@ fn regex_tail_is_scanned() {
         outcome.findings()[0].match_range().exact().unwrap().end(),
         haystack.len()
     );
-    let (_, small) = campaign_profile::regex_parts(&input, Profile::Smoke).unwrap();
+    let (_, small) = fuzz_profile::regex_parts(&input, Profile::Smoke).unwrap();
     assert!(
         engine
             .scan_fragment(&Fragment::new(small), &ScanOptions::default())
@@ -108,7 +108,7 @@ fn regex_tail_is_scanned() {
 
 fn session_retains_large_metadata() {
     let input = deep_seed("session").unwrap();
-    let (baseline, ignore, body) = campaign_profile::session_parts(&input, Profile::Deep);
+    let (baseline, ignore, body) = fuzz_profile::session_parts(&input, Profile::Deep);
     assert!(Baseline::from_go_json(baseline).is_ok());
     assert!(ignore.is_empty());
     let body = &body[1..];

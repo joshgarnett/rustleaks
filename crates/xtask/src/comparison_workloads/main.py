@@ -1,0 +1,678 @@
+# Command line, generation bookkeeping, verification and self-test.
+
+TUNED_KEYS = ('description', 'analogy', 'decode_depth', 'archive_depth', 'git_log_options', 'git_base',
+               'git_head', 'git_staged', 'heldout')
+DESCRIPTIONS = {
+    'keyword-dense': 'Configuration and text files dense in key=, token: and password words with non-secret values',
+    'entropy-negatives': 'Lockfiles, checksum lists and ID tables full of hashes, UUIDs and integrity strings',
+    'mixed-source': 'Source files in 12 languages with varied line lengths and keyword use in code',
+    'minified': 'Minified JavaScript and CSS with lines up to 2 MiB and inline data URIs',
+    'binary-mix': 'Images, shared objects, stored jar archives and fonts mixed with source files',
+    'dense-github-pat-lines': 'One distinct GitHub token shape per line',
+    'dense-github-pat-single-line': 'Distinct GitHub token shapes separated by spaces on one line',
+    'dense-generic-single-line': "Generic api_key = '...' assignments repeated on one line",
+    'dense-planetscale-pairs': 'PlanetScale database ID and token line pairs',
+    'dense-base64-uris': 'Database URIs with passwords, Base64 encoded as one line',
+    'long-line': 'One minified line of 16 MiB with eight planted values',
+    'git-many-branches': 'Trunk of 50 commits and 1,000 branches with two commits each',
+    'git-merges': '200 topic branches merged with merge commits; 10 merges add content of their own',
+    'git-huge-hunk': 'One commit replaces all 32,768 lines of a file',
+    'git-many-small-files': 'One commit changes one line in each of 10,000 files',
+    'git-renames': 'Pure renames, renames with edits, and one rename among 1,000 modifications',
+}
+
+
+def tuned_entry_path(workload):
+    return workload['input']
+
+
+def inventory_root(cache, path):
+    target = cache / path
+    return target if target.is_dir() else target.parent
+
+
+def synthetic_inventory(cache, git, environment, entry, path, labels_path):
+    root = inventory_root(cache, path)
+    inventory = file_inventory(root)
+    summary = None
+    if (root / '.git').is_dir():
+        summary = git_summary(git, root, environment)
+    elif root.name == 'history' and (root.parent / '.git').is_dir():
+        summary = git_summary(git, root.parent, environment)
+    labels_sha256 = sha256_file(labels_path)
+    identity = {'files_sha256': inventory['files_sha256'], 'labels_sha256': labels_sha256,
+                'git': None if summary is None else {key: summary[key] for key in
+                                                     ('head', 'refs_sha256', 'commits_sha256', 'commit_count')}}
+    return dict(inventory, git=summary, labels_sha256=labels_sha256,
+                inventory_sha256=sha256_bytes(canonical_json(identity)))
+
+
+def label_counts(labels):
+    counts = {'secret': 0, 'not-secret': 0}
+    for record in labels:
+        counts[record['label']] += 1
+    return counts
+
+
+def command_generate(arguments, source_root):
+    require_posix('generate')
+    cache = resolve_cache(arguments.cache, source_root)
+    catalog = synthetic_catalog()
+    if arguments.only:
+        wanted = set(item for item in arguments.only.split(',') if item)
+        unknown = wanted - set(entry['id'] for entry in catalog)
+        if unknown:
+            fail('unknown workload ids: %s' % ', '.join(sorted(unknown)))
+        catalog = [entry for entry in catalog if entry['id'] in wanted]
+    sizes = set(int(item) for item in arguments.sizes.split(',') if item)
+    catalog = [entry for entry in catalog if entry.get('shape') not in MAIN_SHAPES
+               or entry['params']['bytes'] // MIB in sizes]
+    git = find_git(arguments.git)
+    environment = git_environment(cache / '.home')
+    tuned = {}
+    if any(entry['generator'] == COMPARISON_FIXTURE_VERSION for entry in catalog):
+        print_line('generating the 19 tuned workloads')
+        tuned = tuned_generate(cache, git, arguments.scale)
+        # The recipe rewrites all 19 folders, so record all 19 inventories.
+        listed = set(entry['id'] for entry in catalog)
+        catalog = [entry for entry in synthetic_catalog()
+                   if entry['generator'] == COMPARISON_FIXTURE_VERSION and entry['id'] not in listed] + catalog
+    for entry in catalog:
+        identity = entry['id']
+        if entry['generator'] == COMPARISON_FIXTURE_VERSION:
+            workload = tuned[identity]
+            labels = tuned_labels(workload)
+            path = tuned_entry_path(workload)
+            details = {'mode': workload['mode'], 'commit_count': workload.get('commit_count', 0),
+                       'params': {key: workload[key] for key in TUNED_KEYS if key in workload}}
+        else:
+            print_line('generating %s' % identity)
+            labels, extra = generate_entry(cache, git, entry, arguments.scale)
+            shape = entry['shape']
+            path = 'synthetic/' + identity
+            executables = extra.pop('executable_paths', [])
+            details = {'mode': 'git' if shape in GIT_SHAPES else 'dir', 'executable_paths': executables,
+                       'commit_count': extra.get('commits', 0), 'params': dict(entry['params'], **extra)}
+        labels_path = cache / 'labels' / 'synthetic' / (identity + '.jsonl')
+        write_labels(labels_path, labels)
+        inventory = synthetic_inventory(cache, git, environment, entry, path, labels_path)
+        record = {'schema': INVENTORY_SCHEMA, 'set': 'synthetic', 'workload': identity,
+                  'generator': entry['generator'], 'seed': entry['seed'], 'scale': arguments.scale,
+                  'path': path, 'labels': 'labels/synthetic/%s.jsonl' % identity,
+                  'label_counts': label_counts(labels), **details, **inventory}
+        write_json(cache / 'inventory' / 'synthetic' / (identity + '.json'), record)
+        print_line('  %s: %d files, %d bytes, %d labels' % (identity, inventory['file_count'], inventory['bytes'],
+                                                         len(labels)))
+    if arguments.write_manifest:
+        if arguments.scale != 'full' or arguments.only or sizes != set(SIZE_SERIES):
+            fail('--write-manifest needs a full-scale run of every workload')
+        write_synthetic_manifest(cache, source_root)
+
+
+def synthetic_manifest_entry(entry, record):
+    shape = entry.get('shape')
+    if entry['generator'] == COMPARISON_FIXTURE_VERSION:
+        description = record['params'].get('description', '')
+    else:
+        description = DESCRIPTIONS[shape]
+    return {
+        'id': entry['id'], 'family': 'synthetic', 'modes': [record['mode']],
+        'description': description,
+        'source': {'kind': 'generated', 'generator': entry['generator'], 'params': record['params'],
+                   'seed': entry['seed']},
+        'path': record['path'],
+        'size': {'bytes': record['bytes'], 'files': record['file_count'], 'commits': record['commit_count']},
+        'labels': record['labels'], 'label_counts': record['label_counts'], 'tuned': entry['tuned'],
+        'expected': {'inventory_sha256': record['inventory_sha256'], 'files_sha256': record['files_sha256'],
+                     'labels_sha256': record['labels_sha256'],
+                     'git_head': record['git']['head'] if record['git'] else None},
+    }
+
+
+def smoke_digests(root, git):
+    # Digest of every workload at smoke scale, split by whether Git is needed.
+    # The self-test recomputes these to find a generator change that was not
+    # followed by a new manifest.
+    root = pathlib.Path(root)
+    parts = {'files': {}, 'git': {}}
+    if git is not None:
+        for identity, workload in sorted(tuned_generate(root, git, 'smoke').items()):
+            path = root / 'smoke-labels.jsonl'
+            write_labels(path, tuned_labels(workload))
+            parts['git'][identity] = [file_inventory(inventory_root(root, workload['input']))['files_sha256'],
+                                      sha256_file(path)]
+    for entry in synthetic_catalog():
+        if entry['generator'] != SYNTHETIC_VERSION or (git is None and entry['shape'] in GIT_SHAPES):
+            continue
+        labels, _ = generate_entry(root, git, entry, 'smoke')
+        path = root / 'smoke-labels.jsonl'
+        write_labels(path, labels)
+        target = root / 'synthetic' / entry['id']
+        files = file_inventory(target)['files_sha256']
+        if entry['shape'] in GIT_SHAPES:
+            parts['git'][entry['id']] = [files, sha256_file(path), git_summary(
+                git, target, git_environment(root / '.home'))['commits_sha256']]
+        else:
+            parts['files'][entry['id']] = [files, sha256_file(path)]
+        remove_tree(target)
+    return {key: sha256_bytes(canonical_json(value)) for key, value in parts.items() if value}
+
+
+def write_synthetic_manifest(cache, source_root):
+    workloads = []
+    for entry in synthetic_catalog():
+        record = read_json(cache / 'inventory' / 'synthetic' / (entry['id'] + '.json'))
+        if record['scale'] != 'full':
+            fail('%s was not generated at full scale' % entry['id'])
+        workloads.append(synthetic_manifest_entry(entry, record))
+    scratch = fresh_directory(cache / '.smoke')
+    try:
+        digests = smoke_digests(scratch, find_git(None))
+    finally:
+        remove_tree(scratch)
+    manifest = {'schema': WORKLOADS_SCHEMA, 'set': 'synthetic', 'smoke_digests': digests,
+                'generators': {COMPARISON_FIXTURE_VERSION: 'crates/xtask/src/comparison_workloads/tuned_synthetic.py',
+                               SYNTHETIC_VERSION: 'crates/xtask/src/comparison_workloads/synthetic.py'},
+                'regenerate': 'cargo xtask compare-workloads generate --cache DIR --write-manifest',
+                'workloads': workloads}
+    write_json(pathlib.Path(source_root) / MANIFEST_DIRECTORY / 'synthetic.json', manifest)
+    print_line('wrote %s/synthetic.json with %d workloads' % (MANIFEST_DIRECTORY, len(workloads)))
+
+
+def verify_synthetic(cache, source_root, only, git, environment):
+    manifest = load_manifest(source_root, 'synthetic')
+    expected = {workload['id']: workload for workload in manifest['workloads']}
+    checked = 0
+    missing = []
+    for entry in synthetic_catalog():
+        if only and entry['id'] not in only:
+            continue
+        path = cache / 'inventory' / 'synthetic' / (entry['id'] + '.json')
+        if not path.is_file():
+            missing.append(entry['id'])
+            continue
+        record = read_json(path)
+        current = synthetic_inventory(cache, git, environment, entry, record['path'], cache / record['labels'])
+        if current['inventory_sha256'] != record['inventory_sha256']:
+            fail('%s changed since generation (files, labels or Git history differ)' % entry['id'])
+        if record['scale'] == 'full' and entry['id'] in expected:
+            if expected[entry['id']]['expected']['inventory_sha256'] != record['inventory_sha256']:
+                fail('%s does not match synthetic.json; regenerate it' % entry['id'])
+            note = 'matches synthetic.json'
+        else:
+            note = 'matches its %s-scale inventory' % record['scale']
+        print_line('ok %s: %s' % (entry['id'], note))
+        checked += 1
+    return checked, missing
+
+
+def verify_matrix(cache, source_root, only):
+    manifest = load_manifest(source_root, 'fixtures-matrix')
+    checked = 0
+    missing = []
+    for workload in manifest['workloads']:
+        if only and workload['id'] not in only:
+            continue
+        path = cache / 'inventory' / 'fixtures-matrix' / (workload['id'] + '.json')
+        if not path.is_file():
+            missing.append(workload['id'])
+            continue
+        record = read_json(path)
+        pinned = workload['source'].get('commit')
+        if pinned and record['source'].get('commit') != pinned:
+            fail('%s was built from %s, but the manifest pins %s' % (
+                workload['id'], record['source'].get('commit'), pinned))
+        inventory = file_inventory(cache / workload['path'], skip_git=False)
+        if inventory['files_sha256'] != record['files_sha256']:
+            fail('%s files changed since the matrix was built' % workload['id'])
+        if sha256_file(cache / workload['labels']) != record['labels_sha256']:
+            fail('%s labels changed since the matrix was built' % workload['id'])
+        counts = workload.get('expected', {})
+        for key in ('cases', 'labels'):
+            if key in counts and counts[key] != record[key]:
+                fail('%s has %d %s, the manifest records %d' % (workload['id'], record[key], key, counts[key]))
+        print_line('ok %s: %d cases, %d labels' % (workload['id'], record['cases'], record['labels']))
+        checked += 1
+    return checked, missing
+
+
+def verify_repos(cache, source_root, only, git, environment, deep, mode):
+    manifest = load_manifest(source_root, 'public-repos')
+    checked = 0
+    missing = []
+    for workload in manifest['workloads']:
+        if only and workload['id'] not in only:
+            continue
+        destination = cache / workload['path']
+        if not (destination / 'fetch.json').is_file():
+            missing.append(workload['id'])
+            continue
+        history = 'git' in workload_modes(workload, mode)
+        record = verify_repository(git, environment, workload['source']['commit'], destination, deep, history)
+        print_line('ok %s: %s, %d files%s' % (workload['id'], workload['source']['commit'][:12],
+                                             record['tree']['files'],
+                                             ', %d commits' % record['commit_count'] if record['history'] else ''))
+        checked += 1
+    return checked, missing
+
+
+def command_verify(arguments, source_root):
+    cache = resolve_cache(arguments.cache, source_root)
+    only = set(item for item in (arguments.only or '').split(',') if item)
+    git = find_git(arguments.git)
+    environment = git_environment(cache / '.home')
+    sets = ('public-repos', 'synthetic', 'fixtures-matrix') if arguments.set == 'all' else (arguments.set,)
+    total = 0
+    absent = []
+    for name in sets:
+        if name == 'public-repos':
+            checked, missing = verify_repos(cache, source_root, only, git, environment, arguments.deep,
+                                            arguments.mode)
+        elif name == 'synthetic':
+            checked, missing = verify_synthetic(cache, source_root, only, git, environment)
+        else:
+            checked, missing = verify_matrix(cache, source_root, only)
+        total += checked
+        absent += ['%s/%s' % (name, item) for item in missing]
+    if only and absent:
+        fail('requested workloads are not in the cache: %s' % ', '.join(absent))
+    print_line('verified %d workloads; %d listed workloads are not in the cache' % (total, len(absent)))
+    if not total:
+        fail('nothing to verify in %s' % cache)
+
+
+def parser():
+    top = argparse.ArgumentParser(prog='cargo xtask compare-workloads')
+    top.add_argument('--source-root', required=True)
+    commands = top.add_subparsers(dest='command')
+    fetch = commands.add_parser('fetch', help='fetch pinned public repositories')
+    fetch.add_argument('--cache', required=True)
+    fetch.add_argument('--set', default='public-repos')
+    fetch.add_argument('--only')
+    fetch.add_argument('--mode', choices=('manifest', 'dir', 'git', 'both'), default='manifest')
+    fetch.add_argument('--allow-large', action='store_true')
+    fetch.add_argument('--force', action='store_true', help='fetch again even when verification passes')
+    fetch.add_argument('--git')
+    generate = commands.add_parser('generate', help='generate synthetic workloads')
+    generate.add_argument('--cache', required=True)
+    generate.add_argument('--only')
+    generate.add_argument('--sizes', default=','.join(str(size) for size in SIZE_SERIES))
+    generate.add_argument('--scale', choices=('full', 'smoke'), default='full')
+    generate.add_argument('--write-manifest', action='store_true')
+    generate.add_argument('--git')
+    matrix = commands.add_parser('matrix', help='build the home-fixtures matrix')
+    matrix.add_argument('--cache', required=True)
+    matrix.add_argument('--tools')
+    matrix.add_argument('--offline', action='store_true', help='reuse fetched upstream sources')
+    matrix.add_argument('--git')
+    verify = commands.add_parser('verify', help='check cached workloads before a run')
+    verify.add_argument('--cache', required=True)
+    verify.add_argument('--set', choices=('all', 'public-repos', 'synthetic', 'fixtures-matrix'), default='all')
+    verify.add_argument('--only')
+    verify.add_argument('--deep', action='store_true', help='also run git fsck on full histories')
+    verify.add_argument('--mode', choices=('manifest', 'dir', 'git', 'both'), default='manifest',
+                        help='modes that fetched repositories must support')
+    verify.add_argument('--git')
+    commands.add_parser('self-test', help='run the offline self-test')
+    return top
+
+
+def main(argv):
+    arguments = parser().parse_args(argv)
+    source_root = pathlib.Path(arguments.source_root).resolve()
+    try:
+        if arguments.command == 'fetch':
+            command_fetch(arguments, source_root)
+        elif arguments.command == 'generate':
+            command_generate(arguments, source_root)
+        elif arguments.command == 'matrix':
+            command_matrix(arguments, source_root)
+        elif arguments.command == 'verify':
+            command_verify(arguments, source_root)
+        elif arguments.command == 'self-test':
+            self_test(source_root)
+        else:
+            parser().print_usage(sys.stderr)
+            return 2
+    except WorkloadError as error:
+        sys.stderr.write('compare-workloads: %s\n' % error)
+        return 1
+    return 0
+
+
+# Self-test. Offline, tiny synthetic data only. A local Git repository stands
+# in for a remote when `git` is available.
+
+def check(condition, message):
+    if not condition:
+        fail('self-test: ' + message)
+
+
+def check_labels(cache, label_path, workload_path, contents=None):
+    count = 0
+    with open(label_path, 'rb') as stream:
+        for line in stream:
+            record = json.loads(line)
+            check(set(LABEL_FIELDS) <= set(record), 'label lacks required keys: %s' % sorted(record))
+            if record.get('commit') or record.get('encoding') or record.get('staged'):
+                count += 1
+                continue
+            data = (pathlib.Path(cache) / workload_path / record['path']).read_bytes() if contents is None \
+                else contents[record['path']]
+            value = data[record['start']:record['end']]
+            check(sha256_bytes(value) == record['secret_sha256'], 'label hash differs for %s' % record['path'])
+            check(line_of(data, record['start']) == record['line'], 'label line differs')
+            count += 1
+    return count
+
+
+def self_test_stream():
+    stream = Stream('self-test')
+    first = [stream.u32() for _ in range(4)]
+    again = Stream('self-test')
+    check(first == [again.u32() for _ in range(4)], 'stream is not deterministic')
+    check(sha256_bytes(canonical_json(first)) == sha256_bytes(canonical_json(
+        [int.from_bytes(hashlib.shake_256(hashlib.sha256(b'self-test').digest() + bytes(8)).digest(16)[i:i + 4],
+                        'little') for i in range(0, 16, 4)])), 'stream does not follow SHAKE-256')
+    value = random_value(Stream('value'), ALNUM, 36)
+    check(len(value) == 36 and entropy(value) >= 3.5, 'random value is not plausible')
+    for kind, prefix in (('github-pat', 'ghp_'), ('npm-token', 'npm_')):
+        token = POSITIVE_KINDS[kind][2](Stream('checksum:' + kind))[0]
+        number = 0
+        for character in token[-6:]:
+            number = number * 62 + BASE62.index(character)
+        check(token.startswith(prefix) and len(token) == 40, '%s token shape' % kind)
+        check(number == zlib.crc32(token[4:34].encode('ascii')) & 0xffffffff, '%s checksum' % kind)
+
+
+def self_test_go():
+    source = '''package rules
+const prefix = "tok_"
+var (
+	other = `raw` + "\\x41"
+)
+var _ = rulebuilder.Add(config.Rule{
+	ID: "sample-rule",
+	Regex: rulebuilder.Token(`tok_[a-z]{8}`),
+	FilterExpr: `entropy(finding["secret"]) <= 3.0` + " || x",
+	Entropy: 3.5,
+	Tests: []config.RuleTest{
+		rulebuilder.Match("one", "key = " + prefix + "abcdefgh", prefix + "abcdefgh"),
+		rulebuilder.NoMatch("two", other),
+		rulebuilder.MatchComponent("three", "id", "id"),
+		{
+			Name: "four",
+			Input: "a\\tb\\u00e9",
+			Attributes: map[string]string{"path": "dir/file.php"},
+			Expect: []config.ExpectedFinding{{Secret: "b"}},
+		},
+	},
+})
+
+var _ = rulebuilder.Add(helper("helper-rule", rulebuilder.Match("five", "v=QQ", "QQ")))
+
+func helper(id string, tests ...config.RuleTest) config.Rule {
+	return config.Rule{ID: id, Tests: tests}
+}
+
+var _ = rulebuilder.Add(built())
+
+func built() config.Rule {
+	local := "zz"
+	r := config.Rule{ID: "built-rule"}
+	r.Tests = []config.RuleTest{rulebuilder.NoMatch("six", local + "!")}
+	return r
+}
+
+func unused() config.Rule {
+	return config.Rule{ID: "unused", Tests: []config.RuleTest{rulebuilder.NoMatch("seven", "x")}}
+}
+'''
+    directory = pathlib.Path(tempfile.mkdtemp(prefix='workloads-go-'))
+    try:
+        write_file(directory, 'rules/sample.go', source.encode('utf-8'))
+        cases, skipped = betterleaks_cases(directory)
+    finally:
+        remove_tree(directory)
+    check([case['name'] for case in cases] == ['one', 'two', 'four', 'six', 'five'],
+          'Go test names %r' % [case['name'] for case in cases])
+    check(cases[3]['rule'] == 'built-rule' and cases[3]['data'] == b'zz!', 'Go rule built in a function')
+    check(cases[4]['rule'] == 'helper-rule' and cases[4]['secrets'] == [b'QQ'], 'Go tests passed to a helper')
+    check(cases[0]['data'] == b'key = tok_abcdefgh' and cases[0]['secrets'] == [b'tok_abcdefgh'], 'Go concatenation')
+    check(cases[1]['data'] == b'rawA' and cases[1]['expected'] == 'none', 'Go constants and escapes')
+    check(cases[2]['path'] == 'dir/file.php' and cases[2]['data'] == 'a\tbé'.encode('utf-8'), 'Go attributes')
+    check(skipped == {'component-only test (never reported on its own)': 1,
+                      'rule function unused is not registered': 1}, 'Go skipped tests %r' % skipped)
+
+
+def self_test_yaml():
+    text = '''rules:
+  - name: Sample
+    id: sample.1
+    examples: # comment
+      - "a\\tb \\u00e9"
+      - 'it''s'
+      - plain value # trailing comment
+      - |
+        line one
+          line two
+    negative_examples:
+      - >-
+        folded
+        text
+- name: Second
+  id: 'sample.2'
+  examples:
+  - same-indent item
+  - "multi
+    line"
+'''
+    values = yaml_examples(text)
+    expected = [('sample.1', 'examples', 'a\tb é'), ('sample.1', 'examples', "it's"),
+                ('sample.1', 'examples', 'plain value'), ('sample.1', 'examples', 'line one\n  line two\n'),
+                ('sample.1', 'negative_examples', 'folded text'), ('sample.2', 'examples', 'same-indent item'),
+                ('sample.2', 'examples', 'multi line')]
+    check(values == expected, 'YAML examples %r' % values)
+
+
+def self_test_matrix(cache):
+    cases = [
+        {'rule': 'r1', 'name': 'positive', 'path': 'src/a.txt', 'data': b'x = SECRET1 y', 'secrets': [b'SECRET1'],
+         'expected': 'exact', 'origin': 'test'},
+        {'rule': 'r1', 'name': 'negative', 'path': '/abs/b.txt', 'data': b'nothing', 'secrets': [],
+         'expected': 'none', 'origin': 'test'},
+        {'rule': 'r2', 'name': 'config', 'path': 'repo/.git/config', 'data': b'url = u', 'secrets': [],
+         'expected': 'at_least_one', 'origin': 'test'},
+    ]
+    outputs = write_cases(cache, 'demo', cases)
+    check(sorted(outputs) == ['fixtures-demo', 'fixtures-demo-dotgit'], 'dotgit routing %r' % sorted(outputs))
+    plain = outputs['fixtures-demo']
+    check(plain[0]['start'] == 4 and plain[0]['end'] == 11 and plain[0]['span'] == 'secret', 'exact fixture span')
+    check(plain[1]['path'] == '00001-r1/abs/b.txt' and plain[1]['label'] == 'not-secret', 'absolute path kept inside')
+    check(outputs['fixtures-demo-dotgit'][0]['span'] == 'case', 'case span for unstated secrets')
+    check((cache / 'fixtures-matrix' / 'fixtures-demo-dotgit' / '00002-r2' / 'repo' / '.git' / 'config').is_file(),
+          'dotgit file written')
+    for bad in ('../x', '', 'a/../../b'):
+        try:
+            safe_relative(bad)
+        except WorkloadError:
+            continue
+        fail('self-test: unsafe path accepted: %r' % bad)
+
+
+def self_test_synthetic(cache, git):
+    entries = [entry for entry in synthetic_catalog() if entry['generator'] == SYNTHETIC_VERSION and (
+        entry['id'].endswith('-1mib') or entry['id'].endswith('-25k') or entry['id'] in ('long-line-16mib',))]
+    digests = {}
+    for round_number in (1, 2):
+        for entry in entries:
+            labels, _ = generate_entry(cache, git, entry, 'smoke')
+            root = cache / 'synthetic' / entry['id']
+            inventory = file_inventory(root)
+            check(inventory['bytes'] == smoke_bytes(entry)['bytes'] or entry['shape'] == 'dense-base64-uris',
+                  '%s has %d bytes' % (entry['id'], inventory['bytes']))
+            label_path = cache / 'labels' / 'synthetic' / (entry['id'] + '.jsonl')
+            write_labels(label_path, labels)
+            check_labels(cache, label_path, 'synthetic/' + entry['id'])
+            digest = (inventory['files_sha256'], sha256_file(label_path))
+            if round_number == 1:
+                digests[entry['id']] = digest
+            else:
+                check(digests[entry['id']] == digest, '%s is not deterministic' % entry['id'])
+    secrets = sum(1 for entry in entries for line in open(cache / 'labels' / 'synthetic' / (entry['id'] + '.jsonl'), 'rb')
+                  if b'"label":"secret"' in line)
+    check(secrets > 0, 'no secrets were planted')
+    if git is None:
+        return 'synthetic shapes'
+    for identity in GIT_SHAPES:
+        entry = next(item for item in synthetic_catalog() if item['id'] == identity)
+        labels, details = generate_entry(cache, git, entry, 'smoke')
+        check(labels and all(record['commit'] for record in labels), '%s labels have commits' % identity)
+        repository = cache / 'synthetic' / identity
+        environment = git_environment(cache / '.home')
+        for record in labels[:5]:
+            data = git_run(git, repository, environment, ['show', '%s:%s' % (record['commit'], record['path'])])
+            check(sha256_bytes(data[record['start']:record['end']]) == record['secret_sha256'],
+                  '%s label does not match the committed blob' % identity)
+    merges = generate_entry(cache, git, next(item for item in synthetic_catalog() if item['id'] == 'git-merges'),
+                            'smoke')[0]
+    check(any(record.get('introduced_by') == 'merge' for record in merges), 'merge-only change is labeled')
+    tuned = tuned_generate(cache, git, 'smoke')
+    check(sorted(tuned) == sorted(TUNED_IDS), 'tuned workload ids')
+    for identity in ('base64-20000', 'git-20000', 'tiny-positive', 'mixed-app-16mib'):
+        labels = tuned_labels(tuned[identity])
+        check(labels, '%s has labels' % identity)
+        path = cache / 'labels' / 'synthetic' / (identity + '.jsonl')
+        write_labels(path, labels)
+        check_labels(cache, path, tuned_entry_path(tuned[identity]).rsplit('/record.txt', 1)[0])
+    return 'synthetic shapes, Git shapes and tuned workloads'
+
+
+def self_test_fetch(cache, git):
+    environment = git_environment(cache / '.home')
+    origin = fresh_directory(cache / 'origin')
+    git_run(git, None, environment, ['init', '--quiet', str(origin)])
+    write_file(origin, 'README.txt', b'hello\n')
+    write_file(origin, 'bin/run.sh', b'#!/bin/sh\n', 0o755)
+    os.symlink('README.txt', str(origin / 'link'))
+    git_run(git, origin, environment, ['add', '-A'])
+    git_run(git, origin, environment, ['commit', '--quiet', '-m', 'one'])
+    write_file(origin, 'docs/b.txt', b'second\n')
+    git_run(git, origin, environment, ['add', '-A'])
+    git_run(git, origin, environment, ['commit', '--quiet', '-m', 'two'])
+    git_run(git, origin, environment, ['tag', 'v1'])
+    commit = git_text(git, origin, environment, ['rev-parse', 'HEAD'])
+    url = origin.as_uri()
+    for history in (False, True):
+        destination = cache / 'repos' / ('demo-%s' % history)
+        record = fetch_repository(git, environment, url, 'refs/tags/v1', commit, destination, history)
+        check(record['tree']['files'] == 3 and record['tree']['symlinks'] == 1, 'fetched tree counts %r' % record['tree'])
+        check(record.get('commit_count', 2) == 2, 'history commit count')
+        verify_repository(git, environment, commit, destination, deep=history, history=history)
+        if not history:
+            try:
+                verify_repository(git, environment, commit, destination, history=True)
+            except WorkloadError:
+                pass
+            else:
+                fail('self-test: a one-commit fetch passed verification for git mode')
+        (destination / 'tree' / 'docs' / 'b.txt').write_bytes(b'changed\n')
+        try:
+            verify_repository(git, environment, commit, destination)
+        except WorkloadError:
+            pass
+        else:
+            fail('self-test: a changed tree passed verification')
+    try:
+        fetch_repository(git, environment, url, 'refs/tags/v1', '0' * 40, cache / 'repos' / 'wrong', False)
+    except WorkloadError:
+        pass
+    else:
+        fail('self-test: a mismatched pin was accepted')
+
+
+def self_test_verify(cache, source_root, git):
+    identities = ('keyword-dense-1mib', 'dense-github-pat-lines-25k')
+    arguments = argparse.Namespace(cache=str(cache), only=','.join(identities), sizes='1', scale='smoke',
+                                   write_manifest=False, git=git)
+    command_generate(arguments, source_root)
+    environment = git_environment(cache / '.home')
+    checked, _ = verify_synthetic(cache, source_root, set(identities), git, environment)
+    check(checked == 2, 'generated workloads verify')
+    target = next((cache / 'synthetic' / identities[0]).rglob('*.env'))
+    data = bytearray(target.read_bytes())
+    data[10] ^= 1
+    target.write_bytes(bytes(data))
+    try:
+        verify_synthetic(cache, source_root, set(identities), git, environment)
+    except WorkloadError:
+        return
+    fail('self-test: a changed synthetic workload passed verification')
+
+
+def self_test_manifests(source_root):
+    names = ('public-repos', 'synthetic', 'fixtures-matrix')
+    for name in names:
+        path = pathlib.Path(source_root) / MANIFEST_DIRECTORY / (name + '.json')
+        if not path.is_file():
+            continue
+        manifest = load_manifest(source_root, name)
+        for workload in manifest['workloads']:
+            check(workload['family'] in ('real-repo', 'labeled', 'fixtures-matrix', 'synthetic'), 'family')
+            check(isinstance(workload['tuned'], bool), 'tuned flag')
+            source = workload['source']
+            if source['kind'] == 'git':
+                check(re.fullmatch(r'[0-9a-f]{40}', source['commit']) is not None, 'pinned commit')
+    synthetic = pathlib.Path(source_root) / MANIFEST_DIRECTORY / 'synthetic.json'
+    check(synthetic.is_file(), 'synthetic.json is present')
+    listed = [workload['id'] for workload in load_manifest(source_root, 'synthetic')['workloads']]
+    check(listed == [entry['id'] for entry in synthetic_catalog()], 'synthetic.json matches the catalog')
+
+
+def self_test_smoke_digests(cache, source_root, git):
+    expected = load_manifest(source_root, 'synthetic')['smoke_digests']
+    actual = smoke_digests(fresh_directory(cache / 'smoke'), git)
+    check(actual['files'] == expected['files'],
+          'the generator changed; regenerate synthetic.json with generate --write-manifest')
+    if git is not None:
+        check(actual['git'] == expected['git'],
+              'the Git or tuned workload generator changed; regenerate synthetic.json with generate --write-manifest')
+
+
+def self_test(source_root):
+    root = pathlib.Path(tempfile.mkdtemp(prefix='rustleaks-workloads-self-test-'))
+    try:
+        cache = resolve_cache(str(root / 'cache'), source_root)
+        link = root / 'repository-link'
+        os.symlink(str(source_root), str(link))
+        for inside in (pathlib.Path(source_root) / 'cache', link / 'cache',
+                       pathlib.Path(str(source_root).swapcase()) / 'cache'):
+            if not inside.parent.exists():
+                continue
+            try:
+                resolve_cache(str(inside), source_root)
+            except WorkloadError:
+                continue
+            fail('self-test: a cache inside the repository was accepted: %s' % inside)
+        self_test_stream()
+        self_test_go()
+        self_test_yaml()
+        self_test_matrix(cache)
+        self_test_manifests(source_root)
+        git = shutil.which('git')
+        git = find_git(git) if git else None
+        covered = self_test_synthetic(cache, git)
+        self_test_smoke_digests(cache, source_root, git)
+        if git is not None:
+            self_test_fetch(cache, git)
+            self_test_verify(cache, source_root, git)
+            covered += ', a local fetch and verification'
+        else:
+            covered += '; Git checks skipped because git is not on PATH'
+    finally:
+        remove_tree(root)
+    print_line('compare-workloads self-test passed: %s' % covered)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

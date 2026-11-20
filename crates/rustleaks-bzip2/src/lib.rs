@@ -5,14 +5,6 @@
 //! * [`Decoder`]: low-level, no IO, bzip2 decoder
 //! * [`DecoderReader`]: high-level synchronous bzip2 decoder
 //!
-//! ## Features
-//!
-//! All feature profiles use the workspace MSRV, Rust 1.95. The retained
-//! `rustc_1_37`, `rustc_1_40`, and `rustc_1_51` names preserve the forked
-//! crate's feature interface; they do not lower the supported compiler.
-//! `nightly` selects the fixed-array decoder path without changing the
-//! workspace compiler policy.
-//!
 //! ## Usage
 //!
 //! ```rust,no_run
@@ -55,7 +47,7 @@ pub mod header;
 mod huffman;
 mod move_to_front;
 
-#[cfg(feature = "nightly")]
-const LEN_258: usize = 258;
-#[cfg(not(feature = "nightly"))]
-const LEN_258: usize = 512;
+/// Capacity of the fixed arrays that hold one entry per Huffman symbol.
+/// A block uses at most 258 symbols. 512 is the smallest array size above
+/// that which `tinyvec` supports without its const-generics feature.
+const MAX_SYMBOLS: usize = 512;

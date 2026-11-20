@@ -24,17 +24,13 @@ that enforce this policy are in [Security checks](security-checks.md).
 - License and advisory checks must pass before a release. An advisory may be
   waived only with a time-limited entry, backed by evidence, in
   `supply-chain-exceptions.toml`. Never remove the check to hide it.
-- Published crates use semver ranges that work with the MSRV, Rust 1.95.
-  Development uses the pinned toolchain in `rust-toolchain.toml`. CI also
+- Published crates use semver ranges that work with the MSRV, Rust 1.95
+  (`rust-version` in the root `Cargo.toml`). Development uses the pinned toolchain in `rust-toolchain.toml`. CI also
   builds with the MSRV and runs the native platform lanes.
 - Any change to a dependency version, feature, target or publication boundary
   reopens the review on this page.
 
 There is no Go module or other executable oracle in the dependency graph.
-Adding one back would need a separately reviewed scope and the dependency and
-security checks on this page. Advisories recorded against the retired Go
-oracle were neither fixed nor waived; they no longer apply because the code
-is gone.
 
 ## Core dependencies
 
@@ -78,7 +74,9 @@ rejects owned unsafe code. Some registry dependencies contain unsafe code
 inside.
 
 Dependency review uses the locked Cargo and Bazel resolutions, cargo-deny,
-cargo-vet, RustSec and the unsafe inventory. It does not hash complete
+cargo-vet, RustSec and the unsafe inventory. Written audits of exact package
+versions are in [`docs/dependency-audits/`](../dependency-audits/README.md),
+and the cargo-vet records in `supply-chain/audits.toml` point to them. It does not hash complete
 dependency trees, because those hashes change on every routine update without
 showing whether a security boundary changed.
 
@@ -226,8 +224,15 @@ Fork provenance:
 | `rustleaks-rar-codec 0.9.3-rustleaks.1` | `68ff174e95890b9e1c01601a93f35f60c017162fb1bd723dfef9f684ae2ffdb6` | `54e744d0e70998d1aea9b1ae8a9bc7eaecd127f3`, extracted at `1f4f885577485d954c5e9a470a728d0111dc6f11` with the same codec tree |
 | `rustleaks-sevenz 0.20.2-rustleaks.1` | `29225600349ef74beda5a9fffb36ac660a24613c0bde9315d0c49be1d51e9c24` | `424ebdb8fa98b78b8e1c18f73c9add6972fe5496` |
 
-Each fork keeps the upstream license next to its code: MIT or Apache-2.0 for
-bzip2 and RAR (with the upstream `COPYING` file), and Apache-2.0 for 7z.
+Each fork keeps the upstream license next to its code:
+
+- `rustleaks-bzip2` keeps MIT or Apache-2.0 (`LICENSE-MIT` and
+  `LICENSE-APACHE`).
+- `rustleaks-rar-codec` keeps the upstream `COPYING` grant, a short custom
+  license. `Cargo.toml` names it with `license-file`, and `deny.toml`
+  accepts it as `LicenseRef-Rustleaks-Rar-Codec` only while the hash of
+  `COPYING` is unchanged.
+- `rustleaks-sevenz` keeps Apache-2.0 (`LICENSE`).
 
 The configured cargo-vet peers have no exact `safe-to-deploy` audit for the
 evaluated replacement graphs. Publisher-wide trust and wildcard audits are
@@ -256,8 +261,10 @@ not an alternative.
   system code, and every dependency.
 - Adds checked arithmetic, fallible growth, Huffman checks, bounded RAR VM
   programs and filters, and output limits set by the caller.
-- Some upstream encoder helpers stay so that the codec tests still work.
-  `rustleaks-sources` does not call them.
+- The RAR3 and RAR5 encoders are compiled only for tests, which encode data
+  and decode it back. They stay in place so the code is easy to compare with
+  upstream. `rustleaks-sources` calls only the RAR3 and RAR5 decoders and the
+  `crc32` module.
 - Container parsing, CRC checks, panic containment and archive limits stay in
   `rustleaks-sources`.
 
@@ -285,7 +292,7 @@ Reevaluate only a released registry version. A new evaluation resolves the
 dependency graph again; do not reuse an old resolution. Each rule below must
 hold:
 
-- It supports Rust 1.95 and all eight declared targets.
+- It supports the workspace MSRV and all eight declared targets.
 - It is a released registry crate, not a Git dependency.
 - It stays outside `rustleaks-core` and keeps its types private.
 - It keeps the required formats and error classes. An intended behavior

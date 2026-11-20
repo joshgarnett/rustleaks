@@ -36,16 +36,12 @@ impl Error for SourceConfigError {}
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum SourceStage {
-    /// Archive-name classification.
-    ArchiveIdentify,
     /// Archive container parsing or enumeration.
     Archive,
     /// Opening or reading one archive member.
     ArchiveMember,
     /// Decompressing a stream or member.
     Decode,
-    /// Building a bounded in-memory seekable spool.
-    Spool,
     /// Directory discovery or enumeration.
     Traverse,
     /// Filesystem metadata lookup.
@@ -60,8 +56,6 @@ pub enum SourceStage {
     BoundaryRead,
     /// Checked resource or arithmetic limit enforcement.
     Limit,
-    /// Source callback delivery.
-    Callback,
     /// A worker in the bounded runner.
     Worker,
     /// Starting, waiting for, or collecting a Git subprocess.
@@ -110,10 +104,6 @@ pub enum SourceIssueKind {
     WorkerPanic,
     /// Git wrote a non-ignorable diagnostic to standard error.
     GitStderr,
-    /// Git patch output could not be parsed.
-    GitParse,
-    /// A Git subprocess could not be started or collected.
-    GitCommand,
 }
 
 /// Whether a source issue describes missing eligible coverage or an exclusion.
@@ -182,7 +172,10 @@ impl SourceIssue {
         self.kind
     }
 
-    /// Returns the affected physical path, when one exists.
+    /// Returns the affected path, when one exists.
+    ///
+    /// For files and directories this is the path on disk. For an archive
+    /// blob found in Git history it is the path in the repository.
     #[must_use]
     pub fn path(&self) -> Option<&std::path::Path> {
         self.path.as_deref()
@@ -280,6 +273,37 @@ pub enum SourceError {
     },
 }
 
+impl SourceError {
+    /// Creates a terminal error.
+    pub(crate) fn terminal(
+        stage: SourceStage,
+        path: Option<PathBuf>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Terminal {
+            stage,
+            path,
+            message: message.into(),
+        }
+    }
+}
+
+/// Passes one event to the callback.
+pub(crate) fn emit_event(
+    event: SourceEvent,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<SourceControl, SourceError> {
+    emit(event).map_err(SourceError::Callback)
+}
+
+/// Passes one issue to the callback.
+pub(crate) fn emit_issue(
+    issue: SourceIssue,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<SourceControl, SourceError> {
+    emit_event(SourceEvent::Issue(issue), emit)
+}
+
 impl fmt::Display for SourceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -352,11 +376,11 @@ pub(crate) fn visit_with_coverage(
         if let Some(issue) = issue
             && issue.disposition == SourceIssueDisposition::CoverageFailure
         {
-            failure = Some(SourceError::Terminal {
-                stage: issue.stage,
-                path: issue.path.clone(),
-                message: issue.message.clone(),
-            });
+            failure = Some(SourceError::terminal(
+                issue.stage,
+                issue.path.clone(),
+                issue.message.clone(),
+            ));
             return Err(CallbackError::new("eligible source coverage failed"));
         }
         emit(event)

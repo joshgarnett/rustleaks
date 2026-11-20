@@ -1,62 +1,50 @@
 //! Workload sets for the cross-tool comparison: pinned public repositories,
 //! generated synthetic workloads and the home-fixtures matrix.
 //!
-//! The work is done by Python 3.9 standard-library modules embedded below and
-//! run with `python3 -I`. All data goes to a cache folder outside the
-//! repository. See `docs/dev/comparison-workloads.md`.
+//! The work is done by the Python 3.9 standard-library modules under
+//! `comparison_workloads/`, run by [`crate::embedded_python`]. All data goes to
+//! a cache folder outside the repository. See `docs/dev/comparison-workloads.md`.
 
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::Output;
+
+use crate::embedded_python::{Program, source_root_arguments};
 
 /// Python modules in load order. Later modules use names from earlier ones.
-const MODULES: &[(&str, &str)] = &[
-    ("common", include_str!("comparison_workloads/common.txt")),
-    ("legacy", include_str!("comparison_workloads/legacy.txt")),
-    ("repos", include_str!("comparison_workloads/repos.txt")),
-    (
-        "synthetic",
-        include_str!("comparison_workloads/synthetic.txt"),
-    ),
-    ("matrix", include_str!("comparison_workloads/matrix.txt")),
-    ("main", include_str!("comparison_workloads/main.txt")),
-];
+const PROGRAM: Program = Program {
+    modules: &[
+        (
+            "comparison_workloads/common.py",
+            include_str!("comparison_workloads/common.py"),
+        ),
+        (
+            "comparison_workloads/tuned_synthetic.py",
+            include_str!("comparison_workloads/tuned_synthetic.py"),
+        ),
+        (
+            "comparison_workloads/repos.py",
+            include_str!("comparison_workloads/repos.py"),
+        ),
+        (
+            "comparison_workloads/synthetic.py",
+            include_str!("comparison_workloads/synthetic.py"),
+        ),
+        (
+            "comparison_workloads/matrix.py",
+            include_str!("comparison_workloads/matrix.py"),
+        ),
+        (
+            "comparison_workloads/main.py",
+            include_str!("comparison_workloads/main.py"),
+        ),
+    ],
+};
 
-/// Joins the modules into one program.
-fn program() -> String {
-    MODULES
-        .iter()
-        .map(|(name, source)| format!("# module: {name}\n{source}"))
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-/// Runs the program with the source root and the given arguments. The program
-/// text goes to standard input so its size is not limited by the command line.
+/// Runs the program with the source root and the given arguments.
 fn invoke(root: &Path, arguments: &[String], capture: bool) -> Result<Output, String> {
-    let mut command = Command::new("python3");
-    command
-        .args(["-I", "-", "--source-root"])
-        .arg(root)
-        .args(arguments)
-        .stdin(Stdio::piped());
-    if capture {
-        command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("cannot start python3 for compare-workloads: {error}"))?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "cannot open the python3 standard input".to_owned())?;
-    stdin.write_all(program().as_bytes()).map_err(|error| {
-        format!("cannot send the compare-workloads program to python3: {error}")
-    })?;
-    drop(stdin);
-    child
-        .wait_with_output()
-        .map_err(|error| format!("compare-workloads did not finish: {error}"))
+    let mut command = Program::command(&source_root_arguments(root));
+    command.args(arguments);
+    PROGRAM.run(command, &[], capture)
 }
 
 /// Entry point for `cargo xtask compare-workloads <fetch|generate|matrix|verify>`.
@@ -95,11 +83,23 @@ mod tests {
     }
 
     #[test]
-    fn program_lists_every_module_once() {
-        let text = program();
-        for (name, _) in MODULES {
-            assert_eq!(text.matches(&format!("# module: {name}\n")).count(), 1);
+    fn manifest_names_the_generator_files() {
+        let root = crate::workspace_root().expect("workspace root");
+        let text =
+            std::fs::read_to_string(root.join("benchmarks/comparison/workloads/synthetic.json"))
+                .expect("synthetic workload manifest is readable");
+        let manifest: serde_json::Value = serde_json::from_str(&text).expect("manifest is JSON");
+        let generators = manifest["generators"].as_object().expect("generators");
+        assert!(!generators.is_empty());
+        for path in generators.values() {
+            let path = path.as_str().expect("generator path");
+            assert!(
+                PROGRAM
+                    .modules
+                    .iter()
+                    .any(|(name, _)| format!("crates/xtask/src/{name}") == path),
+                "{path} is not an embedded module"
+            );
         }
-        assert!(text.contains("if __name__ == '__main__':"));
     }
 }

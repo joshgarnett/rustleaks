@@ -9,11 +9,14 @@ use std::sync::Arc;
 use rustleaks_core::config::CompiledConfig;
 
 use crate::file::{FileTarget, FragmentCommit, visit_borrowed};
+use crate::source::emit_issue;
 use crate::{
     CallbackError, Cancellation, FileOptions, LogicalPath, Source, SourceConfigError,
     SourceControl, SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
 };
 
+mod rar;
+mod snappy;
 pub(crate) mod spool;
 mod stream;
 
@@ -27,10 +30,10 @@ const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
 const GIB: usize = 1024 * MIB;
 const DEFAULT_MAX_DEPTH: usize = 8;
-const DEFAULT_MAX_ENTRIES: usize = 1_000_000;
-const DEFAULT_MAX_MEMBER_BYTES: usize = 4 * GIB;
-const DEFAULT_MAX_TOTAL_BYTES: usize = 16 * GIB;
-const DEFAULT_MAX_SPOOL_BYTES: usize = GIB;
+const DEFAULT_MAX_ENTRIES: NonZeroUsize = NonZeroUsize::new(1_000_000).unwrap();
+const DEFAULT_MAX_MEMBER_BYTES: NonZeroUsize = NonZeroUsize::new(4 * GIB).unwrap();
+const DEFAULT_MAX_TOTAL_BYTES: NonZeroUsize = NonZeroUsize::new(16 * GIB).unwrap();
+const DEFAULT_MAX_SPOOL_BYTES: NonZeroUsize = NonZeroUsize::new(GIB).unwrap();
 /// Largest archive part that must be held in memory at once: a RAR member,
 /// a Snappy or `MinLZ` stream, a TAR long name, 7z headers, and the decoder
 /// dictionaries of 7z, Zstandard and LZIP. The member limit lowers it.
@@ -111,10 +114,10 @@ impl Default for ArchiveLimits {
     fn default() -> Self {
         Self {
             depth: DEFAULT_MAX_DEPTH,
-            entries: NonZeroUsize::new(DEFAULT_MAX_ENTRIES).expect("positive default"),
-            member_bytes: NonZeroUsize::new(DEFAULT_MAX_MEMBER_BYTES).expect("positive default"),
-            total_bytes: NonZeroUsize::new(DEFAULT_MAX_TOTAL_BYTES).expect("positive default"),
-            spool_bytes: NonZeroUsize::new(DEFAULT_MAX_SPOOL_BYTES).expect("positive default"),
+            entries: DEFAULT_MAX_ENTRIES,
+            member_bytes: DEFAULT_MAX_MEMBER_BYTES,
+            total_bytes: DEFAULT_MAX_TOTAL_BYTES,
+            spool_bytes: DEFAULT_MAX_SPOOL_BYTES,
         }
     }
 }
@@ -155,7 +158,7 @@ impl ArchiveOptions {
 
     /// Adds exact decorated target paths excluded before complete-mode reads.
     ///
-    /// This compares normalized logical paths. Legacy fragments ignore it.
+    /// This compares normalized logical paths. Chunked scans ignore it.
     /// Only emitted leaf paths, including compressed streams, are matched.
     /// Naming a container does not exclude its descendants. Container and
     /// shared-decoder checks needed to reach eligible members remain active.
@@ -349,10 +352,12 @@ impl ArchiveSource {
         if cancellation.is_cancelled() {
             return Err(SourceError::Cancelled);
         }
-        let input = self.input.take().ok_or_else(|| SourceError::Terminal {
-            stage: SourceStage::Open,
-            path: Some(self.physical_path.clone()),
-            message: "archive source was already consumed".to_owned(),
+        let input = self.input.take().ok_or_else(|| {
+            SourceError::terminal(
+                SourceStage::Open,
+                Some(self.physical_path.clone()),
+                "archive source was already consumed",
+            )
         })?;
         let name = native_file_name_bytes(&self.physical_path);
         let complete = self.file_options.complete_target_bytes().is_some();
@@ -1007,7 +1012,7 @@ impl<'a> ArchiveState<'a> {
         let remaining_bytes = self.budget.remaining();
         let member_limit = self.memory_limit();
         let mut outcome = None;
-        let result = crate::rar::extract(
+        let result = rar::extract(
             reader,
             remaining_entries,
             member_limit,
@@ -1044,11 +1049,11 @@ impl<'a> ArchiveState<'a> {
         }
         match result {
             Ok(()) => Ok(SourceControl::Continue),
-            Err(crate::rar::RarFailure::Cancelled) => Err(SourceError::Cancelled),
-            Err(crate::rar::RarFailure::Limit(message)) => {
+            Err(rar::RarFailure::Cancelled) => Err(SourceError::Cancelled),
+            Err(rar::RarFailure::Limit(message)) => {
                 emit_issue(limit_issue(self.physical_path, message), emit)
             }
-            Err(crate::rar::RarFailure::Unsupported(message)) => emit_issue(
+            Err(rar::RarFailure::Unsupported(message)) => emit_issue(
                 issue(
                     self.physical_path,
                     SourceStage::ArchiveMember,
@@ -1057,12 +1062,10 @@ impl<'a> ArchiveState<'a> {
                 ),
                 emit,
             ),
-            Err(crate::rar::RarFailure::Corrupt(message)) => {
+            Err(rar::RarFailure::Corrupt(message)) => {
                 emit_issue(corrupt(self.physical_path, message), emit)
             }
-            Err(crate::rar::RarFailure::Read(error)) => {
-                self.emit_failure(Failure::from_io(error), emit)
-            }
+            Err(rar::RarFailure::Read(error)) => self.emit_failure(Failure::from_io(error), emit),
         }
     }
 
@@ -1250,7 +1253,6 @@ impl<'a> ArchiveState<'a> {
                 );
             }
         };
-        reader.set_thread_count(1);
         let archive_entries = reader.archive().files.len();
         match self.budget.entries.get().checked_add(archive_entries) {
             Some(entries) if entries <= self.options.limits.entries.get() => {
@@ -1293,7 +1295,9 @@ impl<'a> ArchiveState<'a> {
                 return Ok(true);
             }
             if entry.size() > member_limit as u64 {
-                return Err(seven_error("archive resource limit exceeded"));
+                return Err(rustleaks_sevenz::Error::from(
+                    Failure::Limit("archive resource limit exceeded".to_owned()).into_io(),
+                ));
             }
             let name = clean_member_name(entry.name().as_bytes());
             let mut decoded = DecodeErrors(stream);
@@ -1356,18 +1360,7 @@ impl<'a> ArchiveState<'a> {
             return outcome;
         }
         if let Err(error) = result {
-            let message = error.to_string();
-            let issue = if message.contains("limit") {
-                limit_issue(self.physical_path, message)
-            } else {
-                issue(
-                    self.physical_path,
-                    SourceStage::Decode,
-                    SourceIssueKind::Decode,
-                    message,
-                )
-            };
-            return emit_issue(issue, emit);
+            return emit_issue(seven_traversal_issue(self.physical_path, &error), emit);
         }
         Ok(SourceControl::Continue)
     }
@@ -1439,7 +1432,9 @@ fn with_codec<T>(
             miniz_oxide::DataFormat::Zlib,
             "zlib",
         )),
-        Codec::Bzip2 => use_reader(&mut DecodeErrors(bzip2_rs::DecoderReader::new(input))),
+        Codec::Bzip2 => use_reader(&mut DecodeErrors(rustleaks_bzip2::DecoderReader::new(
+            input,
+        ))),
         Codec::Xz => use_reader(&mut DecodeErrors(lzma_rust2::XzReader::new(input, true))),
         Codec::Lzip => use_reader(&mut LzipReader::new(input, memory_limit)),
         Codec::Brotli => {
@@ -1461,18 +1456,16 @@ fn with_codec<T>(
             // compressed and the decoded stream stay within the memory limit.
             let compressed = read_bounded(input, memory_limit)?;
             let decoded = if matches!(codec, Codec::Snappy) {
-                crate::snappy::decode_framed(&compressed, memory_limit, cancellation)
+                snappy::decode_framed(&compressed, memory_limit, cancellation)
             } else {
-                crate::snappy::decode_minlz_framed(&compressed, memory_limit, cancellation)
+                snappy::decode_minlz_framed(&compressed, memory_limit, cancellation)
             }
             .map_err(|error| match error {
-                crate::snappy::SnappyFailure::Cancelled => Failure::Cancelled,
-                crate::snappy::SnappyFailure::Limit => {
+                snappy::SnappyFailure::Cancelled => Failure::Cancelled,
+                snappy::SnappyFailure::Limit => {
                     Failure::Limit("archive expansion limit exceeded".to_owned())
                 }
-                crate::snappy::SnappyFailure::Decode(message) => {
-                    Failure::Decode(message.to_owned())
-                }
+                snappy::SnappyFailure::Decode(message) => Failure::Decode(message.to_owned()),
             })?;
             drop(compressed);
             use_reader(&mut decoded.as_slice())
@@ -1544,11 +1537,7 @@ fn open_7z<R: Read + Seek>(
     {
         let memory_limit_kb = memory_limit.div_ceil(1024).max(1);
         let parsed = catch_unwind(AssertUnwindSafe(|| {
-            rustleaks_sevenz::ArchiveReader::new_with_memory_limit_kb(
-                source,
-                rustleaks_sevenz::Password::empty(),
-                memory_limit_kb,
-            )
+            rustleaks_sevenz::ArchiveReader::new_with_memory_limit_kb(source, memory_limit_kb)
         }));
         let Ok(reader) = parsed else {
             return Err(SevenOpenFailure {
@@ -1645,6 +1634,27 @@ fn preflight_7z(
 
 fn seven_error(message: impl Into<String>) -> rustleaks_sevenz::Error {
     rustleaks_sevenz::Error::from(std::io::Error::other(message.into()))
+}
+
+/// Builds the issue for an error that ended a 7z traversal.
+///
+/// A decoder that needs more memory than the 7z memory limit, and a limit
+/// of this crate, give a limit issue. Any other error is a decode issue.
+fn seven_traversal_issue(path: &Path, error: &rustleaks_sevenz::Error) -> SourceIssue {
+    if let rustleaks_sevenz::Error::Io(inner, _) = error
+        && let Some(message) = stream::limit(inner)
+    {
+        return limit_issue(path, message);
+    }
+    if matches!(error, rustleaks_sevenz::Error::MaxMemLimited { .. }) {
+        return limit_issue(path, error.to_string());
+    }
+    issue(
+        path,
+        SourceStage::Decode,
+        SourceIssueKind::Decode,
+        error.to_string(),
+    )
 }
 
 const LZ4_FRAME_MAGIC: u32 = 0x184D_2204;
@@ -2047,18 +2057,9 @@ fn limit_issue(path: &Path, message: impl Into<String>) -> SourceIssue {
     issue(path, SourceStage::Limit, SourceIssueKind::Limit, message)
 }
 
-fn emit_issue(
-    issue: SourceIssue,
-    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-) -> Result<SourceControl, SourceError> {
-    emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use rustleaks_rar_codec::crc32::crc32;
 
     enum DecodeFailure {
         Cancelled,
@@ -2347,12 +2348,6 @@ mod tests {
         assert_eq!(clean_member_name(b"../../a"), leading_parent);
     }
 
-    #[test]
-    fn owned_crc32_matches_the_ieee_check_value() {
-        assert_eq!(crc32(b""), 0);
-        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
-    }
-
     fn zstd_outcome(result: Result<Vec<u8>, DecodeFailure>) -> Result<Vec<u8>, String> {
         result.map_err(|failure| match failure {
             DecodeFailure::Cancelled => "cancelled".to_owned(),
@@ -2624,34 +2619,5 @@ mod tests {
         let reference = zstd_outcome(reference_zstd(input, limit, &cancellation));
         assert!(actual.as_ref().is_ok_and(|bytes| !bytes.is_empty()));
         assert_eq!(actual, reference);
-    }
-
-    fn bitwise_crc32(input: &[u8]) -> u32 {
-        let mut crc = u32::MAX;
-        for byte in input {
-            crc ^= u32::from(*byte);
-            for _ in 0..8 {
-                let polynomial = 0xedb8_8320 & 0_u32.wrapping_sub(crc & 1);
-                crc = (crc >> 1) ^ polynomial;
-            }
-        }
-        !crc
-    }
-
-    #[test]
-    fn table_crc32_matches_the_retained_bitwise_crc32() {
-        let mut state = 0x1234_5678_u32;
-        let mut bytes = Vec::new();
-        for len in (0..=257).chain([1024, 4095, 4096, 4097, 65_536]) {
-            while bytes.len() < len {
-                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                bytes.push(state.to_be_bytes()[0]);
-            }
-            assert_eq!(
-                crc32(&bytes[..len]),
-                bitwise_crc32(&bytes[..len]),
-                "len {len}"
-            );
-        }
     }
 }

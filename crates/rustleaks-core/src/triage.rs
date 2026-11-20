@@ -1,7 +1,7 @@
 //! Opt-in review state and occurrence-preserving presentation.
 //!
 //! Acknowledgement is a workflow decision, never a statement that a credential
-//! is safe. This module does not filter findings or change legacy baselines.
+//! is safe. This module does not filter findings or change baselines.
 //! Persisted records contain caller-supplied identifiers, rule IDs and numeric
 //! locations, but never copy secrets, source text, paths or configuration.
 //! Identifiers must be non-sensitive references from the caller's trusted

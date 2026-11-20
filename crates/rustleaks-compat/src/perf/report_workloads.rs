@@ -15,6 +15,7 @@ use rustleaks_report::{CsvReporter, JsonReporter, JunitReporter, Reporter};
 use serde_json::json;
 
 use super::{FNV_OFFSET, Phase, elapsed, fingerprint, fnv_extend, phase};
+use crate::DEFAULT_RULES;
 
 const SESSION_FINDINGS: usize = 10_000;
 const REPORT_FINDINGS: usize = 10_000;
@@ -22,7 +23,6 @@ const ESCAPE_FINDINGS: usize = 1_000;
 // 4,096 sixteen-byte units form each 64 KiB `Match` value.
 const ESCAPE_UNITS: usize = 4_096;
 const HEAVY_ALLOWLISTS: usize = 500;
-const DEFAULT_RULES: usize = 222;
 // The Gitleaks global allowlist and the Rustleaks allowlist for published
 // vendor examples in the default rules.
 const DEFAULT_ALLOWLISTS: usize = 2;

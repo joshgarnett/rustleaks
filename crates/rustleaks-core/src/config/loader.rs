@@ -9,6 +9,7 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use semver::{BuildMetadata, Version};
 use thiserror::Error;
 
+use crate::go_unicode::lowercase as go_lowercase;
 use crate::regex::{GoRegex, NativeByteRegex};
 
 use super::compiled::{CompiledAllowlist, CompiledConfig, CompiledRule};
@@ -441,7 +442,7 @@ impl Default for ConfigLoader {
 }
 
 impl ConfigLoader {
-    /// Creates a no-I/O loader using the pinned embedded default.
+    /// Creates a no-I/O loader using the embedded default configuration.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -834,11 +835,11 @@ fn compile_allowlist(
             if cache.validated.contains(pattern) {
                 continue;
             }
-            validate_pattern(pattern).map_err(|message| ConfigError::InvalidPattern {
+            GoRegex::validate(pattern).map_err(|error| ConfigError::InvalidPattern {
                 scope: scope.to_owned(),
                 field,
                 pattern: pattern.clone(),
-                message,
+                message: error.to_string(),
             })?;
             cache.validated.insert(pattern.clone());
         }
@@ -1073,14 +1074,6 @@ fn parse_version(value: &str) -> Result<Version, ConfigError> {
             message: error.to_string(),
         }
     })
-}
-
-fn go_lowercase(value: &str) -> String {
-    crate::go_unicode::lowercase(value)
-}
-
-fn validate_pattern(pattern: &str) -> Result<usize, String> {
-    GoRegex::validate(pattern).map_err(|error| error.to_string())
 }
 
 fn normalize_table_keys(value: &mut toml::Value) {
@@ -1621,8 +1614,9 @@ mod tests {
     use super::{
         ConfigError, ConfigLoader, ConfigOrigin, ConfigResolver, FileSystemResolver,
         MAX_CONFIG_FILE_BYTES, normalize_virtual_path, parse_weak_float, parse_weak_integer,
-        validate_pattern, virtual_path_is_absolute,
+        virtual_path_is_absolute,
     };
+    use crate::regex::GoRegex;
 
     #[test]
     fn file_system_resolver_reads_at_most_16_mib() {
@@ -1679,11 +1673,11 @@ mod tests {
 
     #[test]
     fn go_regex_validation_counts_go_groups() {
-        assert_eq!(validate_pattern(r"(?:x)(a)(?P<n>b)(?i:c)").unwrap(), 2);
-        assert_eq!(validate_pattern(r"a{01}").unwrap(), 0);
-        assert!(validate_pattern(r"\p{Age:3.0}").is_err());
-        assert!(validate_pattern("(").is_err());
-        assert!(validate_pattern("[abc").is_err());
+        assert_eq!(GoRegex::validate(r"(?:x)(a)(?P<n>b)(?i:c)").unwrap(), 2);
+        assert_eq!(GoRegex::validate(r"a{01}").unwrap(), 0);
+        assert!(GoRegex::validate(r"\p{Age:3.0}").is_err());
+        assert!(GoRegex::validate("(").is_err());
+        assert!(GoRegex::validate("[abc").is_err());
     }
 
     #[test]

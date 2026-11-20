@@ -18,8 +18,6 @@ pub enum Error {
     NextHeaderCrcMismatch,
     /// IO error with optional context message.
     Io(std::io::Error, Cow<'static, str>),
-    /// Error opening file.
-    FileOpen(std::io::Error, String),
     /// Other error with description.
     Other(Cow<'static, str>),
     /// Bad terminated streams info.
@@ -43,14 +41,8 @@ pub enum Error {
         /// Actual required memory in KB.
         actaul_kb: usize,
     },
-    /// Password required for encrypted archive.
-    PasswordRequired,
     /// Feature or operation not supported.
     Unsupported(Cow<'static, str>),
-    /// Possibly bad password for encrypted content.
-    MaybeBadPassword(std::io::Error),
-    /// File not found.
-    FileNotFound,
 }
 
 impl From<std::io::Error> for Error {
@@ -73,30 +65,6 @@ impl Error {
     #[inline]
     pub(crate) fn io_msg(e: std::io::Error, msg: impl Into<Cow<'static, str>>) -> Self {
         Self::Io(e, msg.into())
-    }
-
-    pub(crate) fn bad_password(e: std::io::Error, encryped: bool) -> Self {
-        if encryped {
-            Self::MaybeBadPassword(e)
-        } else {
-            Self::io_msg(e, "")
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[inline]
-    pub(crate) fn file_open(e: std::io::Error, filename: impl Into<Cow<'static, str>>) -> Self {
-        Self::Io(e, filename.into())
-    }
-
-    pub(crate) fn maybe_bad_password(self, encryped: bool) -> Self {
-        if !encryped {
-            return self;
-        }
-        match self {
-            Self::Io(e, s) if s.is_empty() => Self::MaybeBadPassword(e),
-            _ => self,
-        }
     }
 }
 
