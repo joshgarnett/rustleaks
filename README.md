@@ -1,10 +1,12 @@
 # Rustleaks
 
 Rustleaks finds secrets, such as API keys and passwords, in files, Git history
-and standard input. It is written in Rust. Rustleaks is compatible with
-Gitleaks 8.30.0 configuration, findings and reports. See [Differences from
-Gitleaks](docs/user/gitleaks-differences.md) for the exceptions. The detection
-engine is also available as the `rustleaks-core` library.
+and standard input. It is written in Rust. It reads Gitleaks 8.30.0
+configuration files, ignore files, baselines and allow comments, and keeps
+the Gitleaks report fields and exit codes. Its findings can differ from
+Gitleaks. [Differences from Gitleaks](docs/user/gitleaks-differences.md) lists
+each difference. The detection engine is also available as the
+`rustleaks-core` library.
 
 Rustleaks builds on the behavior, default rules, tests and fixtures of
 [Gitleaks](https://github.com/gitleaks/gitleaks), and thanks its maintainers
@@ -46,6 +48,11 @@ cat app.log | rustleaks stdin   # standard input
 The exit code is 0 when nothing is found and 1 when secrets are found. Add
 `--report-path findings.json` to save a report. Run `rustleaks --help` to list
 the commands and flags.
+
+To stop Rustleaks from reporting a value that is not a secret, add an
+[allow comment](docs/user/configuration.md#allow-comments), an
+[ignore file](docs/user/configuration.md#ignore-files) entry or an
+[allowlist](docs/user/configuration.md#allowlist-fields).
 
 ## Library
 
@@ -92,23 +99,9 @@ For people who use Rustleaks:
 - [Using rustleaks-core](docs/user/library.md)
 - [Review records](docs/user/review-records.md)
 
-For people who work on Rustleaks:
-
-- [Contributing](CONTRIBUTING.md)
-- [Architecture](docs/dev/architecture.md)
-- [Testing and parity](docs/dev/testing-and-parity.md)
-- [Rule pack authoring](docs/dev/rule-pack-authoring.md)
-- [Engine internals](docs/dev/engine-internals.md)
-- [Performance](docs/dev/performance.md)
-- [Scanner comparison](docs/dev/comparison.md)
-- [Comparison workloads](docs/dev/comparison-workloads.md)
-- [Dependencies](docs/dev/dependencies.md)
-- [Threat model](docs/dev/threat-model.md)
-- [Security checks](docs/dev/security-checks.md)
-- [Incident response](docs/dev/incident-response.md)
-- [Updating upstream](docs/dev/updating-upstream.md)
-- [Releasing](docs/dev/releasing.md)
-- [Changelog](CHANGELOG.md)
+For people who work on Rustleaks, start with [Contributing](CONTRIBUTING.md)
+and the [developer documentation](docs/dev/README.md). Changes are listed in
+the [changelog](CHANGELOG.md).
 
 ## AI-assisted development
 

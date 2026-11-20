@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- State the resulting behavior or maintained state. -->
+<!-- State the resulting behavior or state. -->
 
 ## Rationale
 
@@ -18,10 +18,11 @@ new difference from Gitleaks with its documentation),
 sensitive data, dependencies, unsafe code, resource limits, or write
 "No impact" with a reason.
 
-List presentation changes (help, usage, error wording, log or banner text,
-JSON key or CSV column order) with their presentation dispositions or
-comparison changes, or write "None". -->
+List presentation changes with their presentation dispositions or comparison
+changes (see docs/dev/testing-and-parity.md#presentation-dispositions), or
+write "None". -->
 
 ## Issues
 
-<!-- Link real issues with Closes/Fixes when applicable. Do not invent a link. -->
+<!-- Link real issues with `Closes #N` when this change resolves them, or
+`Refs #N` otherwise. Do not invent a link. -->

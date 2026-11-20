@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a Rustleaks capability or maintained workflow change.
+description: Propose a Rustleaks capability or workflow change.
 title: "feat: "
 body:
   - type: textarea
@@ -34,7 +34,7 @@ body:
     id: impact
     attributes:
       label: Compatibility and security impact
-      description: Explain effects on functional Gitleaks compatibility, public API, dependencies, unsafe code, sensitive data, resource limits, and target support. State "Unknown" where investigation is needed.
+      description: Explain effects on the compatibility policy, public API, dependencies, unsafe code, sensitive data, resource limits, and target support. State "Unknown" where investigation is needed.
     validations:
       required: true
   - type: textarea

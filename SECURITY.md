@@ -11,8 +11,6 @@ release advisory states otherwise.
 Do not include real credentials, exploit payloads, or non-public vulnerability
 details in a public issue. Use [GitHub private vulnerability
 reporting](https://github.com/joshgarnett/rustleaks/security/advisories/new).
-The route was enabled and verified through the authenticated repository API on
-2026-08-24. Setup did not submit a live vulnerability report.
 
 Maintainers should acknowledge a private report within three business days,
 provide an initial assessment within seven business days, coordinate
@@ -35,13 +33,12 @@ Compatibility serialization and reporting intentionally preserve raw fields.
 Owned buffers are not zeroized, and removing detected secret byte sequences
 does not prove that remaining source-derived metadata is safe to disclose.
 
-Dependency advisories, licenses, versions, and source origins are governed by
-`deny.toml`. Temporary exceptions must be recorded in
-`supply-chain-exceptions.toml` with an owner, rationale, affected package,
-policy, and expiry date. Expired or unreferenced exceptions fail the local
-release gate.
+`deny.toml` sets the policy for dependency advisories, licenses, versions and
+sources, and `just security` checks it. `supply-chain-exceptions.toml` has no
+active exceptions, and `just security` fails if one is added. Accepting an
+exception needs maintainer approval and a change to that check.
 
-The maintained boundary map, exact local commands, and response procedure are
+The threat boundaries, exact local commands and response procedure are
 documented in the [threat model](docs/dev/threat-model.md),
 [security checks](docs/dev/security-checks.md) and
 [incident response](docs/dev/incident-response.md).
