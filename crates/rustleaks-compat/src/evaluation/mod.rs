@@ -6,7 +6,7 @@
 
 mod generator;
 mod model;
-mod pilot;
+mod native_cases;
 mod score;
 #[cfg(test)]
 mod tests;

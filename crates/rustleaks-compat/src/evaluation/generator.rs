@@ -243,7 +243,7 @@ pub(super) fn corpus() -> Corpus {
         end: 7 + UNKNOWN.len(),
     }];
     cases.push(unknown);
-    cases.extend(super::pilot::cases());
+    cases.extend(super::native_cases::cases());
     for value in &mut cases {
         negatives(value);
     }
@@ -264,7 +264,7 @@ pub(super) fn source_fingerprint() -> String {
     fingerprint(
         &[
             include_bytes!("generator.rs").as_slice(),
-            include_bytes!("pilot.rs").as_slice(),
+            include_bytes!("native_cases.rs").as_slice(),
         ]
         .concat(),
     )
