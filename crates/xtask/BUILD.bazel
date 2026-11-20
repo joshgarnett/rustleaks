@@ -20,7 +20,7 @@ rust_binary(
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/xtask",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.10",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.11",
     },
     srcs = glob(["src/**/*.rs"]) + [
         "//crates/rustleaks-core:campaign_profile_support",
@@ -48,7 +48,7 @@ rust_test(
     deps = all_crate_deps(normal = True, normal_dev = True),
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/xtask",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.10",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.11",
     },
     visibility = ["//visibility:public"],
 )
@@ -92,7 +92,7 @@ rust_test(
     env = _CLI_REGRESSION_ENV,
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/xtask",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.10",
+        "CARGO_PKG_VERSION": "0.1.0-alpha.11",
     },
     # Frozen one-second timeout cases require copied helpers to enter main and
     # record their PIDs before cancellation, including during repeated runs.

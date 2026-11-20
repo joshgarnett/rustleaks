@@ -18,7 +18,7 @@ mod corresponding_source;
 mod notices;
 mod runtime_inputs;
 
-const RELEASE_VERSION: &str = "0.1.0-alpha.10";
+const RELEASE_VERSION: &str = "0.1.0-alpha.11";
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
 const BAZEL_VERSION: &str = "9.2.0";
 const RULES_RUST_VERSION: &str = "0.72.0";

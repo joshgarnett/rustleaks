@@ -27,7 +27,7 @@ const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
 /// has the pinned SHA-256 in `compat/upstream-revision.txt`.
 const DEFAULT_RULES_SHA256: &str =
     "442fca81a914728ebaf843ba59d01bb3e6e71559c1ddb51fddc81fca45df959a";
-const RELEASE_VERSION: &str = "0.1.0-alpha.10";
+const RELEASE_VERSION: &str = "0.1.0-alpha.11";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";
 const CARGO_GEIGER_VERSION: &str = "cargo-geiger 0.13.0";
@@ -2527,7 +2527,7 @@ notes = "owner=maintainers; scope=reviewed graph; rationale=unselected concern; 
         let independent = r#"{
             "packages": [{
                 "name": "rustleaks-core",
-                "version": "0.1.0-alpha.10",
+                "version": "0.1.0-alpha.11",
                 "description": "Byte-first synchronous engine for the independent Rustleaks port",
                 "license": "MIT AND BSD-3-Clause AND Apache-2.0",
                 "repository": "https://github.com/joshgarnett/rustleaks",
