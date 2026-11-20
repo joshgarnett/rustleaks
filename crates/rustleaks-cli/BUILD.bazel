@@ -53,6 +53,7 @@ rust_binary(
 rustleaks_integration_test(
     name = "cli_test",
     src = "tests/cli.rs",
+    srcs = glob(["tests/cli/*.rs"]),
     data = [
         ":rustleaks",
         "//compat:all",
