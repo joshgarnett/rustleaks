@@ -30,9 +30,9 @@ include = [
     "default/LICENSE.veles",
     "default/NOTICE",
     "src/**/*.rs",
-    "LICENSE",
-    "NOTICE",
-    "README.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/README.md",
 ]
 
 [package.metadata.docs.rs]

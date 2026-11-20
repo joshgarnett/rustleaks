@@ -123,7 +123,7 @@ fn validate_core_repository_metadata(metadata: &str) -> Result<(), String> {
         ("version", RELEASE_VERSION),
         (
             "description",
-            "Byte-first synchronous engine for the independent Rustleaks port",
+            "Synchronous, byte-first secret detection engine for Rustleaks",
         ),
         ("license", "MIT AND BSD-3-Clause AND Apache-2.0"),
         ("repository", "https://github.com/joshgarnett/rustleaks"),
@@ -716,7 +716,7 @@ mod tests {
             "packages": [{
                 "name": "rustleaks-core",
                 "version": RELEASE_VERSION,
-                "description": "Byte-first synchronous engine for the independent Rustleaks port",
+                "description": "Synchronous, byte-first secret detection engine for Rustleaks",
                 "license": "MIT AND BSD-3-Clause AND Apache-2.0",
                 "repository": "https://github.com/joshgarnett/rustleaks",
                 "homepage": "https://github.com/joshgarnett/rustleaks",
