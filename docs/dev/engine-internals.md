@@ -78,6 +78,11 @@ These limits apply to each expression or component, not to the whole engine.
   including the reverse NFA. A temporary forward NFA checks the PikeVM
   working set before any search cache exists. It is dropped before the meta
   engine is built from the same parsed expression.
+- The embedded default rules and the built-in packs skip the temporary
+  forward NFA, which makes startup faster. The test
+  `builtin_rules_pass_full_pattern_checks` runs the full check on all of
+  that text. Custom configurations, custom packs and replaced default text
+  always get the full check.
 - If the reverse NFA is too large, compilation retries without DFA
   acceleration, so the forward pattern is still accepted.
 - The `bytes-v1` dialect has no separate repeat limit. The NFA and working

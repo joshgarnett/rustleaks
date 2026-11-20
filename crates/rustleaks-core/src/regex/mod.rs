@@ -367,6 +367,20 @@ impl fmt::Debug for GoRegex {
 
 /// Explicit native byte dialect. Its executable matcher never normalizes input
 /// or passes through the compatibility translator.
+/// A built `bytes-v1` matcher and its required literals.
+type ByteBackend = (Regex, Option<Box<[Box<[u8]>]>>);
+
+/// How much load-time checking a pattern receives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PatternCheck {
+    /// Build a temporary NFA so that size and working-set limits fail at load.
+    Full,
+    /// Text compiled into Rustleaks: the default rules and the built-in packs.
+    /// The temporary NFA is skipped. `builtin_rules_pass_full_pattern_checks`
+    /// in the native tests runs the full check on every such pattern.
+    BuiltIn,
+}
+
 #[derive(Clone)]
 pub(crate) struct NativeByteRegex {
     source: Box<str>,
@@ -390,23 +404,38 @@ impl fmt::Debug for NativeByteRegex {
 }
 
 impl NativeByteRegex {
+    #[cfg(test)]
     pub(crate) fn compile(source: &str) -> Result<Self, GoRegexError> {
+        Self::compile_checked(source, PatternCheck::Full)
+    }
+
+    pub(crate) fn compile_checked(source: &str, check: PatternCheck) -> Result<Self, GoRegexError> {
         if source.len() > PATTERN_SIZE_LIMIT {
             return Err(GoRegexError::PatternTooLarge {
                 actual: source.len(),
                 limit: PATTERN_SIZE_LIMIT,
             });
         }
-        let (backend, required_literals) = GoRegex::on_compile_stack(source, |pattern| {
-            let hir = GoRegex::preflight_dialect(pattern, COMPILED_SIZE_LIMIT, false)?;
-            let backend = GoRegex::build_meta_backend_dialect(&hir, COMPILED_SIZE_LIMIT, false)?;
-            Ok((backend, required_literals::required_literals(&hir)))
-        })?;
+        let build: fn(&str) -> Result<_, GoRegexError> = match check {
+            PatternCheck::Full => |pattern| {
+                let hir = GoRegex::preflight_dialect(pattern, COMPILED_SIZE_LIMIT, false)?;
+                Self::build(&hir)
+            },
+            PatternCheck::BuiltIn => {
+                |pattern| Self::build(&GoRegex::parse_hir(pattern, false, false)?)
+            }
+        };
+        let (backend, required_literals) = GoRegex::on_compile_stack(source, build)?;
         Ok(Self {
             source: source.into(),
             backend,
             required_literals: required_literals.map(Arc::from),
         })
+    }
+
+    fn build(hir: &regex_syntax::hir::Hir) -> Result<ByteBackend, GoRegexError> {
+        let backend = GoRegex::build_meta_backend_dialect(hir, COMPILED_SIZE_LIMIT, false)?;
+        Ok((backend, required_literals::required_literals(hir)))
     }
 
     /// Folded ASCII literals of which every match contains one, ignoring
@@ -475,17 +504,26 @@ impl NativeByteRegex {
 impl GoRegex {
     /// Compiles an untrusted Go regexp without panicking.
     pub(crate) fn compile(source: &str) -> Result<Self, GoRegexError> {
-        Self::compile_mode(source, false)
+        Self::compile_mode(source, false, PatternCheck::Full)
+    }
+
+    /// Compiles a Go regexp with the given load-time check.
+    pub(crate) fn compile_checked(source: &str, check: PatternCheck) -> Result<Self, GoRegexError> {
+        Self::compile_mode(source, false, check)
     }
 
     /// Compiles a Go pattern constrained to the complete input. Absolute
     /// anchors enter HIR after source translation and flag interpretation, so
     /// quote-to-end syntax cannot consume a synthetic pattern suffix.
     pub(crate) fn compile_whole(source: &str) -> Result<Self, GoRegexError> {
-        Self::compile_mode(source, true)
+        Self::compile_mode(source, true, PatternCheck::Full)
     }
 
-    fn compile_mode(source: &str, whole_input: bool) -> Result<Self, GoRegexError> {
+    fn compile_mode(
+        source: &str,
+        whole_input: bool,
+        check: PatternCheck,
+    ) -> Result<Self, GoRegexError> {
         let translated = Self::translate(source)?;
         let (backend, literal_anchor, required) = if Self::needs_compile_stack(&translated.pattern)
         {
@@ -499,8 +537,15 @@ impl GoRegex {
             let (regex, literal_anchor) = Self::on_compile_stack(&translated.pattern, build)?;
             (LazyBackend::built(regex), literal_anchor, None)
         } else {
-            let hir =
-                Self::preflight_mode(&translated.pattern, COMPILED_SIZE_LIMIT, true, whole_input)?;
+            let hir = match check {
+                PatternCheck::Full => Self::preflight_mode(
+                    &translated.pattern,
+                    COMPILED_SIZE_LIMIT,
+                    true,
+                    whole_input,
+                )?,
+                PatternCheck::BuiltIn => Self::parse_hir(&translated.pattern, true, whole_input)?,
+            };
             let literal_anchor = LiteralAnchorShape::analyze(&hir);
             let required = required_literals::required_literals(&hir);
             (LazyBackend::deferred(hir), literal_anchor, required)
@@ -613,6 +658,16 @@ impl GoRegex {
         utf8: bool,
         whole_input: bool,
     ) -> Result<regex_syntax::hir::Hir, GoRegexError> {
+        let hir = Self::parse_hir(pattern, utf8, whole_input)?;
+        Self::check_limits(&hir, nfa_size_limit, utf8)?;
+        Ok(hir)
+    }
+
+    fn parse_hir(
+        pattern: &str,
+        utf8: bool,
+        whole_input: bool,
+    ) -> Result<regex_syntax::hir::Hir, GoRegexError> {
         let hir = syntax::parse_with(
             pattern,
             &syntax::Config::new()
@@ -625,12 +680,19 @@ impl GoRegex {
             // reported error.
             message: "error parsing regex".into(),
         })?;
-        let hir = if whole_input {
+        Ok(if whole_input {
             use regex_syntax::hir::{Hir, Look};
             Hir::concat(vec![Hir::look(Look::Start), hir, Hir::look(Look::End)])
         } else {
             hir
-        };
+        })
+    }
+
+    fn check_limits(
+        hir: &regex_syntax::hir::Hir,
+        nfa_size_limit: usize,
+        utf8: bool,
+    ) -> Result<(), GoRegexError> {
         // Meta does not expose its forward NFA. Preserve the existing exact
         // fallback working-set rejection before allocating any search cache.
         // Parse only once and drop this temporary NFA before meta compilation.
@@ -641,7 +703,7 @@ impl GoRegex {
                     .which_captures(WhichCaptures::All)
                     .nfa_size_limit(Some(nfa_size_limit)),
             )
-            .build_from_hir(&hir)
+            .build_from_hir(hir)
             .map_err(|error| GoRegexError::Backend {
                 message: error.to_string(),
             })?;
@@ -653,7 +715,7 @@ impl GoRegex {
             });
         }
         drop(nfa);
-        Ok(hir)
+        Ok(())
     }
 
     fn build_meta_backend(
@@ -2518,6 +2580,32 @@ mod tests {
         };
         assert!(estimated > limit);
         assert_eq!(limit, super::PIKEVM_WORKING_SIZE_LIMIT);
+    }
+
+    #[test]
+    fn builtin_check_skips_only_the_temporary_nfa() {
+        use super::{NativeByteRegex, PatternCheck};
+        // Parses, but exceeds the PikeVM working-set limit.
+        let over = r"\pL{1000}".repeat(10);
+        assert!(matches!(
+            GoRegex::compile_checked(&over, PatternCheck::Full),
+            Err(GoRegexError::WorkingSetTooLarge { .. })
+        ));
+        assert!(GoRegex::compile_checked(&over, PatternCheck::BuiltIn).is_ok());
+        assert!(matches!(
+            NativeByteRegex::compile_checked(&r"(?u:\pL{1000})".repeat(10), PatternCheck::Full),
+            Err(GoRegexError::WorkingSetTooLarge { .. })
+        ));
+        // Parse and translation errors still fail on the built-in path.
+        for invalid in ["(", "[abc", r"\p{Age:3.0}", "a{1001}"] {
+            assert!(GoRegex::compile_checked(invalid, PatternCheck::BuiltIn).is_err());
+        }
+        for invalid in ["(", "[abc", r"(?u:\p{InvalidProperty})"] {
+            assert!(NativeByteRegex::compile_checked(invalid, PatternCheck::BuiltIn).is_err());
+        }
+        let regex = GoRegex::compile_checked("ab(c+)", PatternCheck::BuiltIn).unwrap();
+        assert!(regex.is_match(b"xabccc"));
+        assert_eq!(regex.capture_count(), 1);
     }
 
     #[test]
