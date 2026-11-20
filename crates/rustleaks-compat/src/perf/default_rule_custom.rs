@@ -8,7 +8,9 @@ use std::fmt::Write as _;
 use rustleaks_core::model::Fragment;
 use serde_json::json;
 
-use super::{Context, Expected, Fallible, KIB, Lcg, MIB, Plan, Plant, Scan, ensure, filler};
+use super::{
+    Context, DefaultRuleRng, Expected, Fallible, KIB, MIB, Plan, Plant, Scan, ensure, filler,
+};
 
 const SMALL_FRAGMENT: usize = 16 * KIB;
 const LARGE_FRAGMENT: usize = MIB;
@@ -96,7 +98,7 @@ fn generic_filter(ctx: &mut Context<'_>, generic: usize) -> Fallible<Plan> {
     let generic_rule = ctx.rule_index("generic-filter-token")?;
     let specific_rule = ctx.rule_index("specific-filter-token")?;
     let specific = generic / 8;
-    let mut rng = Lcg::new(0x6766_696c);
+    let mut rng = DefaultRuleRng::new(0x6766_696c);
     let mut raw = Vec::with_capacity((generic + specific) * 28);
     let mut plants = Vec::with_capacity(generic + specific);
     for index in 0..generic {
@@ -127,7 +129,7 @@ fn generic_filter(ctx: &mut Context<'_>, generic: usize) -> Fallible<Plan> {
 fn plant_hex_line(
     raw: &mut Vec<u8>,
     plants: &mut Vec<Plant>,
-    rng: &mut Lcg,
+    rng: &mut DefaultRuleRng,
     rule: usize,
     prefix: &[u8],
 ) {
@@ -161,7 +163,7 @@ fn many_rules(ctx: &mut Context<'_>, rules: usize) -> Fallible<Plan> {
     let selected = [0, rules / 2, rules - 1];
     let mut scans = Vec::with_capacity(2);
     for (size, repeats) in [(SMALL_FRAGMENT, 1), (LARGE_FRAGMENT, 16)] {
-        let mut rng = Lcg::new(0x6d61_6e79 + size as u64);
+        let mut rng = DefaultRuleRng::new(0x6d61_6e79 + size as u64);
         let mut raw = Vec::with_capacity(size);
         let mut plants = Vec::new();
         for _ in 0..repeats {
@@ -230,7 +232,7 @@ fn heavy_scan(
     per_shape: usize,
 ) -> Fallible<(Scan, usize, usize)> {
     let rule = ctx.rule_index("heavy-target")?;
-    let mut rng = Lcg::new(0x6865_6176 + size as u64);
+    let mut rng = DefaultRuleRng::new(0x6865_6176 + size as u64);
     let mut raw = Vec::with_capacity(size);
     let mut plants = Vec::new();
     let mut candidates = 0;
@@ -313,7 +315,7 @@ fn keywordless(ctx: &mut Context<'_>, rules: usize) -> Fallible<Plan> {
     let mut scans = Vec::with_capacity(2);
     let mut planted_counts = Vec::with_capacity(2);
     for size in [SMALL_FRAGMENT, LARGE_FRAGMENT] {
-        let mut rng = Lcg::new(0x6b77_6c73 + size as u64);
+        let mut rng = DefaultRuleRng::new(0x6b77_6c73 + size as u64);
         let mut raw = Vec::with_capacity(size);
         let mut plants = Vec::new();
         for rule_number in (0..rules).step_by(7) {

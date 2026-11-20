@@ -13,7 +13,7 @@ use serde_json::json;
 use super::super::worker_workloads::with_team;
 use super::super::{Phase, elapsed, fingerprint, phase};
 use super::{
-    Context, Expected, Fallible, GITHUB_PAT_RULE, Lcg, MIB, Plant, RuleMeta, Scan,
+    Context, DefaultRuleRng, Expected, Fallible, GITHUB_PAT_RULE, MIB, Plant, RuleMeta, Scan,
     ensure_default_rules, filler, ghp_token, tiny_content, tiny_fragment, validate,
 };
 
@@ -50,7 +50,7 @@ fn small_case(ctx: Context<'_>, workers: usize) -> Fallible<Case> {
 fn dense_case(mut ctx: Context<'_>, workers: usize) -> Fallible<Case> {
     let rule = ctx.rule_index(GITHUB_PAT_RULE)?;
     let size = 4 * MIB;
-    let mut rng = Lcg::new(0x6465_6e73);
+    let mut rng = DefaultRuleRng::new(0x6465_6e73);
     let mut raw = Vec::with_capacity(size);
     let mut plants = Vec::with_capacity(size / DENSE_STRIDE);
     while raw.len() + DENSE_STRIDE <= size {
@@ -104,14 +104,14 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
         DEFAULT_CONFIG_BYTES,
     );
     compile.outcome_fnv1a64.clone_from(&rule_ids);
-    compile.counts["rules"] = json!(222);
+    compile.counts["rules"] = json!(crate::DEFAULT_RULES);
     let start = Instant::now();
     let detector = Engine::builder(config).build()?;
     let mut construction = phase(
         "engine-construction",
         1,
         elapsed(start)?,
-        222,
+        crate::DEFAULT_RULES as u64,
         "compiled-rules",
         DEFAULT_CONFIG_BYTES,
         DEFAULT_CONFIG_BYTES,

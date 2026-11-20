@@ -239,10 +239,10 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
     let start = Instant::now();
     let config = ConfigLoader::new().load_default()?;
     let compile_ns = elapsed(start)?;
-    if config.rules().len() != 222
-        || super::super::config_metric(&config).fingerprint != 0xbba0_f636_d5a0_2d49
+    if config.rules().len() != crate::DEFAULT_RULES
+        || crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
     {
-        return Err("fragment default configuration differs from the legacy invariant".into());
+        return Err("fragment default configuration differs from the shipped default rules".into());
     }
     let fixture = Fixture::new(id, &config)?;
     let rule_ids = config.ordered_rule_ids().join("\0");
@@ -256,14 +256,14 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
         DEFAULT_CONFIG_BYTES,
     );
     compile.outcome_fnv1a64 = fingerprint(rule_ids.as_bytes());
-    compile.counts["rules"] = json!(222);
+    compile.counts["rules"] = json!(crate::DEFAULT_RULES);
     let start = Instant::now();
     let detector = Engine::builder(config).build()?;
     let mut build = phase(
         "engine-construction",
         1,
         elapsed(start)?,
-        222,
+        crate::DEFAULT_RULES as u64,
         "compiled-rules",
         DEFAULT_CONFIG_BYTES,
         DEFAULT_CONFIG_BYTES,

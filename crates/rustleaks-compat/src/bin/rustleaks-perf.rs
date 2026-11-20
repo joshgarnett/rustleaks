@@ -13,6 +13,7 @@ use std::fs::{self, File};
 use std::hint::black_box;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use benchmark_data::{
@@ -34,6 +35,10 @@ use serde::Serialize;
 
 const SCHEMA_VERSION: u32 = 2;
 const MEASUREMENT_SCOPE: &str = "legacy-v1-includes-verification";
+/// Rules in the shipped default configuration.
+const DEFAULT_RULES: usize = 222;
+/// `config_metric` fingerprint of the shipped default configuration.
+const DEFAULT_CONFIG_FINGERPRINT: u64 = 0xbba0_f636_d5a0_2d49;
 const DEFAULT_INPUT_BYTES: usize = 1_048_576;
 const HOSTILE_INPUT_BYTES: usize = 262_144;
 const SOURCE_FILES: usize = 64;
@@ -183,6 +188,40 @@ impl Drop for FixtureDir {
         if safe_name && self.path.parent() == Some(std::env::temp_dir().as_path()) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+}
+
+/// A temporary folder for one workload run, removed on drop. It holds an empty
+/// folder `empty` and an empty file `empty-config`.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    /// Creates `rustleaks-perf-<kind>-<process>-<n>` in the temporary folder.
+    fn new(kind: &str) -> Result<Self, Box<dyn Error>> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        // A test can leave its folder behind on purpose, and a later run can
+        // reuse the process ID, so a taken name moves to the next one.
+        let root = loop {
+            let root = std::env::temp_dir().join(format!(
+                "rustleaks-perf-{kind}-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            match fs::create_dir(&root) {
+                Ok(()) => break root,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.into()),
+            }
+        };
+        fs::create_dir(root.join("empty"))?;
+        fs::write(root.join("empty-config"), b"")?;
+        Ok(Self(root))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -971,9 +1010,9 @@ fn expected(id: &str) -> Expected {
         "default-compile" => Expected::new(
             // The byte length of the shipped default rules.
             100_665,
-            222,
+            DEFAULT_RULES as u64,
             0,
-            0xbba0_f636_d5a0_2d49,
+            DEFAULT_CONFIG_FINGERPRINT,
             "222 compiled default rules",
         ),
         "default-no-keyword-1-kib" => Expected::new(
