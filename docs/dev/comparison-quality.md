@@ -44,7 +44,8 @@ Both sources write the labels format described in
 [Labels](comparison.md#labels), with the fields in the order of that table.
 `workload` is `constructed-v1` or `credata`, `commit` is always `null`
 because both sources are directory inputs, and `source` is `constructed` or
-`credData`. For `line`, `\r\n`, `\r` and `\n` each end a line.
+`credData`. For `line`, only `\n` ends a line, so `\r\n` counts once and a
+lone `\r` does not count. The scorer counts lines the same way.
 
 ## Constructed corpus
 
@@ -105,7 +106,9 @@ Limits to disclose with any result:
 
 The committed copies are `benchmarks/comparison/quality/labeled.json` and
 `benchmarks/comparison/quality/constructed-v1.expected.json`. A unit test
-fails when the generator sources change without new committed digests. To
+fails when the generator sources, including
+`crates/xtask/src/embedded_python/support.py`, change without new committed
+digests. To
 update them, run `generate` into an empty cache folder, copy `workload.json`
 and `summary.json` over the committed files, and run `verify`.
 
@@ -301,6 +304,8 @@ Conversion rules:
   [`obfuscate_creds.py`](https://github.com/Samsung/CredData/blob/01e3d135a90f46c9a7965683b24a05d12e136b33/obfuscate_creds.py)
   reads them: `\r\n` and a lone `\r` end a line, like `\n`. The adapter
   does this in memory and maps every offset back to the unchanged bytes.
+  The label's `line` is then counted from the byte offset, where only `\n`
+  ends a line.
 - A whole-line row covers the line without its line break. A multi-line row
   runs from `ValueStart` on `LineStart` to `ValueEnd` on `LineEnd`. A
   position past the end of its line is a conversion problem.

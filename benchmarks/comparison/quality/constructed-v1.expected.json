@@ -1,7 +1,7 @@
 {
   "schema": "rustleaks-comparison-quality-expected-v1",
   "corpus": "constructed-v1",
-  "generator_sha256": "63a5db13a7408c9816c9d872f5e36e428989255b59d3b9223cefcfdc71a8c670",
+  "generator_sha256": "12646a3999de76061b613f9953fc06af197a9e036f1d62b49fcd1334b3120ce5",
   "seed": "rustleaks-quality-constructed-v1",
   "scale": 2.0,
   "tree_sha256": "dad7e9cf119b6542ae6a7a32ec9a31463cb8ff693ff829865346522c2d926322",

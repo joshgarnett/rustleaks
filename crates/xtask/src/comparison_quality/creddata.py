@@ -143,10 +143,11 @@ def convert_creddata(checkout, max_problems):
             conflicts.append(f'{relative} bytes {start}-{end}: ' +
                              ', '.join(f'{where} {label}' for label, _, _, where, _ in found))
             continue
-        label, line, category, _, _ = found[0]
+        label, _, category, _, _ = found[0]
         record = {
             'workload': CREDDATA_WORKLOAD, 'path': relative, 'commit': None, 'start': start, 'end': end,
-            'line': line, 'secret_sha256': sha256_hex(documents[relative].raw[start:end]),
+            'line': line_of(documents[relative].raw, start),
+            'secret_sha256': sha256_bytes(documents[relative].raw[start:end]),
             'category': category, 'label': label, 'source': 'credData',
         }
         if all(entry[4] for entry in found):
@@ -193,7 +194,7 @@ def write_creddata(cache_root, checkout, max_problems, force):
     summary = {
         'commit': CREDDATA_COMMIT,
         'data_tree_sha256': digest,
-        'labels_sha256': sha256_hex(labels_bytes),
+        'labels_sha256': sha256_bytes(labels_bytes),
         'labels': {'total': len(labels),
                    'secret': sum(1 for record in labels if record['label'] == 'secret'),
                    'not-secret': sum(1 for record in labels if record['label'] == 'not-secret')},

@@ -13,8 +13,8 @@ use std::process::{Command, Output};
 use crate::embedded_python::{Program, source_root_arguments};
 use crate::tooling::sha256_bytes;
 
-/// Python modules in load order. The first four decide the constructed
-/// corpus bytes.
+/// Python modules in load order. The support module and the first four
+/// modules decide the constructed corpus bytes.
 const PROGRAM: Program = Program {
     modules: &[
         (
@@ -44,19 +44,22 @@ const PROGRAM: Program = Program {
     ],
 };
 
-/// Number of leading modules that decide the constructed corpus bytes.
+/// Number of leading quality modules, after the support module, that decide
+/// the constructed corpus bytes.
 const GENERATOR_MODULES: usize = 4;
 
 /// Committed digests of the default constructed corpus.
 #[cfg(test)]
 const EXPECTED_PATH: &str = "benchmarks/comparison/quality/constructed-v1.expected.json";
 
-/// SHA-256 of the generator sources, concatenated. A change here requires
-/// regenerating the committed digests with `generate` and `verify`.
+/// SHA-256 of the support module and the generator sources, concatenated. A
+/// change here requires regenerating the committed digests with `generate`
+/// and `verify`.
 fn generator_sha256() -> String {
-    let sources = PROGRAM.modules[..GENERATOR_MODULES]
-        .iter()
-        .map(|(_, source)| *source)
+    let sources = PROGRAM
+        .sources()
+        .take(GENERATOR_MODULES + 1)
+        .map(|(_, source)| source)
         .collect::<String>();
     sha256_bytes(sources.as_bytes())
 }

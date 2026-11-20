@@ -61,6 +61,7 @@ def self_test_creddata(root):
     # Synthetic CredData-shaped files. Values are drawn at run time. A line
     # holds a two-byte character before its value, so character and byte
     # offsets differ. The file mixes `\r\n`, `\r` and `\n` line breaks.
+    # CredData counts a lone `\r` as a line break; a label's `line` does not.
     rng = Drbg('self-test', 'credata')
     first_value, second_value = rng.chars(ALNUM, 24), rng.chars(ALNUM, 21)
     lines = ['# café settings', 'api_key = "' + first_value + '"', 'password = getPass()',
@@ -89,8 +90,8 @@ def self_test_creddata(root):
     expected = [
         ('secret', 'credata-key', first_value, 2),
         ('not-secret', 'credata-password', 'password = getPass()', 3),
-        ('secret', 'credata-pem-private-key', '\r\n'.join(lines[3:6]), 4),
-        ('not-secret', 'credata-secret-token', second_value, 7),
+        ('secret', 'credata-pem-private-key', '\r\n'.join(lines[3:6]), 3),
+        ('not-secret', 'credata-secret-token', second_value, 6),
     ]
     if spans != expected:
         raise QualityError(f'CredData conversion self-test failed: {spans!r}')
