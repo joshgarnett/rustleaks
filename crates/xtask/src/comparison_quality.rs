@@ -44,7 +44,8 @@ const PROGRAM: Program = Program {
     ],
 };
 
-/// Number of leading modules that decide the constructed corpus bytes.
+/// Number of leading quality modules, after the support module, that decide
+/// the constructed corpus bytes.
 const GENERATOR_MODULES: usize = 4;
 
 /// Committed digests of the default constructed corpus.

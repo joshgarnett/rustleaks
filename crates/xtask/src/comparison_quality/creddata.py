@@ -143,7 +143,7 @@ def convert_creddata(checkout, max_problems):
             conflicts.append(f'{relative} bytes {start}-{end}: ' +
                              ', '.join(f'{where} {label}' for label, _, _, where, _ in found))
             continue
-        label, line, category, _, _ = found[0]
+        label, _, category, _, _ = found[0]
         record = {
             'workload': CREDDATA_WORKLOAD, 'path': relative, 'commit': None, 'start': start, 'end': end,
             'line': line_of(documents[relative].raw, start),
