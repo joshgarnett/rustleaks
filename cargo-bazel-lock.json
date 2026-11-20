@@ -1,5 +1,5 @@
 {
-  "checksum": "46866c23529e14a0351d8cd139c2de262333d34bccab02b61a622dfaf83b8e2b",
+  "checksum": "1837c44ca8d7a8dfcda914b3709324930f6eb442b7a6c26b393bb6e00ea92aca",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -2266,10 +2266,6 @@
         "deps": {
           "common": [
             {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
-            {
               "id": "thiserror 2.0.21",
               "target": "thiserror"
             }
@@ -2281,6 +2277,10 @@
             {
               "id": "base64 0.23.1",
               "target": "base64"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
             }
           ],
           "selects": {}
