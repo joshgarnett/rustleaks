@@ -18,8 +18,6 @@ pub enum Error {
     NextHeaderCrcMismatch,
     /// IO error with optional context message.
     Io(std::io::Error, Cow<'static, str>),
-    /// Error opening file.
-    FileOpen(std::io::Error, String),
     /// Other error with description.
     Other(Cow<'static, str>),
     /// Bad terminated streams info.
@@ -43,14 +41,8 @@ pub enum Error {
         /// Actual required memory in KB.
         actaul_kb: usize,
     },
-    /// Password required for encrypted archive.
-    PasswordRequired,
     /// Feature or operation not supported.
     Unsupported(Cow<'static, str>),
-    /// Possibly bad password for encrypted content.
-    MaybeBadPassword(std::io::Error),
-    /// File not found.
-    FileNotFound,
 }
 
 impl From<std::io::Error> for Error {
