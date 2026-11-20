@@ -17,7 +17,8 @@ reviewed upstream fixture.
 
 The security goals are to:
 
-- keep exact findings within the supported compatibility profile;
+- never lose a secret that the default rules find, and document every
+  finding difference from Gitleaks;
 - return a structured error or a bounded partial result for hostile input;
 - keep first-party code free of unsafe Rust;
 - avoid hidden network or process-wide activity in the engine; and
@@ -34,7 +35,7 @@ and fail when that boundary changes.
 | Engine and findings | `rustleaks-core/src/engine.rs`, `model.rs` | Byte input, checked locations, scan budgets, cooperative cancellation, `Debug` without content | Engine, model, controlled-scan, disclosure, property, parity, `fragment_scan` fuzz |
 | Configuration and rules | `rustleaks-core/src/config/`, `regex/` | Per-expression regex limits, extension depth 2, 4,096 selected rules, 8 MiB selected rule source, structured errors | Configuration, extension, regex corpus, property, `config` and `go_regex` fuzz |
 | Native packs and diagnostics | `rustleaks-core/src/native.rs`, `explanation.rs`, `validation.rs` | Explicit selection, exact identity, strict fields, no rule collisions, 32 packs, 1 MiB TOML, 1,024 rules, 65,536 explanation records | Native policy, native rules, disclosure, offline layout |
-| Review records | `rustleaks-core/src/triage.rs`, `rustleaks-report/src/triage.rs` | Policy, options and completion binding; finite reasons and expiry; 4,096 records, 100,000 findings, 8 MiB JSON | Core and report triage tests, examples |
+| Review records | `rustleaks-core/src/triage.rs` | Policy, options and completion binding; finite reasons and expiry; 4,096 records, 100,000 findings, 8 MiB JSON | Core triage tests, examples |
 | Decoders and locations | `rustleaks-core/src/decoder/`, `model.rs` | Caller decode depth, decoded bytes and work in budgets, checked offsets | Decoder, arbitrary bytes, locations, parity, `fragment_scan` fuzz |
 | Files and directories | `rustleaks-sources/src/file.rs`, `directory.rs`, `path.rs`, `runner.rs`, `runner/budget.rs` | Bounded chunks and queue, optional complete targets, symlink hop limit 64, path normalization, optional budgets, workers joined | File, directory, path, symlink escape, chunking, complete-target, cancellation, budget and panic cleanup tests |
 | Archives | `rustleaks-sources/src/archive.rs`, `archive/`, `rar.rs`, codec forks, selected decoders | Streamed members, no member extraction to disk, no link following, checked coder graphs, depth 8, 1,000,000 entries, 4 GiB member, 16 GiB total, 1 GiB spool, 64 MiB parts in memory, anonymous owner-only temporary spool files | Format fixtures, traversal, link, bomb, nesting, streaming equivalence and spool cleanup tests, panic policy example, `archive` fuzz |
@@ -121,19 +122,12 @@ See [Using rustleaks-core](../user/library.md#review-records).
 - Streaming input has no limit unless the caller sets one.
 - Budget reservations can reduce concurrency. Producer buffers and single
   metadata fields are not counted.
-- The CLI starts one detection thread for each available CPU, up to 12,
-  unless `--jobs` sets another number. `--jobs` has no fixed maximum. Memory for queued and
-  scanned fragments and for search caches grows with the thread count. The
-  queue without a profile holds at most 1,024 fragments. A thread that cannot
-  start ends the scan before the source is read, and started threads are
-  joined.
-- A `dir` scan with two or more detection threads also starts up to two
-  threads that open and read files. The walking thread still makes every
-  path, size and symbolic link decision before a file is opened, and it reads
-  archives one at a time. The reading threads hold at most 18 fragments and
-  two read buffers. A reading thread that cannot start does not end the
-  scan; the started reading thread, or else the walking thread, reads the
-  files instead. All of them are joined before the scan returns.
+- Memory grows with the number of detection threads (`--jobs`, which has
+  no fixed maximum) and with the directory reader threads (up to 2 in the
+  CLI). The walking thread still makes every path, size and symbolic link
+  decision before a file is opened. Every thread is joined before the scan
+  returns. See [Source runner budgets](engine-internals.md#source-runner-budgets)
+  and [Directory reader threads](engine-internals.md#directory-reader-threads).
 - Intentional exclusions stay separate from coverage failures, and a failed
   complete target publishes no partial prefix.
 
@@ -174,16 +168,13 @@ See [Using rustleaks-core](../user/library.md#review-records).
   with the history, up to 100,000,000 commits.
 - An archive blob streams from `git cat-file` into an archive spool. Over its
   limit, Git is stopped and reaped, and the blob is skipped with an issue.
-- With several history processes, a scan also starts `git rev-list`,
-  `git config --get format.pretty` and one `git log --stdin` for each batch
-  of commits, at most `history_processes` at a time. They use the same Git
-  executable and environment as the single `git log`.
-  Commit names reach standard input only after they are checked to be
-  hexadecimal object names, because `--stdin` also accepts options. A failed
-  write to standard input fails the batch. Every child is killed and reaped,
-  and every thread is joined, on stop, error and cancellation. Each process
-  maps the repository's packs, so memory grows with the process count. The
-  CLI caps the count at 6.
+- With several history processes (up to 6 in the CLI), a scan starts more
+  Git children with the same executable and environment. Commit names reach
+  `git log --stdin` only after they are checked to be hexadecimal object
+  names, because `--stdin` also accepts options. Each process maps the
+  repository's packs, so memory grows with the process count. Every child is
+  killed and reaped on stop, error and cancellation. See
+  [Git history processes](engine-internals.md#git-history-processes).
 - `rustleaks-sources` starts its child processes one at a time. On macOS and
   other targets without `pipe2`, a child started while another thread
   creates a pipe can inherit that pipe, and two `git log` processes that

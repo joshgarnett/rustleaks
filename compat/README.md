@@ -41,12 +41,13 @@ frozen README says that CI replays a Go oracle or its generators, it describes
 the retired process. The frozen files stay unchanged because they are part of
 the hashed evidence.
 
-Frozen files also name documentation paths that have since moved. The
-`design_evidence` field in `api-dispositions-v1.jsonl` names
-`docs/ARCHITECTURE.md` anchors. Those anchors now live in
+Frozen files name some documentation paths that do not exist in the current
+tree. The `docs/ARCHITECTURE.md` anchors in the `design_evidence` field of
+`api-dispositions-v1.jsonl` refer to sections of
 [`docs/dev/architecture.md`](../docs/dev/architecture.md). Paths such as
 `docs/COMPATIBILITY.md` and `docs/RESOURCE_LIMITS.md` in
-`behavior-matrix.toml` and `detect-corpus/` are historical labels.
+`behavior-matrix.toml` and `detect-corpus/` are labels only and point to no
+current file.
 
 New expectations go into Rust tests with synthetic inputs and independently
 reviewed expected values. For functional fields, such as findings, spans,
@@ -85,7 +86,7 @@ Do not edit generated files by hand. Regenerate them with these commands:
 | `quality-corpus/cases-v1.json` | `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- generate` |
 | `quality-corpus/baseline-v1.json` | `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline` |
 | `api-dispositions-v1.jsonl` | `cargo xtask generate api-dispositions` |
-| `public-api/rustleaks-core-0.1.0-alpha.1.txt` | `cargo +nightly-2026-08-21 public-api -p rustleaks-core -sss --color never`, with `cargo-public-api` 0.52.0 |
+| `public-api/rustleaks-core-0.1.0-alpha.1.txt` (the current API; the name is fixed) | `cargo +nightly-2026-08-21 public-api -p rustleaks-core -sss --color never`, with `cargo-public-api` 0.52.0 |
 
 The quality tool also accepts `check` and `check-baseline`. `just quality-eval`
 prints the current quality report. `cargo xtask generate api-dispositions

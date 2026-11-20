@@ -53,12 +53,16 @@ bazelisk run //crates/xtask:xtask -- generate archive-fuzz-seeds /tmp/rustleaks-
 bazelisk run //crates/xtask:xtask -- generate archive-fuzz-seeds /tmp/rustleaks-archive-seeds-v1 --check
 ```
 
+This command accepts any absolute output path, including one under `/tmp`
+on macOS, where `/tmp` is a symbolic link.
+
 Notes on the seeds:
 
-- The two files in `seeds/archive/` keep their original bytes without a
-  header. The generator uses their first byte as both the format selector and
-  the control byte. Old crash inputs must be converted the same way before
-  replay. Do not pass them to the target directly.
+- The two files in `seeds/archive/` are unframed inputs: archive bytes
+  without the `RLA\x01` header. The generator converts them to framed inputs
+  and uses their first byte as both the format selector and the control
+  byte. Convert any other unframed archive input the same way before replay.
+  Do not pass it to the target directly.
 - `support/sevenz_seeds.rs` builds the two compressed 7z seeds. Each holds one
   `value.txt` member with `CODEC_PAYLOAD` repeated eight times. Deflate uses
   `miniz_oxide 0.9.1` raw compression at level 6. LZ4 uses `lz4_flex 0.14.0`
@@ -71,7 +75,8 @@ Notes on the seeds:
 
 `tests/archive_fuzz.rs` uses the same frame decoder and harness as the
 target. It checks every selector and control combination, decoded payloads
-for every seeded format, legacy seed conversion and the member limit.
+for every seeded format, the conversion of unframed seeds and the member
+limit.
 
 The target supports only `panic=unwind`. A compile-time check rejects
 `panic=abort`. Known 7z and RAR decoder panics become source issues only in
@@ -89,8 +94,8 @@ minus one, read-ahead, callback stop, callback error, cancellation before the
 scan and cancellation in the callback. A little-endian `u16` schedule length
 comes next, then the schedule and the payload. Flags use bit 0. Chunk size is
 1 to 64 and read-ahead is 0 to 63. The 12-byte header counts toward the
-input limit. Other inputs use the older format, where one byte (two in the
-deep profile) selects the schedule.
+input limit. The target also accepts unframed inputs, where one byte (two in
+the deep profile) selects the schedule.
 
 ## `git_patch`
 
@@ -99,12 +104,12 @@ framed input starts with `RLG\x01`, then one byte each for the file limit
 minus one, the hunk limit minus one and cancellation, then the patch bytes.
 The file limit is 1 to 32, the hunk limit is 1 to 256, and cancellation uses
 bit 0. The seven-byte header counts toward the input limit. Parser lines are
-limited to 2,048, and metadata and paths to 4 KiB each. Other inputs use the
-older format with one leading control byte. Parsing the same input twice
+limited to 2,048, and metadata and paths to 4 KiB each. The target also
+accepts unframed inputs, which start with one control byte. Parsing the same input twice
 must give the same result.
 
 `source_fuzz_test` checks the generated reader and Git seeds: emitted bytes,
-parser counts, separate controls, limits and the older formats.
+parser counts, separate controls, limits and the unframed formats.
 
 ## Running
 

@@ -11,10 +11,14 @@ between them, and where to make common changes. For using the library, see
   no process-wide state.
 - An `Engine` is immutable, `Send` and `Sync`. Callers decide how to share it
   and how to schedule scans.
-- `rustleaks-core` does not depend on files, archives, Git, reports, the CLI,
-  async runtimes or native libraries.
-- Dependency types, such as regex or JSON types, do not appear in the public
-  API of `rustleaks-core`.
+- `rustleaks-core` does not depend on archives, Git, reports, the CLI, async
+  runtimes or native libraries. It works on bytes. Two conveniences read
+  files: `Baseline::load_go_json(path)` and `config::FileSystemResolver`,
+  which reads configuration files named by `[extend] path`. Callers that
+  read their own input, such as the CLI, pass bytes instead.
+- Regex types do not appear in the public API of `rustleaks-core`.
+  Configuration and baseline parse errors carry the `toml` and `serde_json`
+  error as their source.
 - Owned crates forbid unsafe Rust.
 - Every limit is explicit. See [Engine internals](engine-internals.md) and
   [Resource limits](../user/resource-limits.md).
@@ -29,7 +33,7 @@ between them, and where to make common changes. For using the library, see
 | `rustleaks-cli` | The `rustleaks` command: arguments, configuration discovery, running a scan, output and exit codes | No |
 | `rustleaks-compat` | Quality evaluation and performance workloads | No |
 | `xtask` | Repository checks, generators, release, security, fuzz and performance tools | No |
-| `rustleaks-bzip2`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Safe forks of archive decoders, used only by `rustleaks-sources` | No |
+| `rustleaks-bzip2`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Safe forks of archive decoders, used only by `rustleaks-sources` (and `rustleaks-sevenz` uses `rustleaks-bzip2`) | No |
 
 Dependencies point one way: `rustleaks-sources` and `rustleaks-report` depend
 on `rustleaks-core`, and `rustleaks-cli` depends on all three. Nothing depends
@@ -115,8 +119,8 @@ mode reads each eligible input to the end before scanning it.
 The core owns the finding model (`model.rs`) and sessions (`session.rs`).
 Sessions apply ignore files, baselines, fingerprints and deduplication across
 fragments. The core parses ignore files and baselines from bytes, and the CLI
-reads those files. The core helper `Baseline::load_go_json` is a thin wrapper
-for library users. `rustleaks-report` writes findings through the
+reads those files. For library users, `Baseline::load_go_json(path)` reads a
+baseline file and parses it. `rustleaks-report` writes findings through the
 `Reporter` trait. It does not change detection state.
 
 ## Names

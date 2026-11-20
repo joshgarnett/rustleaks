@@ -10,9 +10,8 @@ shipped default rules in `crates/rustleaks-core/default/gitleaks.toml` are
 based on it and may differ by the reviewed changes listed in
 [Default rules](../user/gitleaks-differences.md#default-rules).
 
-The live Go oracle and automatic upstream discovery are retired. The frozen
-evidence in `compat/` stays the record for the current pin. Commands inside
-frozen corpus READMEs describe the retired process and no longer run.
+Rustleaks has no Go oracle. Commands named in frozen `compat/` files do not
+run. See the [`compat/` README](../../compat/README.md#frozen-evidence).
 
 ## Before you start
 
@@ -46,10 +45,16 @@ frozen corpus READMEs describe the retired process and no longer run.
    files. Never edit historical outcomes or inventories by hand.
 5. **Classify every difference.** Each behavior difference is one of:
    - supported behavior that now matches exactly;
-   - a named safe Rust disposition;
-   - an approved exclusion from the compatibility profile;
+   - an intended Rustleaks difference;
+   - a documented finding difference that loses no secret: list it in
+     [Differences from Gitleaks](../user/gitleaks-differences.md) and add a
+     Rust test;
    - a presentation change; or
-   - a defect.
+   - a defect to fix.
+
+   A difference that makes Rustleaks miss a secret it found before, or that
+   changes the meaning of a configuration, report field or exit code, needs
+   maintainer approval.
 
    A presentation change affects only help, usage, error wording, log,
    banner or summary text, or JSON key or CSV column order. It needs a
@@ -66,16 +71,16 @@ frozen corpus READMEs describe the retired process and no longer run.
 6. **Run the checks.** From a clean, committed candidate:
 
    ```sh
-   cargo xtask regression-check
    just ci
    just security
    cargo xtask qualify
    ```
 
-   Qualification includes package, external consumer, Miri, fuzz and
+   Qualification includes the regression check and package, external consumer, Miri, fuzz and
    performance checks. Refresh the native evidence for each target.
    Cross-compilation proves only that the code compiles.
-7. **Review and record.** Get independent compatibility and Rust API review.
+7. **Review and record.** Get an independent review of the finding
+   differences and the Rust API.
    Record the final source identities, artifact hashes, case counts,
    commands, results and remaining host limits. A pending native or required
    hosted check is not a pass.

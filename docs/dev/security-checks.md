@@ -47,10 +47,9 @@ All other dependency decisions are bound to `Cargo.lock`.
 | `rustleaks-sources/fuzz` | `git_patch` | Patch parsing, quoting, renames, copies, binary changes, submodules, numbers and line endings |
 | `rustleaks-report/fuzz` | `template` | Template parsing, evaluation, escaping, output limits and repeat rendering |
 
-The default cargo-fuzz Clang setup provides AddressSanitizer on the verified
-Apple Silicon macOS host. The targets are designed for x86-64 and ARM64
-Unix-like hosts. A hosted job must verify each scheduled host before claiming
-support. MemorySanitizer and ThreadSanitizer have no supported lane; record
+The default cargo-fuzz Clang setup provides AddressSanitizer. Campaigns run
+on Apple Silicon macOS locally and on `ubuntu-24.04` x86-64 in CI. Other
+hosts are not verified. MemorySanitizer and ThreadSanitizer have no supported lane; record
 them as unsupported unless a reproducible pinned lane exists.
 
 For a longer local run, keep the corpus, dictionary, maximum input length,
@@ -270,8 +269,7 @@ Rust Fuzz Book's
 
 Review and minimize any local failure before you turn it into a synthetic
 regression test. This command grants no public artifact or disclosure
-approval. A monthly manual run and a run after each boundary change are
-useful. Hosted scheduling needs a separate reviewed design for private
+approval. No hosted job runs it, because its private records need private
 storage.
 
 ## Larger structured tests
@@ -294,7 +292,7 @@ private runner sets and records it. Unknown profiles fail at startup.
 
 | Boundary | Case | What it shows | Limit of the claim |
 | --- | --- | --- | --- |
-| Regex and fragment input | Match suffix beyond the old input limit | Exact end span on full input; truncated smoke input has no match | No new Go parity claim |
+| Regex and fragment input | Match suffix beyond the smoke input limit | Exact end span on full input; truncated smoke input has no match | No Gitleaks parity claim |
 | Configuration | Rule after an 8 KiB comment; selected rule and source byte limits | Rule kept; limits accepted at the value and rejected one above | Selection limits do not bound every configuration allocation |
 | Nested decoding | Three encoded layers in a controlled scan | Complete at the measured decoded-byte budget; one less gives a structured partial result | Not full decoder coverage |
 | Many findings | Controlled scan with 8,192 occurrences | Exact count at the finding limit; one less rolls back the rule | Operation budgets across fragments are not covered |
@@ -371,8 +369,9 @@ a new review. No other exemption without a date is accepted.
 
 An exemption is policy coverage, not an audit, and must not lower the
 required criterion. Replace exemptions with peer audits where available, and
-with local audits for the rest. Completed worksheets are in
-[`docs/dependency-audits/`](../dependency-audits/).
+with local audits for the rest. Completed audits are in
+[`docs/dependency-audits/`](../dependency-audits/README.md), which has an
+index by package.
 
 cargo-geiger is only an inventory of dependency changes. Its expected unsafe
 package set is enforced by `xtask`; it is not a security conclusion. See
@@ -382,8 +381,8 @@ package set is enforced by `xtask`; it is not a security conclusion. See
 
 The committed public API snapshot is the exact workspace baseline. For every
 release candidate, run `cargo-semver-checks` for each public crate and feature
-profile against the latest published release, then review the API by hand.
-Before the first publication, the snapshot is the only baseline.
+profile against the latest version on crates.io, then review the API by hand.
+See the [public API README](../../compat/public-api/README.md).
 
 ## Repository self-scan
 
@@ -428,8 +427,8 @@ Untrusted pull request code never runs from `pull_request_target`,
 
 | When | Work |
 | --- | --- |
-| Pull request | `just ci`, the worktree self-scan, `just fuzz-build`, `just fuzz-smoke`, cargo-deny, locked cargo-vet, dependency review on graph changes, current stable and MSRV, and the native platform lanes. RustSec runs in a separate job with network access and no secrets |
-| Nightly | Longer fuzz campaigns, more property cases, frozen evidence and Rust replay, fresh RustSec, newest allowed dependency resolution in a checkout that is not committed, and the repository self-scan |
+| Pull request | `just ci`, the worktree self-scan, `just security` (cargo-deny, RustSec, locked cargo-vet, unsafe inventory, Miri and panic policy), `just fuzz-smoke` (builds and runs the fuzz targets), `just release-dry-run`, `cargo xtask regression-check`, dependency review on graph changes, current stable and MSRV, and the native platform lanes. No pull request job gets secrets |
+| Nightly | Frozen evidence and Rust replay (`cargo xtask regression-check`), longer fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 120 seconds), newest allowed dependency resolution in a checkout that is not committed, and the worktree and history self-scan |
 | Weekly | Pinned Miri, unsafe inventory, cargo-vet, RustSec and all native target lanes. The weekly fuzz job raises run and time budgets but keeps the smoke input limits; it does not run the deep profile. A Bazel coverage review measures ordinary tests, not fuzz coverage. CodeQL and OpenSSF Scorecard run on their own schedules |
 | Release candidate | A manual dry run without secrets for the exact `main` commit and version. See [Releasing](releasing.md) |
 
@@ -438,10 +437,8 @@ matching version and a successful kept dry run. It compares the source
 package byte for byte before it requests a crates.io OIDC token. No
 long-lived registry token belongs in GitHub Actions or local configuration.
 
-Rustleaks does not apply to OSS-Fuzz yet. OSS-Fuzz accepts established
-projects, based partly on attack exposure and the number of users. Reassess
-after there is evidence of adoption. Applying is a separately approved
-external action. Until then, scheduled CI runs the fuzz targets.
+Rustleaks is not in OSS-Fuzz. Applying to OSS-Fuzz is a separately approved
+external action. Scheduled CI runs the fuzz targets.
 
 ## Protected files
 
