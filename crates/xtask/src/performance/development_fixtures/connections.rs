@@ -39,7 +39,7 @@ fn parts(form: &str) -> (&'static [u8], &'static [u8]) {
     }
 }
 
-fn apply_control_input(input: &mut Vec<u8>, form: &str, class: &str, password: &[u8]) {
+fn apply_control_input(input: &mut Vec<u8>, form: &str, class: &str, generated: &[u8]) {
     match class {
         "omitted" => {
             *input = match form {
@@ -58,24 +58,24 @@ fn apply_control_input(input: &mut Vec<u8>, form: &str, class: &str, password: &
             *input = match form {
                 "uri-userinfo" => [
                     b"postgresql://bench;".as_slice(),
-                    password,
+                    generated,
                     b"@db.invalid/application",
                 ]
                 .concat(),
                 "jdbc-query" => [
                     b"jdbc:postgresql://db.invalid/application?user=bench&password:".as_slice(),
-                    password,
+                    generated,
                 ]
                 .concat(),
                 "odbc-properties" => [
                     b"Server=db.invalid;UID=bench;PWD:".as_slice(),
-                    password,
+                    generated,
                     b";",
                 ]
                 .concat(),
                 "libpq-keyword" => [
                     b"host=db.invalid user=bench password:'".as_slice(),
-                    password,
+                    generated,
                     b"'",
                 ]
                 .concat(),
@@ -87,16 +87,16 @@ fn apply_control_input(input: &mut Vec<u8>, form: &str, class: &str, password: &
 }
 
 pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
-    let password = seeded_value("connection-password", ordinal, 24);
+    let generated = seeded_value("connection-password", ordinal, 24);
     let (prefix, suffix) = parts(form);
-    let mut value = password.clone();
+    let mut value = generated.clone();
     match class {
         "empty" => value.clear(),
         "environment-placeholder" => value = b"${PASSWORD}".to_vec(),
         "template-placeholder" => value = b"{{PASSWORD}}".to_vec(),
         "percent-encoded" => {
-            value = format!("%{:02X}", password[0]).into_bytes();
-            value.extend_from_slice(&password[1..]);
+            value = format!("%{:02X}", generated[0]).into_bytes();
+            value.extend_from_slice(&generated[1..]);
         }
         _ => {}
     }
@@ -105,7 +105,7 @@ pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
     input.extend_from_slice(&value);
     let end = input.len();
     input.extend_from_slice(suffix);
-    apply_control_input(&mut input, form, class, &password);
+    apply_control_input(&mut input, form, class, &generated);
     let carrier_end = input.len();
     input.push(b'\n');
     let mut fixture = Fixture::plain(
@@ -121,9 +121,9 @@ pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
             carrier: 0..carrier_end,
         });
     }
-    let source_password = fixture.plants.first().map(|plant| plant.value.as_slice());
+    let source_value = fixture.plants.first().map(|plant| plant.value.as_slice());
     let uri_percent = class == "percent-encoded" && matches!(form, "uri-userinfo" | "jdbc-query");
-    let value_syntax = source_password.map(|_| {
+    let value_syntax = source_value.map(|_| {
         if class == "literal" {
             "literal"
         } else if uri_percent {
@@ -141,8 +141,8 @@ pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
             _ => unreachable!("declared connection form"),
         };
         Some(json!({
-            "source_bytes": {"start": start, "end": start + password.len()},
-            "value_sha256": super::sha256_bytes(&password),
+            "source_bytes": {"start": start, "end": start + generated.len()},
+            "value_sha256": super::sha256_bytes(&generated),
             "role": "generated-literal-outside-declared-password-slot",
         }))
     } else {
@@ -151,12 +151,12 @@ pub(super) fn connection(form: &str, class: &str, ordinal: usize) -> Fixture {
     fixture.details = json!({
         "form": form,
         "class": class,
-        "generated_password_bytes": password.len(),
-        "generated_password_sha256": super::sha256_bytes(&password),
+        "generated_password_bytes": generated.len(),
+        "generated_password_sha256": super::sha256_bytes(&generated),
         "value_syntax": value_syntax,
-        "wire_value_differs_from_semantic_password": source_password.map(|_| uri_percent),
-        "source_password_sha256": source_password.map(super::sha256_bytes),
-        "semantic_password_sha256": source_password.map(|value| super::sha256_bytes(if uri_percent { password.as_slice() } else { value })),
+        "wire_value_differs_from_semantic_password": source_value.map(|_| uri_percent),
+        "source_password_sha256": source_value.map(super::sha256_bytes),
+        "semantic_password_sha256": source_value.map(|value| super::sha256_bytes(if uri_percent { generated.as_slice() } else { value })),
         "retained_literal": retained_literal,
         "proposed_classification": if matches!(class, "literal" | "percent-encoded") { "candidate-positive" } else { "candidate-negative" },
         "required_review": "rule-owner-must-approve-syntax-capture-placeholder-and-decoding-semantics-before-assigning-pass-expectations",

@@ -85,13 +85,16 @@ fn builtin_selection_reaches_normal_pipeline_and_preserves_opt_in() {
 #[test]
 fn native_uri_selection_preserves_global_suppression() {
     let fixture = Fixture::new();
-    for (secret, found) in [
+    for (case, (secret, found)) in [
         ("%B", false),
         ("%D", false),
         ("%S", false),
         ("%Z", true),
         ("%B0", true),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let input = format!("mysql://app:{secret}@db.invalid");
         let result = output_with_stdin(
             command(&fixture.0).args([
@@ -113,13 +116,13 @@ fn native_uri_selection_preserves_global_suppression() {
         assert_eq!(
             result.status.code(),
             Some(i32::from(found)),
-            "{secret}: {}",
+            "case {case}: {}",
             String::from_utf8_lossy(&result.stderr)
         );
         let report = rustleaks_core::session::Baseline::from_go_json(&result.stdout).unwrap();
         assert!(!report.was_null());
         let rows = report.entries();
-        assert_eq!(rows.len(), usize::from(found), "{secret}");
+        assert_eq!(rows.len(), usize::from(found), "case {case}");
         if found {
             assert_eq!(rows[0].secret().as_bytes(), secret.as_bytes());
             assert_eq!(

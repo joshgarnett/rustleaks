@@ -338,12 +338,11 @@ fn source_filters_are_unmasked_and_bound_to_the_exact_fields() {
             source["allowlists"][1]["paths"].as_array().unwrap().len(),
             23
         );
-        for sample in &fixture().source_secret_samples {
+        for (index, sample) in fixture().source_secret_samples.iter().enumerate() {
             assert_eq!(
                 local_count(source.clone(), &sample.value, "src/settings.txt"),
                 0,
-                "{id} {}",
-                sample.value
+                "{id} sample {index}"
             );
             let mut changed = source.clone();
             let regexes = changed["allowlists"][0]["regexes"].as_array_mut().unwrap();
@@ -355,8 +354,7 @@ fn source_filters_are_unmasked_and_bound_to_the_exact_fields() {
             assert_eq!(
                 local_count(changed, &sample.value, "src/settings.txt"),
                 1,
-                "{id} {}",
-                sample.value
+                "{id} sample {index}"
             );
         }
         for value in &fixture().source_stopwords {
