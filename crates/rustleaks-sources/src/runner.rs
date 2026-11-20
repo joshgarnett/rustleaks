@@ -461,6 +461,7 @@ struct ScheduledRun {
 
 /// Starts the workers, feeds them the source's fragments in order, closes the
 /// queue and joins every worker.
+#[allow(clippy::result_large_err)] // A full queue hands the unsent job back without another allocation.
 fn run_scheduled(
     runner: &SourceRunner,
     source: &mut dyn Source,

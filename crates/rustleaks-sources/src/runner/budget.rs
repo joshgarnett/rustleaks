@@ -793,6 +793,7 @@ fn run_with_scan_setup(
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // Scheduling tests return the unsent job from their send closures.
 mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Condvar, mpsc};
