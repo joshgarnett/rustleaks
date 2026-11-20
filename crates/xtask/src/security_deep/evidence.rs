@@ -84,7 +84,7 @@ pub(super) fn snapshot(
         )?)?;
         let version = fs::read_to_string(directory.join(label).join("stdout.log"))
             .map_err(|error| error.to_string())?;
-        if label == "geiger-version" && version.trim() != crate::CARGO_GEIGER_VERSION {
+        if label == "geiger-version" && version.trim() != crate::security::CARGO_GEIGER_VERSION {
             return Err("unsafe inventory tool version drift".into());
         }
         evidence_tools.insert(label, version.trim().to_owned());
@@ -193,7 +193,7 @@ pub(super) fn snapshot(
         let version = id["version"]
             .as_str()
             .ok_or("unsafe package omits version")?;
-        unsafe_packages.insert(format!("{name}@{version}"),json!({"used_unsafe":crate::unsafe_count(&row["unsafety"]["used"]),"forbids_unsafe":row["unsafety"]["forbids_unsafe"],"source":if id["source"].is_null() || id["source"].get("Path").is_some() {json!("workspace")} else {id["source"].clone()}}));
+        unsafe_packages.insert(format!("{name}@{version}"),json!({"used_unsafe":crate::security::unsafe_count(&row["unsafety"]["used"]),"forbids_unsafe":row["unsafety"]["forbids_unsafe"],"source":if id["source"].is_null() || id["source"].get("Path").is_some() {json!("workspace")} else {id["source"].clone()}}));
     }
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(std::path::PathBuf::from)

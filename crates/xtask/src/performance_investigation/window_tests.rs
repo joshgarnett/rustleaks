@@ -341,7 +341,7 @@ fn prepared_binding_rejects_source_and_executable_mutation() {
 
     use super::super::{Prepared, fnv1a64, sha256_file, source_snapshot};
 
-    let temporary = crate::ScopedTempDir::new("window-binding-controls").unwrap();
+    let temporary = crate::tooling::ScopedTempDir::new("window-binding-controls").unwrap();
     let root = temporary.path.join("source");
     fs::create_dir(&root).unwrap();
     for arguments in [
@@ -415,7 +415,7 @@ fn collector_rejects_incomplete_failed_unbounded_or_trailing_output() {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
-    let temporary = crate::ScopedTempDir::new("window-process-controls").unwrap();
+    let temporary = crate::tooling::ScopedTempDir::new("window-process-controls").unwrap();
     let mut fixture = transcript(1, 0);
     fixture["ready"]["provenance"]["binding"] = json!("unbound-runner");
     for case in [
@@ -577,7 +577,7 @@ fn supervisor_enforces_absolute_deadline_and_its_own_capture_limit() {
     use std::process::Command;
     use std::time::{Duration, Instant};
 
-    let temporary = crate::ScopedTempDir::new("window-supervisor-controls").unwrap();
+    let temporary = crate::tooling::ScopedTempDir::new("window-supervisor-controls").unwrap();
     let expired = temporary.path.join("expired");
     fs::create_dir(&expired).unwrap();
     let sentinel = temporary.path.join("must-not-start.txt");

@@ -1130,7 +1130,7 @@ mod tests {
 
     #[test]
     fn source_hash_observes_new_modified_and_deleted_inputs() {
-        let temporary = crate::ScopedTempDir::new("perf-input-test").unwrap();
+        let temporary = crate::tooling::ScopedTempDir::new("perf-input-test").unwrap();
         let files = vec!["first.rs".into(), "new.rs".into()];
         fs::write(temporary.path.join("first.rs"), "before").unwrap();
         let initial = hash_paths(&temporary.path, &files).unwrap();

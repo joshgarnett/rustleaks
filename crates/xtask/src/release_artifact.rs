@@ -1741,7 +1741,7 @@ mod tests {
 
     #[test]
     fn native_archive_checks_exact_notices_binary_modes_and_inventory() {
-        let root = crate::ScopedTempDir::new("notice-archive-validation").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("notice-archive-validation").unwrap();
         let stem = "rustleaks-1.0-x86_64-unknown-linux-gnu";
         let path = root.path.join(format!("{stem}.tar.gz"));
         let document_names = [
@@ -1866,7 +1866,7 @@ mod tests {
 
     #[test]
     fn native_archive_rejects_unknown_huge_or_extended_members_before_payload_reads() {
-        let root = crate::ScopedTempDir::new("native-archive-early-limits").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("native-archive-early-limits").unwrap();
         let path = root.path.join("native.tar.gz");
         let digest = sha256_bytes(b"native binary");
         for (name, kind, size, message) in [
@@ -1918,7 +1918,7 @@ mod tests {
 
     #[test]
     fn native_archive_accepts_bounded_unicode_long_paths_and_rejects_trailer_changes() {
-        let root = crate::ScopedTempDir::new("native-archive-long-path").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("native-archive-long-path").unwrap();
         let path = root.path.join("native.tar.gz");
         let name = format!("licenses/{}/LICENSE", "unicode-é-".repeat(14));
         let documents =
@@ -1991,7 +1991,7 @@ mod tests {
 
     #[test]
     fn gnu_bundle_inventory_requires_source_materials_and_proof_together() {
-        let root = crate::ScopedTempDir::new("source-bundle-inventory").unwrap();
+        let root = crate::tooling::ScopedTempDir::new("source-bundle-inventory").unwrap();
         for name in [
             "native.tar.gz",
             "native.cdx.json",

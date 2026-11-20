@@ -1297,7 +1297,7 @@ mod tests {
         is_command_check_exempt, justfile_recipes, manifest_problems, retired_go_problems,
         snippet_command_problems, tracker_problems, walk,
     };
-    use crate::ScopedTempDir;
+    use crate::tooling::ScopedTempDir;
 
     fn recipes() -> BTreeSet<String> {
         ["check", "docs-check", "test"]

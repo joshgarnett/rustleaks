@@ -101,9 +101,9 @@ struct Limits {
 impl Limits {
     fn environment() -> Result<Self, String> {
         Ok(Self {
-            runs: crate::fuzz_campaign_bound("RUSTLEAKS_FUZZ_RUNS", 16, 1_000_000)?,
-            seconds: crate::fuzz_campaign_bound("RUSTLEAKS_FUZZ_MAX_TOTAL_TIME", 20, 600)?,
-            seed: crate::fuzz_campaign_bound("RUSTLEAKS_FUZZ_SEED", 1, u64::from(u32::MAX))?,
+            runs: fuzz_campaign_bound("RUSTLEAKS_FUZZ_RUNS", 16, 1_000_000)?,
+            seconds: fuzz_campaign_bound("RUSTLEAKS_FUZZ_MAX_TOTAL_TIME", 20, 600)?,
+            seed: fuzz_campaign_bound("RUSTLEAKS_FUZZ_SEED", 1, u64::from(u32::MAX))?,
         })
     }
 
@@ -1077,4 +1077,19 @@ fn classify(outcome: Outcome, artifacts: &Value) -> &'static str {
         }
     }
     outcome.name()
+}
+
+fn fuzz_campaign_bound(name: &str, default: u64, maximum: u64) -> Result<u64, String> {
+    let Some(value) = std::env::var_os(name) else {
+        return Ok(default);
+    };
+    let value = value
+        .to_str()
+        .ok_or_else(|| format!("{name} is not UTF-8"))?
+        .parse::<u64>()
+        .map_err(|error| format!("{name} is not an unsigned integer: {error}"))?;
+    if value == 0 || value > maximum {
+        return Err(format!("{name} must be between 1 and {maximum}"));
+    }
+    Ok(value)
 }

@@ -698,7 +698,7 @@ mod tests {
 
     #[test]
     fn installed_windows_git_requires_a_file_and_preserves_path_precedence() {
-        let scratch = crate::ScopedTempDir::new("windows-git-selection").unwrap();
+        let scratch = crate::tooling::ScopedTempDir::new("windows-git-selection").unwrap();
         let first = scratch.path.join("first installation \u{03a9}");
         let second = scratch.path.join("second installation");
         std::fs::create_dir(&first).unwrap();
