@@ -1,9 +1,9 @@
 # Shared helpers for the comparison quality tools.
 #
-# Python 3.9 standard library only. xtask embeds these files with
-# include_str! and runs them with `python3 -I -c`, so the files are
-# concatenated into one script in a fixed order: common, formats, contexts,
-# generator, creddata, main.
+# Python 3.9 standard library only. xtask (embedded_python.rs) runs
+# embedded_python/support.py and then these files in one namespace, in a fixed
+# order: common, formats, contexts, generator, creddata, main. The program is
+# read from standard input with `python3 -I -`.
 
 import base64
 import hashlib
@@ -14,10 +14,7 @@ from pathlib import Path
 import shutil
 import zlib
 
-WORKLOADS_SCHEMA = 'rustleaks-comparison-workloads-v1'
 EXPECTED_SCHEMA = 'rustleaks-comparison-quality-expected-v1'
-LABEL_FIELDS = ('workload', 'path', 'commit', 'start', 'end', 'line',
-                'secret_sha256', 'category', 'label', 'source')
 LABEL_VALUES = ('secret', 'not-secret')
 
 
@@ -96,10 +93,6 @@ def b64url(data):
     return base64.urlsafe_b64encode(data).decode('ascii').rstrip('=')
 
 
-def sha256_hex(data):
-    return hashlib.sha256(data).hexdigest()
-
-
 def crc32(data):
     return zlib.crc32(data) & 0xffffffff
 
@@ -132,9 +125,9 @@ def tree_digest(root):
             data = full.read_bytes()
             total += len(data)
             relative = full.relative_to(root).as_posix()
-            entries.append(f'{relative}\0{sha256_hex(data)}\n')
+            entries.append(f'{relative}\0{sha256_bytes(data)}\n')
     entries.sort()
-    return sha256_hex(''.join(entries).encode('utf-8')), len(entries), total
+    return sha256_bytes(''.join(entries).encode('utf-8')), len(entries), total
 
 
 def resolve_outside(path, source_root, what):
@@ -171,12 +164,6 @@ def check_label_record(record, where):
         raise QualityError(f'{where}: path must be relative with forward slashes')
 
 
-def line_number(data, offset):
-    """One-based line of a byte offset. `\r\n`, `\r` and `\n` each end a line."""
-    before = data[:offset]
-    return before.count(b'\n') + before.count(b'\r') - before.count(b'\r\n') + 1
-
-
 def check_labels_against_tree(labels_path, tree_root):
     """Check every label against the bytes it points at. Returns the records."""
     records = []
@@ -193,9 +180,9 @@ def check_labels_against_tree(labels_path, tree_root):
             if record['end'] > len(data):
                 raise QualityError(f'{where}: span ends after the file')
             span = data[record['start']:record['end']]
-            if sha256_hex(span) != record['secret_sha256']:
+            if sha256_bytes(span) != record['secret_sha256']:
                 raise QualityError(f'{where}: secret_sha256 does not match the span')
-            if line_number(data, record['start']) != record['line']:
+            if line_of(data, record['start']) != record['line']:
                 raise QualityError(f'{where}: line does not match the start offset')
             records.append(record)
     return records

@@ -92,7 +92,7 @@ def build_corpus(seed, scale):
         for start, end, label, category in doc.spans:
             labels.append({
                 'workload': CORPUS_ID, 'path': path, 'commit': None, 'start': start, 'end': end,
-                'line': line_number(data, start), 'secret_sha256': sha256_hex(data[start:end]),
+                'line': line_of(data, start), 'secret_sha256': sha256_bytes(data[start:end]),
                 'category': category, 'label': label, 'source': 'constructed',
             })
     labels.sort(key=lambda record: (record['path'], record['start']))
@@ -144,7 +144,7 @@ def write_corpus(cache_root, seed, scale, force):
         'seed': seed,
         'scale': scale,
         'tree_sha256': digest,
-        'labels_sha256': sha256_hex(labels_bytes),
+        'labels_sha256': sha256_bytes(labels_bytes),
         'size': size,
         'labels': {'total': len(labels),
                    'secret': sum(1 for record in labels if record['label'] == 'secret'),
@@ -164,7 +164,7 @@ def check_corpus(target):
     digest, file_count, total = tree_digest(target / 'tree')
     if digest != summary['tree_sha256'] or file_count != summary['size']['files'] or total != summary['size']['bytes']:
         raise QualityError(f'{target}: the tree does not match its summary')
-    if sha256_hex((target / 'labels.jsonl').read_bytes()) != summary['labels_sha256']:
+    if sha256_bytes((target / 'labels.jsonl').read_bytes()) != summary['labels_sha256']:
         raise QualityError(f'{target}: labels.jsonl does not match its summary')
     previous = None
     for record in records:
