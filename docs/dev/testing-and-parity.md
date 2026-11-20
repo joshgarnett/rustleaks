@@ -18,7 +18,7 @@ rules for what may change are in the
 - Use synthetic values or reviewed upstream fixtures. Never use a live
   credential.
 - Give each case a stable name.
-- Keep functional assertions apart from timing. Performance budgets belong to
+- Keep functional assertions apart from timing. Timing measurements belong to
   the performance tools. See [Performance](performance.md).
 - Do not add a second test for something that a maintained test already
   covers.
@@ -71,7 +71,8 @@ To add an integration test file:
    `compile_data`, `srcs` or `data`. A file read with `include_str!` or
    `include_bytes!` must be listed in `compile_data`.
 2. Add the target to the crate's `all_tests` suite. `just test` runs
-   `//:test`, which runs every crate's `all_tests`.
+   `//:test`, which lists every crate's `all_tests` suite, or its unit and
+   doc test targets for crates without one.
 3. If the test replays frozen evidence, also add it to the crate's
    `parity_tests` suite. `just parity` runs `//:parity`.
 4. Add the target to `_RUST_TARGETS` in the root `BUILD.bazel`, so that the
@@ -86,10 +87,10 @@ check those by hand.
 The [`compat/` README](../../compat/README.md) lists every file in
 `compat/`, says which files are frozen and how to regenerate the others.
 
-Frozen files record what Gitleaks did at the pinned revision. They are
-history and never change. `crates/xtask/src/tooling/frozen_manifest.rs`
-lists their paths, modes and SHA-256 hashes. Commands named inside frozen
-READMEs describe the retired Go workflow and no longer run.
+Frozen files record what Gitleaks did at the pinned revision and never
+change. The [`compat/` README](../../compat/README.md#frozen-evidence)
+explains how they are checked and which commands named in them no longer
+run.
 
 The committed evidence includes:
 
@@ -144,12 +145,12 @@ For the three `CLI-BB-001` version outputs, the replay first checks the
 historical fields exactly, then expects the current build version from
 package metadata.
 
-The two `CLI-BB-007` embedded configuration variants recorded a minimum
-version warning, because the historical build compared the configuration
-`minVersion` with its own crate version. Rustleaks now compares `minVersion`
-with the implemented Gitleaks version, 8.30.0, so the warning is not printed.
-The replay checks the historical warning, which is event 0, and then expects
-it to be absent.
+Rustleaks compares the configuration `minVersion` with the implemented
+Gitleaks version, 8.30.0 (`IMPLEMENTED_GITLEAKS_VERSION` in
+`crates/rustleaks-cli/src/config.rs`). So the minimum version warning
+recorded as event 0 of the two `CLI-BB-007` embedded configuration variants
+is not printed. The replay checks the historical warning and then expects it
+to be absent.
 
 All other fields stay exact unless a presentation disposition replaces them.
 The execution ledger names the historical and current build versions and
