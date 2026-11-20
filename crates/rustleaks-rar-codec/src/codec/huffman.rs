@@ -126,11 +126,11 @@ pub(crate) fn lengths_for_frequencies(frequencies: &[usize], max_bits: u8) -> Ve
 
 /// Bring every code length down to `max_bits`, keeping the code complete.
 ///
-/// A code deeper than the format allows used to be replaced by a uniform one
-/// over the same symbols. That is a far worse code: on a skewed 289 symbol main
-/// table a flat code spends nine bits on every token where the Huffman code it
-/// replaced averaged closer to six, and the codes that trip the limit overflow
-/// it by a bit or two, not by enough to justify giving up.
+/// Replacing a code deeper than the format allows with a uniform one over the
+/// same symbols gives a far worse code: on a skewed 289 symbol main table a
+/// flat code spends nine bits on every token where the Huffman code averages
+/// closer to six, and the codes that trip the limit overflow it by a bit or
+/// two, not by enough to justify giving up.
 ///
 /// Clamping the over-long lengths breaks Kraft equality, so this pays the
 /// difference back by lengthening the symbols that cost least per bit, then
