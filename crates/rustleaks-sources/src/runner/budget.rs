@@ -5,11 +5,9 @@ use std::sync::{MutexGuard, PoisonError};
 use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanTermination, ScanUsage};
 
 use super::{
-    CallbackError, CancellationToken, Engine, Fragment, INITIAL_QUEUE_RETRIES, Job, JobQueue,
-    Mutex, QueueWait, ScanControl, ScanOptions, ScanOutcome, SessionPolicy, Source, SourceControl,
-    SourceError, SourceEvent, SourceIssue, SourceOutcome, SourceRunner, SourceStatistics,
-    SourceTermination, TrySendError, ensure_active, finish_run, merge_complete_scan, thread,
-    worker_terminal,
+    CancellationToken, Engine, Fragment, Mutex, QueueWait, RunControl, ScanControl, ScanOptions,
+    ScanOutcome, SessionPolicy, Source, SourceError, SourceIssue, SourceOutcome, SourceRunner,
+    SourceTermination, finish_run, merge_complete_scan, run_scheduled, thread,
 };
 use crate::Cancellation;
 
@@ -646,43 +644,38 @@ impl Drop for WorkerGuard<'_> {
     }
 }
 
-fn schedule(
-    operation: &Operation<'_>,
-    job: Job,
-    queue_wait: &QueueWait,
-    mut try_send: impl FnMut(Job) -> Result<(), TrySendError<Job>>,
-) -> Result<SourceControl, CallbackError> {
-    let mut pending = job;
-    let mut waiting = None;
-    let mut remaining_retries = INITIAL_QUEUE_RETRIES;
-    loop {
-        ensure_active(
-            operation.cancellation,
-            "source runner cancelled while scheduling",
-        )?;
-        #[cfg(test)]
-        if let Some(after_external_check) = &queue_wait.after_external_check {
-            after_external_check();
-        }
-        if operation.is_cancelled() {
-            return Ok(SourceControl::Stop);
-        }
-        match try_send(pending) {
-            Ok(()) => return Ok(SourceControl::Continue),
-            Err(TrySendError::Full(job)) => {
-                pending = job;
-                waiting = queue_wait.retry(waiting, &mut remaining_retries);
-            }
-            Err(TrySendError::Disconnected(_)) => {
-                // The last worker can exhaust its budget or panic after the
-                // check above and drop the receiver before this send. Preserve
-                // that internal stop instead of manufacturing a source error.
-                if operation.stopped.load(Ordering::Acquire) {
-                    return Ok(SourceControl::Stop);
-                }
-                return Err(CallbackError::new("all source runner workers disconnected"));
-            }
-        }
+impl RunControl for Operation<'_> {
+    fn token(&self) -> &CancellationToken {
+        self.cancellation
+    }
+
+    fn source_cancellation(&self) -> &dyn Cancellation {
+        self
+    }
+
+    fn stopped(&self) -> bool {
+        self.is_cancelled()
+    }
+
+    fn retain_issue(
+        &self,
+        issues: &mut Vec<SourceIssue>,
+        _omitted: &mut u64,
+        issue: SourceIssue,
+    ) -> bool {
+        Operation::retain_issue(self, issues, issue)
+    }
+
+    fn admit(&self, bytes: usize) -> bool {
+        Operation::admit(self, bytes)
+    }
+
+    fn spawn_failed(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+
+    fn stopped_internally(&self) -> bool {
+        self.stopped.load(Ordering::Acquire)
     }
 }
 
@@ -725,8 +718,7 @@ fn run_with_scan(
     )
 }
 
-#[allow(clippy::result_large_err)] // The bounded channel returns ownership of an unsent fragment without another allocation.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Keep setup failure injection and mandatory joins in one ownership scope.
+#[allow(clippy::too_many_arguments)] // Keep setup failure injection beside the production arguments.
 fn run_with_scan_setup(
     runner: &SourceRunner,
     source: &mut dyn Source,
@@ -743,134 +735,50 @@ fn run_with_scan_setup(
         stopped: AtomicBool::new(false),
         accounting: Mutex::new(Accounting::default()),
     };
-    let queue = JobQueue::new(runner.queue_capacity(), queue_wait);
-    let mut issues = Vec::new();
-    let mut source_result = Ok(SourceControl::Continue);
-    let mut worker_panicked = false;
-    let mut batches = Vec::new();
-    let mut statistics = SourceStatistics::default();
-    let mut next_sequence = 0_u64;
-    thread::scope(|scope| {
-        let mut handles = Vec::new();
-        let mut setup_error = handles
-            .try_reserve_exact(runner.workers())
-            .err()
-            .map(|error| worker_terminal(format!("could not allocate worker handles: {error}")));
-        if setup_error.is_none() {
-            for index in 0..runner.workers() {
-                let receiver = queue.receiver();
-                let operation = &operation;
-                let scan = &scan;
-                match before_spawn(index).and_then(|()| {
-                    thread::Builder::new()
-                        .name(format!("rustleaks-source-{index}"))
-                        .spawn_scoped(scope, move || {
-                            // This local guard publishes panic stop before the
-                            // captured receiver owner drops and notifies.
-                            let _guard = WorkerGuard(operation);
-                            let mut batches = Vec::new();
-                            loop {
-                                if operation.is_cancelled() {
-                                    break;
-                                }
-                                let job = receiver.recv();
-                                let Ok(job) = job else { break };
-                                let Some(reservation) = operation.reserve() else {
-                                    break;
-                                };
-                                let signal = || operation.is_cancelled();
-                                let control = ScanControl::cancellable(&signal)
-                                    .with_budget(reservation.budget);
-                                let detected = scan(&job.fragment, &control);
-                                reservation.settle(&detected);
-                                if !merge_complete_scan(
-                                    &mut batches,
-                                    policy,
-                                    job.sequence,
-                                    detected,
-                                ) {
-                                    break;
-                                }
-                            }
-                            batches
-                        })
-                }) {
-                    Ok(handle) => handles.push(handle),
-                    Err(error) => {
-                        setup_error = Some(worker_terminal(format!(
-                            "could not spawn detection worker: {error}"
-                        )));
-                        operation.stopped.store(true, Ordering::Release);
-                        break;
-                    }
-                }
-            }
-        }
-        if let Some(error) = setup_error {
-            source_result = Err(error);
-        } else {
-            source_result = source.visit(&operation, &mut |event| {
-                ensure_active(
-                    cancellation,
-                    "source runner cancelled while receiving an event",
-                )?;
+    let run = run_scheduled(
+        runner,
+        source,
+        &operation,
+        queue_wait,
+        before_spawn,
+        |receiver| {
+            // This local guard publishes panic stop before the captured
+            // receiver owner drops and notifies.
+            let _guard = WorkerGuard(&operation);
+            let mut batches = Vec::new();
+            loop {
                 if operation.is_cancelled() {
-                    return Ok(SourceControl::Stop);
+                    break;
                 }
-                let fragment = match event {
-                    SourceEvent::Issue(issue) => {
-                        return Ok(if operation.retain_issue(&mut issues, issue) {
-                            SourceControl::Continue
-                        } else {
-                            SourceControl::Stop
-                        });
-                    }
-                    SourceEvent::Fragment { fragment, issue } => {
-                        if let Some(issue) = issue {
-                            return Ok(if operation.retain_issue(&mut issues, issue) {
-                                SourceControl::Continue
-                            } else {
-                                SourceControl::Stop
-                            });
-                        }
-                        *fragment
-                    }
+                let job = receiver.recv();
+                let Ok(job) = job else { break };
+                let Some(reservation) = operation.reserve() else {
+                    break;
                 };
-                if !operation.admit(fragment.content().len()) {
-                    return Ok(SourceControl::Stop);
+                let signal = || operation.is_cancelled();
+                let control = ScanControl::cancellable(&signal).with_budget(reservation.budget);
+                let detected = scan(&job.fragment, &control);
+                reservation.settle(&detected);
+                if !merge_complete_scan(&mut batches, policy, job.sequence, detected) {
+                    break;
                 }
-                statistics.observe(&fragment)?;
-                let sequence = next_sequence;
-                next_sequence += 1;
-                schedule(
-                    &operation,
-                    Job { sequence, fragment },
-                    queue_wait,
-                    |pending| queue.try_send(pending),
-                )
-            });
-        }
-        queue.close();
-        for handle in handles {
-            match handle.join() {
-                Ok(worker_batches) => batches.extend(worker_batches),
-                Err(_) => worker_panicked = true,
             }
-        }
-    });
+            batches
+        },
+    );
     let state = operation.lock();
-    let stopped_for_budget =
-        state.exceeded.is_some() && matches!(source_result, Ok(_) | Err(SourceError::Cancelled));
+    let stopped_for_budget = state.exceeded.is_some()
+        && matches!(run.source_result, Ok(_) | Err(SourceError::Cancelled));
     let mut outcome = finish_run(
         policy,
-        batches,
-        issues,
-        source_result,
-        worker_panicked,
+        run.batches,
+        run.issues,
+        run.source_result,
+        run.worker_panicked,
         cancellation.is_cancelled(),
-        statistics,
+        run.statistics,
     );
-    if !worker_panicked
+    if !run.worker_panicked
         && !cancellation.is_cancelled()
         && stopped_for_budget
         && let Some(exceeded) = state.exceeded
@@ -885,6 +793,7 @@ fn run_with_scan_setup(
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // Scheduling tests return the unsent job from their send closures.
 mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Condvar, mpsc};
@@ -892,6 +801,7 @@ mod tests {
 
     use rustleaks_core::config::ConfigLoader;
 
+    use super::super::{CallbackError, Job, SourceControl, SourceEvent, TrySendError, schedule};
     use super::*;
     use crate::SourceStage;
 
@@ -905,6 +815,8 @@ mod tests {
         .unwrap()
     }
 
+    // The scheduling tests below give `schedule` the `try_send` of an
+    // `mpsc::sync_channel` as a bounded queue stand-in.
     fn job() -> Job {
         Job {
             sequence: 0,
@@ -954,7 +866,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn cancellation_between_existing_checks_preserves_normal_callback_stop() {
         let cancellation = CancellationToken::new();
         let signal = cancellation.clone();
@@ -972,7 +883,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn cancellation_after_checks_does_not_reclassify_a_successful_enqueue() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -987,7 +897,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn cancellation_after_checks_does_not_replace_the_disconnect_callback_error() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -1005,7 +914,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn external_cancellation_already_present_precedes_internal_stop() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -1021,7 +929,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn sleeping_producer_observes_internal_stop_without_worker_progress() {
         let cancellation = CancellationToken::new();
         let operation = unlimited_operation(&cancellation);
@@ -1058,7 +965,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn initial_retries_observe_cancellation_and_stop_before_acquiring_the_gate() {
         for internal_stop in [false, true] {
             let cancellation = CancellationToken::new();
@@ -1110,7 +1016,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn initial_retries_are_bounded_across_spurious_notifications_and_timeouts() {
         for notify in [false, true] {
             let cancellation = CancellationToken::new();
@@ -1250,7 +1155,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn last_worker_budget_stop_between_check_and_send_preserves_stop() {
         let detector = engine();
         let cancellation = CancellationToken::new();
@@ -1291,7 +1195,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)] // Exercise the real channel ownership result at the scheduling boundary.
     fn disconnection_without_an_internal_stop_remains_a_callback_error() {
         let cancellation = CancellationToken::new();
         let operation = Operation {

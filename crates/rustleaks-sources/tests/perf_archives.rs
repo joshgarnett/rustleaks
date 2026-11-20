@@ -1,5 +1,6 @@
 //! Opt-in archive expansion driver. Normal test runs exercise only its verifier.
 #![cfg(feature = "archives")]
+#![forbid(unsafe_code)]
 
 #[allow(
     dead_code,

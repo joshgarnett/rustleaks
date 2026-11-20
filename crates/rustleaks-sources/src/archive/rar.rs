@@ -1000,71 +1000,71 @@ mod tests {
 
         let cancelled = AtomicBool::new(false);
         let expected_text = include_bytes!(concat!(
-            "../../../compat/fixtures/oracle/rar-test-files-16b785c",
+            "../../../../compat/fixtures/oracle/rar-test-files-16b785c",
             "/expected/testfile.txt"
         ));
         let expected_jpeg = include_bytes!(concat!(
-            "../../../compat/fixtures/oracle/rar-test-files-16b785c",
+            "../../../../compat/fixtures/oracle/rar-test-files-16b785c",
             "/expected/testfile.jpg"
         ));
         let expected_png = include_bytes!(concat!(
-            "../../../compat/fixtures/oracle/rar-test-files-16b785c",
+            "../../../../compat/fixtures/oracle/rar-test-files-16b785c",
             "/expected/testfile.png"
         ));
         let fixtures: &[Fixture<'_>] = &[
             (
                 "testfile.rar3.rar",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.rar"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.rar"
                 ),
                 &[expected_text],
             ),
             (
                 "testfile.rar3.solid.rar",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.solid.rar"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.solid.rar"
                 ),
                 &[expected_text],
             ),
             (
                 "testfile.rar3.cbr",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.cbr"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.cbr"
                 ),
                 &[expected_jpeg, expected_png],
             ),
             (
                 "testfile.rar3.solid.cbr",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.solid.cbr"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.solid.cbr"
                 ),
                 &[expected_png, expected_jpeg],
             ),
             (
                 "testfile.rar5.rar",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.rar"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.rar"
                 ),
                 &[expected_text],
             ),
             (
                 "testfile.rar5.solid.rar",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.solid.rar"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.solid.rar"
                 ),
                 &[expected_text],
             ),
             (
                 "testfile.rar5.cbr",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.cbr"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.cbr"
                 ),
                 &[expected_jpeg, expected_png],
             ),
             (
                 "testfile.rar5.solid.cbr",
                 include_bytes!(
-                    "../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.solid.cbr"
+                    "../../../../compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar5.solid.cbr"
                 ),
                 &[expected_jpeg, expected_png],
             ),
@@ -1080,12 +1080,6 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(actual, expected, "{name}");
         }
-    }
-
-    #[test]
-    fn container_crc_matches_the_ieee_check_value() {
-        assert_eq!(crc32(b""), 0);
-        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
     }
 
     #[test]

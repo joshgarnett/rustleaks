@@ -10,6 +10,7 @@ use rustleaks_core::config::CompiledConfig;
 use rustleaks_core::model::{ByteText, Fragment};
 
 use crate::path::clean_native_path;
+use crate::source::emit_issue;
 use crate::{
     CallbackError, Cancellation, FileOptions, FileSource, LogicalPath, Source, SourceConfigError,
     SourceControl, SourceError, SourceEvent, SourceIssue, SourceIssueKind, SourceStage,
@@ -17,7 +18,7 @@ use crate::{
 
 mod readers;
 
-const DEFAULT_MAX_SYMLINK_HOPS: usize = 64;
+const DEFAULT_MAX_SYMLINK_HOPS: NonZeroUsize = NonZeroUsize::new(64).unwrap();
 
 /// Files and issues that the walk may hold ahead of the callback for each
 /// reader thread when `DirectoryOptions::read_threads` is above 1.
@@ -160,7 +161,7 @@ impl DirectoryOptions {
     ///
     /// File paths are compared after symlink resolution, using the emitted
     /// `FilePath` domain rather than the alias spelling. Archive descendants
-    /// retain their full decorated paths. Legacy fragments ignore this option.
+    /// retain their full decorated paths. Chunked scans ignore this option.
     #[must_use]
     pub fn exclude_paths(mut self, paths: Vec<ByteText>) -> Self {
         self.excluded_paths.extend(paths);
@@ -176,17 +177,6 @@ impl DirectoryOptions {
     pub fn logical_root(mut self, root: impl Into<PathBuf>) -> Self {
         self.logical_root = Some(root.into());
         self
-    }
-
-    /// Sets a positive defensive ceiling for chained symlink resolution.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`SourceConfigError`] when `maximum` is zero.
-    pub fn with_max_symlink_hops(mut self, maximum: usize) -> Result<Self, SourceConfigError> {
-        self.max_symlink_hops = NonZeroUsize::new(maximum)
-            .ok_or_else(|| SourceConfigError::positive("max_symlink_hops"))?;
-        Ok(self)
     }
 
     /// Sets how many threads open and read the files that the walk finds.
@@ -206,24 +196,6 @@ impl DirectoryOptions {
     pub const fn read_threads(mut self, threads: NonZeroUsize) -> Self {
         self.read_threads = threads;
         self
-    }
-
-    /// Returns how many threads read files.
-    #[must_use]
-    pub const fn reading_threads(&self) -> usize {
-        self.read_threads.get()
-    }
-
-    /// Returns whether file symlinks are followed.
-    #[must_use]
-    pub const fn follows_symlinks(&self) -> bool {
-        self.follow_symlinks
-    }
-
-    /// Returns the inclusive file-size gate.
-    #[must_use]
-    pub const fn maximum_file_size(&self) -> Option<u64> {
-        self.max_file_size
     }
 
     /// Enables the optional native archive decorator for discovered files.
@@ -246,8 +218,7 @@ impl Default for DirectoryOptions {
             logical_root: None,
             emit_limit_issues: false,
             scan_git_metadata: false,
-            max_symlink_hops: NonZeroUsize::new(DEFAULT_MAX_SYMLINK_HOPS)
-                .expect("the default symlink hop ceiling is positive"),
+            max_symlink_hops: DEFAULT_MAX_SYMLINK_HOPS,
             read_threads: NonZeroUsize::MIN,
             #[cfg(feature = "archives")]
             archive_options: None,
@@ -318,7 +289,7 @@ impl DirectorySource {
 
         // Complete coverage applies only to the selected path domain. The
         // discovered spelling is known before metadata or symlink resolution.
-        // Preserve the historical gate order for legacy fragment callers. A
+        // Chunked scans keep their own gate order. A
         // `.git` name that metadata scanning may enter waits for metadata,
         // and stays pruned unless it is a folder.
         let complete_pruned =
@@ -871,13 +842,6 @@ fn is_lock_name(name: &OsStr) -> bool {
     bytes.len() >= GIT_LOCK_SUFFIX.len()
         && bytes[bytes.len() - GIT_LOCK_SUFFIX.len()..]
             .eq_ignore_ascii_case(GIT_LOCK_SUFFIX.as_bytes())
-}
-
-fn emit_issue(
-    issue: SourceIssue,
-    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-) -> Result<SourceControl, SourceError> {
-    emit(SourceEvent::Issue(issue)).map_err(SourceError::Callback)
 }
 
 fn io_issue(stage: SourceStage, path: &Path, error: &io::Error) -> SourceIssue {

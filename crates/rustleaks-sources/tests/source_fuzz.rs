@@ -20,8 +20,8 @@ use fuzz_profile::{Profile, deep_seed};
 use rustleaks_sources::{SourceControl, SourceError, SourceEvent, SourceIssueKind, SourceStage};
 use source_frame::{Encoding, GIT_HEADER_BYTES, GitFrame, READER_HEADER_BYTES, ReaderFrame};
 
-const LEGACY_READER: &[u8] = include_bytes!("../fuzz/seeds/reader_schedule/data-error.txt");
-const LEGACY_GIT: &[u8] = include_bytes!("../fuzz/seeds/git_patch/basic.patch");
+const UNFRAMED_READER_SEED: &[u8] = include_bytes!("../fuzz/seeds/reader_schedule/data-error.txt");
+const UNFRAMED_GIT_SEED: &[u8] = include_bytes!("../fuzz/seeds/git_patch/basic.patch");
 
 fn seed(target: &str, name: &str) -> Vec<u8> {
     source_frame::seeds(target)
@@ -313,15 +313,15 @@ fn git_hunk_limits_above_128_reach_parsing_without_precancellation() {
             git_harness::exercise(&input, profile).parsed,
             Some((1, 129))
         );
-        // The former single byte requires 0x80 for the same 129-hunk
+        // The unframed control byte needs 0x80 for the same 129-hunk
         // ceiling, which also pre-cancels every nonempty patch.
-        let mut legacy = vec![128];
-        legacy.extend_from_slice(&input[GIT_HEADER_BYTES..]);
-        let frame = GitFrame::decode(&legacy, profile);
+        let mut unframed = vec![128];
+        unframed.extend_from_slice(&input[GIT_HEADER_BYTES..]);
+        let frame = GitFrame::decode(&unframed, profile);
         assert_eq!(frame.controls.files, 1);
         assert_eq!(frame.controls.hunks, 129);
         assert!(frame.controls.cancel_before);
-        assert_eq!(git_harness::exercise(&legacy, profile).parsed, None);
+        assert_eq!(git_harness::exercise(&unframed, profile).parsed, None);
         let mut rejected = input.clone();
         rejected[5] = 127;
         assert_eq!(git_harness::exercise(&rejected, profile).parsed, None);
@@ -388,7 +388,7 @@ fn only_complete_known_headers_select_v1() {
                 } else {
                     GitFrame::decode(&input[..length], profile).encoding
                 };
-                assert_eq!(encoding, Encoding::Legacy);
+                assert_eq!(encoding, Encoding::Unframed);
             }
             for offset in 0..4 {
                 let mut changed = input.clone();
@@ -398,19 +398,19 @@ fn only_complete_known_headers_select_v1() {
                 } else {
                     GitFrame::decode(&changed, profile).encoding
                 };
-                assert_eq!(encoding, Encoding::Legacy);
+                assert_eq!(encoding, Encoding::Unframed);
             }
         }
     }
 }
 
 #[test]
-fn legacy_control_bytes_keep_their_original_mapping_and_payloads() {
+fn unframed_control_bytes_keep_their_mapping_and_payloads() {
     for profile in [Profile::Smoke, Profile::Deep] {
         for control in 0_u8..=255 {
             let input = [control, 2, 0, 4, 0x24, b'a', b'b', b'c', b'd'];
             let reader = ReaderFrame::decode(&input, profile);
-            assert_eq!(reader.encoding, Encoding::Legacy);
+            assert_eq!(reader.encoding, Encoding::Unframed);
             assert_eq!(reader.controls.chunk_bytes, usize::from(control & 0x3f) + 1);
             assert_eq!(
                 reader.controls.read_ahead_bytes,
@@ -428,7 +428,7 @@ fn legacy_control_bytes_keep_their_original_mapping_and_payloads() {
                 assert_eq!(reader.payload, &input[5..]);
             }
             let git = GitFrame::decode(&input, profile);
-            assert_eq!(git.encoding, Encoding::Legacy);
+            assert_eq!(git.encoding, Encoding::Unframed);
             assert_eq!(git.controls.files, usize::from(control & 31) + 1);
             assert_eq!(git.controls.hunks, usize::from(control) + 1);
             assert_eq!(git.controls.cancel_before, control & 128 != 0);
@@ -438,17 +438,17 @@ fn legacy_control_bytes_keep_their_original_mapping_and_payloads() {
 }
 
 #[test]
-fn existing_committed_and_generated_source_seeds_remain_legacy() {
+fn committed_and_generated_source_seeds_are_unframed() {
     for profile in [Profile::Smoke, Profile::Deep] {
         assert_eq!(
-            ReaderFrame::decode(LEGACY_READER, profile).encoding,
-            Encoding::Legacy
+            ReaderFrame::decode(UNFRAMED_READER_SEED, profile).encoding,
+            Encoding::Unframed
         );
         assert_eq!(
-            GitFrame::decode(LEGACY_GIT, profile).encoding,
-            Encoding::Legacy
+            GitFrame::decode(UNFRAMED_GIT_SEED, profile).encoding,
+            Encoding::Unframed
         );
-        let reader = reader_harness::exercise(LEGACY_READER, profile);
+        let reader = reader_harness::exercise(UNFRAMED_READER_SEED, profile);
         assert_eq!(reader.result, Err(SourceError::Cancelled));
         assert_eq!(
             (
@@ -459,7 +459,7 @@ fn existing_committed_and_generated_source_seeds_remain_legacy() {
             (0, 0, 0)
         );
         assert_eq!(
-            git_harness::exercise(LEGACY_GIT, profile).parsed,
+            git_harness::exercise(UNFRAMED_GIT_SEED, profile).parsed,
             Some((1, 1))
         );
     }
@@ -467,11 +467,11 @@ fn existing_committed_and_generated_source_seeds_remain_legacy() {
     let git = deep_seed("git_patch").unwrap();
     assert_eq!(
         ReaderFrame::decode(&reader, Profile::Deep).encoding,
-        Encoding::Legacy
+        Encoding::Unframed
     );
     assert_eq!(
         GitFrame::decode(&git, Profile::Deep).encoding,
-        Encoding::Legacy
+        Encoding::Unframed
     );
     let observation = reader_harness::exercise(&reader, Profile::Deep);
     assert_eq!(observation.result, Ok(SourceControl::Continue));

@@ -1,5 +1,13 @@
 //! Optional archive decorator coverage against committed upstream fixtures.
 #![cfg(feature = "archives")]
+#![forbid(unsafe_code)]
+
+#[path = "../fuzz/support/archive_frame.rs"]
+#[allow(dead_code)]
+mod archive_frame;
+#[path = "../fuzz/support/archive_seeds.rs"]
+#[allow(dead_code)]
+mod archive_seeds;
 
 use std::fs;
 use std::io::{self, Cursor, Read};
@@ -7,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use archive_seeds::synthetic_tar as tar;
 use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::Fragment;
 use rustleaks_sources::{
@@ -465,34 +474,4 @@ fn directory_archive_paths_preserve_identity_and_remapped_roots() {
         assert!(fragments[0].windows_file_path().is_empty());
     }
     fs::remove_dir_all(root).expect("remove temporary directory");
-}
-
-fn tar(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut output = Vec::new();
-    for (name, body) in entries {
-        let mut header = [0_u8; 512];
-        header[..name.len()].copy_from_slice(name.as_bytes());
-        header[100..108].copy_from_slice(b"0000644\0");
-        header[108..116].copy_from_slice(b"0000000\0");
-        header[116..124].copy_from_slice(b"0000000\0");
-        write_octal(&mut header[124..136], body.len());
-        header[136..148].copy_from_slice(b"00000000000\0");
-        header[148..156].fill(b' ');
-        header[156] = b'0';
-        header[257..263].copy_from_slice(b"ustar\0");
-        header[263..265].copy_from_slice(b"00");
-        let checksum: usize = header.iter().map(|byte| *byte as usize).sum();
-        let encoded = format!("{checksum:06o}\0 ");
-        header[148..156].copy_from_slice(encoded.as_bytes());
-        output.extend_from_slice(&header);
-        output.extend_from_slice(body);
-        output.resize(output.len().div_ceil(512) * 512, 0);
-    }
-    output.resize(output.len() + 1024, 0);
-    output
-}
-
-fn write_octal(field: &mut [u8], value: usize) {
-    let encoded = format!("{:0width$o}\0", value, width = field.len() - 1);
-    field.copy_from_slice(encoded.as_bytes());
 }

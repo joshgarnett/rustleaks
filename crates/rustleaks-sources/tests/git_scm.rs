@@ -1,4 +1,5 @@
 //! Git remote discovery and source-control link parity tests.
+#![forbid(unsafe_code)]
 
 mod support;
 

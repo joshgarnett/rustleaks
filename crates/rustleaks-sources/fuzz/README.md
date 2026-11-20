@@ -58,11 +58,10 @@ on macOS, where `/tmp` is a symbolic link.
 
 Notes on the seeds:
 
-- The two files in `seeds/archive/` are unframed inputs: archive bytes
-  without the `RLA\x01` header. The generator converts them to framed inputs
-  and uses their first byte as both the format selector and the control
-  byte. Convert any other unframed archive input the same way before replay.
-  Do not pass it to the target directly.
+- The two files in `seeds/archive/` keep their original bytes without a
+  header. The generator frames them with `archive_frame::migrate_legacy`,
+  which uses their first byte as both the format selector and the control
+  byte. The target does not run an input without the header.
 - `support/sevenz_seeds.rs` builds the two compressed 7z seeds. Each holds one
   `value.txt` member with `CODEC_PAYLOAD` repeated eight times. Deflate uses
   `miniz_oxide 0.9.1` raw compression at level 6. LZ4 uses `lz4_flex 0.14.0`
@@ -75,7 +74,7 @@ Notes on the seeds:
 
 `tests/archive_fuzz.rs` uses the same frame decoder and harness as the
 target. It checks every selector and control combination, decoded payloads
-for every seeded format, the conversion of unframed seeds and the member
+for every seeded format, the framing of the unframed seeds and the member
 limit.
 
 The target supports only `panic=unwind`. A compile-time check rejects

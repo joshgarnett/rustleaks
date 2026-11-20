@@ -1,4 +1,5 @@
-//! Bazel runfile helpers shared by native Git integration tests.
+//! Bazel runfile and event helpers shared by the native source and Git
+//! integration tests.
 #![allow(
     dead_code,
     reason = "each integration binary uses a different subset of these helpers"
@@ -6,7 +7,31 @@
 
 use std::path::{Path, PathBuf};
 
-use rustleaks_sources::{Cancellation, GitSource, RemoteMetadata, ScmError, ScmPlatform};
+use rustleaks_core::model::Fragment;
+use rustleaks_sources::{
+    Cancellation, CancellationToken, GitSource, RemoteMetadata, ScmError, ScmPlatform, Source,
+    SourceControl, SourceEvent, SourceIssueKind,
+};
+
+/// Visits `source` and returns its fragments and the kinds of its issues.
+pub fn collect(source: &mut dyn Source) -> (Vec<Fragment>, Vec<SourceIssueKind>) {
+    let mut fragments = Vec::new();
+    let mut issues = Vec::new();
+    source
+        .visit(&CancellationToken::new(), &mut |event| {
+            match event {
+                SourceEvent::Fragment { fragment, issue } => {
+                    fragments.push(*fragment);
+                    issues.extend(issue.map(|issue| issue.kind()));
+                }
+                SourceEvent::Issue(issue) => issues.push(issue.kind()),
+                _ => panic!("unexpected source event"),
+            }
+            Ok(SourceControl::Continue)
+        })
+        .expect("source visit succeeds");
+    (fragments, issues)
+}
 
 pub fn git_executable() -> PathBuf {
     let runfile = PathBuf::from(

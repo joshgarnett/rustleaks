@@ -1,5 +1,6 @@
 //! Differential replay of reader and direct-file source outcomes.
 #![cfg(feature = "archives")]
+#![forbid(unsafe_code)]
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;

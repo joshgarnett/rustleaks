@@ -277,8 +277,8 @@ impl SourceRunner {
 
     /// Stops on failed eligible coverage, retaining earlier complete targets.
     ///
-    /// Intentional exclusions remain recoverable. The default is `false`,
-    /// preserving legacy issue handling. Complete-target command profiles should
+    /// Intentional exclusions remain recoverable. The default is `false`, the
+    /// issue handling of a normal scan. Complete-target command profiles should
     /// enable this for every source, including Git and caller-defined adapters.
     #[must_use]
     pub const fn fail_on_coverage_error(mut self, enabled: bool) -> Self {
@@ -350,7 +350,6 @@ impl SourceRunner {
         )
     }
 
-    #[allow(clippy::too_many_arguments)] // Inject setup failure without changing public runner configuration.
     fn run_with_worker_setup(
         &self,
         source: &mut dyn Source,
@@ -360,115 +359,269 @@ impl SourceRunner {
         queue_wait: &QueueWait,
         before_spawn: impl Fn(usize) -> std::io::Result<()>,
     ) -> SourceOutcome {
-        let queue = JobQueue::new(self.queue_capacity(), queue_wait);
-        let mut issues = Vec::new();
-        let mut omitted_issues = 0_u64;
-        let mut source_result = Ok(SourceControl::Continue);
-        let mut worker_panicked = false;
-        let mut batches = Vec::new();
-        let mut statistics = SourceStatistics::default();
-        let mut next_sequence = 0_u64;
-
-        thread::scope(|scope| {
-            let mut handles = Vec::new();
-            let mut setup_error = handles
-                .try_reserve_exact(self.workers())
-                .err()
-                .map(|error| {
-                    worker_terminal(format!("could not allocate worker handles: {error}"))
-                });
-            if setup_error.is_none() {
-                for index in 0..self.workers() {
-                    let receiver = queue.receiver();
-                    let worker = &worker;
-                    let spawned = before_spawn(index).and_then(|()| {
-                        thread::Builder::new()
-                            .name(format!("rustleaks-source-{index}"))
-                            .spawn_scoped(scope, move || worker(&receiver))
-                    });
-                    match spawned {
-                        Ok(handle) => handles.push(handle),
-                        Err(error) => {
-                            setup_error = Some(worker_terminal(format!(
-                                "could not spawn detection worker: {error}"
-                            )));
-                            break;
-                        }
-                    }
-                }
-            }
-            // Only workers hold receivers, so their failure disconnects a full
-            // queue.
-            if let Some(error) = setup_error {
-                source_result = Err(error);
-            } else {
-                source_result = source.visit(cancellation, &mut |event| {
-                    ensure_active(
-                        cancellation,
-                        "source runner cancelled while receiving an event",
-                    )?;
-                    let fragment = match event {
-                        SourceEvent::Issue(issue) => {
-                            retain_issue(&mut issues, &mut omitted_issues, issue);
-                            return Ok(SourceControl::Continue);
-                        }
-                        SourceEvent::Fragment { fragment, issue } => {
-                            if let Some(issue) = issue {
-                                retain_issue(&mut issues, &mut omitted_issues, issue);
-                                // Pinned DetectSource treats any callback issue
-                                // as non-scannable even when the same read
-                                // returned bytes. The source event retains them
-                                // for lower-level protocol consumers.
-                                return Ok(SourceControl::Continue);
-                            }
-                            *fragment
-                        }
-                    };
-
-                    statistics.observe(&fragment)?;
-
-                    let sequence = next_sequence;
-                    next_sequence += 1;
-                    let mut pending = Job { sequence, fragment };
-                    let mut waiting = None;
-                    let mut remaining_retries = INITIAL_QUEUE_RETRIES;
-                    loop {
-                        ensure_active(cancellation, "source runner cancelled while scheduling")?;
-                        match queue.try_send(pending) {
-                            Ok(()) => return Ok(SourceControl::Continue),
-                            Err(TrySendError::Full(job)) => {
-                                pending = job;
-                                waiting = queue_wait.retry(waiting, &mut remaining_retries);
-                            }
-                            Err(TrySendError::Disconnected(_)) => {
-                                return Err(CallbackError::new(
-                                    "all source runner workers disconnected",
-                                ));
-                            }
-                        }
-                    }
-                });
-            }
-            queue.close();
-
-            for handle in handles {
-                match handle.join() {
-                    Ok(worker_batches) => batches.extend(worker_batches),
-                    Err(_) => worker_panicked = true,
-                }
-            }
-        });
-
+        let run = run_scheduled(
+            self,
+            source,
+            &Unbudgeted(cancellation),
+            queue_wait,
+            before_spawn,
+            worker,
+        );
         finish_run(
             policy,
-            batches,
-            issues,
-            source_result,
-            worker_panicked,
+            run.batches,
+            run.issues,
+            run.source_result,
+            run.worker_panicked,
             cancellation.is_cancelled(),
-            statistics,
+            run.statistics,
         )
-        .with_omitted_issues(omitted_issues)
+        .with_omitted_issues(run.omitted_issues)
+    }
+}
+
+/// What a run with a budget adds to the shared producer loop. A run without
+/// a budget uses [`Unbudgeted`], which never stops on its own.
+trait RunControl: Sync {
+    /// The caller's cancellation.
+    fn token(&self) -> &CancellationToken;
+
+    /// The cancellation that the source sees.
+    fn source_cancellation(&self) -> &dyn Cancellation;
+
+    /// The run stopped itself or was cancelled; the producer stops without an
+    /// error.
+    fn stopped(&self) -> bool;
+
+    /// Keeps or counts one issue. Returns `false` to stop the source.
+    fn retain_issue(
+        &self,
+        issues: &mut Vec<SourceIssue>,
+        omitted: &mut u64,
+        issue: SourceIssue,
+    ) -> bool;
+
+    /// Accounts for one fragment. Returns `false` to stop the source.
+    fn admit(&self, bytes: usize) -> bool;
+
+    /// Records that a worker could not start.
+    fn spawn_failed(&self);
+
+    /// The run stopped itself, so a disconnected queue is a stop, not an
+    /// error.
+    fn stopped_internally(&self) -> bool;
+}
+
+/// The run control of a run without a budget.
+struct Unbudgeted<'a>(&'a CancellationToken);
+
+impl RunControl for Unbudgeted<'_> {
+    fn token(&self) -> &CancellationToken {
+        self.0
+    }
+
+    fn source_cancellation(&self) -> &dyn Cancellation {
+        self.0
+    }
+
+    fn stopped(&self) -> bool {
+        false
+    }
+
+    fn retain_issue(
+        &self,
+        issues: &mut Vec<SourceIssue>,
+        omitted: &mut u64,
+        issue: SourceIssue,
+    ) -> bool {
+        retain_issue(issues, omitted, issue);
+        true
+    }
+
+    fn admit(&self, _bytes: usize) -> bool {
+        true
+    }
+
+    fn spawn_failed(&self) {}
+
+    fn stopped_internally(&self) -> bool {
+        false
+    }
+}
+
+/// What the producer and the workers left after a run.
+struct ScheduledRun {
+    source_result: Result<SourceControl, SourceError>,
+    batches: Vec<FragmentBatch>,
+    issues: Vec<SourceIssue>,
+    omitted_issues: u64,
+    worker_panicked: bool,
+    statistics: SourceStatistics,
+}
+
+/// Starts the workers, feeds them the source's fragments in order, closes the
+/// queue and joins every worker.
+#[allow(clippy::result_large_err)] // A full queue hands the unsent job back without another allocation.
+fn run_scheduled(
+    runner: &SourceRunner,
+    source: &mut dyn Source,
+    control: &impl RunControl,
+    queue_wait: &QueueWait,
+    before_spawn: impl Fn(usize) -> std::io::Result<()>,
+    worker: impl Fn(&WorkerReceiver<'_>) -> Vec<FragmentBatch> + Sync,
+) -> ScheduledRun {
+    let queue = JobQueue::new(runner.queue_capacity(), queue_wait);
+    let mut issues = Vec::new();
+    let mut omitted_issues = 0_u64;
+    let mut source_result = Ok(SourceControl::Continue);
+    let mut worker_panicked = false;
+    let mut batches = Vec::new();
+    let mut statistics = SourceStatistics::default();
+    let mut next_sequence = 0_u64;
+
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        let mut setup_error = handles
+            .try_reserve_exact(runner.workers())
+            .err()
+            .map(|error| {
+                SourceError::terminal(
+                    SourceStage::Worker,
+                    None,
+                    format!("could not allocate worker handles: {error}"),
+                )
+            });
+        if setup_error.is_none() {
+            for index in 0..runner.workers() {
+                let receiver = queue.receiver();
+                let worker = &worker;
+                let spawned = before_spawn(index).and_then(|()| {
+                    thread::Builder::new()
+                        .name(format!("rustleaks-source-{index}"))
+                        .spawn_scoped(scope, move || worker(&receiver))
+                });
+                match spawned {
+                    Ok(handle) => handles.push(handle),
+                    Err(error) => {
+                        setup_error = Some(SourceError::terminal(
+                            SourceStage::Worker,
+                            None,
+                            format!("could not spawn detection worker: {error}"),
+                        ));
+                        control.spawn_failed();
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(error) = setup_error {
+            source_result = Err(error);
+        } else {
+            source_result = source.visit(control.source_cancellation(), &mut |event| {
+                ensure_active(
+                    control.token(),
+                    "source runner cancelled while receiving an event",
+                )?;
+                if control.stopped() {
+                    return Ok(SourceControl::Stop);
+                }
+                let fragment = match event {
+                    SourceEvent::Issue(issue) => {
+                        return Ok(retained(control.retain_issue(
+                            &mut issues,
+                            &mut omitted_issues,
+                            issue,
+                        )));
+                    }
+                    SourceEvent::Fragment { fragment, issue } => {
+                        if let Some(issue) = issue {
+                            // Gitleaks does not scan a read that reported an
+                            // issue, even when the same read returned bytes.
+                            // The source event keeps them for lower-level
+                            // protocol consumers.
+                            return Ok(retained(control.retain_issue(
+                                &mut issues,
+                                &mut omitted_issues,
+                                issue,
+                            )));
+                        }
+                        *fragment
+                    }
+                };
+                if !control.admit(fragment.content().len()) {
+                    return Ok(SourceControl::Stop);
+                }
+                statistics.observe(&fragment)?;
+                let sequence = next_sequence;
+                next_sequence += 1;
+                schedule(control, Job { sequence, fragment }, queue_wait, |pending| {
+                    queue.try_send(pending)
+                })
+            });
+        }
+        queue.close();
+        for handle in handles {
+            match handle.join() {
+                Ok(worker_batches) => batches.extend(worker_batches),
+                Err(_) => worker_panicked = true,
+            }
+        }
+    });
+
+    ScheduledRun {
+        source_result,
+        batches,
+        issues,
+        omitted_issues,
+        worker_panicked,
+        statistics,
+    }
+}
+
+const fn retained(kept: bool) -> SourceControl {
+    if kept {
+        SourceControl::Continue
+    } else {
+        SourceControl::Stop
+    }
+}
+
+/// Offers one job to the queue until a worker takes it, the run stops, or
+/// the caller cancels.
+fn schedule(
+    control: &impl RunControl,
+    job: Job,
+    queue_wait: &QueueWait,
+    mut try_send: impl FnMut(Job) -> Result<(), TrySendError<Job>>,
+) -> Result<SourceControl, CallbackError> {
+    let mut pending = job;
+    let mut waiting = None;
+    let mut remaining_retries = INITIAL_QUEUE_RETRIES;
+    loop {
+        ensure_active(control.token(), "source runner cancelled while scheduling")?;
+        #[cfg(test)]
+        if let Some(after_external_check) = &queue_wait.after_external_check {
+            after_external_check();
+        }
+        if control.stopped() {
+            return Ok(SourceControl::Stop);
+        }
+        match try_send(pending) {
+            Ok(()) => return Ok(SourceControl::Continue),
+            Err(TrySendError::Full(job)) => {
+                pending = job;
+                waiting = queue_wait.retry(waiting, &mut remaining_retries);
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                // The last worker can exhaust its budget or panic after the
+                // check above and drop the receiver before this send. Keep
+                // that internal stop instead of making a source error.
+                if control.stopped_internally() {
+                    return Ok(SourceControl::Stop);
+                }
+                return Err(CallbackError::new("all source runner workers disconnected"));
+            }
+        }
     }
 }
 
@@ -480,14 +633,6 @@ fn ensure_active(
         Err(CallbackError::new(message))
     } else {
         Ok(())
-    }
-}
-
-fn worker_terminal(message: String) -> SourceError {
-    SourceError::Terminal {
-        stage: SourceStage::Worker,
-        path: None,
-        message,
     }
 }
 
@@ -948,8 +1093,8 @@ impl Source for CompleteCoverageSource<'_> {
 impl Default for SourceRunner {
     fn default() -> Self {
         Self {
-            workers: NonZeroUsize::new(1).expect("one worker is positive"),
-            queue_capacity: NonZeroUsize::new(1).expect("one queue slot is positive"),
+            workers: NonZeroUsize::MIN,
+            queue_capacity: NonZeroUsize::MIN,
             budget: None,
             fail_on_coverage_error: false,
         }
