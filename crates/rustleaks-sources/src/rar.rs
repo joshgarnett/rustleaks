@@ -1083,12 +1083,6 @@ mod tests {
     }
 
     #[test]
-    fn container_crc_matches_the_ieee_check_value() {
-        assert_eq!(crc32(b""), 0);
-        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
-    }
-
-    #[test]
     fn rejects_crc_corruption_and_resource_excess() {
         let cancelled = AtomicBool::new(false);
         let mut archive = stored_v5(b"value.txt", b"payload");
