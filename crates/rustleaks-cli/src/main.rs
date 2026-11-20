@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Thin command-line consumer of Rustleaks libraries with legacy CLI aliases.
+//! The `rustleaks` executable. It runs `rustleaks_cli` with the process environment.
 
 use rustleaks_cli::{RunEnvironment, run_from};
 

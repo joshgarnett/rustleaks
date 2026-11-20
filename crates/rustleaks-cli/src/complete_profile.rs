@@ -105,7 +105,9 @@ impl CompleteProfile {
         let mut length = 0;
         loop {
             if length == bytes.len() {
-                return Err("complete profile exceeds 16384 bytes".to_owned());
+                return Err(format!(
+                    "complete profile exceeds {MAX_PROFILE_BYTES} bytes"
+                ));
             }
             match reader.read(&mut bytes[length..]) {
                 Ok(0) => return Self::parse(&bytes[..length]),
@@ -337,8 +339,8 @@ pub(crate) struct CompletionStatus {
     pub reason: CompletionReason,
     usage: Option<SourceUsage>,
     failure: Option<LimitFailure>,
-    pub scm_link_bytes: usize,
-    pub findings: usize,
+    scm_link_bytes: usize,
+    findings: usize,
     issues: usize,
 }
 
@@ -482,7 +484,7 @@ impl CompletionStatus {
     }
 }
 
-const fn resource_name(kind: SourceBudgetKind) -> &'static str {
+pub(crate) const fn resource_name(kind: SourceBudgetKind) -> &'static str {
     match kind {
         SourceBudgetKind::OriginalBytes => "original_bytes",
         SourceBudgetKind::Fragments => "fragments",

@@ -953,7 +953,7 @@ fn implemented_gitleaks_version_matches_the_pinned_upstream_revision() {
 }
 
 #[test]
-fn minimum_version_warns_only_above_the_implemented_gitleaks_version() {
+fn minimum_version_warning_is_one_warn_line_on_standard_error() {
     let fixture = Fixture::new();
     let default = output(&fixture.0, &["dir", ".", "--no-banner"]);
     let stderr = String::from_utf8_lossy(&default.stderr);
@@ -961,15 +961,9 @@ fn minimum_version_warns_only_above_the_implemented_gitleaks_version() {
     assert!(default.stdout.is_empty());
     assert!(!stderr.contains("config requires"), "{stderr}");
 
+    // The unit test in src/config.rs covers each version case.
     for (min_version, expected) in [
         ("v8.30.0", None),
-        ("v8.30.0+meta", None),
-        (
-            "v8.30.1",
-            Some(
-                "config requires Gitleaks v8.30.1 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
-            ),
-        ),
         (
             "v99.0.0",
             Some(
@@ -1099,7 +1093,7 @@ fn selected_composite_logs_missing_required_rule_and_completes() {
     );
     assert_eq!(fs::read(fixture.0.join("report.json")).unwrap(), b"[]\n");
     assert!(String::from_utf8_lossy(&result.stderr).contains(
-        "error required rule not found in config path=primary-rule rule-id=username-rule"
+        "error rule primary-rule requires rule username-rule, which is not in the configuration"
     ));
 }
 
@@ -2397,7 +2391,7 @@ mod complete_profile {
         assert!(conflict.stdout.is_empty());
         assert!(
             String::from_utf8_lossy(&conflict.stderr)
-                .contains("requires embedded-default configuration")
+                .contains("works only with the default configuration")
         );
     }
 
@@ -2469,10 +2463,7 @@ mod complete_profile {
         args.extend_from_slice(extra);
         let environment = rustleaks_cli::RunEnvironment {
             cwd: fixture.0.clone(),
-            config_path: None,
-            config_toml: None,
-            legacy_config_path: None,
-            legacy_config_toml: None,
+            ..rustleaks_cli::RunEnvironment::default()
         };
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         let code = rustleaks_cli::run_from(
@@ -3405,10 +3396,7 @@ mod complete_profile {
         assert!(!String::from_utf8_lossy(&selected.stdout).contains("CD34"));
         let environment = rustleaks_cli::RunEnvironment {
             cwd: fixture.0.clone(),
-            config_path: None,
-            config_toml: None,
-            legacy_config_path: None,
-            legacy_config_toml: None,
+            ..rustleaks_cli::RunEnvironment::default()
         };
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         let code = rustleaks_cli::run_from(
@@ -3682,7 +3670,7 @@ mod native_packs {
         assert!(String::from_utf8_lossy(&legacy.stderr).contains("rustleaks.groq-api-key"));
         let diagnostic = stdin(&fixture, b"unrelated", &["--log-level", "debug"]);
         let stderr = String::from_utf8_lossy(&diagnostic.stderr);
-        assert!(stderr.contains("native policy rustleaks-native-v1|"));
+        assert!(stderr.contains("built-in rule packs rustleaks-native-v1|"));
         assert!(stderr.contains("providers-sha256:"));
         assert!(!stderr.contains("[[rules]]"));
     }
@@ -3829,7 +3817,7 @@ mod native_packs {
         fixture.write("custom.toml", &custom);
         let explicit = output(&fixture.0, &args(&["stdin", "--config", "custom.toml"]));
         assert_eq!(explicit.status.code(), Some(1));
-        assert!(String::from_utf8_lossy(&explicit.stderr).contains("selected from --config"));
+        assert!(String::from_utf8_lossy(&explicit.stderr).contains("set by --config"));
         assert!(explicit.stdout.is_empty());
         for (key, value) in [
             ("RUSTLEAKS_CONFIG", "custom.toml"),
@@ -3844,7 +3832,7 @@ mod native_packs {
                 .unwrap();
             assert_eq!(result.status.code(), Some(1));
             let stderr = String::from_utf8_lossy(&result.stderr);
-            assert!(stderr.contains(&format!("selected from {key}")));
+            assert!(stderr.contains(&format!("set by {key}")));
             assert!(!stderr.contains(marker));
             assert!(result.stdout.is_empty());
         }
@@ -3854,8 +3842,7 @@ mod native_packs {
                 let result = output(&fixture.0, &args(&mode));
                 assert_eq!(result.status.code(), Some(1));
                 assert!(
-                    String::from_utf8_lossy(&result.stderr)
-                        .contains("selected from source-local config")
+                    String::from_utf8_lossy(&result.stderr).contains("set by source-local config")
                 );
                 assert!(result.stdout.is_empty());
             }
@@ -3879,10 +3866,7 @@ mod native_packs {
     fn unknown_and_duplicate_native_packs_fail_before_scanning() {
         let fixture = Fixture::new();
         for (id, message) in [
-            (
-                "unknown-private-sentinel",
-                "unknown builtin native pack identifier",
-            ),
+            ("unknown-private-sentinel", "unknown built-in rule pack"),
             ("rustleaks-providers-v1", "duplicate native pack identifier"),
         ] {
             let result = stdin(&fixture, secret().as_bytes(), &["--native-pack", id]);

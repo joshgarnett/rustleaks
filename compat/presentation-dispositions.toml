@@ -127,7 +127,7 @@ Limit and decoding flags:
       --base64-mode <mode>
           Choose how to find base64 text.
           Modes: compatible and extended. Default: compatible.
-          compatible keeps the pinned Gitleaks behavior.
+          compatible finds the same base64 text as Gitleaks.
           extended also finds URL-safe base64, base64 without
           padding, and base64 of binary data.
       --max-archive-depth <number>
@@ -269,7 +269,7 @@ Limit and decoding flags:
       --base64-mode <mode>
           Choose how to find base64 text.
           Modes: compatible and extended. Default: compatible.
-          compatible keeps the pinned Gitleaks behavior.
+          compatible finds the same base64 text as Gitleaks.
           extended also finds URL-safe base64, base64 without
           padding, and base64 of binary data.
       --max-archive-depth <number>
@@ -587,3 +587,21 @@ event = 0
 frozen_sha256 = "1a74fd2ea8c1809b015209e2c61eadc80bc2d7795a315ff6fa54c4dbc1b38cf6"
 expected = "ignore file entry has 1 field, expected 3 or 4 file=named.ignore line=1"
 reason = "The warning names the field count, file and line in plain text instead of Rust debug output."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0028"
+variant = "CLI-BB-010/selected-composite-missing-required"
+field = "stderr_event_message"
+event = 1
+frozen_sha256 = "ff7fa3f4406761b5d38f25ca05fdade08ebac5dba27becf683d1a5c99c4f2215"
+expected = "rule primary-rule requires rule username-rule, which is not in the configuration"
+reason = "The error names both rules. The old text labeled a rule ID as a config path."
+
+[[presentation_disposition]]
+id = "PRES-CLI-0029"
+variant = "CLI-BB-016/overflow"
+field = "stderr_event_message"
+event = 0
+frozen_sha256 = "391cbe89739dd8d9dea0162118a0f399c6c7aa8d6e21fe1ff85a25120352623e"
+expected = "--max-target-megabytes is out of range"
+reason = "Each numeric flag has one plain out-of-range message."
