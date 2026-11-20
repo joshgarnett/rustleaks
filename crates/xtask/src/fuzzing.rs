@@ -5,9 +5,9 @@ pub(crate) mod private;
 pub(crate) mod process;
 pub(crate) mod profiles;
 
-#[path = "../../rustleaks-core/tests/support/campaign_profile.rs"]
+#[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
 #[allow(dead_code)] // Shared harness policy also contains target-only helpers.
-mod campaign_profile;
+mod fuzz_profile;
 #[path = "../../rustleaks-sources/fuzz/support/source_frame.rs"]
 #[allow(dead_code)] // Frame decoders also serve the fuzz targets and ordinary proofs.
 mod source_frame;
@@ -740,8 +740,7 @@ fn seed(
         private::write(&corpus.join(name), &input)?;
     }
     if profile == Profile::Deep {
-        let input =
-            campaign_profile::deep_seed(target.name).ok_or("missing structured deep seed")?;
+        let input = fuzz_profile::deep_seed(target.name).ok_or("missing structured deep seed")?;
         if input.len() as u64
             <= TARGETS
                 .iter()

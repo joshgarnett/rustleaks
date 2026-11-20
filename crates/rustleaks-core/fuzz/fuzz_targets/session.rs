@@ -2,10 +2,10 @@
 #![no_main]
 
 #[allow(dead_code)]
-#[path = "../../tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 
-use campaign_profile::Profile;
+use fuzz_profile::Profile;
 
 use std::hint::black_box;
 
@@ -44,7 +44,7 @@ fuzz_target!(|data: &[u8]| {
         .expect("known target");
     let data = &data[..data.len().min(maximum)];
     let (baseline_bytes, ignore_bytes, finding_bytes) =
-        campaign_profile::session_parts(data, Profile::current());
+        fuzz_profile::session_parts(data, Profile::current());
     let candidate = finding(finding_bytes);
 
     let arbitrary_baseline = Baseline::from_go_json(baseline_bytes);

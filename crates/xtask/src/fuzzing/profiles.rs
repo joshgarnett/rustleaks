@@ -37,9 +37,9 @@ impl Profile {
     }
     pub(crate) fn maximum_input(self, target: &str) -> Result<u64, String> {
         let profile = if self == Self::Deep {
-            super::campaign_profile::Profile::Deep
+            super::fuzz_profile::Profile::Deep
         } else {
-            super::campaign_profile::Profile::Smoke
+            super::fuzz_profile::Profile::Smoke
         };
         profile
             .input_limit(target)
@@ -48,9 +48,9 @@ impl Profile {
     }
     pub(crate) fn record(self) -> Value {
         let harness = if self == Self::Deep {
-            super::campaign_profile::Profile::Deep
+            super::fuzz_profile::Profile::Deep
         } else {
-            super::campaign_profile::Profile::Smoke
+            super::fuzz_profile::Profile::Smoke
         };
         let archive = harness.archive();
         let fragment = harness.fragment();

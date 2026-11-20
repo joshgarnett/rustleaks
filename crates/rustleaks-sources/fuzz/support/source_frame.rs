@@ -7,7 +7,7 @@
 //! Input caps include headers. Deep increases input length, not per-operation
 //! limits. No production API or source limit is changed by these test helpers.
 
-use super::campaign_profile::{self, Profile};
+use super::fuzz_profile::{self, Profile};
 
 pub const READER_MAGIC: &[u8; 4] = b"RLR\x01";
 pub const GIT_MAGIC: &[u8; 4] = b"RLG\x01";
@@ -74,7 +74,7 @@ impl<'a> ReaderFrame<'a> {
                 input_bytes: data.len(),
             };
         }
-        let (control, schedule, payload) = campaign_profile::reader_parts(data, profile);
+        let (control, schedule, payload) = fuzz_profile::reader_parts(data, profile);
         Self {
             encoding: Encoding::Legacy,
             controls: ReaderControls {

@@ -102,7 +102,7 @@ fn source_campaign_initialization_retains_legacy_and_adds_framed_seeds_in_each_p
             if profile == Profile::Deep {
                 assert_eq!(
                     fs::read(corpus.join("structured-deep-input")).unwrap(),
-                    super::campaign_profile::deep_seed(name).unwrap()
+                    super::fuzz_profile::deep_seed(name).unwrap()
                 );
             }
         }
@@ -558,7 +558,7 @@ fn explicit_profiles_preserve_smoke_and_bind_deep_inputs_to_replay() {
             target.max_len
         );
         assert_eq!(Profile::Deep.maximum_input(target.name).unwrap(), 65_536);
-        let seed = super::campaign_profile::deep_seed(target.name).unwrap();
+        let seed = super::fuzz_profile::deep_seed(target.name).unwrap();
         assert!(seed.len() as u64 > target.max_len);
         assert!(seed.len() <= 65_536);
     }

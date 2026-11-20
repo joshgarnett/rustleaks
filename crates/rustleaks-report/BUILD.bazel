@@ -35,7 +35,7 @@ rustleaks_integration_test(
     name = "security_stress_test",
     src = "tests/security_stress.rs",
     deps = [":rustleaks_report", "//crates/rustleaks-core:rustleaks_core"],
-    srcs = ["//crates/rustleaks-core:campaign_profile_support"],
+    srcs = ["//crates/rustleaks-core:fuzz_profile_support"],
 )
 
 test_suite(

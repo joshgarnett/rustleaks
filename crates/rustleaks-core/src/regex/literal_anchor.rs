@@ -222,6 +222,7 @@ impl LiteralAnchorShape {
     }
 
     /// Returns whether `byte` is an ASCII member of the leading class.
+    #[cfg(test)]
     pub(crate) fn leading_contains(&self, byte: u8) -> bool {
         self.class[usize::from(byte)]
     }
@@ -571,6 +572,7 @@ impl GoRegex {
     /// Runs the enumeration with no budget, for differential tests.
     ///
     /// The result is `None` only for an expression without a shape.
+    #[cfg(test)]
     pub(crate) fn find_all_literal_anchored_unbudgeted(
         &self,
         normalized: &NormalizedHaystack<'_>,

@@ -7,7 +7,16 @@ use std::path::{Path, PathBuf};
 use rustleaks_core::Engine;
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, ConfigOrigin, VirtualResolver};
 use rustleaks_core::model::{CommitMetadata, Finding, Fragment, ScanOptions};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+#[allow(dead_code)]
+#[path = "support/corpus.rs"]
+mod corpus;
+
+use corpus::{
+    CanonicalFinding, CanonicalFragment, CanonicalRequiredFinding, canonical_finding,
+    decode_base64, json_lines,
+};
 
 #[derive(Deserialize)]
 struct Request {
@@ -104,59 +113,6 @@ struct Response {
 #[derive(Deserialize)]
 struct OracleError {
     class: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CanonicalFinding {
-    rule_id: String,
-    description_base64: String,
-    start_line: i64,
-    end_line: i64,
-    start_column: i64,
-    end_column: i64,
-    line_base64: String,
-    match_base64: String,
-    secret_base64: String,
-    file_base64: String,
-    symlink_file_base64: String,
-    commit_base64: String,
-    link_base64: String,
-    entropy_bits: u32,
-    author_base64: String,
-    email_base64: String,
-    date_base64: String,
-    message_base64: String,
-    tags_base64: Vec<String>,
-    fingerprint_base64: String,
-    fragment: Option<CanonicalFragment>,
-    required_findings: Vec<CanonicalRequiredFinding>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CanonicalFragment {
-    raw_base64: String,
-    bytes_base64: String,
-    file_base64: String,
-    windows_file_base64: String,
-    symlink_file_base64: String,
-    commit_base64: String,
-    start_line: i64,
-    inherited_from_finding: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CanonicalRequiredFinding {
-    rule_id: String,
-    start_line: i64,
-    end_line: i64,
-    start_column: i64,
-    end_column: i64,
-    line_base64: String,
-    match_base64: String,
-    secret_base64: String,
 }
 
 #[test]
@@ -484,7 +440,7 @@ fn build_options(input: &RequestOptions) -> ScanOptions {
         .max_decode_depth(usize::try_from(input.max_decode_depth).unwrap_or(0))
         .max_target_bytes(maximum)
         .redaction_percent(input.redact_percent)
-        .honor_gitleaks_allow(!input.ignore_allow_marker)
+        .honor_allow_markers(!input.ignore_allow_marker)
         .build()
 }
 
@@ -552,112 +508,4 @@ fn build_finding(input: &FindingInput) -> Finding {
         }))
         .build()
         .unwrap()
-}
-
-fn canonical_finding(finding: &Finding) -> CanonicalFinding {
-    CanonicalFinding {
-        rule_id: finding.rule_id().to_string_lossy().into_owned(),
-        description_base64: encode_base64(finding.description().as_bytes()),
-        start_line: i64::try_from(finding.location().start_line()).unwrap(),
-        end_line: i64::try_from(finding.location().end_line()).unwrap(),
-        start_column: i64::try_from(finding.location().start_column()).unwrap(),
-        end_column: i64::try_from(finding.location().end_column()).unwrap(),
-        line_base64: encode_base64(finding.line().as_bytes()),
-        match_base64: encode_base64(finding.match_text().as_bytes()),
-        secret_base64: encode_base64(finding.secret().as_bytes()),
-        file_base64: encode_base64(finding.file().as_bytes()),
-        symlink_file_base64: encode_base64(finding.symlink_file().as_bytes()),
-        commit_base64: encode_base64(finding.commit().as_bytes()),
-        link_base64: encode_base64(finding.link().as_bytes()),
-        entropy_bits: finding.entropy().to_bits(),
-        author_base64: encode_base64(finding.author().as_bytes()),
-        email_base64: encode_base64(finding.email().as_bytes()),
-        date_base64: encode_base64(finding.date().as_bytes()),
-        message_base64: encode_base64(finding.message().as_bytes()),
-        tags_base64: finding
-            .tags()
-            .iter()
-            .map(|tag| encode_base64(tag.as_bytes()))
-            .collect(),
-        fingerprint_base64: encode_base64(finding.fingerprint().as_bytes()),
-        fragment: finding.fragment().map(|fragment| CanonicalFragment {
-            raw_base64: encode_base64(fragment.content().as_bytes()),
-            bytes_base64: String::new(),
-            file_base64: encode_base64(fragment.file_path().as_bytes()),
-            windows_file_base64: encode_base64(fragment.windows_file_path().as_bytes()),
-            symlink_file_base64: encode_base64(fragment.symlink_file().as_bytes()),
-            commit_base64: encode_base64(fragment.commit().as_bytes()),
-            start_line: i64::try_from(fragment.start_line()).unwrap(),
-            inherited_from_finding: fragment.inherited_from_finding(),
-        }),
-        required_findings: finding
-            .required_findings()
-            .iter()
-            .map(|required| CanonicalRequiredFinding {
-                rule_id: required.rule_id().to_string_lossy().into_owned(),
-                start_line: i64::try_from(required.location().start_line()).unwrap(),
-                end_line: i64::try_from(required.location().end_line()).unwrap(),
-                start_column: i64::try_from(required.location().start_column()).unwrap(),
-                end_column: i64::try_from(required.location().end_column()).unwrap(),
-                line_base64: encode_base64(required.line().as_bytes()),
-                match_base64: encode_base64(required.match_text().as_bytes()),
-                secret_base64: encode_base64(required.secret().as_bytes()),
-            })
-            .collect(),
-    }
-}
-
-fn json_lines<T: for<'de> Deserialize<'de>>(path: &Path) -> Vec<T> {
-    fs::read_to_string(path)
-        .unwrap()
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect()
-}
-
-fn decode_base64(encoded: &str) -> Vec<u8> {
-    let mut output = Vec::with_capacity(encoded.len() / 4 * 3);
-    let mut accumulator = 0_u32;
-    let mut bits = 0_u8;
-    for byte in encoded.bytes().take_while(|byte| *byte != b'=') {
-        let value = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => panic!("invalid frozen base64 fixture"),
-        };
-        accumulator = (accumulator << 6) | u32::from(value);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push(((accumulator >> bits) & 0xff) as u8);
-        }
-    }
-    output
-}
-
-fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let value = (u32::from(chunk[0]) << 16)
-            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
-            | u32::from(*chunk.get(2).unwrap_or(&0));
-        output.push(char::from(TABLE[((value >> 18) & 63) as usize]));
-        output.push(char::from(TABLE[((value >> 12) & 63) as usize]));
-        output.push(if chunk.len() > 1 {
-            char::from(TABLE[((value >> 6) & 63) as usize])
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            char::from(TABLE[(value & 63) as usize])
-        } else {
-            '='
-        });
-    }
-    output
 }

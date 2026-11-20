@@ -15,6 +15,7 @@ use base64::Engine as _;
 use serde::de::{self, Deserialize, Deserializer, IgnoredAny, MapAccess, Visitor};
 use thiserror::Error;
 
+use crate::go_unicode::{decode_last_rune, decode_rune};
 use crate::model::{ByteText, CommitMetadata, Finding, Fragment, RequiredFinding};
 
 const GO_SCANNER_TOKEN_LIMIT: usize = 64 * 1024;
@@ -28,8 +29,7 @@ pub struct IgnoreSet {
 impl IgnoreSet {
     /// Parses one complete `.rustleaksignore` byte stream.
     ///
-    /// The legacy `.gitleaksignore` filename uses the same format for backward
-    /// compatibility.
+    /// A `.gitleaksignore` file uses the same format.
     #[must_use]
     pub fn parse_go_compatible(bytes: &[u8]) -> IgnoreParseOutcome {
         let mut ignores = Self::default();
@@ -39,9 +39,9 @@ impl IgnoreSet {
 
     /// Adds entries from another complete ignore-file byte stream.
     ///
-    /// Existing entries remain installed and duplicates collapse. Like the
-    /// pinned Go scanner, an overlong token stops this input after retaining
-    /// entries parsed before it.
+    /// Existing entries remain installed and duplicates collapse. As in
+    /// Gitleaks, an overlong token stops this input after keeping the entries
+    /// parsed before it.
     pub fn extend_go_compatible(&mut self, bytes: &[u8]) -> Vec<IgnoreIssue> {
         let mut issues = Vec::new();
         let mut offset = 0;
@@ -156,54 +156,20 @@ fn trim_go_space(bytes: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = bytes.len();
     while start < end {
-        let (value, width) = decode_first_go_rune(&bytes[start..end]);
-        if !is_go_space(value) {
+        let (value, width) = decode_rune(&bytes[start..end]);
+        if !is_go_space(u32::from(value)) {
             break;
         }
         start += width;
     }
     while start < end {
-        let (value, width) = decode_last_go_rune(&bytes[start..end]);
-        if !is_go_space(value) {
+        let (value, width) = decode_last_rune(&bytes[start..end]);
+        if !is_go_space(u32::from(value)) {
             break;
         }
         end -= width;
     }
     &bytes[start..end]
-}
-
-fn decode_first_go_rune(bytes: &[u8]) -> (u32, usize) {
-    let Some(&first) = bytes.first() else {
-        return (0, 0);
-    };
-    if first < 0x80 {
-        return (u32::from(first), 1);
-    }
-    for width in 2..=4.min(bytes.len()) {
-        if let Ok(value) = std::str::from_utf8(&bytes[..width])
-            && value.chars().count() == 1
-        {
-            return (u32::from(value.chars().next().unwrap_or('\u{fffd}')), width);
-        }
-    }
-    (0xfffd, 1)
-}
-
-fn decode_last_go_rune(bytes: &[u8]) -> (u32, usize) {
-    let Some(&last) = bytes.last() else {
-        return (0, 0);
-    };
-    if last < 0x80 {
-        return (u32::from(last), 1);
-    }
-    for width in 2..=4.min(bytes.len()) {
-        if let Ok(value) = std::str::from_utf8(&bytes[bytes.len() - width..])
-            && value.chars().count() == 1
-        {
-            return (u32::from(value.chars().next().unwrap_or('\u{fffd}')), width);
-        }
-    }
-    (0xfffd, 1)
 }
 
 const fn is_go_space(value: u32) -> bool {
@@ -414,12 +380,13 @@ impl Baseline {
         }
     }
 
-    /// Parses the pinned Go report JSON format from bytes.
+    /// Parses a Gitleaks or Rustleaks JSON report from bytes.
     ///
     /// # Errors
     ///
     /// Returns [`BaselineParseError`] for malformed JSON, a non-array root, a
-    /// wrong known field type, or a value outside the pinned 64-bit Go domain.
+    /// wrong known field type, or a number outside the Go type of its field
+    /// (`int` or `float32`).
     pub fn from_go_json(bytes: &[u8]) -> Result<Self, BaselineParseError> {
         let normalized = normalize_go_json(bytes);
         let decoded = serde_json::from_str::<Option<Vec<BaselineFindingWire>>>(&normalized)
@@ -513,7 +480,7 @@ fn finding_key(finding: &Finding) -> BaselineKey<'_> {
 /// A structured baseline JSON parse failure.
 #[derive(Debug, Error)]
 pub enum BaselineParseError {
-    /// The input did not decode as the pinned report shape.
+    /// The input did not decode as a JSON report.
     #[error("unsupported baseline JSON: {0}")]
     Json(serde_json::Error),
 }
@@ -594,9 +561,9 @@ pub fn qualified_fingerprint(finding: &Finding) -> ByteText {
 /// Why an assigned finding was not collected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SuppressionReason {
-    /// Its global fingerprint appeared in a native or legacy ignore file.
+    /// Its global fingerprint appeared in an ignore file.
     GlobalIgnore,
-    /// Its commit-qualified fingerprint appeared in a native or legacy ignore file.
+    /// Its commit-qualified fingerprint appeared in an ignore file.
     CommitIgnore,
     /// It was equal to an entry in the configured baseline.
     Baseline,

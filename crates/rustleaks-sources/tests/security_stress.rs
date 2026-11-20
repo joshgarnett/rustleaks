@@ -10,8 +10,8 @@ mod archive_frame;
 #[path = "../fuzz/support/archive_harness.rs"]
 mod archive_harness;
 #[allow(dead_code)]
-#[path = "../../rustleaks-core/tests/support/campaign_profile.rs"]
-mod campaign_profile;
+#[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
+mod fuzz_profile;
 #[allow(dead_code)]
 #[path = "../fuzz/support/reader_harness.rs"]
 mod reader_harness;
@@ -21,7 +21,7 @@ mod source_frame;
 
 use std::io::Cursor;
 
-use campaign_profile::{Profile, deep_seed, synthetic_tar};
+use fuzz_profile::{Profile, deep_seed, synthetic_tar};
 use rustleaks_sources::{
     ArchiveLimits, ArchiveOptions, ArchiveSource, CancellationToken, FileOptions, Source,
     SourceControl, SourceEvent, SourceIssueKind,
@@ -53,9 +53,9 @@ fn profile_caps_and_long_schedule_are_explicit() {
         (4, 256, 65536, 1_048_576, 4_194_304)
     );
     let seed = deep_seed("reader_schedule").unwrap();
-    let (_, schedule, payload) = campaign_profile::reader_parts(&seed, Profile::Deep);
+    let (_, schedule, payload) = fuzz_profile::reader_parts(&seed, Profile::Deep);
     assert_eq!((schedule.len(), payload.len()), (8192, 8192));
-    let (_, smoke_schedule, _) = campaign_profile::reader_parts(&seed, Profile::Smoke);
+    let (_, smoke_schedule, _) = fuzz_profile::reader_parts(&seed, Profile::Smoke);
     assert!(smoke_schedule.len() <= 255);
     let archive = deep_seed("archive").unwrap();
     assert!(archive.len() > smoke.input_bytes);
