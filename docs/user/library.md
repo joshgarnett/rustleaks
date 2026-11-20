@@ -23,7 +23,7 @@ library is alpha software, and its API can change between alpha releases. To
 pin the exact version, add it with `=`:
 
 ```sh
-cargo add rustleaks-core@=0.1.0-alpha.10
+cargo add rustleaks-core@=0.1.0-alpha.11
 ```
 
 Only `rustleaks-core` is published. The file, archive and Git readers, the

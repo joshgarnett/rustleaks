@@ -124,7 +124,7 @@ order of configuration sources.
 ### Version
 
 `rustleaks version` and `rustleaks --version` print the Rustleaks version,
-such as `0.1.0-alpha.10`, not a Gitleaks version. A configuration with a
+such as `0.1.0-alpha.11`, not a Gitleaks version. A configuration with a
 `minVersion` newer than 8.30.0 still loads, but Rustleaks prints a warning,
 because it may not support newer settings.
 

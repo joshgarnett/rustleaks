@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0-alpha.11] - 2026-11-20
+
 - Use less CPU with several detection threads. Idle threads used to queue on
   one lock to receive the next piece of input. Now they park until a piece
   arrives, and the scheduling thread checks a full queue without a lock. On
@@ -392,7 +394,7 @@ Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
-[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.10...HEAD
+[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.11...HEAD
 [0.1.0-alpha.1]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
@@ -403,3 +405,4 @@ version and exact source commit.
 [0.1.0-alpha.8]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.9]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.9
 [0.1.0-alpha.10]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.10
+[0.1.0-alpha.11]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.11
