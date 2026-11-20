@@ -336,7 +336,16 @@ example.
   command takes the worker count from `--jobs`, then from the profile
   `workers` key, then from `std::thread::available_parallelism` up to 12,
   or uses 1 when that fails. Without a profile, its queue capacity equals the worker
-  count, up to 1,024, because the channel allocates its slots up front.
+  count, up to 1,024, which bounds the fragments that wait for a worker.
+- The queue is one locked first-in, first-out list. A worker locks it only to
+  take a fragment. While the list is empty, an idle worker parks its thread
+  without holding a lock. A new fragment wakes one parked worker, and that
+  worker wakes the next one if more fragments wait, so the producer pays for
+  at most one wake-up at a time. A producer that finds the queue full checks
+  it again without the lock. The producer is woken by the first fragment
+  taken after it saw the queue full, or by a worker exit, and checks for
+  cancellation every 100 microseconds while it waits. The code is
+  `JobQueue` in `crates/rustleaks-sources/src/runner.rs`.
 - A complete run returns findings in producer order, the same as one worker.
   After a budget stop, the returned subset and its order depend on
   scheduling.

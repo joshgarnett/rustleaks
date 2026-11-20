@@ -621,9 +621,8 @@ fn outcome_termination(termination: &SourceTermination) -> String {
 }
 
 /// The most fragments that wait for a detection thread without a profile.
-/// The channel allocates its slots up front, so this bounds that allocation
-/// for any `--jobs` value. The profile key `queue_capacity` has the same
-/// maximum.
+/// Waiting fragments hold their bytes, so this bounds that memory for any
+/// `--jobs` value. The profile key `queue_capacity` has the same maximum.
 const MAX_DEFAULT_QUEUE_CAPACITY: usize = 1024;
 
 /// The most detection threads that a scan starts when neither `--jobs` nor a

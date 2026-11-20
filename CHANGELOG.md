@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Use less CPU with several detection threads. Idle threads used to queue on
+  one lock to receive the next piece of input. Now they park until a piece
+  arrives, and the scheduling thread checks a full queue without a lock. On
+  a 36-CPU macOS host with 12 threads, a Git history scan of mongo used 30
+  percent less CPU and finished 11 percent sooner, and folder scans of mongo
+  and linux used 7 to 9 percent less CPU. With one or four threads, scans
+  take the same time as before. Findings, their order, reports and exit
+  codes do not change.
 - The default rules are now Rustleaks-owned, based on the Gitleaks default
   configuration at the same pin. The unchanged upstream copy stays in
   `compat/config-corpus/default-gitleaks.toml`, and
