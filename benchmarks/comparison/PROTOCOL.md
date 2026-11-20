@@ -1,8 +1,9 @@
 # Scanner comparison protocol (2026-11)
 
-This file fixes the method before any timed run. It is committed and pushed
-before the first timed run. Rustleaks code does not change between this
-commit and the report. A change starts a new comparison.
+This file fixed the method of the 2026-11 comparison before its first timed
+run. Rustleaks code did not change between this file and the
+[results](results-2026-11.md). A change to the method starts a new
+comparison.
 
 ## Questions
 
@@ -28,7 +29,7 @@ Bazel servers stopped; load average and thermal state recorded by the harness.
 | ID | Version | Build | SHA-256 |
 | --- | --- | --- | --- |
 | rustleaks-0.1.0-alpha.9 | 0.1.0-alpha.9 | release archive | `e7967563da6a7e19901799ec0c5f366d4cab130fb1de90ba7252c1ecc521a1a9` |
-| rustleaks-main | branch `perf/parallel-reading` at `0805cfd7b1c7c344ca19a0ad9ff644c3cdc914d6` (#163 on #162); squash merges give `main` the same tree | `bazelisk build --config=release-macos-aarch64` | `d5e0adc482bbc57f4f8e4d80fe932e55e54d4b3c68d3894fa01155283d408ca3` |
+| rustleaks-main | pre-release build at commit `0805cfd7b1c7c344ca19a0ad9ff644c3cdc914d6` | `bazelisk build --config=release-macos-aarch64` | `d5e0adc482bbc57f4f8e4d80fe932e55e54d4b3c68d3894fa01155283d408ca3` |
 | gitleaks-8.30.1 | 8.30.1 | release archive (go-re2) | `ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f` |
 | betterleaks-1.10.1 | 1.10.1 | release archive | `13ac5109fa85a590c7ba6e7f130311e0c60a2bf582c3aac073176c93b46621a8` |
 | betterleaks-2.0.0-rc.8 | 2.0.0-rc.8 | release archive | `5253cd8409d5468c28c4f6b5aa88dd0d8dfcb6caab2faee7697fef66afb12d42` |
@@ -48,23 +49,21 @@ The harness checks every hash before and after each run.
   2.0.0-rc.8, Kingfisher 2.19.1 and 1.113.0, Rustleaks packs), each run
   against every tool.
 - `constructed-v1`: the labeled synthetic quality corpus.
-- Held-out set: sealed on 2026-11-17 by an agent independent of Rustleaks
-  tuning, inventory SHA-256
+- Held-out set: sealed on 2026-11-17, independently of Rustleaks tuning,
+  inventory SHA-256
   `5aca16b8fd8f1b03c04680f07fba4251675214e66ad14dc98707c4705c1ec927`. The seal
   is checked before the run. The harness smoke passes of 2026-11-18 and
   2026-11-19 scanned it once each to check that every cell runs; those
   outputs were checked for exit status and failures only, and no Rustleaks
   change was made in response to them.
-- CredData: not included unless the maintainer allows running its download
-  script. If included later, it is a separate, labeled addition.
+- CredData: not included.
 
 ## Runs
 
 Each run is a separate `cargo xtask compare run` with its own private output
-folder. Defaults: one warmup, then 3 measured runs per cell. The maintainer
-chose this budget so that all runs together take about 4 to 5 hours.
-Medians were stable at this count in the quick runs of 2026-11-18;
-confidence intervals are wider than with more runs. Other defaults:
+folder. Defaults: one warmup, then 3 measured runs per cell, so that all
+runs together take about 4 to 5 hours. Medians were stable at this count in
+quick trial runs; confidence intervals are wider than with more runs. Other defaults:
 one-hour timeout per sample; an 8-hour time budget per run (`--max-hours`),
 after which no sample starts and the remaining cells are listed as skipped;
 fixed seed; random tool and workload order.

@@ -6,8 +6,7 @@ published to crates.io. The CLI ships as release archives.
 
 Each of these actions needs explicit maintainer approval for that action:
 selecting a version, creating a GitHub release or tag, publishing a crate,
-changing a release setting, turning on trusted publishing, and using a
-credential. A successful local or hosted dry run is not approval.
+changing a release or trusted publishing setting, and using a credential. A successful local or hosted dry run is not approval.
 
 ## Checklist
 
@@ -34,9 +33,30 @@ just release-dry-run
 - [ ] All commands pass.
 - [ ] If compatibility inputs or behavior changed, `cargo xtask qualify`
       passes.
-- [ ] If a previous release exists, `cargo-semver-checks` passes for each
-      public crate and feature profile against the latest published release,
-      and a person reviewed the API change.
+- [ ] `cargo-semver-checks` passes for each public crate and feature
+      profile against the latest version on crates.io, and a person reviewed
+      the API change. See the
+      [public API README](../../compat/public-api/README.md).
+- [ ] The [scanner comparison](comparison.md) of the previous release with
+      the candidate shows no unexplained time, memory or finding regression.
+
+To compare the two builds, list the previous release archive and an
+optimized build of the candidate in a private tools manifest (see
+[Tools manifest](comparison.md#tools-manifest)), then run on a quiet host:
+
+```sh
+just compare run --tools TOOLS --lanes defaults \
+  --workloads benchmarks/comparison/workloads/synthetic.json \
+  --workloads benchmarks/comparison/quality/labeled.json \
+  --cache-root CACHE --output PRIVATE_RUN --baseline PREVIOUS_ID
+```
+
+`CACHE` holds the generated workloads (see
+[Comparison workloads](comparison-workloads.md) and
+[Comparison quality inputs](comparison-quality.md)). The defaults are the
+quick settings: 1 warmup and 3 measured runs per cell.
+Read `report.md` in the run folder for time and memory ratios and for
+finding counts that changed.
 
 ### 3. Run the hosted dry run
 
@@ -279,25 +299,14 @@ The trusted publisher for `rustleaks-core` is:
 
 Only the publication job gets `id-token: write`. It gets a temporary token
 through the official crates.io action and reads no registry secret. Its post
-step revokes the token. Once the trusted publisher configuration is verified,
-require trusted publishing for the crate.
+step revokes the token. Never store a registry token in the repository,
+workflow configuration, artifacts or logs, and never add a long-lived token
+as a fallback.
 
 Cargo adds `.cargo_vcs_info.json` to a package built from a Git worktree. A
 squash merge therefore changes the package bytes and checksum even when the
 source is the same. The package built from the final `main` commit is the
 release package; a branch package does not replace it.
-
-#### First publication of a crate
-
-crates.io
-[trusted publishing](https://crates.io/docs/trusted-publishing) needs the
-crate to exist before a trusted publisher can be set. The first publication
-therefore needs either future registry support for this, or an explicitly
-approved, short-lived API token limited to creating that package. Revoke the
-token after publication and set up trusted publishing before the next
-release. Never store a registry token in the repository, workflow
-configuration, artifacts or logs, and never add a long-lived token as a
-fallback.
 
 ### Publishing the GitHub release
 

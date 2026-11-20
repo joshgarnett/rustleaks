@@ -22,7 +22,7 @@
       "build": "local bazelisk build -c opt //crates/rustleaks-cli:rustleaks at a named commit",
       "regex_engine": "rust-regex",
       "rule_count": 222,
-      "rule_source": "default rules; 542 with all three native packs, 31 of them hidden helpers",
+      "rule_source": "default rules; 542 with all three native packs, 32 of them hidden helpers",
       "notes": "replace the hash with the SHA-256 of the local build and record the commit here"
     },
     {

@@ -6,9 +6,9 @@ what each lane means, what the harness measures, and the limits of the
 results. No result from this harness is a portable speed or quality
 guarantee.
 
-The 2026-11 comparison is fixed in
-[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md),
-and its results are in
+The latest recorded comparison followed
+[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md).
+Its results are in
 [benchmarks/comparison/results-2026-11.md](../../benchmarks/comparison/results-2026-11.md).
 
 ## What the harness does
@@ -100,12 +100,41 @@ report then lists them as flagged cells.
 
 ### Labels
 
-A labels file is JSON Lines. Each line has the workload, the path, a commit
-or `null`, the byte offsets `start` and `end`, the line, the SHA-256 of the
-labeled text, a category, a label and a source, such as `constructed`,
-`credData` or `fixture`. Labels hold no secret text. The scorer reads the
-text at the offsets from the input, checks its SHA-256, and reports labels
-that do not check. Unknown fields are ignored.
+A labels file is JSON Lines, one object per labeled item. Labels hold no
+secret text. The scorer reads the text at the offsets from the input, checks
+its SHA-256, and reports labels that do not check. Unknown fields are
+ignored. This section is the reference for the format; the pages on
+[workloads](comparison-workloads.md#labels) and
+[quality inputs](comparison-quality.md#labels) describe only what their
+sources add.
+
+Every label has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `workload` | Workload ID |
+| `path` | Path relative to the workload folder, with forward slashes |
+| `commit` | Commit ID for a Git workload, otherwise `null` |
+| `start`, `end` | Byte offsets of the labeled text in the file at that commit. `end` is exclusive. Encoded and staged values use other offsets, as described below |
+| `line` | One-based line of `start`. The scorer computes the line from `start` and reports a label whose `line` differs |
+| `secret_sha256` | SHA-256 of the labeled bytes; for an encoded value, of the decoded value |
+| `category` | Credential family, such as `vcs-token`, or the rule ID for fixtures |
+| `label` | `secret` or `not-secret` |
+| `source` | Where the label comes from, such as `constructed`, `credData` or `fixture` |
+
+Optional fields:
+
+| Field | Meaning |
+| --- | --- |
+| `end_line` | One-based line of the last labeled byte |
+| `span` | How a finding matches the label. See the table below |
+| `encoding` | `base64` or `zstd`. See below |
+| `decoded_start`, `decoded_end` | For `encoding: base64`, the secret's offsets in the decoded bytes |
+| `staged` | `true` when the offsets index the staged blob in the Git index, not the file in the worktree. `commit` is then `null` |
+| `expected`, `expected_count` | How findings on the label count. See below |
+| `reachable_from_head`, `introduced_by`, `in_binary` | Scope differences. See [Git labels and scope differences](#git-labels-and-scope-differences) |
+| `home_tool` | The tool whose own example the label comes from |
+| `kind`, `fixture_tool`, `fixture_rule`, `fixture_case`, `fixture_origin` | Descriptive only; the scorer does not read them |
 
 The label is `secret` or `not-secret`. Any other value, such as `ambiguous`,
 leaves the item out of precision and recall: the label is not counted as a
@@ -120,14 +149,25 @@ Kinds of label:
 | `"span": "case"` | Any finding in the same file; the SHA-256 is of the whole case |
 | `"encoding": "base64"` or `"zstd"` | A finding in the same file, or in the archive at that path, whose secret has the label's SHA-256, at any position |
 
-A label without `"span": "line"` is a value label, even when it covers a
-whole line.
+A label without `"span": "line"` or `"span": "case"` is a value label, even
+when it covers a whole line. The workload generators write `"span":
+"secret"` for a value label.
+
+Offsets for encoded values:
+
+- `encoding: base64`: `start` and `end` cover the Base64 text in the file.
+  `decoded_start` and `decoded_end` locate the secret in the decoded bytes.
+- `encoding: zstd`: `start` and `end` index the decompressed member, not the
+  compressed file.
 
 `expected` changes how findings on a label count:
 
 - `exactly_one`: one finding matches; more are over-reporting.
 - `count`: `expected_count` findings match; more are over-reporting.
 - `none`: every finding on the label is a false positive.
+
+Other values, such as `exact` and `at_least_one`, count like a label without
+`expected`.
 
 Labels with the same path and commit whose byte ranges overlap form one
 group, such as a whole-line label and a value label on the same line. A
@@ -136,7 +176,7 @@ label is not counted as a missed secret. A group is a secret when any member
 is a secret. Its category and source come from its narrowest secret member.
 Encoded labels are never grouped.
 
-Git labels:
+#### Git labels and scope differences
 
 - A label belongs to `git` mode when it has a commit, an `introduced_by`
   commit, or `"staged": true` (read from the Git index). Other labels belong
@@ -239,13 +279,13 @@ Only the `defaults` lane gets cold cells unless `--cold-lanes` adds more.
 Each tool sets threads in its own way, and the ways are not the same:
 
 - Rustleaks scans with one detection thread for each CPU, up to 12, by
-  default, in builds that have `--jobs`. The harness passes `--jobs N` to these builds in
-  every thread cell. Older builds scan with 1 worker by default. Their
-  1-thread cells use no profile, and for more than 1 thread the harness
-  generates a `--complete-profile` file with high limits and the requested
-  `workers` value. A profile also makes Rustleaks read each file whole. An
-  older binary without `--complete-profile` runs only the 1-thread cells, and
-  the other cells are listed as skipped.
+  default. For a binary with `--jobs`, the harness passes `--jobs N` in every
+  thread cell. For a binary without `--jobs`, the 1-thread cells use no
+  profile, and for more than 1 thread the harness generates a
+  `--complete-profile` file with high limits and the requested `workers`
+  value. A profile also makes Rustleaks read each file whole. A binary
+  without either option runs only the 1-thread cells, and the other cells are
+  listed as skipped.
 - Gitleaks and Betterleaks get `GOMAXPROCS`. Gitleaks keeps a fixed 40
   detection goroutines. Betterleaks 2 starts 4 times `GOMAXPROCS` workers.
 - Kingfisher gets `--jobs`.
@@ -308,9 +348,7 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 - Findings are counted from the parsed report, every record, with no
   deduplication by the harness. Reports over 64 MiB are parsed once per
   cell; later runs check only the exit code. A report over 4 GiB, or a log
-  over 64 MiB, stops the run. The report limit is set well above the largest
-  report seen so far (Betterleaks writes about 300 MB for the 1 GiB keyword
-  workload) so that it stops only runaway output.
+  over 64 MiB, stops the run. The report limit stops only runaway output.
 - Thermal state is recorded before the first and after the last measured
   run of each cell.
 
@@ -318,10 +356,9 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 
 - Warm cells get 1 warmup and 3 measured runs. `--runs-fast`, `--runs-slow`
   and `--long-runs` set the count for cells under 1 second, of 1 second or
-  more, and of 300 seconds or more; all three default to 3. The maintainer
-  chose this budget on 2026-11-18 so that a full comparison takes hours,
-  not days. Medians are stable at this count; confidence intervals are
-  wider than with more runs.
+  more, and of 300 seconds or more; all three default to 3, so a full
+  comparison takes hours. Medians are stable at this count; confidence
+  intervals are wider than with more runs.
 - Cold cells start every run with an empty `HOME`, `TMPDIR` and cache
   folders, so compiled rule caches start empty. They have no warmups. The
   operating system page cache is not purged, because that needs root.
