@@ -18,8 +18,8 @@ rules only as listed in [Default rules](#default-rules).
 The Gitleaks name only names where Rustleaks started. It does not mean that
 Rustleaks is an official Gitleaks release.
 
-Rustleaks now stands on its own. It is not bound to give the same output as
-Gitleaks. It keeps the things that let you move from Gitleaks working:
+Rustleaks is an independent project. It does not aim to give the same output
+as Gitleaks. It keeps the things that let you move from Gitleaks working:
 
 - Gitleaks configuration files load and mean the same thing.
 - Ignore files, baselines and allow comments keep working.
@@ -34,17 +34,9 @@ Findings can differ from Gitleaks when Rustleaks finds more, or when a
 difference gives a clearer result without losing a secret. Each such
 difference is listed on this page and covered by a test.
 
-Rustleaks owns its help text, usage and error wording, banner, log and
-summary lines, other diagnostic output, and the order of JSON keys and CSV
-columns. It can change them. Each such change updates a test expectation,
-and a reviewer checks the new text against the stated intent.
-
-Some changes need maintainer approval, a changelog entry and tests: removing
-a point in the list above, changing the meaning of a configuration, report
-field or exit code, or making Rustleaks miss secrets it found before.
-
-Contributors can find how this policy is tested in [Testing and
-parity](../dev/testing-and-parity.md).
+Help, usage, error wording, the banner, log and summary lines, and the order
+of JSON keys and CSV columns can change between releases. Use exit codes and
+report fields in scripts.
 
 ## What works the same
 
@@ -124,14 +116,14 @@ order of configuration sources.
 ### Version
 
 `rustleaks version` and `rustleaks --version` print the Rustleaks version,
-such as `0.1.0-alpha.11`, not a Gitleaks version. A configuration with a
+such as `0.1.0-alpha.1`, not a Gitleaks version. A configuration with a
 `minVersion` newer than 8.30.0 still loads, but Rustleaks prints a warning,
 because it may not support newer settings.
 
 ### Help, errors and logs
 
 Help pages, usage text, error messages, the banner and log lines use Rustleaks
-wording and layout. Do not parse them in scripts. Use exit codes and reports.
+wording and layout. See the [compatibility policy](#compatibility-policy).
 
 ### Errors that Rustleaks handles more strictly
 
@@ -178,29 +170,32 @@ in full gives the same findings. These points differ:
   or a decompression bomb. A complete scan then fails with exit code 2. See
   [Archives](resource-limits.md#archives) for the limits.
 - Rustleaks holds a RAR member, a Snappy or MinLZ stream and some headers in
-  memory, up to 64 MiB, and skips larger ones with a warning.
-- Rustleaks keeps temporary copies of up to 1 MiB in memory instead of in a
-  file. Its temporary files have no name, or are deleted when closed.
+  memory, up to a fixed limit, and skips larger ones with a warning.
+- Rustleaks keeps small temporary copies in memory instead of in a file. Its
+  temporary files have no name, or are deleted when closed.
+- See [Archives](resource-limits.md#archives) for these limits.
 - An archive file from Git history that is larger than its limit is skipped
   with a warning, and the scan continues.
-- With `--max-archive-depth 0`, the default, Rustleaks reads every file as
-  plain text, whatever its name. Gitleaks instead skips, without reading it,
-  any file whose name looks like an archive or compressed file by the name
-  rules in [Archives](configuration.md#archives). These names include
-  ordinary text files such as `docker-compose.branch.yml` (`.br`),
-  `app.browser.js` and `notes.zipper.txt`. Rustleaks reports the secrets in
-  those files, so it can report more findings than Gitleaks.
+- With `--max-archive-depth 0`, the default, Rustleaks does not skip a file
+  because of its name. Gitleaks instead skips, without reading it, any file
+  whose name looks like an archive or compressed file by the name rules in
+  [Archives](configuration.md#archives). These names include ordinary text
+  files such as `docker-compose.branch.yml` (`.br`), `app.browser.js` and
+  `notes.zipper.txt`. Rustleaks reports the secrets in those files, so it
+  can report more findings than Gitleaks. Like Gitleaks, Rustleaks still
+  skips files whose content starts like a binary format. See [Files that are
+  skipped](cli-reference.md#files-that-are-skipped).
 
 ### Default rules
 
 The default rules, used when no configuration is selected and by a
 configuration with `[extend] useDefault = true`, are the Gitleaks default
-configuration at the pin with these changes. They still have 222 rules. A
+configuration at the pin with these changes. They have 222 rules. A
 configuration that does not extend the default rules is used as written.
 
 - The global `[allowlist]` table is written as an `[[allowlists]]` entry,
   which has the same meaning.
-- `generic-api-key` has five more allowlists. It no longer reports:
+- `generic-api-key` has five more allowlists. It does not report:
   - hex digests of 32, 40, 64 or 128 characters under a name with md5, sha,
     digest, checksum, fingerprint, hash or etag, such as `token_md5`;
   - 40-character Git object IDs under a name that ends in commit, revision or
@@ -217,10 +212,11 @@ configuration that does not extend the default rules is used as written.
 
 Known loss: UUIDs under names such as `client_id` or `keycloak.client-id`
 are public OAuth and Keycloak identifiers, but some test sets label them as
-secrets. `generic-api-key` no longer reports them.
+secrets. `generic-api-key` does not report them.
 
 To get the Gitleaks findings for these values, use the unchanged upstream
-copy, `compat/config-corpus/default-gitleaks.toml` in the source repository,
+copy,
+[`compat/config-corpus/default-gitleaks.toml`](https://github.com/joshgarnett/rustleaks/blob/main/compat/config-corpus/default-gitleaks.toml),
 as your configuration.
 
 ## Features that Gitleaks does not have

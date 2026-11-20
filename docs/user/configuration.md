@@ -258,8 +258,10 @@ Limits of the Base64 modes:
 
 With `--max-archive-depth N` above 0, Rustleaks opens archives and scans the
 files inside them, up to N levels of archives inside archives. The default is
-0, which does not open archives: every file, whatever its name, is read as
-plain text.
+0, which does not open archives: a file is read as plain text, whatever its
+name. Files whose content starts like a binary format, such as a ZIP or PDF
+file, are skipped. See [Files that are
+skipped](cli-reference.md#files-that-are-skipped).
 
 Rustleaks decides whether a file is an archive by its name only, not by its
 content. A name that contains `.tar`, `.zip`, `.7z` or `.rar` is an archive.
@@ -283,7 +285,7 @@ Archive size, entry and temporary storage limits apply. See
 | `--max-target-megabytes N` | Skip files larger than N megabytes (N times 1,000,000 bytes). `0`, the default, means no limit. |
 | `--follow-symlinks` | `dir` only. Scan files that symbolic links point to. |
 | `--scan-git-metadata` | `dir` only. Also scan the text metadata files in `.git` folders, such as `config`, `hooks` and `logs`. See [Git metadata](cli-reference.md#git-metadata). |
-| `--timeout N` | Stop the scan after N seconds. The scan then fails with exit code 1. `0`, the default, means no timeout. |
+| `--timeout N` | Stop the scan after N seconds. The scan then fails with exit code 1, or with 2 under `--complete-profile`. `0`, the default, means no timeout. |
 | `--native-pack ID` | Add an optional rule pack. See [Native rule packs](native-rule-packs.md). |
 
 See the [command reference](cli-reference.md) for every flag.

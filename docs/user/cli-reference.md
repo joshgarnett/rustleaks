@@ -4,10 +4,6 @@ This page is for people who run `rustleaks` and need the exact name, value and
 default of a command or flag. The other guides explain how to use each
 feature, and this page links to them.
 
-These guides describe the current source. Features listed under Unreleased in
-the [changelog](../../CHANGELOG.md) are not in a release yet. To use them now,
-[build from source](getting-started.md#build-from-source).
-
 ## Synopsis
 
 ```text
@@ -36,8 +32,9 @@ exits with 0.
   use `=`, as in `--redact=20`.
 - Switch flags, such as `--verbose`, also accept `=true` and `=false`, for
   example `--verbose=false`.
-- Short flags are `-c`, `-r`, `-f`, `-b`, `-l`, `-i`, `-v` and `-h`. A short
-  flag can take its value after `=`, as in `-c=my.toml`.
+- Short flags are `-c`, `-r`, `-f`, `-b`, `-l`, `-i`, `-j`, `-v` and `-h`.
+  Give the value of a short flag as the next argument, as in `-r out.json`.
+  Only `-c` also accepts `=`, as in `-c=my.toml`.
 - `--` ends the flags. Every argument after it is a path.
 - Flags that every scan command shares can come before or after the command.
   Flags that belong to one command, such as `--staged` or `--follow-symlinks`,
@@ -65,7 +62,7 @@ tag. Only the lines that each commit adds are scanned.
 
 | Flag | Value | Effect |
 | --- | --- | --- |
-| `--log-opts` | Text | Replaces the options after `git log -p -U0`. Rustleaks splits the value at each space and does not use shell quoting. Example: `--log-opts="main..HEAD"`. |
+| `--log-opts` | Text | Replaces the options after `git log -p -U0`. Rustleaks splits the value at each space and does not use shell quoting, so do not put quotes inside the value. Rustleaks warns about a word that starts and ends with a quote. Example: `--log-opts="main..HEAD"`. |
 | `--staged` | None | Scan changes that are staged but not committed yet (`git diff --staged`). |
 | `--pre-commit` | None | Scan changes in the working tree that are not staged yet (`git diff`). |
 | `--platform` | `github`, `gitlab`, `azuredevops`, `gitea`, `bitbucket` or `none` | Build links to findings for this platform. `none` turns links off. Without this flag, or with an empty value or `unknown`, Rustleaks finds the platform from the remote URL. Case does not matter. |
@@ -91,6 +88,36 @@ Scans a folder and everything below it, or a single file. `file` and
 
 The `File` field of a finding depends on the path you give. See [Ignore
 files](configuration.md#ignore-files).
+
+#### Files that are skipped
+
+`dir` does not scan these files:
+
+- files and folders that a path allowlist matches, such as `.git` folders
+  with the default configuration;
+- symbolic links, unless you give `--follow-symlinks`;
+- files larger than `--max-target-megabytes`, with a warning; and
+- files whose first bytes match a known binary format, without a warning.
+
+The binary check looks at the content, not the name. It skips:
+
+- programs and libraries: Windows, ELF and Mach-O executables, WebAssembly
+  and Android DEX files;
+- archives and compressed files: ZIP and formats built on it, such as JAR or
+  DOCX, and TAR, RAR, 7z, gzip, bzip2, XZ, Zstandard, LZIP, Unix compress,
+  CAB, InstallShield CAB, `ar`, Debian and RPM packages, and ISO 9660 disk
+  images;
+- documents: PDF, PostScript, RTF and Microsoft Office files;
+- fonts: WOFF, WOFF2, TrueType, OpenType and Embedded OpenType; and
+- other formats: SQLite databases, DICOM files, Flash (SWF) files, Chrome
+  extensions (CRX) and NES ROM images.
+
+Images, audio and video files are scanned. The check looks only at the
+first bytes, so a text file that happens to start like one of these formats,
+for example with `%!` or `MZ`, is skipped too. The same check applies to
+each file inside an archive and to standard input. With
+`--max-archive-depth` above 0, a file whose name marks it as an archive is
+opened instead. See [Archives](configuration.md#archives).
 
 #### Git metadata
 
@@ -125,7 +152,7 @@ Name matching has these limits:
 - The `objects` and `.lock` checks ignore case. A submodule named `objects`
   or `index`, or one whose name ends in `.lock`, is not covered.
 - A `.git` file, as in a submodule or linked worktree checkout, only points to
-  the real Git folder. It is skipped as before.
+  the real Git folder. It is skipped.
 - A `.git` folder given as the scan path, as in `rustleaks dir repo/.git`, is
   not matched by the default entry. Rustleaks scans all of it, with or
   without this flag.
@@ -155,8 +182,9 @@ rustleaks stdin [flags]
 ```
 
 Scans the bytes on standard input. There is no file name, so the `File` field
-is empty and Rustleaks does not open archives by name. Configuration files
-and ignore files are looked up in the current folder.
+is empty and Rustleaks does not open archives by name. Input whose first bytes
+match a binary format is skipped, as for [files](#files-that-are-skipped).
+Configuration files and ignore files are looked up in the current folder.
 
 ### version
 
@@ -232,8 +260,8 @@ See [Reports](reports.md) for the formats and fields.
 | `--max-decode-depth` | Whole number | `5` | Decode encoded text up to this many levels deep. `0` or less turns decoding off. |
 | `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also finds URL-safe Base64, Base64 without padding, and Base64 of binary data. See [Decoding](configuration.md#decoding). |
 | `--max-archive-depth` | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
-| `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1. `0` or less means no time limit. |
-| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. With 2 or more, a `dir` scan also reads files on two threads, and a `git` scan of history reads it with this many `git log` processes, up to 6. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. More threads use more memory, and past some number they do not make the scan faster. See [Detection threads](resource-limits.md#detection-threads). |
+| `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1, or with 2 under `--complete-profile`. `0` or less means no time limit. |
+| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. See [Detection threads](resource-limits.md#detection-threads) for its effect on speed and memory. |
 | `--complete-profile` | Path | None | Scan with the limits in this profile file and report whether the scan was complete. See [Complete scanning](complete-scanning.md). |
 
 ### Logging
@@ -325,8 +353,8 @@ set `--exit-code` to another value, such as 3. Do not use 2 or 126.
 `--exit-code` accepts a whole number from -2147483648 to 2147483647. On Linux
 and macOS, the operating system keeps only the lowest 8 bits of an exit code,
 so use a value from 0 to 255. With `--complete-profile`, `--exit-code 2` is an
-error, and the exit code is then 2. Findings hidden by an ignore file, a baseline or an allow comment do
-not count as findings.
+error, and the exit code is then 2. Findings hidden by an ignore file, a
+baseline or an allow comment do not count as findings.
 
 ## Shell completion
 
