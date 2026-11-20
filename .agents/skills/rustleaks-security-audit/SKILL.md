@@ -26,16 +26,17 @@ inventory as a change signal, not proof of safety or reachability. Review any
 new source, build script, native link, license, advisory, vet exemption,
 exception review condition, feature, or target-specific edge. Accepting an
 advisory, vetting, unsafe, or native exception, or a change that the
-compatibility policy reserves for the maintainer, needs maintainer approval. See [Approval
-boundaries](../../../AGENTS.md#approval-boundaries).
+compatibility policy reserves for the maintainer, needs maintainer approval.
+See [Approval boundaries](../../../AGENTS.md#approval-boundaries).
 
 Before retaining an approved cargo-vet exemption, apply the [exemption
 policy](../../../docs/dev/security-checks.md#exemptions). Confirm that
 configured peer evidence is absent. Record why the required criterion cannot
-be certified, and find out whether the concern is reachable in the maintained
+be certified, and find out whether the concern is reachable in the dependency
 graph. Record the scope, resolution condition, owner, and the applicable
-review date or approved boundary-change trigger. Never use an exemption for a known concern reachable in the
-maintained runtime graph or as a silent criteria downgrade.
+review date or approved boundary-change trigger. Never use an exemption for a
+known concern reachable in the runtime graph or as a silent criteria
+downgrade.
 Regenerate the vet inventory after changing an exemption.
 
 Use `rustleaks-build-maintenance` for dependency and lockfile mechanics. This
@@ -63,8 +64,7 @@ one of those package-facing boundaries changes. Follow the incident procedure
 for a suspected live finding, compromised dependency, release input, or
 unexplained fuzz or sanitizer result.
 
-For a repository self-scan, build the maintained CLI and keep all findings
-redacted:
+For a repository self-scan, build the CLI and keep all findings redacted:
 
 ```sh
 bazelisk build //crates/rustleaks-cli:rustleaks
