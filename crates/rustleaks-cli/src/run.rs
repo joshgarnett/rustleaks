@@ -9,7 +9,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rustleaks_core::Engine;
-use rustleaks_core::model::{ByteText, ScanOptions};
+use rustleaks_core::model::{ByteText, Finding, ScanOptions};
+use rustleaks_core::session::SessionPolicy;
 use rustleaks_sources::{
     CancellationToken, RemoteMetadata, ScmErrorKind, ScmPlatform, SourceBudgetScope, SourceIssue,
     SourceIssueKind, SourceRunner, SourceTermination,
@@ -20,7 +21,7 @@ use crate::complete_profile::{CompleteProfile, CompletionReason, CompletionStatu
 use crate::config::{self, ConfigEnvironment};
 use crate::limits::{self, ScanLimits};
 use crate::output::{self, ReportPlan};
-use crate::source;
+use crate::source::{self, BuiltSource};
 use crate::{completion, help};
 
 /// Process context injected into one command execution.
@@ -142,10 +143,33 @@ fn run_scan<R: Read + Send + 'static>(
     code
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "the command lifecycle remains auditable as one ordered compatibility flow"
-)]
+/// What a scan has built before it reads any input.
+struct ScanSetup {
+    /// When the scan clock started, for the summary line.
+    started: Instant,
+    cancellation: CancellationToken,
+    timer: Option<Timer>,
+    log_level: LogLevel,
+    policy: SessionPolicy,
+    report: Option<ReportPlan>,
+    engine: Engine,
+    scan_options: ScanOptions,
+    runner: SourceRunner,
+    source: BuiltSource,
+    remote: Option<RemoteMetadata>,
+}
+
+/// What a finished scan produced.
+struct ScanResult {
+    findings: Vec<Finding>,
+    /// Bytes read, including the bytes of self-excluded files.
+    bytes: u64,
+    /// The scan ended before it read the whole source.
+    partial: bool,
+}
+
+/// Runs one scan in four steps: set up, scan, attach links and write
+/// outputs. Each step returns the exit code when it stops the command.
 fn run_scan_inner<R: Read + Send + 'static>(
     invocation: &Invocation,
     environment: &RunEnvironment,
@@ -155,30 +179,57 @@ fn run_scan_inner<R: Read + Send + 'static>(
     profile: Option<&CompleteProfile>,
     status: &mut CompletionStatus,
 ) -> i32 {
+    let mut setup = match set_up(invocation, environment, stdin, stderr, profile, status) {
+        Ok(setup) => setup,
+        Err(code) => return code,
+    };
+    let mut result = match scan(invocation, &mut setup, stderr, profile, status) {
+        Ok(result) => result,
+        Err(code) => return code,
+    };
+    let findings = std::mem::take(&mut result.findings);
+    result.findings = attach_links(findings, &setup, stderr, profile, status);
+    result.partial = result.partial || profile.is_some() && !status.is_complete();
+    write_outputs(invocation, &setup, &result, stdout, stderr, status)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "setup runs its steps in one order that decides which error is printed first"
+)]
+fn set_up<R: Read + Send + 'static>(
+    invocation: &Invocation,
+    environment: &RunEnvironment,
+    stdin: R,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
+) -> Result<ScanSetup, i32> {
     let mut started = Instant::now();
     let cancellation = CancellationToken::new();
+    // A directory scan starts its clock and its timeout after the
+    // configuration is loaded. Other scans start them first.
     let mut timer = if invocation.command == CommandKind::Directory {
         None
     } else {
-        match Timer::start(limits::timeout(&invocation.options), cancellation.clone()) {
-            Ok(timer) => timer,
-            Err(error) => {
+        Timer::start(limits::timeout(&invocation.options), cancellation.clone()).map_err(
+            |error| {
                 let _ = output::error(stderr, error);
-                return 1;
-            }
-        }
+                1
+            },
+        )?
     };
     let log_level = select_log_level(invocation, stderr);
     if !invocation.options.no_banner && output::banner(stderr).is_err() {
         finish_timer(timer.take());
-        return 1;
+        return Err(1);
     }
     let limits = match ScanLimits::from_options(&invocation.options) {
         Ok(limits) => limits,
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::fatal(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
     let config = match config::assemble(
@@ -203,18 +254,17 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::fatal(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
     if invocation.command == CommandKind::Directory {
         started = Instant::now();
-        timer = match Timer::start(limits::timeout(&invocation.options), cancellation.clone()) {
-            Ok(timer) => timer,
-            Err(error) => {
+        timer = Timer::start(limits::timeout(&invocation.options), cancellation.clone()).map_err(
+            |error| {
                 let _ = output::error(stderr, error);
-                return 1;
-            }
-        };
+                1
+            },
+        )?;
     }
     if log_level.shows_warn() {
         for warning in &config.warnings {
@@ -240,7 +290,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
             finish_timer(timer.take());
             status.reason = CompletionReason::ReportFailure;
             let _ = output::fatal(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
     let engine = match Engine::builder(config.selected).build() {
@@ -248,7 +298,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
     let scan_options = build_scan_options(invocation, &limits);
@@ -261,10 +311,10 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
-    let mut source = match source::build(
+    let source = match source::build(
         invocation,
         stdin,
         &config.full,
@@ -278,7 +328,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
 
@@ -298,25 +348,47 @@ fn run_scan_inner<R: Read + Send + 'static>(
                 CompletionReason::MetadataFailure
             };
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
-    warn_quoted_log_options(invocation, stderr, log_level);
-    source.set_read_threads(read_threads(runner.workers()));
-    if log_level.shows_debug() {
-        let _ = output::info(
-            stderr,
-            format_args!("detection threads: {}", runner.workers()),
-        );
-    }
-    let outcome = runner.run(
-        &mut source,
-        &engine,
+    Ok(ScanSetup {
+        started,
+        cancellation,
+        timer,
+        log_level,
+        policy: config.policy,
+        report,
+        engine,
         scan_options,
-        &config.policy,
-        &cancellation,
+        runner,
+        source,
+        remote,
+    })
+}
+
+/// Reads the source, logs its issues and counts what it read.
+fn scan(
+    invocation: &Invocation,
+    setup: &mut ScanSetup,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
+) -> Result<ScanResult, i32> {
+    let log_level = setup.log_level;
+    warn_quoted_log_options(invocation, stderr, log_level);
+    let workers = setup.runner.workers();
+    setup.source.set_read_threads(read_threads(workers));
+    if log_level.shows_debug() {
+        let _ = output::info(stderr, format_args!("detection threads: {workers}"));
+    }
+    let outcome = setup.runner.run(
+        &mut setup.source,
+        &setup.engine,
+        setup.scan_options,
+        &setup.policy,
+        &setup.cancellation,
     );
-    finish_timer(timer.take());
+    finish_timer(setup.timer.take());
     status.observe(&outcome);
 
     log_source_issues(
@@ -336,79 +408,111 @@ fn run_scan_inner<R: Read + Send + 'static>(
     if partial && let Some(line) = outcome_termination(outcome.termination()) {
         let _ = output::error(stderr, line);
     }
-    let Some(bytes) = outcome.scanned_bytes().checked_add(source.excluded_bytes()) else {
+    let Some(bytes) = outcome
+        .scanned_bytes()
+        .checked_add(setup.source.excluded_bytes())
+    else {
         status.reason = CompletionReason::ResourceExhaustion;
         let _ = output::error(stderr, "source byte accounting overflowed");
-        return 1;
+        return Err(1);
     };
     if invocation.command == CommandKind::Git {
-        let Some(commits) = commit_union_count(outcome.unique_commits(), source.excluded_commits())
+        let Some(commits) =
+            commit_union_count(outcome.unique_commits(), setup.source.excluded_commits())
         else {
             status.reason = CompletionReason::ResourceExhaustion;
             let _ = output::error(stderr, "source commit accounting overflowed");
-            return 1;
+            return Err(1);
         };
         if log_level.shows_info() {
             let _ = output::info(stderr, format_args!("{commits} commits scanned."));
         }
     }
-    let mut findings = outcome.into_findings();
-    if let Some(metadata) = remote {
-        findings = findings
-            .into_iter()
-            .map(|finding| {
-                if let Some(profile) = profile {
-                    match metadata.link_length(&finding) {
-                        Ok(Some(length)) if status.admit_link(profile, length) => {}
-                        Ok(_) => return finding,
-                        Err(_) => {
-                            status.reason = CompletionReason::MetadataFailure;
-                            return finding;
-                        }
+    Ok(ScanResult {
+        findings: outcome.into_findings(),
+        bytes,
+        partial,
+    })
+}
+
+/// Adds a source-control link to each finding when the remote is known.
+/// With a complete profile, links count against the profile link limits.
+fn attach_links(
+    findings: Vec<Finding>,
+    setup: &ScanSetup,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
+) -> Vec<Finding> {
+    let Some(metadata) = &setup.remote else {
+        return findings;
+    };
+    findings
+        .into_iter()
+        .map(|finding| {
+            if let Some(profile) = profile {
+                match metadata.link_length(&finding) {
+                    Ok(Some(length)) if status.admit_link(profile, length) => {}
+                    Ok(_) => return finding,
+                    Err(_) => {
+                        status.reason = CompletionReason::MetadataFailure;
+                        return finding;
                     }
                 }
-                match metadata.link_for(&finding) {
-                    Ok(Some(link)) => finding.with_link(link),
-                    Ok(None) => finding,
-                    Err(error) => {
-                        if profile.is_some() {
-                            status.reason = CompletionReason::MetadataFailure;
-                        }
-                        if log_level.shows_warn() {
-                            let _ = output::warn(
-                                stderr,
-                                format_args!("could not construct source link: {error}"),
-                            );
-                        }
-                        finding
+            }
+            match metadata.link_for(&finding) {
+                Ok(Some(link)) => finding.with_link(link),
+                Ok(None) => finding,
+                Err(error) => {
+                    if profile.is_some() {
+                        status.reason = CompletionReason::MetadataFailure;
                     }
+                    if setup.log_level.shows_warn() {
+                        let _ = output::warn(
+                            stderr,
+                            format_args!("could not construct source link: {error}"),
+                        );
+                    }
+                    finding
                 }
-            })
-            .collect();
-    }
-    let partial = partial || profile.is_some() && !status.is_complete();
+            }
+        })
+        .collect()
+}
+
+/// Writes verbose findings, the summary and the report, and returns the
+/// exit code.
+fn write_outputs(
+    invocation: &Invocation,
+    setup: &ScanSetup,
+    result: &ScanResult,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    status: &mut CompletionStatus,
+) -> i32 {
+    let findings = &result.findings;
     if invocation.options.verbose
-        && output::verbose(stdout, &findings, invocation.options.redact).is_err()
+        && output::verbose(stdout, findings, invocation.options.redact).is_err()
     {
         status.reason = CompletionReason::ReportFailure;
         return 1;
     }
     if output::summary(
         stderr,
-        bytes,
-        started.elapsed(),
+        result.bytes,
+        setup.started.elapsed(),
         findings.len(),
-        partial,
-        log_level.shows_info(),
-        log_level.shows_warn(),
+        result.partial,
+        setup.log_level.shows_info(),
+        setup.log_level.shows_warn(),
     )
     .is_err()
     {
         status.reason = CompletionReason::ReportFailure;
         return 1;
     }
-    if let Some(report) = report
-        && let Err(error) = report.write(stdout, &findings)
+    if let Some(report) = &setup.report
+        && let Err(error) = report.write(stdout, findings)
     {
         status.reason = CompletionReason::ReportFailure;
         let _ = output::error(
@@ -417,7 +521,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         );
         return 1;
     }
-    if partial {
+    if result.partial {
         1
     } else if findings.is_empty() {
         0
