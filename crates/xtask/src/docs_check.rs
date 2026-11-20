@@ -270,7 +270,7 @@ fn is_skipped_tree(relative: &Path) -> bool {
         return false;
     };
     let top_level = relative.components().count() == 1
-        && (matches!(first, ".git" | SCRATCH_DIRECTORY) || first.starts_with("bazel-"));
+        && (matches!(first, ".git" | ".claude" | SCRATCH_DIRECTORY) || first.starts_with("bazel-"));
     // Cargo build output can appear at any depth, for example under fuzz crates.
     top_level || relative.file_name().is_some_and(|name| name == "target")
 }
