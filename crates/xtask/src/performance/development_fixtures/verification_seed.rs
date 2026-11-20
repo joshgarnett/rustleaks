@@ -52,7 +52,7 @@ pub(super) fn pat(family: &str, ordinal: usize, class: &str) -> Vec<u8> {
     result
 }
 
-pub(super) fn connection_password(form: &str, class: &str) -> Result<Vec<u8>, String> {
+pub(super) fn connection_value(form: &str, class: &str) -> Result<Vec<u8>, String> {
     let form = [
         "uri-userinfo",
         "jdbc-query",

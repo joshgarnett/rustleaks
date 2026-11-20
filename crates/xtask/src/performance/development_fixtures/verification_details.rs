@@ -529,15 +529,15 @@ fn connection_parts(form: &str) -> (&'static [u8], &'static [u8]) {
 
 fn connection(input: &[u8], manifest: &Value, form: &str, class: &str) -> Result<(), String> {
     let details = &manifest["details"];
-    let seeded_password = verification_seed::connection_password(form, class)?;
+    let seeded_value = verification_seed::connection_value(form, class)?;
     let proposed_positive = matches!(class, "literal" | "percent-encoded");
     let uri_percent = class == "percent-encoded" && matches!(form, "uri-userinfo" | "jdbc-query");
     let source_value = if class == "percent-encoded" {
-        let mut value = format!("%{:02X}", seeded_password[0]).into_bytes();
-        value.extend_from_slice(&seeded_password[1..]);
+        let mut value = format!("%{:02X}", seeded_value[0]).into_bytes();
+        value.extend_from_slice(&seeded_value[1..]);
         value
     } else {
-        seeded_password.clone()
+        seeded_value.clone()
     };
     let syntax = proposed_positive.then_some(if class == "literal" {
         "literal"
@@ -547,7 +547,7 @@ fn connection(input: &[u8], manifest: &Value, form: &str, class: &str) -> Result
         "literal-percent-containing"
     });
     let semantic_value = if uri_percent {
-        seeded_password.as_slice()
+        seeded_value.as_slice()
     } else {
         source_value.as_slice()
     };
@@ -557,7 +557,7 @@ fn connection(input: &[u8], manifest: &Value, form: &str, class: &str) -> Result
             && details["form"] == form
             && details["class"] == class
             && number(&details["generated_password_bytes"])? == 24
-            && details["generated_password_sha256"] == sha256_bytes(&seeded_password)
+            && details["generated_password_sha256"] == sha256_bytes(&seeded_value)
             && details.get("password_sha256").is_none()
             && details.get("literal_password_bytes").is_none()
             && details["value_syntax"] == json!(syntax)
@@ -589,14 +589,7 @@ fn connection(input: &[u8], manifest: &Value, form: &str, class: &str) -> Result
             "unexpected retained non-password literal",
         )?;
     }
-    connection_carrier(
-        input,
-        manifest,
-        form,
-        class,
-        &seeded_password,
-        &source_value,
-    )
+    connection_carrier(input, manifest, form, class, &seeded_value, &source_value)
 }
 
 fn connection_carrier(
@@ -604,14 +597,14 @@ fn connection_carrier(
     manifest: &Value,
     form: &str,
     class: &str,
-    seeded_password: &[u8],
+    seeded_value: &[u8],
     source_value: &[u8],
 ) -> Result<(), String> {
     let details = &manifest["details"];
     let proposed_positive = matches!(class, "literal" | "percent-encoded");
     let uri_percent = class == "percent-encoded" && matches!(form, "uri-userinfo" | "jdbc-query");
     let semantic_value = if uri_percent {
-        seeded_password
+        seeded_value
     } else {
         source_value
     };
@@ -693,7 +686,7 @@ fn connection_carrier(
             "prose control differs",
         )?,
         "malformed-delimiter" => {
-            malformed_connection(carrier, details, form, seeded_password)?;
+            malformed_connection(carrier, details, form, seeded_value)?;
         }
         _ => return Err("unknown connection control".into()),
     }
@@ -704,7 +697,7 @@ fn malformed_connection(
     carrier: &[u8],
     details: &Value,
     form: &str,
-    seeded_password: &[u8],
+    seeded_value: &[u8],
 ) -> Result<(), String> {
     let (prefix, suffix): (&[u8], &[u8]) = match form {
         "uri-userinfo" => (b"postgresql://bench;", b"@db.invalid/application"),
@@ -721,18 +714,18 @@ fn malformed_connection(
             && carrier.ends_with(suffix),
         "malformed-delimiter carrier differs",
     )?;
-    let password = &carrier[prefix.len()..prefix.len() + 24];
+    let generated = &carrier[prefix.len()..prefix.len() + 24];
     require(
-        password.iter().all(u8::is_ascii_alphanumeric)
-            && password == seeded_password
-            && details["generated_password_sha256"] == sha256_bytes(password),
+        generated.iter().all(u8::is_ascii_alphanumeric)
+            && generated == seeded_value
+            && details["generated_password_sha256"] == sha256_bytes(generated),
         "malformed-delimiter literal differs",
     )?;
     require(
         details["retained_literal"]
             == json!({
                 "source_bytes": {"start": prefix.len(), "end": prefix.len() + 24},
-                "value_sha256": sha256_bytes(password),
+                "value_sha256": sha256_bytes(generated),
                 "role": "generated-literal-outside-declared-password-slot",
             }),
         "malformed literal must remain separate from a structural password slot",

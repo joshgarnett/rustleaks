@@ -656,7 +656,7 @@ fn connection_percent_semantics_distinguish_uri_encoding_from_literal_property_b
         let manifest = fixture.manifest();
         verification::verify_bytes(&fixture.input, &manifest).unwrap();
         let source = &fixture.plants[0].value;
-        let recipe = verification_seed::connection_password(form, "percent-encoded").unwrap();
+        let recipe = verification_seed::connection_value(form, "percent-encoded").unwrap();
         assert_eq!(source.len(), 26);
         assert_eq!(source[0], b'%');
         assert_eq!(manifest["details"]["value_syntax"], syntax);
@@ -719,7 +719,7 @@ fn connection_negatives_have_no_password_semantics_and_preserve_malformed_litera
         let details = &manifest["details"];
         let form = details["form"].as_str().unwrap();
         let class = details["class"].as_str().unwrap();
-        let recipe = verification_seed::connection_password(form, class)?;
+        let recipe = verification_seed::connection_value(form, class)?;
         assert_eq!(details["generated_password_bytes"], 24);
         assert_eq!(details["generated_password_sha256"], sha256_bytes(&recipe));
         assert!(details.get("password_sha256").is_none());
@@ -758,9 +758,9 @@ fn connection_negatives_have_no_password_semantics_and_preserve_malformed_litera
                 );
             }
             for name in ["source_password_sha256", "semantic_password_sha256"] {
-                let mut false_password = manifest.clone();
-                false_password["details"][name] = json!(sha256_bytes(&recipe));
-                assert!(verification::verify_bytes(&fixture.input, &false_password).is_err());
+                let mut false_value = manifest.clone();
+                false_value["details"][name] = json!(sha256_bytes(&recipe));
+                assert!(verification::verify_bytes(&fixture.input, &false_value).is_err());
             }
         }
         if class == "malformed-delimiter" {
