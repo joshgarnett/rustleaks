@@ -106,7 +106,7 @@ fn identity_summary(value: &Value, workload: Option<&str>) -> Result<Value, Stri
                     value["measurement_scope"].as_str(),
                     Some(SAMPLE_SCOPE | WINDOW_SCOPE)
                 ))
-        || build["default_config_sha256"] != crate::CONFIG_SHA256
+        || build["default_config_sha256"] != crate::DEFAULT_RULES_SHA256
         || source["dirty"].as_bool().is_none()
     {
         return Err("report source or build identity is invalid".into());
@@ -376,7 +376,7 @@ fn profile(value: &Value, directory: Option<&Path>) -> Result<Projection, String
         || provenance["host"] != value["host"]
         || provenance["baseline_eligible"] != (value["source"]["dirty"] == false)
         || provenance["upstream_revision"] != crate::REVISION
-        || provenance["default_config_sha256"] != crate::CONFIG_SHA256
+        || provenance["default_config_sha256"] != crate::DEFAULT_RULES_SHA256
         || provenance["package_version"] != crate::RELEASE_VERSION
         || provenance["target_os"] != value["host"]["os"]
         || provenance["target_arch"] != value["host"]["arch"]

@@ -402,7 +402,7 @@ requests run the worktree scan, and the nightly workflow runs both scans.
   examples and generated hashes. A worktree fingerprint includes the line
   number, so update it when an edit moves the reviewed line.
 - GitHub secret scanning skips only the generated corpora, copied fixtures and
-  the pinned default configuration listed in `.github/secret_scanning.yml`.
+  the default configuration files listed in `.github/secret_scanning.yml`.
   Repository checks require that exact list. Generator source, examples and
   documentation are scanned.
 

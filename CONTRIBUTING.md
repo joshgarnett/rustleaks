@@ -128,9 +128,12 @@ the Cargo, crate-universe and Bazel module lockfiles.
 
 ## Compatibility and test data
 
-- Do not change the upstream revision, the packaged default configuration,
-  frozen corpora, fixtures, the public API snapshot or safe Rust dispositions
-  on their own. Follow [Updating upstream](docs/dev/updating-upstream.md).
+- Do not change the upstream revision, the upstream copy of the default
+  configuration, frozen corpora, fixtures, the public API snapshot or safe
+  Rust dispositions on their own. Follow
+  [Updating upstream](docs/dev/updating-upstream.md). A change to the shipped
+  default rules follows the rule maintenance procedure and is listed in
+  [Default rules](docs/user/gitleaks-differences.md#default-rules).
 - Historical Go corpora never change. Their generation commands describe the
   retired process and do not run.
 - New regression tests need findings, spans, fingerprints, report fields,

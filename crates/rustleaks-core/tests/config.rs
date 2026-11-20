@@ -981,14 +981,32 @@ fn config_extend_003_resolvers_are_explicit_and_origin_aware() {
     assert!(unc_registration.rule("registered-unc").is_some());
 }
 
+/// The unchanged upstream Gitleaks default configuration at the pin.
+fn upstream_default() -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../compat/config-corpus/default-gitleaks.toml"),
+    )
+    .unwrap()
+}
+
 #[test]
 fn config_default_004_is_exact_and_effective() {
-    // CONFIG-DEFAULT-004.
+    // CONFIG-DEFAULT-004. The pin and its SHA-256 describe the upstream copy.
+    // The shipped default is based on it; its own SHA-256 is
+    // DEFAULT_CONFIG_SHA256, and tests/default_rules.rs checks how the two
+    // differ.
     assert_eq!(DEFAULT_CONFIG_REVISION, UPSTREAM_REVISION);
-    assert_eq!(
-        DEFAULT_CONFIG_SHA256,
-        "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf"
+    let pin = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/upstream-revision.txt"),
+    )
+    .unwrap();
+    let pinned_sha256 = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
+    assert!(
+        pin.lines()
+            .any(|line| line == format!("default_config_sha256={pinned_sha256}"))
     );
+    assert_eq!(sha256_hex(upstream_default().as_bytes()), pinned_sha256);
     assert_eq!(DEFAULT_CONFIG.as_bytes(), DEFAULT_CONFIG_BYTES);
     assert_eq!(sha256_hex(DEFAULT_CONFIG_BYTES), DEFAULT_CONFIG_SHA256);
     let default = ConfigLoader::new().load_default().unwrap();
@@ -1048,7 +1066,11 @@ fn canonical_config_corpus_matches_all_112_fresh_go_outcomes() {
         resolver.insert(path, contents.clone());
         resolver.insert(format!("../testdata/config/{path}"), contents);
     }
-    let loader = ConfigLoader::new().with_resolver(resolver);
+    // The frozen Go outcomes were observed with the upstream default, so the
+    // loader uses the unchanged upstream copy as its default here.
+    let loader = ConfigLoader::new()
+        .with_resolver(resolver)
+        .with_default_config(upstream_default());
     let outcomes = fs::read_to_string(corpus.join("outcomes-v1.jsonl"))
         .unwrap()
         .lines()

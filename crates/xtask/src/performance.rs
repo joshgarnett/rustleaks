@@ -9,7 +9,7 @@ use std::process::Command;
 use serde_json::{Value, json};
 
 use crate::tooling::{command_output, sha256_file};
-use crate::{CONFIG_SHA256, RELEASE_VERSION, REVISION, workspace_root};
+use crate::{DEFAULT_RULES_SHA256, RELEASE_VERSION, REVISION, workspace_root};
 
 #[path = "performance_representative.rs"]
 mod representative_suite;
@@ -72,7 +72,8 @@ struct PerfInvariant {
 const PERF_INVARIANTS: &[PerfInvariant] = &[
     PerfInvariant {
         workload: "default-compile",
-        logical_bytes: 97_731,
+        // The byte length of the shipped default rules.
+        logical_bytes: 100_665,
         result_count: 222,
         output_bytes: 0,
         outcome_fnv1a64: "bba0f636d5a02d49",
@@ -533,8 +534,8 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
 
 fn verify_default_config(bytes: &[u8]) -> Result<String, String> {
     let actual = sha256_bytes(bytes);
-    if actual != CONFIG_SHA256 {
-        return Err("benchmark default configuration differs from its pinned SHA-256".into());
+    if actual != DEFAULT_RULES_SHA256 {
+        return Err("benchmark default configuration differs from its recorded SHA-256".into());
     }
     Ok(actual)
 }
@@ -985,7 +986,7 @@ fn validate_record<'a>(
     }
     let provenance = &record["provenance"];
     if provenance["upstream_revision"] != REVISION
-        || provenance["default_config_sha256"] != CONFIG_SHA256
+        || provenance["default_config_sha256"] != DEFAULT_RULES_SHA256
         || provenance["package_version"] != RELEASE_VERSION
         || provenance["binding"] != "bazel-action-graph"
         || provenance["executable_bytes"] != prepared.executable_bytes
@@ -1187,7 +1188,7 @@ mod tests {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../rustleaks-core/default/gitleaks.toml");
         let mut bytes = fs::read(path).unwrap();
-        assert_eq!(verify_default_config(&bytes).unwrap(), CONFIG_SHA256);
+        assert_eq!(verify_default_config(&bytes).unwrap(), DEFAULT_RULES_SHA256);
         let length = bytes.len();
         bytes[0] ^= 1;
         assert_eq!(bytes.len(), length);
@@ -1223,7 +1224,7 @@ mod tests {
             "invariant": "exact",
             "provenance": {
                 "upstream_revision": REVISION,
-                "default_config_sha256": CONFIG_SHA256,
+                "default_config_sha256": DEFAULT_RULES_SHA256,
                 "package_version": RELEASE_VERSION,
                 "binding": "unbound-runner",
                 "target_os": "test",

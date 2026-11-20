@@ -53,13 +53,14 @@ records.
 
 ## Rules
 
-The crate includes the Gitleaks default rules and three optional rule packs.
+The crate includes default rules based on the Gitleaks default rules, and
+three optional rule packs.
 The packs add rules to the default rules and are used only when you add them
 with `native::NativePolicy`. Rule counts include helper rules.
 
 | Rule set | Constant | Rules | Details |
 | --- | --- | ---: | --- |
-| Gitleaks default rules | `config::DEFAULT_CONFIG` | 222 | [Compatibility policy](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/gitleaks-differences.md#compatibility-policy) |
+| Default rules, based on the Gitleaks default rules | `config::DEFAULT_CONFIG` | 222 | [Default rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/gitleaks-differences.md#default-rules) |
 | `rustleaks-extra-v1` | `native::EXTRA_RULES_V1` | 3 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-extra-v1.md) |
 | `rustleaks-providers-v1` | `native::PROVIDER_RULES_V1` | 303 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-providers-v1.md) |
 | `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 14 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-connections-v1.md) |

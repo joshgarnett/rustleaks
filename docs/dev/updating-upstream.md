@@ -4,9 +4,11 @@ This page is for maintainers. It explains how to move Rustleaks to a newer
 Gitleaks revision. Changing the pin needs maintainer approval.
 
 Rustleaks is pinned to one Gitleaks revision. `compat/upstream-revision.txt`
-records the commit and the SHA-256 of the default configuration. The packaged
-default rules are in `crates/rustleaks-core/default/gitleaks.toml`, with a
-checked copy in `compat/config-corpus/default-gitleaks.toml`.
+records the commit and the SHA-256 of the upstream default configuration. The
+unchanged upstream copy is `compat/config-corpus/default-gitleaks.toml`. The
+shipped default rules in `crates/rustleaks-core/default/gitleaks.toml` are
+based on it and may differ by the reviewed changes listed in
+[Default rules](../user/gitleaks-differences.md#default-rules).
 
 The live Go oracle and automatic upstream discovery are retired. The frozen
 evidence in `compat/` stays the record for the current pin. Commands inside
@@ -34,7 +36,11 @@ frozen corpus READMEs describe the retired process and no longer run.
    generator provenance. Never derive expected results only from the current
    Rust code.
 4. **Update the pin in one change.** Update `compat/upstream-revision.txt`,
-   both copies of the default configuration and the new evidence together.
+   the upstream copy of the default configuration and the new evidence
+   together. Apply the new upstream rules to the shipped default rules and
+   keep or rework each listed Rustleaks change, so that
+   `crates/rustleaks-core/tests/default_rules.rs` still names every
+   difference.
    Keep copied bytes, file modes, symbolic link targets, hashes, licenses and
    `NOTICE` attribution. Use reviewed, deterministic tools for generated
    files. Never edit historical outcomes or inventories by hand.

@@ -6,7 +6,8 @@ with Rustleaks and how to turn them on.
 
 ## What a rule pack is
 
-The default rules are the Gitleaks default configuration, with 222 rules.
+The default rules are based on the Gitleaks default configuration, with 222
+rules and the changes in [Default rules](gitleaks-differences.md#default-rules).
 Rustleaks also ships three optional rule packs. A pack adds rules to the
 default rules. It never changes or removes a default rule. No pack is used
 unless you ask for it.

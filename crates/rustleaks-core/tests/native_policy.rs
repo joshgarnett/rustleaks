@@ -2071,10 +2071,11 @@ mod native_bytes {
     #[test]
     fn raw_invalid_bytes_are_not_normalized_and_captures_keep_buffer_context() {
         // Multibyte and malformed bytes in whole matches require no content
-        // normalization. Invalid captured bytes still reach the unchanged Go
-        // global secret allowlist, which owns its separately charged buffer.
+        // normalization. Invalid captured bytes still reach the two default
+        // global secret allowlists, the Gitleaks one and the Rustleaks vendor
+        // examples, and each owns its separately charged buffer.
         // Varied ASCII captures avoid its uniform-letter suppression.
-        let invalid_secret_normalization = 2 + 2 * (2 + size_of::<usize>());
+        let invalid_secret_normalization = 2 * (2 + 2 * (2 + size_of::<usize>()));
         for (pattern, input, whole, secret, normalization) in [
             (r"a(?s:.{0,2})(X0)", "aéaX0".as_bytes(), (3, 6), (4, 6), 0),
             (r"[^X](X0)", "éX0".as_bytes(), (1, 4), (2, 4), 0),
@@ -2191,9 +2192,10 @@ mod native_bytes {
                 FindingRange::Exact(ByteRange::new(start, end).unwrap())
             );
         }
-        // Each of the two five-byte secrets has one malformed byte. Only
-        // the inherited Go secret allowlist normalizes: T + (2 + usize) * I.
-        let allowlist_normalization = 2 * (5 + 2 + size_of::<usize>());
+        // Each of the two five-byte secrets has one malformed byte. Only the
+        // two default global secret allowlists, the Gitleaks one and the
+        // Rustleaks vendor examples, normalize, each T + (2 + usize) * I.
+        let allowlist_normalization = 2 * 2 * (5 + 2 + size_of::<usize>());
         assert_eq!(
             complete.usage().normalization_bytes(),
             allowlist_normalization

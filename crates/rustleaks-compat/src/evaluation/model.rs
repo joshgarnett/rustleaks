@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 pub(super) const MAX_CORPUS_BYTES: usize = 1024 * 1024;
 pub(super) const PROFILE: &str = "gitleaks-b58d3f1";
+/// SHA-256 of the upstream default configuration of [`PROFILE`], the pinned
+/// copy in `compat/config-corpus/default-gitleaks.toml`.
 pub(super) const CONFIG_SHA256: &str =
     "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 

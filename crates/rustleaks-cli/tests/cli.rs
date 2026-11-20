@@ -2181,6 +2181,80 @@ fn archive_depth_zero_reads_archive_named_files_as_text() {
     assert_eq!(rows, expected);
 }
 
+#[test]
+fn default_rules_hide_hash_like_values_and_keep_real_formats() {
+    // The default rules add allowlists to the Gitleaks rules. A 32-character
+    // hex digest under a name with md5 is hidden; a GitHub token in its
+    // documented layout is still reported. The unchanged upstream copy of the
+    // Gitleaks default rules, used as a configuration, reports both. Values are built from fixed steps
+    // through their alphabets, so this file holds no credential-shaped text.
+    let cycle = |alphabet: &[u8], step: usize, start: usize, length: usize| {
+        (0..length)
+            .map(|index| char::from(alphabet[(index * step + start) % alphabet.len()]))
+            .collect::<String>()
+    };
+    let digest = cycle(b"0123456789abcdef", 7, 3, 32);
+    let token = format!(
+        "gh{}_{}",
+        "p",
+        cycle(
+            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            7,
+            5,
+            36
+        )
+    );
+    let fixture = Fixture::new();
+    fixture.write("hash.env", format!("token_md5 = {digest}\n"));
+    fixture.write("token.env", format!("GITHUB_TOKEN={token}\n"));
+    let scan = |config: Option<&str>| {
+        let mut arguments = vec![
+            "dir",
+            ".",
+            "--no-banner",
+            "--report-path",
+            "-",
+            "--report-format",
+            "json",
+            "--log-level",
+            "fatal",
+        ];
+        if let Some(config) = config {
+            arguments.extend(["-c", config]);
+        }
+        let result = output(&fixture.0, &arguments);
+        assert_eq!(
+            result.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let mut rows = report_rows(&result);
+        rows.sort();
+        rows
+    };
+    let github = (
+        "github-pat".to_owned(),
+        "token.env".to_owned(),
+        1,
+        token.clone(),
+        String::new(),
+    );
+    assert_eq!(scan(None), vec![github.clone()]);
+    fixture.write(
+        "pinned.toml",
+        fs::read(compat_file("config-corpus/default-gitleaks.toml")).unwrap(),
+    );
+    let generic = (
+        "generic-api-key".to_owned(),
+        "hash.env".to_owned(),
+        1,
+        digest,
+        String::new(),
+    );
+    assert_eq!(scan(Some("pinned.toml")), vec![generic, github]);
+}
+
 mod complete_profile {
     use super::*;
     use std::io::{self, Cursor, Read};

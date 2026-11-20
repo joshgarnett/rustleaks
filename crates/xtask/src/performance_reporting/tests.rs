@@ -3,7 +3,7 @@ use super::*;
 fn fixture() -> Value {
     let source = json!({"revision":"a".repeat(40),"dirty":false,"input_sha256":"b".repeat(64)});
     let build = json!({"schema_version":1,"system":"bazel","timing_scope":MEASUREMENT_SCOPE,
-        "default_config_sha256":crate::CONFIG_SHA256,"executable_sha256":"c".repeat(64),
+        "default_config_sha256":crate::DEFAULT_RULES_SHA256,"executable_sha256":"c".repeat(64),
         "compiler_sha256":"d".repeat(64),"workload_definition_sha256":"e".repeat(64),
         "target":"aarch64-apple-darwin","compile_action_key":"private action key"});
     let host = json!({"os":"macos","arch":"aarch64","cpu":"Apple M1 Max"});
@@ -14,7 +14,7 @@ fn fixture() -> Value {
             "output_bytes":invariant.output_bytes,"outcome_fnv1a64":invariant.outcome_fnv1a64,
             "logical_unit":if invariant.workload.starts_with("report-") {"findings"} else {"input-bytes"},
             "elapsed_ns":100,"ns_per_iteration":100,"invariant":"synthetic outcome verified",
-            "provenance":{"upstream_revision":crate::REVISION,"default_config_sha256":crate::CONFIG_SHA256,
+            "provenance":{"upstream_revision":crate::REVISION,"default_config_sha256":crate::DEFAULT_RULES_SHA256,
                 "package_version":crate::RELEASE_VERSION,"binding":"bazel-action-graph",
                 "executable_bytes":1024,"executable_fnv1a64":"0123456789abcdef",
                 "source":source,"build":build,"host":host,"baseline_eligible":true,

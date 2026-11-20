@@ -33,8 +33,11 @@ and retain its source/generator identities. Generated expected outcomes must
 not be derived solely from current Rust output. Use reviewed deterministic
 tooling for generated inventories and snapshots; do not hand-edit them.
 
-Update the approved pin, both default-config copies, evidence bindings,
-fixture inventory, hashes and attribution together. Preserve copied bytes,
+Update the approved pin, the upstream default-config copy, evidence
+bindings, fixture inventory, hashes and attribution together. The pin and its
+SHA-256 describe the upstream copy. Apply the new upstream rules to the shipped
+default rules and keep or rework each listed Rustleaks change, so that
+`crates/rustleaks-core/tests/default_rules.rs` still names every difference. Preserve copied bytes,
 modes, symlinks and licenses. Keep old generator hashes as historical facts,
 not requirements that deleted generator code still exists.
 

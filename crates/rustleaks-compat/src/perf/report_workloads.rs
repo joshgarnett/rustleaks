@@ -23,7 +23,9 @@ const ESCAPE_FINDINGS: usize = 1_000;
 const ESCAPE_UNITS: usize = 4_096;
 const HEAVY_ALLOWLISTS: usize = 500;
 const DEFAULT_RULES: usize = 222;
-const DEFAULT_ALLOWLISTS: usize = 1;
+// The Gitleaks global allowlist and the Rustleaks allowlist for published
+// vendor examples in the default rules.
+const DEFAULT_ALLOWLISTS: usize = 2;
 
 pub(super) const WORKLOADS: &[&str] = &[
     "session-classify-baseline-10000x10000",
@@ -607,7 +609,10 @@ mod tests {
         assert_eq!(extended[0].counts["allowlists"], DEFAULT_ALLOWLISTS);
         let heavy = run("config-compile-allowlist-heavy", 1).unwrap();
         assert_eq!(heavy[0].counts["rules"], DEFAULT_RULES);
-        assert_eq!(heavy[0].counts["allowlists"], HEAVY_ALLOWLISTS + 1);
+        assert_eq!(
+            heavy[0].counts["allowlists"],
+            HEAVY_ALLOWLISTS + DEFAULT_ALLOWLISTS
+        );
     }
 
     #[test]

@@ -22,7 +22,11 @@ mod workflows;
 use tooling::{command_output, command_status_with_timeout};
 
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
-const CONFIG_SHA256: &str = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
+/// SHA-256 of the shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`.
+/// It equals `rustleaks_core::config::DEFAULT_CONFIG_SHA256`. The upstream copy
+/// has the pinned SHA-256 in `compat/upstream-revision.txt`.
+const DEFAULT_RULES_SHA256: &str =
+    "442fca81a914728ebaf843ba59d01bb3e6e71559c1ddb51fddc81fca45df959a";
 const RELEASE_VERSION: &str = "0.1.0-alpha.10";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.19.9";
 const CARGO_AUDIT_VERSION: &str = "cargo-audit-audit 0.22.2";

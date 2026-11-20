@@ -2996,7 +2996,18 @@ mod tests {
         let root = root.as_table().expect("embedded default must be a table");
         let mut count = 0;
 
-        compile_allowlist(&root["allowlist"], "global allowlist", &mut count);
+        for (allowlist_index, allowlist) in root["allowlists"]
+            .as_array()
+            .expect("global allowlists must be an array")
+            .iter()
+            .enumerate()
+        {
+            compile_allowlist(
+                allowlist,
+                &format!("global allowlist {allowlist_index}"),
+                &mut count,
+            );
+        }
         for (rule_index, rule) in root["rules"]
             .as_array()
             .expect("rules must be an array")

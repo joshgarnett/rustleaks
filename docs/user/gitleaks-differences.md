@@ -10,9 +10,11 @@ Gitleaks. See [NOTICE](../../NOTICE) for attribution.
 
 Rustleaks started as a port of one Gitleaks revision: commit
 `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` (`v8.30.0-27-gb58d3f1`). It
-implements the configuration features of Gitleaks 8.30.0. The packaged
-default rules are the Gitleaks default configuration at that revision, with
+implements the configuration features of Gitleaks 8.30.0. The default rules
+are based on the Gitleaks default configuration at that revision, with
 SHA-256 `e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf`.
+Rustleaks keeps an unchanged copy of that file and changes its own default
+rules only as listed in [Default rules](#default-rules).
 The Gitleaks name only names where Rustleaks started. It does not mean that
 Rustleaks is an official Gitleaks release.
 
@@ -48,7 +50,8 @@ parity](../dev/testing-and-parity.md).
 
 - **Configuration.** Gitleaks TOML files work without changes, including
   `[extend]`, allowlists, required rules and `minVersion`. The default rules
-  are the Gitleaks default configuration at the pinned revision. See
+  are the Gitleaks default configuration at the pinned revision with the
+  changes in [Default rules](#default-rules). See
   [Configuration](configuration.md).
 - **Findings.** For the same input and configuration, Rustleaks reports the
   same rule IDs, matches, secrets, files, lines, columns, commit details,
@@ -187,6 +190,38 @@ in full gives the same findings. These points differ:
   ordinary text files such as `docker-compose.branch.yml` (`.br`),
   `app.browser.js` and `notes.zipper.txt`. Rustleaks reports the secrets in
   those files, so it can report more findings than Gitleaks.
+
+### Default rules
+
+The default rules, used when no configuration is selected and by a
+configuration with `[extend] useDefault = true`, are the Gitleaks default
+configuration at the pin with these changes. They still have 222 rules. A
+configuration that does not extend the default rules is used as written.
+
+- The global `[allowlist]` table is written as an `[[allowlists]]` entry,
+  which has the same meaning.
+- `generic-api-key` has five more allowlists. It no longer reports:
+  - hex digests of 32, 40, 64 or 128 characters under a name with md5, sha,
+    digest, checksum, fingerprint, hash or etag, such as `token_md5`;
+  - 40-character Git object IDs under a name that ends in commit, revision or
+    rev, such as `token_commit`;
+  - Subresource Integrity values such as `sha384-` and a Base64 digest;
+  - Stripe publishable keys (`pk_live_` and `pk_test_`), which Stripe
+    documents as safe to expose;
+  - UUIDs under identifier names such as `token_id`, `client_id` or
+    `keycloak.client-id`. Names that contain `secret`, such as `secret_id`,
+    and key names such as `api_key` are not affected.
+- A new global allowlist hides, from every rule, the exact example values
+  that Discord, Azurite, Telegram, Slack and Google publish in their
+  documentation.
+
+Known loss: UUIDs under names such as `client_id` or `keycloak.client-id`
+are public OAuth and Keycloak identifiers, but some test sets label them as
+secrets. `generic-api-key` no longer reports them.
+
+To get the Gitleaks findings for these values, use the unchanged upstream
+copy, `compat/config-corpus/default-gitleaks.toml` in the source repository,
+as your configuration.
 
 ## Features that Gitleaks does not have
 

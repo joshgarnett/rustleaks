@@ -706,7 +706,7 @@ pub(super) fn validate(
             || provenance["executable_bytes"] != prepared.executable_bytes
             || provenance["executable_fnv1a64"] != prepared.executable_fnv1a64
             || provenance["upstream_revision"] != crate::REVISION
-            || provenance["default_config_sha256"] != crate::CONFIG_SHA256
+            || provenance["default_config_sha256"] != crate::DEFAULT_RULES_SHA256
             || provenance["package_version"] != crate::RELEASE_VERSION
             || provenance["target_os"] != prepared.host["os"]
             || provenance["target_arch"] != prepared.host["arch"]
@@ -900,7 +900,7 @@ mod tests {
         let records = required_phases("core-mixed-1-kib").unwrap().iter().map(|phase| json!({
             "schema_version":3,"suite":"representative-v1","workload":"core-mixed-1-kib","measurement_scope":SCOPE,
             "phase":{"phase":phase,"scope":SCOPE,"iterations":1,"complete":true,"errors":0,"findings":1,"elapsed_ns":1,"logical_units_per_iteration":1024,"logical_unit":"input-bytes","counts":{"workers":1},"input_fnv1a64":"0123456789abcdef","config_fnv1a64":"0123456789abcdef","outcome_fnv1a64":"0123456789abcdef"},
-            "provenance":{"binding":"bazel-action-graph","build":prepared.build,"source":prepared.source,"host":prepared.host,"baseline_eligible":true,"executable_bytes":1,"executable_fnv1a64":prepared.executable_fnv1a64,"upstream_revision":crate::REVISION,"default_config_sha256":crate::CONFIG_SHA256,"package_version":crate::RELEASE_VERSION,"target_os":"test-os","target_arch":"test-arch"}
+            "provenance":{"binding":"bazel-action-graph","build":prepared.build,"source":prepared.source,"host":prepared.host,"baseline_eligible":true,"executable_bytes":1,"executable_fnv1a64":prepared.executable_fnv1a64,"upstream_revision":crate::REVISION,"default_config_sha256":crate::DEFAULT_RULES_SHA256,"package_version":crate::RELEASE_VERSION,"target_os":"test-os","target_arch":"test-arch"}
         })).collect::<Vec<_>>();
         let encode = |records: &[Value]| {
             records
