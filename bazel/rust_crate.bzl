@@ -7,6 +7,10 @@ load(
     "rust_test",
 )
 
+# The workspace package version from Cargo.toml. Bazel targets of workspace
+# crates set it as `CARGO_PKG_VERSION`.
+RUSTLEAKS_VERSION = "0.1.0-alpha.11"
+
 _DOC_TEST_INCOMPATIBLE = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],
     # rules_rust 0.72.0's stable-channel doctest writer strips every path
@@ -28,7 +32,7 @@ def rustleaks_library(
         name,
         crate_name,
         edition,
-        version,
+        version = RUSTLEAKS_VERSION,
         aliases_extra = {},
         crate_features = [],
         deps = [],
@@ -120,7 +124,7 @@ def rustleaks_integration_test(
         env = env,
         rustc_env = {
             "CARGO_MANIFEST_DIR": native.package_name(),
-            "CARGO_PKG_VERSION": "0.1.0-alpha.11",
+            "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
         },
         srcs = [src] + srcs,
         visibility = ["//visibility:public"],

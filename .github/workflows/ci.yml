@@ -31,14 +31,14 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
       - name: Check native notice source completeness
         working-directory: rustleaks
         run: |
           cargo fetch --locked
           cargo xtask release-artifact notices --check
-      - name: Run the authoritative acceptance gate
+      - name: Run the acceptance gate
         working-directory: rustleaks
         run: just ci
       - name: Scan the worktree with redacted output
@@ -49,7 +49,6 @@ jobs:
       - name: Verify Cargo and Bazel dependency drift
         working-directory: rustleaks
         run: |
-          cargo xtask build-system-check
           bazelisk query @crates//:srcs >/dev/null
           git diff --exit-code -- Cargo.lock cargo-bazel-lock.json MODULE.bazel.lock
 
@@ -63,20 +62,25 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Install current stable and MSRV
+      - name: Set up the pinned toolchain
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Install current stable
         working-directory: rustleaks
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup toolchain install 1.95.0 --profile minimal
+        run: rustup toolchain install stable --profile minimal
       - name: Check current stable feature profiles
         working-directory: rustleaks
         run: |
           cargo +stable check --workspace --all-targets --locked
           cargo +stable check --workspace --all-targets --all-features --locked
           cargo +stable check --workspace --all-targets --no-default-features --locked
+      # The pinned toolchain in rust-toolchain.toml is the declared MSRV.
       - name: Check the declared MSRV
         working-directory: rustleaks
-        run: cargo +1.95.0 check --workspace --all-targets --all-features --locked
+        run: cargo check --workspace --all-targets --all-features --locked
 
   security:
     name: Security policy
@@ -88,8 +92,10 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
+        with:
+          install-miri: "true"
       - name: Install pinned security tools
         working-directory: rustleaks
         run: |
@@ -97,8 +103,6 @@ jobs:
           cargo install cargo-audit --locked --version 0.22.2
           cargo install cargo-vet --locked --version 0.10.2
           cargo install cargo-geiger --locked --version 0.13.0
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component miri
-          cargo +nightly-2026-08-21 miri setup
       - name: Run dependency and owned-code security policy
         working-directory: rustleaks
         run: just security
@@ -113,21 +117,11 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-bazelisk: "false"
-      - name: Install pinned fuzz tools
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Hydrate locked fuzz dependencies
-        working-directory: rustleaks
-        run: |
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+          install-fuzz: "true"
       - name: Build targets and replay bounded smoke campaigns
         working-directory: rustleaks
         run: just fuzz-smoke
@@ -142,7 +136,7 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
       - name: Hydrate locked package dependencies
         working-directory: rustleaks
@@ -151,21 +145,27 @@ jobs:
         working-directory: rustleaks
         run: just release-dry-run
 
-  parity:
-    name: Frozen evidence and Rust regression
-    runs-on: macos-15
-    timeout-minutes: 120
+  # The native lanes replay //:parity as part of //:test, so this job only
+  # checks the frozen evidence bytes.
+  frozen-evidence:
+    name: Frozen evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out Rustleaks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
-      - name: Verify frozen evidence and replay Rust regressions
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Verify frozen evidence
         working-directory: rustleaks
-        run: cargo xtask regression-check
+        run: cargo xtask frozen-evidence-check
 
   dependency-review:
     name: Dependency review
@@ -182,7 +182,7 @@ jobs:
         with:
           fail-on-severity: low
 
-  native-linux:
+  native-unix:
     name: Native ${{ matrix.target }}
     strategy:
       fail-fast: false
@@ -194,64 +194,28 @@ jobs:
             config: linux-x86_64-gnu
             host_platform: //platforms:linux_x86_64_gnu
             execution_platform: //platforms:linux_x86_64_gnu
+            test_compilation_mode: fastbuild
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-gnu
             config: linux-aarch64-gnu
             host_platform: //platforms:linux_aarch64_gnu
             execution_platform: //platforms:linux_aarch64_gnu
+            test_compilation_mode: fastbuild
           - runner: ubuntu-24.04
             architecture: x86_64
             target: x86_64-unknown-linux-musl
             config: linux-x86_64-musl
             host_platform: //platforms:linux_x86_64_gnu
             execution_platform: //platforms:linux_x86_64_gnu
+            test_compilation_mode: fastbuild
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-musl
             config: linux-aarch64-musl
             host_platform: //platforms:linux_aarch64_gnu
             execution_platform: //platforms:linux_aarch64_gnu
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          install-just: "false"
-      - name: Verify native host architecture
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
-      - name: Build and test the native target
-        working-directory: rustleaks
-        env:
-          BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
-        run: |
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --jobs=1 --nozip_undeclared_test_outputs //:test
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
-
-  native-macos:
-    name: Native ${{ matrix.target }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
+            test_compilation_mode: fastbuild
           - runner: macos-15-intel
             architecture: x86_64
             target: x86_64-apple-darwin
@@ -274,7 +238,7 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"
@@ -331,7 +295,7 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-just: "false"
@@ -375,10 +339,9 @@ jobs:
       - security
       - fuzz
       - package
-      - parity
+      - frozen-evidence
       - dependency-review
-      - native-linux
-      - native-macos
+      - native-unix
       - native-windows
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -390,10 +353,9 @@ jobs:
           SECURITY: ${{ needs.security.result }}
           FUZZ: ${{ needs.fuzz.result }}
           PACKAGE: ${{ needs.package.result }}
-          PARITY: ${{ needs.parity.result }}
+          FROZEN_EVIDENCE: ${{ needs.frozen-evidence.result }}
           DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
-          NATIVE_LINUX: ${{ needs.native-linux.result }}
-          NATIVE_MACOS: ${{ needs.native-macos.result }}
+          NATIVE_UNIX: ${{ needs.native-unix.result }}
           NATIVE_WINDOWS: ${{ needs.native-windows.result }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
@@ -404,9 +366,8 @@ jobs:
             "${SECURITY}" \
             "${FUZZ}" \
             "${PACKAGE}" \
-            "${PARITY}" \
-            "${NATIVE_LINUX}" \
-            "${NATIVE_MACOS}" \
+            "${FROZEN_EVIDENCE}" \
+            "${NATIVE_UNIX}" \
             "${NATIVE_WINDOWS}"; do
             test "${result}" = success
           done

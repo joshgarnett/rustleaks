@@ -19,7 +19,6 @@ rustleaks_library(
     crate_name = "rustleaks_sources",
     deps = ["//crates/rustleaks-core:rustleaks_core"],
     edition = "2024",
-    version = "0.1.0-alpha.11",
 )
 
 rustleaks_library(
@@ -30,7 +29,6 @@ rustleaks_library(
     data = ["//compat:all"],
     deps = _ARCHIVE_DEPS,
     edition = "2024",
-    version = "0.1.0-alpha.11",
 )
 
 rustleaks_library(
@@ -40,7 +38,6 @@ rustleaks_library(
     docs = False,
     edition = "2024",
     unit_test = False,
-    version = "0.1.0-alpha.11",
     visibility = ["//visibility:public"],
 )
 
@@ -52,7 +49,6 @@ rustleaks_library(
     docs = False,
     edition = "2024",
     unit_test = False,
-    version = "0.1.0-alpha.11",
     visibility = ["//visibility:public"],
 )
 

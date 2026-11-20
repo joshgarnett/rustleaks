@@ -17,7 +17,7 @@ doctor:
     cargo --version
     rustc --version
 
-# Check Rust formatting through the authoritative Bazel graph.
+# Check Rust formatting through Bazel.
 format:
     bazelisk test //:format
 
@@ -37,7 +37,7 @@ flake-check:
 docs:
     bazelisk build //:docs
 
-# Check maintained prose, templates, skills, and local links.
+# Check prose, templates, skills, local links, and workflow and automation commands.
 docs-check:
     bazelisk run //crates/xtask:xtask -- docs-check
 
@@ -45,7 +45,7 @@ docs-check:
 parity:
     bazelisk test //:parity
 
-# Evaluate the maintained synthetic detection-quality corpus.
+# Evaluate the synthetic detection-quality corpus.
 quality-eval:
     bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate
 
@@ -53,7 +53,7 @@ quality-eval:
 perf-run:
     bazelisk run //crates/xtask:xtask -- perf run
 
-# Check benchmark outcomes, build identity, and applicable host budgets.
+# Check benchmark outcomes and build identity.
 perf-check:
     bazelisk run //crates/xtask:xtask -- perf check
 
@@ -62,11 +62,11 @@ perf-check:
 perf-fixtures *arguments:
     bazelisk run //crates/xtask:xtask -- perf fixtures "$@"
 
-# Collect representative phase measurements on demand.
+# Measure time per scan phase on larger inputs.
 perf-representative:
     bazelisk run //crates/xtask:xtask -- perf representative
 
-# Capture an optional native profile with private output.
+# Record a CPU profile. Output stays local.
 [unix]
 [positional-arguments]
 perf-profile *arguments:
@@ -78,16 +78,28 @@ perf-profile *arguments:
 perf-calibrate *arguments:
     bazelisk run //crates/xtask:xtask -- perf calibrate "$@"
 
-# Collect or validate an optional private performance report.
+# Collect or check a local performance report.
 [positional-arguments]
 perf-report *arguments:
     bazelisk run //crates/xtask:xtask -- perf report "$@"
 
-# Compare scanner binaries with the private cross-scanner comparison harness.
+# Compare Rustleaks with other scanners. Output stays local.
 [unix]
 [positional-arguments]
 compare *arguments:
     bazelisk run //crates/xtask:xtask -- compare "$@"
+
+# Generate or check the labeled quality corpus for the scanner comparison.
+[unix]
+[positional-arguments]
+compare-quality *arguments:
+    bazelisk run //crates/xtask:xtask -- compare-quality "$@"
+
+# Fetch, generate or check the workload sets for the scanner comparison.
+[unix]
+[positional-arguments]
+compare-workloads *arguments:
+    bazelisk run //crates/xtask:xtask -- compare-workloads "$@"
 
 # Run formatting, lint, documentation, build, and eight-target compile gates.
 check: docs-check
@@ -106,7 +118,7 @@ fuzz-build:
 fuzz-smoke:
     bazelisk run //crates/xtask:xtask -- fuzz-smoke
 
-# Run private local fuzz evidence and reviewed-corpus operations.
+# Run local fuzz campaigns and manage fuzz corpora.
 [unix]
 [positional-arguments]
 fuzz *arguments:
@@ -116,7 +128,7 @@ fuzz *arguments:
 security:
     bazelisk run //crates/xtask:xtask -- security-check
 
-# Run the optional bounded local deep-security profile.
+# Run the bounded local deep security checks.
 [unix]
 [positional-arguments]
 security-deep *arguments:

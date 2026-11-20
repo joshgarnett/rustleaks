@@ -388,6 +388,8 @@ class Builder:
         self.newlines += newlines
 
     def add_span(self, data, span, **extra):
+        # Counts lines as `line_of` does; the running count avoids rescanning
+        # the whole file for every span.
         start, end, category, label, kind = span
         line = self.newlines + 1 + data.count(b'\n', 0, start)
         end_line = self.newlines + 1 + data.count(b'\n', 0, max(start, end - 1))
@@ -927,7 +929,7 @@ def generate_git_shape(root, git, identity, scale, seed):
 
 def synthetic_catalog():
     entries = []
-    for identity in LEGACY_IDS:
+    for identity in TUNED_IDS:
         entries.append({'id': identity, 'generator': COMPARISON_FIXTURE_VERSION, 'tuned': True})
     for shape in MAIN_SHAPES:
         for size in SIZE_SERIES:

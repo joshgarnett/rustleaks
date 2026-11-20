@@ -17,25 +17,6 @@ env:
   CARGO_NET_RETRY: "5"
 
 jobs:
-  regression:
-    name: Frozen evidence and Rust regression
-    runs-on: macos-15
-    timeout-minutes: 120
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up maintained tools
-        uses: ./rustleaks/.github/actions/setup
-      - name: Hydrate locked Rust dependencies
-        working-directory: rustleaks
-        run: cargo fetch --locked
-      - name: Verify frozen evidence and replay Rust regressions
-        working-directory: rustleaks
-        run: cargo xtask regression-check
-
   extended-fuzz:
     name: Extended AddressSanitizer fuzzing
     runs-on: ubuntu-24.04
@@ -46,21 +27,11 @@ jobs:
         with:
           path: rustleaks
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
           install-bazelisk: "false"
-      - name: Install pinned fuzz tools
-        working-directory: rustleaks
-        run: |
-          rustup toolchain install nightly-2026-08-21 --profile minimal --component llvm-tools-preview
-          cargo +nightly-2026-08-21 install cargo-fuzz --locked --version 0.13.2
-      - name: Hydrate locked fuzz dependencies
-        working-directory: rustleaks
-        run: |
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
-          cargo +nightly-2026-08-21 fetch --locked --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+          install-fuzz: "true"
       - name: Run extended campaigns
         working-directory: rustleaks
         env:
@@ -79,7 +50,7 @@ jobs:
           path: rustleaks
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up maintained tools
+      - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
       - name: Check newest allowed dependencies without committing
         working-directory: rustleaks

@@ -17,7 +17,6 @@ filegroup(
         "*.md",
         "benchmarks/**",
         "*.toml",
-        "benchmarks/**",
         "docs/**",
         "release/**",
     ]) + [
@@ -134,7 +133,6 @@ filegroup(
     srcs = [
         "//crates/rustleaks-bzip2:rustleaks_bzip2_docs",
         "//crates/rustleaks-cli:rustleaks_cli_docs",
-        "//crates/rustleaks-compat:rustleaks_compat_docs",
         "//crates/rustleaks-core:rustleaks_core_docs",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec_docs",
         "//crates/rustleaks-report:rustleaks_report_docs",
@@ -179,6 +177,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:controlled_scan_test",
     "//crates/rustleaks-core:default_rule_cases_test",
     "//crates/rustleaks-core:default_rule_corpus_test",
+    "//crates/rustleaks-core:default_rules_test",
     "//crates/rustleaks-core:decoded_locations_test",
     "//crates/rustleaks-core:location_lookup_test",
     "//crates/rustleaks-core:detect_corpus_test",

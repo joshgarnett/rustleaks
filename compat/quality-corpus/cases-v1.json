@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generator": "rustleaks-quality-v1",
-  "generator_source_fnv1a64": "363ec799159e8647",
+  "generator_source_fnv1a64": "bc0460de3e6a9385",
   "license": "MIT",
   "provenance": "First-party deterministic synthetic cases. No live or external credential corpus; activity and issuer validity are not verified.",
   "intended_population": "Small synthetic structural and labeling controls, not a sample of deployments or a provider-validity benchmark.",
@@ -2336,7 +2336,7 @@
       "id": "azure-servicebus-order-0",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -2581,7 +2581,7 @@
       "id": "azure-servicebus-order-1",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -2826,7 +2826,7 @@
       "id": "azure-servicebus-order-2",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -3071,7 +3071,7 @@
       "id": "azure-servicebus-order-3",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -3316,7 +3316,7 @@
       "id": "azure-servicebus-order-4",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -3561,7 +3561,7 @@
       "id": "azure-servicebus-order-5",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -3806,7 +3806,7 @@
       "id": "azure-servicebus-invalid-bytes",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         255,
@@ -4046,7 +4046,7 @@
       "id": "azure-servicebus-field-spacing",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         69,
@@ -4290,7 +4290,7 @@
       "id": "azure-servicebus-repeated",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         69,
@@ -4736,7 +4736,7 @@
       "id": "azure-servicebus-percent-envelope",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         34,
@@ -5271,7 +5271,7 @@
       "id": "azure-app-configuration-order-0",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -5484,7 +5484,7 @@
       "id": "azure-app-configuration-order-1",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -5697,7 +5697,7 @@
       "id": "azure-app-configuration-order-2",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -5910,7 +5910,7 @@
       "id": "azure-app-configuration-order-3",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -6123,7 +6123,7 @@
       "id": "azure-app-configuration-order-4",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -6336,7 +6336,7 @@
       "id": "azure-app-configuration-order-5",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         99,
@@ -6549,7 +6549,7 @@
       "id": "azure-app-configuration-invalid-bytes",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         255,
@@ -6757,7 +6757,7 @@
       "id": "azure-app-configuration-field-spacing",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         69,
@@ -6969,7 +6969,7 @@
       "id": "azure-app-configuration-repeated",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         69,
@@ -7351,7 +7351,7 @@
       "id": "azure-app-configuration-percent-envelope",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         34,
@@ -7790,7 +7790,7 @@
       "id": "azure-eventhub-entity-path",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         69,
@@ -8044,7 +8044,7 @@
       "id": "mongodb-standard",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         109,
@@ -8155,7 +8155,7 @@
       "id": "mongodb-srv",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         109,
@@ -8269,7 +8269,7 @@
       "id": "mongodb-host-list",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         109,
@@ -8418,7 +8418,7 @@
       "id": "mongodb-percent-userinfo",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         109,
@@ -8538,7 +8538,7 @@
       "id": "mongodb-short-password",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         109,
@@ -8790,7 +8790,7 @@
       "id": "mongodb-invalid-bytes",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         255,
@@ -8897,7 +8897,7 @@
       "id": "mongodb-repeated",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         109,
@@ -9077,7 +9077,7 @@
       "id": "mongodb-percent-envelope",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot",
+      "stratum": "native",
       "rationale": "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.",
       "input": [
         37,
@@ -9279,8 +9279,8 @@
       "id": "servicebus-sovereign-gap",
       "leakage_group": "azure-servicebus",
       "split": "holdout",
-      "stratum": "native-pilot-gap",
-      "rationale": "Synthetic credential-bearing form deliberately outside the bounded pilot grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.",
+      "stratum": "native-gap",
+      "rationale": "Synthetic credential-bearing form deliberately outside the bounded native rule grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.",
       "input": [
         69,
         110,
@@ -9505,8 +9505,8 @@
       "id": "appconfiguration-sovereign-gap",
       "leakage_group": "azure-app-configuration",
       "split": "holdout",
-      "stratum": "native-pilot-gap",
-      "rationale": "Synthetic credential-bearing form deliberately outside the bounded pilot grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.",
+      "stratum": "native-gap",
+      "rationale": "Synthetic credential-bearing form deliberately outside the bounded native rule grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.",
       "input": [
         69,
         110,
@@ -9696,8 +9696,8 @@
       "id": "mongodb-ipv6-gap",
       "leakage_group": "mongodb-uri",
       "split": "holdout",
-      "stratum": "native-pilot-gap",
-      "rationale": "Synthetic credential-bearing form deliberately outside the bounded pilot grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.",
+      "stratum": "native-gap",
+      "rationale": "Synthetic credential-bearing form deliberately outside the bounded native rule grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.",
       "input": [
         109,
         111,

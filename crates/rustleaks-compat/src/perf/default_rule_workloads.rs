@@ -20,6 +20,7 @@ use rustleaks_core::model::{ByteRange, FindingRange, Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome, ScanUsage};
 use serde_json::{Value, json};
 
+use super::suite_support::go_entropy;
 use super::{Phase, USAGE_KEYS, elapsed, fingerprint, outcome_signature, phase, usage_counters};
 
 #[path = "default_rule_contention.rs"]
@@ -31,8 +32,6 @@ mod realistic;
 
 const KIB: usize = 1_024;
 const MIB: usize = 1_024 * KIB;
-const DEFAULT_RULE_COUNT: usize = 222;
-const DEFAULT_RULES_FINGERPRINT: u64 = 0xbba0_f636_d5a0_2d49;
 /// `generic-api-key` rejects a secret whose entropy does not exceed this value.
 const GENERIC_ENTROPY: f64 = 3.5;
 const GENERIC_RULE: &str = "generic-api-key";
@@ -166,9 +165,12 @@ const VALUE_LETTERS: &[u8] = b"bcdfghjlmnpqrtvwxzBCDFGHJLMNPQRTVWXZ";
 const BLOB_ALPHABET: &[u8] = b"0123456789GHJMNPQRTUVWXZ+/";
 const TOKEN_ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-struct Lcg(u64);
+/// The random stream of the default-rule workloads. It differs from
+/// `suite_support::Lcg`. The expected values of these workloads depend on its
+/// exact output, so the two generators cannot be merged.
+struct DefaultRuleRng(u64);
 
-impl Lcg {
+impl DefaultRuleRng {
     const fn new(seed: u64) -> Self {
         Self(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1)
     }
@@ -267,29 +269,6 @@ fn admitted_rules(config: &CompiledConfig, census: &Census<'_>) -> usize {
                     .any(|keyword| census.matched.contains(keyword.as_str()))
         })
         .count()
-}
-
-/// Upstream `shannonEntropy`, summed in ascending symbol order. Go iterates a
-/// map, so that order is the canonical choice among Go's admissible results.
-/// Every planted secret is ASCII, which makes bytes and runes equivalent.
-fn go_entropy(secret: &[u8]) -> Fallible<f64> {
-    ensure(secret.is_ascii(), "planted secret must be ASCII")?;
-    if secret.is_empty() {
-        return Ok(0.0);
-    }
-    let mut counts = [0_u32; 128];
-    for byte in secret {
-        counts[usize::from(*byte)] += 1;
-    }
-    #[allow(clippy::cast_precision_loss)] // Secret lengths are far below 2^52.
-    let inverse_length = 1.0 / secret.len() as f64;
-    Ok(counts
-        .iter()
-        .filter(|count| **count > 0)
-        .fold(0.0, |entropy, count| {
-            let frequency = f64::from(*count) * inverse_length;
-            entropy - frequency * frequency.log2()
-        }))
 }
 
 fn ensure(condition: bool, message: &str) -> Fallible<()> {
@@ -622,7 +601,7 @@ impl PreparedProfile {
             "config_fnv1a64": fingerprint(DEFAULT_CONFIG_BYTES),
             // Preserve the representative operation's hash of its joined scan hashes.
             "outcome_fnv1a64": fingerprint(outcome_signature(&warm).as_bytes()),
-            "rules": DEFAULT_RULE_COUNT, "keywords": keywords,
+            "rules": crate::DEFAULT_RULES, "keywords": keywords,
             "findings": scan.expected.findings.len(), "decoded_bytes": usage.decoded_bytes(),
             "work_units": usage.work_units(), "finding_records": usage.finding_records(),
             "finding_payload_bytes": usage.finding_payload_bytes(),
@@ -686,9 +665,9 @@ fn input_fingerprint(scans: &[Scan]) -> String {
 
 fn ensure_default_rules(config: &CompiledConfig) -> Fallible<()> {
     ensure(
-        config.rules().len() == DEFAULT_RULE_COUNT
-            && super::super::config_metric(config).fingerprint == DEFAULT_RULES_FINGERPRINT,
-        "default configuration differs from the legacy invariant",
+        config.rules().len() == crate::DEFAULT_RULES
+            && crate::config_metric(config).fingerprint == crate::DEFAULT_CONFIG_FINGERPRINT,
+        "default configuration differs from the shipped default rules",
     )
 }
 
@@ -1057,7 +1036,7 @@ impl Forbidden {
 }
 
 fn clean_value(
-    rng: &mut Lcg,
+    rng: &mut DefaultRuleRng,
     forbidden: &Forbidden,
     alphabet: &[u8],
     length: usize,
@@ -1073,7 +1052,11 @@ fn clean_value(
 
 /// A value with at least one digit, which keeps it outside the rule allowlist
 /// `^[a-zA-Z_.-]+$`, and with entropy above the generic threshold.
-fn generic_value(rng: &mut Lcg, forbidden: &Forbidden, length: usize) -> Fallible<Vec<u8>> {
+fn generic_value(
+    rng: &mut DefaultRuleRng,
+    forbidden: &Forbidden,
+    length: usize,
+) -> Fallible<Vec<u8>> {
     for _ in 0..1_000 {
         let mut value = clean_value(rng, forbidden, VALUE_ALPHABET, length)?;
         value[0] = b'7';
@@ -1121,7 +1104,7 @@ impl Killer {
 fn near_miss_value(
     killer: Killer,
     line: usize,
-    rng: &mut Lcg,
+    rng: &mut DefaultRuleRng,
     forbidden: &[Forbidden; 3],
 ) -> Fallible<Vec<u8>> {
     match killer {
@@ -1185,7 +1168,7 @@ fn near_miss_input(ctx: &Context<'_>, killer: Killer, lines: usize) -> Fallible<
         Forbidden::new(ctx.config, &[VALUE_ALPHABET, NEAR_MISS_STOPWORD])?,
         Forbidden::new(ctx.config, &[VALUE_ALPHABET, NEAR_MISS_GLOBAL_WORD])?,
     ];
-    let mut rng = Lcg::new(0x6e65_6172);
+    let mut rng = DefaultRuleRng::new(0x6e65_6172);
     let mut raw = Vec::with_capacity(lines * 64);
     for line in 0..lines {
         raw.extend_from_slice(b"key=");
@@ -1315,7 +1298,7 @@ fn keyword_run_blob(ctx: &Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
         b"auth",
         b"credential",
     ];
-    let mut raw = Lcg::new(0x626c_6f62).string(BLOB_ALPHABET, size);
+    let mut raw = DefaultRuleRng::new(0x626c_6f62).string(BLOB_ALPHABET, size);
     let clean = census(ctx.config, &raw);
     ensure(
         clean.occurrences == 0,
@@ -1349,7 +1332,7 @@ fn prefix_storm(ctx: &Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
         "hf_",
         "ops_",
     ];
-    let mut rng = Lcg::new(0x7072_6566);
+    let mut rng = DefaultRuleRng::new(0x7072_6566);
     let mut raw = Vec::with_capacity(size + 32);
     let mut tokens = 0;
     while raw.len() < size {
@@ -1401,7 +1384,7 @@ fn thrash_generic(ctx: &Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
     const SEPARATORS: [&str; 7] = ["", " ", "\t", "  ", ".setting", "-cfg", "_v2"];
     const OPERATORS: [&str; 9] = ["=", "=>", ":", ":=", "::=", "?=", "||", ",", ">"];
     const QUOTES: [&str; 3] = ["", "\"", "'"];
-    let mut rng = Lcg::new(0x7468_7261);
+    let mut rng = DefaultRuleRng::new(0x7468_7261);
     let mut raw = Vec::with_capacity(size + 80);
     let mut lines = 0;
     while raw.len() < size {
@@ -1467,7 +1450,7 @@ fn multibyte(
     };
     let forbidden = Forbidden::new(ctx.config, &[VALUE_ALPHABET])?;
     let rule = ctx.rule_index(GENERIC_RULE)?;
-    let mut rng = Lcg::new(0x6d62_7974);
+    let mut rng = DefaultRuleRng::new(0x6d62_7974);
     let mut raw = Vec::with_capacity(size + 256);
     raw.extend_from_slice(KEYWORD_LINE.as_bytes());
     let stride = size / (plants + 1);
@@ -1524,7 +1507,7 @@ fn groupless_private_key(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, 
     let mut raw = b"synthetic fixture header line\n".to_vec();
     let start = raw.len();
     raw.extend_from_slice(HEADER);
-    let mut rng = Lcg::new(0x7065_6d31);
+    let mut rng = DefaultRuleRng::new(0x7065_6d31);
     // Room for one 65-byte body line, the footer, and its terminating newline.
     while raw.len() + 65 + FOOTER.len() < size {
         raw.extend_from_slice(&rng.string(TOKEN_ALPHABET, 64));
@@ -1548,7 +1531,7 @@ fn groupless_private_key(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, 
     Ok((scan, json!({"block_bytes": end - start})))
 }
 
-fn ghp_token(rng: &mut Lcg) -> Vec<u8> {
+fn ghp_token(rng: &mut DefaultRuleRng) -> Vec<u8> {
     let mut token = b"ghp_".to_vec();
     token.extend_from_slice(&rng.string(TOKEN_ALPHABET, 36));
     token
@@ -1558,7 +1541,7 @@ fn ghp_token(rng: &mut Lcg) -> Vec<u8> {
 /// token is one candidate and its whole match is the secret.
 fn groupless_tokens(ctx: &mut Context<'_>, tokens: usize) -> Fallible<(Scan, Value)> {
     let rule = ctx.rule_index(GITHUB_PAT_RULE)?;
-    let mut rng = Lcg::new(0x6768_7030);
+    let mut rng = DefaultRuleRng::new(0x6768_7030);
     let mut raw = Vec::with_capacity(tokens * 41);
     let mut plants = Vec::with_capacity(tokens);
     for _ in 0..tokens {
@@ -1578,7 +1561,7 @@ fn groupless_tokens(ctx: &mut Context<'_>, tokens: usize) -> Fallible<(Scan, Val
 /// Records of one synthetic token and `z` padding, with no newline anywhere.
 fn minified_tokens(
     ctx: &mut Context<'_>,
-    rng: &mut Lcg,
+    rng: &mut DefaultRuleRng,
     raw: &mut Vec<u8>,
     tokens: usize,
     record: usize,
@@ -1603,7 +1586,7 @@ fn minified_tokens(
 /// line, so this costs about 1 GiB of line bytes per scan by design.
 fn minified_one_line(ctx: &mut Context<'_>, tokens: usize, size: usize) -> Fallible<(Scan, Value)> {
     let mut raw = Vec::with_capacity(size);
-    let mut rng = Lcg::new(0x6d69_6e31);
+    let mut rng = DefaultRuleRng::new(0x6d69_6e31);
     let plants = minified_tokens(ctx, &mut rng, &mut raw, tokens, size / tokens)?;
     ensure(raw.len() == size, "minified line must fill the fragment")?;
     let scan = ascii_scan(ctx, raw, plants, tokens)?;
@@ -1616,7 +1599,7 @@ fn minified_tail(ctx: &mut Context<'_>, tokens: usize, size: usize) -> Fallible<
     let mut raw = filler(60);
     raw.retain(|byte| *byte != b'\n');
     raw.push(b'\n');
-    let mut rng = Lcg::new(0x6d69_6e32);
+    let mut rng = DefaultRuleRng::new(0x6d69_6e32);
     let plants = minified_tokens(ctx, &mut rng, &mut raw, tokens, 255)?;
     ensure(raw.len() <= size, "tail records exceed the fragment")?;
     raw.resize(size, b'z');

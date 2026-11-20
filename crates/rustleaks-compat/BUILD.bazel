@@ -1,6 +1,6 @@
 load("@crates//:defs.bzl", "aliases", "all_crate_deps")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
-load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_library")
+load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION", "rustleaks_build_contract_files", "rustleaks_library")
 
 exports_files(["Cargo.toml"])
 rustleaks_build_contract_files()
@@ -16,9 +16,10 @@ rustleaks_library(
     compile_data = ["//compat:quality_default_config"],
     crate_name = "rustleaks_compat",
     data = ["//compat:all"],
-    deps = _DEPS,
+    deps = ["//crates/rustleaks-core:rustleaks_core"],
+    docs = False,
     edition = "2024",
-    version = "0.1.0-alpha.11",
+    srcs = glob(["src/lib.rs", "src/evaluation/**/*.rs"]),
 )
 
 rust_binary(
@@ -27,13 +28,13 @@ rust_binary(
     crate_name = "rustleaks_perf",
     crate_root = "src/bin/rustleaks-perf.rs",
     data = ["//compat:all"],
-    deps = all_crate_deps(normal = True) + _DEPS + [":rustleaks_compat"],
+    deps = all_crate_deps(normal = True) + _DEPS,
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.11",
+        "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
-    srcs = glob(["src/**/*.rs"]),
+    srcs = ["src/bin/rustleaks-perf.rs"] + glob(["src/perf/*.rs"]),
     visibility = ["//visibility:public"],
 )
 
@@ -47,9 +48,9 @@ rust_binary(
     edition = "2024",
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.11",
+        "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
-    srcs = glob(["src/**/*.rs"]),
+    srcs = ["src/bin/rustleaks-quality.rs"],
     visibility = ["//visibility:public"],
 )
 
@@ -87,10 +88,10 @@ rust_test(
         "//crates/rustleaks-cli:rustleaks",
     ] + _PERF_GIT_DATA,
     env = _PERF_TEST_ENV,
-    deps = all_crate_deps(normal = True, normal_dev = True) + _DEPS + [":rustleaks_compat"],
+    deps = all_crate_deps(normal = True, normal_dev = True) + _DEPS,
     rustc_env = {
         "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
-        "CARGO_PKG_VERSION": "0.1.0-alpha.11",
+        "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
     visibility = ["//visibility:public"],
 )
@@ -98,7 +99,6 @@ rust_test(
 test_suite(
     name = "all_tests",
     tests = [
-        ":rustleaks_compat_doc_test",
         ":rustleaks_compat_unit_test",
         ":rustleaks_perf_test",
     ],

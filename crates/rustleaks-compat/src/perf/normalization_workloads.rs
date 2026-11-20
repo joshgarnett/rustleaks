@@ -122,7 +122,7 @@ fn build(size: usize, shape: Shape, depth: usize) -> Fixture {
         input,
         config: config.to_owned(),
         expected: Vec::new(),
-        legacy_fingerprint: None,
+        control_fingerprint: None,
         expected_rules: 1,
         depth,
         decoded_bytes,

@@ -1,6 +1,6 @@
 # Command line, generation bookkeeping, verification and self-test.
 
-LEGACY_KEYS = ('description', 'analogy', 'decode_depth', 'archive_depth', 'git_log_options', 'git_base',
+TUNED_KEYS = ('description', 'analogy', 'decode_depth', 'archive_depth', 'git_log_options', 'git_base',
                'git_head', 'git_staged', 'heldout')
 DESCRIPTIONS = {
     'keyword-dense': 'Configuration and text files dense in key=, token: and password words with non-secret values',
@@ -22,7 +22,7 @@ DESCRIPTIONS = {
 }
 
 
-def legacy_entry_path(workload):
+def tuned_entry_path(workload):
     return workload['input']
 
 
@@ -69,10 +69,10 @@ def command_generate(arguments, source_root):
                or entry['params']['bytes'] // MIB in sizes]
     git = find_git(arguments.git)
     environment = git_environment(cache / '.home')
-    legacy = {}
+    tuned = {}
     if any(entry['generator'] == COMPARISON_FIXTURE_VERSION for entry in catalog):
-        print_line('generating the 19 tuned legacy workloads')
-        legacy = legacy_generate(cache, git, arguments.scale)
+        print_line('generating the 19 tuned workloads')
+        tuned = tuned_generate(cache, git, arguments.scale)
         # The recipe rewrites all 19 folders, so record all 19 inventories.
         listed = set(entry['id'] for entry in catalog)
         catalog = [entry for entry in synthetic_catalog()
@@ -80,11 +80,11 @@ def command_generate(arguments, source_root):
     for entry in catalog:
         identity = entry['id']
         if entry['generator'] == COMPARISON_FIXTURE_VERSION:
-            workload = legacy[identity]
-            labels = legacy_labels(workload)
-            path = legacy_entry_path(workload)
+            workload = tuned[identity]
+            labels = tuned_labels(workload)
+            path = tuned_entry_path(workload)
             details = {'mode': workload['mode'], 'commit_count': workload.get('commit_count', 0),
-                       'params': {key: workload[key] for key in LEGACY_KEYS if key in workload}}
+                       'params': {key: workload[key] for key in TUNED_KEYS if key in workload}}
         else:
             print_line('generating %s' % identity)
             labels, extra = generate_entry(cache, git, entry, arguments.scale)
@@ -136,9 +136,9 @@ def smoke_digests(root, git):
     root = pathlib.Path(root)
     parts = {'files': {}, 'git': {}}
     if git is not None:
-        for identity, workload in sorted(legacy_generate(root, git, 'smoke').items()):
+        for identity, workload in sorted(tuned_generate(root, git, 'smoke').items()):
             path = root / 'smoke-labels.jsonl'
-            write_labels(path, legacy_labels(workload))
+            write_labels(path, tuned_labels(workload))
             parts['git'][identity] = [file_inventory(inventory_root(root, workload['input']))['files_sha256'],
                                       sha256_file(path)]
     for entry in synthetic_catalog():
@@ -171,8 +171,8 @@ def write_synthetic_manifest(cache, source_root):
     finally:
         remove_tree(scratch)
     manifest = {'schema': WORKLOADS_SCHEMA, 'set': 'synthetic', 'smoke_digests': digests,
-                'generators': {COMPARISON_FIXTURE_VERSION: 'crates/xtask/src/comparison_workloads/legacy.txt',
-                               SYNTHETIC_VERSION: 'crates/xtask/src/comparison_workloads/synthetic.txt'},
+                'generators': {COMPARISON_FIXTURE_VERSION: 'crates/xtask/src/comparison_workloads/tuned_synthetic.py',
+                               SYNTHETIC_VERSION: 'crates/xtask/src/comparison_workloads/synthetic.py'},
                 'regenerate': 'cargo xtask compare-workloads generate --cache DIR --write-manifest',
                 'workloads': workloads}
     write_json(pathlib.Path(source_root) / MANIFEST_DIRECTORY / 'synthetic.json', manifest)
@@ -353,7 +353,7 @@ def check_labels(cache, label_path, workload_path, contents=None):
     with open(label_path, 'rb') as stream:
         for line in stream:
             record = json.loads(line)
-            check(set(LABEL_KEYS) <= set(record), 'label lacks required keys: %s' % sorted(record))
+            check(set(LABEL_FIELDS) <= set(record), 'label lacks required keys: %s' % sorted(record))
             if record.get('commit') or record.get('encoding') or record.get('staged'):
                 count += 1
                 continue
@@ -361,7 +361,7 @@ def check_labels(cache, label_path, workload_path, contents=None):
                 else contents[record['path']]
             value = data[record['start']:record['end']]
             check(sha256_bytes(value) == record['secret_sha256'], 'label hash differs for %s' % record['path'])
-            check(data.count(b'\n', 0, record['start']) + 1 == record['line'], 'label line differs')
+            check(line_of(data, record['start']) == record['line'], 'label line differs')
             count += 1
     return count
 
@@ -537,15 +537,15 @@ def self_test_synthetic(cache, git):
     merges = generate_entry(cache, git, next(item for item in synthetic_catalog() if item['id'] == 'git-merges'),
                             'smoke')[0]
     check(any(record.get('introduced_by') == 'merge' for record in merges), 'merge-only change is labeled')
-    legacy = legacy_generate(cache, git, 'smoke')
-    check(sorted(legacy) == sorted(LEGACY_IDS), 'legacy ids')
+    tuned = tuned_generate(cache, git, 'smoke')
+    check(sorted(tuned) == sorted(TUNED_IDS), 'tuned workload ids')
     for identity in ('base64-20000', 'git-20000', 'tiny-positive', 'mixed-app-16mib'):
-        labels = legacy_labels(legacy[identity])
+        labels = tuned_labels(tuned[identity])
         check(labels, '%s has labels' % identity)
         path = cache / 'labels' / 'synthetic' / (identity + '.jsonl')
         write_labels(path, labels)
-        check_labels(cache, path, legacy_entry_path(legacy[identity]).rsplit('/record.txt', 1)[0])
-    return 'synthetic shapes, Git shapes and legacy workloads'
+        check_labels(cache, path, tuned_entry_path(tuned[identity]).rsplit('/record.txt', 1)[0])
+    return 'synthetic shapes, Git shapes and tuned workloads'
 
 
 def self_test_fetch(cache, git):
@@ -636,7 +636,7 @@ def self_test_smoke_digests(cache, source_root, git):
           'the generator changed; regenerate synthetic.json with generate --write-manifest')
     if git is not None:
         check(actual['git'] == expected['git'],
-              'the Git or legacy generator changed; regenerate synthetic.json with generate --write-manifest')
+              'the Git or tuned workload generator changed; regenerate synthetic.json with generate --write-manifest')
 
 
 def self_test(source_root):

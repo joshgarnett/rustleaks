@@ -2,6 +2,3 @@
 //! Unpublished compatibility-test and detection-quality support.
 
 pub mod evaluation;
-
-/// Oracle protocol version. Increment when request or response semantics change.
-pub const ORACLE_PROTOCOL_VERSION: u32 = 1;

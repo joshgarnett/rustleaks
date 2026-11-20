@@ -22,8 +22,8 @@ use super::source_scale_workloads::{
     token_row,
 };
 use super::suite_support::{
-    DATABASE_URI_RULE, Lcg, PACKS, Result, checked_github_token, database_uri, keyword_census,
-    pack_config, prose_line, prose_line_of, shannon_entropy, tar,
+    DATABASE_URI_RULE, Lcg, PACKS, Result, checked_github_token, database_uri, go_entropy,
+    keyword_census, pack_config, prose_line, prose_line_of, tar,
 };
 use super::{Phase, fingerprint};
 use crate::representative_io;
@@ -788,7 +788,7 @@ fn matrix(
 
 /// Empty standard input with the default rules alone, each pack, and all packs.
 fn startup(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     let run = Run {
         cli,
         git: cli,
@@ -828,7 +828,7 @@ fn startup(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
 /// empty folder gives the fixed cost and the others the cost per byte.
 fn size_series(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
     let (config, _, _) = pack_config(&[])?;
-    let scratch = Scratch::new()?;
+    let scratch = Scratch::new("scale")?;
     let mut rng = Lcg::new(0x7365_7269);
     let mut phases = Vec::new();
     for mib in SERIES_MIB {
@@ -940,24 +940,24 @@ fn ignore_baseline(
             clippy::cast_possible_truncation,
             reason = "reports store entropy as a 32-bit float"
         )]
-        let entropy = shannon_entropy(&row.secret) as f32;
-        json!({
+        let entropy = go_entropy(&row.secret)? as f32;
+        Ok::<_, Box<dyn std::error::Error>>(json!({
             "RuleID": row.rule, "Description": description,
             "StartLine": row.line, "EndLine": row.line,
             "StartColumn": row.column, "EndColumn": row.column + row.secret.len() - 1,
             "Match": secret, "Secret": secret, "File": file, "SymlinkFile": "",
             "Commit": "", "Entropy": entropy, "Author": "", "Email": "", "Date": "",
             "Message": "", "Tags": [], "Fingerprint": format!("{file}:{}:{}", row.rule, row.line),
-        })
+        }))
     };
     let mut baseline = Vec::with_capacity(UNRELATED_ENTRIES + 1);
     for index in 0..UNRELATED_ENTRIES {
         baseline.push(entry(
             &format!("unrelated/f{index:05}.txt"),
             &all[baselined],
-        ));
+        )?);
     }
-    baseline.push(entry(&all[baselined].file, &all[baselined]));
+    baseline.push(entry(&all[baselined].file, &all[baselined])?);
     fs::write(
         run.root.join("baseline-10000.json"),
         serde_json::to_vec(&baseline)?,

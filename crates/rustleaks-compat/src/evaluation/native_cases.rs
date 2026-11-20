@@ -1,4 +1,4 @@
-//! Independent intent labels for the three-family native rules pilot.
+//! Independent intent labels for the native rules of three provider families.
 
 use super::generator::{around, case, label};
 use super::model::{Case, fingerprint};
@@ -22,13 +22,7 @@ pub(super) fn cases() -> Vec<Case> {
 }
 
 fn positive(id: &str, input: Vec<u8>, secret: &[u8], family: &str, rule: &str) -> Case {
-    let mut value = case(
-        id,
-        "holdout",
-        "native-pilot",
-        input,
-        &[rule, "generic-api-key"],
-    );
+    let mut value = case(id, "holdout", "native", input, &[rule, "generic-api-key"]);
     value.leakage_group = family.into();
     value.rationale = "First-party synthetic credential role and byte extent, independently specified from primary provider formats. Not an active credential or deployment sample.".into();
     label(&mut value, secret, family, rule);
@@ -402,8 +396,8 @@ fn gaps(cases: &mut Vec<Case>) {
         ),
     ] {
         let mut value = positive(id, text.into_bytes(), secret.as_bytes(), family, rule);
-        value.stratum = "native-pilot-gap".into();
-        value.rationale = "Synthetic credential-bearing form deliberately outside the bounded pilot grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.".into();
+        value.stratum = "native-gap".into();
+        value.rationale = "Synthetic credential-bearing form deliberately outside the bounded native rule grammar. Retained positive labels expose the gap; no native coverage or clean-scan claim is made.".into();
         cases.push(value);
     }
 }

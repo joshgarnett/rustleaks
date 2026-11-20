@@ -1,5 +1,5 @@
 name: Set up Rustleaks tools
-description: Configure the native Bazel platform and install maintained tools.
+description: Configure the native Bazel platform and install the pinned tools.
 
 inputs:
   rust-toolchain:
@@ -11,13 +11,25 @@ inputs:
     required: false
     default: clippy,rustfmt
   install-just:
-    description: Install the maintained Just version.
+    description: Install the pinned Just version.
     required: false
     default: "true"
   install-bazelisk:
-    description: Install the maintained Bazelisk version.
+    description: Install the pinned Bazelisk version.
     required: false
     default: "true"
+  nightly-toolchain:
+    description: Pinned nightly Rust toolchain for fuzzing and Miri.
+    required: false
+    default: nightly-2026-08-21
+  install-fuzz:
+    description: Install the nightly toolchain with cargo-fuzz and fetch the locked fuzz dependencies.
+    required: false
+    default: "false"
+  install-miri:
+    description: Install the nightly toolchain with Miri.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -56,6 +68,30 @@ runs:
         rustup default "${RUST_TOOLCHAIN}"
         rustc -vV
         cargo -vV
+
+    - name: Install fuzz tools
+      if: inputs.install-fuzz == 'true'
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      env:
+        NIGHTLY: ${{ inputs.nightly-toolchain }}
+      run: |
+        set -euo pipefail
+        rustup toolchain install "${NIGHTLY}" --profile minimal --component llvm-tools-preview
+        cargo +"${NIGHTLY}" install cargo-fuzz --locked --version 0.13.2
+        for package in rustleaks-core rustleaks-sources rustleaks-report; do
+          cargo +"${NIGHTLY}" fetch --locked --manifest-path "crates/${package}/fuzz/Cargo.toml"
+        done
+
+    - name: Install Miri
+      if: inputs.install-miri == 'true'
+      shell: bash
+      env:
+        NIGHTLY: ${{ inputs.nightly-toolchain }}
+      run: |
+        set -euo pipefail
+        rustup toolchain install "${NIGHTLY}" --profile minimal --component miri
+        cargo +"${NIGHTLY}" miri setup
 
     - name: Install Just
       if: inputs.install-just == 'true'

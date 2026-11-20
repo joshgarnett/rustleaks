@@ -86,7 +86,7 @@ def selftest_units():
     with tempfile.TemporaryDirectory() as folder:
         manifest = os.path.join(folder, 'w.json')
         with open(manifest, 'w') as handle:
-            json.dump({'schema': SCHEMA_WORKLOADS, 'set': 's', 'workloads': [
+            json.dump({'schema': WORKLOADS_SCHEMA, 'set': 's', 'workloads': [
                 {'id': 'a', 'family': 'synthetic', 'modes': ['stdin'], 'path': 'a'},
                 {'id': 'b', 'family': 'synthetic', 'modes': ['dir', 'stdin'], 'path': 'b'}]}, handle)
         loaded, sources = manifest_load_workloads([manifest], folder)
@@ -448,7 +448,7 @@ def selftest_end_to_end():
         base = {'tools': os.path.join(directory, 'tools.json'), 'workloads': os.path.join(directory, 'workloads.json'),
                 'cache': cache, 'git': git}
         write_json(base['tools'], {'schema': SCHEMA_TOOLS, 'tools': tools})
-        write_json(base['workloads'], {'schema': SCHEMA_WORKLOADS, 'set': 'self-test', 'workloads': [{
+        write_json(base['workloads'], {'schema': WORKLOADS_SCHEMA, 'set': 'self-test', 'workloads': [{
             'id': 'tiny', 'family': 'synthetic', 'modes': ['dir', 'git'],
             'source': {'kind': 'generated', 'generator': 'self-test', 'params': {}, 'seed': '1'},
             'path': 'synthetic/tree', 'size': {'bytes': len(content), 'files': 1, 'commits': 0},
@@ -714,7 +714,7 @@ def selftest_guard_fixture(directory):
     base = {'tools': os.path.join(directory, 'tools.json'), 'workloads': os.path.join(directory, 'workloads.json'),
             'cache': cache, 'git': git}
     write_json(base['tools'], {'schema': SCHEMA_TOOLS, 'tools': tools})
-    write_json(base['workloads'], {'schema': SCHEMA_WORKLOADS, 'set': 'self-test', 'workloads': [{
+    write_json(base['workloads'], {'schema': WORKLOADS_SCHEMA, 'set': 'self-test', 'workloads': [{
         'id': 'budget', 'family': 'synthetic', 'modes': ['dir'],
         'source': {'kind': 'generated', 'generator': 'self-test', 'params': {}, 'seed': '1'},
         'path': 'tree', 'size': {'bytes': 13, 'files': 1, 'commits': 0}, 'tuned': True}]})
