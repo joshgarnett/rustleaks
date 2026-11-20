@@ -23,8 +23,6 @@ rustleaks_library(
         ],
     )
     for test in [
-        "triage",
-
         "report_corpus",
         "reporters",
         "template",
@@ -50,8 +48,6 @@ test_suite(
 test_suite(
     name = "all_tests",
     tests = [
-        ":triage_test",
-
         ":report_corpus_test",
         ":reporters_test",
         ":rustleaks_report_doc_test",

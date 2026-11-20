@@ -40,7 +40,7 @@ pub(crate) struct Options {
     pub complete_profile: Option<PathBuf>,
     /// Detection threads from `--jobs`. `None` leaves the choice to the
     /// complete profile or the number of CPUs that the process may use, up
-    /// to 12.
+    /// to a fixed maximum.
     pub jobs: Option<NonZeroUsize>,
     pub exit_code: i32,
     pub report_path: Option<PathBuf>,
@@ -210,23 +210,23 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
             index += 1;
             continue;
         }
-        if !positional_only && text.is_some_and(|value| value.starts_with("--")) {
-            let value = text.ok_or_else(|| ParseError::other("option name is not valid UTF-8"))?;
+        if !positional_only && let Some(value) = text.filter(|value| value.starts_with("--")) {
             parse_long(value, &arguments, &mut index, command, &mut options)
                 .map_err(|error| error.with_command(topic))?;
             index += 1;
             continue;
         }
-        if !positional_only && text.is_some_and(|value| value.starts_with('-') && value != "-") {
-            let value = text.ok_or_else(|| ParseError::other("option name is not valid UTF-8"))?;
+        if !positional_only
+            && let Some(value) = text.filter(|value| value.starts_with('-') && *value != "-")
+        {
             parse_short(value, &arguments, &mut index, &mut options)
                 .map_err(|error| error.with_command(topic))?;
             index += 1;
             continue;
         }
         if topic.is_none() {
-            // After "version", one more command name is still parsed here, as
-            // before; "version git" prints the version.
+            // After "version", one more command name is still parsed here;
+            // "version git" prints the version.
             let name = text.ok_or_else(|| ParseError::other("command name is not valid UTF-8"))?;
             if version_command {
                 version_words += 1;
@@ -243,7 +243,7 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
             }
         } else {
             positionals.try_reserve(1).map_err(|error| {
-                ParseError::other(format!("could not retain source path: {error}"))
+                ParseError::other(format!("not enough memory for source path: {error}"))
             })?;
             positionals.push(copy_path(argument)?);
         }
@@ -347,38 +347,39 @@ fn meta_action(meta: Topic, positionals: &[PathBuf]) -> Result<Action, ParseErro
                 given(received)
             ))),
         },
-        _ => Ok(Action::RootHelp),
+        Topic::Git | Topic::Directory | Topic::Stdin | Topic::Version => {
+            unreachable!("only help and completion are meta commands")
+        }
     }
 }
 
 fn append_native_pack(id: &str, options: &mut Options) -> Result<(), ParseError> {
-    if options.native_packs.len() == rustleaks_core::native::NativePolicy::MAX_PACKS {
-        return Err(ParseError::other(
-            "--native-pack exceeds the 32-item safety limit",
-        ));
+    const MAX_PACKS: usize = rustleaks_core::native::NativePolicy::MAX_PACKS;
+    if options.native_packs.len() == MAX_PACKS {
+        return Err(ParseError::other(format!(
+            "--native-pack exceeds the {MAX_PACKS}-item safety limit"
+        )));
     }
     if id.is_empty() {
-        return Err(ParseError::other(
-            "--native-pack requires a nonempty builtin identifier",
-        ));
+        return Err(ParseError::other("--native-pack needs a rule pack name"));
     }
-    options
-        .native_packs
-        .try_reserve(1)
-        .map_err(|error| ParseError::other(format!("could not retain --native-pack: {error}")))?;
+    options.native_packs.try_reserve(1).map_err(|error| {
+        ParseError::other(format!("not enough memory for --native-pack: {error}"))
+    })?;
     options.native_packs.push(copy_text(id)?);
     Ok(())
 }
 
 fn append_enabled_rules(value: &str, options: &mut Options) -> Result<(), ParseError> {
+    const MAX_ENABLED_RULES: usize = 4_096;
     for rule in value.split(',') {
-        if options.enable_rules.len() == 4_096 {
-            return Err(ParseError::other(
-                "--enable-rule exceeds the 4096-item safety limit",
-            ));
+        if options.enable_rules.len() == MAX_ENABLED_RULES {
+            return Err(ParseError::other(format!(
+                "--enable-rule exceeds the {MAX_ENABLED_RULES}-item safety limit"
+            )));
         }
         options.enable_rules.try_reserve(1).map_err(|error| {
-            ParseError::other(format!("could not retain --enable-rule: {error}"))
+            ParseError::other(format!("not enough memory for --enable-rule: {error}"))
         })?;
         options.enable_rules.push(copy_text(rule)?);
     }
@@ -636,7 +637,7 @@ fn copy_text(value: &str) -> Result<String, ParseError> {
     }
     let mut copied = String::new();
     copied.try_reserve_exact(value.len()).map_err(|error| {
-        ParseError::other(format!("could not retain command-line text: {error}"))
+        ParseError::other(format!("not enough memory for command-line text: {error}"))
     })?;
     copied.push_str(value);
     Ok(copied)
@@ -652,7 +653,7 @@ fn copy_path(value: &OsStr) -> Result<PathBuf, ParseError> {
     }
     let mut copied = PathBuf::new();
     copied.try_reserve_exact(length).map_err(|error| {
-        ParseError::other(format!("could not retain command-line path: {error}"))
+        ParseError::other(format!("not enough memory for command-line path: {error}"))
     })?;
     copied.push(value);
     Ok(copied)
@@ -670,7 +671,7 @@ fn retain_arguments(
             )));
         }
         retained.try_reserve(1).map_err(|error| {
-            ParseError::other(format!("could not retain command line: {error}"))
+            ParseError::other(format!("not enough memory for command line: {error}"))
         })?;
         retained.push(argument);
     }
@@ -1113,11 +1114,6 @@ mod tests {
         assert_eq!(invocation.source, PathBuf::from(source));
         assert_eq!(invocation.options.config, Some(PathBuf::from(config)));
     }
-}
-
-#[cfg(test)]
-mod native_pack_tests {
-    use super::*;
 
     #[test]
     fn native_packs_are_explicit_ordered_repeatable_and_bounded() {

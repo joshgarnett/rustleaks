@@ -9,21 +9,23 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rustleaks_core::Engine;
-use rustleaks_core::model::{ByteText, ScanOptions};
+use rustleaks_core::model::{ByteText, Finding, ScanOptions};
+use rustleaks_core::session::SessionPolicy;
 use rustleaks_sources::{
-    CancellationToken, RemoteMetadata, ScmPlatform, SourceIssue, SourceIssueKind, SourceRunner,
-    SourceTermination,
+    CancellationToken, RemoteMetadata, ScmErrorKind, ScmPlatform, SourceBudgetScope, SourceIssue,
+    SourceIssueKind, SourceRunner, SourceTermination,
 };
 
 use crate::args::{self, Action, CommandKind, Invocation, ParseErrorKind};
 use crate::complete_profile::{CompleteProfile, CompletionReason, CompletionStatus};
 use crate::config::{self, ConfigEnvironment};
+use crate::limits::{self, ScanLimits};
 use crate::output::{self, ReportPlan};
-use crate::source;
+use crate::source::{self, BuiltSource};
 use crate::{completion, help};
 
 /// Process context injected into one command execution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RunEnvironment {
     /// Current directory used for relative config extension resolution.
     pub cwd: PathBuf,
@@ -141,10 +143,33 @@ fn run_scan<R: Read + Send + 'static>(
     code
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "the command lifecycle remains auditable as one ordered compatibility flow"
-)]
+/// What a scan has built before it reads any input.
+struct ScanSetup {
+    /// When the scan clock started, for the summary line.
+    started: Instant,
+    cancellation: CancellationToken,
+    timer: Option<Timer>,
+    log_level: LogLevel,
+    policy: SessionPolicy,
+    report: Option<ReportPlan>,
+    engine: Engine,
+    scan_options: ScanOptions,
+    runner: SourceRunner,
+    source: BuiltSource,
+    remote: Option<RemoteMetadata>,
+}
+
+/// What a finished scan produced.
+struct ScanResult {
+    findings: Vec<Finding>,
+    /// Bytes read, including the bytes of self-excluded files.
+    bytes: u64,
+    /// The scan ended before it read the whole source.
+    partial: bool,
+}
+
+/// Runs one scan in four steps: set up, scan, attach links and write
+/// outputs. Each step returns the exit code when it stops the command.
 fn run_scan_inner<R: Read + Send + 'static>(
     invocation: &Invocation,
     environment: &RunEnvironment,
@@ -154,24 +179,59 @@ fn run_scan_inner<R: Read + Send + 'static>(
     profile: Option<&CompleteProfile>,
     status: &mut CompletionStatus,
 ) -> i32 {
+    let mut setup = match set_up(invocation, environment, stdin, stderr, profile, status) {
+        Ok(setup) => setup,
+        Err(code) => return code,
+    };
+    let mut result = match scan(invocation, &mut setup, stderr, profile, status) {
+        Ok(result) => result,
+        Err(code) => return code,
+    };
+    let findings = std::mem::take(&mut result.findings);
+    result.findings = attach_links(findings, &setup, stderr, profile, status);
+    result.partial = result.partial || profile.is_some() && !status.is_complete();
+    write_outputs(invocation, &setup, &result, stdout, stderr, status)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "setup runs its steps in one order that decides which error is printed first"
+)]
+fn set_up<R: Read + Send + 'static>(
+    invocation: &Invocation,
+    environment: &RunEnvironment,
+    stdin: R,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
+) -> Result<ScanSetup, i32> {
     let mut started = Instant::now();
     let cancellation = CancellationToken::new();
+    // A directory scan starts its clock and its timeout after the
+    // configuration is loaded. Other scans start them first.
     let mut timer = if invocation.command == CommandKind::Directory {
         None
     } else {
-        match Timer::start(invocation.options.timeout_seconds, cancellation.clone()) {
-            Ok(timer) => timer,
-            Err(error) => {
+        Timer::start(limits::timeout(&invocation.options), cancellation.clone()).map_err(
+            |error| {
                 let _ = output::error(stderr, error);
-                return 1;
-            }
-        }
+                1
+            },
+        )?
     };
     let log_level = select_log_level(invocation, stderr);
     if !invocation.options.no_banner && output::banner(stderr).is_err() {
         finish_timer(timer.take());
-        return 1;
+        return Err(1);
     }
+    let limits = match ScanLimits::from_options(&invocation.options) {
+        Ok(limits) => limits,
+        Err(error) => {
+            finish_timer(timer.take());
+            let _ = output::fatal(stderr, error);
+            return Err(1);
+        }
+    };
     let config = match config::assemble(
         invocation,
         ConfigEnvironment {
@@ -194,18 +254,17 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::fatal(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
     if invocation.command == CommandKind::Directory {
         started = Instant::now();
-        timer = match Timer::start(invocation.options.timeout_seconds, cancellation.clone()) {
-            Ok(timer) => timer,
-            Err(error) => {
+        timer = Timer::start(limits::timeout(&invocation.options), cancellation.clone()).map_err(
+            |error| {
                 let _ = output::error(stderr, error);
-                return 1;
-            }
-        };
+                1
+            },
+        )?;
     }
     if log_level.shows_warn() {
         for warning in &config.warnings {
@@ -217,12 +276,10 @@ fn run_scan_inner<R: Read + Send + 'static>(
             let _ = output::error(stderr, error);
         }
     }
-    if invocation.options.log_level.eq_ignore_ascii_case("debug")
-        || invocation.options.log_level.eq_ignore_ascii_case("trace")
-    {
+    if log_level.shows_debug() {
         let _ = output::info(stderr, format_args!("using config {}", config.origin));
         if let Some(reference) = &config.native_policy_reference {
-            let _ = output::info(stderr, format_args!("native policy {reference}"));
+            let _ = output::info(stderr, format_args!("built-in rule packs {reference}"));
         }
     }
 
@@ -233,7 +290,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
             finish_timer(timer.take());
             status.reason = CompletionReason::ReportFailure;
             let _ = output::fatal(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
     let engine = match Engine::builder(config.selected).build() {
@@ -241,17 +298,10 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
-    let scan_options = match build_scan_options(invocation) {
-        Ok(options) => options,
-        Err(error) => {
-            finish_timer(timer.take());
-            let _ = output::error(stderr, error);
-            return 1;
-        }
-    };
+    let scan_options = build_scan_options(invocation, &limits);
     let jobs = invocation.options.jobs;
     let runner = match profile.map_or_else(
         || default_runner(jobs, thread::available_parallelism),
@@ -261,15 +311,16 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
-    let mut source = match source::build(
+    let source = match source::build(
         invocation,
         stdin,
         &config.full,
         config.excluded_paths,
         &environment.cwd,
+        &limits,
         profile,
         git_history_processes(runner.workers()),
     ) {
@@ -277,7 +328,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         Err(error) => {
             finish_timer(timer.take());
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
 
@@ -297,25 +348,47 @@ fn run_scan_inner<R: Read + Send + 'static>(
                 CompletionReason::MetadataFailure
             };
             let _ = output::error(stderr, error);
-            return 1;
+            return Err(1);
         }
     };
-    warn_quoted_log_options(invocation, stderr, log_level);
-    source.set_read_threads(read_threads(runner.workers()));
-    if log_level.shows_debug() {
-        let _ = output::info(
-            stderr,
-            format_args!("detection threads: {}", runner.workers()),
-        );
-    }
-    let outcome = runner.run(
-        &mut source,
-        &engine,
+    Ok(ScanSetup {
+        started,
+        cancellation,
+        timer,
+        log_level,
+        policy: config.policy,
+        report,
+        engine,
         scan_options,
-        &config.policy,
-        &cancellation,
+        runner,
+        source,
+        remote,
+    })
+}
+
+/// Reads the source, logs its issues and counts what it read.
+fn scan(
+    invocation: &Invocation,
+    setup: &mut ScanSetup,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
+) -> Result<ScanResult, i32> {
+    let log_level = setup.log_level;
+    warn_quoted_log_options(invocation, stderr, log_level);
+    let workers = setup.runner.workers();
+    setup.source.set_read_threads(read_threads(workers));
+    if log_level.shows_debug() {
+        let _ = output::info(stderr, format_args!("detection threads: {workers}"));
+    }
+    let outcome = setup.runner.run(
+        &mut setup.source,
+        &setup.engine,
+        setup.scan_options,
+        &setup.policy,
+        &setup.cancellation,
     );
-    finish_timer(timer.take());
+    finish_timer(setup.timer.take());
     status.observe(&outcome);
 
     log_source_issues(
@@ -332,83 +405,114 @@ fn run_scan_inner<R: Read + Send + 'static>(
             SourceTermination::Completed | SourceTermination::Stopped
         )
     };
-    if partial {
-        let _ = output::error(stderr, outcome_termination(outcome.termination()));
+    if partial && let Some(line) = outcome_termination(outcome.termination()) {
+        let _ = output::error(stderr, line);
     }
-    let Some(bytes) = outcome.scanned_bytes().checked_add(source.excluded_bytes()) else {
+    let Some(bytes) = outcome
+        .scanned_bytes()
+        .checked_add(setup.source.excluded_bytes())
+    else {
         status.reason = CompletionReason::ResourceExhaustion;
         let _ = output::error(stderr, "source byte accounting overflowed");
-        return 1;
+        return Err(1);
     };
     if invocation.command == CommandKind::Git {
-        let Some(commits) = commit_union_count(
-            outcome.unique_commits(),
-            source.excluded_commits(),
-            source.excluded_commit_count(),
-        ) else {
+        let Some(commits) =
+            commit_union_count(outcome.unique_commits(), setup.source.excluded_commits())
+        else {
             status.reason = CompletionReason::ResourceExhaustion;
             let _ = output::error(stderr, "source commit accounting overflowed");
-            return 1;
+            return Err(1);
         };
         if log_level.shows_info() {
             let _ = output::info(stderr, format_args!("{commits} commits scanned."));
         }
     }
-    let mut findings = outcome.into_findings();
-    if let Some(metadata) = remote {
-        findings = findings
-            .into_iter()
-            .map(|finding| {
-                if let Some(profile) = profile {
-                    match metadata.link_length(&finding) {
-                        Ok(Some(length)) if status.admit_link(profile, length) => {}
-                        Ok(_) => return finding,
-                        Err(_) => {
-                            status.reason = CompletionReason::MetadataFailure;
-                            return finding;
-                        }
+    Ok(ScanResult {
+        findings: outcome.into_findings(),
+        bytes,
+        partial,
+    })
+}
+
+/// Adds a source-control link to each finding when the remote is known.
+/// With a complete profile, links count against the profile link limits.
+fn attach_links(
+    findings: Vec<Finding>,
+    setup: &ScanSetup,
+    stderr: &mut dyn Write,
+    profile: Option<&CompleteProfile>,
+    status: &mut CompletionStatus,
+) -> Vec<Finding> {
+    let Some(metadata) = &setup.remote else {
+        return findings;
+    };
+    findings
+        .into_iter()
+        .map(|finding| {
+            if let Some(profile) = profile {
+                match metadata.link_length(&finding) {
+                    Ok(Some(length)) if status.admit_link(profile, length) => {}
+                    Ok(_) => return finding,
+                    Err(_) => {
+                        status.reason = CompletionReason::MetadataFailure;
+                        return finding;
                     }
                 }
-                match metadata.link_for(&finding) {
-                    Ok(Some(link)) => finding.with_link(link),
-                    Ok(None) => finding,
-                    Err(error) => {
-                        if profile.is_some() {
-                            status.reason = CompletionReason::MetadataFailure;
-                        }
-                        if log_level.shows_warn() {
-                            let _ = output::warn(
-                                stderr,
-                                format_args!("could not construct source link: {error}"),
-                            );
-                        }
-                        finding
+            }
+            match metadata.link_for(&finding) {
+                Ok(Some(link)) => finding.with_link(link),
+                Ok(None) => finding,
+                Err(error) => {
+                    if profile.is_some() {
+                        status.reason = CompletionReason::MetadataFailure;
                     }
+                    if setup.log_level.shows_warn() {
+                        let _ = output::warn(
+                            stderr,
+                            format_args!("could not construct source link: {error}"),
+                        );
+                    }
+                    finding
                 }
-            })
-            .collect();
-    }
-    let partial = partial || profile.is_some() && !status.is_complete();
-    if invocation.options.verbose && output::verbose(stdout, &findings).is_err() {
+            }
+        })
+        .collect()
+}
+
+/// Writes verbose findings, the summary and the report, and returns the
+/// exit code.
+fn write_outputs(
+    invocation: &Invocation,
+    setup: &ScanSetup,
+    result: &ScanResult,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    status: &mut CompletionStatus,
+) -> i32 {
+    let findings = &result.findings;
+    if invocation.options.verbose
+        && output::verbose(stdout, findings, invocation.options.redact).is_err()
+    {
         status.reason = CompletionReason::ReportFailure;
         return 1;
     }
     if output::summary(
         stderr,
-        bytes,
-        started.elapsed(),
+        result.bytes,
+        setup.started.elapsed(),
         findings.len(),
-        partial,
-        log_level.shows_info(),
-        log_level.shows_warn(),
+        result.partial,
+        setup.log_level.shows_info(),
+        setup.log_level.shows_warn(),
     )
     .is_err()
     {
         status.reason = CompletionReason::ReportFailure;
         return 1;
     }
-    if let Some(report) = report
-        && let Err(error) = report.write(stdout, &findings)
+    if let Some(report) = &setup.report
+        && let Err(error) = report.write(stdout, findings)
     {
         status.reason = CompletionReason::ReportFailure;
         let _ = output::error(
@@ -417,7 +521,7 @@ fn run_scan_inner<R: Read + Send + 'static>(
         );
         return 1;
     }
-    if partial {
+    if result.partial {
         1
     } else if findings.is_empty() {
         0
@@ -483,15 +587,9 @@ fn source_issue_is_error(kind: SourceIssueKind) -> bool {
     )
 }
 
-fn commit_union_count(
-    included: &[ByteText],
-    excluded: &[ByteText],
-    excluded_count: usize,
-) -> Option<usize> {
-    if excluded.len() != excluded_count {
-        return None;
-    }
-    let mut total = included.len().checked_add(excluded_count)?;
+/// Counts the commits in either list. `None` means the count overflowed.
+fn commit_union_count(included: &[ByteText], excluded: &[ByteText]) -> Option<usize> {
+    let mut total = included.len().checked_add(excluded.len())?;
     if excluded.is_empty() {
         return Some(total);
     }
@@ -513,20 +611,14 @@ fn commit_union_count(
     Some(total)
 }
 
-fn build_scan_options(invocation: &Invocation) -> Result<ScanOptions, String> {
-    let decode_depth = if invocation.options.max_decode_depth <= 0 {
-        0
-    } else {
-        usize::try_from(invocation.options.max_decode_depth)
-            .map_err(|_| "--max-decode-depth is out of range".to_owned())?
-    };
-    Ok(ScanOptions::builder()
-        .max_decode_depth(decode_depth)
+fn build_scan_options(invocation: &Invocation, limits: &ScanLimits) -> ScanOptions {
+    ScanOptions::builder()
+        .max_decode_depth(limits.decode_depth)
         .base64_mode(invocation.options.base64_mode)
-        .max_target_bytes(source::engine_maximum(invocation)?)
+        .max_target_bytes(limits.engine_max)
         .redaction_percent(invocation.options.redact)
         .honor_allow_markers(!invocation.options.ignore_allow_markers)
-        .build())
+        .build()
 }
 
 fn discover_remote(
@@ -588,7 +680,10 @@ fn discover_remote(
         }
         Err(error) => {
             if invocation.options.complete_profile.is_some() {
-                return Err(format!("source link discovery failed: {:?}", error.kind()));
+                return Err(format!(
+                    "could not read the Git remote for finding links: {}",
+                    scm_error_words(error.kind())
+                ));
             }
             if log_level.shows_error() {
                 let _ = output::error(
@@ -601,23 +696,43 @@ fn discover_remote(
     }
 }
 
-fn outcome_termination(termination: &SourceTermination) -> String {
-    match termination {
-        SourceTermination::Completed => "source completed".to_owned(),
+/// Plain words for a Git remote discovery error.
+const fn scm_error_words(kind: ScmErrorKind) -> &'static str {
+    match kind {
+        ScmErrorKind::InvalidPlatform => "unknown platform",
+        ScmErrorKind::Cancelled => "cancelled",
+        ScmErrorKind::Spawn => "could not start Git",
+        ScmErrorKind::ChildOutput => "could not read the output of Git",
+        ScmErrorKind::OutputLimit => "Git printed too much output",
+        ScmErrorKind::GitExit => "Git failed",
+        ScmErrorKind::InvalidRemote => "the remote URL is not valid",
+        ScmErrorKind::Cleanup => "could not stop Git",
+        ScmErrorKind::Allocation => "not enough memory",
+    }
+}
+
+/// The error line for a scan that ended before it read the whole source.
+/// A completed scan has no such line.
+fn outcome_termination(termination: &SourceTermination) -> Option<String> {
+    Some(match termination {
+        SourceTermination::Completed => return None,
         SourceTermination::Stopped => "source stopped".to_owned(),
         SourceTermination::Cancelled => "source cancelled".to_owned(),
         SourceTermination::SourceError(error) => error.to_string(),
         SourceTermination::WorkerPanic => "source detection worker panicked".to_owned(),
         SourceTermination::BudgetExceeded(exceeded) => format!(
-            "source budget exceeded: {:?}/{:?} limit={} consumed={} requested={}",
-            exceeded.scope(),
-            exceeded.kind(),
+            "the scan reached its {} limit for {}: limit={} consumed={} requested={}",
+            crate::complete_profile::resource_name(exceeded.kind()),
+            match exceeded.scope() {
+                SourceBudgetScope::Fragment => "one fragment",
+                SourceBudgetScope::Operation => "the whole scan",
+            },
             exceeded.limit(),
             exceeded.consumed(),
             exceeded.requested()
         ),
         _ => "source ended with an unknown terminal state".to_owned(),
-    }
+    })
 }
 
 /// The most fragments that wait for a detection thread without a profile.
@@ -626,18 +741,14 @@ fn outcome_termination(termination: &SourceTermination) -> String {
 const MAX_DEFAULT_QUEUE_CAPACITY: usize = 1024;
 
 /// The most detection threads that a scan starts when neither `--jobs` nor a
-/// profile sets the count. Measured on a 36-CPU host, scans of large
-/// repositories were within 4 percent of their best time at 12 threads and
-/// used about half the memory of 36 threads. `--jobs` can set more.
+/// profile sets the count. More threads made large scans only a little
+/// faster and used much more memory. `--jobs` can set more.
 const MAX_DEFAULT_JOBS: usize = 12;
 
 /// The most `git log` processes that read Git history at the same time.
 /// Each process maps the pack files and holds its own caches, from hundreds
-/// of megabytes to gigabytes for large histories. On a 36-CPU host with 12
-/// detection threads, history scans of mongo and typescript were about 3
-/// times faster with 6 processes than with 1, 4 processes were slower and 8
-/// were not faster. The 6 Git processes together used no more memory than
-/// one process that reads the whole history.
+/// of megabytes to gigabytes for large histories. Fewer processes made large
+/// history scans slower, and more were not faster.
 const MAX_GIT_HISTORY_PROCESSES: usize = 6;
 
 /// Reads Git history with one process for each detection thread, up to
@@ -663,12 +774,9 @@ fn default_runner(
         .map_err(|error| error.to_string())
 }
 
-/// The most threads that read the files of a directory scan. On a 36-CPU
-/// macOS host, two reader threads made a scan of 100,000 small files about
-/// 37 percent faster than one, and scans of large repositories 2 to 30
-/// percent faster. Three or four were no faster for most of them and used
-/// more CPU time, because opening files in the operating system was then
-/// the limit.
+/// The most threads that read the files of a directory scan. Two reader
+/// threads were faster than one. More were not faster and used more CPU
+/// time, because opening files in the operating system was then the limit.
 const MAX_READ_THREADS: usize = 2;
 
 /// Returns how many threads read the files of a directory scan: one for each
@@ -816,12 +924,13 @@ struct Timer {
 }
 
 impl Timer {
-    fn start(seconds: i64, cancellation: CancellationToken) -> Result<Option<Self>, String> {
-        if seconds <= 0 {
-            return Ok(None);
-        }
-        let seconds = u64::try_from(seconds).map_err(|_| "--timeout is out of range".to_owned())?;
-        Self::start_after(Duration::from_secs(seconds), cancellation).map(Some)
+    fn start(
+        timeout: Option<Duration>,
+        cancellation: CancellationToken,
+    ) -> Result<Option<Self>, String> {
+        timeout
+            .map(|timeout| Self::start_after(timeout, cancellation))
+            .transpose()
     }
 
     fn start_after(timeout: Duration, cancellation: CancellationToken) -> Result<Self, String> {
@@ -856,10 +965,7 @@ mod tests {
     fn environment(cwd: PathBuf) -> RunEnvironment {
         RunEnvironment {
             cwd,
-            config_path: None,
-            config_toml: None,
-            legacy_config_path: None,
-            legacy_config_toml: None,
+            ..RunEnvironment::default()
         }
     }
 
@@ -900,6 +1006,15 @@ mod tests {
             let runner = default_runner(NonZeroUsize::new(jobs), never).unwrap();
             assert_eq!((runner.workers(), runner.queue_capacity()), expected);
         }
+    }
+
+    #[test]
+    fn jobs_help_names_the_default_maximum() {
+        let help = crate::cli_spec::scan_flag("jobs").unwrap().help.join(" ");
+        assert!(
+            help.contains(&format!("up to {MAX_DEFAULT_JOBS}.")),
+            "{help}"
+        );
     }
 
     #[test]
@@ -1011,10 +1126,8 @@ mod tests {
         let inline = "[[rules]]\nid='x'\nregex='never-match-this'\n";
         let env = RunEnvironment {
             cwd: PathBuf::from("."),
-            config_path: None,
             config_toml: Some(OsString::from(inline)),
-            legacy_config_path: None,
-            legacy_config_toml: None,
+            ..RunEnvironment::default()
         };
         let code = run_from(
             [
@@ -1036,10 +1149,8 @@ mod tests {
         let marker = "SECRET_MARKER_DO_NOT_PRINT";
         let env = RunEnvironment {
             cwd: PathBuf::from("."),
-            config_path: None,
             config_toml: Some(OsString::from(format!("invalid = [ {marker}"))),
-            legacy_config_path: None,
-            legacy_config_toml: None,
+            ..RunEnvironment::default()
         };
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -1155,12 +1266,8 @@ mod tests {
     fn commit_count_is_an_exact_union() {
         let included = [ByteText::from("one"), ByteText::from("two")];
         let excluded = [ByteText::from("two"), ByteText::from("three")];
-        assert_eq!(
-            commit_union_count(&included, &excluded, excluded.len()),
-            Some(3)
-        );
-        assert_eq!(commit_union_count(&included, &[], 0), Some(2));
-        assert_eq!(commit_union_count(&included, &excluded, usize::MAX), None);
+        assert_eq!(commit_union_count(&included, &excluded), Some(3));
+        assert_eq!(commit_union_count(&included, &[]), Some(2));
     }
 
     #[test]
@@ -1177,15 +1284,8 @@ mod tests {
             ByteText::from("four"),
             ByteText::from("two"),
         ];
-        assert_eq!(
-            commit_union_count(&included, &excluded, excluded.len()),
-            Some(4)
-        );
-        assert_eq!(commit_union_count(&[], &excluded, excluded.len()), Some(3));
-        assert_eq!(
-            commit_union_count(&included, &[ByteText::from("two")], usize::MAX),
-            None
-        );
+        assert_eq!(commit_union_count(&included, &excluded), Some(4));
+        assert_eq!(commit_union_count(&[], &excluded), Some(3));
     }
 
     #[test]

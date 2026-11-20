@@ -392,11 +392,11 @@ fn scan_parts(source: &[u8]) -> Result<Vec<Part>, TemplateError> {
     let mut cursor = 0;
     while let Some(relative) = find_bytes(&source[cursor..], b"{{") {
         let open = cursor + relative;
-        push_part(
+        try_push(
             &mut parts,
             Part {
                 offset: cursor,
-                kind: PartKind::Literal(copy_bytes(&source[cursor..open])?),
+                kind: PartKind::Literal(try_copy(&source[cursor..open])?),
             },
         )?;
 
@@ -426,11 +426,11 @@ fn scan_parts(source: &[u8]) -> Result<Vec<Part>, TemplateError> {
                 .and_then(|index| source.get(index))
                 .is_some_and(|byte| is_trim_space(*byte));
         let action_end = if right_trim { close - 1 } else { close };
-        push_part(
+        try_push(
             &mut parts,
             Part {
                 offset: action_start,
-                kind: PartKind::Action(copy_bytes(&source[action_start..action_end])?),
+                kind: PartKind::Action(try_copy(&source[action_start..action_end])?),
             },
         )?;
         cursor = close + 2;
@@ -440,11 +440,11 @@ fn scan_parts(source: &[u8]) -> Result<Vec<Part>, TemplateError> {
             }
         }
     }
-    push_part(
+    try_push(
         &mut parts,
         Part {
             offset: cursor,
-            kind: PartKind::Literal(copy_bytes(&source[cursor..])?),
+            kind: PartKind::Literal(try_copy(&source[cursor..])?),
         },
     )?;
     Ok(parts)
@@ -484,15 +484,6 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn copy_bytes(bytes: &[u8]) -> Result<Vec<u8>, TemplateError> {
-    let mut owned = Vec::new();
-    owned
-        .try_reserve(bytes.len())
-        .map_err(|_| TemplateError::Allocation)?;
-    owned.extend_from_slice(bytes);
-    Ok(owned)
-}
-
 fn copy_ascii(bytes: &[u8], offset: usize) -> Result<String, TemplateError> {
     if !bytes.is_ascii() {
         return Err(TemplateError::Parse {
@@ -512,14 +503,6 @@ fn copy_ascii(bytes: &[u8], offset: usize) -> Result<String, TemplateError> {
     Ok(text)
 }
 
-fn push_part(parts: &mut Vec<Part>, part: Part) -> Result<(), TemplateError> {
-    parts
-        .try_reserve(1)
-        .map_err(|_| TemplateError::Allocation)?;
-    parts.push(part);
-    Ok(())
-}
-
 struct Parser {
     parts: Vec<Part>,
     next: usize,
@@ -536,7 +519,7 @@ impl Parser {
             let part = &self.parts[self.next];
             match &part.kind {
                 PartKind::Literal(bytes) => {
-                    push_node(&mut nodes, Node::Literal(copy_bytes(bytes)?))?;
+                    try_push(&mut nodes, Node::Literal(try_copy(bytes)?))?;
                     self.next += 1;
                 }
                 PartKind::Action(bytes) => {
@@ -581,7 +564,7 @@ impl Parser {
                         let (variables, value) = parse_range(&tokens[1..], offset)?;
                         self.next += 1;
                         let body = self.parse_nodes(true, nesting + 1)?;
-                        push_node(
+                        try_push(
                             &mut nodes,
                             Node::Range {
                                 variables,
@@ -596,7 +579,7 @@ impl Parser {
                         let value = parse_expression(&tokens[1..], offset)?;
                         self.next += 1;
                         let body = self.parse_nodes(true, nesting + 1)?;
-                        push_node(&mut nodes, Node::With { value, body })?;
+                        try_push(&mut nodes, Node::With { value, body })?;
                         continue;
                     }
                     if token_ident(&tokens[0]) == Some("if") {
@@ -604,11 +587,11 @@ impl Parser {
                         let condition = parse_expression(&tokens[1..], offset)?;
                         self.next += 1;
                         let body = self.parse_nodes(true, nesting + 1)?;
-                        push_node(&mut nodes, Node::If { condition, body })?;
+                        try_push(&mut nodes, Node::If { condition, body })?;
                         continue;
                     }
                     let node = parse_non_block_node(&tokens, offset)?;
-                    push_node(&mut nodes, node)?;
+                    try_push(&mut nodes, node)?;
                     self.next += 1;
                 }
             }
@@ -632,7 +615,7 @@ fn parse_non_block_node(tokens: &[Token], offset: usize) -> Result<Node, Templat
             unreachable!();
         };
         return Ok(Node::Assign {
-            name: clone_string(name)?,
+            name: try_string(name)?,
             value: parse_expression(&tokens[2..], offset)?,
         });
     }
@@ -647,23 +630,6 @@ fn ensure_nesting(nesting: usize, offset: usize) -> Result<(), TemplateError> {
         });
     }
     Ok(())
-}
-
-fn push_node(nodes: &mut Vec<Node>, node: Node) -> Result<(), TemplateError> {
-    nodes
-        .try_reserve(1)
-        .map_err(|_| TemplateError::Allocation)?;
-    nodes.push(node);
-    Ok(())
-}
-
-fn clone_string(source: &str) -> Result<String, TemplateError> {
-    let mut value = String::new();
-    value
-        .try_reserve(source.len())
-        .map_err(|_| TemplateError::Allocation)?;
-    value.push_str(source);
-    Ok(value)
 }
 
 #[derive(Debug)]
@@ -794,17 +760,17 @@ fn parse_string_literal(source: &[u8], offset: usize) -> Result<(Vec<u8>, usize)
                     message: "unterminated string escape",
                 })?;
                 match escaped {
-                    b'a' => push_byte(&mut value, 0x07)?,
-                    b'b' => push_byte(&mut value, 0x08)?,
-                    b'f' => push_byte(&mut value, 0x0c)?,
-                    b'n' => push_byte(&mut value, b'\n')?,
-                    b'r' => push_byte(&mut value, b'\r')?,
-                    b't' => push_byte(&mut value, b'\t')?,
-                    b'v' => push_byte(&mut value, 0x0b)?,
-                    b'\\' | b'"' => push_byte(&mut value, escaped)?,
+                    b'a' => try_push(&mut value, 0x07)?,
+                    b'b' => try_push(&mut value, 0x08)?,
+                    b'f' => try_push(&mut value, 0x0c)?,
+                    b'n' => try_push(&mut value, b'\n')?,
+                    b'r' => try_push(&mut value, b'\r')?,
+                    b't' => try_push(&mut value, b'\t')?,
+                    b'v' => try_push(&mut value, 0x0b)?,
+                    b'\\' | b'"' => try_push(&mut value, escaped)?,
                     b'x' => {
                         let byte = parse_hex(&source[cursor + 1..], 2, offset)?;
-                        push_byte(
+                        try_push(
                             &mut value,
                             u8::try_from(byte).map_err(|_| TemplateError::Parse {
                                 offset,
@@ -821,7 +787,7 @@ fn parse_string_literal(source: &[u8], offset: usize) -> Result<(Vec<u8>, usize)
                             message: "invalid Unicode escape",
                         })?;
                         let mut encoded = [0_u8; 4];
-                        push_bytes(&mut value, character.encode_utf8(&mut encoded).as_bytes())?;
+                        try_extend(&mut value, character.encode_utf8(&mut encoded).as_bytes())?;
                         cursor += digits;
                     }
                     _ => {
@@ -834,7 +800,7 @@ fn parse_string_literal(source: &[u8], offset: usize) -> Result<(Vec<u8>, usize)
                 cursor += 1;
             }
             byte => {
-                push_byte(&mut value, byte)?;
+                try_push(&mut value, byte)?;
                 cursor += 1;
             }
         }
@@ -870,22 +836,6 @@ fn parse_hex(bytes: &[u8], digits: usize, offset: usize) -> Result<u32, Template
     Ok(value)
 }
 
-fn push_byte(bytes: &mut Vec<u8>, byte: u8) -> Result<(), TemplateError> {
-    bytes
-        .try_reserve(1)
-        .map_err(|_| TemplateError::Allocation)?;
-    bytes.push(byte);
-    Ok(())
-}
-
-fn push_bytes(target: &mut Vec<u8>, bytes: &[u8]) -> Result<(), TemplateError> {
-    target
-        .try_reserve(bytes.len())
-        .map_err(|_| TemplateError::Allocation)?;
-    target.extend_from_slice(bytes);
-    Ok(())
-}
-
 fn token_ident(token: &Token) -> Option<&str> {
     match &token.kind {
         TokenKind::Ident(name) => Some(name),
@@ -895,7 +845,7 @@ fn token_ident(token: &Token) -> Option<&str> {
 
 fn unsupported(name: &str, offset: usize) -> Result<TemplateError, TemplateError> {
     Ok(TemplateError::UnsupportedFeature {
-        name: clone_string(name)?,
+        name: try_string(name)?,
         offset,
     })
 }
@@ -917,7 +867,7 @@ fn parse_range(tokens: &[Token], offset: usize) -> Result<(Vec<String>, Expr), T
                 variables
                     .try_reserve(1)
                     .map_err(|_| TemplateError::Allocation)?;
-                variables.push(clone_string(name)?);
+                variables.push(try_string(name)?);
             }
             [
                 Token {
@@ -936,8 +886,8 @@ fn parse_range(tokens: &[Token], offset: usize) -> Result<(Vec<String>, Expr), T
                 variables
                     .try_reserve(2)
                     .map_err(|_| TemplateError::Allocation)?;
-                variables.push(clone_string(first)?);
-                variables.push(clone_string(second)?);
+                variables.push(try_string(first)?);
+                variables.push(try_string(second)?);
             }
             _ => {
                 return Err(TemplateError::Parse {
@@ -1060,9 +1010,9 @@ impl ExpressionCursor<'_> {
         match &token.kind {
             TokenKind::Dot(None) => Ok(Expr::Dot),
             TokenKind::Dot(Some(name)) => Ok(Expr::Field(parse_field(name, token.offset)?)),
-            TokenKind::Variable(name) => Ok(Expr::Variable(clone_string(name)?)),
+            TokenKind::Variable(name) => Ok(Expr::Variable(try_string(name)?)),
             TokenKind::Integer(value) => Ok(Expr::Integer(*value)),
-            TokenKind::Bytes(bytes) => Ok(Expr::Bytes(copy_bytes(bytes)?)),
+            TokenKind::Bytes(bytes) => Ok(Expr::Bytes(try_copy(bytes)?)),
             TokenKind::LeftParen => {
                 ensure_nesting(self.nesting, token.offset)?;
                 self.nesting += 1;
@@ -1149,7 +1099,7 @@ impl Value<'_> {
             Self::Finding(value) => Self::Finding(value),
             Self::Tags(value) => Self::Tags(value),
             Self::Bytes(value) => Self::Bytes(value),
-            Self::Owned(value) => Self::Owned(copy_bytes(value)?),
+            Self::Owned(value) => Self::Owned(try_copy(value)?),
             Self::Usize(value) => Self::Usize(*value),
             Self::Integer(value) => Self::Integer(*value),
             Self::Float(value) => Self::Float(*value),
@@ -1327,7 +1277,7 @@ fn evaluate<'a>(
 
 fn missing(name: &str) -> Result<TemplateError, TemplateError> {
     Ok(TemplateError::MissingValue {
-        name: clone_string(name)?,
+        name: try_string(name)?,
     })
 }
 
@@ -1701,4 +1651,39 @@ impl fmt::Display for TemplateReporter {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(SAFE_TEMPLATE_PROFILE)
     }
+}
+
+/// Pushes one value after a fallible reservation.
+fn try_push<T>(values: &mut Vec<T>, value: T) -> Result<(), TemplateError> {
+    values
+        .try_reserve(1)
+        .map_err(|_| TemplateError::Allocation)?;
+    values.push(value);
+    Ok(())
+}
+
+/// Appends bytes after a fallible reservation.
+fn try_extend(target: &mut Vec<u8>, bytes: &[u8]) -> Result<(), TemplateError> {
+    target
+        .try_reserve(bytes.len())
+        .map_err(|_| TemplateError::Allocation)?;
+    target.extend_from_slice(bytes);
+    Ok(())
+}
+
+/// Copies bytes into a new vector after a fallible reservation.
+fn try_copy(bytes: &[u8]) -> Result<Vec<u8>, TemplateError> {
+    let mut owned = Vec::new();
+    try_extend(&mut owned, bytes)?;
+    Ok(owned)
+}
+
+/// Copies text into a new string after a fallible reservation.
+fn try_string(source: &str) -> Result<String, TemplateError> {
+    let mut value = String::new();
+    value
+        .try_reserve(source.len())
+        .map_err(|_| TemplateError::Allocation)?;
+    value.push_str(source);
+    Ok(value)
 }

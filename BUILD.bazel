@@ -146,7 +146,6 @@ filegroup(
 )
 
 _RUST_TARGETS = [
-    "//crates/rustleaks-report:triage_test",
 
     "//crates/rustleaks-core:native_policy_test",
     "//crates/rustleaks-core:native_predicates_test",

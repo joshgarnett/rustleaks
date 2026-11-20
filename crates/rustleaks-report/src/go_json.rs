@@ -4,6 +4,17 @@ use rustleaks_core::model::{ByteText, CommitMetadata, Finding, Fragment};
 
 use crate::ReportError;
 
+/// Rejects a non-finite entropy before any report byte is written.
+pub(crate) fn check_entropy(findings: &[Finding]) -> Result<(), ReportError> {
+    match findings
+        .iter()
+        .find(|finding| !finding.entropy().is_finite())
+    {
+        Some(finding) => Err(ReportError::NonFiniteEntropy(finding.entropy())),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn write_findings(
     writer: &mut dyn Write,
     findings: &[Finding],
@@ -33,26 +44,23 @@ pub(crate) fn write_finding(
     depth: usize,
 ) -> Result<(), ReportError> {
     let location = finding.location();
-    let mut fields = 18_usize;
-    fields += usize::from(!finding.link().is_empty());
-    fields += usize::from(finding.fragment().is_some());
-    let mut field = 0_usize;
     writer.write_all(b"{")?;
 
+    // Every member after the first starts with a comma.
     macro_rules! member {
-        ($name:literal, $body:expr) => {{
-            field += 1;
+        (first $name:literal, $body:expr) => {{
             writer.write_all(b"\n")?;
             write_indent(writer, indent, depth + 1)?;
             writer.write_all(concat!("\"", $name, "\": ").as_bytes())?;
             $body?;
-            if field != fields {
-                writer.write_all(b",")?;
-            }
+        }};
+        ($name:literal, $body:expr) => {{
+            writer.write_all(b",")?;
+            member!(first $name, $body);
         }};
     }
 
-    member!("RuleID", write_string(writer, finding.rule_id().as_bytes()));
+    member!(first "RuleID", write_string(writer, finding.rule_id().as_bytes()));
     member!(
         "Description",
         write_string(writer, finding.description().as_bytes())
@@ -432,7 +440,9 @@ fn non_ascii_replacement(bytes: &[u8]) -> (Option<&'static [u8]>, usize) {
     }
 }
 
-const fn utf8_width(first: u8) -> usize {
+/// The length of the UTF-8 sequence that a non-ASCII lead byte starts, or 0
+/// for a byte that cannot start one.
+pub(crate) const fn utf8_width(first: u8) -> usize {
     match first {
         0xc2..=0xdf => 2,
         0xe0..=0xef => 3,
@@ -441,9 +451,9 @@ const fn utf8_width(first: u8) -> usize {
     }
 }
 
-/// The per-byte writers and allocating float formatter replaced by run-based
-/// and stack-based output, retained verbatim as the oracle for byte equivalence,
-/// with the adversarial inputs they are compared on.
+/// Simple per-byte reference versions of the writers and the float
+/// formatter, used to test the fast versions, with the inputs they are
+/// compared on.
 #[cfg(test)]
 pub(crate) mod reference {
     use std::io::Write;
