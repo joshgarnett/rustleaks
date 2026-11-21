@@ -27,7 +27,7 @@ archives = [
 brotli-decompressor = { version = "=6.3.2", default-features = false, features = ["std"], optional = true }
 compcol = { version = "=0.8.0", default-features = false, features = ["rar2"], optional = true }
 rustleaks-rar-codec = { path = "../rustleaks-rar-codec", version = "=0.9.3-rustleaks.1", optional = true }
-rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.11" }
+rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.12" }
 lz4_flex = { version = "=0.14.2", default-features = false, features = ["checked-decode", "frame", "safe-decode", "safe-encode", "std"], optional = true }
 lzma-rust2 = { version = "=0.25.0", default-features = false, features = ["std", "xz", "lzip"], optional = true }
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"], optional = true }
