@@ -164,8 +164,8 @@ const PERF_INVARIANTS: &[PerfInvariant] = &[
         workload: "report-sarif",
         logical_bytes: 10_000,
         result_count: 10_000,
-        output_bytes: 7_308_202,
-        outcome_fnv1a64: "8293a2e439c3f929",
+        output_bytes: 7_308_208,
+        outcome_fnv1a64: "71e08eece351840c",
     },
     PerfInvariant {
         workload: "bm-0001",

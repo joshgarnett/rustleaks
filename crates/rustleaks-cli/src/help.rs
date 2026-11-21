@@ -9,7 +9,8 @@ use crate::cli_spec::{
 
 const ROOT_INTRO: &str = "\
 Rustleaks finds secrets in Git history, files, directories and standard
-input. It reads Gitleaks configuration, ignore and baseline files.
+input. It also reads configuration, ignore and baseline files written for
+Gitleaks.
 
 Usage:
   rustleaks <command> [flags]
@@ -132,7 +133,8 @@ fn write_scan_flags(writer: &mut dyn Write) -> io::Result<()> {
 }
 
 fn write_legacy_flags(writer: &mut dyn Write) -> io::Result<()> {
-    writer.write_all(b"\nLegacy flag names:\n  These Gitleaks names also work.\n")?;
+    writeln!(writer, "\n{}", Group::Legacy.heading())?;
+    writer.write_all(b"  These older names also work.\n")?;
     for legacy in LEGACY_FLAGS {
         let Some(current) = scan_flag(legacy.current) else {
             continue;
@@ -144,6 +146,9 @@ fn write_legacy_flags(writer: &mut dyn Write) -> io::Result<()> {
             value_suffix(current.value),
             legacy.current
         )?;
+    }
+    for flag in SCAN_FLAGS.iter().filter(|flag| flag.group == Group::Legacy) {
+        write_flag(writer, flag)?;
     }
     Ok(())
 }

@@ -125,11 +125,12 @@ baseline file and parses it. `rustleaks-report` writes findings through the
 
 ## Names
 
-The project uses the name `rustleaks`. Gitleaks names stay only where
-compatibility needs them: configuration fields, `.gitleaks.toml`,
-`.gitleaksignore`, `GITLEAKS_CONFIG`, legacy flags, report field names, the
-`gitleaks` tool name in SARIF and JUnit reports, historical evidence, fixture
-identity and attribution. These names do not identify the product.
+The project uses the name `rustleaks`, including the tool name in SARIF and
+JUnit reports. Gitleaks names stay only as legacy names and where existing
+files need them: configuration fields, `.gitleaks.toml`, `.gitleaksignore`,
+`gitleaks:allow`, `GITLEAKS_CONFIG`, legacy flags, report field names,
+historical evidence, fixture identity and attribution. These names do not
+identify the product.
 
 ## Where to add things
 

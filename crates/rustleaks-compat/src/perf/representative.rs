@@ -669,6 +669,9 @@ fn run_report(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>>
         }
         black_box(&output);
         result.elapsed_ns += elapsed(start)?;
+        if !is_json {
+            output = super::sarif_without_version(&output)?;
+        }
         if output.len() as u64 != control.output_bytes
             || fnv_extend(FNV_OFFSET, &output) != control.fingerprint
         {

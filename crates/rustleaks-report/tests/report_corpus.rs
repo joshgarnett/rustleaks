@@ -13,6 +13,11 @@ use rustleaks_report::{
 };
 use serde_json::Value;
 
+#[path = "support/tool_identity.rs"]
+mod tool_identity;
+
+use tool_identity::with_rustleaks_identity;
+
 #[test]
 fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
     let root = std::env::var_os("RUSTLEAKS_REPORT_CORPUS").map_or_else(
@@ -109,6 +114,12 @@ fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
             dispositions.push(id.to_owned());
             continue;
         }
+        let expected = if matches!(format, "junit" | "sarif") && limit.is_none() {
+            // The only intended difference from the frozen bytes.
+            with_rustleaks_identity(format, &expected)
+        } else {
+            expected
+        };
         assert_eq!(destination.bytes, expected, "{id}");
         let expected_error = outcome["error"].is_object();
         assert_eq!(result.is_err(), expected_error, "{id}");

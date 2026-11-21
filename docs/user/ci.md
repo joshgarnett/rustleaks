@@ -67,7 +67,9 @@ Notes:
 - `fetch-depth: 0` fetches the full history. The default checkout has only the
   last commit.
 - `--redact` keeps secret values out of the uploaded SARIF file.
-- The SARIF file names the tool `gitleaks`. See [SARIF](reports.md#sarif).
+- The SARIF file names the tool `rustleaks`. If the repository has code
+  scanning alerts from Gitleaks, the first upload opens new alerts under
+  `rustleaks`. See [SARIF](reports.md#sarif).
 - The upload step runs even when the scan step fails, for example because it
   found secrets.
 - For stronger supply-chain safety, pin each action to a full commit SHA.

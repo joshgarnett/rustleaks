@@ -32,7 +32,7 @@ impl ReportRule {
     }
 }
 
-/// Upstream-compatible `SARIF` 2.1.0 report writer.
+/// `SARIF` 2.1.0 report writer.
 #[derive(Clone, Debug, Default)]
 pub struct SarifReporter {
     rules: Vec<ReportRule>,
@@ -109,17 +109,18 @@ impl Reporter for SarifReporter {
     }
 }
 
+/// SARIF `tool.driver.name`.
+const TOOL_NAME: &[u8] = b"rustleaks";
+/// SARIF `tool.driver.semanticVersion`: the Rustleaks package version.
+const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// SARIF `tool.driver.informationUri`.
+const TOOL_URI: &[u8] = b"https://github.com/joshgarnett/rustleaks";
+
 fn write_driver(writer: &mut dyn Write, rules: &[ReportRule]) -> Result<(), ReportError> {
     writer.write_all(b"{")?;
-    text_member(writer, 5, b"name", b"gitleaks", true)?;
-    text_member(writer, 5, b"semanticVersion", b"v8.0.0", true)?;
-    text_member(
-        writer,
-        5,
-        b"informationUri",
-        b"https://github.com/gitleaks/gitleaks",
-        true,
-    )?;
+    text_member(writer, 5, b"name", TOOL_NAME, true)?;
+    text_member(writer, 5, b"semanticVersion", TOOL_VERSION.as_bytes(), true)?;
+    text_member(writer, 5, b"informationUri", TOOL_URI, true)?;
     field(writer, 5, b"rules")?;
     if rules.is_empty() {
         writer.write_all(b"[]")?;

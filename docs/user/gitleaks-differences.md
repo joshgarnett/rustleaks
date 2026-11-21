@@ -64,17 +64,14 @@ report fields in scripts.
 - **Help and completion.** The `help` command and the `completion` command for
   bash, zsh, fish and PowerShell work as in Gitleaks, but the help text uses
   Rustleaks wording. `completion` accepts `--no-descriptions` and ignores it.
-- **Report tool name.** SARIF and JUnit reports name the tool `gitleaks`. The
-  SARIF `semanticVersion` is the fixed value `v8.0.0`, as in Gitleaks. GitHub
-  code scanning tracks alerts by tool name, so alert history continues after
-  you switch.
 
-## Rustleaks names and Gitleaks names
+## Rustleaks names and legacy names
 
 Rustleaks has its own names for files, variables, flags and comments. The
-Gitleaks names still work.
+legacy names that Gitleaks uses still work, with no warning. Their meaning is
+the Rustleaks meaning, which can change in later releases.
 
-| Rustleaks name | Gitleaks name | When both are present |
+| Rustleaks name | Legacy name | When both are present |
 | --- | --- | --- |
 | `RUSTLEAKS_CONFIG` | `GITLEAKS_CONFIG` | The Rustleaks name wins. |
 | `RUSTLEAKS_CONFIG_TOML` | `GITLEAKS_CONFIG_TOML` | The Rustleaks name wins. |
@@ -96,8 +93,8 @@ order of configuration sources.
   `rustleaks git --pre-commit` to scan changes that are not committed. See
   [Using Rustleaks in CI and Git hooks](ci.md).
 - The `--diagnostics` and `--diagnostics-dir` flags.
-- Colored output. `--no-color` is accepted and has no effect, because
-  Rustleaks never prints color.
+- Colored output. The legacy `--no-color` flag is accepted and has no
+  effect, because Rustleaks never prints color.
 - Sprig and other helper functions in report templates. Rustleaks supports a
   small, safe part of the Go template language. See
   [Templates](reports.md#templates).
@@ -119,6 +116,17 @@ order of configuration sources.
 such as `0.1.0-alpha.1`, not a Gitleaks version. A configuration with a
 `minVersion` newer than 8.30.0 still loads, but Rustleaks prints a warning,
 because it may not support newer settings.
+
+### Report tool name
+
+SARIF reports name the tool `rustleaks`, with the Rustleaks version as
+`semanticVersion` and the Rustleaks repository as `informationUri`. JUnit
+reports name the test suite `rustleaks`. Gitleaks uses `gitleaks`, `v8.0.0`
+and the Gitleaks project page. GitHub
+code scanning tracks alerts by tool name, so after you switch, findings that
+already have alerts under `gitleaks` get new alerts under `rustleaks` once.
+Update any CI step that looks for the `gitleaks` JUnit suite name. See [Moving
+from Gitleaks](moving-from-gitleaks.md).
 
 ### Help, errors and logs
 
