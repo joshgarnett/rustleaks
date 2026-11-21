@@ -307,10 +307,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - `session::global_fingerprint` and `session::qualified_fingerprint` build
   fingerprints without a session.
 
-## Native rule packs
+## Built-in rules
 
-`NativePolicy` starts from the default rules and adds rule packs. See [Native
-rule packs](native-rule-packs.md) for what each pack contains.
+`ConfigLoader::new().load_default()` gives the Gitleaks-derived default rules
+alone. To scan with every built-in rule, as the CLI does, add
+`with_builtin_rules`. It also makes `[extend] useDefault = true` include the
+Rustleaks rules. See [Built-in rules](built-in-rules.md) for what they cover.
+
+```rust
+use rustleaks_core::config::ConfigLoader;
+use rustleaks_core::model::{Fragment, ScanOptions};
+use rustleaks_core::Engine;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = ConfigLoader::new().with_builtin_rules().load_default()?;
+    assert!(config.rule("rustleaks.groq-api-key").is_some());
+    let engine = Engine::builder(config).build()?;
+    let outcome = engine.scan_fragment(&Fragment::new(b"no secrets here"), &ScanOptions::default());
+    assert!(outcome.findings().is_empty());
+    Ok(())
+}
+```
+
+### Custom compositions
+
+`NativePolicy` starts from the default rules and adds rule files that you
+choose, with an identity that records them.
 
 ```rust
 use rustleaks_core::explanation::ExplanationOptions;

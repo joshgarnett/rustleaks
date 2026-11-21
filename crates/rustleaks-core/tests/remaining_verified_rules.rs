@@ -186,7 +186,7 @@ fn primary() -> impl Iterator<Item = &'static Case> {
 
 #[test]
 fn every_source_case_preserves_exact_report_secret_and_original_byte_geometry() {
-    assert_eq!(config().rules().len(), 542);
+    assert_eq!(config().rules().len(), 547);
     assert_eq!(fixture().selected_rule_ids.len(), 3);
     assert_eq!(
         fixture()

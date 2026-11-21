@@ -80,6 +80,14 @@ pub enum NativeExtension {
     GithubClassicPatV1,
 }
 
+/// The built-in rule files, in composition order, that
+/// [`ConfigLoader::with_builtin_rules`] adds to the default rules.
+pub(crate) const BUILTIN_PACKS: [(&str, &str); 3] = [
+    ("rustleaks-extra-v1", EXTRA_RULES_V1),
+    ("rustleaks-providers-v1", PROVIDER_RULES_V1),
+    ("rustleaks-connections-v1", CONNECTION_RULES_V1),
+];
+
 /// Exact policy identity with configuration bytes omitted from diagnostics.
 ///
 /// Identity includes the policy and crate versions, the default
@@ -1312,12 +1320,6 @@ edges=[{id='github-pat',relation='full-match-window',window='0'}, {id='rustleaks
 mod builtin_pattern_checks {
     use super::*;
 
-    const ALL_PACKS: [(&str, &str); 3] = [
-        ("rustleaks-extra-v1", EXTRA_RULES_V1),
-        ("rustleaks-providers-v1", PROVIDER_RULES_V1),
-        ("rustleaks-connections-v1", CONNECTION_RULES_V1),
-    ];
-
     // Built-in rule text skips the temporary load-time NFA. This runs the
     // full check on all of it, so the skip cannot hide a pattern over a limit.
     #[test]
@@ -1330,7 +1332,7 @@ mod builtin_pattern_checks {
         assert_eq!(full_default.allowlists, default.allowlists);
 
         let mut policy = NativePolicy::builder();
-        for (id, contents) in ALL_PACKS {
+        for (id, contents) in BUILTIN_PACKS {
             policy = policy.with_pack(id, contents).unwrap();
         }
         let (full, full_identity) = policy
@@ -1369,5 +1371,42 @@ mod builtin_pattern_checks {
             .load_toml("[extend]\nuseDefault = true\n")
             .unwrap_err();
         assert!(extended.to_string().contains("working set"), "{extended:?}");
+    }
+
+    #[test]
+    fn an_extending_rule_replaces_a_builtin_bytes_regex() {
+        let pack = "[[rules]]\nid = \"rustleaks.bytes-sample\"\n\
+                    regex = { dialect = \"bytes-v1\", pattern = \"marker=([A-Z]{8})\" }\n\
+                    keywords = [\"marker=\"]\n";
+        let (base, _) = NativePolicy::builder()
+            .with_pack("bytes-sample-v1", pack)
+            .unwrap()
+            .compile()
+            .unwrap();
+        assert!(
+            base.rules["rustleaks.bytes-sample"]
+                .native_byte_matcher
+                .is_some()
+        );
+        let mut loader = ConfigLoader::new();
+        loader.builtin_rules_for_test(base);
+        let config = loader
+            .load_toml(
+                "[extend]\nuseDefault = true\n[[rules]]\nid = \"rustleaks.bytes-sample\"\n\
+                 regex = '''other=([a-z]{8})'''\nkeywords = [\"other=\"]\n",
+            )
+            .unwrap();
+        let rule = &config.rules["rustleaks.bytes-sample"];
+        assert!(rule.native_byte_matcher.is_none());
+        assert!(rule.regex_matcher.is_some());
+        let engine = crate::Engine::builder(config).build().unwrap();
+        let found = |input: &[u8]| {
+            engine
+                .scan_fragment(&Fragment::new(input), &ScanOptions::default())
+                .findings()
+                .len()
+        };
+        assert_eq!(found(b"other=abcdefgh"), 1);
+        assert_eq!(found(b"marker=ABCDEFGH"), 0);
     }
 }

@@ -59,11 +59,6 @@ operation_scm_link_bytes=33554432
 
 const USAGE: &str = "usage: perf fixtures --check <absolute-fixture-directory> [--cli <absolute-path>] [--profile <absolute-path>]";
 const DEFAULT_CLI: &str = "bazel-bin/crates/rustleaks-cli/rustleaks";
-const PACKS: [&str; 3] = [
-    "rustleaks-extra-v1",
-    "rustleaks-providers-v1",
-    "rustleaks-connections-v1",
-];
 const JUDGED_RULE: &str = "github-pat";
 const STATUS_PREFIX: &str = "rustleaks_scan_status";
 const PROFILE_LIMIT: u64 = 16 * 1024;
@@ -579,7 +574,6 @@ impl Scanner {
         command
             .arg("dir")
             .arg(target)
-            .args(PACKS.into_iter().flat_map(|pack| ["--native-pack", pack]))
             .arg("--complete-profile")
             .arg(&self.profile)
             .args([

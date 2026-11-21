@@ -60,11 +60,6 @@ pub(crate) const PLATFORMS: &[&str] = &[
     "bitbucket",
     "none",
 ];
-pub(crate) const NATIVE_PACKS: &[&str] = &[
-    "rustleaks-extra-v1",
-    "rustleaks-providers-v1",
-    "rustleaks-connections-v1",
-];
 
 /// Flag groups in the order that help prints them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -217,18 +212,6 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         &[
             "Use only these rules. Separate rule IDs with commas.",
             "You can repeat this flag.",
-        ],
-    )),
-    repeatable(flag(
-        "native-pack",
-        None,
-        Value::Choice("id", NATIVE_PACKS),
-        Group::Configuration,
-        &[
-            "Add a built-in rule pack to the default configuration.",
-            "Packs: rustleaks-extra-v1, rustleaks-providers-v1 and",
-            "rustleaks-connections-v1. Repeat the flag to add more packs.",
-            "This works only with the default configuration.",
         ],
     )),
     flag(
@@ -754,9 +737,6 @@ mod tests {
     fn choice_lists_are_accepted_by_the_parser() {
         for mode in BASE64_MODES {
             assert!(parses_as_scan("stdin", &[format!("--base64-mode={mode}")]));
-        }
-        for pack in NATIVE_PACKS {
-            assert!(parses_as_scan("stdin", &[format!("--native-pack={pack}")]));
         }
         for platform in PLATFORMS {
             assert!(parses_as_scan("git", &[format!("--platform={platform}")]));

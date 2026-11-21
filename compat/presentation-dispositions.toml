@@ -74,11 +74,6 @@ Configuration flags:
       --enable-rule <ids>
           Use only these rules. Separate rule IDs with commas.
           You can repeat this flag.
-      --native-pack <id>
-          Add a built-in rule pack to the default configuration.
-          Packs: rustleaks-extra-v1, rustleaks-providers-v1 and
-          rustleaks-connections-v1. Repeat the flag to add more packs.
-          This works only with the default configuration.
 
 Suppression flags:
   -b, --baseline-path <path>
@@ -216,11 +211,6 @@ Configuration flags:
       --enable-rule <ids>
           Use only these rules. Separate rule IDs with commas.
           You can repeat this flag.
-      --native-pack <id>
-          Add a built-in rule pack to the default configuration.
-          Packs: rustleaks-extra-v1, rustleaks-providers-v1 and
-          rustleaks-connections-v1. Repeat the flag to add more packs.
-          This works only with the default configuration.
 
 Suppression flags:
   -b, --baseline-path <path>

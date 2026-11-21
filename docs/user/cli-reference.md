@@ -169,8 +169,8 @@ Other rules still apply to each selected file:
 - If no path allowlist matches a `.git` folder, for example with a custom
   configuration, Rustleaks scans the whole folder with or without this flag.
 
-With `--native-pack rustleaks-connections-v1`, the Git credential URL rules
-for `.git/config` and `.git-credentials` paths can then report findings.
+The built-in Git credential URL rules can then report findings in
+`.git/config` and `.git-credentials`.
 
 The flag works only with `dir`. Gitleaks does not scan these files, so a scan
 with this flag can report findings that Gitleaks does not.
@@ -228,7 +228,6 @@ The `git`, `dir` and `stdin` commands accept every flag in this section. The
 | --- | --- | --- | --- | --- |
 | `--config` | `-c` | Path | None | Read the configuration from this file. See [Configuration order](#configuration-order). |
 | `--enable-rule` | | Rule IDs | All rules | Use only these rules. Separate IDs with commas or repeat the flag. An unknown ID is an error. See [Configuration](configuration.md#choosing-rules-with---enable-rule). |
-| `--native-pack` | | `rustleaks-extra-v1`, `rustleaks-providers-v1` or `rustleaks-connections-v1` | None | Add a built-in rule pack to the default rules. Repeat the flag to add more packs. Works only with the default configuration. See [Native rule packs](native-rule-packs.md). |
 
 ### Suppression
 

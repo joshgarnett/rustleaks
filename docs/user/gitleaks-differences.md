@@ -106,8 +106,6 @@ order of configuration sources.
 
 ### Added in Rustleaks
 
-- `--native-pack`, which adds optional rule packs. See [Native rule
-  packs](native-rule-packs.md).
 - `--base64-mode extended`, which finds more Base64 text. See
   [Decoding](configuration.md#decoding).
 - `--complete-profile`, which fails a scan that did not cover all of its
@@ -188,12 +186,25 @@ in full gives the same findings. These points differ:
   skips files whose content starts like a binary format. See [Files that are
   skipped](cli-reference.md#files-that-are-skipped).
 
+### Rustleaks rules
+
+When no configuration is selected, and in a configuration with
+`[extend] useDefault = true`, Rustleaks scans with the default rules below
+and with the Rustleaks rules in [Built-in rules](built-in-rules.md). The
+Rustleaks rule IDs start with `rustleaks.`. Gitleaks has no such rules, so
+Rustleaks can report more findings than Gitleaks for the same input, and a
+scan that Gitleaks passes can exit with code 1. Baselines and ignore files
+from Gitleaks do not cover these findings.
+
+To scan with only the Gitleaks-derived rules, use a configuration that does
+not extend the default, such as a copy of
+[`gitleaks.toml`](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/gitleaks.toml).
+A configuration that does not extend the default rules is used as written.
+
 ### Default rules
 
-The default rules, used when no configuration is selected and by a
-configuration with `[extend] useDefault = true`, are the Gitleaks default
-configuration at the pin with these changes. They have 222 rules. A
-configuration that does not extend the default rules is used as written.
+The default rules are the Gitleaks default configuration at the pin with
+these changes. They have 222 rules.
 
 - The global `[allowlist]` table is written as an `[[allowlists]]` entry,
   which has the same meaning.
@@ -223,8 +234,8 @@ as your configuration.
 
 ## Features that Gitleaks does not have
 
-- [Native rule packs](native-rule-packs.md): 320 extra rules, including helper
-  rules, for service provider tokens, connection strings and other secrets.
+- [Built-in rules](built-in-rules.md): Rustleaks rules for service provider
+  tokens, connection strings and other secrets, used with the default rules.
 - [Complete scanning](complete-scanning.md): a scan that fails with exit code 2
   unless it scanned all of its input within the limits you set.
 - [Git metadata](cli-reference.md#git-metadata): an opt-in `dir` scan of the

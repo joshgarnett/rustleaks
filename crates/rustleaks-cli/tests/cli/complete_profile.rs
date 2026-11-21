@@ -4,7 +4,7 @@ use std::io::{self, Cursor, Read};
 const PROFILE: &str = "version=1\ntarget_bytes=65536\noperation_original_bytes=1048576\noperation_fragments=100\noperation_issues=10\nworkers=1\nqueue_capacity=1\nfragment_decoded_bytes=1048576\noperation_decoded_bytes=1048576\nfragment_work_units=1000000\noperation_work_units=1000000\nfragment_finding_records=100\noperation_finding_records=100\nfragment_finding_payload_bytes=1048576\noperation_finding_payload_bytes=1048576\nfragment_collected_spans=1000\noperation_collected_spans=1000\nfragment_normalization_bytes=1048576\noperation_normalization_bytes=1048576\narchive_entries=100\narchive_member_bytes=65536\narchive_total_bytes=1048576\narchive_spool_bytes=65536\ngit_patch_bytes=1048576\ngit_patch_lines=10000\ngit_stderr_bytes=65536\ngit_blob_bytes=65536\ngit_metadata_bytes=65536\ngit_path_bytes=4096\ngit_files=100\ngit_hunks=100\nscm_link_bytes=4096\noperation_scm_link_bytes=8192\n";
 
 #[test]
-fn explicit_native_packs_are_independent_of_complete_target_selection() {
+fn builtin_rules_are_independent_of_complete_target_selection() {
     let fixture = Fixture::new();
     profile(&fixture, &[]);
     let value = format!(
@@ -17,8 +17,6 @@ fn explicit_native_packs_are_independent_of_complete_target_selection() {
     );
     fixture.write("secret.txt", &value);
     let common = [
-        "--native-pack",
-        "rustleaks-providers-v1",
         "--enable-rule",
         "rustleaks.dockerhub-personal-access-token",
         "--complete-profile",
@@ -64,18 +62,6 @@ fn explicit_native_packs_are_independent_of_complete_target_selection() {
             b"rustleaks.dockerhub-personal-access-token"
         );
     }
-    let conflict = command(&fixture.0)
-        .env("RUSTLEAKS_CONFIG_TOML", no_match_config())
-        .args(["stdin"])
-        .args(common)
-        .output()
-        .unwrap();
-    assert_eq!(conflict.status.code(), Some(2));
-    assert!(conflict.stdout.is_empty());
-    assert!(
-        String::from_utf8_lossy(&conflict.stderr)
-            .contains("works only with the default configuration")
-    );
 }
 
 fn profile(fixture: &Fixture, replacements: &[(&str, usize)]) {

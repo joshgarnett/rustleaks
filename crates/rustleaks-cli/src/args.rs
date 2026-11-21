@@ -36,7 +36,6 @@ pub(crate) struct Invocation {
 )]
 pub(crate) struct Options {
     pub config: Option<PathBuf>,
-    pub native_packs: Vec<String>,
     pub complete_profile: Option<PathBuf>,
     /// Detection threads from `--jobs`. `None` leaves the choice to the
     /// complete profile or the number of CPUs that the process may use, up
@@ -72,7 +71,6 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             config: None,
-            native_packs: Vec::new(),
             complete_profile: None,
             jobs: None,
             exit_code: 1,
@@ -353,23 +351,6 @@ fn meta_action(meta: Topic, positionals: &[PathBuf]) -> Result<Action, ParseErro
     }
 }
 
-fn append_native_pack(id: &str, options: &mut Options) -> Result<(), ParseError> {
-    const MAX_PACKS: usize = rustleaks_core::native::NativePolicy::MAX_PACKS;
-    if options.native_packs.len() == MAX_PACKS {
-        return Err(ParseError::other(format!(
-            "--native-pack exceeds the {MAX_PACKS}-item safety limit"
-        )));
-    }
-    if id.is_empty() {
-        return Err(ParseError::other("--native-pack needs a rule pack name"));
-    }
-    options.native_packs.try_reserve(1).map_err(|error| {
-        ParseError::other(format!("not enough memory for --native-pack: {error}"))
-    })?;
-    options.native_packs.push(copy_text(id)?);
-    Ok(())
-}
-
 fn append_enabled_rules(value: &str, options: &mut Options) -> Result<(), ParseError> {
     const MAX_ENABLED_RULES: usize = 4_096;
     for rule in value.split(',') {
@@ -399,7 +380,6 @@ fn parse_long(
         .map_or((body, None), |(name, value)| (name, Some(value)));
     match name {
         "config" => options.config = nonempty_path(path_value(name, attached, arguments, index)?),
-        "native-pack" => append_native_pack(value(name, attached, arguments, index)?, options)?,
         "complete-profile" => {
             let path = path_value(name, attached, arguments, index)?;
             if path.as_os_str().is_empty() {
@@ -882,7 +862,6 @@ mod tests {
     const ACCEPTED_FLAGS: &[(&str, &[&str])] = &[
         ("--config=x", SCAN),
         ("-c x", SCAN),
-        ("--native-pack=rustleaks-extra-v1", SCAN),
         ("--complete-profile=x", SCAN),
         ("--jobs=2", SCAN),
         ("-j 2", SCAN),
@@ -1113,37 +1092,5 @@ mod tests {
         };
         assert_eq!(invocation.source, PathBuf::from(source));
         assert_eq!(invocation.options.config, Some(PathBuf::from(config)));
-    }
-
-    #[test]
-    fn native_packs_are_explicit_ordered_repeatable_and_bounded() {
-        let Action::Scan(invocation) = parse(
-            [
-                "stdin",
-                "--native-pack",
-                "rustleaks-extra-v1",
-                "--native-pack=rustleaks-providers-v1",
-            ]
-            .map(OsString::from),
-        )
-        .unwrap() else {
-            panic!("expected scan");
-        };
-        assert_eq!(
-            invocation.options.native_packs,
-            ["rustleaks-extra-v1", "rustleaks-providers-v1"]
-        );
-        assert!(invocation.options.complete_profile.is_none());
-        let Action::Scan(legacy) = parse([OsString::from("stdin")]).unwrap() else {
-            panic!("expected scan");
-        };
-        assert!(legacy.options.native_packs.is_empty());
-        for args in [
-            vec!["stdin", "--native-pack"],
-            vec!["stdin", "--native-pack="],
-            [vec!["stdin"], vec!["--native-pack=rustleaks-extra-v1"; 33]].concat(),
-        ] {
-            assert!(parse(args.into_iter().map(OsString::from)).is_err());
-        }
     }
 }

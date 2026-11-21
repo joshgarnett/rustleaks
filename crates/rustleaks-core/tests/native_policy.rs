@@ -2502,3 +2502,119 @@ skipReport=true
         ));
     }
 }
+
+// A synthetic value of `prefix` and `length` mixed ASCII letters and digits,
+// built at run time so that no token-shaped literal is in the source.
+fn synthetic(prefix: &str, length: usize) -> String {
+    let body: String = "Q7m2Z9v4L1c8R5s0N6b3X"
+        .chars()
+        .cycle()
+        .take(length)
+        .collect();
+    format!("{prefix}{body}")
+}
+
+fn groq() -> String {
+    synthetic("gsk_", 52)
+}
+
+fn rule_ids_found(config: rustleaks_core::config::CompiledConfig, input: &str) -> Vec<String> {
+    let engine = Engine::builder(config).build().unwrap();
+    engine
+        .scan_fragment(&Fragment::new(input.as_bytes()), &ScanOptions::default())
+        .findings()
+        .iter()
+        .map(|finding| finding.rule_id().as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn builtin_loader() -> ConfigLoader {
+    ConfigLoader::new().with_builtin_rules()
+}
+
+#[test]
+fn builtin_rules_are_the_default_rules_plus_every_rule_file() {
+    let line = format!("{}\n", groq());
+
+    let gitleaks = ConfigLoader::new().load_default().unwrap();
+    let builtin = builtin_loader().load_default().unwrap();
+    let (composed, _) = NativePolicy::builder()
+        .with_pack("rustleaks-extra-v1", rustleaks_core::native::EXTRA_RULES_V1)
+        .unwrap()
+        .with_pack(
+            "rustleaks-providers-v1",
+            rustleaks_core::native::PROVIDER_RULES_V1,
+        )
+        .unwrap()
+        .with_pack(
+            "rustleaks-connections-v1",
+            rustleaks_core::native::CONNECTION_RULES_V1,
+        )
+        .unwrap()
+        .compile()
+        .unwrap();
+    assert_eq!(builtin.ordered_rule_ids(), composed.ordered_rule_ids());
+    for id in gitleaks.ordered_rule_ids() {
+        assert!(builtin.rule(id).is_some(), "{id}");
+    }
+    assert!(builtin.rule("rustleaks.groq-api-key").is_some());
+    assert!(gitleaks.rule("rustleaks.groq-api-key").is_none());
+
+    assert_eq!(rule_ids_found(builtin, &line), ["rustleaks.groq-api-key"]);
+    assert!(rule_ids_found(gitleaks, &line).is_empty());
+}
+
+#[test]
+fn extending_the_default_includes_builtin_rules_only_when_selected() {
+    let line = format!("{}\n", groq());
+    let extend = "[extend]\nuseDefault = true\n";
+    let builtin = builtin_loader().load_toml(extend).unwrap();
+    assert_eq!(rule_ids_found(builtin, &line), ["rustleaks.groq-api-key"]);
+    let gitleaks = ConfigLoader::new().load_toml(extend).unwrap();
+    assert!(rule_ids_found(gitleaks, &line).is_empty());
+
+    let disabled = builtin_loader()
+        .load_toml("[extend]\nuseDefault = true\ndisabledRules = [\"rustleaks.groq-api-key\"]\n")
+        .unwrap();
+    assert!(disabled.rule("rustleaks.groq-api-key").is_none());
+    assert!(rule_ids_found(disabled, &line).is_empty());
+
+    // A configuration without an extension gets only its own rules.
+    let own = builtin_loader()
+        .load_toml("[[rules]]\nid = \"own\"\nregex = '''own=([a-z]{8})'''\n")
+        .unwrap();
+    assert_eq!(own.ordered_rule_ids(), ["own"]);
+}
+
+#[test]
+fn replaced_default_text_ignores_the_builtin_rules() {
+    let text = "[[rules]]\nid = \"only\"\nregex = '''only=([a-z]{8})'''\n";
+    let loader = ConfigLoader::new()
+        .with_builtin_rules()
+        .with_default_config(text);
+    assert_eq!(loader.load_default().unwrap().ordered_rule_ids(), ["only"]);
+    let extended = loader.load_toml("[extend]\nuseDefault = true\n").unwrap();
+    assert_eq!(extended.ordered_rule_ids(), ["only"]);
+}
+
+#[test]
+fn an_extending_rule_replaces_a_builtin_entropy_predicate() {
+    // `rustleaks.dockerhub-personal-access-token` has a structured byte
+    // entropy predicate. A Gitleaks-format regex and entropy in an extending
+    // config replace the built-in matcher and predicate. Keywords are merged,
+    // so the override adds its own.
+    let id = "rustleaks.dockerhub-personal-access-token";
+    let builtin = builtin_loader().load_default().unwrap();
+    assert!(builtin.rule(id).unwrap().native_entropy().is_some());
+    let config = builtin_loader()
+        .load_toml(&format!(
+            "[extend]\nuseDefault = true\n[[rules]]\nid = \"{id}\"\n\
+             regex = \'\'\'docker=([a-z]{{8}})\'\'\'\nentropy = 1.0\nkeywords = [\"docker=\"]\n"
+        ))
+        .unwrap();
+    assert!(config.rule(id).unwrap().native_entropy().is_none());
+    assert_eq!(rule_ids_found(config.clone(), "docker=abcdefgh\n"), [id]);
+    let original = format!("{}\n", synthetic("dckr_pat_", 27));
+    assert!(rule_ids_found(config, &original).is_empty());
+    assert_eq!(rule_ids_found(builtin, &original), [id]);
+}

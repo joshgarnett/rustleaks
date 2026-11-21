@@ -205,7 +205,7 @@ the [command reference](cli-reference.md) for every command and flag.
   baselines.
 - [Reports](reports.md): JSON, CSV, JUnit, SARIF and template reports.
 - [Using Rustleaks in CI](ci.md): GitHub Actions and pre-commit hooks.
-- [Native rule packs](native-rule-packs.md): optional extra rules.
+- [Built-in rules](built-in-rules.md): which rules a scan uses.
 - [Complete scanning](complete-scanning.md): scans that must cover every byte
   or fail.
 - [Resource limits](resource-limits.md): built-in limits and what happens when

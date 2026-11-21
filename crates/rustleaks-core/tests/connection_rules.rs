@@ -1982,3 +1982,824 @@ fn global_allowlist_suppresses_slack_token_containing_false() {
         }
     }
 }
+
+// Rules for password-first semicolon forms, Oracle and SQLite JDBC URLs and
+// more URI schemes. Expected ranges follow the literal parts of each input.
+
+const NEW_CONNECTION_IDS: [&str; 5] = [
+    PASSWORD_FIRST,
+    JDBC_ORACLE,
+    JDBC_QUERY_ORACLE_SQLITE,
+    OTHER_DATABASE_URI,
+    OTHER_SERVICE_URI,
+];
+const PASSWORD_FIRST: &str = "rustleaks.connection-string.password.password-first";
+const JDBC_ORACLE: &str = "rustleaks.connection-string.password.jdbc-oracle";
+const JDBC_QUERY_ORACLE_SQLITE: &str =
+    "rustleaks.connection-string.password.jdbc-query-oracle-sqlite";
+const OTHER_DATABASE_URI: &str = "rustleaks.connection-string.password.other-database-uri";
+const OTHER_SERVICE_URI: &str = "rustleaks.other-service-uri-password";
+
+/// Only the added rules, with the default global allowlists.
+fn new_rules_engine() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let (config, _) = NativePolicy::builder()
+            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
+            .unwrap()
+            .compile()
+            .unwrap();
+        Engine::builder(config.select_rules(NEW_CONNECTION_IDS).unwrap())
+            .build()
+            .unwrap()
+    })
+}
+
+/// All three packs, with a connection pack that lacks the added rules.
+fn all_rules_without_new_rules() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let mut value: toml::Value = toml::from_str(CONNECTION_RULES_V1).unwrap();
+        let rules = value["rules"].as_array_mut().unwrap();
+        let count = rules.len();
+        rules.retain(|rule| !NEW_CONNECTION_IDS.contains(&rule["id"].as_str().unwrap()));
+        assert_eq!(rules.len() + NEW_CONNECTION_IDS.len(), count);
+        let connections = toml::to_string(&value).unwrap();
+        NativePolicy::builder()
+            .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
+            .unwrap()
+            .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
+            .unwrap()
+            .with_pack("rustleaks-connections-v1", &connections)
+            .unwrap()
+            .build()
+            .unwrap()
+            .engine()
+            .clone()
+    })
+}
+
+/// One input written as `{lead}{before}{secret}{after}`. The match starts
+/// after `lead` and ends after the first `matched_after` bytes of `after`.
+struct Case<'a> {
+    lead: &'a str,
+    before: &'a str,
+    secret: &'a str,
+    after: &'a str,
+    matched_after: &'a str,
+}
+
+impl<'a> Case<'a> {
+    /// A case whose match is the whole input.
+    const fn whole(before: &'a str, secret: &'a str, after: &'a str) -> Self {
+        Self {
+            lead: "",
+            before,
+            secret,
+            after,
+            matched_after: after,
+        }
+    }
+
+    fn input(&self) -> String {
+        format!("{}{}{}{}", self.lead, self.before, self.secret, self.after)
+    }
+
+    /// Checks that the engine gives exactly this one finding from `rule`.
+    fn assert_one(&self, engine: &Engine, rule: &str) {
+        assert!(self.after.starts_with(self.matched_after));
+        let input = self.input();
+        let findings = scan(engine, input.as_bytes());
+        assert_eq!(findings.len(), 1, "{input:?}");
+        let finding = &findings[0];
+        let secret_start = self.lead.len() + self.before.len();
+        let match_end = secret_start + self.secret.len() + self.matched_after.len();
+        assert_eq!(finding.rule_id().as_bytes(), rule.as_bytes(), "{input:?}");
+        assert_eq!(
+            finding.secret().as_bytes(),
+            self.secret.as_bytes(),
+            "{input:?}"
+        );
+        assert_eq!(
+            finding.secret_range(),
+            range(secret_start, secret_start + self.secret.len()),
+            "{input:?}"
+        );
+        assert_eq!(
+            finding.match_range(),
+            range(self.lead.len(), match_end),
+            "{input:?}"
+        );
+    }
+}
+
+fn assert_no_new_finding(input: &str) {
+    assert!(
+        scan(new_rules_engine(), input.as_bytes()).is_empty(),
+        "{input:?}"
+    );
+}
+
+fn scan_path(engine: &Engine, input: &str, path: &str) -> Vec<Finding> {
+    let fragment = Fragment::builder(input.as_bytes().to_vec())
+        .file_path(path)
+        .build();
+    let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
+    assert!(outcome.is_complete());
+    outcome.findings().to_vec()
+}
+
+#[test]
+fn issue_lines_each_give_one_connection_finding_under_all_rules() {
+    for (rule, case) in [
+        (
+            PASSWORD_FIRST,
+            Case::whole("Pwd=", "Winter2026", ";Server=db.corp.internal;"),
+        ),
+        (
+            PASSWORD_FIRST,
+            Case::whole("Password=", "Winter2026", ";Data Source=db.corp.internal;"),
+        ),
+        (
+            JDBC_ORACLE,
+            Case::whole(
+                "jdbc:oracle:thin:app/",
+                "Q7vx9Lm2Rk4p",
+                "@db.corp.internal:1521/sales",
+            ),
+        ),
+        (
+            JDBC_QUERY_ORACLE_SQLITE,
+            Case::whole(
+                "jdbc:oracle:thin:@db.corp.internal:1521/sales?user=app&password=",
+                "Winter2026",
+                "",
+            ),
+        ),
+        (
+            JDBC_QUERY_ORACLE_SQLITE,
+            Case::whole("jdbc:sqlite:file.db?password=", "Winter2026", ""),
+        ),
+        (
+            OTHER_DATABASE_URI,
+            Case::whole(
+                "mssql://app:",
+                "Q7vx9Lm2Rk4p",
+                "@db.corp.internal:1433/sales",
+            ),
+        ),
+        (
+            OTHER_DATABASE_URI,
+            Case::whole(
+                "sqlserver://app:",
+                "Q7vx9Lm2Rk4p",
+                "@db.corp.internal:1433/sales",
+            ),
+        ),
+        (
+            OTHER_DATABASE_URI,
+            Case::whole(
+                "oracle://app:",
+                "Q7vx9Lm2Rk4p",
+                "@db.corp.internal:1521/sales",
+            ),
+        ),
+        (
+            OTHER_DATABASE_URI,
+            Case::whole(
+                "clickhouse://app:",
+                "Q7vx9Lm2Rk4p",
+                "@db.corp.internal:9000/sales",
+            ),
+        ),
+        (
+            OTHER_SERVICE_URI,
+            Case::whole("nats://app:", "Q7vx9Lm2Rk4p", "@bus.corp.internal:4222"),
+        ),
+    ] {
+        case.assert_one(all_rules(), rule);
+        // No connection rule found these lines before the added rules.
+        let input = case.input();
+        assert!(
+            scan(all_rules_without_new_rules(), input.as_bytes())
+                .iter()
+                .all(|finding| !finding.rule_id().as_bytes().starts_with(b"rustleaks.conn")),
+            "{input:?}"
+        );
+    }
+    // HTTPS credential URLs stay outside the pack.
+    assert!(
+        scan(
+            all_rules(),
+            b"https://app:Q7vx9Lm2Rk4p@files.corp.internal/data"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn password_first_forms_keep_exact_secret_and_match_ranges() {
+    for case in [
+        Case::whole("Pwd=", "Winter2026", ";Server=db.corp.internal;"),
+        Case::whole("PASSWORD = ", "Winter2026", " ; HOST = db.corp.internal ;"),
+        Case::whole(
+            "pWd=\"",
+            "Win;ter 2026",
+            "\";Uid=app;Database=sales;Host=db.corp.internal;",
+        ),
+        Case::whole(
+            "Password='",
+            "Win\"ter2026",
+            "';Data \t Source=db.corp.internal;",
+        ),
+        Case::whole("Pwd={", "Win;ter}}2026", "};DSN=sales;"),
+        Case::whole("Pwd=", "%57inter2026", ";Server=db.corp.internal"),
+        // A quote after the host is consumed.
+        Case::whole("Password=", "Winter2026", ";Server=db.corp.internal\""),
+        // A line feed after the host is consumed and then trimmed.
+        Case {
+            lead: "",
+            before: "Pwd=",
+            secret: "Winter2026",
+            after: ";Server=db.corp.internal\nnext",
+            matched_after: ";Server=db.corp.internal",
+        },
+        // A listed byte before the key is consumed.
+        Case {
+            lead: "connectionString=",
+            before: "\"Password=",
+            secret: "Winter2026",
+            after: ";Server=db.corp.internal\"",
+            matched_after: ";Server=db.corp.internal\"",
+        },
+        Case {
+            lead: "Driver={ODBC}",
+            before: ";Pwd=",
+            secret: "Winter2026",
+            after: ";Server=db.corp.internal;Database=sales;",
+            matched_after: ";Server=db.corp.internal;",
+        },
+    ] {
+        case.assert_one(new_rules_engine(), PASSWORD_FIRST);
+    }
+    // Native locations keep the preceding-LF byte-column origin.
+    let input = "p\nx=Pwd=Winter2026;Server=db.corp.internal;";
+    let findings = scan(new_rules_engine(), input.as_bytes());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].secret_range(), range(8, 18));
+    assert_eq!(findings[0].match_range(), range(3, input.len()));
+    assert_eq!(
+        findings[0].location(),
+        Location::new(1, 1, 3, input.len() - 1).unwrap()
+    );
+}
+
+#[test]
+fn password_first_rejects_placeholders_missing_hosts_and_out_of_bound_values() {
+    for password in [
+        "${DB_PASSWORD}",
+        "$DB_PASSWORD",
+        "%DB_PASSWORD%",
+        "<password>",
+        "[DB_PASSWORD]",
+        "your_password",
+        "changeme",
+        "REDACTED",
+        "****",
+        "xxxxxxxx",
+        "process.env.DB",
+        "config.db",
+    ] {
+        assert_no_new_finding(&format!("Pwd={password};Server=db.corp.internal;"));
+        assert_no_new_finding(&format!("Pwd=\"{password}\";Server=db.corp.internal;"));
+    }
+    for input in [
+        "Pwd=Winter2026;",
+        "Pwd=Winter2026",
+        "Pwd=Winter2026;Database=sales;",
+        "Pwd=Winter2026;Server=;",
+        "Pwd=Winter2026;Server=\"db.corp.internal\";",
+        "Pwd=Winter2026;\nServer=db.corp.internal;",
+        "Pwd=Winter2026;ProxyServer=db.corp.internal;",
+        "Pwd=;Server=db.corp.internal;",
+        "Pwd=\"\";Server=db.corp.internal;",
+        "Pwd=Win;Server=db.corp.internal;",
+        "Pwd:Winter2026;Server=db.corp.internal;",
+        "DbPwd=Winter2026;Server=db.corp.internal;",
+        "Pwd=Winter2026 Server=db.corp.internal;",
+        "Pwd=\"Winter2026;Server=db.corp.internal;",
+    ] {
+        assert_no_new_finding(input);
+    }
+    for (length, accepted) in [(4, true), (128, true), (3, false), (129, false)] {
+        // A final distinct byte avoids the inherited repeated-letter allowlist.
+        let password = format!("{}7", "Q".repeat(length - 1));
+        let input = format!("Pwd={password};Server=db.corp.internal;");
+        assert_eq!(
+            scan(new_rules_engine(), input.as_bytes()).len(),
+            usize::from(accepted),
+            "{length}"
+        );
+    }
+    for (host, accepted) in [(128, true), (129, false)] {
+        let input = format!("Pwd=Winter2026;Server={};", "d".repeat(host));
+        assert_eq!(
+            scan(new_rules_engine(), input.as_bytes()).len(),
+            usize::from(accepted),
+            "{host}"
+        );
+    }
+    for (middle, accepted) in [(200, true), (201, false)] {
+        let input = format!(
+            "Pwd=Winter2026;A={};Server=db.corp.internal;",
+            "x".repeat(middle - 2)
+        );
+        assert_eq!(
+            scan(new_rules_engine(), input.as_bytes()).len(),
+            usize::from(accepted),
+            "{middle}"
+        );
+    }
+}
+
+#[test]
+fn password_first_leaves_host_first_passwords_to_the_host_first_rules() {
+    for (input, expected) in [
+        // A password between two host properties gives only the host-first
+        // finding.
+        (
+            "Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;",
+            vec![("unquoted", "R7!q", 13), ("unquoted", "T8!w", 31)],
+        ),
+        (
+            "Server=a;Pwd=Winter2026;Host=b;",
+            vec![("unquoted", "Winter2026", 13)],
+        ),
+        (
+            "Server=a;Pwd=\"Winter2026\";Host=b;",
+            vec![("double-quoted", "Winter2026", 14)],
+        ),
+        (
+            "Server=a;Pwd={Winter2026};Host=b;",
+            vec![("odbc-braced", "Winter2026", 14)],
+        ),
+        (
+            "jdbc:sqlserver://h;password=Winter2026;Server=y;",
+            vec![("unquoted", "Winter2026", 28)],
+        ),
+        // A host-first connection with no later host property does not hide
+        // a password-first connection before it.
+        (
+            "Pwd=Winter2026;Server=db.corp.internal;Pwd=Summer2027;",
+            vec![
+                ("password-first", "Winter2026", 4),
+                ("unquoted", "Summer2027", 43),
+            ],
+        ),
+        // Quotes end a connection, so two JSON values are separate.
+        (
+            "{\"A\":\"Server=a;Pwd=Autumn2025;\",\"B\":\"Pwd=Winter2026;Server=b;\"}",
+            vec![
+                ("unquoted", "Autumn2025", 19),
+                ("password-first", "Winter2026", 41),
+            ],
+        ),
+        // The exclusion reads only the line of the match.
+        (
+            "Host=one;Pwd=R7!q;Host=two;\nPwd=T8!w;Server=three;",
+            vec![("unquoted", "R7!q", 13), ("password-first", "T8!w", 32)],
+        ),
+        (
+            "Pwd=T8!w;Server=three\nHost=one;Pwd=R7!q;Host=two;",
+            vec![("password-first", "T8!w", 4), ("unquoted", "R7!q", 35)],
+        ),
+    ] {
+        let mut expected = expected
+            .into_iter()
+            .map(|(suffix, secret, start)| exact(&format!("{PREFIX}{suffix}"), secret, start))
+            .collect::<Vec<_>>();
+        expected.sort();
+        assert_eq!(
+            outcomes(all_rules(), input, &ScanOptions::default()),
+            expected,
+            "{input:?}"
+        );
+    }
+}
+
+#[test]
+fn new_rules_take_over_generic_findings_for_the_same_password() {
+    let secret = "Q7m2Z9v4L1c8R5s0N6b3X";
+    for (rule, before, after) in [
+        (PASSWORD_FIRST, "Password=", ";Server=db.corp.internal;"),
+        (
+            JDBC_QUERY_ORACLE_SQLITE,
+            "jdbc:oracle:thin:@db.corp.internal:1521/sales?user=app&password=",
+            "",
+        ),
+        (
+            JDBC_QUERY_ORACLE_SQLITE,
+            "jdbc:sqlite:file.db?password=",
+            "",
+        ),
+    ] {
+        let input = format!("{before}{secret}{after}");
+        assert!(
+            outcomes(default_rules(), &input, &ScanOptions::default()).contains(&exact(
+                "generic-api-key",
+                secret,
+                before.len()
+            )),
+            "{input:?}"
+        );
+        assert_eq!(
+            outcomes(all_rules(), &input, &ScanOptions::default()),
+            vec![exact(rule, secret, before.len())],
+            "{input:?}"
+        );
+    }
+}
+
+#[test]
+fn jdbc_oracle_user_password_forms_keep_exact_ranges() {
+    for case in [
+        Case::whole(
+            "jdbc:oracle:thin:app/",
+            "Winter2026",
+            "@db.corp.internal:1521/sales",
+        ),
+        Case::whole("JDBC:ORACLE:OCI:app/", "Winter2026", "@sales_tns"),
+        Case::whole(
+            "jdbc:oracle:thin:c##app/",
+            "W!n%74er:2026",
+            "@//db.corp.internal:1521/sales.corp",
+        ),
+        Case::whole(
+            "jdbc:oracle:thin:app/",
+            "Winter2026",
+            "@db.corp.internal:1521:orcl",
+        ),
+        Case::whole(
+            "jdbc:oracle:thin:app/",
+            "Winter2026",
+            "@[2001:db8::1]:1521/sales",
+        ),
+        Case::whole("jdbc:oracle:thin:app/", "7", "@db.corp.internal"),
+        // A descriptor ends the match after its first key.
+        Case {
+            lead: "",
+            before: "jdbc:oracle:thin:app/",
+            secret: "Winter2026",
+            after: "@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db.corp.internal)))",
+            matched_after: "@(DESCRIPTION=",
+        },
+        // A closing quote is consumed; the text after it is not.
+        Case {
+            lead: "url=\"",
+            before: "jdbc:oracle:thin:app/",
+            secret: "Winter2026",
+            after: "@db.corp.internal\" next",
+            matched_after: "@db.corp.internal\"",
+        },
+    ] {
+        case.assert_one(new_rules_engine(), JDBC_ORACLE);
+    }
+}
+
+#[test]
+fn jdbc_oracle_rejects_examples_placeholders_and_missing_parts() {
+    for input in [
+        "jdbc:oracle:thin:scott/tiger@db.corp.internal:1521:orcl",
+        "jdbc:oracle:thin:user/password@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:test1/test1@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/Winter2026@db.example.com:1521/sales",
+        "jdbc:oracle:thin:app/Winter2026@example:1521/sales",
+        "jdbc:oracle:thin:app/Winter2026@//example.org/sales",
+        "jdbc:oracle:thin:app/${DB_PASSWORD}@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/{{db_password}}@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/<password>@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/$DB_PASSWORD@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/%DB_PASSWORD%@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/****@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/changeme@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/your_password@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/aaaa@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:/Winter2026@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app/Winter2026@",
+        "jdbc:oracle:thin:app/Winter2026@ db.corp.internal",
+        "jdbc:oracle:thin:app/Winter2026@-db.corp.internal",
+        "jdbc:oracle:thin:@db.corp.internal:1521/sales",
+        "jdbc:oracle:thin:app@db.corp.internal:1521/sales",
+        "xjdbc:oracle:thin:app/Winter2026@db.corp.internal:1521/sales",
+        "jdbc:oracle:kprb:app/Winter2026@db.corp.internal:1521/sales",
+    ] {
+        assert_no_new_finding(input);
+    }
+}
+
+#[test]
+fn jdbc_oracle_and_sqlite_query_passwords_keep_exact_ranges() {
+    for case in [
+        Case {
+            lead: "",
+            before: "jdbc:oracle:thin:@db.corp.internal:1521/sales?user=app&password=",
+            secret: "Winter2026",
+            after: "&ssl=true",
+            matched_after: "&",
+        },
+        Case::whole(
+            "jdbc:oracle:thin:@//db.corp.internal:1521/sales?password=",
+            "Winter2026",
+            "",
+        ),
+        Case::whole(
+            "JDBC:ORACLE:OCI:@sales_tns?user=app&amp;password=",
+            "Winter2026",
+            "",
+        ),
+        Case::whole("jdbc:sqlite:file.db?password=", "W!n%74er:2026", ""),
+        Case {
+            lead: "",
+            before: "jdbc:sqlite:/var/data/app.db?cipher=sqlcipher&password=",
+            secret: "Winter2026",
+            after: "&legacy=4",
+            matched_after: "&",
+        },
+        Case::whole("jdbc:sqlite:C:\\data\\app.db?password=", "Winter2026", ""),
+        Case {
+            lead: "",
+            before: "jdbc:sqlite::memory:?password=",
+            secret: "Winter2026",
+            after: " next",
+            matched_after: " ",
+        },
+    ] {
+        case.assert_one(new_rules_engine(), JDBC_QUERY_ORACLE_SQLITE);
+    }
+    // A user/password@ authority and a password option are two passwords.
+    let before = "jdbc:oracle:thin:app/";
+    let middle = "@db.corp.internal:1521/sales?password=";
+    let input = format!("{before}Summer2027{middle}Winter2026");
+    let mut expected = vec![
+        exact(JDBC_ORACLE, "Summer2027", before.len()),
+        exact(
+            JDBC_QUERY_ORACLE_SQLITE,
+            "Winter2026",
+            before.len() + 10 + middle.len(),
+        ),
+    ];
+    expected.sort();
+    assert_eq!(
+        outcomes(new_rules_engine(), &input, &ScanOptions::default()),
+        expected
+    );
+}
+
+#[test]
+fn jdbc_oracle_and_sqlite_query_rejects_placeholders_and_missing_parts() {
+    for value in [
+        "",
+        "Win",
+        "$DB_PASSWORD",
+        "%DB_PASSWORD%",
+        "${DB_PASSWORD}",
+        "<password>",
+        "****",
+        "changeme",
+        "your_password",
+        "REDACTED",
+        "config.db",
+    ] {
+        for prefix in [
+            "jdbc:sqlite:file.db?password=",
+            "jdbc:oracle:thin:@db.corp.internal:1521/sales?user=app&password=",
+        ] {
+            assert_no_new_finding(&format!("{prefix}{value}"));
+        }
+    }
+    for input in [
+        "jdbc:sqlite:file.db?PASSWORD=Winter2026",
+        "jdbc:sqlite:file.db?notpassword=Winter2026",
+        "jdbc:sqlite:file.db?passwordHint=Winter2026",
+        "jdbc:sqlite:file.db?a=b&xpassword=Winter2026",
+        "jdbc:sqlite:file.db password=Winter2026",
+        "jdbc:sqlite:?password=Winter2026",
+        "jdbc:oracle:thin:@?password=Winter2026",
+        "jdbc:oracle:thin:@/sales?password=Winter2026",
+        "jdbc:oracle:thin:db.corp.internal:1521/sales?password=Winter2026",
+        "jdbc:h2:file.db?password=Winter2026",
+        "xjdbc:sqlite:file.db?password=Winter2026",
+        "jdbc:mysql://db.corp.internal/sales?password=Winter2026",
+    ] {
+        assert_no_new_finding(input);
+    }
+}
+
+#[test]
+fn other_database_uri_schemes_keep_exact_ranges() {
+    for scheme in [
+        "mssql",
+        "sqlserver",
+        "oracle",
+        "clickhouse",
+        "cockroachdb",
+        "couchdb",
+        "influxdb",
+        "cassandra",
+        "neo4j",
+        "bolt",
+        "MSSQL",
+        "mssql+pyodbc",
+        "oracle+cx_oracle",
+        "clickhouse+native",
+        "cockroachdb+psycopg2",
+        "neo4j+s",
+        "neo4j+ssc",
+        "bolt+s",
+        "postgres+asyncpg",
+        "postgresql+psycopg2",
+        "mysql+pymysql",
+        "mariadb+mariadbconnector",
+    ] {
+        let before = format!("{scheme}://app:");
+        Case::whole(
+            &before,
+            "Q7vx9Lm2Rk4p",
+            "@db.corp.internal:1433/sales?encrypt=true",
+        )
+        .assert_one(new_rules_engine(), OTHER_DATABASE_URI);
+    }
+    for case in [
+        Case::whole(
+            "cassandra://app:",
+            "Q7vx9Lm2Rk4p",
+            "@db1.corp.internal:9042,db2.corp.internal:9042/sales",
+        ),
+        Case::whole(
+            "clickhouse://app:",
+            "Q7vx9Lm2Rk4p",
+            "@[2001:db8::1]:9000/sales",
+        ),
+        Case::whole(
+            "influxdb://:",
+            "Q7vx9Lm2Rk4p",
+            "@metrics.corp.internal:8086/db",
+        ),
+        Case::whole("mssql://app:", "W!n:%74er", "@db.corp.internal/sales"),
+        Case {
+            lead: "\"",
+            before: "mssql://app:",
+            secret: "Q7vx9Lm2Rk4p",
+            after: "@db.corp.internal/sales\" next",
+            matched_after: "@db.corp.internal/sales\"",
+        },
+    ] {
+        case.assert_one(new_rules_engine(), OTHER_DATABASE_URI);
+    }
+}
+
+#[test]
+fn other_database_uri_rejects_examples_placeholders_and_missing_parts() {
+    for password in [
+        "${DB_PASSWORD}",
+        "{{db_password}}",
+        "$DB_PASSWORD",
+        "%DB_PASSWORD%",
+        "<password>",
+        "****",
+        "true",
+        "abcdefghijklmnopqrstuvwxyz",
+        "your_password",
+    ] {
+        assert_no_new_finding(&format!("mssql://app:{password}@db.corp.internal/sales"));
+    }
+    for input in [
+        "mssql://user:pass@example.com/sales",
+        "oracle://foo:bar@test.com/sales",
+        "mssql://app:Q7vx9Lm2Rk4p@db.example.com/sales",
+        "mssql://app:Q7vx9Lm2Rk4p@example/sales",
+        "clickhouse://app:Q7vx9Lm2Rk4p@example.org:9000",
+        "mssql://app@db.corp.internal/sales",
+        "mssql://app:@db.corp.internal/sales",
+        "mssql://app:Q7vx9Lm2Rk4p@",
+        "mssql://app:Q7vx9Lm2Rk4p@-db.corp.internal",
+        "mssql+://app:Q7vx9Lm2Rk4p@db.corp.internal/sales",
+        "xmssql://app:Q7vx9Lm2Rk4p@db.corp.internal/sales",
+        "foo://app:Q7vx9Lm2Rk4p@db.corp.internal/sales",
+        "postgresql://app:Q7vx9Lm2Rk4p@db.corp.internal/sales",
+        // A semicolon cannot be part of the user name or password, so a JDBC
+        // SQL Server property list is not read as user information.
+        "jdbc:sqlserver://db.corp.internal:1433;user=app;password=Q7vx9@Lm2Rk4p;",
+        "sqlserver://db.corp.internal:1433;user=app;password=Q7vx9Lm2Rk4p;",
+    ] {
+        assert_no_new_finding(input);
+    }
+}
+
+#[test]
+fn other_service_uri_schemes_keep_exact_ranges_and_exclusions() {
+    for scheme in ["nats", "NATS", "mqtt", "mqtts", "memcached", "memcache"] {
+        let before = format!("{scheme}://app:");
+        Case::whole(&before, "Q7vx9Lm2Rk4p", "@bus.corp.internal:4222/x")
+            .assert_one(new_rules_engine(), OTHER_SERVICE_URI);
+    }
+    Case::whole("nats://:", "Q7vx9Lm2Rk4p", "@bus.corp.internal:4222")
+        .assert_one(new_rules_engine(), OTHER_SERVICE_URI);
+    for input in [
+        "nats://app:Q7vx9Lm2Rk4p@localhost:4222",
+        "nats://app:Q7vx9Lm2Rk4p@bus.invalid:4222",
+        "mqtt://app:Q7vx9Lm2Rk4p@broker.test:1883",
+        "mqtt://app:Q7vx9Lm2Rk4p@broker.example.com:1883",
+        "memcached://app:Q7vx9Lm2Rk4p@example:11211",
+        "nats://user:pass@bus.corp.internal:4222",
+        "nats://test:test@bus.corp.internal:4222",
+        "nats://app:example_password@bus.corp.internal:4222",
+        "nats://app:placeholder@bus.corp.internal:4222",
+        "nats://app:xxxx@bus.corp.internal:4222",
+        "nats://app:${NATS_PASSWORD}@bus.corp.internal:4222",
+        "nats://app@bus.corp.internal:4222",
+        "nats://app:@bus.corp.internal:4222",
+        "nats://app:Q7vx9Lm2Rk4p@",
+        "xnats://app:Q7vx9Lm2Rk4p@bus.corp.internal:4222",
+        "rabbitmq://app:Q7vx9Lm2Rk4p@mq.corp.internal:5672",
+    ] {
+        assert_no_new_finding(input);
+    }
+    // Test and documentation paths are excluded, as in service-uri-password.
+    let input = "nats://app:Q7vx9Lm2Rk4p@bus.corp.internal:4222";
+    for path in ["tests/settings.conf", "README.md", "config.example.yaml"] {
+        assert!(
+            scan_path(new_rules_engine(), input, path).is_empty(),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        scan_path(new_rules_engine(), input, "config/settings.conf").len(),
+        1
+    );
+}
+
+#[test]
+fn new_rules_add_no_finding_for_passwords_that_existing_rules_own() {
+    for (input, path) in [
+        (
+            "postgresql://app:Q7vx9Lm2Rk4p@db.corp.internal:5432/sales",
+            "",
+        ),
+        ("mysql://app:Q7vx9Lm2Rk4p@db.corp.internal/sales", ""),
+        ("redis://:Q7vx9Lm2Rk4p@cache.corp.internal:6379", ""),
+        ("amqp://app:Q7vx9Lm2Rk4p@mq.corp.internal:5672/vhost", ""),
+        (
+            "mongodb://app:Q7vx9Lm2Rk4pT8w0@db.corp.internal:27017, next",
+            "",
+        ),
+        (
+            "mongodb+srv://app:Q7vx9Lm2Rk4p@cluster0.corp.internal/sales",
+            "",
+        ),
+        (
+            "https://app:Q7vx9Lm2Rk4p@bitbucket.org/team/repo.git",
+            "repo/.git/config",
+        ),
+        ("Server=db.corp.internal;Pwd=Winter2026;", ""),
+        ("Host=one;Pwd=R7!q;Host=two;Pwd=T8!w;", ""),
+        (
+            "jdbc:sqlserver://db.corp.internal:1433;user=app;password=Winter2026;Server=b;",
+            "",
+        ),
+        (
+            "jdbc:mysql://db.corp.internal/sales?password=Winter2026",
+            "",
+        ),
+        (
+            "jdbc:postgresql://db.corp.internal/sales?user=app&password=Winter2026",
+            "",
+        ),
+        ("host=db.corp.internal password=Winter2026 dbname=sales", ""),
+    ] {
+        let old = scan_path(all_rules_without_new_rules(), input, path);
+        assert!(!old.is_empty(), "{input:?}");
+        assert_eq!(scan_path(all_rules(), input, path), old, "{input:?}");
+    }
+    // A provider token in the password slot keeps both findings, as for
+    // database-uri. The engine removes only overlapping generic findings.
+    let token = format!(
+        "ghp_{}",
+        "Q7m2Z9v4L1c8R5s0N6b3X"
+            .chars()
+            .cycle()
+            .take(36)
+            .collect::<String>()
+    );
+    let input = format!("nats://app:{token}@bus.corp.internal:4222");
+    let mut expected = vec![
+        exact("github-pat", &token, 11),
+        exact(OTHER_SERVICE_URI, &token, 11),
+    ];
+    expected.sort();
+    assert_eq!(
+        outcomes(all_rules(), &input, &ScanOptions::default()),
+        expected
+    );
+}

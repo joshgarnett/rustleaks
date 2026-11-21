@@ -23,8 +23,6 @@ fn scan(fixture: &Fixture, extra: &[&str]) -> Output {
         .args([
             "dir",
             "repo",
-            "--native-pack",
-            "rustleaks-connections-v1",
             "--no-banner",
             "--log-level",
             "fatal",
@@ -144,8 +142,6 @@ fn a_git_folder_given_as_the_scan_path_is_scanned_in_full() {
             .args([
                 "dir",
                 "repo/.git",
-                "--native-pack",
-                "rustleaks-connections-v1",
                 "--no-banner",
                 "--log-level",
                 "fatal",

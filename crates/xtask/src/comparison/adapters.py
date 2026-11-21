@@ -153,6 +153,10 @@ def adapter_probe(tool, env):
             text = out + err
             if '--native-pack' in text:
                 probe['capabilities'].append('native-packs')
+            elif '--complete-profile' in text:
+                # Builds without --native-pack that have --complete-profile
+                # always scan with every built-in rule.
+                probe['capabilities'].append('builtin-rules')
             if '--complete-profile' in text:
                 probe['capabilities'].append('complete-profile')
             if '--jobs' in text:
@@ -214,10 +218,16 @@ def adapter_invocation(tool, mode, target, report, settings, inputs):
         if name == 'rustleaks':
             capabilities = tool.get('probe', {}).get('capabilities', [])
             if settings.get('packs'):
-                if 'native-packs' not in capabilities:
-                    return {'unsupported': 'binary has no --native-pack option'}
-                for pack in RUSTLEAKS_PACKS:
-                    flag(['--native-pack', pack], 'Rustleaks 2x2 lane: packs on', 'lane')
+                if 'native-packs' in capabilities:
+                    for pack in RUSTLEAKS_PACKS:
+                        flag(['--native-pack', pack], 'Rustleaks 2x2 lane: packs on', 'lane')
+                elif 'builtin-rules' in capabilities:
+                    flags.append({'flag': '(none)', 'kind': 'lane',
+                                  'reason': 'Rustleaks 2x2 lane: this build always uses every built-in rule'})
+                else:
+                    return {'unsupported': 'binary has no built-in rule packs'}
+            elif 'builtin-rules' in capabilities and 'packs' in settings:
+                return {'unsupported': 'this build cannot turn its built-in rules off'}
             workers = None
             if settings.get('profile'):
                 workers = threads or 1

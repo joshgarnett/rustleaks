@@ -14,8 +14,6 @@ fn secret() -> String {
 fn args<'a>(prefix: &[&'a str]) -> Vec<&'a str> {
     let mut arguments = prefix.to_vec();
     arguments.extend([
-        "--native-pack",
-        "rustleaks-providers-v1",
         "--enable-rule",
         "rustleaks.groq-api-key",
         "--no-banner",
@@ -36,27 +34,27 @@ fn stdin(fixture: &Fixture, bytes: &[u8], extra: &[&str]) -> Output {
 }
 
 #[test]
-fn builtin_selection_reaches_normal_pipeline_and_preserves_opt_in() {
+fn a_default_scan_reports_builtin_rules() {
     let fixture = Fixture::new();
     let value = secret();
-    let accepted = stdin(
-        &fixture,
+    let found = output_with_stdin(
+        command(&fixture.0).args([
+            "--no-banner",
+            "stdin",
+            "--report-path",
+            "-",
+            "--report-format",
+            "json",
+        ]),
         value.as_bytes(),
-        &[
-            "--native-pack",
-            "rustleaks-extra-v1",
-            "--native-pack",
-            "rustleaks-connections-v1",
-        ],
     );
     assert_eq!(
-        accepted.status.code(),
+        found.status.code(),
         Some(1),
         "{}",
-        String::from_utf8_lossy(&accepted.stderr)
+        String::from_utf8_lossy(&found.stderr)
     );
-    let report = rustleaks_core::session::Baseline::from_go_json(&accepted.stdout).unwrap();
-    assert!(!report.was_null());
+    let report = rustleaks_core::session::Baseline::from_go_json(&found.stdout).unwrap();
     let rows = report.entries();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].rule_id().as_bytes(), b"rustleaks.groq-api-key");
@@ -64,26 +62,27 @@ fn builtin_selection_reaches_normal_pipeline_and_preserves_opt_in() {
     let rejected = stdin(&fixture, format!("gsk_{}", "0".repeat(52)).as_bytes(), &[]);
     assert_eq!(rejected.status.code(), Some(0));
     assert_eq!(rejected.stdout, b"[]\n");
-    let legacy = output(
-        &fixture.0,
-        &[
-            "stdin",
-            "--enable-rule",
-            "rustleaks.groq-api-key",
-            "--no-banner",
-        ],
-    );
-    assert_eq!(legacy.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&legacy.stderr).contains("rustleaks.groq-api-key"));
-    let diagnostic = stdin(&fixture, b"unrelated", &["--log-level", "debug"]);
-    let stderr = String::from_utf8_lossy(&diagnostic.stderr);
-    assert!(stderr.contains("built-in rule packs rustleaks-native-v1|"));
-    assert!(stderr.contains("providers-sha256:"));
-    assert!(!stderr.contains("[[rules]]"));
 }
 
 #[test]
-fn native_uri_selection_preserves_global_suppression() {
+fn the_native_pack_flag_is_gone() {
+    let fixture = Fixture::new();
+    for flag in ["--native-pack=rustleaks-providers-v1", "--native-pack"] {
+        let result = output_with_stdin(
+            command(&fixture.0).args(["stdin", "--no-banner", flag]),
+            secret().as_bytes(),
+        );
+        assert_eq!(result.status.code(), Some(126), "{flag}");
+        assert!(result.stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("native-pack"),
+            "{flag}"
+        );
+    }
+}
+
+#[test]
+fn builtin_uri_rule_keeps_global_suppression() {
     let fixture = Fixture::new();
     for (case, (secret, found)) in [
         ("%B", false),
@@ -99,8 +98,6 @@ fn native_uri_selection_preserves_global_suppression() {
         let result = output_with_stdin(
             command(&fixture.0).args([
                 "stdin",
-                "--native-pack",
-                "rustleaks-connections-v1",
                 "--enable-rule",
                 "rustleaks.connection-string.password.database-uri",
                 "--no-banner",
@@ -163,8 +160,6 @@ fn six_builtin_byte_predicates_survive_cli_rule_selection() {
             let result = output_with_stdin(
                 command(&fixture.0).args([
                     "stdin",
-                    "--native-pack",
-                    "rustleaks-providers-v1",
                     "--enable-rule",
                     id,
                     "--no-banner",
@@ -196,77 +191,61 @@ fn six_builtin_byte_predicates_survive_cli_rule_selection() {
 }
 
 #[test]
-fn conflicting_config_sources_are_not_silently_ignored() {
+fn configs_get_builtin_rules_only_by_extending_the_default() {
+    // No `--enable-rule`: a config without the built-in rules must scan
+    // cleanly instead of failing on a missing rule ID.
+    let args = |prefix: &[&'static str]| {
+        let mut arguments = prefix.to_vec();
+        arguments.extend(["--no-banner", "--log-level", "fatal"]);
+        arguments
+    };
     let fixture = Fixture::new();
-    let marker = "NATIVE_CONFIG_PRIVATE_SENTINEL";
-    let custom = format!(
-        "# {marker}\n[allowlist]\nregexes=['.*']\n{}",
-        no_match_config()
-    );
-    fixture.write("custom.toml", &custom);
-    let explicit = output(&fixture.0, &args(&["stdin", "--config", "custom.toml"]));
-    assert_eq!(explicit.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&explicit.stderr).contains("set by --config"));
-    assert!(explicit.stdout.is_empty());
-    for (key, value) in [
-        ("RUSTLEAKS_CONFIG", "custom.toml"),
-        ("RUSTLEAKS_CONFIG_TOML", custom.as_str()),
-        ("GITLEAKS_CONFIG", "custom.toml"),
-        ("GITLEAKS_CONFIG_TOML", custom.as_str()),
+    let own = no_match_config();
+    let extending = "[extend]\nuseDefault = true\n";
+    fixture.write("own.toml", own);
+    fixture.write("extending.toml", extending);
+    fixture.write("chained.toml", "[extend]\npath = 'extending.toml'\n");
+    for (path, count) in [("own.toml", 0), ("extending.toml", 1), ("chained.toml", 1)] {
+        let result = output_with_stdin(
+            command(&fixture.0).args(args(&["stdin", "--config", path])),
+            secret().as_bytes(),
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(count),
+            "{path}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    for (key, value, count) in [
+        ("RUSTLEAKS_CONFIG", "own.toml", 0),
+        ("RUSTLEAKS_CONFIG", "extending.toml", 1),
+        ("RUSTLEAKS_CONFIG_TOML", own, 0),
+        ("RUSTLEAKS_CONFIG_TOML", extending, 1),
+        ("GITLEAKS_CONFIG", "own.toml", 0),
+        ("GITLEAKS_CONFIG_TOML", extending, 1),
     ] {
-        let result = command(&fixture.0)
-            .env(key, value)
-            .args(args(&["stdin"]))
-            .output()
-            .unwrap();
-        assert_eq!(result.status.code(), Some(1));
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        assert!(stderr.contains(&format!("set by {key}")));
-        assert!(!stderr.contains(marker));
-        assert!(result.stdout.is_empty());
+        let result = output_with_stdin(
+            command(&fixture.0).env(key, value).args(args(&["stdin"])),
+            secret().as_bytes(),
+        );
+        assert_eq!(result.status.code(), Some(count), "{key}={value}");
     }
     for filename in [".rustleaks.toml", ".gitleaks.toml"] {
-        fixture.write(filename, &custom);
-        for mode in [vec!["stdin"], vec!["dir", "."]] {
-            let result = output(&fixture.0, &args(&mode));
-            assert_eq!(result.status.code(), Some(1));
-            assert!(String::from_utf8_lossy(&result.stderr).contains("set by source-local config"));
-            assert!(result.stdout.is_empty());
+        for (contents, count) in [(own, 0), (extending, 1)] {
+            fixture.write(filename, contents);
+            let result = output_with_stdin(
+                command(&fixture.0).args(args(&["stdin"])),
+                secret().as_bytes(),
+            );
+            assert_eq!(result.status.code(), Some(count), "{filename}");
         }
         fs::remove_file(fixture.0.join(filename)).unwrap();
     }
-    let empty = command(&fixture.0)
-        .env("RUSTLEAKS_CONFIG", "")
-        .env("RUSTLEAKS_CONFIG_TOML", "")
-        .env("GITLEAKS_CONFIG", "")
-        .env("GITLEAKS_CONFIG_TOML", "")
-        .args(args(&["stdin"]))
-        .output()
-        .unwrap();
-    assert_eq!(empty.status.code(), Some(0));
-    let missing = output(&fixture.0, &args(&["dir", "absent-source"]));
-    assert_eq!(missing.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&missing.stderr).contains("during config selection"));
 }
 
 #[test]
-fn unknown_and_duplicate_native_packs_fail_before_scanning() {
-    let fixture = Fixture::new();
-    for (id, message) in [
-        ("unknown-private-sentinel", "unknown built-in rule pack"),
-        ("rustleaks-providers-v1", "duplicate native pack identifier"),
-    ] {
-        let result = stdin(&fixture, secret().as_bytes(), &["--native-pack", id]);
-        assert_eq!(result.status.code(), Some(1));
-        assert!(result.stdout.is_empty());
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        assert!(stderr.contains(message));
-        assert!(!stderr.contains("unknown-private-sentinel"));
-    }
-}
-
-#[test]
-fn native_composition_retains_redaction_ignores_baselines_and_source_exclusions() {
+fn builtin_rules_keep_redaction_ignores_baselines_and_source_exclusions() {
     let fixture = Fixture::new();
     let value = secret();
     let redacted = stdin(

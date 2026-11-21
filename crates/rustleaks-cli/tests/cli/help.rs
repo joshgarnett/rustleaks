@@ -7,7 +7,6 @@ use super::*;
 const SCAN_FLAG_LINES: &[&str] = &[
     "-c, --config <path>",
     "--enable-rule <ids>",
-    "--native-pack <id>",
     "-b, --baseline-path <path>",
     "-i, --rustleaks-ignore-path <path>",
     "--ignore-rustleaks-allow",
@@ -263,7 +262,6 @@ fn help_rejects_unknown_topics_and_extra_arguments() {
 const COMPLETION_LONG_FLAGS: &[&str] = &[
     "--config",
     "--enable-rule",
-    "--native-pack",
     "--baseline-path",
     "--rustleaks-ignore-path",
     "--gitleaks-ignore-path",
@@ -308,11 +306,6 @@ const COMPLETION_VALUE_LISTS: &[&[&str]] = &[
         "gitea",
         "bitbucket",
         "none",
-    ],
-    &[
-        "rustleaks-extra-v1",
-        "rustleaks-providers-v1",
-        "rustleaks-connections-v1",
     ],
     &["bash", "zsh", "fish", "powershell"],
     &[

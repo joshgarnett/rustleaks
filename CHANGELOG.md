@@ -2,12 +2,36 @@
 
 ## [Unreleased]
 
-- Startup is faster. An empty scan with the default rules takes about
-  17 ms instead of 28 ms, and with all three built-in packs about 42 ms
-  instead of 67 ms, measured on one Apple silicon Mac. The embedded rules skip a
-  temporary size check that a test runs on them instead, and each
-  `--native-pack` is parsed and validated once instead of twice. Custom
-  configurations keep the full check. Findings do not change.
+- Every scan uses all built-in rules. Without a configuration, and with
+  `[extend] useDefault = true`, Rustleaks now adds its own rules for
+  provider tokens and connection strings to the Gitleaks-derived default
+  rules. Their IDs start with `rustleaks.`. Scans can report more findings
+  than before and than Gitleaks, and a scan that passed can now exit with
+  code 1. On the two held-out test sets, recall rose from 0.834 to 0.848 and
+  from 0.724 to 0.787, and precision stayed within 0.002. On one Apple
+  silicon Mac, folder scans of five public repositories took 2% to 21% more
+  wall time and 49% to 70% more peak memory than with the Gitleaks-derived
+  rules alone. A configuration that does not extend the default is used as
+  written. See `docs/user/built-in-rules.md`.
+- The connection rules find more forms. They find `Password=` or `Pwd=`
+  before the server or host property, Oracle
+  `jdbc:oracle:thin:user/password@host` URLs, and the `password=` option of
+  Oracle and SQLite JDBC URLs. They also find passwords in `mssql`,
+  `sqlserver`, `oracle`, `clickhouse`, `cockroachdb`, `couchdb`, `influxdb`,
+  `cassandra`, `neo4j` and `bolt` URIs, in `+driver` forms such as
+  `postgresql+psycopg2://`, and in `nats`, `mqtt`, `mqtts`, `memcached` and
+  `memcache` URIs. `https://user:password@host` is still not covered.
+- The `--native-pack` flag is removed, since the rules it selected are now
+  always used. The rule files keep their IDs inside Rustleaks.
+  `ConfigLoader::with_builtin_rules` gives library users the same rules as
+  the CLI. `ConfigLoader::load_default` without it is unchanged.
+- Startup is faster. On one Apple silicon Mac, an empty scan with all
+  built-in rules takes about 44 ms; 0.1.0-alpha.11 took 69 ms with the same
+  rule files. A configuration that does not extend the default takes about
+  27 ms, as before, because the built-in rules compile only when used. The
+  embedded rules skip a temporary size check that a test runs on them
+  instead, and each rule file is parsed and validated once instead of twice.
+  Custom configurations keep the full check.
 - Fix `--redact` with `--verbose`: the `Required:` lines of composite rules
   (`[[rules.required]]`) printed helper values, such as client IDs, in full.
   They are now masked with the same percent as the main secret. Reports did

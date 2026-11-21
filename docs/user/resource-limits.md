@@ -242,16 +242,15 @@ archives inside it at the same time.
 | One command-line value or path | 1 MiB |
 | Path components when Rustleaks cleans a path | 4,096 |
 | `--enable-rule` IDs | 4,096. The selected rules can hold at most 8 MiB of rule source text. |
-| `--native-pack` flags | 32 |
 | `extend` levels in a configuration | 2 |
 | One configuration file, including `.gitleaks.toml` or `.rustleaks.toml` in the scanned folder and each `[extend]` file | 16 MiB. A larger file fails to load before Rustleaks reads more than 16 MiB of it. |
 | One regular expression | 1 MiB of source, 4,096 levels of nesting, and 256 MiB for each compiled form. A repeat count can be at most 1,000, and the counts of nested repeats multiplied together can be at most 1,000. |
-| Native rule packs together | 32 packs, 1 MiB of TOML, 1,024 rules |
+| Native rule files in one `NativePolicy` (library) | 32 files, 1 MiB of TOML, 1,024 rules |
 | One line of an ignore file | 64 KiB. Parsing of that file stops at a longer line. Rustleaks reads an ignore file one line at a time, so it never holds more than one line of the file in memory, plus the entries it keeps. |
 | Report template | 1 MiB of source, 1,000,000 actions plus 1,000 actions for each finding, 128 levels of nesting. The report size has no limit, because Rustleaks writes the report while it renders. |
 | Complete-scan profile file | 16 KiB |
 
-A configuration or rule pack that exceeds these limits fails to load.
+A configuration or rule file that exceeds these limits fails to load.
 
 ## Large inputs under the example profile
 
@@ -260,7 +259,7 @@ Under the [example profile](complete-scanning.md#the-profile-file), they can
 stop a complete scan:
 
 - Many encoded values, such as one Base64 value on each line, can reach
-  `fragment_work_units` or `operation_work_units`. The native rule packs add
+  `fragment_work_units` or `operation_work_units`. The Rustleaks rules add
   more work for each value.
 - Many findings on one long line can reach `fragment_finding_payload_bytes`,
   because each finding keeps a copy of the whole line.
@@ -277,7 +276,7 @@ are not memory limits. Some cases use much more memory than the input size:
 
 - Each finding keeps a copy of its source line. Many findings on one long line
   can use a lot of memory, even for a small file.
-- Some native pack association rules, such as
+- Some Rustleaks association rules, such as
   `rustleaks.association.planetscale-api-token`, attach every helper in a
   piece of the input to every finding of the rule in that piece. Rustleaks
   stores that list once, and the `--complete-profile` limits count it once.

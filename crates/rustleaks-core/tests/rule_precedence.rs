@@ -642,7 +642,7 @@ fn every_positive_case_keeps_its_exact_finding_with_all_rules_active() {
     assert_eq!(packs.len(), 179 + 54);
     assert_eq!(
         all_rules().engine().config().rules().len(),
-        222 + 303 + 14 + 3
+        222 + 303 + 19 + 3
     );
     assert_eq!(
         INTENDED_OVERLAPS

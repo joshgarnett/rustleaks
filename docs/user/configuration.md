@@ -286,6 +286,5 @@ Archive size, entry and temporary storage limits apply. See
 | `--follow-symlinks` | `dir` only. Scan files that symbolic links point to. |
 | `--scan-git-metadata` | `dir` only. Also scan the text metadata files in `.git` folders, such as `config`, `hooks` and `logs`. See [Git metadata](cli-reference.md#git-metadata). |
 | `--timeout N` | Stop the scan after N seconds. The scan then fails with exit code 1, or with 2 under `--complete-profile`. `0`, the default, means no timeout. |
-| `--native-pack ID` | Add an optional rule pack. See [Native rule packs](native-rule-packs.md). |
 
 See the [command reference](cli-reference.md) for every flag.

@@ -58,6 +58,42 @@ pub const LIBPQ_SECRETS: [&str; 5] = [
     r"Q7\ v9R2",
 ];
 
+/// (rule ID, text before the secret, secret, text after it) for the input
+/// `{before}{secret}{after}`. One case for each password-first, Oracle,
+/// SQLite and added URI scheme rule.
+pub const ADDED_FORMS: [(&str, &str, &str, &str); 5] = [
+    (
+        "rustleaks.connection-string.password.password-first",
+        "Pwd=",
+        "Winter2026",
+        ";Server=db.corp.internal;",
+    ),
+    (
+        "rustleaks.connection-string.password.jdbc-oracle",
+        "jdbc:oracle:thin:app/",
+        "Q7vx9Lm2Rk4p",
+        "@db.corp.internal:1521/sales",
+    ),
+    (
+        "rustleaks.connection-string.password.jdbc-query-oracle-sqlite",
+        "jdbc:sqlite:file.db?password=",
+        "Winter2026",
+        "",
+    ),
+    (
+        "rustleaks.connection-string.password.other-database-uri",
+        "mssql://app:",
+        "Q7vx9Lm2Rk4p",
+        "@db.corp.internal:1433/sales",
+    ),
+    (
+        "rustleaks.other-service-uri-password",
+        "nats://app:",
+        "Q7vx9Lm2Rk4p",
+        "@bus.corp.internal:4222",
+    ),
+];
+
 /// One positive case: name, owning rule, input, file path, secret, and the
 /// byte offset of the secret in the input.
 pub type Positive = (String, String, String, &'static str, String, usize);
@@ -97,6 +133,16 @@ pub fn positives() -> Vec<Positive> {
             "",
             secret.to_owned(),
             offset,
+        ));
+    }
+    for (rule, before, secret, after) in ADDED_FORMS {
+        positives.push((
+            format!("{rule}/added-form"),
+            rule.to_owned(),
+            format!("{before}{secret}{after}"),
+            "",
+            secret.to_owned(),
+            before.len(),
         ));
     }
     positives
