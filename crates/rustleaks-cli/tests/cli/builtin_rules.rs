@@ -68,10 +68,8 @@ fn a_default_scan_reports_builtin_rules() {
 fn the_native_pack_flag_is_gone() {
     let fixture = Fixture::new();
     for flag in ["--native-pack=rustleaks-providers-v1", "--native-pack"] {
-        let result = output_with_stdin(
-            command(&fixture.0).args(["stdin", "--no-banner", flag]),
-            secret().as_bytes(),
-        );
+        // No standard input: the parser exits before it would read any.
+        let result = output(&fixture.0, &["stdin", "--no-banner", flag]);
         assert_eq!(result.status.code(), Some(126), "{flag}");
         assert!(result.stdout.is_empty());
         assert!(
