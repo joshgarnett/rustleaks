@@ -16,7 +16,7 @@ tarpaulin-report.html
 .env
 .env.*
 !.env.example
-!compat/fixtures/**/.env*
+!testdata/fixtures/**/.env*
 .direnv/
 
 # Editors and operating systems

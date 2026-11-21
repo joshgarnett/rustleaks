@@ -1,35 +1,33 @@
 ---
 name: rustleaks-rule-maintenance
-description: Maintain Rustleaks default-rule, custom-rule or native rule pack behavior with grounded positive and negative cases, exact source spans, keyword and entropy behavior, and allowlist coverage. Use for rule semantics, native pack rules and rule tests; use rustleaks-compatibility for a new Gitleaks pin.
+description: Maintain Rustleaks default-rule, custom-rule or native rule pack behavior with grounded positive and negative cases, exact source spans, keyword and entropy behavior, and allowlist coverage. Use for rule semantics, native pack rules and rule tests.
 ---
 
 # Rustleaks rule maintenance
 
-Read `docs/dev/rule-pack-authoring.md`, `docs/dev/testing-and-parity.md`, the
-[compatibility
-policy](../../../docs/user/gitleaks-differences.md#compatibility-policy), the
-applicable config and detection corpus READMEs, and the rule-related entries
-in `compat/test-manifest.toml`. Decide whether the request changes the
+Read `docs/dev/rule-pack-authoring.md`, `docs/dev/testing.md`, the
+[repository contract](../../../AGENTS.md#repository-contract) and the
+applicable config and detection corpus READMEs under `testdata/`. Decide
+whether the request changes the
 shipped default rules, supported TOML semantics, a native rule pack, or only
 Rustleaks test coverage.
 
 ## Default rules
 
 The shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`,
-are Rustleaks-owned and based on the unchanged upstream copy,
-`compat/config-corpus/default-gitleaks.toml`. Never edit the upstream copy; a
-change derived from a new Gitleaks revision uses `rustleaks-compatibility`
-and updates the pin, the upstream copy, hashes, generated evidence and
-provenance together.
+started from the Gitleaks default configuration and are maintained in place.
+`testdata/config-corpus/default-gitleaks.toml` is test input for the
+configuration cases; never edit it to match the shipped rules.
 
-A Rustleaks change to the shipped default rules needs normal review, and:
+A change to the shipped default rules needs normal review, and:
 
 - tests with expectations from the change's definition, including near
   misses that must stay findings;
-- an update to `crates/rustleaks-core/tests/default_rules.rs`, which names
-  every difference from the upstream copy;
-- an entry in `docs/user/gitleaks-differences.md#default-rules` and a
-  changelog entry;
+- for an added allowlist, an update to
+  `crates/rustleaks-core/tests/default_rules.rs`, which names the allowlists
+  that Rustleaks adds;
+- an update to [Default rules](../../../docs/user/built-in-rules.md#default-rules)
+  when users see the change, and a changelog entry;
 - updates of `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and
   `DEFAULT_RULES_SHA256` in `xtask`, and of generated baselines with their
   generator commands; and
@@ -97,9 +95,9 @@ For each rule behavior, add or identify:
 Keep Go regex translation and dependency types private. Do not alter matching
 bytes or offsets in a corpus normalizer.
 
-The quality corpus in `compat/quality-corpus/` has labels written
+The quality corpus in `testdata/quality-corpus/` has labels written
 independently of detector output. Never change a label to improve a result.
-See `compat/quality-corpus/README.md` for how to regenerate it, and run
+See `testdata/quality-corpus/README.md` for how to regenerate it, and run
 `just quality-eval` to print the report.
 
 ## Validate
@@ -125,14 +123,11 @@ bazelisk test //crates/rustleaks-core:native_policy_test
 `bazelisk test //crates/rustleaks-core:config_test` for TOML, extension, or
 config-loading changes. Then run the commands that the [local
 workflow](../../../CONTRIBUTING.md#local-workflow) table names for the
-change, at least `just ci`. Run `cargo xtask regression-check` when
-supported behavior or its regression evidence changes. Treat a behavior fix
-as a supported-behavior change even when unchanged committed evidence already
-contains the expected outcome. Run `just fuzz-smoke` for a parser, regex,
+change, at least `just ci`. Run `just fuzz-smoke` for a parser, regex,
 decoder, predicate or hostile-input change. New expectations must be
-specified independently of current Rust output; do not rewrite historical Go
-observations.
+specified independently of current Rust output. A case under `testdata/`
+changes only when the reviewed behavior change requires it.
 
 Report the rule identifiers, intended behavior, positive and negative cases,
-exact span evidence, allowlist effect, overlap, compatibility classification,
+exact span evidence, allowlist effect, overlap, whether any secret is lost,
 commands and results, and any approval required.

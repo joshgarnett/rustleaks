@@ -33,7 +33,7 @@ struct ExpectedFinding {
 #[test]
 fn every_default_rule_positive_and_negative_matches_the_pinned_oracle() {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/generator-corpus/samples-v1.jsonl");
+        .join("../../testdata/generator-corpus/samples-v1.jsonl");
     let samples = fs::read_to_string(corpus)
         .unwrap()
         .lines()

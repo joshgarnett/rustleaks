@@ -200,7 +200,7 @@ fn arbitrary_json_errors_do_not_echo_input_values() {
 
 #[test]
 fn committed_corpus_and_baseline_replay_exactly() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/quality-corpus");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/quality-corpus");
     let corpus = std::fs::read(root.join("cases-v1.json")).unwrap();
     check_generated_corpus(&corpus).unwrap();
     let baseline = evaluate_corpus(&corpus).unwrap();

@@ -1,22 +1,18 @@
-//! Rust-owned maintenance and frozen historical evidence verification.
+//! Rust-owned repository maintenance tooling.
 
 mod archive_fuzz_seeds;
 mod artifacts;
 #[cfg(test)]
 mod cli_corpus;
-mod fixtures;
-mod frozen;
 mod fuzz_seeds;
 mod generate;
 mod native_assets;
 mod native_coverage_assets;
-mod presentation;
 mod support;
 mod tokenizer_assets;
 mod vet_inventory;
 
 pub(crate) use archive_fuzz_seeds::generate_archive_fuzz_seeds;
-pub(crate) use frozen::{FROZEN_DIRECTORIES, check_frozen_evidence, frozen_artifact_paths};
 pub(crate) use fuzz_seeds::generate_regex_fuzz_seeds;
 pub(crate) use generate::{GENERATE_TARGETS, run as run_generate};
 pub(crate) use native_assets::generate as generate_native_pack_identity;

@@ -377,10 +377,11 @@ fn check_compile_assets(crate_root: &Path, build: &str) -> Result<(), String> {
     for source in sources {
         let text = fs::read_to_string(&source)
             .map_err(|error| format!("cannot read {}: {error}", source.display()))?;
-        needs_compat |= text.contains("compat/") || text.contains("../compat");
+        needs_compat |= text.contains("testdata/") || text.contains("../testdata");
         needs_default |= text.contains("default/gitleaks.toml");
     }
-    if needs_compat && !build.contains("//compat:") && !build.contains("//:build_contract_files") {
+    if needs_compat && !build.contains("//testdata:") && !build.contains("//:build_contract_files")
+    {
         return Err(format!(
             "{} compatibility assets are not declared",
             crate_root.display()
@@ -688,7 +689,6 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "fuzz-build",
         "fuzz-smoke",
         "package-check",
-        "parity",
         "perf-calibrate",
         "perf-check",
         "perf-fixtures",
@@ -722,7 +722,6 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
             "docs-check",
             "bazelisk run //crates/xtask:xtask -- docs-check",
         ),
-        ("parity", "bazelisk test //:parity"),
         (
             "quality-eval",
             "bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate",

@@ -13,9 +13,8 @@ _DEPS = [
 
 rustleaks_library(
     name = "rustleaks_compat",
-    compile_data = ["//compat:quality_default_config"],
     crate_name = "rustleaks_compat",
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = ["//crates/rustleaks-core:rustleaks_core"],
     docs = False,
     edition = "2024",
@@ -27,7 +26,7 @@ rust_binary(
     aliases = aliases(),
     crate_name = "rustleaks_perf",
     crate_root = "src/bin/rustleaks-perf.rs",
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = all_crate_deps(normal = True) + _DEPS,
     edition = "2024",
     rustc_env = {
@@ -43,7 +42,7 @@ rust_binary(
     aliases = aliases(),
     crate_name = "rustleaks_quality",
     crate_root = "src/bin/rustleaks-quality.rs",
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = all_crate_deps(normal = True) + [":rustleaks_compat"],
     edition = "2024",
     rustc_env = {
@@ -84,7 +83,7 @@ rust_test(
     aliases = aliases(normal = True, normal_dev = True),
     crate = ":rustleaks_perf",
     data = [
-        "//compat:all",
+        "//testdata:all",
         "//crates/rustleaks-cli:rustleaks",
     ] + _PERF_GIT_DATA,
     env = _PERF_TEST_ENV,

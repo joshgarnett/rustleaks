@@ -1,9 +1,9 @@
-# Pinned fixture bytes are opaque compatibility evidence. Do not normalize
-# line endings or flag upstream-significant trailing/blank whitespace.
-compat/fixtures/upstream/testdata/** -text -whitespace
-compat/fixtures/oracle/** -text -whitespace
+# Copied fixture bytes are test input. Do not normalize line endings or flag
+# trailing or blank whitespace that the fixtures need.
+testdata/fixtures/upstream/testdata/** -text -whitespace
+testdata/fixtures/archives/** -text -whitespace
 crates/rustleaks-compcol/src/brotli/dictionary.bin -text -whitespace
-compat/config-corpus/default-gitleaks.toml -text -whitespace
+testdata/config-corpus/default-gitleaks.toml -text -whitespace
 crates/rustleaks-core/default/gitleaks.toml -text -whitespace
 # Pack identities and copied license texts bind exact bytes on every checkout.
 crates/rustleaks-core/default/rustleaks-*.toml -text -whitespace
@@ -19,5 +19,3 @@ crates/rustleaks-core/data/LICENSE.tiktoken-rs -text -whitespace
 # Native release notice sources and generated copies retain exact upstream bytes.
 release/notice-inputs/** -text -whitespace
 release/licenses/** -text -whitespace
-# Reviewed presentation text keeps LF line endings in multi-line strings.
-compat/presentation-dispositions.toml text eol=lf

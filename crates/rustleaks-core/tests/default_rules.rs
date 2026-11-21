@@ -1,14 +1,14 @@
-//! The Rustleaks default rules and how they differ from the upstream copy.
+//! The allowlists that Rustleaks adds to the default rules.
 //!
-//! `default/gitleaks.toml` is the Gitleaks default configuration at the pin
-//! with reviewed Rustleaks changes. The unchanged upstream copy is
-//! `compat/config-corpus/default-gitleaks.toml`. The first test names every
-//! change. The other tests check what the added allowlists do. Each case is a
-//! line that the upstream rules report. The expectation comes from the
-//! allowlist definitions:
-//! - a filtered case is reported by the upstream rules and hidden by the
-//!   default rules;
-//! - a kept case gives the same findings with both.
+//! `default/gitleaks.toml` started from the Gitleaks default configuration.
+//! Rustleaks adds five allowlists to `generic-api-key` and one global
+//! allowlist. The first test names them. The other tests check what they do.
+//! Each case is a line that the default rules report when the added
+//! allowlists are removed. The expectation comes from the allowlist
+//! definitions:
+//! - a filtered case is reported without the added allowlists and hidden by
+//!   the default rules;
+//! - a kept case gives the same findings with and without them.
 //!
 //! Values are built at run time from a seeded generator or from pieces, so
 //! this source file holds no credential-shaped string.
@@ -16,8 +16,6 @@
 #![allow(missing_docs)]
 
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::Path;
 
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG, RawConfig};
 use rustleaks_core::explanation::ExplanationOptions;
@@ -69,25 +67,6 @@ fn engine(config: CompiledConfig) -> Engine {
     Engine::builder(config).build().unwrap()
 }
 
-/// The unchanged upstream Gitleaks default configuration at the pin.
-fn upstream_text() -> String {
-    fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../compat/config-corpus/default-gitleaks.toml"),
-    )
-    .unwrap()
-}
-
-/// The upstream rules, without the Rustleaks changes.
-fn pinned() -> Engine {
-    engine(
-        ConfigLoader::new()
-            .with_default_config(upstream_text())
-            .load_default()
-            .unwrap(),
-    )
-}
-
 /// Descriptions of the allowlists that Rustleaks adds to `generic-api-key`.
 const GENERIC_ADDITIONS: [&str; 5] = [
     "Hex digests assigned to hash-like names",
@@ -100,49 +79,61 @@ const GENERIC_ADDITIONS: [&str; 5] = [
 /// Descriptions of the global allowlists that Rustleaks adds.
 const GLOBAL_ADDITIONS: [&str; 1] = ["Published vendor documentation examples"];
 
-#[test]
-fn the_default_rules_differ_from_the_upstream_copy_only_as_listed() {
-    let loader = ConfigLoader::new();
-    let shipped = loader.parse_toml(DEFAULT_CONFIG, None).unwrap();
-    let mut expected: RawConfig = loader.parse_toml(&upstream_text(), None).unwrap();
-    // The upstream singular `[allowlist]` table is written as the first
-    // `[[allowlists]]` entry, which has the same meaning.
-    let first = expected.allowlist.take().unwrap();
-    expected.allowlists.insert(0, first);
-    let generic = expected
+/// The default rules as written, parsed.
+fn shipped() -> RawConfig {
+    ConfigLoader::new()
+        .parse_toml(DEFAULT_CONFIG, None)
+        .unwrap()
+}
+
+/// The default rules without the allowlists that Rustleaks adds.
+fn without_additions() -> Engine {
+    let mut raw = shipped();
+    let generic = raw
         .rules
         .iter_mut()
         .find(|rule| rule.id == GENERIC)
         .unwrap();
-    let shipped_generic = shipped
+    generic
+        .allowlists
+        .retain(|allowlist| !GENERIC_ADDITIONS.contains(&allowlist.description.as_str()));
+    raw.allowlists
+        .retain(|allowlist| !GLOBAL_ADDITIONS.contains(&allowlist.allowlist.description.as_str()));
+    engine(ConfigLoader::new().compile(raw).unwrap())
+}
+
+#[test]
+fn the_default_rules_have_the_added_allowlists() {
+    let shipped = shipped();
+    let generic = shipped
         .rules
         .iter()
         .find(|rule| rule.id == GENERIC)
         .unwrap();
-    let added = &shipped_generic.allowlists[generic.allowlists.len()..];
-    assert_eq!(
-        added
-            .iter()
-            .map(|allowlist| allowlist.description.as_str())
-            .collect::<Vec<_>>(),
-        GENERIC_ADDITIONS
-    );
-    generic.allowlists.extend(added.iter().cloned());
-    let added = &shipped.allowlists[expected.allowlists.len()..];
-    assert_eq!(
-        added
-            .iter()
-            .map(|allowlist| allowlist.allowlist.description.as_str())
-            .collect::<Vec<_>>(),
-        GLOBAL_ADDITIONS
-    );
+    let descriptions = generic
+        .allowlists
+        .iter()
+        .map(|allowlist| allowlist.description.as_str())
+        .collect::<Vec<_>>();
+    // The first four allowlists came with the rule; three have no
+    // description.
+    let mut expected = vec!["", "Allowlist for Generic API Keys", "", ""];
+    expected.extend(GENERIC_ADDITIONS);
+    assert_eq!(descriptions, expected);
+    let globals = shipped
+        .allowlists
+        .iter()
+        .map(|allowlist| allowlist.allowlist.description.as_str())
+        .collect::<Vec<_>>();
+    let mut expected = vec!["global allow lists"];
+    expected.extend(GLOBAL_ADDITIONS);
+    assert_eq!(globals, expected);
     assert!(
-        added
+        shipped
+            .allowlists
             .iter()
             .all(|allowlist| allowlist.target_rules.is_empty())
     );
-    expected.allowlists.extend(added.iter().cloned());
-    assert_eq!(shipped, expected);
     assert_eq!(shipped.rules.len(), 222);
 }
 
@@ -169,33 +160,33 @@ fn findings(engine: &Engine, line: &str) -> BTreeSet<(String, String)> {
         .collect()
 }
 
-/// Draws values until the pinned rules report one, so that each case starts
-/// from a reported finding. Random values can fall below the entropy check or
+/// Draws values until the rules without the added allowlists report one, so
+/// that each case starts from a reported finding. Random values can fall below the entropy check or
 /// contain a stopword. Returns the line and the secret.
 fn draw(case: &str, mut make: impl FnMut() -> String, template: &str) -> (String, String) {
-    let pinned = pinned();
+    let without = without_additions();
     for _ in 0..64 {
         let secret = make();
         let line = template.replace("{}", &secret);
-        if findings(&pinned, &line)
+        if findings(&without, &line)
             .iter()
             .any(|(_, value)| *value == secret)
         {
             return (line, secret);
         }
     }
-    panic!("{case}: the pinned rules report no drawn value");
+    panic!("{case}: the rules without the added allowlists report no drawn value");
 }
 
-/// Asserts that the pinned rules report `secret` under `rule` and that the
-/// default rules report the same findings without it. Messages name the case,
+/// Asserts that the rules without the added allowlists report `secret` under
+/// `rule` and that the default rules report the same findings without it. Messages name the case,
 /// never the synthetic value.
 fn assert_filtered(case: &str, make: impl FnMut() -> String, template: &str, rule: &str) {
     let (line, secret) = draw(case, make, template);
-    let mut expected = findings(&pinned(), &line);
+    let mut expected = findings(&without_additions(), &line);
     assert!(
         expected.remove(&(rule.to_owned(), secret)),
-        "{case}: the pinned rules must report the value under {rule}"
+        "{case}: the rules without the added allowlists must report the value under {rule}"
     );
     assert_eq!(findings(&default_rules(), &line), expected, "{case}");
 }
@@ -204,7 +195,7 @@ fn assert_kept(case: &str, make: impl FnMut() -> String, template: &str) {
     let (line, _) = draw(case, make, template);
     assert_eq!(
         findings(&default_rules(), &line),
-        findings(&pinned(), &line),
+        findings(&without_additions(), &line),
         "{case}"
     );
 }
@@ -364,11 +355,11 @@ fn vendor_examples() -> [(&'static str, String); 5] {
 fn published_vendor_examples_are_hidden_from_every_rule() {
     for (case, example) in vendor_examples() {
         let line = format!("{case}_token = \"{example}\"");
-        // No pinned rule reports the Telegram example in this form; the
+        // No rule reports the Telegram example in this form; the
         // allowlist still covers it where a rule would.
         assert!(
-            case == "telegram" || !findings(&pinned(), &line).is_empty(),
-            "{case}: the pinned rules must report the example"
+            case == "telegram" || !findings(&without_additions(), &line).is_empty(),
+            "{case}: the rules without the added allowlists must report the example"
         );
         let shown = findings(&default_rules(), &line);
         assert!(shown.is_empty(), "{case}: {} findings remain", shown.len());
@@ -385,10 +376,10 @@ fn values_that_differ_from_a_vendor_example_are_still_reported() {
         let mut changed = example.clone();
         changed.replace_range(8..9, if &example[8..9] == "Q" { "R" } else { "Q" });
         let line = format!("{case}_token = \"{changed}\"");
-        let expected = findings(&pinned(), &line);
+        let expected = findings(&without_additions(), &line);
         assert!(
             !expected.is_empty(),
-            "{case}: the pinned rules must report the value"
+            "{case}: the rules without the added allowlists must report the value"
         );
         assert_eq!(findings(&default_rules(), &line), expected, "{case}");
     }
@@ -403,7 +394,7 @@ fn extending_the_default_gets_the_allowlists() {
             .load_toml("[extend]\nuseDefault = true\n")
             .unwrap(),
     );
-    assert!(findings(&pinned(), &line).contains(&(GENERIC.to_owned(), secret)));
+    assert!(findings(&without_additions(), &line).contains(&(GENERIC.to_owned(), secret)));
     assert!(findings(&extended, &line).is_empty());
 }
 
@@ -415,6 +406,9 @@ fn disabling_the_generic_rule_still_loads() {
     assert!(!config.rules().contains_key(GENERIC));
 }
 
+/// A configuration with only a `generic-api-key` rule and no allowlists.
+const STANDALONE: &str = "[[rules]]\nid = \"generic-api-key\"\nregex = '''token_md5 = ([0-9a-f]{32})'''\nsecretGroup = 1\n";
+
 #[test]
 fn a_replaced_default_and_a_standalone_config_are_unchanged() {
     let mut values = Values(10);
@@ -423,19 +417,13 @@ fn a_replaced_default_and_a_standalone_config_are_unchanged() {
     // A caller-supplied default without the allowlists is used as given.
     let replaced = engine(
         ConfigLoader::new()
-            .with_default_config(upstream_text())
+            .with_default_config(STANDALONE)
             .load_toml("[extend]\nuseDefault = true\n")
             .unwrap(),
     );
     assert_eq!(findings(&replaced, &line), expected);
     // A configuration that does not extend the default gets no allowlists.
-    let standalone = engine(
-        ConfigLoader::new()
-            .load_toml(
-                "[[rules]]\nid = \"generic-api-key\"\nregex = '''token_md5 = ([0-9a-f]{32})'''\nsecretGroup = 1\n",
-            )
-            .unwrap(),
-    );
+    let standalone = engine(ConfigLoader::new().load_toml(STANDALONE).unwrap());
     assert_eq!(findings(&standalone, &line), expected);
 }
 
@@ -456,5 +444,5 @@ fn native_packs_on_the_default_use_the_allowlists() {
     );
     assert!(outcome.scan().is_complete());
     assert!(outcome.scan().findings().is_empty());
-    assert!(findings(&pinned(), &line).contains(&(GENERIC.to_owned(), secret)));
+    assert!(findings(&without_additions(), &line).contains(&(GENERIC.to_owned(), secret)));
 }

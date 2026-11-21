@@ -79,7 +79,7 @@ fn range(value: &Value) -> Option<[usize; 2]> {
 
 fn default_positives() -> Vec<Positive> {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/generator-corpus/samples-v1.jsonl");
+        .join("../../testdata/generator-corpus/samples-v1.jsonl");
     fs::read_to_string(corpus)
         .unwrap()
         .lines()

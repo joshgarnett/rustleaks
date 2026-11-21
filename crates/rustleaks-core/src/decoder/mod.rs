@@ -1246,7 +1246,7 @@ mod tests {
     fn for_each_corpus_pass(
         mut visit: impl FnMut(&str, &[u8], &[EncodedSegment], &[u8], &[EncodedSegment]),
     ) {
-        let corpus = include_str!("../../../../compat/decoder-corpus/outcomes-v1.jsonl");
+        let corpus = include_str!("../../../../testdata/decoder-corpus/outcomes-v1.jsonl");
         for outcome in corpus
             .lines()
             .map(|line| serde_json::from_str::<OracleOutcome>(line).unwrap())
@@ -2070,13 +2070,13 @@ mod tests {
 
     #[test]
     #[allow(clippy::too_many_lines)]
-    fn canonical_decoder_pass_corpus_matches_go() {
-        let requests = include_str!("../../../../compat/decoder-corpus/requests-v1.jsonl")
+    fn decoder_pass_corpus_matches_expected_outcomes() {
+        let requests = include_str!("../../../../testdata/decoder-corpus/requests-v1.jsonl")
             .lines()
             .map(|line| serde_json::from_str::<OracleRequest>(line).unwrap())
             .filter(|request| request.operation == "decode")
             .collect::<Vec<_>>();
-        let corpus = include_str!("../../../../compat/decoder-corpus/outcomes-v1.jsonl");
+        let corpus = include_str!("../../../../testdata/decoder-corpus/outcomes-v1.jsonl");
         let outcomes = corpus
             .lines()
             .map(|line| serde_json::from_str::<OracleOutcome>(line).unwrap())

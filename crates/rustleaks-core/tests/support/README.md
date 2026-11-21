@@ -8,7 +8,7 @@ The integration tests in `crates/rustleaks-core/tests/` include these files.
 | File | Used by | Contents |
 | --- | --- | --- |
 | `native_harness.rs` | The five coverage tests below | The composition of all three rule packs, scan, range and entropy helpers |
-| `corpus.rs` | `allowlist.rs`, `composite_corpus.rs`, `detect_corpus.rs`, `session_corpus.rs` | The finding record of the frozen corpora under `compat/`, JSON Lines and base64 helpers |
+| `corpus.rs` | `allowlist.rs`, `composite_corpus.rs`, `detect_corpus.rs`, `session_corpus.rs` | The finding record of the corpora under `testdata/`, JSON Lines and base64 helpers |
 | `fuzz_profile.rs` | Fuzz targets, `security_stress.rs` tests and `xtask` in several crates | Smoke and deep fuzz limits and the larger synthetic seeds |
 | `*_cases.rs` | The rule-pack tests and `rule_precedence.rs` | Hand-written cases for each rule pack |
 

@@ -14,7 +14,6 @@ repository root with the committed lockfiles unchanged.
 | `just fuzz-smoke` | Runs short AddressSanitizer campaigns on copies of the reviewed seeds |
 | `just fuzz` | Runs private local fuzz campaigns and corpus operations (Unix) |
 | `just security-deep` | Runs the optional deep security profile (Unix) |
-| `just parity` | Replays the committed compatibility corpus |
 | `just ci` | Runs format, lint, docs, build, the eight-target compile check and all tests. It does not run the security, fuzz, package or release checks |
 | `just package-check` | Builds the extracted package and clean external Cargo and Bazel consumers |
 | `just release-dry-run` | Runs the package checks and Cargo's locked publish check without upload |
@@ -292,7 +291,7 @@ private runner sets and records it. Unknown profiles fail at startup.
 
 | Boundary | Case | What it shows | Limit of the claim |
 | --- | --- | --- | --- |
-| Regex and fragment input | Match suffix beyond the smoke input limit | Exact end span on full input; truncated smoke input has no match | No Gitleaks parity claim |
+| Regex and fragment input | Match suffix beyond the smoke input limit | Exact end span on full input; truncated smoke input has no match | No claim about other inputs |
 | Configuration | Rule after an 8 KiB comment; selected rule and source byte limits | Rule kept; limits accepted at the value and rejected one above | Selection limits do not bound every configuration allocation |
 | Nested decoding | Three encoded layers in a controlled scan | Complete at the measured decoded-byte budget; one less gives a structured partial result | Not full decoder coverage |
 | Many findings | Controlled scan with 8,192 occurrences | Exact count at the finding limit; one less rolls back the rule | Operation budgets across fragments are not covered |
@@ -382,7 +381,7 @@ package set is enforced by `xtask`; it is not a security conclusion. See
 The committed public API snapshot is the exact workspace baseline. For every
 release candidate, run `cargo-semver-checks` for each public crate and feature
 profile against the latest version on crates.io, then review the API by hand.
-See the [public API README](../../compat/public-api/README.md).
+See the [public API README](../../testdata/public-api/README.md).
 
 ## Repository self-scan
 
@@ -427,8 +426,8 @@ Untrusted pull request code never runs from `pull_request_target`,
 
 | When | Work |
 | --- | --- |
-| Pull request | `just ci`, the worktree self-scan, `just security` (cargo-deny, RustSec, locked cargo-vet, unsafe inventory, Miri and panic policy), `just fuzz-smoke` (builds and runs the fuzz targets), `just release-dry-run`, `cargo xtask regression-check`, dependency review on graph changes, current stable and MSRV, and the native platform lanes. No pull request job gets secrets |
-| Nightly | Frozen evidence and Rust replay (`cargo xtask regression-check`), longer fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 120 seconds), newest allowed dependency resolution in a checkout that is not committed, and the worktree and history self-scan |
+| Pull request | `just ci`, the worktree self-scan, `just security` (cargo-deny, RustSec, locked cargo-vet, unsafe inventory, Miri and panic policy), `just fuzz-smoke` (builds and runs the fuzz targets), `just release-dry-run`, dependency review on graph changes, current stable and MSRV, and the native platform lanes. No pull request job gets secrets |
+| Nightly | Longer fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 120 seconds), newest allowed dependency resolution in a checkout that is not committed, and the worktree and history self-scan |
 | Weekly | Pinned Miri, unsafe inventory, cargo-vet, RustSec and all native target lanes. The weekly fuzz job raises run and time budgets but keeps the smoke input limits; it does not run the deep profile. A Bazel coverage review measures ordinary tests, not fuzz coverage. CodeQL and OpenSSF Scorecard run on their own schedules |
 | Release candidate | A manual dry run without secrets for the exact `main` commit and version. See [Releasing](releasing.md) |
 
@@ -456,7 +455,7 @@ these files:
 - Security documents: `SECURITY.md`, this page, the threat model, the
   incident procedure and the dependency policy.
 - Scanning policy: `.rustleaks.toml`, `.rustleaksignore`, the resource
-  limits and the compatibility policy.
+  limits and the repository contract.
 - Evidence: public API snapshots, corpora, generators and fixture
   inventories.
 - Release inputs: package, release, checksum, SBOM, provenance and

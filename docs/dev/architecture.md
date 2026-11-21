@@ -82,7 +82,7 @@ maintenance tools. They are never published.
 `rustleaks-core` parses TOML into a validated, immutable compiled
 configuration (`config` module). The default rules,
 `crates/rustleaks-core/default/gitleaks.toml`, are built into the crate. They
-are based on the upstream copy in `compat/config-corpus/default-gitleaks.toml`.
+started from the Gitleaks default configuration.
 Native rule packs load through `native::NativePolicy`, which adds stricter
 validation before the normal loader runs. Regex types stay private.
 
@@ -136,15 +136,13 @@ identify the product.
 
 ### A detection rule
 
-- The default rules are Rustleaks-owned and based on the pinned Gitleaks
-  configuration. A change to them needs review, tests in
-  `crates/rustleaks-core/tests/default_rules.rs` (which names every
-  difference from the upstream copy), an entry in
-  [Default rules](../user/gitleaks-differences.md#default-rules), a changelog
-  entry, and a measurement on a held-out set that was not used to design it.
-  A change that makes Rustleaks miss secrets needs maintainer approval. Do not
-  edit the upstream copy; it changes only with a new pin. See
-  [Updating upstream](updating-upstream.md).
+- The default rules started from the Gitleaks default configuration and are
+  maintained in place. A change to them needs review, tests with
+  expectations from the change's definition, an update to
+  [Default rules](../user/built-in-rules.md#default-rules) when users see the
+  change, a changelog entry, and a measurement on a held-out set that was not
+  used to design it. A change that makes Rustleaks miss secrets needs
+  maintainer approval.
 - Add a new rule to a native rule pack. See
   [Rule pack authoring](rule-pack-authoring.md).
 - Engine behavior that rules depend on, such as a new predicate, belongs in
@@ -160,7 +158,7 @@ identify the product.
    dependency types private. Put new codecs behind the `archives` feature.
 4. Connect it in `crates/rustleaks-cli/src/source.rs` if the CLI needs it.
 5. Add tests under `crates/rustleaks-sources/tests/` and register them. See
-   [Testing and parity](testing-and-parity.md#adding-a-test).
+   [Testing](testing.md#adding-a-test).
 6. Update [Engine internals](engine-internals.md), the
    [threat model](threat-model.md) and, for new dependencies,
    [Dependencies](dependencies.md).
@@ -190,5 +188,6 @@ identify the product.
 5. Document the flag in the user
    [command reference](../user/cli-reference.md).
 
-A new flag must not change the meaning of an existing Gitleaks flag. See the
-[compatibility policy](../user/gitleaks-differences.md#compatibility-policy).
+A new flag must not change the meaning of an existing flag, including a
+legacy Gitleaks flag. See the
+[repository contract](../../AGENTS.md#repository-contract).

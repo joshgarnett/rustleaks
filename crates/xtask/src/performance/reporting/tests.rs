@@ -14,7 +14,7 @@ fn fixture() -> Value {
             "output_bytes":invariant.output_bytes,"outcome_fnv1a64":invariant.outcome_fnv1a64,
             "logical_unit":if invariant.workload.starts_with("report-") {"findings"} else {"input-bytes"},
             "elapsed_ns":100,"ns_per_iteration":100,"invariant":"synthetic outcome verified",
-            "provenance":{"upstream_revision":crate::REVISION,"default_config_sha256":crate::DEFAULT_RULES_SHA256,
+            "provenance":{"default_config_sha256":crate::DEFAULT_RULES_SHA256,
                 "package_version":crate::RELEASE_VERSION,"binding":"bazel-action-graph",
                 "executable_bytes":1024,"executable_fnv1a64":"0123456789abcdef",
                 "source":source,"build":build,"host":host,"baseline_eligible":true,

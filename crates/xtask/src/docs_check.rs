@@ -14,14 +14,12 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::slice;
 
-use crate::tooling::{FROZEN_DIRECTORIES, frozen_artifact_paths};
-
 /// Upstream fixture Markdown files that are kept byte for byte.
 const VERBATIM_UPSTREAM_FIXTURES: &[&str] = &[
-    "compat/fixtures/upstream/testdata/expected/report/template_markdown.md",
-    "compat/fixtures/upstream/testdata/repos/archives/README.md",
-    "compat/fixtures/upstream/testdata/repos/small/README.md",
-    "compat/fixtures/upstream/testdata/repos/staged/README.md",
+    "testdata/fixtures/upstream/testdata/expected/report/template_markdown.md",
+    "testdata/fixtures/upstream/testdata/repos/archives/README.md",
+    "testdata/fixtures/upstream/testdata/repos/small/README.md",
+    "testdata/fixtures/upstream/testdata/repos/staged/README.md",
 ];
 
 /// Directory prefixes whose files are not maintained prose.
@@ -41,7 +39,7 @@ const BANNED_PHRASES: &[&str] = &[
 ///
 /// They are matched as whole words, ignoring case, in Markdown and Rust
 /// documentation prose outside code spans, code blocks, and link targets.
-/// Frozen evidence and dependency audit records are exempt. A match that is
+/// Dependency audit records are exempt. A match that is
 /// part of a [`BANNED_PHRASES`] match is reported only once, by that check.
 const STYLE_PHRASES: &[&str] = &[
     "blazing",
@@ -290,13 +288,12 @@ fn is_document(relative: &Path) -> bool {
 }
 
 /// Returns whether a file is a first-party Cargo manifest: the workspace
-/// manifest or a manifest below `crates/`, outside frozen evidence.
+/// manifest or a manifest below `crates/`.
 fn is_manifest(relative: &Path) -> bool {
     relative
         .file_name()
         .is_some_and(|name| name == "Cargo.toml")
         && (relative.components().count() == 1 || relative.starts_with(CRATES_DIRECTORY))
-        && !is_frozen(relative)
 }
 
 fn tracker_problems(tree: &Tree) -> Vec<String> {
@@ -312,28 +309,17 @@ fn tracker_problems(tree: &Tree) -> Vec<String> {
 }
 
 /// Returns whether documented commands in this file are exempt from command
-/// validation. Frozen historical evidence and release notes may name retired
-/// commands.
+/// validation. Release notes may name retired commands.
 fn is_command_check_exempt(relative: &Path) -> bool {
     relative
         .file_name()
         .is_some_and(|name| name == "CHANGELOG.md")
-        || is_frozen(relative)
-}
-
-/// Returns whether a file is frozen historical evidence that cannot be edited.
-fn is_frozen(relative: &Path) -> bool {
-    FROZEN_DIRECTORIES
-        .iter()
-        .any(|directory| relative.starts_with(directory))
-        || frozen_artifact_paths().any(|artifact| relative == Path::new(artifact))
 }
 
 /// Returns whether a file is exempt from the [`STYLE_PHRASES`] and sentence
-/// length checks. Frozen evidence cannot be edited, and dependency audit
-/// records keep reviewed wording.
+/// length checks. Dependency audit records keep reviewed wording.
 fn is_prose_style_exempt(relative: &Path) -> bool {
-    is_frozen(relative) || relative.starts_with(DEPENDENCY_AUDIT_DIRECTORY)
+    relative.starts_with(DEPENDENCY_AUDIT_DIRECTORY)
 }
 
 /// Checks one file. `relative` is the path below `root`, which is used to
@@ -1448,9 +1434,12 @@ mod tests {
     }
 
     #[test]
-    fn exempts_frozen_files_and_audits_from_style_phrases() {
+    fn exempts_audits_from_style_phrases() {
         let contents = "A robust design.\n";
-        assert!(problems("compat/allowlist-corpus/README.md", contents).is_empty());
+        assert_eq!(
+            problems("testdata/allowlist-corpus/README.md", contents),
+            ["testdata/allowlist-corpus/README.md:1: uses disallowed phrase \"robust\""]
+        );
         assert!(problems("docs/dependency-audits/crate.md", contents).is_empty());
         assert_eq!(
             problems("CHANGELOG.md", contents),
@@ -1508,10 +1497,13 @@ mod tests {
     }
 
     #[test]
-    fn exempts_frozen_files_audits_and_rust_from_sentence_warnings() {
+    fn exempts_audits_and_rust_from_sentence_warnings() {
         let contents = format!("{}\n", sentence(41));
         assert_eq!(warnings("docs/A.md", &contents).len(), 1);
-        assert!(warnings("compat/allowlist-corpus/README.md", &contents).is_empty());
+        assert_eq!(
+            warnings("testdata/allowlist-corpus/README.md", &contents).len(),
+            1
+        );
         assert!(warnings("docs/dependency-audits/crate.md", &contents).is_empty());
         assert!(warnings("src/lib.rs", &format!("/// {contents}")).is_empty());
     }
@@ -1551,7 +1543,7 @@ mod tests {
             "crates/a/fuzz",
             "crates/a/target",
             ".tmp/copy",
-            "compat/allowlist-corpus",
+            "testdata/allowlist-corpus",
             "vendor/b",
         ] {
             fs::create_dir_all(root.path.join(directory)).unwrap();
@@ -1562,7 +1554,7 @@ mod tests {
             "crates/a/fuzz/Cargo.toml",
             "crates/a/target/Cargo.toml",
             ".tmp/copy/Cargo.toml",
-            "compat/allowlist-corpus/Cargo.toml",
+            "testdata/allowlist-corpus/Cargo.toml",
             "vendor/b/Cargo.toml",
         ] {
             fs::write(root.path.join(file), "[workspace]\n").unwrap();
@@ -1785,17 +1777,17 @@ mod tests {
     }
 
     #[test]
-    fn skips_command_checks_for_frozen_and_historical_files() {
+    fn skips_command_checks_for_release_notes() {
         assert!(is_command_check_exempt(Path::new("CHANGELOG.md")));
-        assert!(is_command_check_exempt(Path::new(
-            "compat/allowlist-corpus/README.md"
-        )));
-        assert!(is_command_check_exempt(Path::new(
-            "compat/fixtures/upstream/notes.md"
+        assert!(!is_command_check_exempt(Path::new(
+            "testdata/allowlist-corpus/README.md"
         )));
         assert!(!is_command_check_exempt(Path::new("docs/TESTING.md")));
         let retired = "Run `cargo xtask nope-check`.\n";
-        assert!(problems("compat/allowlist-corpus/README.md", retired).is_empty());
+        assert_eq!(
+            problems("testdata/allowlist-corpus/README.md", retired).len(),
+            1
+        );
         assert!(problems("CHANGELOG.md", retired).is_empty());
         assert_eq!(problems("docs/TESTING.md", retired).len(), 1);
         assert_eq!(

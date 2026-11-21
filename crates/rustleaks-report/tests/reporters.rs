@@ -44,12 +44,12 @@ fn json_matches_upstream_fixtures_byte_for_byte() {
     assert_eq!(
         render(&JsonReporter, &[finding]),
         include_bytes!(
-            "../../../compat/fixtures/upstream/testdata/expected/report/json_simple.json"
+            "../../../testdata/fixtures/upstream/testdata/expected/report/json_simple.json"
         )
     );
     assert_eq!(
         render(&JsonReporter, &[]),
-        include_bytes!("../../../compat/fixtures/upstream/testdata/expected/report/empty.json")
+        include_bytes!("../../../testdata/fixtures/upstream/testdata/expected/report/empty.json")
     );
 }
 
@@ -72,7 +72,9 @@ fn csv_matches_upstream_fixture_byte_for_byte() {
         .unwrap();
     assert_eq!(
         render(&CsvReporter, &[finding]),
-        include_bytes!("../../../compat/fixtures/upstream/testdata/expected/report/csv_simple.csv")
+        include_bytes!(
+            "../../../testdata/fixtures/upstream/testdata/expected/report/csv_simple.csv"
+        )
     );
     assert!(render(&CsvReporter, &[]).is_empty());
 }
@@ -88,7 +90,7 @@ fn junit_matches_upstream_fixtures_with_the_rustleaks_suite_name() {
         with_rustleaks_identity(
             "junit",
             include_bytes!(
-                "../../../compat/fixtures/upstream/testdata/expected/report/junit_simple.xml"
+                "../../../testdata/fixtures/upstream/testdata/expected/report/junit_simple.xml"
             )
         )
     );
@@ -97,7 +99,7 @@ fn junit_matches_upstream_fixtures_with_the_rustleaks_suite_name() {
         with_rustleaks_identity(
             "junit",
             include_bytes!(
-                "../../../compat/fixtures/upstream/testdata/expected/report/junit_empty.xml"
+                "../../../testdata/fixtures/upstream/testdata/expected/report/junit_empty.xml"
             )
         )
     );
@@ -130,7 +132,7 @@ fn sarif_matches_upstream_fixture_with_the_rustleaks_driver() {
         with_rustleaks_identity(
             "sarif",
             include_bytes!(
-                "../../../compat/fixtures/upstream/testdata/expected/report/sarif_simple.sarif"
+                "../../../testdata/fixtures/upstream/testdata/expected/report/sarif_simple.sarif"
             )
         )
     );

@@ -41,22 +41,22 @@ fn render(template: &TemplateReporter, findings: &[Finding]) -> Vec<u8> {
 #[test]
 fn fixture_templates_match_the_pinned_go_oracle_byte_for_byte() {
     let json = reporter(include_bytes!(
-        "../../../compat/fixtures/upstream/testdata/report/jsonextra.tmpl"
+        "../../../testdata/fixtures/upstream/testdata/report/jsonextra.tmpl"
     ));
     assert_eq!(
         render(&json, &[fixture_finding()]),
         include_bytes!(
-            "../../../compat/fixtures/upstream/testdata/expected/report/template_jsonextra.json"
+            "../../../testdata/fixtures/upstream/testdata/expected/report/template_jsonextra.json"
         )
     );
 
     let markdown = reporter(include_bytes!(
-        "../../../compat/fixtures/upstream/testdata/report/markdown.tmpl"
+        "../../../testdata/fixtures/upstream/testdata/report/markdown.tmpl"
     ));
     assert_eq!(
         render(&markdown, &[fixture_finding()]),
         include_bytes!(
-            "../../../compat/fixtures/upstream/testdata/expected/report/template_markdown.md"
+            "../../../testdata/fixtures/upstream/testdata/expected/report/template_markdown.md"
         )
     );
 }
@@ -64,12 +64,12 @@ fn fixture_templates_match_the_pinned_go_oracle_byte_for_byte() {
 #[test]
 fn fixture_templates_define_exact_empty_order_and_duplicate_behavior() {
     let json = reporter(include_bytes!(
-        "../../../compat/fixtures/upstream/testdata/report/jsonextra.tmpl"
+        "../../../testdata/fixtures/upstream/testdata/report/jsonextra.tmpl"
     ));
     assert_eq!(render(&json, &[]), b"[\n]\n");
 
     let markdown = reporter(include_bytes!(
-        "../../../compat/fixtures/upstream/testdata/report/markdown.tmpl"
+        "../../../testdata/fixtures/upstream/testdata/report/markdown.tmpl"
     ));
     assert_eq!(
         render(&markdown, &[]),
@@ -415,8 +415,8 @@ fn packaged_example_templates_use_far_fewer_actions_than_the_allowance() {
     let one = [fixture_finding()];
     let two = [fixture_finding(), fixture_finding()];
     for source in [
-        &include_bytes!("../../../compat/fixtures/upstream/testdata/report/jsonextra.tmpl")[..],
-        include_bytes!("../../../compat/fixtures/upstream/testdata/report/markdown.tmpl"),
+        &include_bytes!("../../../testdata/fixtures/upstream/testdata/report/jsonextra.tmpl")[..],
+        include_bytes!("../../../testdata/fixtures/upstream/testdata/report/markdown.tmpl"),
         b"{{range $i, $f := .}}{{$i}} {{.RuleID | quote}} {{.File}}:{{.StartLine}}\n{{end}}total: {{len .}}",
     ] {
         let per_finding = actions_needed(source, &two) - actions_needed(source, &one);

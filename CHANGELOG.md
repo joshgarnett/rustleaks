@@ -26,6 +26,18 @@
 - `ScanOptions::honor_gitleaks_allow` and
   `ScanOptionsBuilder::honor_gitleaks_allow` are removed. Use
   `honor_allow_markers`, which has the same meaning.
+- Rustleaks no longer tracks a Gitleaks revision. The public constants
+  `rustleaks_core::UPSTREAM_REVISION` and
+  `rustleaks_core::config::DEFAULT_CONFIG_REVISION` are removed. The
+  built-in review reference and `NativePolicyIdentity` no longer include the
+  Gitleaks commit, so both change once, and review records made with the
+  old built-in reference are reported as stale. The default rules file has a new
+  header comment, so `DEFAULT_CONFIG_SHA256` changes; the rules do not.
+  Findings, report fields and exit codes do not change.
+- `docs/user/gitleaks-differences.md` is replaced by
+  `docs/user/moving-from-gitleaks.md`, which now lists the differences from
+  Gitleaks, and the default rule allowlists are described in
+  `docs/user/built-in-rules.md`.
 
 ## [0.1.0-alpha.12] - 2026-11-21
 

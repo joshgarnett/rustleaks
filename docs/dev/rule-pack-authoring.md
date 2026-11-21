@@ -64,7 +64,7 @@ into an ordinary configuration file is not supported.
 ## Identity
 
 `NativePolicyIdentity` compares exact, length-framed bytes of the native
-policy version, crate version, pinned upstream and configuration identity,
+policy version, crate version, default rules identity,
 enabled annotation extensions, and the ordered pack IDs and TOML sources.
 Any byte change, including whitespace or a comment, changes the identity. The
 framing is an equality check, not a digest and not authentication.
@@ -289,8 +289,9 @@ any of these needs a concrete user need and a reviewed safety design.
   and `rustleaks-extra-v1` for the small first-party set.
 - Changes to the shipped default rules
   (`crates/rustleaks-core/default/gitleaks.toml`) follow [A detection
-  rule](architecture.md#a-detection-rule). Never edit the upstream copy in
-  `compat/config-corpus/default-gitleaks.toml`.
+  rule](architecture.md#a-detection-rule). Do not edit
+  `testdata/config-corpus/default-gitleaks.toml`, which is test input for the
+  configuration cases.
 
 ### Imported rules
 
@@ -363,11 +364,11 @@ bazelisk test //crates/rustleaks-core:connection_rules_test
 ```
 
 A new test file must be registered. See
-[Testing and parity](testing-and-parity.md#adding-a-test).
+[Testing](testing.md#adding-a-test).
 
 ### Quality corpus
 
-The synthetic quality corpus in `compat/quality-corpus/` compares the
+The synthetic quality corpus in `testdata/quality-corpus/` compares the
 default rules with `rustleaks-extra-v1`. Its labels are written
 independently of detector output. Regenerate and check it with:
 
@@ -378,7 +379,7 @@ just quality-eval
 ```
 
 Never change a label to improve a detector result. See the
-[quality corpus README](../../compat/quality-corpus/README.md).
+[quality corpus README](../../testdata/quality-corpus/README.md).
 
 ### Notes for each pack
 
@@ -394,7 +395,7 @@ These notes add to the steps above.
 - A refresh needs a review of provider format changes, new independent test
   cases and a new run of the quality comparison. Nothing is downloaded.
 - Quality evaluation: the [quality
-  corpus](../../compat/quality-corpus/README.md) compares the default rules
+  corpus](../../testdata/quality-corpus/README.md) compares the default rules
   with and without this pack on the same inputs. It has Azure field orders,
   repeats, invalid bytes, percent-encoded wrappers, MongoDB percent-encoded
   user information, short passwords, templates and near misses. Sovereign

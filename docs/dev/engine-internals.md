@@ -694,4 +694,4 @@ budget as incomplete coverage, not as a fast clean scan.
 
 Owned code forbids unsafe Rust. CI runs the resource-limit tests natively on
 all eight required targets. These tests do not measure time or memory. See
-[Testing and parity](testing-and-parity.md#platforms).
+[Testing](testing.md#platforms).

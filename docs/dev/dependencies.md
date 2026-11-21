@@ -199,7 +199,7 @@ that all dependencies are safe Rust.
 
 `cargo deny check` must pass advisories, bans, licenses and sources. CI runs
 the platform tests natively on all eight targets (see
-[Testing and parity](testing-and-parity.md#platforms)). The tests reach
+[Testing](testing.md#platforms)). The tests reach
 dependency code only with the inputs they pass to it. Compiling for a target
 does not test its architecture-specific unsafe paths.
 
@@ -305,8 +305,8 @@ hold:
 - Every unsafe block, build script, native library, C or C++ build, `links`
   key, proc macro and target-specific dependency is listed.
 - It passes native tests for every claimed format.
-- It passes the archive unit and corpus tests, parity, panic-abort checks,
-  fuzzing and resource-limit tests.
+- It passes the archive unit and corpus tests, the CLI corpus replay,
+  panic-abort checks, fuzzing and resource-limit tests.
 - It meets the license, notice and source policy.
 - It passes cargo-deny, RustSec and cargo-vet. Run `just security` on its
   exact locked graph.
@@ -324,7 +324,7 @@ native inventory, MSRV and compatibility result. After approval:
 1. Follow the build maintenance procedure and run `just deps-repin`.
 2. Review all Cargo and Bazel lockfile changes.
 3. Remove the old crate and its targets. Keep licenses and notices.
-4. Run the dependency, archive, parity, fuzz, panic-abort, native,
+4. Run the dependency, archive, corpus, fuzz, panic-abort, native,
    clean-clone, package and release checks.
 
 Archive support must not shrink without notice.

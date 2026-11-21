@@ -560,7 +560,6 @@ fn findings_preserve_coordinates_entropy_tags_metadata_and_duplicates() {
     );
 }
 
-// RED-001; TM-0241..TM-0250
 #[test]
 fn finding_redaction_uses_go_bytes_round_to_even_and_keeps_auxiliaries() {
     let location = Location::new(0, 0, 1, 1).unwrap();

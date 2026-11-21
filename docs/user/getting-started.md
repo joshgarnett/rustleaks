@@ -212,6 +212,4 @@ the [command reference](cli-reference.md) for every command and flag.
   a scan reaches one.
 - [Moving from Gitleaks](moving-from-gitleaks.md): what keeps working and
   which names to use if you move from Gitleaks.
-- [Differences from Gitleaks](gitleaks-differences.md): every difference
-  from Gitleaks.
 - [Using rustleaks-core](library.md): the Rust library.

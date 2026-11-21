@@ -52,13 +52,11 @@ Never send vulnerability details to a public issue.
 
 - Develop the smallest complete fix on a private branch or advisory fork.
 - Add an ordinary deterministic regression test, and any property, fuzz,
-  resource, parity or negative-control test that is needed. A compatibility
-  difference must be explicit and reviewed.
+  resource, corpus or negative-control test that is needed. A behavior
+  change must be explicit and reviewed.
 - In a clean checkout, run the affected tests, `just security`,
   `just fuzz-smoke`, `just ci`, the package checks and the native target
-  checks. `just ci` includes the committed corpora and parity tests. Run
-  `cargo xtask regression-check` when compatibility behavior or its evidence
-  changed.
+  checks. `just ci` includes the corpus tests and the CLI corpus replay.
   Get a technical review from someone other than the author of the fix.
 - Rebuild release artifacts from trusted inputs. Reconcile the source,
   lockfiles, Bazel graph, SBOM, checksums and attestations before publication

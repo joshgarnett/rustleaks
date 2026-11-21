@@ -136,7 +136,7 @@ enum MethodDisposition {
 }
 
 #[test]
-fn frozen_allowlist_corpus_matches_go() {
+fn allowlist_corpus_matches_expected_outcomes() {
     let corpus = corpus_dir();
     let requests = json_lines::<Request>(&corpus.join("requests-v1.jsonl"));
     let responses = json_lines::<Response>(&corpus.join("outcomes-v1.jsonl"));
@@ -148,7 +148,7 @@ fn frozen_allowlist_corpus_matches_go() {
     for (request, response) in requests.iter().zip(&responses) {
         assert_eq!(request.id, response.id);
         assert_eq!(request.operation, response.operation);
-        assert!(response.error.is_none(), "{}: Go oracle error", request.id);
+        assert!(response.error.is_none(), "{}: recorded error", request.id);
         match request.operation.as_str() {
             "method" => {
                 let disposition = method_disposition(request);
@@ -412,7 +412,8 @@ fn load_detector_config(request: &Request) -> rustleaks_core::config::CompiledCo
 }
 
 fn fixture_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/fixtures/upstream/testdata/config")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/fixtures/upstream/testdata/config")
 }
 
 fn fixture_resolver() -> VirtualResolver {
@@ -441,7 +442,7 @@ fn fixture_resolver() -> VirtualResolver {
 }
 
 fn corpus_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/allowlist-corpus")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/allowlist-corpus")
 }
 
 fn go_string(bytes: &[u8]) -> String {

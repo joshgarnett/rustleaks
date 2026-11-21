@@ -19,18 +19,13 @@ pub use raw::{
     RawGlobalAllowlist, RegexTarget, RequiredRuleSpec, RuleSpec,
 };
 
-/// The Rustleaks default rules: the Gitleaks default configuration at
-/// [`DEFAULT_CONFIG_REVISION`] with the reviewed Rustleaks changes listed in
-/// `docs/user/gitleaks-differences.md`.
+/// The Rustleaks default rules. They started from the Gitleaks default
+/// configuration; see `NOTICE` for attribution.
 pub const DEFAULT_CONFIG: &str = include_str!("../../default/gitleaks.toml");
 
 /// Byte view of [`DEFAULT_CONFIG`].
 pub const DEFAULT_CONFIG_BYTES: &[u8] = DEFAULT_CONFIG.as_bytes();
 
-/// Gitleaks commit on which [`DEFAULT_CONFIG`] is based.
-pub const DEFAULT_CONFIG_REVISION: &str = crate::UPSTREAM_REVISION;
-
-/// SHA-256 of [`DEFAULT_CONFIG_BYTES`], the shipped Rustleaks default. The
-/// upstream copy has the SHA-256 in `compat/upstream-revision.txt`.
+/// SHA-256 of [`DEFAULT_CONFIG_BYTES`], the shipped Rustleaks default rules.
 pub const DEFAULT_CONFIG_SHA256: &str =
-    "442fca81a914728ebaf843ba59d01bb3e6e71559c1ddb51fddc81fca45df959a";
+    "35c17b31383953534b7e5769082564aab30a52606f32a310a217e99b341280b8";

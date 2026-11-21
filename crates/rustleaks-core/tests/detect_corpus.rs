@@ -118,14 +118,14 @@ fn canonical_adapter_preserves_every_nested_protocol_field() {
 }
 
 #[test]
-fn frozen_direct_detector_corpus_matches_go() {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/detect-corpus");
+fn direct_detector_corpus_matches_expected_outcomes() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/detect-corpus");
     replay_detector_corpus(&corpus);
 }
 
 #[test]
-fn frozen_decoder_detector_corpus_matches_go() {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/decoder-corpus");
+fn decoder_detector_corpus_matches_expected_outcomes() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/decoder-corpus");
     replay_detector_corpus(&corpus);
 }
 
@@ -139,7 +139,7 @@ fn replay_detector_corpus(corpus: &Path) {
         if request.config_base64.is_empty() && request.config_fixture.is_empty() {
             continue;
         }
-        assert!(response.error.is_none(), "{}: Go oracle error", request.id);
+        assert!(response.error.is_none(), "{}: recorded error", request.id);
         assert!(
             !request.scope_disposition.contains("deferred"),
             "{}",
@@ -158,7 +158,7 @@ fn scan_detector_request(request: &Request) -> Vec<CanonicalFinding> {
         decode_base64(&request.config_base64)
     } else {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../compat/fixtures/upstream/testdata/config")
+            .join("../../testdata/fixtures/upstream/testdata/config")
             .join(&request.config_fixture);
         fs::read(fixture).unwrap()
     };
@@ -220,7 +220,7 @@ fn scan_detector_request(request: &Request) -> Vec<CanonicalFinding> {
 }
 
 #[test]
-fn frozen_bootstrap_detector_rows_keep_exact_detection_fields() {
+fn bootstrap_detector_rows_keep_exact_detection_fields() {
     let (requests, outcomes) = bootstrap_rows();
     for (request, response) in requests.into_iter().zip(outcomes).take(3) {
         assert_eq!(request["protocol_version"], 1);
@@ -251,8 +251,8 @@ fn frozen_bootstrap_detector_rows_keep_exact_detection_fields() {
         for finding in &mut expected {
             finding["fragment"] = serde_json::Value::Null;
             finding["required_findings"] = serde_json::json!([]);
-            // Remote metadata belongs to sources. The exact frozen link is
-            // replayed by git_scm::bootstrap_source_link_matches_frozen_bytes.
+            // Remote metadata belongs to sources. The link is checked by
+            // git_scm::bootstrap_source_link_matches_the_recorded_bytes.
             if request.id == "custom-basic" {
                 assert_eq!(
                     decode_base64(finding["link_base64"].as_str().unwrap()),
@@ -272,31 +272,28 @@ fn frozen_bootstrap_detector_rows_keep_exact_detection_fields() {
 }
 
 #[test]
-fn bootstrap_adapter_errors_have_explicit_retired_and_safe_dispositions() {
+fn a_malformed_regex_is_a_configuration_error() {
     let (requests, outcomes) = bootstrap_rows();
     let config = decode_base64(requests[3]["config_base64"].as_str().unwrap());
+    // The recorded outcome is a panic. Rustleaks returns a structured error.
     assert_eq!(outcomes[3]["error"]["class"], "panic");
     assert!(matches!(
         ConfigLoader::new().load_toml(std::str::from_utf8(&config).unwrap()),
         Err(rustleaks_core::config::ConfigError::InvalidPattern { .. })
     ));
-    // Protocol validation was a Go JSONL adapter contract. The in-memory Rust
-    // engine accepts typed inputs and does not implement that retired protocol.
-    assert_eq!(requests[4]["protocol_version"], 99);
-    assert_eq!(outcomes[4]["error"]["class"], "protocol");
-    assert_eq!(outcomes[4]["error"]["message"], "expected protocol 1");
 }
 
 fn bootstrap_rows() -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/oracle-corpus");
-    let requests = detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-input.jsonl"));
-    let outcomes = detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-golden.jsonl"));
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/detect-corpus");
+    let requests =
+        detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-requests.jsonl"));
+    let outcomes =
+        detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-outcomes.jsonl"));
     let ids = [
         "custom-basic",
         "custom-invalid-utf8",
         "custom-allow-marker",
         "malformed-regex-panic",
-        "wrong-protocol",
     ];
     for rows in [&requests, &outcomes] {
         assert_eq!(rows.len(), ids.len());

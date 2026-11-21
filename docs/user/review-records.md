@@ -49,8 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Identifying the rules and the source
 
 - `ReviewPolicy::for_builtin` works for the default rules and the packaged
-  packs. Its reference includes the package versions, the pinned Gitleaks
-  revision, the hashes of the selected rules and the enabled extensions.
+  packs. Its reference includes the package versions, the hashes of the selected
+  rules and the enabled extensions.
 - For your own packs, use `ReviewPolicy::caller_bound` with a reference from
   your own store that is tied to the exact pack bytes. A pack name and version
   alone are not enough. Before each review, the library checks that the scan

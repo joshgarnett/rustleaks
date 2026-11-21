@@ -2604,7 +2604,7 @@ mod tests {
     #[test]
     fn zstd_compressed_fixture_decodes_identically_with_a_smaller_history() {
         let input = include_bytes!(concat!(
-            "../../../compat/fixtures/upstream/testdata/archives",
+            "../../../testdata/fixtures/upstream/testdata/archives",
             "/files/main.go.zst"
         ));
         let limit = 64 * 1024 * 1024;

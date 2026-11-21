@@ -8,7 +8,7 @@ use std::process::Command;
 use serde_json::{Value, json};
 
 use crate::tooling::{command_output, sha256_bytes, sha256_file};
-use crate::{DEFAULT_RULES_SHA256, RELEASE_VERSION, REVISION, workspace_root};
+use crate::{DEFAULT_RULES_SHA256, RELEASE_VERSION, workspace_root};
 mod representative_suite;
 
 pub(crate) use representative_suite::run as representative;
@@ -911,8 +911,7 @@ fn validate_record<'a>(
         return Err("performance record omits checked timing or invariant".into());
     }
     let provenance = &record["provenance"];
-    if provenance["upstream_revision"] != REVISION
-        || provenance["default_config_sha256"] != DEFAULT_RULES_SHA256
+    if provenance["default_config_sha256"] != DEFAULT_RULES_SHA256
         || provenance["package_version"] != RELEASE_VERSION
         || provenance["binding"] != "bazel-action-graph"
         || provenance["executable_bytes"] != prepared.executable_bytes
@@ -992,7 +991,6 @@ mod tests {
             "outcome_fnv1a64": expected.outcome_fnv1a64,
             "invariant": "exact",
             "provenance": {
-                "upstream_revision": REVISION,
                 "default_config_sha256": DEFAULT_RULES_SHA256,
                 "package_version": RELEASE_VERSION,
                 "binding": "unbound-runner",
@@ -1013,7 +1011,7 @@ mod tests {
         let output = prepared.bind(&raw).unwrap();
         validate_records(&output, &prepared, &request).unwrap();
         for (before, after) in [
-            (REVISION, "wrong"),
+            (DEFAULT_RULES_SHA256, "wrong"),
             ("\"result_count\":222", "\"result_count\":221"),
             ("actual compiler", "unavailable"),
             ("test-head", "stale-head"),

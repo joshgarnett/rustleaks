@@ -11,7 +11,7 @@ These pages are for contributors and maintainers. User documentation is in
 | [Architecture](architecture.md) | Learn the crates, how data moves between them, and where to add a rule, source, report format or flag |
 | [Engine internals](engine-internals.md) | Change scan budgets, cancellation, caches, threads, Git processes or complete-target scanning |
 | [Rule pack authoring](rule-pack-authoring.md) | Add or change a rule in a native rule pack |
-| [Testing and parity](testing-and-parity.md) | Run tests, add a test, and understand the frozen compatibility evidence |
+| [Testing](testing.md) | Run tests, add a test, and change the test data under `testdata/` |
 | [Performance](performance.md) | Run the in-repository performance tools and keep their results |
 
 ## Scanner comparison
@@ -31,9 +31,8 @@ These pages are for contributors and maintainers. User documentation is in
 | [Dependencies](dependencies.md) | Apply the dependency policy and the archive codec decisions |
 | [Incident response](incident-response.md) | Handle a vulnerability, exposed credential or compromised input |
 | [Releasing](releasing.md) | Qualify and publish a release |
-| [Updating upstream](updating-upstream.md) | Move Rustleaks to a newer Gitleaks revision |
 
-Related folders: [`compat/`](../../compat/README.md) holds the frozen and
-generated compatibility evidence, and
+Related folders: [`testdata/`](../../testdata/README.md) holds the test
+corpora, copied fixtures and generated test files, and
 [`docs/dependency-audits/`](../dependency-audits/README.md) holds the
 dependency audits.

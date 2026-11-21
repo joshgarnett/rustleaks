@@ -200,8 +200,7 @@ fn collect(
     let mut result: Value = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
     if deadline.is_some() {
         let provenance = &result["ready"]["provenance"];
-        if provenance["upstream_revision"] != super::REVISION
-            || provenance["default_config_sha256"] != super::DEFAULT_RULES_SHA256
+        if provenance["default_config_sha256"] != super::DEFAULT_RULES_SHA256
             || provenance["package_version"] != super::RELEASE_VERSION
             || provenance["target_os"] != prepared.host["os"]
             || provenance["target_arch"] != prepared.host["arch"]

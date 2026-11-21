@@ -23,10 +23,10 @@ rustleaks_library(
 
 rustleaks_library(
     name = "rustleaks_sources_archives",
-    compile_data = ["//compat:fixtures"],
+    compile_data = ["//testdata:fixtures"],
     crate_features = _ARCHIVE_FEATURES,
     crate_name = "rustleaks_sources",
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = _ARCHIVE_DEPS,
     edition = "2024",
 )
@@ -78,7 +78,7 @@ _GIT_TEST_ENV = select({
 rust_binary(
     name = "panic_abort_policy",
     aliases = aliases(),
-    compile_data = ["//compat:fixtures"],
+    compile_data = ["//testdata:fixtures"],
     crate_features = _ARCHIVE_FEATURES,
     crate_name = "panic_abort_policy",
     crate_root = "examples/panic_abort_policy.rs",
@@ -99,7 +99,7 @@ rustleaks_integration_test(
     src = "tests/archive_fuzz.rs",
     crate_features = _ARCHIVE_FEATURES,
     data = [
-        "//compat:all",
+        "//testdata:all",
         "fuzz/seeds/archive/tar-header.txt",
         "fuzz/seeds/archive/zip-header.txt",
     ],
@@ -111,7 +111,7 @@ rustleaks_integration_test(
     name = "scan_resilience_test",
     src = "tests/scan_resilience.rs",
     crate_features = _ARCHIVE_FEATURES,
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
     srcs = [":archive_fuzz_support", "//crates/rustleaks-core:fuzz_profile_support"],
 )
@@ -181,7 +181,7 @@ rustleaks_integration_test(
     name = "perf_archives_test",
     src = "tests/perf_archives.rs",
     crate_features = _ARCHIVE_FEATURES,
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
     srcs = [":archive_fuzz_support"],
 )
@@ -192,7 +192,7 @@ rustleaks_integration_test(
         src = "tests/" + test + ".rs",
         crate_features = _ARCHIVE_FEATURES,
         data = [
-            "//compat:all",
+            "//testdata:all",
         ] + _GIT_TEST_DATA + (["tests/support/git-fixture.sh"] if test == "git_sources" else []),
         deps = _ARCHIVE_DEPS + [":rustleaks_sources_archives"],
         env = _GIT_TEST_ENV,
@@ -208,17 +208,6 @@ rustleaks_integration_test(
         "source_corpus",
     ]
 ]
-
-test_suite(
-    name = "parity_tests",
-    tests = [
-        ":git_corpus_test",
-        ":git_scm_test",
-        ":native_sources_test",
-        ":source_corpus_test",
-    ],
-    visibility = ["//visibility:public"],
-)
 
 test_suite(
     name = "all_tests",

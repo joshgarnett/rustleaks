@@ -15,8 +15,8 @@ rustleaks_library(
         name = test + "_test",
         src = "tests/" + test + ".rs",
         srcs = ["tests/support/tool_identity.rs"],
-        compile_data = ["//compat:fixtures"],
-        data = ["//compat:all"],
+        compile_data = ["//testdata:fixtures"],
+        data = ["//testdata:all"],
         deps = [
             ":rustleaks_report",
             "//crates/rustleaks-core:rustleaks_core",
@@ -34,15 +34,6 @@ rustleaks_integration_test(
     src = "tests/security_stress.rs",
     deps = [":rustleaks_report", "//crates/rustleaks-core:rustleaks_core"],
     srcs = ["//crates/rustleaks-core:fuzz_profile_support"],
-)
-
-test_suite(
-    name = "parity_tests",
-    tests = [
-        ":report_corpus_test",
-        ":template_test",
-    ],
-    visibility = ["//visibility:public"],
 )
 
 test_suite(

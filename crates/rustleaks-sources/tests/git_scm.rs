@@ -1,4 +1,4 @@
-//! Git remote discovery and source-control link parity tests.
+//! Git remote discovery and source-control link tests.
 #![forbid(unsafe_code)]
 
 mod support;
@@ -43,11 +43,11 @@ fn link(
 }
 
 #[test]
-fn bootstrap_source_link_matches_frozen_bytes() {
+fn bootstrap_source_link_matches_the_recorded_bytes() {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/oracle-corpus");
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/detect-corpus");
     let request: serde_json::Value = serde_json::from_str(
-        fs::read_to_string(corpus.join("bootstrap-input.jsonl"))
+        fs::read_to_string(corpus.join("bootstrap-requests.jsonl"))
             .unwrap()
             .lines()
             .next()
@@ -55,7 +55,7 @@ fn bootstrap_source_link_matches_frozen_bytes() {
     )
     .unwrap();
     let outcome: serde_json::Value = serde_json::from_str(
-        fs::read_to_string(corpus.join("bootstrap-golden.jsonl"))
+        fs::read_to_string(corpus.join("bootstrap-outcomes.jsonl"))
             .unwrap()
             .lines()
             .next()
@@ -65,14 +65,14 @@ fn bootstrap_source_link_matches_frozen_bytes() {
     assert_eq!(request["id"], "custom-basic");
     assert_eq!(outcome["id"], request["id"]);
     let fragment = &request["fragment"];
-    let frozen = &outcome["findings"][0];
+    let recorded = &outcome["findings"][0];
     let decode = |value: &serde_json::Value| BASE64.decode(value.as_str().unwrap()).unwrap();
     let finding = Finding::builder()
         .rule_id("bootstrap-token")
         .location(
             Location::new(
-                usize::try_from(frozen["start_line"].as_u64().unwrap()).unwrap(),
-                usize::try_from(frozen["end_line"].as_u64().unwrap()).unwrap(),
+                usize::try_from(recorded["start_line"].as_u64().unwrap()).unwrap(),
+                usize::try_from(recorded["end_line"].as_u64().unwrap()).unwrap(),
                 0,
                 0,
             )
@@ -87,7 +87,7 @@ fn bootstrap_source_link_matches_frozen_bytes() {
         .link_for(&finding)
         .unwrap()
         .unwrap();
-    assert_eq!(actual.as_bytes(), decode(&frozen["link_base64"]));
+    assert_eq!(actual.as_bytes(), decode(&recorded["link_base64"]));
 }
 
 #[test]

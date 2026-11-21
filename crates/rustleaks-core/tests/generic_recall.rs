@@ -1,26 +1,29 @@
 //! Recall probes for the default `generic-api-key` rule: synthetic random
 //! 40-byte keys, some with an embedded dictionary word, under credential-like
-//! names. Each expectation is computed from the pinned rule and its filters,
+//! names. Each expectation is computed from the default rule and its filters,
 //! so a change to the stopwords, the allowlists or the entropy check shows up
 //! as a change in which probes are reported.
 //!
-//! The pinned rule (in `compat/config-corpus/default-gitleaks.toml`) reports
-//! the first capture group when all of these hold:
+//! The default rule (in `default/gitleaks.toml`) reports the first capture
+//! group when all of these hold:
 //! - the secret's Shannon entropy over its bytes is above 3.5;
 //! - the secret is not only ASCII letters, `_`, `.` and `-`;
-//! - the full match does not match the rule's `regexTarget = "match"` regex;
-//! - the lowercase secret contains none of the rule's stopwords; and
-//! - the secret passes the global allowlist, here its unanchored `false`
-//!   alternative, its `true` prefix and `null` suffix, and its stopwords.
+//! - the full match does not match the regex of the rule's
+//!   `regexTarget = "match"` allowlist that has stopwords;
+//! - the lowercase secret contains none of that allowlist's stopwords; and
+//! - the secret passes the first global allowlist, here its unanchored
+//!   `false` alternative, its `true` prefix and `null` suffix, and its
+//!   stopwords.
+//!
+//! The other allowlists of the rule cover hex digests, Git object IDs,
+//! Subresource Integrity values, Stripe publishable keys and UUIDs, which
+//! these probes never are.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
-use std::fs;
-use std::path::PathBuf;
-
 use regex_automata::meta::Regex;
 use rustleaks_core::Engine;
-use rustleaks_core::config::ConfigLoader;
+use rustleaks_core::config::{ConfigLoader, DEFAULT_CONFIG};
 use rustleaks_core::model::{ByteRange, FindingRange, Fragment, ScanOptions};
 
 struct Filters {
@@ -29,10 +32,8 @@ struct Filters {
     match_allowlist: Regex,
 }
 
-fn pinned_config() -> toml::Value {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/config-corpus/default-gitleaks.toml");
-    toml::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+fn default_config() -> toml::Value {
+    toml::from_str(DEFAULT_CONFIG).unwrap()
 }
 
 fn filters(config: &toml::Value) -> Filters {
@@ -55,12 +56,13 @@ fn filters(config: &toml::Value) -> Filters {
         .iter()
         .find(|allowlist| {
             allowlist.get("regexTarget").and_then(toml::Value::as_str) == Some("match")
+                && allowlist.get("stopwords").is_some()
         })
         .unwrap();
     let [pattern] = strings(&with_match["regexes"]).try_into().unwrap();
     Filters {
         rule_stopwords: strings(&with_match["stopwords"]),
-        global_stopwords: strings(&config["allowlist"]["stopwords"]),
+        global_stopwords: strings(&config["allowlists"][0]["stopwords"]),
         match_allowlist: Regex::new(&pattern).unwrap(),
     }
 }
@@ -133,7 +135,7 @@ const WORDS: [&str; 18] = [
 
 #[test]
 fn generic_rule_reports_exactly_the_probes_its_filters_allow() {
-    let config = pinned_config();
+    let config = default_config();
     let filters = filters(&config);
     assert!(filters.rule_stopwords.len() > 1_000);
     let engine = Engine::builder(

@@ -53,18 +53,9 @@ rustleaks_integration_test(
     name = "cli_test",
     src = "tests/cli.rs",
     srcs = glob(["tests/cli/*.rs"]),
-    data = [
-        ":rustleaks",
-        "//compat:all",
-    ] + _GIT_TEST_DATA,
+    data = [":rustleaks"] + _GIT_TEST_DATA,
     deps = _DEPS + [":rustleaks_cli"],
     env = _GIT_TEST_ENV,
-)
-
-test_suite(
-    name = "parity_tests",
-    tests = [":cli_test"],
-    visibility = ["//visibility:public"],
 )
 
 test_suite(

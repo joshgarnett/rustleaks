@@ -411,10 +411,10 @@ struct RegexRequest {
 }
 
 #[test]
-fn frozen_regex_corpus_matches_the_unanchored_path_when_eligible() {
+fn regex_corpus_matches_the_unanchored_path_when_eligible() {
     let mut compiled = BTreeMap::new();
     let mut eligible_inputs = 0_usize;
-    for line in include_str!("../../../../../compat/regex-corpus/requests-v1.jsonl").lines() {
+    for line in include_str!("../../../../../testdata/regex-corpus/requests-v1.jsonl").lines() {
         let request: RegexRequest = serde_json::from_str(line).unwrap();
         let Ok(pattern) =
             String::from_utf8(BASE64_STANDARD.decode(request.pattern_base64).unwrap())

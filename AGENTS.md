@@ -2,23 +2,22 @@
 
 ## Repository contract
 
-Rustleaks is an independent secret scanner in Rust, based on one pinned
-Gitleaks revision. The
-[compatibility policy](docs/user/gitleaks-differences.md#compatibility-policy)
-defines what it keeps:
+Rustleaks is an independent secret scanner in Rust. It started from Gitleaks
+commit `b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` and does not track Gitleaks.
+These keep working and keep their meaning, as Rustleaks behavior:
 
-- Gitleaks configuration files, ignore files, baselines, allow comments, exit
-  codes, report fields, and the supported Gitleaks commands, flags,
-  environment variables and file names keep working and keep their meaning.
-- Findings can differ from Gitleaks when Rustleaks loses no secret. Each
-  difference is listed in `docs/user/gitleaks-differences.md` and covered by a
-  test.
-- Help, usage, error wording, logs, the banner, summaries, and JSON key or CSV
-  column order are presentation. Rustleaks owns them.
+- the configuration format, ignore files, baselines, allow comments,
+  fingerprints, exit codes and report fields;
+- the commands, flags, environment variables and file names, including the
+  legacy Gitleaks names listed in
+  [Moving from Gitleaks](docs/user/moving-from-gitleaks.md#names-to-use).
 
-Rustleaks has no Go oracle and does not track Gitleaks automatically. Do not
-install Go or check out Gitleaks to create expected values. Commands named in
-frozen `compat/` files do not run.
+Findings can change when Rustleaks finds more or gives a clearer result. A
+change that makes Rustleaks miss a secret it found before needs maintainer
+approval. Help, usage, error wording, logs, the banner, summaries, and JSON
+key or CSV column order are presentation.
+
+Do not install Go or check out Gitleaks to create expected values.
 
 Keep `rustleaks-core` independent of files, archives, Git, reports, the CLI,
 async runtimes and native libraries. Source adapters belong in
@@ -28,20 +27,16 @@ async runtimes and native libraries. Source adapters belong in
 details and must not enter the default core graph or public API. See
 [the architecture](docs/dev/architecture.md).
 
-`compat/upstream-revision.txt` pins the Gitleaks commit and the SHA-256 of the
-unchanged upstream copy of the default configuration,
-`compat/config-corpus/default-gitleaks.toml`. Compatibility evidence is under
-`compat/`. The shipped default rules,
-`crates/rustleaks-core/default/gitleaks.toml`, are Rustleaks-owned and based
-on that copy. Each difference from it is listed in
-[Default rules](docs/user/gitleaks-differences.md#default-rules) and named in
-`crates/rustleaks-core/tests/default_rules.rs`.
+The default rules are in `crates/rustleaks-core/default/gitleaks.toml` and
+the Rustleaks rule files beside it. Rustleaks changes them in place. Test
+data, including cases recorded from Gitleaks and copied fixtures, is under
+`testdata/`; see [its README](testdata/README.md).
 
 ## Commands
 
 Run commands from the repository root. Just is the public interface. Bazel is
-the authority for builds, tests, lint, formatting, documentation, parity
-replay and target compilation.
+the authority for builds, tests, lint, formatting, documentation and target
+compilation.
 
 | Need | Command |
 | --- | --- |
@@ -50,7 +45,6 @@ replay and target compilation.
 | Check formatting | `just format` |
 | Lint, prose, docs, build and target checks | `just check` |
 | Run before opening a pull request | `just ci` and `just security` |
-| Frozen evidence check and parity replay | `cargo xtask regression-check` |
 | Release candidate checks (public API, MSRV), from a clean committed tree | `cargo xtask qualify` |
 
 [Local workflow](CONTRIBUTING.md#local-workflow) lists the command for each
@@ -61,31 +55,27 @@ the named security, fuzz, Miri and MSRV tools that Just recipes call. Never
 use Cargo to bypass a failed Bazel action.
 
 The eight required targets are listed in
-[Testing and parity](docs/dev/testing-and-parity.md#platforms).
+[Testing](docs/dev/testing.md#platforms).
 Cross-compilation proves only compilation. A support claim needs native
-build, test, feature, parity, example and relevant CLI evidence for the exact
-target.
+build, test, feature, example and relevant CLI evidence for the exact target.
 
 ## Invariants
 
-- Do not change configuration meaning, exit codes, report fields, error
+- Do not change configuration meaning, exit codes, report fields or error
   classes (including `rustleaks-core` error kinds such as `ConfigError`
-  kinds) or the mappings in `compat/test-manifest.toml`, and do not make
-  Rustleaks miss a secret it found before, without maintainer approval. See
-  [Approval boundaries](#approval-boundaries).
+  kinds), and do not make Rustleaks miss a secret it found before, without
+  maintainer approval. See [Approval boundaries](#approval-boundaries).
 - Any change to findings, spans or fingerprints needs a changelog entry and a
-  Rust test. When it differs from Gitleaks, list it in
-  `docs/user/gitleaks-differences.md`.
+  Rust test.
 - Write expected findings, spans, fingerprints, report fields, exit codes and
   error classes from the intended behavior, never from current output. Never
-  hide a functional difference with normalization. Frozen Go observations
-  under `compat/` never change.
+  hide a functional difference with normalization. This also applies when a
+  change updates a case under `testdata/`; see
+  [Test data](docs/dev/testing.md#test-data).
 - A presentation change needs an updated test expectation that a reviewer
   checks against its stated intent. It does not need maintainer approval.
-  [Presentation
-  dispositions](docs/dev/testing-and-parity.md#presentation-dispositions)
-  says when to record one and which comparisons still pin key and column
-  order.
+  [Test data](docs/dev/testing.md#test-data) says which comparisons still
+  pin JSON key and CSV column order.
 - Keep detection synchronous, in-memory, `Send + Sync`, and free of implicit
   file, environment, log, thread, async-runtime or process-global behavior.
   Keep C and C++ build steps and dependency implementation types out of the
@@ -113,8 +103,7 @@ checks before committing, and pull request and merge rules.
 
 ## Skills
 
-Task procedures are in `.agents/skills/`. Use the matching skill for
-compatibility work (the Gitleaks pin and compatibility evidence), rule
+Task procedures are in `.agents/skills/`. Use the matching skill for rule
 maintenance, build maintenance, release work, security audit, and GitHub
 issues, commits, pull requests, reviews and merges.
 
@@ -122,18 +111,18 @@ issues, commits, pull requests, reviews and merges.
 
 Stop for maintainer approval before:
 
-- adding or updating dependencies, toolchains, `rules_rust`, the Gitleaks pin
-  or the upstream copy of the default configuration;
+- adding or updating dependencies, toolchains or `rules_rust`;
 - changing GitHub settings or ownership;
 - enabling paid services;
 - accepting a security exception;
-- removing a supported Gitleaks command, flag, environment variable or file
-  name, changing the meaning of a configuration, report field, error class or
-  exit code, or making Rustleaks miss secrets that it found before;
+- removing a supported command, flag, environment variable or file name
+  (including a legacy Gitleaks name), changing the meaning of a
+  configuration, report field, error class or exit code, or making Rustleaks
+  miss secrets that it found before;
 - selecting a release version;
 - creating or publishing a release or crate; or
 - using a credential.
 
 A local dry run does not authorize publication. A change to the shipped
-default rules needs normal review, tests and a listed difference, and
+default rules needs normal review, tests and a changelog entry, and
 maintainer approval only when it makes Rustleaks miss a secret.

@@ -1,6 +1,6 @@
 //! The tool identity in SARIF and `JUnit` reports.
 //!
-//! Upstream fixtures and the frozen report corpus name the tool `gitleaks`.
+//! Upstream fixtures and the report corpus name the tool `gitleaks`.
 //! Rustleaks names itself instead. Every other byte of those reports stays
 //! the same, so the tests replace exactly this identity and compare the rest
 //! of each report byte for byte.

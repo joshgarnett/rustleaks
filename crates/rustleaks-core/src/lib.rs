@@ -59,6 +59,3 @@ pub use engine::{
 };
 
 pub use model::Base64Mode;
-
-/// Gitleaks commit that the shipped default rules are based on.
-pub const UPSTREAM_REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";

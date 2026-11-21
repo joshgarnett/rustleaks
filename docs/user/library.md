@@ -79,7 +79,7 @@ then builds the engine.
 
 | Call | Result |
 | --- | --- |
-| `ConfigLoader::new().load_default()` | The default rules: 222 rules based on the Gitleaks default configuration, with the changes in [Default rules](gitleaks-differences.md#default-rules). |
+| `ConfigLoader::new().load_default()` | The [default rules](built-in-rules.md#default-rules): 222 rules that started from the Gitleaks default configuration. |
 | `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). |
 | `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. |
 

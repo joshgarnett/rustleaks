@@ -1,5 +1,5 @@
 # Symmetric home-fixtures matrix. Each tool's own rule examples are read at
-# run time from pinned upstream sources (or, for Rustleaks and the frozen
+# run time from pinned upstream sources (or, for Rustleaks and the recorded
 # Gitleaks generator samples, from this repository) and written as one case
 # folder per example. Nothing read here is committed.
 #
@@ -7,7 +7,7 @@
 # a `.git` component go to a separate `-dotgit` workload, so reports show them
 # as their own row.
 
-GITLEAKS_SAMPLES = 'compat/generator-corpus/samples-v1.jsonl'
+GITLEAKS_SAMPLES = 'testdata/generator-corpus/samples-v1.jsonl'
 RUSTLEAKS_FIXTURES = ('additional_coverage', 'association_coverage', 'format_coverage',
                       'remaining_verified_rules', 'special_coverage')
 DEFAULT_CASE_PATH = 'input.txt'
@@ -678,11 +678,6 @@ def kingfisher_cases(source, directory):
 
 def gitleaks_cases(source_root, upstream):
     path = pathlib.Path(source_root) / GITLEAKS_SAMPLES
-    digest = sha256_file(path)
-    manifest = (pathlib.Path(source_root) / 'compat' / 'test-manifest.toml').read_text(encoding='utf-8')
-    match = re.search(r'^generator_samples_sha256 = "([0-9a-f]{64})"$', manifest, re.M)
-    if not match or match.group(1) != digest:
-        fail('the frozen Gitleaks generator samples do not match compat/test-manifest.toml')
     cases = []
     missing = set()
     with open(path, 'rb') as stream:

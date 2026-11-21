@@ -20,7 +20,7 @@ const FIXTURES: &[(&str, usize)] = &[
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/fixtures/oracle/bodgit-sevenzip-v1.6.1")
+        .join("../../testdata/fixtures/archives/bodgit-sevenzip-v1.6.1")
         .join(name)
 }
 

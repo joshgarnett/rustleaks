@@ -187,7 +187,7 @@ fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions(
         let _context = RequestContext(&request.id);
         let expected = outcomes.get(&request.id).expect("matching outcome");
         if cfg!(windows) && windows_platform_disposition(&request) {
-            // The frozen outcomes are Darwin-native. Upstream applies the
+            // The recorded outcomes are Darwin-native. Upstream applies the
             // alias-size gate before symlink resolution, so zero-length
             // Windows symlink metadata has a different exact disposition.
             // The permission row depends on Unix mode bits. Focused native
@@ -600,7 +600,7 @@ fn create_symlink(target: &Path, link: &Path, target_is_dir: bool) {
     } else {
         std::os::windows::fs::symlink_file(target, link)
     };
-    result.expect("native Windows symlink capability is required for source parity");
+    result.expect("native Windows symlink capability is required for the source corpus");
 }
 
 fn logical_base(request: &Request) -> String {
@@ -1021,14 +1021,14 @@ fn issue_class(kind: SourceIssueKind) -> &'static str {
 
 fn corpus_root() -> PathBuf {
     std::env::var_os("RUSTLEAKS_SOURCE_CORPUS").map_or_else(
-        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/source-corpus"),
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/source-corpus"),
         PathBuf::from,
     )
 }
 
 fn upstream_fixture(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/fixtures/upstream")
+        .join("../../testdata/fixtures/upstream")
         .join(relative)
 }
 

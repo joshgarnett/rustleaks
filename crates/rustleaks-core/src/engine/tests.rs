@@ -1964,8 +1964,8 @@ fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
 }
 
 #[test]
-fn private_filter_replays_the_frozen_oracle_adapter() {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/composite-corpus");
+fn private_filter_replays_the_composite_corpus() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/composite-corpus");
     let requests = json_lines(&corpus.join("requests-v1.jsonl"))
         .into_iter()
         .filter(|value| string(value, "operation") == "filter_probe")

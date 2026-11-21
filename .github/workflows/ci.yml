@@ -145,28 +145,6 @@ jobs:
         working-directory: rustleaks
         run: just release-dry-run
 
-  # The native lanes replay //:parity as part of //:test, so this job only
-  # checks the frozen evidence bytes.
-  frozen-evidence:
-    name: Frozen evidence
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Check out Rustleaks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: rustleaks
-          persist-credentials: false
-      - name: Set up tools
-        uses: ./rustleaks/.github/actions/setup
-        with:
-          rust-components: ""
-          install-just: "false"
-          install-bazelisk: "false"
-      - name: Verify frozen evidence
-        working-directory: rustleaks
-        run: cargo xtask frozen-evidence-check
-
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
@@ -256,14 +234,7 @@ jobs:
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 --nozip_undeclared_test_outputs //:test
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 //:test
 
   native-windows:
     name: Native ${{ matrix.target }}
@@ -320,15 +291,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 --nozip_undeclared_test_outputs //:test
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Retain native Rust CLI regression evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rust-cli-regression-${{ matrix.target }}
-          path: rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json
-          if-no-files-found: error
 
   required:
     name: Required
@@ -339,7 +303,6 @@ jobs:
       - security
       - fuzz
       - package
-      - frozen-evidence
       - dependency-review
       - native-unix
       - native-windows
@@ -353,7 +316,6 @@ jobs:
           SECURITY: ${{ needs.security.result }}
           FUZZ: ${{ needs.fuzz.result }}
           PACKAGE: ${{ needs.package.result }}
-          FROZEN_EVIDENCE: ${{ needs.frozen-evidence.result }}
           DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
           NATIVE_UNIX: ${{ needs.native-unix.result }}
           NATIVE_WINDOWS: ${{ needs.native-windows.result }}
@@ -366,7 +328,6 @@ jobs:
             "${SECURITY}" \
             "${FUZZ}" \
             "${PACKAGE}" \
-            "${FROZEN_EVIDENCE}" \
             "${NATIVE_UNIX}" \
             "${NATIVE_WINDOWS}"; do
             test "${result}" = success

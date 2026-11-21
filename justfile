@@ -41,10 +41,6 @@ docs:
 docs-check:
     bazelisk run //crates/xtask:xtask -- docs-check
 
-# Run the committed compatibility replay through Bazel.
-parity:
-    bazelisk test //:parity
-
 # Evaluate the synthetic detection-quality corpus.
 quality-eval:
     bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate

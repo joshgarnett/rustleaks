@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Differential replay of the frozen scan-session oracle corpus.
+//! Replay of the scan-session corpus under `testdata/session-corpus/`.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -123,7 +123,7 @@ struct OracleError {
 }
 
 #[test]
-fn session_corpus_matches_every_frozen_oracle_outcome() {
+fn session_corpus_matches_every_expected_outcome() {
     let corpus = corpus_root();
     let requests = json_lines::<Request>(&corpus.join("requests-v1.jsonl"));
     let outcomes = json_lines::<Outcome>(&corpus.join("outcomes-v1.jsonl"))
@@ -450,7 +450,7 @@ fn project_finding(finding: &Finding) -> FindingWire {
 }
 
 fn corpus_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/session-corpus")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/session-corpus")
 }
 
 fn decode(value: &str) -> Vec<u8> {

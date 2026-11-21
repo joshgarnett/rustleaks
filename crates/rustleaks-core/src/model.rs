@@ -1466,9 +1466,9 @@ mod redaction_tests {
     }
 
     #[test]
-    fn private_mask_helper_replays_every_frozen_oracle_row() {
+    fn private_mask_helper_replays_every_composite_corpus_row() {
         let corpus =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/composite-corpus");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/composite-corpus");
         let outcomes = json_lines(&corpus.join("outcomes-v1.jsonl"))
             .into_iter()
             .map(|value| (string(&value, "id").to_owned(), value))
