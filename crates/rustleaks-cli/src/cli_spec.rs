@@ -341,10 +341,10 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         &[
             "Choose how to find base64 text.",
             "Modes: compatible and extended. Default: compatible.",
-            "compatible decodes padded base64 and unpadded URL-safe",
-            "base64, and keeps only printable decoded text.",
-            "extended also finds URL-safe base64, base64 without",
-            "padding, and base64 of binary data.",
+            "compatible decodes padded standard base64 and unpadded",
+            "URL-safe base64, and keeps only text output.",
+            "extended also decodes padded URL-safe and unpadded",
+            "standard base64, and keeps binary output.",
         ],
     ),
     flag(

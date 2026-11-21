@@ -121,8 +121,8 @@ because it may not support newer settings.
 
 SARIF reports name the tool `rustleaks`, with the Rustleaks version as
 `semanticVersion` and the Rustleaks repository as `informationUri`. JUnit
-reports name the test suite `rustleaks`. Gitleaks, and Rustleaks up to
-0.1.0-alpha.12, use `gitleaks`, `v8.0.0` and the Gitleaks project page. GitHub
+reports name the test suite `rustleaks`. Gitleaks uses `gitleaks`, `v8.0.0`
+and the Gitleaks project page. GitHub
 code scanning tracks alerts by tool name, so after you switch, findings that
 already have alerts under `gitleaks` get new alerts under `rustleaks` once.
 Update any CI step that looks for the `gitleaks` JUnit suite name. See [Moving

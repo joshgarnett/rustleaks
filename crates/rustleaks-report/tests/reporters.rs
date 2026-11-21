@@ -94,7 +94,12 @@ fn junit_matches_upstream_fixtures_with_the_rustleaks_suite_name() {
     );
     assert_eq!(
         render(&JunitReporter, &[]),
-        b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n\t<testsuite failures=\"0\" name=\"rustleaks\" tests=\"0\" time=\"\"></testsuite>\n</testsuites>"
+        with_rustleaks_identity(
+            "junit",
+            include_bytes!(
+                "../../../compat/fixtures/upstream/testdata/expected/report/junit_empty.xml"
+            )
+        )
     );
 }
 

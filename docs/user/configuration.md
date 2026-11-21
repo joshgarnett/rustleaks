@@ -243,9 +243,10 @@ text have tags such as `decoded:base64` and `decode-depth:1`.
 `--base64-mode` selects how Base64 is decoded:
 
 - `compatible`, the default, decodes padded standard Base64 and unpadded
-  URL-safe Base64, and keeps the result only when it is printable ASCII text.
-- `extended` also accepts URL-safe Base64, Base64 without padding, and
-  decoded bytes that are not printable text. It can find secrets that
+  URL-safe Base64. It keeps the result only when every decoded byte is in
+  the range 0x09 to 0x7E.
+- `extended` also decodes padded URL-safe and unpadded standard Base64, and
+  keeps decoded bytes outside that range. It can find secrets that
   `compatible` mode misses.
 
 Limits of the Base64 modes:

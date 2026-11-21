@@ -256,7 +256,7 @@ See [Reports](reports.md) for the formats and fields.
 | --- | --- | --- | --- |
 | `--max-target-megabytes` | Whole number | `0` | Skip files larger than this many megabytes (1,000,000 bytes each). `0` or less means no limit. |
 | `--max-decode-depth` | Whole number | `5` | Decode encoded text up to this many levels deep. `0` or less turns decoding off. |
-| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also finds URL-safe Base64, Base64 without padding, and Base64 of binary data. See [Decoding](configuration.md#decoding). |
+| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also decodes padded URL-safe and unpadded standard Base64, and keeps binary output. See [Decoding](configuration.md#decoding). |
 | `--max-archive-depth` | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
 | `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1, or with 2 under `--complete-profile`. `0` or less means no time limit. |
 | `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. See [Detection threads](resource-limits.md#detection-threads) for its effect on speed and memory. |

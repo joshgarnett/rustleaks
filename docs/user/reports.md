@@ -172,9 +172,8 @@ The `tool.driver.rules` list holds every rule in the configuration, with its
 ID and description.
 
 The tool is named `rustleaks`, with `semanticVersion` set to the Rustleaks
-version, such as `0.2.0`, and `informationUri` set to the Rustleaks
-repository. Gitleaks, and Rustleaks up to 0.1.0-alpha.12, name the tool
-`gitleaks`. GitHub code scanning tracks alerts by tool name, so after you
+version and `informationUri` set to the Rustleaks repository. Gitleaks names
+the tool `gitleaks`. GitHub code scanning tracks alerts by tool name, so after you
 switch, findings that already have alerts under `gitleaks` get new alerts
 under `rustleaks` once.
 

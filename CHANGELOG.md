@@ -20,7 +20,9 @@
 - Help and the `minVersion` warning no longer describe Rustleaks as an
   implementation of Gitleaks. The warning now reads `config minVersion
   <version> is newer than Gitleaks 8.30.0, the newest configuration version
-  that Rustleaks supports, so some settings may not be supported`.
+  that Rustleaks supports, so some settings may not be supported`. The
+  `--base64-mode` help and documentation now say which Base64 forms each
+  mode decodes.
 - `ScanOptions::honor_gitleaks_allow` and
   `ScanOptionsBuilder::honor_gitleaks_allow` are removed. Use
   `honor_allow_markers`, which has the same meaning.

@@ -664,21 +664,23 @@ fn run_report(iterations: usize, kind: ReportKind) -> Result<(u128, Metric), Box
         let mut output = Vec::new();
         match kind {
             ReportKind::Json => JsonReporter.write(&mut output, black_box(&findings))?,
-            ReportKind::Sarif => {
-                sarif.write(&mut output, black_box(&findings))?;
-                output = sarif_without_version(&output)?;
-            }
+            ReportKind::Sarif => sarif.write(&mut output, black_box(&findings))?,
         }
-        last = Some(Metric {
+        last = Some(output);
+    }
+    let elapsed = start.elapsed().as_nanos();
+    let mut output = last.ok_or("no report iteration")?;
+    if matches!(kind, ReportKind::Sarif) {
+        output = sarif_without_version(&output)?;
+    }
+    Ok((
+        elapsed,
+        Metric {
             logical_bytes: u64::try_from(findings.len())?,
             result_count: u64::try_from(findings.len())?,
             output_bytes: u64::try_from(output.len())?,
             fingerprint: fnv_extend(FNV_OFFSET, &output),
-        });
-    }
-    Ok((
-        start.elapsed().as_nanos(),
-        last.ok_or("no report iteration")?,
+        },
     ))
 }
 
