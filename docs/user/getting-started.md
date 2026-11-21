@@ -34,7 +34,7 @@ pre-releases.
 | Windows ARM64 | `rustleaks-VERSION-aarch64-pc-windows-msvc.tar.gz` |
 
 `VERSION` is the release version without the leading `v`, for example
-`0.1.0-alpha.11`. The release tag is `vVERSION`.
+`0.1.0-alpha.12`. The release tag is `vVERSION`.
 
 Each archive contains one folder named like the archive, without `.tar.gz`.
 The folder holds the `rustleaks` program (`rustleaks.exe` on Windows),
@@ -55,7 +55,7 @@ archive with source material for the Linux glibc builds.
 This example installs the Linux x86_64 build with the GitHub CLI:
 
 ```sh
-VERSION=0.1.0-alpha.11
+VERSION=0.1.0-alpha.12
 TARGET=x86_64-unknown-linux-gnu
 STEM="rustleaks-${VERSION}-${TARGET}"
 gh release download "v${VERSION}" --repo joshgarnett/rustleaks \

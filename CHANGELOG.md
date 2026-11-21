@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0-alpha.12] - 2026-11-21
+
 - Every scan uses all built-in rules. Without a configuration, and with
   `[extend] useDefault = true`, Rustleaks now adds its own rules for
   provider tokens and connection strings to the Gitleaks-derived default
@@ -459,7 +461,7 @@ Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
-[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.11...HEAD
+[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.12...HEAD
 [0.1.0-alpha.1]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
@@ -471,3 +473,4 @@ version and exact source commit.
 [0.1.0-alpha.9]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.9
 [0.1.0-alpha.10]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.10
 [0.1.0-alpha.11]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.11
+[0.1.0-alpha.12]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.12

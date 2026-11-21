@@ -41,7 +41,7 @@ jobs:
       - name: Install Rustleaks
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: 0.1.0-alpha.11
+          VERSION: 0.1.0-alpha.12
         run: |
           stem="rustleaks-${VERSION}-x86_64-unknown-linux-gnu"
           gh release download "v${VERSION}" --repo joshgarnett/rustleaks \
