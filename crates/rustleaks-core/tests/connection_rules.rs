@@ -2070,33 +2070,47 @@ impl<'a> Case<'a> {
         assert!(self.after.starts_with(self.matched_after));
         let input = self.input();
         let findings = scan(engine, input.as_bytes());
-        assert_eq!(findings.len(), 1, "{input:?}");
+        assert_eq!(findings.len(), 1, "{rule}: {}{}", self.lead, self.before);
         let finding = &findings[0];
         let secret_start = self.lead.len() + self.before.len();
         let match_end = secret_start + self.secret.len() + self.matched_after.len();
-        assert_eq!(finding.rule_id().as_bytes(), rule.as_bytes(), "{input:?}");
+        assert_eq!(
+            finding.rule_id().as_bytes(),
+            rule.as_bytes(),
+            "{rule}: {}{}",
+            self.lead,
+            self.before
+        );
         assert_eq!(
             finding.secret().as_bytes(),
             self.secret.as_bytes(),
-            "{input:?}"
+            "{rule}: {}{}",
+            self.lead,
+            self.before
         );
         assert_eq!(
             finding.secret_range(),
             range(secret_start, secret_start + self.secret.len()),
-            "{input:?}"
+            "{rule}: {}{}",
+            self.lead,
+            self.before
         );
         assert_eq!(
             finding.match_range(),
             range(self.lead.len(), match_end),
-            "{input:?}"
+            "{rule}: {}{}",
+            self.lead,
+            self.before
         );
     }
 }
 
+// Messages give only the length: the input holds a synthetic password.
 fn assert_no_new_finding(input: &str) {
     assert!(
         scan(new_rules_engine(), input.as_bytes()).is_empty(),
-        "{input:?}"
+        "input of {} bytes",
+        input.len()
     );
 }
 
@@ -2184,7 +2198,9 @@ fn issue_lines_each_give_one_connection_finding_under_all_rules() {
             scan(all_rules_without_new_rules(), input.as_bytes())
                 .iter()
                 .all(|finding| !finding.rule_id().as_bytes().starts_with(b"rustleaks.conn")),
-            "{input:?}"
+            "{rule}: {}{}",
+            case.lead,
+            case.before
         );
     }
     // HTTPS credential URLs stay outside the pack.
@@ -2410,12 +2426,12 @@ fn new_rules_take_over_generic_findings_for_the_same_password() {
                 secret,
                 before.len()
             )),
-            "{input:?}"
+            "{before}"
         );
         assert_eq!(
             outcomes(all_rules(), &input, &ScanOptions::default()),
             vec![exact(rule, secret, before.len())],
-            "{input:?}"
+            "{before}"
         );
     }
 }
