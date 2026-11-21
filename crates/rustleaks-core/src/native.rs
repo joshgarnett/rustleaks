@@ -41,6 +41,7 @@ use crate::config::{
 };
 use crate::explanation::{ExplanationLog, ExplanationOptions};
 use crate::model::{Fragment, ScanOptions};
+use crate::regex::PatternCheck;
 use crate::{Engine, ScanBudget, ScanControl, ScanError, ScanOutcome, UPSTREAM_REVISION};
 
 pub(crate) mod predicate;
@@ -133,6 +134,9 @@ impl NativePolicyIdentity {
 #[derive(Clone, Default)]
 pub struct NativePolicy {
     packs: Vec<(String, String)>,
+    // The validation result of each entry in `packs`, in the same order, so
+    // that `compile` does not parse and validate each pack a second time.
+    validated: Vec<Arc<ValidatedPack>>,
     github_classic: bool,
 }
 
@@ -206,8 +210,9 @@ impl NativePolicy {
         {
             return Err(NativePolicyError::LimitExceeded);
         }
-        validate_pack(contents)?;
+        let validated = validate_pack(contents)?;
         self.packs.push((id.to_owned(), contents.to_owned()));
+        self.validated.push(Arc::new(validated));
         Ok(self)
     }
 
@@ -252,6 +257,14 @@ impl NativePolicy {
     /// directives or configuration compilation failures.
     #[allow(clippy::too_many_lines)] // Pack composition, collision checks and identity binding share one ordered flow.
     pub fn compile(self) -> Result<(CompiledConfig, NativePolicyIdentity), NativePolicyError> {
+        self.compile_with(false)
+    }
+
+    #[allow(clippy::too_many_lines)] // See `compile`.
+    fn compile_with(
+        self,
+        force_full_check: bool,
+    ) -> Result<(CompiledConfig, NativePolicyIdentity), NativePolicyError> {
         let loader = ConfigLoader::new();
         let mut raw = loader.parse_toml(DEFAULT_CONFIG, None)?;
         let mut ids = raw
@@ -286,8 +299,8 @@ impl NativePolicy {
                 b""
             },
         );
-        for (id, contents) in self.packs {
-            let pack = validate_pack(&contents)?;
+        for ((id, contents), pack) in self.packs.into_iter().zip(self.validated) {
+            let pack = Arc::unwrap_or_clone(pack);
             native_count += pack.raw.rules.len();
             if native_count > Self::MAX_NATIVE_RULES {
                 return Err(NativePolicyError::LimitExceeded);
@@ -326,7 +339,14 @@ impl NativePolicy {
                 );
             }
         }
-        let mut config = loader.compile_native(raw, &native_bytes)?;
+        // Only the embedded default rules with exact built-in packs skip the
+        // temporary load-time NFA; custom packs get the full check.
+        let check = if builtin_review_reference.is_some() && !force_full_check {
+            PatternCheck::BuiltIn
+        } else {
+            PatternCheck::Full
+        };
+        let mut config = loader.compile_native(raw, &native_bytes, check)?;
         for (id, keywords) in native_keywords {
             if let Some(rule) = config.rules.get_mut(&id) {
                 rule.native_keywords = Some(keywords);
@@ -428,6 +448,7 @@ fn valid_identifier(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
 }
 
+#[derive(Clone)]
 struct ValidatedPack {
     raw: RawConfig,
     native_entropy: BTreeMap<String, NativeEntropy>,
@@ -1284,5 +1305,69 @@ edges=[{id='github-pat',relation='full-match-window',window='0'}, {id='rustleaks
                 .native_byte_matcher
                 .is_some()
         );
+    }
+}
+
+#[cfg(test)]
+mod builtin_pattern_checks {
+    use super::*;
+
+    const ALL_PACKS: [(&str, &str); 3] = [
+        ("rustleaks-extra-v1", EXTRA_RULES_V1),
+        ("rustleaks-providers-v1", PROVIDER_RULES_V1),
+        ("rustleaks-connections-v1", CONNECTION_RULES_V1),
+    ];
+
+    // Built-in rule text skips the temporary load-time NFA. This runs the
+    // full check on all of it, so the skip cannot hide a pattern over a limit.
+    #[test]
+    fn builtin_rules_pass_full_pattern_checks() {
+        let full_default = ConfigLoader::new()
+            .load_toml(DEFAULT_CONFIG)
+            .expect("default rules pass the full pattern check");
+        let default = ConfigLoader::new().load_default().unwrap();
+        assert_eq!(full_default.rules, default.rules);
+        assert_eq!(full_default.allowlists, default.allowlists);
+
+        let mut policy = NativePolicy::builder();
+        for (id, contents) in ALL_PACKS {
+            policy = policy.with_pack(id, contents).unwrap();
+        }
+        let (full, full_identity) = policy
+            .clone()
+            .compile_with(true)
+            .expect("built-in packs pass the full pattern check");
+        let (fast, fast_identity) = policy.compile().unwrap();
+        assert_eq!(full, fast);
+        assert_eq!(full_identity, fast_identity);
+    }
+
+    // Ten `\pL{1000}` in a row parse, but exceed the PikeVM working-set limit.
+    fn over_limit_rule(id: &str) -> String {
+        format!(
+            "[[rules]]\nid = \"{id}\"\nregex = '''{}'''\n",
+            r"\pL{1000}".repeat(10)
+        )
+    }
+
+    #[test]
+    fn custom_packs_keep_the_full_pattern_check() {
+        let error = NativePolicy::builder()
+            .with_pack("custom-v1", &over_limit_rule("rustleaks.over-limit"))
+            .unwrap()
+            .compile()
+            .unwrap_err();
+        assert!(error.to_string().contains("working set"), "{error}");
+    }
+
+    #[test]
+    fn replaced_default_rules_keep_the_full_pattern_check() {
+        let loader = ConfigLoader::new().with_default_config(over_limit_rule("over-limit"));
+        let error = loader.load_default().unwrap_err();
+        assert!(error.to_string().contains("working set"), "{error}");
+        let extended = loader
+            .load_toml("[extend]\nuseDefault = true\n")
+            .unwrap_err();
+        assert!(extended.to_string().contains("working set"), "{extended:?}");
     }
 }

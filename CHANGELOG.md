@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Startup is faster. An empty scan with the default rules takes about
+  17 ms instead of 28 ms, and with all three built-in packs about 42 ms
+  instead of 67 ms, measured on one Apple silicon Mac. The embedded rules skip a
+  temporary size check that a test runs on them instead, and each
+  `--native-pack` is parsed and validated once instead of twice. Custom
+  configurations keep the full check. Findings do not change.
 - Fix `--redact` with `--verbose`: the `Required:` lines of composite rules
   (`[[rules.required]]`) printed helper values, such as client IDs, in full.
   They are now masked with the same percent as the main secret. Reports did

@@ -10,7 +10,7 @@ use semver::{BuildMetadata, Version};
 use thiserror::Error;
 
 use crate::go_unicode::lowercase as go_lowercase;
-use crate::regex::{GoRegex, NativeByteRegex};
+use crate::regex::{GoRegex, NativeByteRegex, PatternCheck};
 
 use super::compiled::{CompiledAllowlist, CompiledConfig, CompiledRule};
 use super::raw::{AllowlistSpec, Condition, RawConfig, RawGlobalAllowlist, RegexTarget, RuleSpec};
@@ -542,7 +542,16 @@ impl ConfigLoader {
         raw: RawConfig,
         origin: Option<ConfigOrigin>,
     ) -> Result<CompiledConfig, ConfigError> {
-        let mut config = self.compile_level(raw, origin, 0)?;
+        self.compile_checked(raw, origin, PatternCheck::Full)
+    }
+
+    fn compile_checked(
+        &self,
+        raw: RawConfig,
+        origin: Option<ConfigOrigin>,
+        check: PatternCheck,
+    ) -> Result<CompiledConfig, ConfigError> {
+        let mut config = self.compile_level(raw, origin, 0, check)?;
         validate_effective_rules(&config.rules)?;
         attach_targeted_allowlists(&mut config)?;
         Ok(config)
@@ -554,7 +563,19 @@ impl ConfigLoader {
     ///
     /// Returns a structured parse or validation error.
     pub fn load_default(&self) -> Result<CompiledConfig, ConfigError> {
-        self.load_toml_at(&self.default_config, Some(ConfigOrigin::EmbeddedDefault))
+        let origin = Some(ConfigOrigin::EmbeddedDefault);
+        let raw = self.parse_toml(&self.default_config, origin.as_ref())?;
+        self.compile_checked(raw, origin, self.default_check())
+    }
+
+    // The embedded default rules are checked in full by a test, so their
+    // patterns skip the temporary load-time NFA. Replaced text is checked.
+    fn default_check(&self) -> PatternCheck {
+        if *self.default_config == *DEFAULT_CONFIG {
+            PatternCheck::BuiltIn
+        } else {
+            PatternCheck::Full
+        }
     }
 
     /// Resolves and loads a top-level path through the injected resolver.
@@ -576,9 +597,10 @@ impl ConfigLoader {
         &self,
         raw: RawConfig,
         byte_rules: &BTreeSet<String>,
+        check: PatternCheck,
     ) -> Result<CompiledConfig, ConfigError> {
         debug_assert_eq!(raw.extend, ConfigExtension::default());
-        let mut config = self.compile_local(raw, None, Some(byte_rules))?;
+        let mut config = self.compile_local(raw, None, Some(byte_rules), check)?;
         validate_effective_rules(&config.rules)?;
         attach_targeted_allowlists(&mut config)?;
         Ok(config)
@@ -589,8 +611,9 @@ impl ConfigLoader {
         raw: RawConfig,
         origin: Option<ConfigOrigin>,
         depth: usize,
+        check: PatternCheck,
     ) -> Result<CompiledConfig, ConfigError> {
-        let mut config = self.compile_local(raw, origin, None)?;
+        let mut config = self.compile_local(raw, origin, None, check)?;
         if depth < MAX_EXTEND_DEPTH {
             if !config.extension.path.is_empty() && config.extension.use_default {
                 return Err(ConfigError::ConflictingExtension);
@@ -600,8 +623,13 @@ impl ConfigLoader {
                     .parse_toml(&self.default_config, Some(&ConfigOrigin::EmbeddedDefault))
                     .map_err(|error| ConfigError::Extended(Box::new(error)))?;
                 Some(
-                    self.compile_level(raw, Some(ConfigOrigin::EmbeddedDefault), depth + 1)
-                        .map_err(|error| ConfigError::Extended(Box::new(error)))?,
+                    self.compile_level(
+                        raw,
+                        Some(ConfigOrigin::EmbeddedDefault),
+                        depth + 1,
+                        self.default_check(),
+                    )
+                    .map_err(|error| ConfigError::Extended(Box::new(error)))?,
                 )
             } else if !config.extension.path.is_empty() {
                 let resolved = self
@@ -612,7 +640,7 @@ impl ConfigLoader {
                     .parse_toml(&resolved.contents, Some(&resolved.origin))
                     .map_err(|error| ConfigError::Extended(Box::new(error)))?;
                 Some(
-                    self.compile_level(raw, Some(resolved.origin), depth + 1)
+                    self.compile_level(raw, Some(resolved.origin), depth + 1, PatternCheck::Full)
                         .map_err(|error| ConfigError::Extended(Box::new(error)))?,
                 )
             } else {
@@ -630,6 +658,7 @@ impl ConfigLoader {
         mut raw: RawConfig,
         origin: Option<ConfigOrigin>,
         byte_rules: Option<&BTreeSet<String>>,
+        check: PatternCheck,
     ) -> Result<CompiledConfig, ConfigError> {
         if raw.allowlist.is_some() && !raw.allowlists.is_empty() {
             return Err(ConfigError::GlobalAllowlistConflict);
@@ -656,7 +685,7 @@ impl ConfigLoader {
         let mut cache = AllowlistCache::default();
         for rule in raw.rules {
             let bytes = byte_rules.is_some_and(|rules| rules.contains(&rule.id));
-            let compiled = compile_rule(rule, bytes, &mut cache)?;
+            let compiled = compile_rule(rule, bytes, &mut cache, check)?;
             keywords.extend(compiled.keywords.iter().cloned());
             ordered_rule_ids.push(compiled.id.clone());
             rules.insert(compiled.id.clone(), compiled);
@@ -671,6 +700,7 @@ impl ConfigLoader {
                 &mut allowlists,
                 &mut targeted_allowlists,
                 &mut cache,
+                check,
             )?;
         }
 
@@ -709,6 +739,7 @@ fn compile_rule(
     mut rule: RuleSpec,
     bytes: bool,
     cache: &mut AllowlistCache,
+    check: PatternCheck,
 ) -> Result<CompiledRule, ConfigError> {
     if rule.allowlist.is_some() && !rule.allowlists.is_empty() {
         return Err(ConfigError::RuleAllowlistConflict {
@@ -722,7 +753,7 @@ fn compile_rule(
     let mut allowlists = Vec::with_capacity(rule.allowlists.len());
     for allowlist in rule.allowlists {
         let scope = format!("{}: [[rules.allowlists]]", rule.id);
-        allowlists.push(compile_allowlist(allowlist, &scope, cache)?);
+        allowlists.push(compile_allowlist(allowlist, &scope, cache, check)?);
     }
 
     for required in &rule.required {
@@ -733,26 +764,28 @@ fn compile_rule(
         }
     }
 
-    let (path, path_matcher) = nonempty_pattern(rule.path, &rule.id, "path")?;
+    let (path, path_matcher) = nonempty_pattern(rule.path, &rule.id, "path", check)?;
     let (regex, regex_matcher, native_byte_matcher) = if bytes {
-        let compiled =
-            NativeByteRegex::compile(&rule.regex).map_err(|error| ConfigError::InvalidPattern {
+        let compiled = NativeByteRegex::compile_checked(&rule.regex, check).map_err(|error| {
+            ConfigError::InvalidPattern {
                 scope: rule.id.clone(),
                 field: "regex",
                 pattern: rule.regex.clone(),
                 message: error.to_string(),
-            })?;
+            }
+        })?;
         (Some(rule.regex), None, Some(compiled))
     } else if rule.regex.is_empty() {
         (None, None, None)
     } else {
-        let compiled =
-            GoRegex::compile(&rule.regex).map_err(|error| ConfigError::InvalidPattern {
+        let compiled = GoRegex::compile_checked(&rule.regex, check).map_err(|error| {
+            ConfigError::InvalidPattern {
                 scope: rule.id.clone(),
                 field: "regex",
                 pattern: rule.regex.clone(),
                 message: error.to_string(),
-            })?;
+            }
+        })?;
         (Some(rule.regex), Some(compiled), None)
     };
 
@@ -788,8 +821,9 @@ fn compile_global_allowlist(
     global: &mut Vec<CompiledAllowlist>,
     targeted: &mut Vec<(Vec<String>, CompiledAllowlist)>,
     cache: &mut AllowlistCache,
+    check: PatternCheck,
 ) -> Result<(), ConfigError> {
-    let allowlist = compile_allowlist(raw.allowlist, "[[allowlists]]", cache)?;
+    let allowlist = compile_allowlist(raw.allowlist, "[[allowlists]]", cache, check)?;
     if raw.target_rules.is_empty() {
         global.push(allowlist);
     } else {
@@ -802,6 +836,7 @@ fn compile_allowlist(
     raw: AllowlistSpec,
     scope: &str,
     cache: &mut AllowlistCache,
+    check: PatternCheck,
 ) -> Result<CompiledAllowlist, ConfigError> {
     let condition = match raw.condition {
         Condition::Unknown(value) => {
@@ -830,7 +865,14 @@ fn compile_allowlist(
             scope: scope.to_owned(),
         });
     }
-    for (patterns, field) in [(&raw.paths, "path"), (&raw.regexes, "regex")] {
+    // Built-in text needs no per-pattern check: the joined matcher below
+    // parses every pattern, and the full check runs in a test.
+    let individual = if check == PatternCheck::Full {
+        vec![(&raw.paths, "path"), (&raw.regexes, "regex")]
+    } else {
+        Vec::new()
+    };
+    for (patterns, field) in individual {
         for pattern in patterns {
             if cache.validated.contains(pattern) {
                 continue;
@@ -844,8 +886,9 @@ fn compile_allowlist(
             cache.validated.insert(pattern.clone());
         }
     }
-    let path_matcher = compile_joined_allowlist_patterns(&raw.paths, scope, "path", cache)?;
-    let regex_matcher = compile_joined_allowlist_patterns(&raw.regexes, scope, "regex", cache)?;
+    let path_matcher = compile_joined_allowlist_patterns(&raw.paths, scope, "path", cache, check)?;
+    let regex_matcher =
+        compile_joined_allowlist_patterns(&raw.regexes, scope, "regex", cache, check)?;
     let normalized_stop_words = raw
         .stop_words
         .into_iter()
@@ -902,6 +945,7 @@ fn compile_joined_allowlist_patterns(
     scope: &str,
     field: &'static str,
     cache: &mut AllowlistCache,
+    check: PatternCheck,
 ) -> Result<Option<GoRegex>, ConfigError> {
     if patterns.is_empty() {
         return Ok(None);
@@ -917,12 +961,13 @@ fn compile_joined_allowlist_patterns(
     if let Some(regex) = cache.joined.get(&joined) {
         return Ok(Some(regex.clone()));
     }
-    let regex = GoRegex::compile(&joined).map_err(|error| ConfigError::InvalidPattern {
-        scope: scope.to_owned(),
-        field,
-        pattern: joined.clone(),
-        message: error.to_string(),
-    })?;
+    let regex =
+        GoRegex::compile_checked(&joined, check).map_err(|error| ConfigError::InvalidPattern {
+            scope: scope.to_owned(),
+            field,
+            pattern: joined.clone(),
+            message: error.to_string(),
+        })?;
     cache.joined.insert(joined, regex.clone());
     Ok(Some(regex))
 }
@@ -931,16 +976,18 @@ fn nonempty_pattern(
     pattern: String,
     scope: &str,
     field: &'static str,
+    check: PatternCheck,
 ) -> Result<(Option<String>, Option<GoRegex>), ConfigError> {
     if pattern.is_empty() {
         return Ok((None, None));
     }
-    let compiled = GoRegex::compile(&pattern).map_err(|error| ConfigError::InvalidPattern {
-        scope: scope.to_owned(),
-        field,
-        pattern: pattern.clone(),
-        message: error.to_string(),
-    })?;
+    let compiled =
+        GoRegex::compile_checked(&pattern, check).map_err(|error| ConfigError::InvalidPattern {
+            scope: scope.to_owned(),
+            field,
+            pattern: pattern.clone(),
+            message: error.to_string(),
+        })?;
     Ok((Some(pattern), Some(compiled)))
 }
 
