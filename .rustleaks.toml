@@ -33,6 +33,28 @@ paths = [
 ]
 
 [[allowlists]]
+description = "Built-in rule tests, examples and rule documentation contain reviewed synthetic credentials"
+paths = [
+  '''^crates/rustleaks-core/tests/(connection_rules|native_rules|native_predicates)\.rs$''',
+  '''^crates/rustleaks-core/tests/support/(connection|extra_rule)_cases\.rs$''',
+  '''^crates/rustleaks-core/src/native/predicate/vercel/tests\.rs$''',
+  '''^crates/rustleaks-compat/src/evaluation/native_cases\.rs$''',
+  '''^crates/xtask/src/package\.rs$''',
+  '''^crates/rustleaks-core/default/rustleaks-connections-v1\.md$''',
+  '''^docs/dev/comparison-workloads\.md$''',
+]
+
+[[allowlists]]
+description = "A changelog entry quotes two synthetic ODBC passwords"
+condition = "AND"
+paths = [
+  '''^CHANGELOG\.md$''',
+]
+regexes = [
+  '''^(R7!q|T8!w)$''',
+]
+
+[[allowlists]]
 description = "The native coverage review record and the providers pack provenance record contain Git revisions"
 condition = "AND"
 paths = [

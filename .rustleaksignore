@@ -93,3 +93,12 @@ feb7a54e3ab17d690fd2724e39ae40f8b7bbe324:crates/rustleaks-core/src/lib.rs:aws-ac
 3ca35a125fcd946f10275da7974b3c6db60e1fea:crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:289
 3ca35a125fcd946f10275da7974b3c6db60e1fea:crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:aws-access-token:290
 3ca35a125fcd946f10275da7974b3c6db60e1fea:crates/xtask/src/tooling/traceability/assertions/spec/direct.rs:private-key:336
+
+# Reviewed synthetic connection strings in earlier commits of the accuracy pilot and xtask.
+4168b3cf12417436cc625bf356f0840e76cd5b96:crates/rustleaks-compat/src/evaluation/pilot.rs:rustleaks.mongodb-password:165
+4168b3cf12417436cc625bf356f0840e76cd5b96:crates/rustleaks-compat/src/evaluation/pilot.rs:rustleaks.mongodb-password:170
+4168b3cf12417436cc625bf356f0840e76cd5b96:crates/xtask/src/main.rs:rustleaks.mongodb-password:604
+4fd49b0d8c1f5f49ca89527bf15b3b0d0c53761d:crates/rustleaks-compat/src/evaluation/pilot.rs:rustleaks.mongodb-password:165
+4fd49b0d8c1f5f49ca89527bf15b3b0d0c53761d:crates/rustleaks-compat/src/evaluation/pilot.rs:rustleaks.mongodb-password:170
+4fd49b0d8c1f5f49ca89527bf15b3b0d0c53761d:crates/xtask/src/main.rs:rustleaks.mongodb-password:691
+90ac22e54c9591446b09973879a503ac337e35c7:crates/xtask/src/main.rs:rustleaks.connection-string.password.odbc-braced:675
