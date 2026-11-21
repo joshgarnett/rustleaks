@@ -1866,17 +1866,9 @@ impl ScanOptions {
 
     /// Returns whether source lines containing a supported allow marker are honored.
     ///
-    /// The native marker is `rustleaks:allow`. The `gitleaks:allow` spelling
-    /// is also recognized.
+    /// The markers are `rustleaks:allow` and the legacy `gitleaks:allow`.
     #[must_use]
     pub const fn honor_allow_markers(self) -> bool {
-        self.honor_allow_markers
-    }
-
-    /// Deprecated alias for [`Self::honor_allow_markers`].
-    #[deprecated(note = "use honor_allow_markers")]
-    #[must_use]
-    pub const fn honor_gitleaks_allow(self) -> bool {
         self.honor_allow_markers
     }
 }
@@ -1934,19 +1926,11 @@ impl ScanOptionsBuilder {
 
     /// Selects whether source lines containing supported allow markers are honored.
     ///
-    /// This controls both `rustleaks:allow` and the backward-compatible
-    /// `gitleaks:allow` spelling.
+    /// This controls both `rustleaks:allow` and the legacy `gitleaks:allow`.
     #[must_use]
     pub const fn honor_allow_markers(mut self, value: bool) -> Self {
         self.options.honor_allow_markers = value;
         self
-    }
-
-    /// Deprecated alias for [`Self::honor_allow_markers`].
-    #[deprecated(note = "use honor_allow_markers")]
-    #[must_use]
-    pub const fn honor_gitleaks_allow(self, value: bool) -> Self {
-        self.honor_allow_markers(value)
     }
 
     /// Builds the options.

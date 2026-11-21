@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `ScanOptions::honor_gitleaks_allow` and
+  `ScanOptionsBuilder::honor_gitleaks_allow` are removed. Use
+  `honor_allow_markers`, which has the same meaning.
+
 ## [0.1.0-alpha.12] - 2026-11-21
 
 - Every scan uses all built-in rules. Without a configuration, and with

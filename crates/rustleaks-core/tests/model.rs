@@ -655,9 +655,6 @@ fn scan_options_preserve_upstream_domain_and_models_are_send_sync() {
     assert_eq!(defaults.max_target_bytes(), None);
     assert_eq!(defaults.redaction_percent(), 0);
     assert!(defaults.honor_allow_markers());
-    #[allow(deprecated)] // The deprecated alias must keep working.
-    let alias = defaults.honor_gitleaks_allow();
-    assert!(alias);
 
     let options = ScanOptions::builder()
         .max_decode_depth(5)
@@ -668,13 +665,7 @@ fn scan_options_preserve_upstream_domain_and_models_are_send_sync() {
     assert_eq!(options.max_decode_depth(), 5);
     assert_eq!(options.max_target_bytes(), Some(1_000_000));
     assert_eq!(options.redaction_percent(), 75);
-    #[allow(deprecated)] // The deprecated alias must keep working.
-    let alias = options.honor_gitleaks_allow();
-    assert!(!alias);
     assert!(!options.honor_allow_markers());
-    #[allow(deprecated)] // The deprecated builder alias must keep working.
-    let aliased = ScanOptions::builder().honor_gitleaks_allow(false).build();
-    assert!(!aliased.honor_allow_markers());
     let oversized = ScanOptions::builder().redaction_percent(1_000).build();
     assert_eq!(oversized.redaction_percent(), 1_000);
 
