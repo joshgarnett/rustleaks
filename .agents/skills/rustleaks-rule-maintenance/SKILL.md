@@ -43,8 +43,10 @@ approval.
 New Rustleaks rules go into a native pack in `crates/rustleaks-core/default/`:
 `rustleaks-providers-v1` for provider keys and tokens,
 `rustleaks-connections-v1` for passwords in connection strings and URLs, and
-`rustleaks-extra-v1` for the small first-party set. A change that alters what
-a published pack detects needs a new pack ID. Ask the maintainer first.
+`rustleaks-extra-v1` for the small first-party set. Every default scan uses
+all of them. Before the first stable release a pack changes in place with a
+changelog entry; from then on, a change that alters what a published pack
+detects needs a new pack ID and maintainer approval.
 
 For the provider and connection packs:
 
@@ -73,7 +75,7 @@ next to the pack and `NOTICE` attribution. Reject a rule when Rustleaks cannot
 express the relevant source behavior without leaving something out.
 
 Update the pack's `.md` file and the rule counts in
-`docs/user/native-rule-packs.md`.
+`docs/dev/rule-pack-authoring.md`.
 
 ## Build evidence
 

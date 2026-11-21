@@ -48,22 +48,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The value is synthetic test data, not a credential. The guide [Using
 rustleaks-core](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md)
-covers configuration, sessions, ignore files, baselines, rule packs and review
-records.
+covers configuration, sessions, ignore files, baselines, built-in rules and
+review records.
 
 ## Rules
 
 The crate includes default rules based on the Gitleaks default rules, and
-three optional rule packs. The packs add rules to the default rules and are
-used only when you add them with `native::NativePolicy`. Rule counts include
-helper rules.
+three Rustleaks rule files that add more rules. `ConfigLoader::load_default`
+gives the default rules alone. `ConfigLoader::with_builtin_rules` adds every
+Rustleaks rule, as the CLI does, and `native::NativePolicy` builds a custom
+composition. Rule counts include helper rules.
 
 | Rule set | Constant | Rules | Details |
 | --- | --- | ---: | --- |
 | Default rules, based on the Gitleaks default rules | `config::DEFAULT_CONFIG` | 222 | [Default rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/gitleaks-differences.md#default-rules) |
 | `rustleaks-extra-v1` | `native::EXTRA_RULES_V1` | 3 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-extra-v1.md) |
 | `rustleaks-providers-v1` | `native::PROVIDER_RULES_V1` | 303 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-providers-v1.md) |
-| `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 14 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-connections-v1.md) |
+| `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 19 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-connections-v1.md) |
 
 ## Limits
 
@@ -77,5 +78,5 @@ cancellation](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/libra
 
 The Rustleaks code is licensed under the MIT License. Copied Gitleaks
 configuration and test material keep their MIT terms. Adapted Go code keeps
-its BSD terms. The optional rule packs keep their MIT or Apache-2.0 source
+its BSD terms. The Rustleaks rule files keep their MIT or Apache-2.0 source
 terms. See `LICENSE`, `NOTICE` and `default/NOTICE` in the crate package.

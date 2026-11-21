@@ -278,9 +278,6 @@ fn set_up<R: Read + Send + 'static>(
     }
     if log_level.shows_debug() {
         let _ = output::info(stderr, format_args!("using config {}", config.origin));
-        if let Some(reference) = &config.native_policy_reference {
-            let _ = output::info(stderr, format_args!("built-in rule packs {reference}"));
-        }
     }
 
     let report = match ReportPlan::new(&invocation.options, config.full.as_ref(), &environment.cwd)

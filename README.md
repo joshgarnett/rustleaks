@@ -92,7 +92,7 @@ For people who use Rustleaks:
 - [Configuration](docs/user/configuration.md)
 - [Reports](docs/user/reports.md)
 - [Using Rustleaks in CI and Git hooks](docs/user/ci.md)
-- [Native rule packs](docs/user/native-rule-packs.md)
+- [Built-in rules](docs/user/built-in-rules.md)
 - [Complete scanning](docs/user/complete-scanning.md)
 - [Resource limits](docs/user/resource-limits.md)
 - [Differences from Gitleaks](docs/user/gitleaks-differences.md)
@@ -119,9 +119,9 @@ See the [security policy](SECURITY.md).
 
 Rustleaks code is licensed under the [MIT License](LICENSE). Copied Gitleaks
 configuration, fixtures and test material keep their MIT terms. Adapted Go
-code keeps its BSD terms. The optional rule packs keep their MIT or Apache-2.0
+code keeps its BSD terms. The Rustleaks rule files keep their MIT or Apache-2.0
 source terms. Forked codec crates and codec fixtures keep their own licenses,
 which are stored next to them. Release archives include every license in a
 `licenses` folder.
-See [NOTICE](NOTICE) and the [rule pack
+See [NOTICE](NOTICE) and the [rule file
 notice](crates/rustleaks-core/default/NOTICE).

@@ -1,9 +1,11 @@
 # Rule pack authoring
 
 This page is for contributors who add or change rules in the native rule
-packs. It covers the pack files, the rules the native loader enforces, the
-native-only rule features, and the steps for a change. For what the packs do
-and how users turn them on, see [Native rule packs](../user/native-rule-packs.md).
+packs, the rule files that hold the Rustleaks rules. Every scan without a
+configuration, and every configuration with `[extend] useDefault = true`,
+uses all of them. The page covers the pack files, the rules the native loader
+enforces, the native-only rule features, and the steps for a change. For what
+users see, see [Built-in rules](../user/built-in-rules.md).
 
 ## Packs and their files
 
@@ -14,7 +16,7 @@ The packs live in `crates/rustleaks-core/default/` and are built into
 | --- | ---: | --- |
 | `rustleaks-extra-v1` | 3 | `.toml`, `.md`, `.sha256` |
 | `rustleaks-providers-v1` | 303 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
-| `rustleaks-connections-v1` | 14 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
+| `rustleaks-connections-v1` | 19 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
 
 - `<pack>.toml` holds the rules.
 - `<pack>.md` describes the pack for users: selection, rules, shared
@@ -67,8 +69,10 @@ enabled annotation extensions, and the ordered pack IDs and TOML sources.
 Any byte change, including whitespace or a comment, changes the identity. The
 framing is an equality check, not a digest and not authentication.
 
-- A change in rule behavior needs a new pack ID, such as
-  `rustleaks-providers-v2`, or a new policy or package version.
+- Before the first stable release, a rule file changes in place: edit it,
+  keep its ID and add a changelog entry. From the first stable release, a
+  change in what a published file detects needs a new ID, such as
+  `rustleaks-providers-v2`.
 - `builtin_review_reference()` returns a reference without the TOML source
   for the default rules alone or for the packaged packs under their fixed IDs.
   It holds versions, the ordered pack IDs and checked content hashes. A
@@ -283,8 +287,6 @@ any of these needs a concrete user need and a reviewed safety design.
 - Use `rustleaks-providers-v1` for provider API keys and tokens,
   `rustleaks-connections-v1` for passwords in connection strings and URLs,
   and `rustleaks-extra-v1` for the small first-party set.
-- A change that alters what an existing published pack detects needs a new
-  pack ID. Ask the maintainer before you start.
 - Changes to the shipped default rules
   (`crates/rustleaks-core/default/gitleaks.toml`) follow [A detection
   rule](architecture.md#a-detection-rule). Never edit the upstream copy in
@@ -380,8 +382,7 @@ Never change a label to improve a detector result. See the
 
 ### Notes for each pack
 
-These notes add to the steps above. A change in what a published pack
-detects needs a new pack ID.
+These notes add to the steps above.
 
 #### rustleaks-extra-v1
 
@@ -421,7 +422,7 @@ detects needs a new pack ID.
   specific findings stay. Fixtures are written by hand and never sent to a
   provider. The tests are a regression contract, not a measure of accuracy
   on real data.
-- All 3 packs with the default rules give 542 rules, including 32 hidden
+- All 3 packs with the default rules give 547 rules, including 32 hidden
   helpers.
 - The build checks both pack digests and that the provider provenance is
   consistent. Nothing is downloaded at build or run time.
@@ -431,7 +432,8 @@ detects needs a new pack ID.
 #### rustleaks-connections-v1
 
 - Tests: `connection_rules.rs` covers the 6 connection string forms, the
-  libpq forms, and quoted and braced controls. It also checks exact
+  libpq forms, the password-first, Oracle, SQLite and added URI scheme
+  forms, and quoted and braced controls. It also checks exact
   locations, bounds, ASCII and Unicode differences, stopwords and findings
   on the same line. Other cases cover adjacent connections, host-key
   boundaries, allowlists, generic and provider overlap, composition
@@ -446,8 +448,9 @@ detects needs a new pack ID.
 
 ### Documentation and review
 
-- Update the pack's `.md` file and the rule counts in the user
-  [native rule packs guide](../user/native-rule-packs.md).
+- Update the pack's `.md` file, the rule counts in this page and the user
+  [built-in rules guide](../user/built-in-rules.md) when its description
+  changes.
 - Run `just ci`. Run `just fuzz-smoke` when you change regex, decoder or
   predicate code.
 - In the pull request, list the rule IDs, the source and license, the

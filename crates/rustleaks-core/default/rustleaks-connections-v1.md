@@ -1,7 +1,7 @@
 # Rustleaks connection rules v1
 
-The `rustleaks-connections-v1` pack adds 14 namespaced rules for passwords in
-connection strings and credential URLs: 10 password rules, 3 Git credential
+The `rustleaks-connections-v1` pack adds 19 namespaced rules for passwords in
+connection strings and credential URLs: 15 password rules, 3 Git credential
 URL rules and 1 hidden helper rule. The pack is opt-in and runs locally. It
 adds no parser, dependency, expression interpreter, validator or client
 connection. It does not check whether a credential is active, and it does not
@@ -9,19 +9,21 @@ change the packaged default rules.
 
 ## Selection
 
-- CLI: `--native-pack rustleaks-connections-v1`.
-- Library: `NativePolicy::builder().with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?`,
-  with `CONNECTION_RULES_V1` from `rustleaks_core::native`.
+- CLI: always used, with the default rules, when no configuration is
+  selected and in a configuration with `[extend] useDefault = true`.
+- Library: `ConfigLoader::with_builtin_rules` adds all built-in rule files.
+  `NativePolicy::builder().with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?`
+  builds a custom composition, with `CONNECTION_RULES_V1` from `rustleaks_core::native`.
 - The pack can be combined with `rustleaks-extra-v1` and
   `rustleaks-providers-v1` in any order. The exact bytes and the order of the
-  packs are part of the policy identity. Existing engine constructors do not
-  turn it on.
+  packs are part of the policy identity. `ConfigLoader::load_default` without
+  `with_builtin_rules` does not use it.
 - The pack uses native byte entropy and `buffer-v1` association tables. The
   normal configuration loader (`ConfigLoader`, `--config`, inline
   configuration or joined TOML files) rejects these tables.
 
-See [Native rule
-packs](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/native-rule-packs.md)
+See [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
 for users and [Rule pack
 authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
 for contributors.
@@ -65,7 +67,8 @@ Semicolon forms:
 - Quotes and braces around the password are not part of the secret. A
   doubled ODBC closing brace counts as one unit and keeps both source bytes,
   so a braced secret can hold up to 256 source bytes.
-- Password-first order is not matched.
+- The `password-first` rule matches password-first order (see [Added
+  connection forms](#added-connection-forms-5-rules)).
 
 JDBC forms:
 
@@ -79,7 +82,9 @@ JDBC forms:
   are accepted.
 - The `password` key is case-sensitive, even when the dialect and the
   option names before it use other ASCII cases.
-- Oracle and SQLite JDBC URLs have no rule in this pack.
+- The `jdbc-oracle` and `jdbc-query-oracle-sqlite` rules match Oracle and
+  SQLite JDBC URLs (see [Added connection
+  forms](#added-connection-forms-5-rules)).
 
 Database URIs:
 
@@ -93,8 +98,9 @@ Database URIs:
 - Host labels are 1 to 253 bytes and ports are 1 to 5 digits. Bracketed
   hexadecimal address bodies, comma-separated host lists and the optional
   path and query have no length limit.
-- Other schemes, HTTPS credential URLs and values outside ASCII are not
-  matched.
+- The `other-database-uri` rule matches more schemes (see [Added
+  connection forms](#added-connection-forms-5-rules)). HTTPS credential URLs
+  and values outside ASCII are not matched.
 - Detection uses the generated Kingfisher byte regex whitespace: bytes 09 to
   0d and 20, including vertical tab. Rejection rules use Go whitespace: bytes
   09, 0a, 0c, 0d and 20, without vertical tab. So a synthetic URI that ends
@@ -191,11 +197,93 @@ check that a client would accept them.
   fragment detection are separate. The CLI `dir` command skips `.git` folders
   unless `--scan-git-metadata` is given.
 
+### Added connection forms (5 rules)
+
+| Rule ID | Matches | Secret | Entropy or predicate |
+| --- | --- | --- | --- |
+| `connection-string.password.password-first` | Semicolon form with `Password` or `Pwd` before a host property | Double-quoted, single-quoted, braced or unquoted password, 4 to 128 bytes or units; the first capture that takes part | None; 43 stopwords, 18 secret regex exclusions, 1 line exclusion |
+| `connection-string.password.jdbc-oracle` | `jdbc:oracle:thin:` or `jdbc:oracle:oci:` URL with `user/password@` and a host | Password, 1 to 128 bytes | None; 43 stopwords, the 31 `database-uri` secret regex exclusions and 2 stopwords, 2 full-match exclusions |
+| `connection-string.password.jdbc-query-oracle-sqlite` | Oracle JDBC URL with a host, or SQLite JDBC URL with a path, and a query | Lowercase `password=` query value, 4 to 128 bytes | None; 43 stopwords, 18 secret regex exclusions |
+| `connection-string.password.other-database-uri` | `mssql`, `sqlserver`, `oracle`, `clickhouse`, `cockroachdb`, `couchdb`, `influxdb`, `cassandra`, `neo4j` or `bolt` URI with an optional `+driver` suffix, or `postgres`, `postgresql`, `mysql` or `mariadb` with a `+driver` suffix | User information password, 1 to 256 bytes | The `database-uri` exclusions |
+| `other-service-uri-password` | `nats`, `mqtt`, `mqtts`, `memcached` or `memcache` URI | Password, 1 to 256 bytes; user name empty or up to 128 bytes | The `service-uri-password` exclusions |
+
+- These rules were written for Rustleaks. They reuse byte classes and
+  exclusions from the rules above and are not imported from another scanner.
+- Scheme names, JDBC prefixes and property keys accept ASCII case variants,
+  except the case-sensitive `password=` query key.
+
+Password-first semicolon forms:
+
+- `Password` or `Pwd` must come before a nonempty `Server`, `Host`,
+  `Data Source` or `DSN` property on the same line. The key start, the
+  password alphabets and bounds, the optional middle segment of at most 200
+  bytes and the host value of at most 128 bytes are the same as in the
+  host-first semicolon forms.
+- The host value ends at a semicolon, a quote, a line break or the end of
+  the input.
+- The 43 stopwords of the unquoted rule apply to every quoting style. The 18
+  placeholder and non-literal exclusions of `service-uri-password` also
+  apply, so values such as `$DB_PASSWORD`, `%DB_PASSWORD%` and `<password>`
+  are not reported.
+- A password between two host properties, as in `Host=one;Pwd=R7!q;Host=two;`,
+  belongs to the host-first rules. A line exclusion drops the password-first
+  finding when its line has a host-first connection that runs, without a
+  quote, brace or line break, into another host property after its password.
+  Another password-first connection on the same line is then not reported
+  either. This is a known gap.
+- The line exclusion must match at the end of the line. For a match on the
+  last line of a fragment without a final line break, the inherited line
+  target starts at the start of the fragment; the end anchor keeps earlier
+  lines from suppressing that match.
+
+Oracle and SQLite JDBC URLs:
+
+- `jdbc-oracle`: the user is 1 to 128 ASCII letters, digits or `._$#-`. The
+  password cannot contain a slash, at sign, ASCII whitespace, quote or
+  backtick. After the at sign come an optional `//` and a host, TNS alias or
+  bracketed address with an optional port and the `database-uri` tail, or a
+  `(DESCRIPTION=` or `(ADDRESS=` descriptor. For a descriptor the match ends
+  after its first key.
+- `jdbc-oracle` drops `scott/tiger` and the example tuples of the URI rules,
+  such as `user/password`, and the hosts `example`, `example.com`,
+  `example.org` and `example.net` and their subdomains.
+- `jdbc-query-oracle-sqlite`: the Oracle authority is at most 256 bytes and
+  the service path at most 200 bytes. The SQLite path is 1 to 256 bytes of
+  ASCII letters, digits or `._~/\:%+-`. Up to 1,000 bytes of options can
+  come before `password=`, and the last `password=` option is reported.
+  `&amp;` separators are accepted. The value alphabet is the `jdbc-query`
+  alphabet.
+- A URL with both `user/password@` and a `password=` option gives two
+  findings, one from each rule.
+
+More URI schemes:
+
+- `other-database-uri` uses the `database-uri` grammar, except that the user
+  name and password cannot contain a semicolon. A JDBC SQL Server property
+  list such as `jdbc:sqlserver://host:1433;user=app;password=...;` is then not
+  read as user information; the unquoted semicolon rule reports it.
+- `other-service-uri-password` uses the `service-uri-password` grammar and
+  exclusions without change, including the test and documentation path
+  exclusions and the low-confidence hosts `localhost`, `.invalid` and
+  `.test`.
+- The schemes do not overlap those of `database-uri`, `service-uri-password`,
+  the MongoDB rules or the Git credential URL rules, so one URI password
+  gives one connection finding. `database-uri` does not match
+  `postgresql+psycopg2://`, so the `+driver` forms belong to
+  `other-database-uri`.
+- Not matched: HTTP and HTTPS credential URLs, `rabbitmq://` (RabbitMQ
+  clients use `amqp://`, which `service-uri-password` matches),
+  `couchbase://`, the semicolon form `sqlserver://host;user=...;password=...`,
+  and other schemes. A general HTTPS rule would overlap the provider token
+  rules for tokens in Git URLs and match many documentation URLs, so the pack
+  has none.
+
 ## Shared boundaries
 
 ASCII scope:
 
-- In the 6 connection string rules, every consumed match byte is ASCII,
+- In the 6 connection string rules and the 5 added rules, every consumed
+  match byte is ASCII,
   including allowed ASCII control bytes. The surrounding fragment can contain
   any bytes. No text normalization runs.
 - Unicode and invalid-byte connection values are out of scope. A comparison
@@ -278,6 +366,7 @@ Resources:
 | `mongodb-password-comma`, `mongodb-password-comma-tuple`, `service-uri-password` | The same pinned Betterleaks configuration | MIT, `LICENSE.betterleaks` |
 | 3 Git credential URL rules | Apache-2.0 Veles (OSV-SCALIBR) sources, as recorded per rule | Apache-2.0, `LICENSE.veles` |
 | `connection-string.password.libpq-quoted` and `connection-string.password.libpq-unquoted` | Written for Rustleaks from the PostgreSQL documentation | MIT, repository license |
+| `connection-string.password.` `password-first`, `jdbc-oracle`, `jdbc-query-oracle-sqlite` and `other-database-uri`, and `other-service-uri-password` | Written for Rustleaks. Byte classes come from the Kingfisher rules and exclusions from the Betterleaks rules above | MIT, repository license; the copied parts keep the licenses above |
 
 The table shows 12-character commits. The provenance JSON records the full
 commit IDs.

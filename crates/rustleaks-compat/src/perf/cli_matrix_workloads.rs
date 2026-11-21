@@ -435,6 +435,18 @@ fn compare(actual: &[Expected], expected: &[Expected]) -> Result<()> {
     Ok(())
 }
 
+/// A config file, written into each run root, with the Gitleaks-derived
+/// default rules and none of the built-in Rustleaks rules.
+const GITLEAKS_RULES: &str = "gitleaks-rules.toml";
+
+fn write_gitleaks_rules(root: &Path) -> Result<()> {
+    std::fs::write(
+        root.join(GITLEAKS_RULES),
+        rustleaks_core::config::DEFAULT_CONFIG,
+    )?;
+    Ok(())
+}
+
 /// The fixed context of one CLI phase.
 struct Run<'a> {
     cli: &'a Path,
@@ -460,10 +472,10 @@ fn invocation(run: &Run<'_>, flags: Flags, extra: &[&str]) -> Command {
             command.env("PATH", parent);
         }
     }
-    if flags.packs {
-        for (id, _) in PACKS {
-            command.args(["--native-pack", id]);
-        }
+    if !flags.packs {
+        // The CLI always adds the built-in rules to the default rules. A
+        // config with the Gitleaks-derived default rules alone turns them off.
+        command.args(["--config", GITLEAKS_RULES]);
     }
     if let Some(workers) = flags.workers {
         command.args(["--complete-profile", &format!("profile-w{workers}.limits")]);
@@ -677,6 +689,7 @@ fn run_on(id: &str, iterations: usize, repository: Option<&Repository>) -> Resul
         _ if WORKLOADS.contains(&id) => {
             let repository = repository.ok_or("CLI matrix workload needs the repository")?;
             let git = representative_io::executable("RUSTLEAKS_PERF_GIT")?;
+            write_gitleaks_rules(&repository.scratch.0)?;
             let run = Run {
                 cli: &cli,
                 git: &git,
@@ -786,35 +799,27 @@ fn matrix(
         .collect()
 }
 
-/// Empty standard input with the default rules alone, each pack, and all packs.
+/// Empty standard input with the Gitleaks-derived rules alone and with every
+/// built-in rule.
 fn startup(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
     let scratch = Scratch::new("scale")?;
+    write_gitleaks_rules(&scratch.0)?;
     let run = Run {
         cli,
         git: cli,
         root: &scratch.0,
         target: "",
     };
-    let mut selections: Vec<(&str, Vec<&str>)> = vec![("none", Vec::new())];
-    for (id, _) in PACKS {
-        selections.push((
-            id.trim_start_matches("rustleaks-").trim_end_matches("-v1"),
-            vec![id],
-        ));
-    }
-    selections.push(("all", PACKS.iter().map(|(id, _)| *id).collect()));
     let mut phases = Vec::new();
-    for (label, packs) in selections {
-        let extra = packs
-            .iter()
-            .flat_map(|id| ["--native-pack", id])
-            .collect::<Vec<_>>();
+    for (label, packs) in [("none", false), ("all", true)] {
+        let mut flags = Flags::new(Mode::Stdin);
+        flags.packs = packs;
         phases.push(measure(
             &run,
             iterations,
             &format!("cold-empty-stdin-packs-{label}"),
-            Flags::new(Mode::Stdin),
-            &extra,
+            flags,
+            &[],
             &[],
             0,
             0,
@@ -869,6 +874,7 @@ fn size_series(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
         }
         keyword_census(&config, &filler)?;
         expected.sort();
+        write_gitleaks_rules(&scratch.0)?;
         let run = Run {
             cli,
             git: cli,

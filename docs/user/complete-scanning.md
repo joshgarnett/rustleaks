@@ -40,7 +40,7 @@ A relative path is read from the current working folder. Rustleaks never
 picks a profile by itself.
 
 All other options work as usual: configuration, `--enable-rule`,
-`--native-pack`, ignore files, baselines, allow comments, redaction and
+ignore files, baselines, allow comments, redaction and
 reports. `--max-decode-depth`, `--max-archive-depth` and `--timeout` still
 set the decode depth, the archive depth and the time limit.
 

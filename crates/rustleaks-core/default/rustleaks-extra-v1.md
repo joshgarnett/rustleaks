@@ -9,19 +9,20 @@ does not change the packaged default rules.
 
 ## Selection
 
-- CLI: `--native-pack rustleaks-extra-v1`.
-- Library: `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?.build()?`,
-  with `EXTRA_RULES_V1` from `rustleaks_core::native`.
+- CLI: always used, with the default rules, when no configuration is
+  selected and in a configuration with `[extend] useDefault = true`.
+- Library: `ConfigLoader::with_builtin_rules` adds all built-in rule files.
+  `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?.build()?`
+  builds a custom composition, with `EXTRA_RULES_V1` from `rustleaks_core::native`.
 - The pack can be combined with `rustleaks-providers-v1` and
   `rustleaks-connections-v1` in any order. The exact bytes and the order of
   the packs are part of the policy identity.
 - The pack uses no native-only tables. The pack file also loads with
   `--config` or `ConfigLoader`, but then it is a plain configuration with
-  only these 3 rules and without the default rules. Use `--native-pack` to
-  add the rules to the default rules.
+  only these 3 rules and without the default rules.
 
-See [Native rule
-packs](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/native-rule-packs.md)
+See [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
 for users and [Rule pack
 authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
 for contributors.

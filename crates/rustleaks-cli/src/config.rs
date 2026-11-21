@@ -9,9 +9,6 @@ use rustleaks_core::config::{
     ResolverError,
 };
 use rustleaks_core::model::ByteText;
-use rustleaks_core::native::{
-    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, NativePolicyError, PROVIDER_RULES_V1,
-};
 use rustleaks_core::session::{Baseline, BaselineLoadError, IgnoreIssue, IgnoreSet, SessionPolicy};
 use rustleaks_sources::LogicalPath;
 
@@ -44,7 +41,6 @@ pub(crate) struct ConfigAssembly {
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
     pub origin: String,
-    pub native_policy_reference: Option<String>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -110,10 +106,10 @@ pub(crate) fn assemble(
         .map_err(|error| format!("could not configure current version: {error}"))?
         .with_resolver(CwdResolver {
             cwd: cwd.to_path_buf(),
-        });
+        })
+        .with_builtin_rules();
     let source = select_config_source(invocation, environment, cwd)?;
-    let (full, origin, native_policy_reference) =
-        compile_selected_config(source, &invocation.options.native_packs, cwd, &loader)?;
+    let (full, origin) = load_config(source, cwd, &loader)?;
     let selected = if invocation.options.enable_rules.is_empty() {
         full.clone()
     } else {
@@ -176,7 +172,6 @@ pub(crate) fn assemble(
         warnings,
         errors,
         origin,
-        native_policy_reference,
     })
 }
 
@@ -216,6 +211,7 @@ enum ConfigSource<'a> {
 }
 
 impl ConfigSource<'_> {
+    #[cfg(test)]
     fn category(&self) -> &'static str {
         match self {
             Self::Path(_, source) | Self::Inline(_, source) => source,
@@ -307,64 +303,6 @@ fn load_config(
             .map(|config| (config, "<embedded-default>".to_owned()))
             .map_err(|error| format!("could not load embedded config: {error}")),
     }
-}
-
-fn compile_selected_config(
-    source: ConfigSource<'_>,
-    native_packs: &[String],
-    cwd: &Path,
-    loader: &ConfigLoader,
-) -> Result<(CompiledConfig, String, Option<String>), String> {
-    if native_packs.is_empty() {
-        let (full, origin) = load_config(source, cwd, loader)?;
-        return Ok((full, origin, None));
-    }
-    if !matches!(source, ConfigSource::EmbeddedDefault) {
-        return Err(format!(
-            "--native-pack works only with the default configuration, but a configuration was set by {}",
-            source.category(),
-        ));
-    }
-    let (full, reference) = compile_native_packs(native_packs)?;
-    Ok((full, "<embedded-default>".to_owned(), Some(reference)))
-}
-
-/// The rules of a built-in rule pack. `cli_spec::NATIVE_PACKS` lists the
-/// same names for help and completion.
-fn native_pack_contents(id: &str) -> Option<&'static str> {
-    match id {
-        "rustleaks-extra-v1" => Some(EXTRA_RULES_V1),
-        "rustleaks-providers-v1" => Some(PROVIDER_RULES_V1),
-        "rustleaks-connections-v1" => Some(CONNECTION_RULES_V1),
-        _ => None,
-    }
-}
-
-fn compile_native_packs(ids: &[String]) -> Result<(CompiledConfig, String), String> {
-    let mut policy = NativePolicy::builder();
-    for id in ids {
-        let contents =
-            native_pack_contents(id).ok_or_else(|| "unknown built-in rule pack".to_owned())?;
-        policy = policy
-            .with_pack(id, contents)
-            .map_err(native_policy_error)?;
-    }
-    let (config, identity) = policy.compile().map_err(native_policy_error)?;
-    let reference = identity
-        .builtin_review_reference()
-        .ok_or_else(|| "the built-in rule packs have no review reference".to_owned())?
-        .to_owned();
-    Ok((config, reference))
-}
-
-fn native_policy_error(error: NativePolicyError) -> String {
-    // Exact identity and configuration bytes never enter CLI diagnostics.
-    let category = match error {
-        NativePolicyError::Config(error) => config_error_category(&error).to_owned(),
-        NativePolicyError::Engine(_) => "engine compilation error".to_owned(),
-        error => error.to_string(),
-    };
-    format!("could not compile the built-in rule packs ({category})")
 }
 
 fn config_error_category(error: &ConfigError) -> &'static str {
@@ -1137,18 +1075,11 @@ mod tests {
     }
 
     #[test]
-    fn every_listed_rule_pack_has_rules() {
-        for id in crate::cli_spec::NATIVE_PACKS {
-            assert!(native_pack_contents(id).is_some(), "{id}");
-        }
-        assert_eq!(native_pack_contents("rustleaks-missing-v1"), None);
-    }
-
-    #[test]
-    fn cli_compiles_and_projects_the_requested_byte_predicates() {
-        let (full, reference) =
-            compile_native_packs(&["rustleaks-providers-v1".to_owned()]).unwrap();
-        assert!(reference.contains("providers-sha256:"));
+    fn rule_selection_keeps_builtin_byte_predicates() {
+        let full = ConfigLoader::new()
+            .with_builtin_rules()
+            .load_default()
+            .unwrap();
         for id in [
             "rustleaks.dockerhub-personal-access-token",
             "rustleaks.dockerhub-organization-access-token",

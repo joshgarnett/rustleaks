@@ -2090,6 +2090,81 @@
         "reviewed_on": "2026-11-16",
         "syntax_reference": "https://www.postgresql.org/docs/18/libpq-connect.html#LIBPQ-CONNSTRING"
       }
+    },
+    {
+      "id": "rustleaks.connection-string.password.password-first",
+      "intentional_native_selection": {
+        "allowlists": "The 43 unquoted-rule stopwords, the instructional and non-literal secret predicates of the URI rules, and a line exclusion for a host-first connection whose password is followed by another host property, so one password is not reported twice.",
+        "boundary": "The password key starts at the start of the input, after a listed byte, or at an ASCII word boundary, as in the host-first rules. The line exclusion is anchored to the end of the line slice, because the inherited line target of a last line without a line break starts at the start of the fragment.",
+        "capture": "First participating group: the double-quoted, single-quoted, braced or unquoted password, without its quotes or braces.",
+        "domain": "Semicolon form with a Password or Pwd property before a nonempty Server, Host, Data Source or DSN property on the same line; ASCII case variants of the keys.",
+        "limits": "Password 4..128 bytes or braced units; one optional middle segment of at most 200 bytes; host value 1..128 bytes. Byte classes match the Kingfisher host-first semicolon rules."
+      },
+      "native_id": "rustleaks.connection-string.password.password-first",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-20"
+      }
+    },
+    {
+      "id": "rustleaks.connection-string.password.jdbc-oracle",
+      "intentional_native_selection": {
+        "allowlists": "The 43 unquoted-rule stopwords, the database-uri secret predicates, and match exclusions for scott/tiger and other example tuples and for example hosts.",
+        "boundary": "ASCII word boundary before jdbc.",
+        "capture": "Explicit group 1, the password between the slash and the at sign.",
+        "domain": "Oracle JDBC thin or OCI URL with user/password@ before a DNS host, bracketed address, //host or a (DESCRIPTION= or (ADDRESS= descriptor.",
+        "limits": "User 1..128 bytes of ASCII letters, digits and ._$#-; password 1..128 bytes without slash, at sign, ASCII whitespace, quotes or backtick; host and tail use the database URI grammar."
+      },
+      "native_id": "rustleaks.connection-string.password.jdbc-oracle",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-20"
+      }
+    },
+    {
+      "id": "rustleaks.connection-string.password.jdbc-query-oracle-sqlite",
+      "intentional_native_selection": {
+        "allowlists": "The 43 unquoted-rule stopwords and the instructional and non-literal secret predicates of the URI rules.",
+        "boundary": "ASCII word boundary before jdbc; the password key follows ? or & (or &amp;).",
+        "capture": "Explicit group 1, the password option value.",
+        "domain": "Oracle JDBC thin or OCI URL with a host after the at sign, or SQLite JDBC URL with a path, followed by a query with a lowercase password option.",
+        "limits": "Oracle authority at most 256 bytes and service path at most 200 bytes; SQLite path 1..256 bytes; options before the password at most 1000 bytes; value 4..128 bytes with the jdbc-query value alphabet."
+      },
+      "native_id": "rustleaks.connection-string.password.jdbc-query-oracle-sqlite",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-20"
+      }
+    },
+    {
+      "id": "rustleaks.connection-string.password.other-database-uri",
+      "intentional_native_selection": {
+        "allowlists": "The database-uri allowlists, unchanged.",
+        "boundary": "ASCII word boundary before the scheme. The scheme set does not overlap database-uri, mongodb or service-uri-password.",
+        "capture": "Explicit group 1, the userinfo password.",
+        "domain": "mssql, sqlserver, oracle, clickhouse, cockroachdb, couchdb, influxdb, cassandra, neo4j and bolt URIs, each with an optional +driver suffix, and postgres, postgresql, mysql and mariadb URIs with a required +driver suffix.",
+        "limits": "The database-uri grammar, except that the user name and password cannot contain a semicolon, so a JDBC SQL Server property list is not read as userinfo."
+      },
+      "native_id": "rustleaks.connection-string.password.other-database-uri",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-20"
+      }
+    },
+    {
+      "id": "rustleaks.other-service-uri-password",
+      "intentional_native_selection": {
+        "allowlists": "The service-uri-password allowlists, unchanged.",
+        "boundary": "ASCII word boundary before the scheme. The scheme set does not overlap the other URI rules.",
+        "capture": "Explicit group 1, the userinfo password.",
+        "domain": "nats, mqtt, mqtts, memcached and memcache URIs.",
+        "limits": "The service-uri-password grammar, unchanged except for the scheme list."
+      },
+      "native_id": "rustleaks.other-service-uri-password",
+      "source": {
+        "kind": "original-rustleaks-implementation",
+        "reviewed_on": "2026-11-20"
+      }
     }
   ],
   "schema_version": 1,

@@ -10,15 +10,16 @@ coverage of any provider or scanner.
 
 ## Selection
 
-- CLI: `--native-pack rustleaks-providers-v1`.
-- Library: `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?.build()?`,
-  with `PROVIDER_RULES_V1` from `rustleaks_core::native`.
+- CLI: always used, with the default rules, when no configuration is
+  selected and in a configuration with `[extend] useDefault = true`.
+- Library: `ConfigLoader::with_builtin_rules` adds all built-in rule files.
+  `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?.build()?`
+  builds a custom composition, with `PROVIDER_RULES_V1` from `rustleaks_core::native`.
 - The pack can be combined with `rustleaks-extra-v1` and
   `rustleaks-connections-v1` in any order. The exact bytes and the order of
-  the packs are part of the policy identity. Existing engine constructors do
-  not turn it on.
-- With `--native-pack`, the CLI uses the built-in default rules and rejects
-  a custom configuration. A pack does not turn on `--complete-profile`.
+  the packs are part of the policy identity. `ConfigLoader::load_default` without
+  `with_builtin_rules` does not use it.
+- The rules do not turn on `--complete-profile`.
 - The pack uses native-only tables:
   - 213 rules use `byte-shannon-f64-v1` byte entropy: 151 reject values
     below the threshold (`lt`) and 62 reject values at or below it (`le`).
@@ -31,8 +32,8 @@ coverage of any provider or scanner.
 - An explicit rule selection must include every hidden helper that a selected
   rule needs. A selected parent without its helpers fails to build.
 
-See [Native rule
-packs](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/native-rule-packs.md)
+See [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
 for users and [Rule pack
 authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
 for contributors, including the meaning of the native tables.

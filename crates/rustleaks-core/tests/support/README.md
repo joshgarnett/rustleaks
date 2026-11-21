@@ -14,7 +14,7 @@ The integration tests in `crates/rustleaks-core/tests/` include these files.
 
 ## Coverage data
 
-Each JSON file holds hand-written cases for rules in the optional packs. No
+Each JSON file holds hand-written cases for rules in the Rustleaks rule files. No
 generator writes them. Change a file by hand, in the same change as the rule
 it covers, and write each expected value from the rule source, not from
 scanner output.

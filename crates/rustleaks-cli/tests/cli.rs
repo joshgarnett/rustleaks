@@ -13,6 +13,8 @@ mod support;
 
 use support::*;
 
+#[path = "cli/builtin_rules.rs"]
+mod builtin_rules;
 #[path = "cli/complete_profile.rs"]
 mod complete_profile;
 #[path = "cli/configuration.rs"]
@@ -25,8 +27,6 @@ mod git_metadata;
 mod help;
 #[path = "cli/jobs.rs"]
 mod jobs;
-#[path = "cli/native_packs.rs"]
-mod native_packs;
 #[path = "cli/reports.rs"]
 mod reports;
 #[path = "cli/scan.rs"]

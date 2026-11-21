@@ -3,13 +3,14 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use semver::{BuildMetadata, Version};
 use thiserror::Error;
 
 use crate::go_unicode::lowercase as go_lowercase;
+use crate::native::{BUILTIN_PACKS, NativePolicy};
 use crate::regex::{GoRegex, NativeByteRegex, PatternCheck};
 
 use super::compiled::{CompiledAllowlist, CompiledConfig, CompiledRule};
@@ -423,6 +424,7 @@ pub struct ConfigLoader {
     resolver: Arc<dyn ConfigResolver>,
     default_config: Arc<str>,
     current_version: Option<Version>,
+    builtin_rules: Option<Arc<OnceLock<CompiledConfig>>>,
 }
 
 impl fmt::Debug for ConfigLoader {
@@ -431,6 +433,7 @@ impl fmt::Debug for ConfigLoader {
             .debug_struct("ConfigLoader")
             .field("default_config_len", &self.default_config.len())
             .field("current_version", &self.current_version)
+            .field("builtin_rules", &self.builtin_rules.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -449,7 +452,42 @@ impl ConfigLoader {
             resolver: Arc::new(NoIoResolver),
             default_config: Arc::from(DEFAULT_CONFIG),
             current_version: None,
+            builtin_rules: None,
         }
+    }
+
+    /// Adds every built-in Rustleaks rule to the embedded default rules.
+    ///
+    /// After this call, [`Self::load_default`] and `[extend] useDefault = true`
+    /// give the default rules plus all rules in the built-in rule files
+    /// (`EXTRA_RULES_V1`, `PROVIDER_RULES_V1` and `CONNECTION_RULES_V1` in
+    /// [`crate::native`]). Text set with [`Self::with_default_config`] is used
+    /// unchanged instead. Without this call the default is the
+    /// Gitleaks-derived rules alone.
+    ///
+    /// The rules compile on first use and are shared by clones of this
+    /// loader, so a configuration that does not extend the default does not
+    /// pay for them.
+    #[must_use]
+    pub fn with_builtin_rules(mut self) -> Self {
+        self.builtin_rules = Some(Arc::new(OnceLock::new()));
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn builtin_rules_for_test(&mut self, config: CompiledConfig) {
+        self.builtin_rules = Some(Arc::new(OnceLock::from(config)));
+    }
+
+    // The composed built-in rules, when they replace the embedded default.
+    fn builtin_default(&self) -> Option<CompiledConfig> {
+        let builtin = self.builtin_rules.as_ref()?;
+        if *self.default_config != *DEFAULT_CONFIG {
+            return None;
+        }
+        let mut config = CompiledConfig::clone(builtin.get_or_init(compile_builtin_rules));
+        config.origin = Some(ConfigOrigin::EmbeddedDefault);
+        Some(config)
     }
 
     /// Replaces the injected extension resolver.
@@ -563,6 +601,9 @@ impl ConfigLoader {
     ///
     /// Returns a structured parse or validation error.
     pub fn load_default(&self) -> Result<CompiledConfig, ConfigError> {
+        if let Some(config) = self.builtin_default() {
+            return Ok(config);
+        }
         let origin = Some(ConfigOrigin::EmbeddedDefault);
         let raw = self.parse_toml(&self.default_config, origin.as_ref())?;
         self.compile_checked(raw, origin, self.default_check())
@@ -618,7 +659,11 @@ impl ConfigLoader {
             if !config.extension.path.is_empty() && config.extension.use_default {
                 return Err(ConfigError::ConflictingExtension);
             }
-            let base = if config.extension.use_default {
+            let base = if config.extension.use_default
+                && let Some(builtin) = self.builtin_default()
+            {
+                Some(builtin)
+            } else if config.extension.use_default {
                 let raw = self
                     .parse_toml(&self.default_config, Some(&ConfigOrigin::EmbeddedDefault))
                     .map_err(|error| ConfigError::Extended(Box::new(error)))?;
@@ -733,6 +778,19 @@ struct AllowlistCache {
     validated: BTreeSet<String>,
     joined: BTreeMap<String, GoRegex>,
     stop_words: BTreeMap<Vec<String>, AhoCorasick>,
+}
+
+// The built-in rule text is fixed at compile time, and
+// `builtin_rules_pass_full_pattern_checks` compiles exactly this composition,
+// so this cannot fail at run time.
+fn compile_builtin_rules() -> CompiledConfig {
+    let mut policy = NativePolicy::builder();
+    for (id, contents) in BUILTIN_PACKS {
+        policy = policy
+            .with_pack(id, contents)
+            .expect("built-in rule files are valid");
+    }
+    policy.compile().expect("built-in rules compile").0
 }
 
 fn compile_rule(
@@ -1080,6 +1138,8 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
             }
             if current_rule.entropy != 0.0 {
                 base_rule.entropy = current_rule.entropy;
+                // A Gitleaks-format entropy replaces a built-in byte predicate.
+                base_rule.native_entropy = None;
             }
             if current_rule.secret_group != 0 {
                 base_rule.secret_group = current_rule.secret_group;
@@ -1087,6 +1147,8 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
             if current_rule.regex.is_some() {
                 base_rule.regex = current_rule.regex;
                 base_rule.regex_matcher = current_rule.regex_matcher;
+                // A Gitleaks-format regex replaces a built-in `bytes-v1` regex.
+                base_rule.native_byte_matcher = None;
             }
             if current_rule.path.is_some() {
                 base_rule.path = current_rule.path;
