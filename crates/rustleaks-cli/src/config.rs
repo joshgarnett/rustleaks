@@ -14,11 +14,11 @@ use rustleaks_sources::LogicalPath;
 
 use crate::args::{CommandKind, Invocation};
 
-/// Gitleaks release whose behavior this build implements.
+/// Newest Gitleaks version whose configuration settings this build supports.
 ///
-/// `compat/upstream-revision.txt` pins the upstream commit with the
-/// description `v8.30.0-27-gb58d3f1`. A config `minVersion` above this
-/// version produces an advisory warning.
+/// A config `minVersion` names the Gitleaks version that the configuration
+/// was written for. A `minVersion` above this version produces an advisory
+/// warning.
 const IMPLEMENTED_GITLEAKS_VERSION: &str = "8.30.0";
 
 /// Largest configuration file, in bytes, that Rustleaks reads.
@@ -177,8 +177,9 @@ pub(crate) fn assemble(
 
 fn minimum_version_warning(config: &CompiledConfig, origin: &str) -> String {
     format!(
-        "config requires Gitleaks {} or later; Rustleaks implements Gitleaks \
-         {IMPLEMENTED_GITLEAKS_VERSION}, so newer settings may not be supported; config path={origin}",
+        "config minVersion {} is newer than Gitleaks \
+         {IMPLEMENTED_GITLEAKS_VERSION}, the newest configuration version that Rustleaks supports, \
+         so some settings may not be supported; config path={origin}",
         config.min_version(),
     )
 }
@@ -906,11 +907,11 @@ mod tests {
         for (required, expected) in [
             (
                 "v8.30.1",
-                "config requires Gitleaks v8.30.1 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
+                "config minVersion v8.30.1 is newer than Gitleaks 8.30.0, the newest configuration version that Rustleaks supports, so some settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
             ),
             (
                 "v99.0.0",
-                "config requires Gitleaks v99.0.0 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
+                "config minVersion v99.0.0 is newer than Gitleaks 8.30.0, the newest configuration version that Rustleaks supports, so some settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
             ),
         ] {
             let config = format!("minVersion = '{required}'\n");

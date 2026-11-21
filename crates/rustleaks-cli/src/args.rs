@@ -202,7 +202,7 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
                     .filter(|rest| rest.is_empty() || rest.starts_with('='))
             })
         {
-            // Gitleaks accepts this completion flag. Rustleaks ignores it.
+            // A legacy completion flag. Rustleaks accepts and ignores it.
             boolean("no-descriptions", attached.strip_prefix('='))
                 .map_err(|error| error.with_command(topic))?;
             index += 1;

@@ -111,7 +111,7 @@ fn implemented_gitleaks_version_matches_the_pinned_upstream_revision() {
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         stderr.contains(&format!(
-            "; Rustleaks implements Gitleaks {version}, so newer settings"
+            " is newer than Gitleaks {version}, the newest configuration version"
         )),
         "{description}: {stderr}"
     );
@@ -124,7 +124,7 @@ fn minimum_version_warning_is_one_warn_line_on_standard_error() {
     let stderr = String::from_utf8_lossy(&default.stderr);
     assert_eq!(default.status.code(), Some(0), "{stderr}");
     assert!(default.stdout.is_empty());
-    assert!(!stderr.contains("config requires"), "{stderr}");
+    assert!(!stderr.contains("config minVersion"), "{stderr}");
 
     // The unit test in src/config.rs covers each version case.
     for (min_version, expected) in [
@@ -132,7 +132,7 @@ fn minimum_version_warning_is_one_warn_line_on_standard_error() {
         (
             "v99.0.0",
             Some(
-                "config requires Gitleaks v99.0.0 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
+                "config minVersion v99.0.0 is newer than Gitleaks 8.30.0, the newest configuration version that Rustleaks supports, so some settings may not be supported; config path=RUSTLEAKS_CONFIG_TOML",
             ),
         ),
     ] {
@@ -148,11 +148,11 @@ fn minimum_version_warning_is_one_warn_line_on_standard_error() {
         assert_eq!(result.status.code(), Some(0), "{min_version}: {stderr}");
         assert!(result.stdout.is_empty());
         match expected {
-            None => assert!(!stderr.contains("config requires"), "{stderr}"),
+            None => assert!(!stderr.contains("config minVersion"), "{stderr}"),
             Some(message) => {
                 let warnings = stderr
                     .lines()
-                    .filter(|line| line.contains("config requires"))
+                    .filter(|line| line.contains("config minVersion"))
                     .collect::<Vec<_>>();
                 assert_eq!(warnings.len(), 1, "{stderr}");
                 assert!(warnings[0].contains("warn"), "{stderr}");

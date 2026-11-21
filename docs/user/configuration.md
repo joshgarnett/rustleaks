@@ -46,7 +46,7 @@ stopwords = ["placeholder"]
 | --- | --- |
 | `title` | A name for the configuration. |
 | `description` | Free text. |
-| `minVersion` | The oldest Gitleaks version that the configuration needs. See [minVersion](#minversion). |
+| `minVersion` | The Gitleaks version that the configuration was written for. See [minVersion](#minversion). |
 | `[extend]` | Builds this configuration on top of another one. See [Extending a configuration](#extending-a-configuration). |
 | `[[rules]]` | One table for each rule. |
 | `[[allowlists]]` | Global allowlists. They apply to every rule, or to the rules listed in `targetRules`. The older single `[allowlist]` table is also accepted. |
@@ -111,9 +111,10 @@ Rustleaks does not warn about it.
 
 ### minVersion
 
-`minVersion` names the oldest Gitleaks version that the configuration needs.
-Rustleaks implements Gitleaks 8.30.0. When a configuration asks for a newer
-version, Rustleaks prints a warning and still runs the scan. A `minVersion`
+`minVersion` names the Gitleaks version that the configuration was written
+for. Rustleaks supports the configuration settings of Gitleaks 8.30.0. When
+`minVersion` is newer, Rustleaks prints a warning, because the configuration
+may use settings that it does not support, and still runs the scan. A `minVersion`
 that is not a valid version, such as `minVersion = "latest"`, is an error.
 The default rules ask for `v8.25.0`, so they do not cause a warning.
 
@@ -125,10 +126,13 @@ Rustleaks uses the first source in this list that is set:
 2. The `RUSTLEAKS_CONFIG` environment variable, a path to a file.
 3. The `RUSTLEAKS_CONFIG_TOML` environment variable, which holds the TOML
    text itself.
-4. The `GITLEAKS_CONFIG` environment variable, a path to a file.
-5. The `GITLEAKS_CONFIG_TOML` environment variable, which holds the TOML text.
+4. The `GITLEAKS_CONFIG` environment variable, the legacy name for
+   `RUSTLEAKS_CONFIG`.
+5. The `GITLEAKS_CONFIG_TOML` environment variable, the legacy name for
+   `RUSTLEAKS_CONFIG_TOML`.
 6. A `.rustleaks.toml` file in the folder you scan.
-7. A `.gitleaks.toml` file in the folder you scan.
+7. A `.gitleaks.toml` file in the folder you scan, the legacy name for
+   `.rustleaks.toml`.
 8. The default rules built into Rustleaks.
 
 Empty values are skipped. Steps 6 and 7 apply when the scan target is a
@@ -160,15 +164,15 @@ Rustleaks logs an error for each missing required rule.
 ## Ignore files
 
 An ignore file lists findings that Rustleaks should not report. Rustleaks
-reads `.rustleaksignore` files and, for backward compatibility,
-`.gitleaksignore` files. Both use the same format, and Rustleaks uses all of
+reads `.rustleaksignore` files and files with the legacy name
+`.gitleaksignore`. Both use the same format, and Rustleaks uses all of
 them together.
 
 Rustleaks looks in these places:
 
 - the path given with `--rustleaks-ignore-path` (`-i`), which can be an ignore
   file or a folder that holds one. The default is the current folder.
-  `--gitleaks-ignore-path` is another name for this flag;
+  `--gitleaks-ignore-path` is the legacy name of this flag;
 - the folder you scan. For `stdin`, this is the current folder.
 
 Each line holds the fingerprint of one finding. Copy fingerprints from the
@@ -218,7 +222,7 @@ scans without a baseline. The exit code does not show this, so check the log.
 
 ## Allow comments
 
-Add `rustleaks:allow` to a line to hide findings on that line. The older
+Add `rustleaks:allow` to a line to hide findings on that line. The legacy
 `gitleaks:allow` comment also works.
 
 ```python
@@ -227,7 +231,7 @@ api_key = "example-not-a-secret"  # rustleaks:allow
 
 The marker is case sensitive and can appear anywhere on the line. To report
 these findings anyway, use `--ignore-rustleaks-allow`.
-`--ignore-gitleaks-allow` is another name for the same flag.
+`--ignore-gitleaks-allow` is the legacy name of the same flag.
 
 ## Decoding
 
@@ -238,11 +242,12 @@ text have tags such as `decoded:base64` and `decode-depth:1`.
 
 `--base64-mode` selects how Base64 is decoded:
 
-- `compatible`, the default, decodes Base64 the same way as Gitleaks.
-- `extended` also accepts URL-safe Base64, Base64 without padding, and
-  decoded bytes that are not printable text. This mode is a Rustleaks
-  extension. It can find secrets that `compatible` mode misses, so its
-  findings can differ from Gitleaks.
+- `compatible`, the default, decodes padded standard Base64 and unpadded
+  URL-safe Base64. It keeps the result only when every decoded byte is in
+  the range 0x09 to 0x7E.
+- `extended` also decodes padded URL-safe and unpadded standard Base64, and
+  keeps decoded bytes outside that range. It can find secrets that
+  `compatible` mode misses.
 
 Limits of the Base64 modes:
 

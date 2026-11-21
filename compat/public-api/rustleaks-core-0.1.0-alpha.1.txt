@@ -524,7 +524,6 @@ impl rustleaks_core::model::ScanOptions
 pub const fn rustleaks_core::model::ScanOptions::base64_mode(self) -> rustleaks_core::model::Base64Mode
 pub fn rustleaks_core::model::ScanOptions::builder() -> rustleaks_core::model::ScanOptionsBuilder
 pub const fn rustleaks_core::model::ScanOptions::honor_allow_markers(self) -> bool
-pub const fn rustleaks_core::model::ScanOptions::honor_gitleaks_allow(self) -> bool
 pub const fn rustleaks_core::model::ScanOptions::max_decode_depth(self) -> usize
 pub const fn rustleaks_core::model::ScanOptions::max_target_bytes(self) -> core::option::Option<usize>
 pub const fn rustleaks_core::model::ScanOptions::redaction_percent(self) -> usize
@@ -535,7 +534,6 @@ impl rustleaks_core::model::ScanOptionsBuilder
 pub const fn rustleaks_core::model::ScanOptionsBuilder::base64_mode(self, rustleaks_core::model::Base64Mode) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::build(self) -> rustleaks_core::model::ScanOptions
 pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_allow_markers(self, bool) -> Self
-pub const fn rustleaks_core::model::ScanOptionsBuilder::honor_gitleaks_allow(self, bool) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::max_decode_depth(self, usize) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::max_target_bytes(self, core::option::Option<usize>) -> Self
 pub const fn rustleaks_core::model::ScanOptionsBuilder::redaction_percent(self, usize) -> Self

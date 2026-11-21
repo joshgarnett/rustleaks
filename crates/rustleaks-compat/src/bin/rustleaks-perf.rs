@@ -666,17 +666,42 @@ fn run_report(iterations: usize, kind: ReportKind) -> Result<(u128, Metric), Box
             ReportKind::Json => JsonReporter.write(&mut output, black_box(&findings))?,
             ReportKind::Sarif => sarif.write(&mut output, black_box(&findings))?,
         }
-        last = Some(Metric {
+        last = Some(output);
+    }
+    let elapsed = start.elapsed().as_nanos();
+    let mut output = last.ok_or("no report iteration")?;
+    if matches!(kind, ReportKind::Sarif) {
+        output = sarif_without_version(&output)?;
+    }
+    Ok((
+        elapsed,
+        Metric {
             logical_bytes: u64::try_from(findings.len())?,
             result_count: u64::try_from(findings.len())?,
             output_bytes: u64::try_from(output.len())?,
             fingerprint: fnv_extend(FNV_OFFSET, &output),
-        });
-    }
-    Ok((
-        start.elapsed().as_nanos(),
-        last.ok_or("no report iteration")?,
+        },
     ))
+}
+
+/// Replaces the Rustleaks version in SARIF output with `VERSION`, so the
+/// recorded size and hash of the SARIF workload do not change with each
+/// release.
+fn sarif_without_version(output: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let current = format!("\"semanticVersion\": \"{}\"", env!("CARGO_PKG_VERSION"));
+    let current = current.as_bytes();
+    let mut starts = output
+        .windows(current.len())
+        .enumerate()
+        .filter(|(_, window)| *window == current)
+        .map(|(start, _)| start);
+    let (Some(start), None) = (starts.next(), starts.next()) else {
+        return Err("SARIF output does not hold the Rustleaks version once".into());
+    };
+    let mut fixed = output[..start].to_vec();
+    fixed.extend_from_slice(b"\"semanticVersion\": \"VERSION\"");
+    fixed.extend_from_slice(&output[start + current.len()..]);
+    Ok(fixed)
 }
 
 fn report_findings() -> Result<Vec<Finding>, Box<dyn Error>> {
@@ -1098,8 +1123,8 @@ fn expected(id: &str) -> Expected {
         "report-sarif" => Expected::new(
             10_000,
             10_000,
-            7_308_202,
-            0x8293_a2e4_39c3_f929,
+            7_308_208,
+            0x71e0_8eec_e351_840c,
             "exact 10,000-finding SARIF bytes",
         ),
         "bm-0001" => Expected::new(

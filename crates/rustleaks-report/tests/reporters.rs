@@ -6,6 +6,11 @@ use rustleaks_report::{
     CsvReporter, JsonReporter, JunitReporter, ReportRule, Reporter, SarifReporter,
 };
 
+#[path = "support/tool_identity.rs"]
+mod tool_identity;
+
+use tool_identity::with_rustleaks_identity;
+
 fn simple_finding(description: &str, start_line: usize, commit: &str) -> Finding {
     Finding::builder()
         .rule_id("test-rule")
@@ -73,27 +78,33 @@ fn csv_matches_upstream_fixture_byte_for_byte() {
 }
 
 #[test]
-fn junit_matches_upstream_fixtures_byte_for_byte() {
+fn junit_matches_upstream_fixtures_with_the_rustleaks_suite_name() {
     let findings = [
         simple_finding("Test Rule", 1, "0000000000000000"),
         simple_finding("Test Rule", 2, ""),
     ];
     assert_eq!(
         render(&JunitReporter, &findings),
-        include_bytes!(
-            "../../../compat/fixtures/upstream/testdata/expected/report/junit_simple.xml"
+        with_rustleaks_identity(
+            "junit",
+            include_bytes!(
+                "../../../compat/fixtures/upstream/testdata/expected/report/junit_simple.xml"
+            )
         )
     );
     assert_eq!(
         render(&JunitReporter, &[]),
-        include_bytes!(
-            "../../../compat/fixtures/upstream/testdata/expected/report/junit_empty.xml"
+        with_rustleaks_identity(
+            "junit",
+            include_bytes!(
+                "../../../compat/fixtures/upstream/testdata/expected/report/junit_empty.xml"
+            )
         )
     );
 }
 
 #[test]
-fn sarif_matches_upstream_fixture_byte_for_byte() {
+fn sarif_matches_upstream_fixture_with_the_rustleaks_driver() {
     let finding = Finding::builder()
         .rule_id("test-rule")
         .description("A test rule")
@@ -116,9 +127,30 @@ fn sarif_matches_upstream_fixture_byte_for_byte() {
     .unwrap();
     assert_eq!(
         render(&reporter, &[finding]),
-        include_bytes!(
-            "../../../compat/fixtures/upstream/testdata/expected/report/sarif_simple.sarif"
+        with_rustleaks_identity(
+            "sarif",
+            include_bytes!(
+                "../../../compat/fixtures/upstream/testdata/expected/report/sarif_simple.sarif"
+            )
         )
+    );
+}
+
+#[test]
+fn sarif_driver_names_rustleaks_and_its_version() {
+    let reporter = SarifReporter::try_new([]).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&render(&reporter, &[])).unwrap();
+    let driver = &report["runs"][0]["tool"]["driver"];
+    assert_eq!(driver["name"], "rustleaks");
+    assert_eq!(driver["semanticVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        driver["informationUri"],
+        "https://github.com/joshgarnett/rustleaks"
+    );
+    assert!(
+        !String::from_utf8(render(&reporter, &[]))
+            .unwrap()
+            .contains("gitleaks")
     );
 }
 

@@ -1,12 +1,13 @@
 # Rustleaks
 
 Rustleaks finds secrets, such as API keys and passwords, in files, Git history
-and standard input. It is written in Rust. It reads Gitleaks 8.30.0
-configuration files, ignore files, baselines and allow comments, and keeps
-the Gitleaks report fields and exit codes. Its findings can differ from
-Gitleaks. [Differences from Gitleaks](docs/user/gitleaks-differences.md) lists
-each difference. The detection engine is also available as the
-`rustleaks-core` library.
+and standard input. It is written in Rust. The detection engine is also
+available as the `rustleaks-core` library.
+
+Rustleaks reads configuration files, ignore files, baselines and allow
+comments written for Gitleaks 8.30.0, and its reports keep the same fields
+and exit codes. Its findings can differ from Gitleaks. If you use Gitleaks
+now, start with [Moving from Gitleaks](docs/user/moving-from-gitleaks.md).
 
 Rustleaks builds on the behavior, default rules, tests and fixtures of
 [Gitleaks](https://github.com/gitleaks/gitleaks), and thanks its maintainers
@@ -95,6 +96,7 @@ For people who use Rustleaks:
 - [Built-in rules](docs/user/built-in-rules.md)
 - [Complete scanning](docs/user/complete-scanning.md)
 - [Resource limits](docs/user/resource-limits.md)
+- [Moving from Gitleaks](docs/user/moving-from-gitleaks.md)
 - [Differences from Gitleaks](docs/user/gitleaks-differences.md)
 - [Using rustleaks-core](docs/user/library.md)
 - [Review records](docs/user/review-records.md)

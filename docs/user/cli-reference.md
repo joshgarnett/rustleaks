@@ -247,7 +247,6 @@ The `git`, `dir` and `stdin` commands accept every flag in this section. The
 | `--exit-code` | | Whole number | `1` | The exit code when the scan finds secrets. See [Exit codes](#exit-codes). |
 | `--redact` | | Optional percent, after `=` | Off | Hide secrets in logs, `--verbose` output and reports. Without a value, hide the whole secret. `--redact=20` hides 20 percent. |
 | `--verbose` | `-v` | None | Off | Print each finding on standard output. |
-| `--no-color` | | None | Off | Accepted for Gitleaks compatibility. Rustleaks never prints color. |
 
 See [Reports](reports.md) for the formats and fields.
 
@@ -257,7 +256,7 @@ See [Reports](reports.md) for the formats and fields.
 | --- | --- | --- | --- |
 | `--max-target-megabytes` | Whole number | `0` | Skip files larger than this many megabytes (1,000,000 bytes each). `0` or less means no limit. |
 | `--max-decode-depth` | Whole number | `5` | Decode encoded text up to this many levels deep. `0` or less turns decoding off. |
-| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also finds URL-safe Base64, Base64 without padding, and Base64 of binary data. See [Decoding](configuration.md#decoding). |
+| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also decodes padded URL-safe and unpadded standard Base64, and keeps binary output. See [Decoding](configuration.md#decoding). |
 | `--max-archive-depth` | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
 | `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1, or with 2 under `--complete-profile`. `0` or less means no time limit. |
 | `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. See [Detection threads](resource-limits.md#detection-threads) for its effect on speed and memory. |
@@ -277,14 +276,15 @@ See [Reports](reports.md) for the formats and fields.
 | `--help` | `-h` | Print help for the command. |
 | `--version` | | Print `rustleaks version` and the version number. Works only without a command. |
 
-### Gitleaks flag names
+### Legacy flag names
 
-These Gitleaks names also work:
+These older names also work:
 
-| Gitleaks name | Rustleaks name |
+| Legacy name | Effect |
 | --- | --- |
-| `--gitleaks-ignore-path` | `--rustleaks-ignore-path` |
-| `--ignore-gitleaks-allow` | `--ignore-rustleaks-allow` |
+| `--gitleaks-ignore-path` | Same as `--rustleaks-ignore-path`. |
+| `--ignore-gitleaks-allow` | Same as `--ignore-rustleaks-allow`. |
+| `--no-color` | Accepted and ignored. Rustleaks never prints color. |
 
 ## Environment variables
 
@@ -292,8 +292,8 @@ These Gitleaks names also work:
 | --- | --- |
 | `RUSTLEAKS_CONFIG` | The path of a configuration file. |
 | `RUSTLEAKS_CONFIG_TOML` | The configuration text itself. |
-| `GITLEAKS_CONFIG` | The Gitleaks name for `RUSTLEAKS_CONFIG`. |
-| `GITLEAKS_CONFIG_TOML` | The Gitleaks name for `RUSTLEAKS_CONFIG_TOML`. |
+| `GITLEAKS_CONFIG` | Legacy name for `RUSTLEAKS_CONFIG`. |
+| `GITLEAKS_CONFIG_TOML` | Legacy name for `RUSTLEAKS_CONFIG_TOML`. |
 
 An empty variable is skipped. Rustleaks reads no other environment variables
 itself. The `git` program that it runs reads its own variables, such as

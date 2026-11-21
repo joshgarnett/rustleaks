@@ -54,7 +54,8 @@ field = "stdout"
 frozen_sha256 = "e10817928d97514364ad4d36eddf9c2f3ec08b453ab3858df8d328d468f7b043"
 expected = '''
 Rustleaks finds secrets in Git history, files, directories and standard
-input. It reads Gitleaks configuration, ignore and baseline files.
+input. It also reads configuration, ignore and baseline files written for
+Gitleaks.
 
 Usage:
   rustleaks <command> [flags]
@@ -81,11 +82,13 @@ Suppression flags:
   -i, --rustleaks-ignore-path <path>
           Read ignore entries from this file or folder.
           In a folder, Rustleaks reads .rustleaksignore and
-          .gitleaksignore. Default: ".", the current folder.
+          the legacy .gitleaksignore. Default: ".", the current
+          folder.
           Ignore files in the scanned folder are always read.
       --ignore-rustleaks-allow
           Do not skip lines that have an allow comment.
-          Allow comments are rustleaks:allow and gitleaks:allow.
+          Allow comments are rustleaks:allow and the legacy
+          gitleaks:allow.
 
 Report flags:
   -r, --report-path <path>
@@ -108,9 +111,6 @@ Report flags:
           --redact=20 hides 20 percent. Always use "=" here.
   -v, --verbose
           Print each finding to standard output.
-      --no-color
-          Accepted for Gitleaks compatibility.
-          Rustleaks never prints color.
 
 Limit and decoding flags:
       --max-target-megabytes <number>
@@ -122,9 +122,10 @@ Limit and decoding flags:
       --base64-mode <mode>
           Choose how to find base64 text.
           Modes: compatible and extended. Default: compatible.
-          compatible finds the same base64 text as Gitleaks.
-          extended also finds URL-safe base64, base64 without
-          padding, and base64 of binary data.
+          compatible decodes padded standard base64 and unpadded
+          URL-safe base64, and keeps only text output.
+          extended also decodes padded URL-safe and unpadded
+          standard base64, and keeps binary output.
       --max-archive-depth <number>
           Scan inside archives nested up to this many levels deep.
           0 means archives are not opened. Default: 0.
@@ -156,11 +157,13 @@ Other flags:
           Print the Rustleaks version.
 
 Legacy flag names:
-  These Gitleaks names also work.
+  These older names also work.
       --gitleaks-ignore-path <path>
           Same as --rustleaks-ignore-path.
       --ignore-gitleaks-allow
           Same as --ignore-rustleaks-allow.
+      --no-color
+          Accepted and ignored. Rustleaks never prints color.
 
 Configuration order:
   Rustleaks uses the first configuration that it finds:
@@ -191,7 +194,8 @@ field = "stdout"
 frozen_sha256 = "e10817928d97514364ad4d36eddf9c2f3ec08b453ab3858df8d328d468f7b043"
 expected = '''
 Rustleaks finds secrets in Git history, files, directories and standard
-input. It reads Gitleaks configuration, ignore and baseline files.
+input. It also reads configuration, ignore and baseline files written for
+Gitleaks.
 
 Usage:
   rustleaks <command> [flags]
@@ -218,11 +222,13 @@ Suppression flags:
   -i, --rustleaks-ignore-path <path>
           Read ignore entries from this file or folder.
           In a folder, Rustleaks reads .rustleaksignore and
-          .gitleaksignore. Default: ".", the current folder.
+          the legacy .gitleaksignore. Default: ".", the current
+          folder.
           Ignore files in the scanned folder are always read.
       --ignore-rustleaks-allow
           Do not skip lines that have an allow comment.
-          Allow comments are rustleaks:allow and gitleaks:allow.
+          Allow comments are rustleaks:allow and the legacy
+          gitleaks:allow.
 
 Report flags:
   -r, --report-path <path>
@@ -245,9 +251,6 @@ Report flags:
           --redact=20 hides 20 percent. Always use "=" here.
   -v, --verbose
           Print each finding to standard output.
-      --no-color
-          Accepted for Gitleaks compatibility.
-          Rustleaks never prints color.
 
 Limit and decoding flags:
       --max-target-megabytes <number>
@@ -259,9 +262,10 @@ Limit and decoding flags:
       --base64-mode <mode>
           Choose how to find base64 text.
           Modes: compatible and extended. Default: compatible.
-          compatible finds the same base64 text as Gitleaks.
-          extended also finds URL-safe base64, base64 without
-          padding, and base64 of binary data.
+          compatible decodes padded standard base64 and unpadded
+          URL-safe base64, and keeps only text output.
+          extended also decodes padded URL-safe and unpadded
+          standard base64, and keeps binary output.
       --max-archive-depth <number>
           Scan inside archives nested up to this many levels deep.
           0 means archives are not opened. Default: 0.
@@ -293,11 +297,13 @@ Other flags:
           Print the Rustleaks version.
 
 Legacy flag names:
-  These Gitleaks names also work.
+  These older names also work.
       --gitleaks-ignore-path <path>
           Same as --rustleaks-ignore-path.
       --ignore-gitleaks-allow
           Same as --ignore-rustleaks-allow.
+      --no-color
+          Accepted and ignored. Rustleaks never prints color.
 
 Configuration order:
   Rustleaks uses the first configuration that it finds:
