@@ -69,6 +69,9 @@ pub(crate) enum Group {
     Reports,
     Limits,
     Logging,
+    /// Legacy flags without a current name. Help lists them with the
+    /// legacy flag names, not in a group of their own.
+    Legacy,
 }
 
 impl Group {
@@ -87,6 +90,7 @@ impl Group {
             Self::Reports => "Report flags:",
             Self::Limits => "Limit and decoding flags:",
             Self::Logging => "Logging flags:",
+            Self::Legacy => "Legacy flag names:",
         }
     }
 }
@@ -134,7 +138,7 @@ impl Flag {
     }
 }
 
-/// A legacy Gitleaks flag name with the same meaning as a current flag.
+/// A legacy flag name with the same meaning as a current flag.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LegacyFlag {
     pub long: &'static str,
@@ -229,7 +233,8 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         &[
             "Read ignore entries from this file or folder.",
             "In a folder, Rustleaks reads .rustleaksignore and",
-            ".gitleaksignore. Default: \".\", the current folder.",
+            "the legacy .gitleaksignore. Default: \".\", the current",
+            "folder.",
             "Ignore files in the scanned folder are always read.",
         ],
     ),
@@ -240,7 +245,8 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         Group::Suppression,
         &[
             "Do not skip lines that have an allow comment.",
-            "Allow comments are rustleaks:allow and gitleaks:allow.",
+            "Allow comments are rustleaks:allow and the legacy",
+            "gitleaks:allow.",
         ],
     ),
     flag(
@@ -304,11 +310,8 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         "no-color",
         None,
         Value::Switch,
-        Group::Reports,
-        &[
-            "Accepted for Gitleaks compatibility.",
-            "Rustleaks never prints color.",
-        ],
+        Group::Legacy,
+        &["Accepted and ignored. Rustleaks never prints color."],
     ),
     flag(
         "max-target-megabytes",
@@ -338,7 +341,8 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
         &[
             "Choose how to find base64 text.",
             "Modes: compatible and extended. Default: compatible.",
-            "compatible finds the same base64 text as Gitleaks.",
+            "compatible decodes padded base64 and unpadded URL-safe",
+            "base64, and keeps only printable decoded text.",
             "extended also finds URL-safe base64, base64 without",
             "padding, and base64 of binary data.",
         ],
@@ -406,7 +410,7 @@ pub(crate) const SCAN_FLAGS: &[Flag] = &[
     ),
 ];
 
-/// Legacy Gitleaks names that every scan command accepts.
+/// Legacy names that every scan command accepts.
 pub(crate) const LEGACY_FLAGS: &[LegacyFlag] = &[
     LegacyFlag {
         long: "gitleaks-ignore-path",
@@ -478,7 +482,7 @@ const COMPLETION_FLAGS: &[Flag] = &[flag(
     None,
     Value::Switch,
     Group::Configuration,
-    &["Accepted for Gitleaks compatibility; ignored."],
+    &["Accepted and ignored."],
 )];
 
 const DIR_FLAGS: &[Flag] = &[

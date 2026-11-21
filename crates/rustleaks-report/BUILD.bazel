@@ -14,6 +14,7 @@ rustleaks_library(
     rustleaks_integration_test(
         name = test + "_test",
         src = "tests/" + test + ".rs",
+        srcs = ["tests/support/tool_identity.rs"],
         compile_data = ["//compat:fixtures"],
         data = ["//compat:all"],
         deps = [

@@ -5,7 +5,7 @@ use rustleaks_core::model::Finding;
 use crate::go_json;
 use crate::{ReportError, Reporter};
 
-/// Upstream-compatible `JUnit` XML report writer.
+/// `JUnit` XML report writer.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct JunitReporter;
 
@@ -15,7 +15,7 @@ impl Reporter for JunitReporter {
         writer.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n")?;
         write!(
             writer,
-            "\t<testsuite failures=\"{}\" name=\"gitleaks\" tests=\"{}\" time=\"\">",
+            "\t<testsuite failures=\"{}\" name=\"rustleaks\" tests=\"{}\" time=\"\">",
             findings.len(),
             findings.len()
         )?;

@@ -152,7 +152,7 @@ finding has a link. Tags are separated by spaces. CSV has no `Description` or
 ## JUnit
 
 `--report-format junit` writes JUnit XML with one test suite named
-`gitleaks`. Each finding is one failed test case. The failure text holds the
+`rustleaks`. Each finding is one failed test case. The failure text holds the
 finding as JSON.
 
 ## SARIF
@@ -171,11 +171,12 @@ finding as JSON.
 The `tool.driver.rules` list holds every rule in the configuration, with its
 ID and description.
 
-The tool is named `gitleaks`, with `semanticVersion` set to the fixed value
-`v8.0.0` and `informationUri` set to the Gitleaks project page. These values
-do not describe the Rustleaks version. Rustleaks keeps them because GitHub
-code scanning tracks alerts by tool name, so alert history continues when you
-move from Gitleaks to Rustleaks.
+The tool is named `rustleaks`, with `semanticVersion` set to the Rustleaks
+version, such as `0.2.0`, and `informationUri` set to the Rustleaks
+repository. Gitleaks, and Rustleaks up to 0.1.0-alpha.12, name the tool
+`gitleaks`. GitHub code scanning tracks alerts by tool name, so after you
+switch, findings that already have alerts under `gitleaks` get new alerts
+under `rustleaks` once.
 
 ## Templates
 

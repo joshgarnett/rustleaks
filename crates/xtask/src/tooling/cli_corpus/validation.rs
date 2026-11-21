@@ -95,9 +95,9 @@ pub(super) fn native_disposition(id: &str, windows: bool) -> Option<&'static str
     }
 }
 
-// Keep historical build metadata frozen; derive only these five release-specific
-// expectations from trusted build metadata or the frozen corpus, never from the
-// observed binary output.
+// Keep historical build metadata frozen; derive only these release-specific
+// expectations and the Rustleaks report tool identity from trusted build
+// metadata or the frozen corpus, never from the observed binary output.
 pub(super) fn current_build_expectation(
     id: &str,
     frozen: &Value,
@@ -149,9 +149,103 @@ pub(super) fn current_build_expectation(
                 .remove(0);
             Some("embedded-config-min-version-satisfied")
         }
+        id if REPORT_TOOL_IDENTITY_VARIANTS.contains(&id) => {
+            let sarif = id.ends_with("sarif");
+            // The replay spells Rustleaks names in stdout as `gitleaks`, as it
+            // does for every other stdout comparison. Report files keep the
+            // spelling that Rustleaks writes.
+            let (base64_key, bytes_key, sha_key, holder, legacy) = if frozen["report"].is_object() {
+                (
+                    "bytes_base64",
+                    "bytes",
+                    "sha256",
+                    &mut expected["report"],
+                    false,
+                )
+            } else {
+                (
+                    "stdout_base64",
+                    "stdout_bytes",
+                    "stdout_sha256",
+                    &mut expected,
+                    true,
+                )
+            };
+            let historical = holder[base64_key]
+                .as_str()
+                .and_then(|text| BASE64.decode(text).ok())
+                .ok_or_else(|| format!("{id}: frozen report bytes are missing"))?;
+            let current =
+                with_rustleaks_tool_identity(id, &historical, sarif, build_version, legacy)?;
+            holder[base64_key] = json!(BASE64.encode(&current));
+            holder[bytes_key] = json!(current.len());
+            holder[sha_key] = json!(sha256_bytes(&current));
+            Some("report-rustleaks-tool-identity")
+        }
         _ => None,
     };
     Ok((expected, marker))
+}
+
+/// Variants whose frozen SARIF or `JUnit` report names the tool `gitleaks`.
+/// `CLI-BB-021/junit` is not listed: its report is on stdout, where the
+/// replay spells the `rustleaks` suite name as `gitleaks`.
+const REPORT_TOOL_IDENTITY_VARIANTS: &[&str] = &[
+    "CLI-BB-021/sarif",
+    "CLI-BB-022/result.sarif",
+    "CLI-BB-034/junit",
+    "CLI-BB-034/sarif",
+];
+
+/// Replaces the one historical tool identity in a frozen report with the
+/// Rustleaks name, version and repository. Every other byte stays frozen.
+/// With `legacy`, the name is spelled `gitleaks` as in other stdout
+/// comparisons.
+fn with_rustleaks_tool_identity(
+    id: &str,
+    historical: &[u8],
+    sarif: bool,
+    build_version: &str,
+    legacy: bool,
+) -> Result<Vec<u8>, String> {
+    let name = if legacy { "gitleaks" } else { "rustleaks" };
+    let (old, new) = if sarif {
+        (
+            concat!(
+                "     \"name\": \"gitleaks\",\n",
+                "     \"semanticVersion\": \"v8.0.0\",\n",
+                "     \"informationUri\": \"https://github.com/gitleaks/gitleaks\",\n",
+            )
+            .to_owned(),
+            format!(
+                concat!(
+                    "     \"name\": \"{name}\",\n",
+                    "     \"semanticVersion\": \"{version}\",\n",
+                    "     \"informationUri\": \"https://github.com/joshgarnett/{name}\",\n",
+                ),
+                name = name,
+                version = build_version
+            ),
+        )
+    } else {
+        (
+            " name=\"gitleaks\" ".to_owned(),
+            format!(" name=\"{name}\" "),
+        )
+    };
+    let old = old.as_bytes();
+    let mut starts = historical
+        .windows(old.len())
+        .enumerate()
+        .filter(|(_, window)| *window == old)
+        .map(|(start, _)| start);
+    let (Some(start), None) = (starts.next(), starts.next()) else {
+        return Err(format!("{id}: frozen report tool identity changed"));
+    };
+    let mut current = historical[..start].to_vec();
+    current.extend_from_slice(new.as_bytes());
+    current.extend_from_slice(&historical[start + old.len()..]);
+    Ok(current)
 }
 
 fn historical_build_version_warning() -> String {
@@ -619,7 +713,7 @@ mod tests {
         let (_, variants, _) = fixture();
         let index = frozen_index(&variants);
         let historical = "config requires a newer Gitleaks version... required=v8.25.0 current=0.1.0-alpha.5 config path=<embedded-default>";
-        let current = "config requires Gitleaks v8.25.0 or later; Rustleaks implements Gitleaks 8.30.0, so newer settings may not be supported; config path=<embedded-default>";
+        let current = "config minVersion v8.25.0 is newer than Gitleaks 8.30.0, the newest configuration version that Rustleaks supports, so some settings may not be supported; config path=<embedded-default>";
         for id in [
             "CLI-BB-007/file-embedded",
             "CLI-BB-007/directory-embedded-empty",
@@ -703,6 +797,76 @@ mod tests {
     }
 
     #[test]
+    fn report_tool_identity_changes_only_the_tool_identity() {
+        let (_, variants, _) = fixture();
+        for id in REPORT_TOOL_IDENTITY_VARIANTS {
+            let frozen = &variants
+                .iter()
+                .find(|variant| variant.id == *id)
+                .unwrap()
+                .expected;
+            let (expected, marker) =
+                current_build_expectation(id, frozen, "12.34.56-rc.789+review").unwrap();
+            assert_eq!(marker, Some("report-rustleaks-tool-identity"));
+            let (holder, key) = if frozen["report"].is_object() {
+                ("/report", "bytes_base64")
+            } else {
+                ("", "stdout_base64")
+            };
+            let decode = |value: &Value| {
+                let text = value.pointer(holder).unwrap()[key].as_str().unwrap();
+                String::from_utf8(BASE64.decode(text).unwrap()).unwrap()
+            };
+            let (before, after) = (decode(frozen), decode(&expected));
+            let name = if holder.is_empty() {
+                "gitleaks"
+            } else {
+                "rustleaks"
+            };
+            if id.ends_with("sarif") {
+                assert!(before.contains("\"semanticVersion\": \"v8.0.0\""), "{id}");
+                assert!(
+                    after.contains(&format!(
+                        "     \"name\": \"{name}\",\n     \"semanticVersion\": \"12.34.56-rc.789+review\",\n     \"informationUri\": \"https://github.com/joshgarnett/{name}\",\n"
+                    )),
+                    "{id}: {after}"
+                );
+            } else {
+                assert!(after.contains(" name=\"rustleaks\" "), "{id}: {after}");
+            }
+            if !holder.is_empty() {
+                assert!(!after.contains("gitleaks"), "{id}: {after}");
+            }
+            // Everything outside the tool identity is unchanged.
+            let prefix = before
+                .bytes()
+                .zip(after.bytes())
+                .take_while(|(old, new)| old == new)
+                .count();
+            let suffix = before
+                .bytes()
+                .rev()
+                .zip(after.bytes().rev())
+                .take_while(|(old, new)| old == new)
+                .count();
+            let identity = if id.ends_with("sarif") {
+                "     \"name\": \"gitleaks\",\n     \"semanticVersion\": \"v8.0.0\",\n     \"informationUri\": \"https://github.com/gitleaks/gitleaks\",\n"
+            } else {
+                " name=\"gitleaks\" "
+            };
+            let start = before.find(identity).unwrap();
+            assert!(prefix >= start, "{id}");
+            assert!(before.len() - suffix <= start + identity.len(), "{id}");
+            let mut tampered = frozen.clone();
+            tampered.pointer_mut(holder).unwrap()[key] = json!(BASE64.encode("{}"));
+            assert!(
+                current_build_expectation(id, &tampered, "1.0.0").is_err(),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
     fn unrelated_observations_are_not_projected_for_release_versions() {
         let (_, variants, _) = fixture();
         let mut projected = 0;
@@ -720,7 +884,7 @@ mod tests {
             set_stdout(&mut changed, b"12.34.56-rc.789+review\n");
             assert!(compare_frozen(&variant.id, &changed, &expected, false).is_err());
         }
-        assert_eq!(projected, 5);
+        assert_eq!(projected, 5 + REPORT_TOOL_IDENTITY_VARIANTS.len());
     }
 
     #[test]

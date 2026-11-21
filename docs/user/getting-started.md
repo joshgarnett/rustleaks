@@ -10,8 +10,8 @@ the [changelog](../../CHANGELOG.md) are not in a release yet. To use them now,
 ## What Rustleaks is
 
 Rustleaks finds secrets, such as API keys and passwords, in files, Git history
-and standard input. It reads Gitleaks configuration files. See [Differences
-from Gitleaks](gitleaks-differences.md).
+and standard input. It also reads configuration files written for Gitleaks.
+See [Moving from Gitleaks](moving-from-gitleaks.md).
 
 ## Install
 
@@ -210,6 +210,8 @@ the [command reference](cli-reference.md) for every command and flag.
   or fail.
 - [Resource limits](resource-limits.md): built-in limits and what happens when
   a scan reaches one.
-- [Differences from Gitleaks](gitleaks-differences.md): what to expect if you
-  move from Gitleaks.
+- [Moving from Gitleaks](moving-from-gitleaks.md): what keeps working and
+  which names to use if you move from Gitleaks.
+- [Differences from Gitleaks](gitleaks-differences.md): every difference
+  from Gitleaks.
 - [Using rustleaks-core](library.md): the Rust library.

@@ -103,7 +103,7 @@ fn root_help_forms_agree_and_describe_commands_order_and_exit_status() {
         assert_eq!(stdout_text(&fixture.0, arguments), help, "{arguments:?}");
     }
     assert!(help.starts_with(
-        "Rustleaks finds secrets in Git history, files, directories and standard\ninput. It reads Gitleaks configuration, ignore and baseline files.\n\nUsage:\n  rustleaks <command> [flags]\n\nCommands:\n"
+        "Rustleaks finds secrets in Git history, files, directories and standard\ninput. It also reads configuration, ignore and baseline files written for\nGitleaks.\n\nUsage:\n  rustleaks <command> [flags]\n\nCommands:\n"
     ));
     for line in [
         "  git         Scan the commits of a Git repository.\n",
@@ -157,6 +157,23 @@ Run 'rustleaks help <command>' for details.
 "
     ));
     assert!(!help.contains(['\u{2013}', '\u{2014}']));
+    // The legacy names are listed together, after the current flags, and
+    // --no-color is not offered as a report flag.
+    assert!(help.contains(
+        "
+Legacy flag names:
+  These older names also work.
+      --gitleaks-ignore-path <path>
+          Same as --rustleaks-ignore-path.
+      --ignore-gitleaks-allow
+          Same as --ignore-rustleaks-allow.
+      --no-color
+          Accepted and ignored. Rustleaks never prints color.
+"
+    ));
+    let reports = &help[help.find("\nReport flags:\n").unwrap()..];
+    let reports = &reports[..reports[1..].find("\n\n").unwrap()];
+    assert!(!reports.contains("--no-color"), "{reports}");
 
     // The stated exit status for unknown flags matches the parser.
     assert_eq!(

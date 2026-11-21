@@ -247,7 +247,6 @@ The `git`, `dir` and `stdin` commands accept every flag in this section. The
 | `--exit-code` | | Whole number | `1` | The exit code when the scan finds secrets. See [Exit codes](#exit-codes). |
 | `--redact` | | Optional percent, after `=` | Off | Hide secrets in logs, `--verbose` output and reports. Without a value, hide the whole secret. `--redact=20` hides 20 percent. |
 | `--verbose` | `-v` | None | Off | Print each finding on standard output. |
-| `--no-color` | | None | Off | Accepted for Gitleaks compatibility. Rustleaks never prints color. |
 
 See [Reports](reports.md) for the formats and fields.
 
@@ -277,14 +276,15 @@ See [Reports](reports.md) for the formats and fields.
 | `--help` | `-h` | Print help for the command. |
 | `--version` | | Print `rustleaks version` and the version number. Works only without a command. |
 
-### Gitleaks flag names
+### Legacy flag names
 
-These Gitleaks names also work:
+These older names also work:
 
-| Gitleaks name | Rustleaks name |
+| Legacy name | Effect |
 | --- | --- |
-| `--gitleaks-ignore-path` | `--rustleaks-ignore-path` |
-| `--ignore-gitleaks-allow` | `--ignore-rustleaks-allow` |
+| `--gitleaks-ignore-path` | Same as `--rustleaks-ignore-path`. |
+| `--ignore-gitleaks-allow` | Same as `--ignore-rustleaks-allow`. |
+| `--no-color` | Accepted and ignored. Rustleaks never prints color. |
 
 ## Environment variables
 
@@ -292,8 +292,8 @@ These Gitleaks names also work:
 | --- | --- |
 | `RUSTLEAKS_CONFIG` | The path of a configuration file. |
 | `RUSTLEAKS_CONFIG_TOML` | The configuration text itself. |
-| `GITLEAKS_CONFIG` | The Gitleaks name for `RUSTLEAKS_CONFIG`. |
-| `GITLEAKS_CONFIG_TOML` | The Gitleaks name for `RUSTLEAKS_CONFIG_TOML`. |
+| `GITLEAKS_CONFIG` | Legacy name for `RUSTLEAKS_CONFIG`. |
+| `GITLEAKS_CONFIG_TOML` | Legacy name for `RUSTLEAKS_CONFIG_TOML`. |
 
 An empty variable is skipped. Rustleaks reads no other environment variables
 itself. The `git` program that it runs reads its own variables, such as

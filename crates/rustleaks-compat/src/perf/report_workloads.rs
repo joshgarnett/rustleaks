@@ -395,7 +395,7 @@ fn xml_escape_json(text: &str) -> String {
 
 fn junit_expected(count: usize) -> Vec<u8> {
     let mut output = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n\t<testsuite failures=\"{count}\" name=\"gitleaks\" tests=\"{count}\" time=\"\">\n"
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n\t<testsuite failures=\"{count}\" name=\"rustleaks\" tests=\"{count}\" time=\"\">\n"
     );
     for index in 0..count {
         let line = index + 1;

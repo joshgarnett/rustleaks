@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+- SARIF reports name the tool `rustleaks`, with the Rustleaks version as
+  `semanticVersion` and the Rustleaks repository as `informationUri`. They
+  named the tool `gitleaks`, with the fixed version `v8.0.0` and the
+  Gitleaks project page. GitHub code scanning tracks alerts by tool name, so
+  after this change, findings that already have alerts get new alerts under
+  `rustleaks` once. JUnit reports name the test suite `rustleaks` instead of
+  `gitleaks`. Update any CI step that looks for the old name. Findings,
+  other report content and exit codes do not change.
+- The Gitleaks names `GITLEAKS_CONFIG`, `GITLEAKS_CONFIG_TOML`,
+  `.gitleaks.toml`, `.gitleaksignore`, `gitleaks:allow`,
+  `--gitleaks-ignore-path`, `--ignore-gitleaks-allow` and `--no-color` are
+  now documented as legacy names. They keep working, with no warning. Help
+  lists `--no-color` with the legacy flag names. A new guide,
+  `docs/user/moving-from-gitleaks.md`, lists what keeps working and the
+  Rustleaks names to use.
+- Help and the `minVersion` warning no longer describe Rustleaks as an
+  implementation of Gitleaks. The warning now reads `config minVersion
+  <version> is newer than Gitleaks 8.30.0, the newest configuration version
+  that Rustleaks supports, so some settings may not be supported`.
 - `ScanOptions::honor_gitleaks_allow` and
   `ScanOptionsBuilder::honor_gitleaks_allow` are removed. Use
   `honor_allow_markers`, which has the same meaning.
