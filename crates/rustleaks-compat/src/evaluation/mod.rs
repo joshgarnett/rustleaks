@@ -94,7 +94,7 @@ pub fn check_generated_corpus(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Compares the full default and opt-in native profiles and selected individual rules.
+/// Compares the default rules, native rule profiles and selected individual rules.
 ///
 /// The report exposes exact-location scores separately from distinct-value
 /// recognition. Unmapped decoded findings are never assigned an invented range.
@@ -106,6 +106,7 @@ pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
     verify_config_bytes(DEFAULT_CONFIG_BYTES)?;
     let corpus = model::parse(bytes)?;
     let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
         .load_default()
         .map_err(|_| "cannot compile default quality-evaluation configuration")?;
     let engine = Engine::builder(config.clone())

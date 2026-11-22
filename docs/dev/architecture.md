@@ -83,8 +83,9 @@ maintenance tools. They are never published.
 configuration (`config` module). The default rules,
 `crates/rustleaks-core/default/gitleaks.toml`, are built into the crate. They
 started from the Gitleaks default configuration.
-Native rule packs load through `native::NativePolicy`, which adds stricter
-validation before the normal loader runs. Regex types stay private.
+The Rustleaks rule files load through `native::NativePolicy`, which adds
+stricter validation before the normal loader runs. `ConfigLoader` adds all
+of them to the default rules. Regex types stay private.
 
 <a id="detection-and-codec"></a>
 

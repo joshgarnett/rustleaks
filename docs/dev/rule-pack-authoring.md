@@ -33,8 +33,8 @@ The packs live in `crates/rustleaks-core/default/` and are built into
 
 Rule counts include hidden helper rules that other rules depend on.
 
-The packs are never selected automatically. They never change the packaged
-default rules.
+`ConfigLoader` adds every pack to the default rules in `gitleaks.toml`. The
+packs do not change that file.
 
 ## What the native loader enforces
 
@@ -69,10 +69,9 @@ enabled annotation extensions, and the ordered pack IDs and TOML sources.
 Any byte change, including whitespace or a comment, changes the identity. The
 framing is an equality check, not a digest and not authentication.
 
-- Before the first stable release, a rule file changes in place: edit it,
-  keep its ID and add a changelog entry. From the first stable release, a
-  change in what a published file detects needs a new ID, such as
-  `rustleaks-providers-v2`.
+- A rule file changes in place: edit it, keep its ID and add a changelog
+  entry. A change that makes Rustleaks miss a secret it found before needs
+  maintainer approval.
 - `builtin_review_reference()` returns a reference without the TOML source
   for the default rules alone or for the packaged packs under their fixed IDs.
   It holds versions, the ordered pack IDs and checked content hashes. A

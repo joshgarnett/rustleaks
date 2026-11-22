@@ -138,7 +138,12 @@ fn the_default_rules_have_the_added_allowlists() {
 }
 
 fn default_rules() -> Engine {
-    engine(ConfigLoader::new().load_default().unwrap())
+    engine(
+        ConfigLoader::new()
+            .with_default_config(DEFAULT_CONFIG)
+            .load_default()
+            .unwrap(),
+    )
 }
 
 fn options() -> ScanOptions {

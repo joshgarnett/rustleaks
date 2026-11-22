@@ -197,7 +197,7 @@ pub(super) fn pack_selection(ids: &[&str]) -> Result<PackSelection> {
 }
 
 /// Compiles the default configuration plus the selected packs through the
-/// native policy, as `--native-pack` does.
+/// native policy, the way `ConfigLoader` builds the built-in rules.
 pub(super) fn compile_packs(selection: &PackSelection) -> Result<CompiledConfig> {
     let mut policy = NativePolicy::builder();
     for (id, contents) in &selection.packs {

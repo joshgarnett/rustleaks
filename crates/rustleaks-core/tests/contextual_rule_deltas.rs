@@ -1,4 +1,4 @@
-//! Independent controls for opt-in contextual and residual delimiter gaps.
+//! Independent controls for built-in rule contextual and residual delimiter gaps.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 

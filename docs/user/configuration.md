@@ -7,9 +7,10 @@ finds it, and the ways to hide findings you have already reviewed.
 ## The configuration file
 
 Rustleaks uses the Gitleaks TOML configuration format. A Gitleaks
-configuration file works without changes. Rustleaks ships one default
-configuration with 222 rules. It is based on the Gitleaks default rules and
-adds allowlists that hide some values that are clearly not secrets, such as
+configuration file works without changes. Rustleaks ships 222 default
+rules and its own Rustleaks rules, and uses all of them unless you pass a
+configuration. The default rules are based on the Gitleaks default rules and
+add allowlists that hide some values that are clearly not secrets, such as
 hex digests under hash names and published documentation examples. See
 [Default rules](built-in-rules.md#default-rules).
 
@@ -91,7 +92,7 @@ The `[extend]` table builds your configuration on top of a base:
 
 | Field | Meaning |
 | --- | --- |
-| `useDefault` | When `true`, the base is the default rules. |
+| `useDefault` | When `true`, the base is every built-in rule: the default rules and the Rustleaks rules. |
 | `path` | The path to a base configuration file. |
 | `disabledRules` | Rule IDs from the base to leave out. |
 

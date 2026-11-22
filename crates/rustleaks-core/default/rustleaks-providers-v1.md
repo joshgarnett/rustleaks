@@ -3,22 +3,23 @@
 The `rustleaks-providers-v1` pack adds 303 namespaced rules for provider API
 keys, tokens and related credentials. 31 of them are hidden helper rules: 30
 association helpers and 1 Azure Service Bus tuple helper. The other 272 rules
-report findings. The pack is opt-in and runs locally. It does not contact a
-provider or check whether a credential is active, and it does not change the
-packaged default rules. It covers selected formats. It does not claim complete
-coverage of any provider or scanner.
+report findings. Every default scan uses the pack. It runs locally. It does
+not contact a provider or check whether a credential is active, and it does
+not change the packaged default rules. It covers selected formats. It does
+not claim complete coverage of any provider or scanner.
 
 ## Selection
 
 - CLI: always used, with the default rules, when no configuration is
   selected and in a configuration with `[extend] useDefault = true`.
-- Library: `ConfigLoader::with_builtin_rules` adds all built-in rule files.
+- Library: `ConfigLoader::load_default` and `[extend] useDefault = true`
+  use all built-in rule files, unless `ConfigLoader::with_default_config`
+  replaces the default.
   `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?.build()?`
   builds a custom composition, with `PROVIDER_RULES_V1` from `rustleaks_core::native`.
 - The pack can be combined with `rustleaks-extra-v1` and
   `rustleaks-connections-v1` in any order. The exact bytes and the order of
-  the packs are part of the policy identity. `ConfigLoader::load_default` without
-  `with_builtin_rules` does not use it.
+  the packs are part of the policy identity.
 - The rules do not turn on `--complete-profile`.
 - The pack uses native-only tables:
   - 213 rules use `byte-shannon-f64-v1` byte entropy: 151 reject values

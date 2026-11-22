@@ -80,7 +80,9 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
         | "dense-github-one-line"
         | "dense-filter-one-line"
         | "dense-long-line-sparse" => {
-            let config = ConfigLoader::new().load_default()?;
+            let config = ConfigLoader::new()
+                .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+                .load_default()?;
             series(id, iterations, config, b"default".to_vec(), 0)
         }
         "dense-base64-uris" => {

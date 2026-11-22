@@ -83,7 +83,9 @@ fn dense_case(mut ctx: Context<'_>, workers: usize) -> Fallible<Case> {
 #[allow(clippy::too_many_lines)] // Keep construction and persistent-worker phase boundaries together.
 pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
     let start = Instant::now();
-    let config = ConfigLoader::new().load_default()?;
+    let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()?;
     let compile_ns = elapsed(start)?;
     ensure_default_rules(&config)?;
     let ctx = Context::new(&config);

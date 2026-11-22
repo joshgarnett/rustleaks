@@ -49,14 +49,16 @@ pub(crate) mod predicate;
 /// Version of native composition, identity and explanation semantics.
 pub const NATIVE_POLICY_VERSION: &str = "rustleaks-native-v1";
 
-/// The `rustleaks-extra-v1` rule pack. Never part of the default rules.
+/// The `rustleaks-extra-v1` rule file. Not part of [`DEFAULT_CONFIG`];
+/// [`ConfigLoader`] adds it to the default.
 pub const EXTRA_RULES_V1: &str = include_str!("../default/rustleaks-extra-v1.toml");
 
 /// SHA-256 of [`EXTRA_RULES_V1`].
 pub const EXTRA_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-extra-v1.sha256");
 
 /// The `rustleaks-providers-v1` rule pack, adapted from MIT Betterleaks and
-/// Apache-2.0 Veles sources. Never part of the default rules.
+/// Apache-2.0 Veles sources. Not part of [`DEFAULT_CONFIG`]; [`ConfigLoader`]
+/// adds it to the default.
 pub const PROVIDER_RULES_V1: &str = include_str!("../default/rustleaks-providers-v1.toml");
 
 /// SHA-256 of [`PROVIDER_RULES_V1`].
@@ -64,7 +66,7 @@ pub const PROVIDER_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-pr
 
 /// The `rustleaks-connections-v1` rule pack of ASCII connection credentials,
 /// adapted from Apache-2.0 Kingfisher and Veles and MIT Betterleaks sources.
-/// Never part of the default rules.
+/// Not part of [`DEFAULT_CONFIG`]; [`ConfigLoader`] adds it to the default.
 pub const CONNECTION_RULES_V1: &str = include_str!("../default/rustleaks-connections-v1.toml");
 
 /// SHA-256 of [`CONNECTION_RULES_V1`].
@@ -80,8 +82,8 @@ pub enum NativeExtension {
     GithubClassicPatV1,
 }
 
-/// The built-in rule files, in composition order, that
-/// [`ConfigLoader::with_builtin_rules`] adds to the default rules.
+/// The built-in rule files, in composition order, that [`ConfigLoader`] adds
+/// to the default rules.
 pub(crate) const BUILTIN_PACKS: [(&str, &str); 3] = [
     ("rustleaks-extra-v1", EXTRA_RULES_V1),
     ("rustleaks-providers-v1", PROVIDER_RULES_V1),
@@ -1326,7 +1328,10 @@ mod builtin_pattern_checks {
         let full_default = ConfigLoader::new()
             .load_toml(DEFAULT_CONFIG)
             .expect("default rules pass the full pattern check");
-        let default = ConfigLoader::new().load_default().unwrap();
+        let default = ConfigLoader::new()
+            .with_default_config(DEFAULT_CONFIG)
+            .load_default()
+            .unwrap();
         assert_eq!(full_default.rules, default.rules);
         assert_eq!(full_default.allowlists, default.allowlists);
 

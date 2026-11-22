@@ -79,13 +79,13 @@ then builds the engine.
 
 | Call | Result |
 | --- | --- |
-| `ConfigLoader::new().load_default()` | The [default rules](built-in-rules.md#default-rules): 222 rules that started from the Gitleaks default configuration. |
+| `ConfigLoader::new().load_default()` | Every [built-in rule](built-in-rules.md), the same rules as the CLI: the 222 default rules plus the Rustleaks rules. |
 | `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). |
 | `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. |
 
-A configuration can use `[extend] useDefault = true` to build on the default
-rules. A configuration with `[extend] path = "..."` needs file access, which
-the loader does not have by default. Give it a resolver:
+A configuration can use `[extend] useDefault = true` to build on the
+built-in rules. A configuration with `[extend] path = "..."` needs file
+access, which the loader does not have by default. Give it a resolver:
 
 ```rust
 use rustleaks_core::config::{ConfigLoader, FileSystemResolver};
@@ -309,10 +309,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Built-in rules
 
-`ConfigLoader::new().load_default()` gives the Gitleaks-derived default rules
-alone. To scan with every built-in rule, as the CLI does, add
-`with_builtin_rules`. It also makes `[extend] useDefault = true` include the
-Rustleaks rules. See [Built-in rules](built-in-rules.md) for what they cover.
+`ConfigLoader::new().load_default()` and `[extend] useDefault = true` give
+every built-in rule, the same rules as the CLI: the default rules plus the
+Rustleaks rules. See [Built-in rules](built-in-rules.md) for what they
+cover. The Rustleaks rules compile the first time a loader needs them, once
+for the loader and its clones, so a configuration that does not extend the
+default does not pay for them. Reuse the loader or the `CompiledConfig`
+instead of creating a new loader for each scan.
+
+To use the default rules alone, pass `config::DEFAULT_CONFIG` to
+`with_default_config`. Any text passed to `with_default_config` replaces the
+whole default, without the Rustleaks rules.
 
 ```rust
 use rustleaks_core::config::ConfigLoader;
@@ -320,7 +327,7 @@ use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::Engine;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = ConfigLoader::new().with_builtin_rules().load_default()?;
+    let config = ConfigLoader::new().load_default()?;
     assert!(config.rule("rustleaks.groq-api-key").is_some());
     let engine = Engine::builder(config).build()?;
     let outcome = engine.scan_fragment(&Fragment::new(b"no secrets here"), &ScanOptions::default());

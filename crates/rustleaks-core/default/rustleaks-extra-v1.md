@@ -2,16 +2,18 @@
 
 The `rustleaks-extra-v1` pack adds 3 namespaced rules for Azure Service Bus
 and Event Hubs keys, Azure App Configuration keys and MongoDB URI passwords.
-It has no hidden helper rules. The pack is opt-in and runs locally. It does
-not contact a provider or check whether a credential is active. It uses the
-normal matching, allowlist, overlap filtering and decoding behavior, and it
-does not change the packaged default rules.
+It has no hidden helper rules. Every default scan uses the pack. It runs
+locally. It does not contact a provider or check whether a credential is
+active. It uses the normal matching, allowlist, overlap filtering and
+decoding behavior, and it does not change the packaged default rules.
 
 ## Selection
 
 - CLI: always used, with the default rules, when no configuration is
   selected and in a configuration with `[extend] useDefault = true`.
-- Library: `ConfigLoader::with_builtin_rules` adds all built-in rule files.
+- Library: `ConfigLoader::load_default` and `[extend] useDefault = true`
+  use all built-in rule files, unless `ConfigLoader::with_default_config`
+  replaces the default.
   `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?.build()?`
   builds a custom composition, with `EXTRA_RULES_V1` from `rustleaks_core::native`.
 - The pack can be combined with `rustleaks-providers-v1` and

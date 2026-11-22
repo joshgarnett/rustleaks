@@ -1,4 +1,4 @@
-//! Provider-grounded synthetic controls for the opt-in native pack.
+//! Provider-grounded synthetic controls for the `rustleaks-extra-v1` rules.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -243,9 +243,14 @@ fn native_composition_is_explicit_and_keeps_legacy_outcomes() {
         .build()
         .unwrap();
     let fragment = Fragment::new(b"mongodb://synthetic:m7!@db.example.invalid/".as_slice());
-    let default = Engine::builder(ConfigLoader::new().load_default().unwrap())
-        .build()
-        .unwrap();
+    let default = Engine::builder(
+        ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()
+            .unwrap(),
+    )
+    .build()
+    .unwrap();
     assert!(
         default
             .scan_fragment(&fragment, &ScanOptions::default())

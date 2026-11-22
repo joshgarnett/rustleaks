@@ -146,7 +146,6 @@ pub fn rustleaks_core::config::ConfigLoader::load_toml(&self, &str) -> core::res
 pub fn rustleaks_core::config::ConfigLoader::load_toml_at(&self, &str, core::option::Option<rustleaks_core::config::ConfigOrigin>) -> core::result::Result<rustleaks_core::config::CompiledConfig, rustleaks_core::config::ConfigError>
 pub fn rustleaks_core::config::ConfigLoader::new() -> Self
 pub fn rustleaks_core::config::ConfigLoader::parse_toml(&self, &str, core::option::Option<&rustleaks_core::config::ConfigOrigin>) -> core::result::Result<rustleaks_core::config::RawConfig, rustleaks_core::config::ConfigError>
-pub fn rustleaks_core::config::ConfigLoader::with_builtin_rules(self) -> Self
 pub fn rustleaks_core::config::ConfigLoader::with_current_version(self, &str) -> core::result::Result<Self, rustleaks_core::config::ConfigError>
 pub fn rustleaks_core::config::ConfigLoader::with_default_config(self, impl core::convert::Into<alloc::sync::Arc<str>>) -> Self
 pub fn rustleaks_core::config::ConfigLoader::with_resolver(self, impl rustleaks_core::config::ConfigResolver + 'static) -> Self

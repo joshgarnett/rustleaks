@@ -54,9 +54,10 @@ review records.
 
 The crate includes default rules based on the Gitleaks default rules, and
 three Rustleaks rule files that add more rules. `ConfigLoader::load_default`
-gives the default rules alone. `ConfigLoader::with_builtin_rules` adds every
-Rustleaks rule, as the CLI does, and `native::NativePolicy` builds a custom
-composition. Rule counts include helper rules.
+gives all of them, as the CLI does. `ConfigLoader::with_default_config`
+replaces the default, for example with `config::DEFAULT_CONFIG` for the
+default rules alone, and `native::NativePolicy` builds a custom composition.
+Rule counts include helper rules.
 
 | Rule set | Constant | Rules | Details |
 | --- | --- | ---: | --- |

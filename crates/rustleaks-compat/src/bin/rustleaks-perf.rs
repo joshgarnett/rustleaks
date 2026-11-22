@@ -416,7 +416,9 @@ fn run_default_compile(iterations: usize) -> Result<(u128, Metric), Box<dyn Erro
     let start = Instant::now();
     let mut last = None;
     for _ in 0..iterations {
-        let config = ConfigLoader::new().load_default()?;
+        let config = ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()?;
         let metric = config_metric(&config);
         let detector = Engine::builder(config).build()?;
         black_box(&detector);
@@ -440,7 +442,9 @@ fn run_default_keyword(
     case: KeywordCase,
     input_bytes: usize,
 ) -> Result<(u128, Metric), Box<dyn Error>> {
-    let config = ConfigLoader::new().load_default()?;
+    let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()?;
     let input = match case {
         KeywordCase::None => vec![0u8; input_bytes],
         KeywordCase::One => keyword_input(&config, 1, input_bytes)?,
@@ -503,6 +507,7 @@ fn keyword_input(
 
 fn run_default_positive(iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
     let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
         .load_default()?
         .select_rules(["private-key"])?;
     run_scan(
@@ -778,7 +783,9 @@ fn run_bm_regex(
 }
 
 fn run_bm_aggregate_paths(iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
-    let config = ConfigLoader::new().load_default()?;
+    let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()?;
     let start = Instant::now();
     let mut last = None;
     for _ in 0..iterations {
@@ -853,8 +860,10 @@ fn run_bm_aggregate_regexes(iterations: usize) -> Result<(u128, Metric), Box<dyn
 }
 
 fn default_allowlist_probe() -> Result<Engine, Box<dyn Error>> {
-    let config = ConfigLoader::new().load_toml(
-        r#"
+    let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_toml(
+            r#"
 [extend]
 useDefault = true
 
@@ -863,7 +872,7 @@ id = "perf-probe"
 description = "perf-probe"
 regex = '''(?s).+'''
 "#,
-    )?;
+        )?;
     Ok(Engine::builder(config.select_rules(["perf-probe"])?).build()?)
 }
 

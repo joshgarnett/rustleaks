@@ -578,7 +578,9 @@ impl PreparedProfile {
             id == PROFILE_WORKLOAD,
             "unsupported default-rule profile workload",
         )?;
-        let config = ConfigLoader::new().load_default()?;
+        let config = ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()?;
         ensure_default_rules(&config)?;
         let plan = build(id, &config)?;
         ensure(
@@ -695,7 +697,9 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
     let start = Instant::now();
     let config = match toml.as_deref() {
         Some(text) => ConfigLoader::new().load_toml(text)?,
-        None => ConfigLoader::new().load_default()?,
+        None => ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()?,
     };
     let compile_ns = elapsed(start)?;
     let config_bytes = toml.as_deref().map_or(DEFAULT_CONFIG_BYTES, str::as_bytes);

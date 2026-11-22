@@ -229,7 +229,9 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Err
         return Err("worker iterations are outside representative bounds".into());
     }
     let start = Instant::now();
-    let config = ConfigLoader::new().load_default()?;
+    let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()?;
     let compile_ns = elapsed(start)?;
     if config.rules().len() != crate::DEFAULT_RULES
         || crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
