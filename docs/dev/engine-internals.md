@@ -477,9 +477,9 @@ numbers:
 - Each worker keeps its own regex search caches: a forward and a reverse
   lazy DFA cache of up to 2 MiB each for every expression it searches, plus
   smaller fallback caches. These are most of the memory that grows with the
-  scan. During a 12-thread `dir` scan of the gitlab tree (691 MB) with every
-  built-in rule, they held more than 300 MB of the 418 MB live heap. Peak
-  RSS grew by about 29 MB for each detection thread from 1 to 12 threads. A
+  scan. A `dir` scan of the gitlab tree (691 MB) with every built-in rule
+  reached a peak RSS of about 102 MB with one detection thread and about
+  352 MB with 12, about 23 MB for each added thread. A
   [required literal](#required-literals) or keyword that rules out a buffer
   means that expression is not searched and its caches stay small.
 
