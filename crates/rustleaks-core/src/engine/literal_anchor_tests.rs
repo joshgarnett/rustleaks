@@ -106,7 +106,7 @@ fn assert_paths_agree(
     );
     assert_eq!(
         rule.regex
-            .find_all_literal_anchored_unbudgeted(&normalized, &starts)
+            .find_all_literal_anchored_unbudgeted(&normalized, rule.anchor.candidate, &starts)
             .unwrap(),
         expected,
         "{label}: anchored enumeration differs for {} on {:?}",

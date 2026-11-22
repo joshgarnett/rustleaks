@@ -527,9 +527,10 @@ struct RuleLiteralAnchor {
     keyword_indexes: Box<[usize]>,
 }
 
-/// Keyword start offsets recorded by one pure-ASCII keyword pass.
+/// Keyword start offsets recorded by one keyword pass whose lowercasing keeps
+/// offsets (see `Lowered::same_offsets`), such as any pure-ASCII pass.
 ///
-/// Offsets index the raw haystack: ASCII lowercasing preserves them. A
+/// Offsets index the raw haystack, which is also the normalized one. A
 /// saturated keyword is too dense for anchored search, so its rules use the
 /// unanchored path. Limits only choose a path and never change results.
 #[derive(Default)]
@@ -1180,22 +1181,30 @@ impl Engine {
                 );
             }
             matched_keywords.fill(false);
+            let mut native_words = self.empty_native_words();
+            // A case-insensitive automaton over the raw pass would avoid this
+            // copy, but its larger DFA made scans slower.
+            let lowered = self
+                .prefilter
+                .as_ref()
+                .filter(|_| self.keyword_count > 0 || native_words.is_some())
+                .map(|prefilter| (prefilter, lowercase_bytes_keeping_ascii(&current_raw)));
+            // Literal-anchored search needs keyword offsets that are raw
+            // offsets, where only ASCII bytes can match an ASCII letter.
             let record_occurrences = context.control.budget.collected_spans.is_none()
                 && !self.recorded_keywords.is_empty()
-                && current_raw.is_ascii();
+                && lowered
+                    .as_ref()
+                    .is_some_and(|(_, lowered)| lowered.same_offsets);
             keyword_occurrences.begin_pass(
                 record_occurrences.then_some(current_raw.len()),
                 self.keyword_count,
             );
-            let mut native_words = self.empty_native_words();
-            if let Some(prefilter) = &self.prefilter
-                && (self.keyword_count > 0 || native_words.is_some())
-            {
-                let (normalized, kept_ascii) = lowercase_bytes_keeping_ascii(&current_raw);
-                if !kept_ascii {
+            if let Some((prefilter, lowered)) = lowered {
+                if !lowered.kept_ascii {
                     native_words = None;
                 }
-                for found in prefilter.find_overlapping_iter(&normalized) {
+                for found in prefilter.find_overlapping_iter(&lowered.bytes) {
                     let pattern = found.pattern().as_usize();
                     if let Some(words) = native_words.as_mut() {
                         self.record_prefilter_native(words, pattern);
@@ -1352,9 +1361,6 @@ impl Engine {
                     match event {
                         DecodeCheckpoint::Work(units) => context.work_many(units),
                         DecodeCheckpoint::CollectedSpans(spans) => context.collected_spans(spans),
-                        DecodeCheckpoint::NormalizationBytes(bytes) => {
-                            context.normalization_bytes(bytes)
-                        }
                     }
                 });
             let (decoded_output, segments) = match decode_result {

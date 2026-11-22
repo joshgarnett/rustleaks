@@ -311,15 +311,17 @@ fn tail_bounds_are_shared_by_every_choice() {
             .candidates()
             .iter()
             .map(|candidate| match &candidate.tail {
-                TailBound::Finite(maximum) => (*maximum, Vec::new()),
+                TailBound::Finite(maximum) => (*maximum, Vec::new(), None),
                 TailBound::Unbounded {
                     bounded_prefix,
                     run,
+                    after,
                 } => (
                     *bounded_prefix,
                     (0_u8..=0xFF)
                         .filter(|byte| run[usize::from(*byte)])
                         .collect(),
+                    *after,
                 ),
             })
             .collect::<Vec<_>>()
@@ -327,20 +329,65 @@ fn tail_bounds_are_shared_by_every_choice() {
     // After each choice come its unconsumed literal bytes and two digits.
     assert_eq!(
         bounds(r"(?i)[a-z]{0,4}?ab=[0-9]{2}"),
-        [(4, Vec::new()), (3, Vec::new()), (2, Vec::new())]
+        [
+            (4, Vec::new(), None),
+            (3, Vec::new(), None),
+            (2, Vec::new(), None)
+        ]
     );
-    // The unbounded `x*` starts after the same bounded bytes, and from there
-    // only `x`, `X` and `;` can be consumed.
-    let run = b";Xx".to_vec();
+    // The unbounded `x*` starts after the same bounded bytes and consumes only
+    // `x` and `X`; the `;` after it adds at most one byte.
+    let run = b"Xx".to_vec();
     assert_eq!(
         bounds(r"(?i)[a-z]{0,4}?abc=[0-9]{2}x*;"),
         [
-            (5, run.clone()),
-            (4, run.clone()),
-            (3, run.clone()),
-            (2, run)
+            (5, run.clone(), Some(1)),
+            (4, run.clone(), Some(1)),
+            (3, run.clone(), Some(1)),
+            (2, run, Some(1))
         ]
     );
+    // A second unbounded node keeps every byte from the first one onward.
+    assert_eq!(
+        bounds(r"[a-z]{0,4}?abc=x*;y*")[0],
+        (0, b";xy".to_vec(), None)
+    );
+}
+
+#[test]
+fn occurrences_without_a_required_byte_are_dropped() {
+    let regex = compile(
+        r#"(?i)[\w.-]{0,50}?(?:key|token)(?:[ \t\w.-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)[\x60'"\s=]{0,5}([\w.=-]{10,150})(?:[\x60'"\s;]|$)"#,
+    );
+    let shape = regex.literal_anchor().unwrap();
+    let candidate = &shape.candidates()[0];
+    let required = candidate.required.as_ref().unwrap();
+    let set = (0_u8..=0x7F)
+        .filter(|byte| required.set[usize::from(*byte)])
+        .collect::<Vec<_>>();
+    assert_eq!(set, b",:=>?|");
+    // Up to 20 name bytes and 3 spaces or quotes may come first.
+    assert_eq!(required.within, 23);
+    let name = "x".repeat(20);
+    // The window ends after the longest literal, `token`: byte 28 here.
+    let near = format!("key{name}   =abcdefghij1");
+    let far = format!("key{name}      =abcdefghij1");
+    assert!(candidate.can_place(near.as_bytes(), 0));
+    assert!(!candidate.can_place(far.as_bytes(), 0));
+    assert!(!candidate.can_place(b"key(value) token.get(x)", 0));
+    // Dropping occurrences never changes the matches.
+    for haystack in [
+        near.as_str(),
+        far.as_str(),
+        "key(value) token.get(x); key = abcdefghij123 ",
+        "tokentokenkey:abcdefghij123\nkey",
+        "key",
+    ] {
+        let expected = regex.find_all(haystack.as_bytes());
+        for found in regex.literal_anchored_candidates(haystack.as_bytes()) {
+            assert_eq!(found, expected, "{haystack:?}");
+        }
+    }
 }
 
 // Exhaustive enumeration over every string of a small alphabet. These expressions
@@ -440,24 +487,88 @@ fn regex_corpus_matches_the_unanchored_path_when_eligible() {
 }
 
 #[test]
-fn non_ascii_haystacks_have_no_anchored_results() {
+fn non_ascii_haystacks_are_served_without_fold_characters() {
     let regex = compile(r"(?i)[\w.-]{0,50}?(?:key)=x");
-    assert!(regex.literal_anchor().is_some());
+    assert!(regex.literal_anchor().unwrap().non_ascii_haystacks);
     assert!(!regex.literal_anchored_candidates(b"key=x").is_empty());
+    // Valid UTF-8 without U+017F and U+212A is served.
+    for haystack in ["\u{e9} key=x", "key=x \u{20ac}", "\u{e9}key=x"] {
+        let found = regex.literal_anchored_candidates(haystack.as_bytes());
+        assert!(!found.is_empty(), "{haystack:?}");
+        assert_every_candidate_matches(&regex, haystack.as_bytes(), "served");
+    }
+    // A fold character or an invalid byte leaves the full search.
     for haystack in [
         "\u{212A}ey=x".as_bytes(),
-        "é key=x".as_bytes(),
+        "\u{17f}key=x".as_bytes(),
         b"key=x\xff",
     ] {
         assert!(regex.literal_anchored_candidates(haystack).is_empty());
     }
+    // A leading class with another non-ASCII member serves only ASCII.
+    let wide = compile(r"(?i)[a-z\x{e9}]{0,5}?(?:key)=x");
+    assert!(!wide.literal_anchor().unwrap().non_ascii_haystacks);
+    assert!(
+        wide.literal_anchored_candidates("\u{e9}key=x".as_bytes())
+            .is_empty()
+    );
+    assert!(!wide.literal_anchored_candidates(b"key=x").is_empty());
+}
+
+#[test]
+fn exhaustive_non_ascii_pieces_match_the_unanchored_path() {
+    // Tails that can consume multi-byte characters, so the UTF-8 bounds and
+    // the run of non-ASCII bytes are reached.
+    let pieces: [&str; 6] = ["a", "b", "=", ";", "\u{e9}", "\u{20ac}"];
+    for pattern in [
+        r"(?i)[ab]{0,2}?(?:ab)=([^;]{1,2})(?:;|$)",
+        r"(?i)[ab]{0,2}?(?:ab)[^;]*;",
+        r"(?i)[ab]{0,2}?(?:ab)[^;]{0,2}=",
+        r"(?i)[ab]{0,1}?(?:ab)\b=?",
+    ] {
+        let regex = compile(pattern);
+        assert!(
+            regex.literal_anchor().unwrap().non_ascii_haystacks,
+            "{pattern}"
+        );
+        let mut served = 0_usize;
+        let mut visit = |input: &[u8]| {
+            if !input.is_ascii() && !regex.literal_anchored_candidates(input).is_empty() {
+                served += 1;
+            }
+            assert_every_candidate_matches(&regex, input, "non-ASCII pieces");
+        };
+        for_each_piece_string(&pieces, 6, &mut Vec::new(), &mut visit);
+        assert!(served > 1_000, "{pattern}: {served}");
+    }
+}
+
+fn for_each_piece_string(
+    pieces: &[&str],
+    maximum_pieces: usize,
+    current: &mut Vec<u8>,
+    visit: &mut impl FnMut(&[u8]),
+) {
+    fn walk(pieces: &[&str], left: usize, current: &mut Vec<u8>, visit: &mut impl FnMut(&[u8])) {
+        visit(current);
+        if left == 0 {
+            return;
+        }
+        for piece in pieces {
+            let length = current.len();
+            current.extend_from_slice(piece.as_bytes());
+            walk(pieces, left - 1, current, visit);
+            current.truncate(length);
+        }
+    }
+    walk(pieces, maximum_pieces, current, visit);
 }
 
 #[test]
 fn folded_non_ascii_variants_still_match_on_the_unanchored_path() {
     // U+212A folds to k and U+017F to s, so an ordinary search matches inputs
-    // where no ASCII keyword occurs. Such inputs are not pure ASCII and never
-    // reach the anchored path.
+    // where no ASCII keyword occurs. Such inputs never reach the anchored
+    // path.
     let regex = compile(r"(?i)[\w.-]{0,50}?(?:key|ſk)=x");
     assert!(!regex.find_all("\u{212A}ey=x".as_bytes()).is_empty());
     assert!(!"\u{212A}ey=x".is_ascii());

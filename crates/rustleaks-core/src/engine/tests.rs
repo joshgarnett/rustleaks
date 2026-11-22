@@ -2294,10 +2294,11 @@ fn cancelled_overlap_filter_keeps_a_replaced_finding_whose_keeper_is_cut_off() {
 /// automaton.
 fn prefilter_native_words(engine: &Engine, raw: &[u8]) -> Option<Box<[u64]>> {
     let mut words = engine.empty_native_words()?;
-    let (lowered, kept_ascii) = lowercase_bytes_keeping_ascii(raw);
-    if !kept_ascii {
+    let lowered = lowercase_bytes_keeping_ascii(raw);
+    if !lowered.kept_ascii {
         return None;
     }
+    let lowered = lowered.bytes;
     for found in engine
         .prefilter
         .as_ref()
