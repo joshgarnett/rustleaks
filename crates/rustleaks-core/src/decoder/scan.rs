@@ -49,75 +49,116 @@ pub(super) fn find_encodings<E>(
     Ok(spans)
 }
 
+/// A base64 class byte, which includes `U` and every hex digit.
+const BASE64: u8 = 1;
+/// `%` or `\`, the only other bytes that can start a match.
+const OTHER_START: u8 = 2;
+/// A hex digit.
+const HEX: u8 = 4;
+/// `U`, which can start `U+hhhh`.
+const UPPER_U: u8 = 8;
+/// The kind of each byte.
+static KINDS: [u8; 256] = kinds();
+
+const fn kinds() -> [u8; 256] {
+    let mut kinds = [0; 256];
+    let mut index = 0;
+    while index < 256 {
+        #[allow(clippy::cast_possible_truncation)] // `index` is below 256.
+        let byte = index as u8;
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'/' | b'+' | b'-') {
+            kinds[index] = BASE64;
+            if byte.is_ascii_hexdigit() {
+                kinds[index] |= HEX;
+            }
+            if byte == b'U' {
+                kinds[index] |= UPPER_U;
+            }
+        } else if matches!(byte, b'%' | b'\\') {
+            kinds[index] = OTHER_START;
+        }
+        index += 1;
+    }
+    kinds
+}
+
+fn kind(byte: u8) -> u8 {
+    KINDS[usize::from(byte)]
+}
+
 /// Returns the leftmost match that starts at or after `from`.
 fn next_match(data: &[u8], from: usize) -> Option<(usize, usize)> {
     let mut index = from;
-    while index < data.len() {
+    loop {
+        // Bytes of no kind start nothing.
+        index += data
+            .get(index..)?
+            .iter()
+            .position(|byte| kind(*byte) != 0)?;
         let byte = data[index];
-        if byte == b'%' {
-            if let Some(end) = percent_at(data, index) {
-                return Some((index, end));
-            }
-            index += 1;
-        } else if byte == b'\\' {
-            if let Some(end) = escaped_unicode_at(data, index) {
-                return Some((index, end));
-            }
-            index += 1;
-        } else if is_base64(byte) {
-            // Within one run of base64 bytes, hex and base64 can match only
-            // where at least 16 run bytes remain, and then base64 always does.
-            // Before that, only `U+hhhh` can start a match.
-            let run_end = run_end(data, index, is_base64);
-            for start in index..run_end {
-                if data[start] == b'U'
-                    && let Some(end) = plus_unicode_at(data, start)
+        if kind(byte) & BASE64 != 0 {
+            // One read of the run finds its end, the end of its leading hex
+            // digits and its first `U`.
+            let run = &data[index..];
+            let run_len = run
+                .iter()
+                .position(|byte| kind(*byte) & BASE64 == 0)
+                .unwrap_or(run.len());
+            let run = &run[..run_len];
+            let run_end = index + run_len;
+            if run_end - index >= BASE64_MINIMUM {
+                // Base64 matches at the run start, so the match starts there.
+                // `U+hhhh` is tried first, then hex, then base64.
+                if byte == b'U'
+                    && let Some(end) = plus_unicode_at(data, index)
                 {
-                    return Some((start, end));
+                    return Some((index, end));
                 }
-                if run_end - start >= BASE64_MINIMUM {
-                    let hex_end = run_end_within(data, start, run_end, u8::is_ascii_hexdigit);
-                    if hex_end - start >= HEX_MINIMUM {
-                        return Some((start, hex_end));
-                    }
-                    let padding = data[run_end..]
+                let hex_end = index
+                    + run
                         .iter()
-                        .take(2)
-                        .take_while(|byte| **byte == b'=')
-                        .count();
-                    return Some((start, run_end + padding));
+                        .position(|byte| kind(*byte) & HEX == 0)
+                        .unwrap_or(run_len);
+                if hex_end - index >= HEX_MINIMUM {
+                    return Some((index, hex_end));
+                }
+                let padding = data[run_end..]
+                    .iter()
+                    .take(2)
+                    .take_while(|byte| **byte == b'=')
+                    .count();
+                return Some((index, run_end + padding));
+            }
+            // Fewer than 16 run bytes remain from any start in this run, so
+            // only `U+hhhh` can start a match here.
+            if let Some(offset) = run.iter().position(|byte| *byte == b'U') {
+                let mut start = index + offset;
+                while let Some(offset) = data[start..run_end].iter().position(|byte| *byte == b'U')
+                {
+                    start += offset;
+                    if let Some(end) = plus_unicode_at(data, start) {
+                        return Some((start, end));
+                    }
+                    start += 1;
                 }
             }
             index = run_end;
         } else {
+            let end = if byte == b'%' {
+                percent_at(data, index)
+            } else {
+                escaped_unicode_at(data, index)
+            };
+            if let Some(end) = end {
+                return Some((index, end));
+            }
             index += 1;
         }
     }
-    None
-}
-
-fn is_base64(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'/' | b'+' | b'-')
 }
 
 fn is_go_space(byte: u8) -> bool {
     matches!(byte, b'\t' | b'\n' | 0x0c | b'\r' | b' ')
-}
-
-fn run_end(data: &[u8], start: usize, member: impl Fn(u8) -> bool) -> usize {
-    start
-        + data[start..]
-            .iter()
-            .take_while(|byte| member(**byte))
-            .count()
-}
-
-fn run_end_within(data: &[u8], start: usize, limit: usize, member: impl Fn(&u8) -> bool) -> usize {
-    start
-        + data[start..limit]
-            .iter()
-            .take_while(|byte| member(byte))
-            .count()
 }
 
 fn hex_pair_at(data: &[u8], index: usize) -> bool {

@@ -122,6 +122,10 @@ const MAX_CANDIDATES: usize = 32;
 /// costs one more. The default rules spend at most 168. The largest literal
 /// set, 64 case-insensitive literals of 64 bytes, spends about 8,400.
 const MAX_ENUMERATION_STEPS: usize = 1 << 14;
+/// Anchored attempts may scan this many haystack lengths in total. An
+/// unanchored search reads the haystack forward and its matches in reverse,
+/// so this keeps the anchored path at about the cost of one such search.
+const ATTEMPT_ALLOWANCE: usize = 2;
 /// Membership by byte value. Entries for non-ASCII bytes are always false.
 type ByteSet = [bool; 256];
 
@@ -747,7 +751,8 @@ impl<'a> AttemptBudget<'a> {
         };
         let reach_floor = leading.saturating_add(minimum_tail);
         let attempt_floor = ATTEMPT_COST_FLOOR.saturating_add(reach_floor);
-        if attempts.saturating_mul(attempt_floor) > bytes.len() {
+        let allowance = bytes.len().saturating_mul(ATTEMPT_ALLOWANCE);
+        if attempts.saturating_mul(attempt_floor) > allowance {
             return None;
         }
         Some(Self {
@@ -756,7 +761,7 @@ impl<'a> AttemptBudget<'a> {
             after_run,
             reach_floor,
             run_end: 0,
-            remaining: bytes.len(),
+            remaining: allowance,
         })
     }
 

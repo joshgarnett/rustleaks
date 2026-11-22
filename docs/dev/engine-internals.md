@@ -186,8 +186,18 @@ search caches.
 
 ## Literal-anchored search
 
-Rules whose prefix shape is proven at compile time use anchored search, but
-only on pure-ASCII passes.
+Rules whose prefix shape is proven at compile time use anchored search.
+The proof is in `crates/rustleaks-core/src/regex/literal_anchor.rs`. It
+serves pure-ASCII passes, and other passes when three things hold:
+
+- The pass is valid UTF-8.
+- Lowercasing keeps every character's byte length.
+- The pass has neither U+017F nor U+212A, and the rule's leading class and
+  keywords match no other non-ASCII character.
+
+U+017F and U+212A are the only non-ASCII characters that case-insensitive
+matching pairs with ASCII letters. Under these conditions keyword offsets
+are raw offsets and the start of every match is ASCII.
 
 - The keyword pass records the start of each hit for keywords that these
   rules use. For a haystack of `len` bytes, each pass records at most
@@ -196,15 +206,22 @@ only on pure-ASCII passes.
 - Recorded offsets stay until the next pass starts. Vector capacity is reused
   across passes and released when the fragment finishes. These are length
   limits, not heap limits.
+- On an ASCII pass, a keyword hit is skipped when the bytes a match must have
+  soon after it are missing, such as one of `= > : | ? ,` within 23 bytes
+  after the keyword for `generic-api-key`. No match can use such a hit.
 - Anchored search charges an upper bound on the bytes each attempt can scan.
-  When the charges exceed the haystack length, it falls back to the unanchored
-  search. Both paths return the same matches and the same keyword work charge.
+  On an ASCII pass the bound counts one byte per character. On other passes
+  it counts UTF-8 lengths and treats every non-ASCII byte as one the
+  unbounded part can consume. When the charges exceed twice the haystack
+  length, it falls back to the unanchored search, which reads the haystack
+  forward and each match again in reverse. Both paths return the same matches and
+  the same keyword work charge.
 - With a finite collected-span budget, the engine uses the exact unanchored
   collector, so speculative attempts cannot use the span allowance. Without
   that budget, span usage includes abandoned anchor attempts and can differ
   between anchored and unanchored scans with the same findings.
 
-Non-ASCII and invalid UTF-8 input always use the unanchored search.
+Invalid UTF-8 and other non-ASCII input use the unanchored search.
 
 ## Normalization
 
@@ -215,14 +232,18 @@ span refers to the original bytes. Ordered whole matches use a local cursor
 with a short linear step and a binary search for larger jumps. Capture offsets
 use separate binary lookups.
 
-Normalization is admitted before allocation. Valid UTF-8 stays borrowed. An
+Rule searches normalize; the decoder does not. Its candidate scanner reads
+raw bytes, since every class in its pattern is ASCII. Normalization is
+admitted before allocation. Valid UTF-8 stays borrowed. An
 input of T bytes with I invalid bytes charges `T + (2 + sizeof(usize)) * I`
 when normalization is needed. Each separate normalization charges again. On a
 64-bit target, input that is all invalid charges 11T.
 
 Backend caches and the lowercase, newline-index and decoder buffers are not
 counted. Decoder span admission bounds the number of candidates, not
-allocation bytes. Decoded-byte admission happens after each transform.
+allocation bytes. Decoded-byte admission happens after each transform. The
+decoder keeps each accepted decoded value for the rest of the fragment, keyed
+by its encoded bytes. A candidate that decodes to nothing is not kept.
 
 ## Filtering caches
 
@@ -288,7 +309,10 @@ line, and redaction can create separate lines.
   patterns runs at most once per native input buffer on the raw bytes, stops
   once every pattern has been seen, and is indivisible like one regex search.
   It is a contiguous NFA, several times smaller than a DFA, because it runs
-  only on these buffers. The first keyword check on a buffer charges the
+  only on these buffers. When the keyword automaton already answered a pass
+  and none of a reporting native rule's ASCII keywords occur, the engine
+  charges what the keyword checks would charge, in the same order, and skips
+  the rule's detection path. Explained scans always take the full path. The first keyword check on a buffer charges the
   input length, and every rule's ASCII keyword check then reads the shared
   result. Unicode searches share one lowercase string per buffer; building it
   charges two input lengths, and each search charges the folded length.

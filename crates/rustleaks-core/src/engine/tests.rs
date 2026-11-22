@@ -2420,3 +2420,74 @@ keywords = ["test_", "live_"]
     assert!(searched > 0);
     assert_eq!(scan(b"mylab=test_ab12\xff"), (0, 0));
 }
+
+#[test]
+fn native_keyword_misses_charge_like_the_detection_path() {
+    // Explained scans always take the full detection path, so they are the
+    // reference for findings, usage and where a work budget stops the scan.
+    let engine = Engine::builder(ConfigLoader::new().load_default().unwrap())
+        .build()
+        .unwrap();
+    let gates = engine.native_fast_gates.iter().flatten().count();
+    let native = engine
+        .config
+        .rules
+        .values()
+        .filter(|rule| rule.native_required.is_some() || rule.native_byte_matcher.is_some())
+        .count();
+    let skip = engine
+        .config
+        .rules
+        .values()
+        .filter(|rule| {
+            (rule.native_required.is_some() || rule.native_byte_matcher.is_some())
+                && rule.skip_report
+        })
+        .count();
+    // Every reporting native rule with ASCII keywords, which is all but the
+    // keyword-less ones.
+    assert!(
+        gates >= 25,
+        "{gates} of {native} native rules, {skip} skipReport"
+    );
+    let token = ["ghp_", "abcdefghijklmnopqrstuvwxyz0123456789"].concat();
+    let inputs = [
+        "plain text without any keyword\n".to_owned(),
+        format!("export GITHUB_TOKEN={token}\nmore text\n"),
+        "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n".to_owned(),
+        "caf\u{e9} au lait\n".to_owned(),
+    ];
+    let options = ScanOptions::default();
+    for input in &inputs {
+        let fragment = Fragment::new(input.as_bytes());
+        let scan = |control: &ScanControl<'_>| {
+            let fast = engine.scan_fragment_controlled(&fragment, &options, control);
+            let (full, _) = engine.scan_fragment_explained(
+                &fragment,
+                &options,
+                control,
+                ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+                false,
+            );
+            (fast, full)
+        };
+        let (fast, full) = scan(&ScanControl::unlimited());
+        assert_eq!(fast.findings(), full.findings(), "{input:?}");
+        assert_eq!(fast.usage(), full.usage(), "{input:?}");
+        let used = fast.usage().work_units();
+        assert!(used > 100, "{input:?}: {used}");
+        // Every work limit stops both scans at the same point.
+        for limit in (0..=used).step_by(7).chain([used - 1]) {
+            let control =
+                ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(limit));
+            let (fast, full) = scan(&control);
+            assert_eq!(
+                fast.termination(),
+                full.termination(),
+                "{input:?} at {limit}"
+            );
+            assert_eq!(fast.findings(), full.findings(), "{input:?} at {limit}");
+            assert_eq!(fast.usage(), full.usage(), "{input:?} at {limit}");
+        }
+    }
+}

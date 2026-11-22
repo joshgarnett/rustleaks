@@ -408,6 +408,10 @@ pub struct Engine {
     /// For each rule, aligned with `config.rules`, sets of pattern IDs such
     /// that every match contains a literal of each set.
     native_required_patterns: Vec<Option<RequiredPatterns>>,
+    /// For each native rule whose keyword gate is answered by native patterns
+    /// alone, aligned with `config.rules`: its keywords' pattern IDs in order.
+    /// See [`ScanContext::native_patterns_absent`].
+    native_fast_gates: Vec<Option<Box<[u32]>>>,
     /// Rules whose findings a reviewed rule overlap can replace.
     replaced_by: ReplacedBy,
 }
@@ -861,6 +865,54 @@ impl<'a> ScanContext<'a> {
             .is_some_and(|word| word & (1_u64 << (index % 64)) != 0))
     }
 
+    /// Returns whether the whole-pass input `key` is known to contain none of
+    /// `patterns`. It is `false` when that pass's native patterns are not
+    /// known yet.
+    fn native_patterns_absent(&self, key: NativeHitKey, patterns: &[u32]) -> bool {
+        if key.input.pass != self.native_keyword_pass {
+            return false;
+        }
+        let Some(Some(hits)) = self.native_keyword_hits.first() else {
+            return false;
+        };
+        hits.key == key
+            && patterns.iter().all(|&pattern| {
+                let index = pattern as usize;
+                hits.words
+                    .get(index / 64)
+                    .is_none_or(|word| word & (1_u64 << (index % 64)) == 0)
+            })
+    }
+
+    /// Charges what `native_candidates` charges when none of `keywords`
+    /// ASCII keywords occur in the whole-pass input, in the same order: one
+    /// unit, one unit for the first keyword, the input length once per
+    /// input, then one unit for each other keyword. Call it only after
+    /// [`Self::native_patterns_absent`] returned `true`.
+    fn charge_native_keyword_miss(
+        &mut self,
+        keywords: usize,
+        input_len: usize,
+    ) -> Result<(), ScanTermination> {
+        self.work()?;
+        self.work()?;
+        let charged = self
+            .native_keyword_hits
+            .first()
+            .and_then(Option::as_ref)
+            .is_some_and(|hits| hits.input_charged);
+        if !charged {
+            self.work_many(input_len)?;
+            if let Some(Some(hits)) = self.native_keyword_hits.first_mut() {
+                hits.input_charged = true;
+            }
+        }
+        for _ in 1..keywords {
+            self.work()?;
+        }
+        Ok(())
+    }
+
     /// Stores the native patterns that the prefilter found in the whole pass,
     /// so the first native lookup for it does not search again.
     fn seed_native_keyword_hits(&mut self, key: NativeHitKey, words: Box<[u64]>) {
@@ -1258,6 +1310,36 @@ impl Engine {
                         ExplanationReason::RuleSelected,
                     );
                     if rule.native_required.is_some() || rule.native_byte_matcher.is_some() {
+                        // A keyword miss on the whole pass ends the rule here
+                        // with the same charges as its detection path, which
+                        // would record only explanation events.
+                        if encoded_segments.is_empty()
+                            && !context.explanations.is_enabled()
+                            && let Some(patterns) = &self.native_fast_gates[rule_ordinal]
+                        {
+                            let key = NativeHitKey {
+                                input: NativeInputId {
+                                    pass: decode_depth,
+                                    segment: None,
+                                },
+                                address: current_raw.as_ptr() as usize,
+                                length: current_raw.len(),
+                            };
+                            if context.native_patterns_absent(key, patterns) {
+                                if let Err(termination) = context
+                                    .charge_native_keyword_miss(patterns.len(), current_raw.len())
+                                {
+                                    return finish_partial(
+                                        findings,
+                                        &self.replaced_by,
+                                        options,
+                                        context.usage,
+                                        termination,
+                                    );
+                                }
+                                continue;
+                            }
+                        }
                         let detected = self.detect_native_rule(
                             fragment,
                             options,
@@ -3185,6 +3267,7 @@ impl EngineBuilder {
                     })?,
             )
         };
+        let native_fast_gates = native_fast_gates(&self.config, &native_keyword_patterns);
         let replaced_by = ReplacedBy::new(&self.config);
         Ok(Engine {
             config: self.config,
@@ -3198,9 +3281,46 @@ impl EngineBuilder {
             native_keyword_matcher,
             native_keyword_patterns,
             native_required_patterns,
+            native_fast_gates,
             replaced_by,
         })
     }
+}
+
+/// Returns, for each native rule that a keyword miss can skip without its
+/// detection path, the pattern IDs of its keywords in order.
+///
+/// Such a rule runs through `native_candidates`, reports findings (not
+/// `skipReport`), has `buffer-v1` relations or no required rules, and has only
+/// ASCII keywords, each with a shared pattern.
+fn native_fast_gates(
+    config: &CompiledConfig,
+    native_keyword_patterns: &[Option<Box<[Option<u32>]>>],
+) -> Vec<Option<Box<[u32]>>> {
+    config
+        .rules
+        .values()
+        .zip(native_keyword_patterns)
+        .map(|(rule, patterns)| {
+            let native = rule.native_required.is_some() || rule.native_byte_matcher.is_some();
+            let keywords = rule.native_keywords.as_ref()?;
+            let patterns = patterns.as_ref()?;
+            if !native
+                || rule.skip_report
+                // Gitleaks-style required rules are projected even after an
+                // empty primary pass; `buffer-v1` relations are not.
+                || (rule.native_required.is_none() && !rule.required.is_empty())
+                || keywords.is_empty()
+                || keywords.len() != patterns.len()
+                || !keywords
+                    .iter()
+                    .all(|keyword| matches!(keyword, NativeKeyword::Ascii(_)))
+            {
+                return None;
+            }
+            patterns.iter().copied().collect::<Option<Box<[u32]>>>()
+        })
+        .collect()
 }
 
 /// Sets of native pattern IDs such that every match of a rule's expression
