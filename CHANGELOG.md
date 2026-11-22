@@ -11,28 +11,28 @@
   with a byte scanner instead of a regular expression, rejects base64 values
   whose first bytes would not decode to printable text, and caches only values
   it accepts. Most regular expressions build their matcher at their first
-  search instead of at load. On an Apple M5 Ultra Mac (36 logical CPUs, macOS
-  27.2.1) with 12 threads, median of three runs, against the previous `main`:
-  folder scans of 13 public repositories used 17 to 46 percent less CPU time
-  (linux 19.7 s to 10.7 s) and 20 to 33 percent less peak memory (linux 263 MB
-  to 202 MB), and finished up to 18 percent sooner. Git history scans of 9
-  repositories used 3 to 17 percent less CPU time and finished in about the
-  same time; peak memory was 8 to 32 percent lower, except ruby, which reached
-  284 MB against 271 MB. On 1 GiB synthetic inputs, CPU time fell by 12 to 46
-  percent. An empty scan takes about 39 ms and 31 MB of peak memory, against
-  44 ms and 39 MB. Each added detection thread costs about 23 MB of peak
-  memory on a folder scan of gitlab, against about 33 MB.
-  `ScanUsage::normalization_bytes` can be lower for the same input: it no
-  longer counts the decoder's candidate search or searches that a missing
-  literal skips, so a `ScanBudget::max_normalization_bytes` limit stops fewer
-  scans. See
+  search instead of at load. The figures below compare with the previous
+  `main` on an Apple M5 Ultra Mac (36 logical CPUs, macOS 27.2.1), with 12
+  threads and the median of three runs. Folder scans of 13 public repositories
+  used 17 to 46 percent less CPU time (linux 19.7 s to 10.7 s) and 20 to 33
+  percent less peak memory (linux 263 MB to 202 MB). They finished up to 18
+  percent sooner. Git history scans of 9 repositories used 3 to 17 percent
+  less CPU time and finished in about the same time; peak memory was 8 to 32
+  percent lower, except ruby, which reached 284 MB against 271 MB. On 1 GiB
+  synthetic inputs, CPU time fell by 12 to 46 percent. An empty scan takes
+  about 39 ms and 31 MB of peak memory, against 44 ms and 39 MB. Each added
+  detection thread costs about 23 MB of peak memory on a folder scan of
+  gitlab, against about 33 MB. `ScanUsage::normalization_bytes` can be lower
+  for the same input: it no longer counts the decoder's candidate search or
+  searches that a missing literal skips, so a
+  `ScanBudget::max_normalization_bytes` limit stops fewer scans. See
   `docs/dev/engine-internals.md#startup-memory-of-the-built-in-rules` for
-  where startup memory goes.
-- Fix composite rules in custom native packs (`NativePolicy::with_pack`) when
-  explanations are off: a `[[rules.required]]` rule is now gated by its own
-  keywords and literals, as it already was with explanations. It used the
-  primary rule's keyword data, which could drop or add a composite finding.
-  Built-in rules and CLI configurations were not affected.
+  where startup memory goes. - Fix composite rules in custom native packs
+  (`NativePolicy::with_pack`) when explanations are off: a
+  `[[rules.required]]` rule is now gated by its own keywords and literals, as
+  it already was with explanations. It used the primary rule's keyword data,
+  which could drop or add a composite finding. Built-in rules and CLI
+  configurations were not affected.
 - When a Rustleaks rule and another built-in rule report the same secret at
   the same bytes of the same file and commit, only one finding is reported.
   15 reviewed rule pairs do this, listed in
