@@ -16,7 +16,9 @@ use crate::RELEASE_VERSION;
 use crate::tooling::{command_output, hex_lower, sha256_bytes, sha256_file};
 
 mod corresponding_source;
+mod linux_packages;
 mod notices;
+mod package_managers;
 mod runtime_inputs;
 
 const REPOSITORY: &str = "https://github.com/joshgarnett/rustleaks";
@@ -37,6 +39,25 @@ const TARGETS: &[(&str, &str)] = &[
     ("x86_64-pc-windows-msvc", "release-windows-x86_64-msvc"),
     ("aarch64-pc-windows-msvc", "release-windows-aarch64-msvc"),
 ];
+
+/// Whether a GNU bundle may still lack its .deb and .rpm packages.
+/// `prepare` writes the bundle before the packages exist, and
+/// `add-packages` adds them; a finished bundle requires them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LinuxPackages {
+    MayBePending,
+    Required,
+}
+
+/// The facts a verified bundle provides to later release steps.
+struct VerifiedBundle {
+    stem: String,
+    documents: BTreeMap<String, (Vec<u8>, u32)>,
+    binary_sha256: String,
+    binary_size: u64,
+    package_identity: Option<linux_packages::Identity>,
+    has_packages: bool,
+}
 
 struct ReleaseEvidence<'a> {
     target: &'a str,
@@ -84,8 +105,22 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
         [command, binary, bazel_output_root, target, commit, proof, output, glibc, source_proof] if command == "prepare" => prepare(root, Path::new(binary), Path::new(bazel_output_root), target, commit, Path::new(proof), Path::new(output), glibc, Some(Path::new(source_proof)), None),
         [command, binary, bazel_output_root, target, commit, proof, output, map, trace] if command == "prepare-windows" => prepare(root, Path::new(binary), Path::new(bazel_output_root), target, commit, Path::new(proof), Path::new(output), "none", None, Some((Path::new(map), Path::new(trace)))),
-        [command, output] if command == "verify" => verify(root, Path::new(output)),
-        _ => Err("usage: cargo xtask release-artifact <notices [--check]|fetch-source REPOSITORY_CACHE|prepare-source REPOSITORY_CACHE COMMIT OUTPUT|relink-source ARCHIVE COMMIT TARGET WORK PROOF|compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE [SOURCE_PROOF]|prepare-windows BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT MAP TRACE|verify OUTPUT>".into()),
+        [command, bundle, output] if command == "package-input" => {
+            package_input(root, Path::new(bundle), Path::new(output))
+        }
+        [command, bundle, deb, rpm] if command == "add-packages" => {
+            add_packages(root, Path::new(bundle), Path::new(deb), Path::new(rpm))
+        }
+        [command, assets, version, output] if command == "package-managers" => {
+            package_managers::write(Path::new(assets), version, Path::new(output))
+        }
+        [command, current, next] if command == "check-upgrade" => {
+            package_managers::check_upgrade(current, next)
+        }
+        [command, output] if command == "verify" => {
+            verify(root, Path::new(output), LinuxPackages::Required).map(|_| ())
+        }
+        _ => Err("usage: cargo xtask release-artifact <notices [--check]|fetch-source REPOSITORY_CACHE|prepare-source REPOSITORY_CACHE COMMIT OUTPUT|relink-source ARCHIVE COMMIT TARGET WORK PROOF|compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE [SOURCE_PROOF]|prepare-windows BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT MAP TRACE|package-input BUNDLE OUTPUT|add-packages BUNDLE DEB RPM|package-managers ASSETS VERSION OUTPUT|check-upgrade CURRENT_VERSION NEW_VERSION|verify OUTPUT>".into()),
     }
 }
 
@@ -390,6 +425,7 @@ fn prepare(
         "notices": notice_manifest(&notices)?,
         "correspondingSource": source,
         "sourceRelink": source_relink,
+        "linuxPackages": Value::Null,
         "runtimeInputEvidence": runtime_evidence,
         "sbom": {
             "file": sbom_name,
@@ -406,7 +442,7 @@ fn prepare(
         },
     });
     write_json(&output.join("manifest.json"), &manifest)?;
-    verify(root, output)?;
+    verify(root, output, LinuxPackages::MayBePending)?;
     println!("prepared and verified non-publishing release bundle {archive_name}");
     Ok(())
 }
@@ -436,7 +472,7 @@ fn prepare_output_directory(output: &Path) -> Result<(), String> {
 }
 
 #[allow(clippy::too_many_lines)] // Verify the complete bound bundle before extraction or native execution.
-fn verify(root: &Path, output: &Path) -> Result<(), String> {
+fn verify(root: &Path, output: &Path, packages: LinuxPackages) -> Result<VerifiedBundle, String> {
     let manifest = read_json(&output.join("manifest.json"))?;
     let commit = required_pointer(&manifest, "/release/sourceCommit")?;
     validate_commit(commit)?;
@@ -519,13 +555,52 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
     let sbom_sha256 = required_pointer(&manifest, "/sbom/sha256")?;
     let provenance_name = required_pointer(&manifest, "/provenance/file")?;
     let provenance_sha256 = required_pointer(&manifest, "/provenance/sha256")?;
+    let stem = artifact_name
+        .strip_suffix(".tar.gz")
+        .ok_or("release archive name must end in .tar.gz")?;
+    let package_identity = if target.ends_with("linux-gnu") {
+        Some(linux_packages::identity(
+            target,
+            RELEASE_VERSION,
+            manifest["artifact"]["glibcMinimum"]
+                .as_str()
+                .ok_or("GNU release manifest omits its glibc baseline")?,
+        )?)
+    } else {
+        None
+    };
+    let package_names = match (
+        &package_identity,
+        manifest["linuxPackages"].is_null(),
+        packages,
+    ) {
+        (None, true, _) | (Some(_), true, LinuxPackages::MayBePending) => Vec::new(),
+        (None, false, _) => {
+            return Err("non-GNU release bundle has unexpected Linux packages".into());
+        }
+        (Some(_), true, LinuxPackages::Required) => {
+            return Err("GNU release bundle omits its .deb and .rpm packages".into());
+        }
+        (Some(_), false, _) => vec![format!("{stem}.deb"), format!("{stem}.rpm")],
+    };
     validate_output_directory(
         output,
         artifact_name,
         sbom_name,
         provenance_name,
         source.as_ref(),
+        &package_names,
     )?;
+    let package_files = package_names
+        .iter()
+        .map(|name| Ok((name.clone(), sha256_file(&output.join(name))?)))
+        .collect::<Result<Vec<_>, String>>()?;
+    if let Some(identity) = &package_identity
+        && !package_files.is_empty()
+        && manifest["linuxPackages"] != package_bindings(identity, &package_files)
+    {
+        return Err("release manifest package bindings differ from the bundle packages".into());
+    }
     if fs::metadata(output.join(artifact_name))
         .map_err(|error| error.to_string())?
         .len()
@@ -584,7 +659,13 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
             return Err("SHA256SUMS omits exact source relink proof entry".into());
         }
     }
-    if sums.lines().count() != 3 + 2 * usize::from(source.is_some()) {
+    for (name, digest) in &package_files {
+        let expected = format!("{digest}  {name}");
+        if !sums.lines().any(|line| line == expected) {
+            return Err(format!("SHA256SUMS omits exact entry {expected}"));
+        }
+    }
+    if sums.lines().count() != 3 + 2 * usize::from(source.is_some()) + package_files.len() {
         return Err("SHA256SUMS has an unexpected number of release entries".into());
     }
     let sbom = read_json(&output.join(sbom_name))?;
@@ -620,13 +701,18 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
     }
     notices::reconcile_sbom(&notices, &sbom)?;
     let provenance = read_json(&output.join(provenance_name))?;
+    let subjects = std::iter::once((artifact_name, artifact_sha256))
+        .chain(
+            package_files
+                .iter()
+                .map(|(name, digest)| (name.as_str(), digest.as_str())),
+        )
+        .map(|(name, digest)| json!({"name": name, "digest": {"sha256": digest}}))
+        .collect::<Vec<_>>();
     if provenance["predicateType"] != "https://slsa.dev/provenance/v1"
-        || provenance
-            .pointer("/subject/0/digest/sha256")
-            .and_then(Value::as_str)
-            != Some(artifact_sha256)
+        || provenance["subject"] != Value::Array(subjects)
     {
-        return Err("release provenance is not bound to the artifact checksum".into());
+        return Err("release provenance subjects are not the archive and package checksums".into());
     }
     if let Some(source) = &source {
         let expected = json!({"name":source["file"],"digest":{"sha256":source["sha256"]}});
@@ -657,15 +743,177 @@ fn verify(root: &Path, output: &Path) -> Result<(), String> {
         return Err("release reproducibility proof is invalid".into());
     }
     let documents = archive_documents(root, commit, &notices)?;
+    let binary_sha256 = required_pointer(&manifest, "/artifact/binarySha256")?;
     validate_archive(
         &output.join(artifact_name),
         artifact_name,
         &documents,
-        required_pointer(&manifest, "/artifact/binarySha256")?,
+        binary_sha256,
         binary_size,
     )?;
+    if let Some(identity) = &package_identity
+        && !package_files.is_empty()
+    {
+        let contents = linux_packages::contents(&documents, binary_sha256, binary_size)?;
+        linux_packages::verify_deb(&output.join(&package_files[0].0), &contents, identity)?;
+        linux_packages::verify_rpm(&output.join(&package_files[1].0), &contents, identity)?;
+    }
     println!("verified release bundle checksums, SBOM, provenance, and archive contents");
+    Ok(VerifiedBundle {
+        stem: stem.to_owned(),
+        documents,
+        binary_sha256: binary_sha256.to_owned(),
+        binary_size,
+        package_identity,
+        has_packages: !package_files.is_empty(),
+    })
+}
+
+/// The manifest record of a bundle's .deb and .rpm, in that order.
+fn package_bindings(identity: &linux_packages::Identity, files: &[(String, String)]) -> Value {
+    let formats = [
+        ("deb", identity.deb_architecture),
+        ("rpm", identity.rpm_architecture),
+    ];
+    Value::Array(
+        files
+            .iter()
+            .zip(formats)
+            .map(|((file, sha256), (format, architecture))| {
+                json!({
+                    "file": file,
+                    "format": format,
+                    "sha256": sha256,
+                    "version": identity.version,
+                    "architecture": architecture,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Writes the `//release/linux-packages` input from a verified GNU bundle.
+fn package_input(root: &Path, bundle: &Path, output: &Path) -> Result<(), String> {
+    let verified = verify(root, bundle, LinuxPackages::MayBePending)?;
+    let identity = verified
+        .package_identity
+        .as_ref()
+        .ok_or("only GNU release bundles have Linux packages")?;
+    let archive = bundle.join(format!("{}.tar.gz", verified.stem));
+    let binary = archive_member(
+        &archive,
+        &format!("{}/rustleaks", verified.stem),
+        verified.binary_size,
+    )?;
+    if sha256_bytes(&binary) != verified.binary_sha256 {
+        return Err("release archive binary differs from the verified binary".into());
+    }
+    linux_packages::write_input(output, &verified.documents, &binary, identity)?;
+    println!("wrote Linux package input to {}", output.display());
     Ok(())
+}
+
+/// Adds the .deb and .rpm built from `package-input` to a GNU bundle and
+/// binds them in the checksums, provenance subjects and manifest.
+fn add_packages(root: &Path, output: &Path, deb: &Path, rpm: &Path) -> Result<(), String> {
+    let verified = verify(root, output, LinuxPackages::MayBePending)?;
+    let identity = verified
+        .package_identity
+        .as_ref()
+        .ok_or("only GNU release bundles have Linux packages")?;
+    if verified.has_packages {
+        return Err("release bundle already has its Linux packages".into());
+    }
+    let contents = linux_packages::contents(
+        &verified.documents,
+        &verified.binary_sha256,
+        verified.binary_size,
+    )?;
+    linux_packages::verify_deb(deb, &contents, identity)?;
+    linux_packages::verify_rpm(rpm, &contents, identity)?;
+    let mut files = Vec::new();
+    for (source, extension) in [(deb, "deb"), (rpm, "rpm")] {
+        let name = format!("{}.{extension}", verified.stem);
+        let destination = output.join(&name);
+        let bytes = fs::read(source)
+            .map_err(|error| format!("cannot read package {}: {error}", source.display()))?;
+        fs::write(&destination, &bytes)
+            .map_err(|error| format!("cannot add package {name}: {error}"))?;
+        files.push((name, sha256_bytes(&bytes)));
+    }
+
+    let manifest_path = output.join("manifest.json");
+    let mut manifest = read_json(&manifest_path)?;
+    let provenance_name = required_pointer(&manifest, "/provenance/file")?.to_owned();
+    let previous_provenance = required_pointer(&manifest, "/provenance/sha256")?.to_owned();
+    let provenance_path = output.join(&provenance_name);
+    let mut provenance = read_json(&provenance_path)?;
+    let subjects = provenance["subject"]
+        .as_array_mut()
+        .ok_or("release provenance has no subjects")?;
+    for (name, sha256) in &files {
+        subjects.push(json!({"name": name, "digest": {"sha256": sha256}}));
+    }
+    write_json(&provenance_path, &provenance)?;
+    let provenance_sha256 = sha256_file(&provenance_path)?;
+    manifest["provenance"]["sha256"] = json!(provenance_sha256);
+    manifest["linuxPackages"] = package_bindings(identity, &files);
+    write_json(&manifest_path, &manifest)?;
+
+    let sums_path = output.join("SHA256SUMS");
+    let sums = fs::read_to_string(&sums_path)
+        .map_err(|error| format!("cannot read SHA256SUMS: {error}"))?;
+    let previous_line = format!("{previous_provenance}  {provenance_name}");
+    let mut updated = String::new();
+    for line in sums.lines() {
+        if line == previous_line {
+            writeln!(updated, "{provenance_sha256}  {provenance_name}")
+        } else {
+            writeln!(updated, "{line}")
+        }
+        .expect("writing to a String cannot fail");
+    }
+    for (name, sha256) in &files {
+        writeln!(updated, "{sha256}  {name}").expect("writing to a String cannot fail");
+    }
+    fs::write(&sums_path, updated)
+        .map_err(|error| format!("cannot write release checksums: {error}"))?;
+    verify(root, output, LinuxPackages::Required)?;
+    println!("added and verified {} and {}", files[0].0, files[1].0);
+    Ok(())
+}
+
+/// Reads one member of a release archive that `verify` already checked.
+fn archive_member(archive: &Path, path: &str, size: u64) -> Result<Vec<u8>, String> {
+    let file = fs::File::open(archive)
+        .map_err(|error| format!("cannot open release archive {}: {error}", archive.display()))?;
+    let mut entries = tar::Archive::new(GzDecoder::new(BufReader::new(file)));
+    for entry in entries
+        .entries()
+        .map_err(|error| format!("cannot read release archive: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("cannot read release entry: {error}"))?;
+        let name = entry
+            .path()
+            .map_err(|error| error.to_string())?
+            .to_str()
+            .map(str::to_owned);
+        if name.as_deref() == Some(path) {
+            if entry.size() != size {
+                return Err(format!(
+                    "release archive member {path} has an unexpected size"
+                ));
+            }
+            let mut bytes =
+                Vec::with_capacity(usize::try_from(size).map_err(|error| error.to_string())?);
+            entry
+                .take(size + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|error| format!("cannot read release archive member {path}: {error}"))?;
+            return Ok(bytes);
+        }
+    }
+    Err(format!("release archive has no member {path}"))
 }
 
 fn validate_output_directory(
@@ -674,6 +922,7 @@ fn validate_output_directory(
     sbom_name: &str,
     provenance_name: &str,
     source: Option<&Value>,
+    packages: &[String],
 ) -> Result<(), String> {
     let stem = artifact_name
         .strip_suffix(".tar.gz")
@@ -697,7 +946,7 @@ fn validate_output_directory(
             .into_string()
             .map_err(|_| "release bundle path is not UTF-8")?;
         actual.insert(name);
-        if actual.len() > 9 {
+        if actual.len() > 11 {
             return Err("release bundle exceeds its file inventory limit".into());
         }
     }
@@ -716,6 +965,7 @@ fn validate_output_directory(
         expected.insert(required_pointer(source, "/file")?.to_owned());
         expected.insert("source-relink.json".into());
     }
+    expected.extend(packages.iter().cloned());
     if actual.contains(&attestation_name) {
         expected.insert(attestation_name);
     }
@@ -2009,6 +2259,7 @@ mod tests {
                 "native.cdx.json",
                 "native.provenance.json",
                 source,
+                &[],
             )
         };
         check(None).unwrap();
@@ -2023,6 +2274,24 @@ mod tests {
         .unwrap();
         check(Some(&source)).unwrap();
         assert!(check(None).is_err());
+
+        let packages = ["native.deb".to_owned(), "native.rpm".to_owned()];
+        let with_packages = || {
+            validate_output_directory(
+                &root.path,
+                "native.tar.gz",
+                "native.cdx.json",
+                "native.provenance.json",
+                Some(&source),
+                &packages,
+            )
+        };
+        assert!(with_packages().is_err());
+        fs::write(root.path.join("native.deb"), b"synthetic deb").unwrap();
+        assert!(with_packages().is_err());
+        fs::write(root.path.join("native.rpm"), b"synthetic rpm").unwrap();
+        with_packages().unwrap();
+        assert!(check(Some(&source)).is_err());
     }
 
     #[test]

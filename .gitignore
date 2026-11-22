@@ -35,3 +35,6 @@ Thumbs.db
 /bazel-*
 *.orig
 *.rej
+
+# Release package input written by cargo xtask release-artifact package-input
+/release/linux-packages/input/

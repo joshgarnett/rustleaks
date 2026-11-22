@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Install Rustleaks with Homebrew (`brew install joshgarnett/tap/rustleaks`)
+  on macOS and Linux, with Scoop on Windows, or from the new `.deb` and
+  `.rpm` packages for Linux x86_64 and ARM64 with glibc 2.28 or later. All
+  channels install the program from the release archives. The packages
+  install `/usr/bin/rustleaks` and the archive's documents under
+  `/usr/share/doc/rustleaks`, and are covered by each glibc target's
+  checksums and signed attestation. A release now has 67 assets. The new
+  `Update Package Managers` workflow writes the formula and manifest from
+  a published release, checks each install, and pushes them after
+  approval. A version without a pre-release suffix is published as the
+  latest GitHub release instead of a pre-release.
 - Scans with all built-in rules use less CPU time and memory. Findings, their
   order, reports and exit codes do not change. A rule's regular expression is
   no longer searched when the text lacks a literal that every match must
@@ -27,7 +38,8 @@
   searches that a missing literal skips, so a
   `ScanBudget::max_normalization_bytes` limit stops fewer scans. See
   `docs/dev/engine-internals.md#startup-memory-of-the-built-in-rules` for
-  where startup memory goes. - Fix composite rules in custom native packs
+  where startup memory goes.
+- Fix composite rules in custom native packs
   (`NativePolicy::with_pack`) when explanations are off: a
   `[[rules.required]]` rule is now gated by its own keywords and literals, as
   it already was with explanations. It used the primary rule's keyword data,

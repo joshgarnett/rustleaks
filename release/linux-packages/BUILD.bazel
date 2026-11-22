@@ -1,0 +1,134 @@
+# Linux release packages.
+#
+# The GNU release lanes write `input/` with
+# `cargo xtask release-artifact package-input`, from the verified release
+# archive: `input/rustleaks`, the archive documents under `input/doc/` and
+# the Debian `Depends` value in `input/depends.txt`. These targets only
+# repackage those bytes; they do not build the CLI. Build them with the
+# release configuration of the lane, which selects the package architecture.
+
+load("@rules_pkg//pkg:deb.bzl", "pkg_deb")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "pkg_mkdirs", "strip_prefix")
+load("@rules_pkg//pkg:rpm.bzl", "pkg_rpm")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION")
+load(":package_paths.bzl", "DOC_ROOT", "document_directories")
+
+# Debian and RPM sort `~` before the empty string, so a prerelease such as
+# 0.2.0-alpha.1 becomes 0.2.0~alpha.1 and sorts before 0.2.0.
+PACKAGE_VERSION = RUSTLEAKS_VERSION.replace("-", "~")
+
+DOCUMENTS = glob(
+    ["input/doc/**"],
+    allow_empty = True,
+)
+
+GNU_LINUX = [
+    "@platforms//os:linux",
+    "//platforms:gnu",
+]
+
+pkg_files(
+    name = "binary",
+    srcs = ["input/rustleaks"],
+    attributes = pkg_attributes(
+        group = "root",
+        mode = "0755",
+        user = "root",
+    ),
+    prefix = "usr/bin",
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "documents",
+    srcs = DOCUMENTS,
+    attributes = pkg_attributes(
+        group = "root",
+        mode = "0644",
+        user = "root",
+    ),
+    prefix = DOC_ROOT,
+    strip_prefix = strip_prefix.from_pkg("input/doc"),
+    tags = ["manual"],
+)
+
+pkg_mkdirs(
+    name = "document_directories",
+    attributes = pkg_attributes(
+        group = "root",
+        mode = "0755",
+        user = "root",
+    ),
+    dirs = document_directories(DOCUMENTS),
+    tags = ["manual"],
+)
+
+pkg_tar(
+    name = "data",
+    srcs = [
+        ":binary",
+        ":document_directories",
+        ":documents",
+    ],
+    extension = "tar.gz",
+    tags = ["manual"],
+)
+
+DESCRIPTION = """Secret scanner for Git repositories, folders, archives and standard input.
+ Rustleaks finds passwords, API keys and tokens with configurable rules."""
+
+pkg_deb(
+    name = "deb",
+    architecture = select({
+        "@platforms//cpu:aarch64": "arm64",
+        "@platforms//cpu:x86_64": "amd64",
+    }),
+    data = ":data",
+    depends_file = "input/depends.txt",
+    description = DESCRIPTION,
+    homepage = "https://github.com/joshgarnett/rustleaks",
+    license = "MIT",
+    maintainer = "Rustleaks maintainers <https://github.com/joshgarnett/rustleaks/issues>",
+    package = "rustleaks",
+    package_file_name = "rustleaks.deb",
+    priority = "optional",
+    section = "devel",
+    tags = ["manual"],
+    target_compatible_with = GNU_LINUX,
+    version = PACKAGE_VERSION,
+)
+
+pkg_rpm(
+    name = "rpm",
+    srcs = [
+        ":binary",
+        ":document_directories",
+        ":documents",
+    ],
+    architecture = select({
+        "@platforms//cpu:aarch64": "aarch64",
+        "@platforms//cpu:x86_64": "x86_64",
+    }),
+    # Gzip keeps the payload readable by every supported rpm version and by
+    # the release verifier.
+    binary_payload_compression = "w9.gzdio",
+    # Package the archive bytes as they are: no stripping, debug packages,
+    # build-ID links or other post-install changes, and a fixed build host.
+    defines = {
+        "__os_install_post": "%{nil}",
+        "_build_id_links": "none",
+        "_buildhost": "rustleaks.invalid",
+        "debug_package": "%{nil}",
+    },
+    description = "Rustleaks finds passwords, API keys and tokens in Git repositories,\nfolders, archives and standard input with configurable rules.",
+    license = "MIT",
+    package_name = "rustleaks",
+    release = "1",
+    source_date_epoch = 0,
+    summary = "Secret scanner for Git repositories, folders, archives and standard input",
+    tags = ["manual"],
+    target_compatible_with = GNU_LINUX,
+    url = "https://github.com/joshgarnett/rustleaks",
+    version = PACKAGE_VERSION,
+)

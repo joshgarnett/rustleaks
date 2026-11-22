@@ -323,7 +323,13 @@ jobs:
       - name: Hydrate locked release dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
+      - name: Install the RPM package builder
+        if: matrix.libc == 'gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends rpm
       - name: Build twice, smoke test, and prepare evidence
+        id: build
         working-directory: rustleaks
         env:
           CANDIDATE: ${{ inputs.candidate }}
@@ -376,6 +382,39 @@ jobs:
           fi
           cargo xtask release-artifact prepare "${work}/rustleaks-one" "${first_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle" "${glibc}" "${source_args[@]}"
           cargo xtask release-artifact prepare "${work}/rustleaks-two" "${second_root}" "${RELEASE_TARGET}" "${CANDIDATE}" "${work}/reproducibility.json" "${work}/bundle-repeat" "${glibc}" "${source_args[@]}"
+          stem="rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}"
+          subjects="${work}/bundle/${stem}.tar.gz"
+          if [[ "${RELEASE_LIBC}" = gnu ]]; then
+            # Each Bazel root packages its own bundle, so the bundle
+            # comparison below also proves the .deb and .rpm reproducible.
+            package_input=release/linux-packages/input
+            for lane in one two; do
+              if [[ "${lane}" = one ]]; then
+                root="${first_root}"
+                bundle="${work}/bundle"
+              else
+                root="${second_root}"
+                bundle="${work}/bundle-repeat"
+              fi
+              rm -rf "${package_input}"
+              cargo xtask release-artifact package-input "${bundle}" "${package_input}"
+              bazelisk --output_user_root="${root}" build --config="${RELEASE_CONFIG}" //release/linux-packages:deb //release/linux-packages:rpm
+              exec_root="$(bazelisk --output_user_root="${root}" info --config="${RELEASE_CONFIG}" execution_root)"
+              outputs="$(bazelisk --output_user_root="${root}" cquery --config="${RELEASE_CONFIG}" --output=files '//release/linux-packages:deb + //release/linux-packages:rpm')"
+              test "$(grep -c '\.deb$' <<<"${outputs}")" = 1
+              test "$(grep -c '\.rpm$' <<<"${outputs}")" = 1
+              cargo xtask release-artifact add-packages "${bundle}" \
+                "${exec_root}/$(grep '\.deb$' <<<"${outputs}")" \
+                "${exec_root}/$(grep '\.rpm$' <<<"${outputs}")"
+            done
+            rm -rf "${package_input}"
+            subjects="${subjects}"$'\n'"${work}/bundle/${stem}.deb"$'\n'"${work}/bundle/${stem}.rpm"
+          fi
+          {
+            echo 'subjects<<SUBJECTS'
+            echo "${subjects}"
+            echo 'SUBJECTS'
+          } >> "${GITHUB_OUTPUT}"
           cargo xtask release-artifact compare-bundles "${work}/bundle" "${work}/bundle-repeat"
           packaged="${work}/extracted/rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}/rustleaks"
           packaged_smoke="${work}/packaged-smoke.json"
@@ -384,11 +423,42 @@ jobs:
           "${packaged}" --help
           printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${packaged}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path="${packaged_smoke}"
           grep -q REDACTED "${packaged_smoke}"
+      - name: Install the Linux packages on glibc 2.28
+        if: matrix.libc == 'gnu'
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          bundle="${RUNNER_TEMP}/release-work/bundle"
+          stem="rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}"
+          binary_sha256="$(jq -r '.artifact.binarySha256' "${bundle}/manifest.json")"
+          check='rustleaks --version
+          test "$(sha256sum /usr/bin/rustleaks | cut -d " " -f 1)" = "${BINARY_SHA256}"
+          test -f /usr/share/doc/rustleaks/LICENSE
+          test -f /usr/share/doc/rustleaks/licenses/index.json
+          printf "%s%s\n" "string AWSToken = \"AKIA" "LALEMEL33243OLIB\";" | rustleaks stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=/tmp/smoke.json
+          grep -q REDACTED /tmp/smoke.json'
+          # Debian 10 and AlmaLinux 8 have glibc 2.28, the oldest supported.
+          docker run --rm --network none -e BINARY_SHA256="${binary_sha256}" -v "${bundle}:/bundle:ro" \
+            debian:10@sha256:58ce6f1271ae1c8a2006ff7d3e54e9874d839f573d8009c20154ad0f2fb0a225 \
+            sh -euc "dpkg -i /bundle/${stem}.deb
+          ${check}
+          dpkg -r rustleaks
+          test ! -e /usr/bin/rustleaks
+          test ! -e /usr/share/doc/rustleaks"
+          docker run --rm --network none -e BINARY_SHA256="${binary_sha256}" -v "${bundle}:/bundle:ro" \
+            almalinux:8@sha256:768bedc30fe0a536adb0a65d2eddb7caad364e514fbddd0ae9e026975f590342 \
+            sh -euc "rpm -i /bundle/${stem}.rpm
+          ${check}
+          rpm -e rustleaks
+          test ! -e /usr/bin/rustleaks
+          test ! -e /usr/share/doc/rustleaks"
       - name: Attest the release archive
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: ${{ runner.temp }}/release-work/bundle/rustleaks-${{ inputs.version }}-${{ matrix.target }}.tar.gz
+          subject-path: ${{ steps.build.outputs.subjects }}
       - name: Verify and retain the release archive attestation
         working-directory: rustleaks
         env:
@@ -396,16 +466,20 @@ jobs:
           CANDIDATE: ${{ inputs.candidate }}
           EXPECTED_VERSION: ${{ inputs.version }}
           RELEASE_TARGET: ${{ matrix.target }}
+          SUBJECTS: ${{ steps.build.outputs.subjects }}
         run: |
           set -euo pipefail
           archive="${RUNNER_TEMP}/release-work/bundle/rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}.tar.gz"
-          gh attestation verify "${archive}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --bundle "${ATTESTATION_BUNDLE}" \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
-            --source-digest "${CANDIDATE}" \
-            --source-ref refs/heads/main \
-            --deny-self-hosted-runners
+          test "$(head -n 1 <<<"${SUBJECTS}")" = "${archive}"
+          while IFS= read -r subject; do
+            gh attestation verify "${subject}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --bundle "${ATTESTATION_BUNDLE}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+              --source-digest "${CANDIDATE}" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done <<<"${SUBJECTS}"
           cp "${ATTESTATION_BUNDLE}" "${RUNNER_TEMP}/release-work/bundle/rustleaks-${EXPECTED_VERSION}-${RELEASE_TARGET}.attestation.jsonl"
           cargo xtask release-artifact verify "${RUNNER_TEMP}/release-work/bundle"
       - name: Upload the verified target bundle
