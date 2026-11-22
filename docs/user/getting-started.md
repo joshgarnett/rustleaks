@@ -15,6 +15,60 @@ See [Moving from Gitleaks](moving-from-gitleaks.md).
 
 ## Install
 
+Each install method below gets the same program from a
+[GitHub release](#from-a-github-release). Homebrew and Scoop check the
+archive's SHA-256 checksum. The Linux packages hold the release archive's
+program and documents without changes.
+
+### With Homebrew
+
+On macOS and Linux:
+
+```sh
+brew install joshgarnett/tap/rustleaks
+```
+
+The formula installs the macOS Intel, macOS Apple silicon, Linux x86_64 or
+Linux ARM64 archive. On Linux it installs the glibc build, which needs glibc
+2.28 or later. Run `brew upgrade rustleaks` to get a newer release.
+
+### With Scoop
+
+On Windows x86_64 and ARM64:
+
+```powershell
+scoop bucket add rustleaks https://github.com/joshgarnett/scoop-bucket
+scoop install rustleaks/rustleaks
+```
+
+Run `scoop update rustleaks` to get a newer release.
+
+### With a .deb or .rpm package
+
+For Linux x86_64 and ARM64 with glibc 2.28 or later, such as Debian 10,
+Ubuntu 20.04 and Red Hat Enterprise Linux 8 or newer, each release has a
+Debian and an RPM package next to the glibc archive. They install
+`/usr/bin/rustleaks` and put `README.md`, `LICENSE`, `NOTICE` and the
+`licenses` folder in `/usr/share/doc/rustleaks`.
+
+```sh
+VERSION=0.1.0-alpha.12
+TARGET=x86_64-unknown-linux-gnu
+STEM="rustleaks-${VERSION}-${TARGET}"
+gh release download "v${VERSION}" --repo joshgarnett/rustleaks \
+  --pattern "${STEM}.deb" \
+  --pattern "${STEM}.attestation.jsonl"
+gh attestation verify "${STEM}.deb" --repo joshgarnett/rustleaks \
+  --bundle "${STEM}.attestation.jsonl"
+sudo apt install "./${STEM}.deb"
+```
+
+For the RPM package, download `${STEM}.rpm` instead and run
+`sudo dnf install "./${STEM}.rpm"`. There is no package repository: to
+upgrade, install the package of a newer release the same way. The package
+version of a pre-release uses `~` in place of `-`, for example
+`0.2.0~rc.1`, so that it sorts before `0.2.0`.
+
 ### From a GitHub release
 
 Each release on the
@@ -47,7 +101,8 @@ Next to each archive, the release has these files with the same name start:
 - `.cdx.json`, a CycloneDX SBOM;
 - `.provenance.json`, `.manifest.json` and `.reproducibility.json`, which
   describe how the archive was built; and
-- `.source-relink.json`, for the Linux glibc targets only.
+- `.source-relink.json`, `.deb` and `.rpm`, for the Linux glibc targets
+  only.
 
 The release also has one `rustleaks-VERSION-corresponding-source.tar.gz`
 archive with source material for the Linux glibc builds.

@@ -1,0 +1,321 @@
+name: Update Package Managers
+
+# Writes the Homebrew formula and Scoop manifest for a published release,
+# installs each one on its platforms, and only then, when `publish` is set,
+# pushes them to joshgarnett/homebrew-tap and joshgarnett/scoop-bucket.
+# Without `publish` the workflow uses no credential and changes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published release version.
+        required: true
+        type: string
+      publish:
+        description: Push the formula and manifest after every install check passes.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-managers
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
+jobs:
+  generate:
+    name: Write the formula and manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the trigger commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Require a published release from main
+        id: release
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          test "${TRIGGER_REF}" = refs/heads/main
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.draft' <<<"${release_json}")" = false
+          if [[ "${EXPECTED_VERSION}" = *-* ]]; then
+            test "$(jq -r '.prerelease' <<<"${release_json}")" = true
+          else
+            test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          fi
+          candidate="$(jq -r '.target_commitish' <<<"${release_json}")"
+          [[ "${candidate}" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "${candidate}" HEAD
+          echo "candidate=${candidate}" >> "${GITHUB_OUTPUT}"
+      - name: Download and verify the release archives
+        env:
+          CANDIDATE: ${{ steps.release.outputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets="${RUNNER_TEMP}/release-assets"
+          work="${RUNNER_TEMP}/package-managers"
+          mkdir -p "${assets}" "${work}/manifests"
+          targets=(
+            aarch64-apple-darwin
+            x86_64-apple-darwin
+            aarch64-unknown-linux-gnu
+            x86_64-unknown-linux-gnu
+            x86_64-pc-windows-msvc
+            aarch64-pc-windows-msvc
+          )
+          for target in "${targets[@]}"; do
+            stem="rustleaks-${EXPECTED_VERSION}-${target}"
+            gh release download "v${EXPECTED_VERSION}" --repo "${GITHUB_REPOSITORY}" --dir "${assets}" \
+              --pattern "${stem}.tar.gz" \
+              --pattern "${stem}.SHA256SUMS" \
+              --pattern "${stem}.attestation.jsonl" \
+              --pattern "${stem}.manifest.json"
+            gh attestation verify "${assets}/${stem}.tar.gz" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --bundle "${assets}/${stem}.attestation.jsonl" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml" \
+              --source-digest "${CANDIDATE}" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+            manifest="${assets}/${stem}.manifest.json"
+            test "$(jq -r '.release.version' "${manifest}")" = "${EXPECTED_VERSION}"
+            test "$(jq -r '.release.sourceCommit' "${manifest}")" = "${CANDIDATE}"
+            test "$(jq -r '.build.target' "${manifest}")" = "${target}"
+            test "$(jq -r '.artifact.sha256' "${manifest}")" = "$(sha256sum "${assets}/${stem}.tar.gz" | cut -d ' ' -f 1)"
+            install -m 0644 "${manifest}" "${work}/manifests/${target}.json"
+          done
+          cargo xtask release-artifact package-managers "${assets}" "${EXPECTED_VERSION}" "${work}/out"
+      - name: Keep the formula and manifest for the install checks
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-managers-${{ inputs.version }}
+          path: ${{ runner.temp }}/package-managers
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-homebrew:
+    name: Install with Homebrew on ${{ matrix.target }}
+    needs: generate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            architecture: arm64
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            architecture: x86_64
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+    env:
+      EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+      EXPECTED_VERSION: ${{ inputs.version }}
+      RELEASE_TARGET: ${{ matrix.target }}
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - name: Install from a local tap and compare the binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+          if [[ "${RUNNER_OS}" = Linux ]]; then
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          fi
+          work="${RUNNER_TEMP}/package-managers"
+          gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "package-managers-${EXPECTED_VERSION}" --dir "${work}"
+          brew tap-new --no-git rustleaks-verify/local
+          install -m 0644 "${work}/out/Formula/rustleaks.rb" "$(brew --repository rustleaks-verify/local)/Formula/rustleaks.rb"
+          brew install rustleaks-verify/local/rustleaks
+          brew test rustleaks-verify/local/rustleaks
+          installed="$(brew --prefix rustleaks-verify/local/rustleaks)/bin/rustleaks"
+          expected="$(jq -r '.artifact.binarySha256' "${work}/manifests/${RELEASE_TARGET}.json")"
+          test "$(shasum -a 256 "${installed}" | cut -d ' ' -f 1)" = "${expected}"
+          "${installed}" --version | grep -F "${EXPECTED_VERSION}"
+          printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${installed}" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path="${RUNNER_TEMP}/homebrew-smoke.json"
+          grep -q REDACTED "${RUNNER_TEMP}/homebrew-smoke.json"
+
+  verify-scoop:
+    name: Install with Scoop on ${{ matrix.target }}
+    needs: generate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            architecture: X64
+            target: x86_64-pc-windows-msvc
+          - runner: windows-11-arm
+            architecture: Arm64
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+    env:
+      EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+      EXPECTED_VERSION: ${{ inputs.version }}
+      RELEASE_TARGET: ${{ matrix.target }}
+    steps:
+      - name: Install from the manifest and compare the binary
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actual -ne $env:EXPECTED_ARCHITECTURE) { throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual" }
+          $work = Join-Path $env:RUNNER_TEMP package-managers
+          gh run download $env:GITHUB_RUN_ID --repo $env:GITHUB_REPOSITORY --name "package-managers-$env:EXPECTED_VERSION" --dir $work
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The installer is pinned by commit and hash. It downloads Scoop
+          # and its main bucket, which this read-only job trusts.
+          $installer = Join-Path $env:RUNNER_TEMP install-scoop.ps1
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ScoopInstaller/Install/1e2f334083d609986d8c8bc9e31ae8e87c39fab4/install.ps1' -OutFile $installer
+          $installerHash = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
+          if ($installerHash -cne '94f983b190438311e006b957db7c8422709e0ba62a6c2ac04e278164108f2512') { throw "Scoop installer hash is $installerHash" }
+          & $installer -RunAsAdmin
+          $env:PATH = "$(Join-Path $env:USERPROFILE 'scoop\shims');$env:PATH"
+          scoop install (Join-Path $work 'out/bucket/rustleaks.json')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installed = Join-Path (scoop prefix rustleaks) rustleaks.exe
+          $manifest = Get-Content -Raw (Join-Path $work "manifests/$env:RELEASE_TARGET.json") | ConvertFrom-Json
+          $binaryHash = (Get-FileHash -Algorithm SHA256 $installed).Hash.ToLowerInvariant()
+          if ($binaryHash -cne $manifest.artifact.binarySha256) { throw "installed binary hash is $binaryHash" }
+          $version = rustleaks --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not $version.Contains($env:EXPECTED_VERSION)) { throw "rustleaks --version printed $version" }
+          $smoke = Join-Path $env:RUNNER_TEMP scoop-smoke.json
+          ('string AWSToken = "AKIA' + 'LALEMEL33243OLIB";') | rustleaks stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=$smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Select-String -Quiet -Pattern REDACTED -Path $smoke)) { throw 'Scoop smoke finding missing' }
+
+  publish:
+    name: Push the formula and manifest
+    needs:
+      - generate
+      - verify-homebrew
+      - verify-scoop
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the trigger commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Build the upgrade check before any token exists
+        run: |
+          set -euo pipefail
+          cargo fetch --locked
+          cargo build --locked -p xtask
+      - name: Download the checked formula and manifest
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "package-managers-${EXPECTED_VERSION}" --dir "${RUNNER_TEMP}/package-managers"
+      - name: Prepare the tap and bucket changes
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/package-managers/out"
+          for channel in "homebrew-tap Formula/rustleaks.rb" "scoop-bucket bucket/rustleaks.json"; do
+            read -r repository file <<<"${channel}"
+            checkout="${RUNNER_TEMP}/${repository}"
+            git clone --depth 1 --branch main "https://github.com/joshgarnett/${repository}.git" "${checkout}"
+            if [[ -f "${checkout}/${file}" ]]; then
+              if [[ "${file}" = *.json ]]; then
+                current="$(jq -r '.version' "${checkout}/${file}")"
+              else
+                current="$(sed -n 's#.*/releases/download/v\([^/]*\)/.*#\1#p' "${checkout}/${file}" | sort -u)"
+              fi
+              ./target/debug/xtask release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
+            fi
+            mkdir -p "$(dirname "${checkout}/${file}")"
+            install -m 0644 "${work}/${file}" "${checkout}/${file}"
+            git -C "${checkout}" add "${file}"
+          done
+      - name: Create a one-hour token for the tap and bucket
+        id: token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ vars.PACKAGING_APP_ID }}
+          private-key: ${{ secrets.PACKAGING_APP_PRIVATE_KEY }}
+          owner: joshgarnett
+          repositories: |
+            homebrew-tap
+            scoop-bucket
+          permission-contents: write
+      # Only Git and the GitHub CLI run while the token exists.
+      - name: Push to the tap and bucket
+        env:
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          bot_id="$(gh api "users/${APP_SLUG}%5Bbot%5D" --jq '.id')"
+          author_name="${APP_SLUG}[bot]"
+          author_email="${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          for repository in homebrew-tap scoop-bucket; do
+            checkout="${RUNNER_TEMP}/${repository}"
+            if git -C "${checkout}" diff --cached --quiet; then
+              echo "${repository} already has rustleaks ${EXPECTED_VERSION}"
+              continue
+            fi
+            git -C "${checkout}" -c user.name="${author_name}" -c user.email="${author_email}" \
+              commit --message "rustleaks ${EXPECTED_VERSION}"
+            git -C "${checkout}" push origin HEAD:main
+            printf 'Pushed rustleaks %s to %s\n' "${EXPECTED_VERSION}" "${repository}" >> "${GITHUB_STEP_SUMMARY}"
+          done

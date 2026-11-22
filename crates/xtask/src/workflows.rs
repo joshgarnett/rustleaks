@@ -5,6 +5,9 @@ use std::fs;
 use std::path::Path;
 
 const CODEQL_ACTION_PIN: &str = "33d7b85da1a04171e211befe2c739303b9a4c066";
+/// The only secret any workflow reads: the packaging App key, in the
+/// protected publish job of `packages.yml`.
+const PACKAGING_SECRET: &str = "private-key: ${{ secrets.PACKAGING_APP_PRIVATE_KEY }}";
 const SECRET_SCANNING_CONFIG: &str = r#"paths-ignore:
   - "testdata/allowlist-corpus/**"
   - "testdata/cli-corpus/**"
@@ -55,6 +58,8 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read GitHub release workflow: {error}"))?;
     let publish = fs::read_to_string(directory.join("publish.yml"))
         .map_err(|error| format!("cannot read publication workflow: {error}"))?;
+    let packages = fs::read_to_string(directory.join("packages.yml"))
+        .map_err(|error| format!("cannot read package manager workflow: {error}"))?;
     let scorecard = fs::read_to_string(directory.join("scorecard.yml"))
         .map_err(|error| format!("cannot read Scorecard workflow: {error}"))?;
     let codeql = fs::read_to_string(directory.join("codeql.yml"))
@@ -66,6 +71,7 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
     validate_release_workflow(&dry_run)?;
     validate_github_release_workflow(&release)?;
     validate_publish_workflow(&publish)?;
+    validate_packages_workflow(&packages)?;
     validate_scorecard_workflow(&scorecard)?;
     validate_codeql_workflow(&codeql)?;
     validate_secret_scanning_config(&secret_scanning)?;
@@ -163,6 +169,146 @@ fn validate_publish_workflow(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Checks that the package manager workflow writes and installs the formula
+/// and manifest without a credential, and that only its protected publish
+/// job, after every install check, gets the App token for the two repositories.
+fn validate_packages_workflow(source: &str) -> Result<(), String> {
+    for forbidden in [
+        "pull_request:",
+        "push:",
+        "schedule:",
+        "cargo publish",
+        "gh release create",
+        "gh release upload",
+        "gh release delete",
+        "id-token:",
+        "attestations:",
+        "persist-credentials: true",
+        "curl ",
+        "| iex",
+        "Invoke-Expression",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!(
+                "package manager workflow contains forbidden text {forbidden:?}"
+            ));
+        }
+    }
+    let writes = source
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.ends_with(": write"))
+        .collect::<Vec<_>>();
+    if writes != ["permission-contents: write"] {
+        return Err(format!(
+            "package manager workflow may only ask the App token for contents write, found {writes:?}"
+        ));
+    }
+    let generate = workflow_job(source, "generate")?;
+    for required in [
+        "test \"${TRIGGER_REF}\" = refs/heads/main",
+        "releases/tags/v${EXPECTED_VERSION}",
+        "test \"$(jq -r '.draft' <<<\"${release_json}\")\" = false",
+        "git merge-base --is-ancestor \"${candidate}\" HEAD",
+        "gh attestation verify \"${assets}/${stem}.tar.gz\"",
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml\"",
+        "--source-digest \"${CANDIDATE}\"",
+        "--source-ref refs/heads/main",
+        "--deny-self-hosted-runners",
+        "cargo xtask release-artifact package-managers",
+    ] {
+        if !generate.contains(required) {
+            return Err(format!(
+                "package manager generation omits required boundary {required:?}"
+            ));
+        }
+    }
+    for job_name in ["generate", "verify-homebrew", "verify-scoop"] {
+        let job = workflow_job(source, job_name)?;
+        if job.contains("secrets.") || job.contains("environment:") || job.contains("vars.") {
+            return Err(format!(
+                "package manager job {job_name} must not use the release environment or a credential"
+            ));
+        }
+    }
+    for (job_name, required) in [
+        (
+            "verify-homebrew",
+            "test \"$(shasum -a 256 \"${installed}\" | cut -d ' ' -f 1)\" = \"${expected}\"",
+        ),
+        (
+            "verify-homebrew",
+            "brew test rustleaks-verify/local/rustleaks",
+        ),
+        (
+            "verify-scoop",
+            "if ($binaryHash -cne $manifest.artifact.binarySha256)",
+        ),
+        (
+            "verify-scoop",
+            "if ($installerHash -cne '94f983b190438311e006b957db7c8422709e0ba62a6c2ac04e278164108f2512')",
+        ),
+    ] {
+        if !workflow_job(source, job_name)?.contains(required) {
+            return Err(format!(
+                "package manager job {job_name} omits install check {required:?}"
+            ));
+        }
+    }
+    let publish = workflow_job(source, "publish")?;
+    for required in [
+        "    needs:\n      - generate\n      - verify-homebrew\n      - verify-scoop\n",
+        "    if: inputs.publish\n",
+        "    environment: release\n",
+        "actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0",
+        PACKAGING_SECRET,
+        "          owner: joshgarnett\n          repositories: |\n            homebrew-tap\n            scoop-bucket\n          permission-contents: write\n",
+        "cargo build --locked -p xtask",
+        "./target/debug/xtask release-artifact check-upgrade",
+        "git -C \"${checkout}\" push origin HEAD:main",
+    ] {
+        if !publish.contains(required) {
+            return Err(format!(
+                "package manager publish job omits required boundary {required:?}"
+            ));
+        }
+    }
+    // Build scripts and the clone run before the token exists; only Git and
+    // the GitHub CLI run after it.
+    let token = publish
+        .find("actions/create-github-app-token@")
+        .ok_or("package manager publish job omits its token step")?;
+    let (before, after) = publish.split_at(token);
+    for required in [
+        "cargo build --locked -p xtask",
+        "release-artifact check-upgrade",
+        "git clone",
+    ] {
+        if !before.contains(required) {
+            return Err(format!(
+                "package manager publish job must run {required:?} before it creates the token"
+            ));
+        }
+    }
+    if after.contains("cargo") || after.contains("xtask") || after.contains("git clone") {
+        return Err("package manager publish job runs build code while the token exists".into());
+    }
+    for (required, expected) in [
+        ("environment: release", 1),
+        ("secrets.", 1),
+        ("actions/create-github-app-token@", 1),
+        ("permission-contents: write", 1),
+    ] {
+        let actual = source.matches(required).count();
+        if actual != expected {
+            return Err(format!(
+                "package manager workflow contains {actual} instances of {required:?}; expected {expected}"
+            ));
+        }
+    }
+    validate_minimal_setup(source, "package manager workflow")
+}
+
 fn validate_github_release_workflow(source: &str) -> Result<(), String> {
     for forbidden in [
         "pull_request:",
@@ -202,7 +348,11 @@ fn validate_github_release_workflow(source: &str) -> Result<(), String> {
         "gh release create \"${tag}\"",
         "--target \"${CANDIDATE}\"",
         "--prerelease",
-        "test \"$(jq '.assets | length' <<<\"${release_json}\")\" = 63",
+        "test \"$(jq '.assets | length' <<<\"${release_json}\")\" = 67",
+        "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = \"${prerelease}\"",
+        "install -m 0644 \"${bundle}/${stem}.deb\" \"${assets}/\"",
+        "install -m 0644 \"${bundle}/${stem}.rpm\" \"${assets}/\"",
+        "subjects+=(\"${bundle}/${stem}.deb\" \"${bundle}/${stem}.rpm\")",
         "source_name=\"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
         "cmp \"${bundle}/${source_name}\" \"${assets}/${source_name}\"",
         "install -m 0644 \"${bundle}/source-relink.json\" \"${assets}/${stem}.source-relink.json\"",
@@ -447,6 +597,9 @@ fn validate_published_native_steps(job: &str) -> Result<(), String> {
                 "\n            gh release download \"v${EXPECTED_VERSION}\" --repo \"${GITHUB_REPOSITORY}\" --dir \"${bundle}\" \\\n",
                 "--pattern \"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
                 "--pattern \"${stem}.source-relink.json\"",
+                "--pattern \"${stem}.deb\"",
+                "--pattern \"${stem}.rpm\"",
+                "subjects+=(\"${bundle}/${stem}.deb\" \"${bundle}/${stem}.rpm\")",
                 "mv \"${bundle}/${stem}.source-relink.json\" \"${bundle}/source-relink.json\"",
             ] {
                 if !verify.contains(required) {
@@ -555,6 +708,13 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
         "  security:",
         "  fuzz:",
         "  self-scan:",
+        "cargo xtask release-artifact package-input \"${bundle}\" \"${package_input}\"",
+        "//release/linux-packages:deb //release/linux-packages:rpm",
+        "cargo xtask release-artifact add-packages \"${bundle}\"",
+        "subject-path: ${{ steps.build.outputs.subjects }}",
+        "done <<<\"${SUBJECTS}\"",
+        "debian:10@sha256:58ce6f1271ae1c8a2006ff7d3e54e9874d839f573d8009c20154ad0f2fb0a225",
+        "almalinux:8@sha256:768bedc30fe0a536adb0a65d2eddb7caad364e514fbddd0ae9e026975f590342",
         "      - acceptance",
         "      - qualification",
         "      - security",
@@ -790,6 +950,13 @@ fn validate_workflow(
     if !names.insert(name.to_owned()) {
         return Err(format!("duplicate workflow name {name:?}"));
     }
+    let allowed_secret = path.file_name().and_then(|name| name.to_str()) == Some("packages.yml")
+        && source.matches(PACKAGING_SECRET).count() == 1;
+    let checked = if allowed_secret {
+        source.replacen(PACKAGING_SECRET, "", 1)
+    } else {
+        source.to_owned()
+    };
     for forbidden in [
         "pull_request_target:",
         "workflow_run:",
@@ -798,7 +965,7 @@ fn validate_workflow(
         "${{ secrets.",
         "-latest",
     ] {
-        if source.contains(forbidden) {
+        if checked.contains(forbidden) {
             return Err(format!(
                 "{} contains forbidden workflow text {forbidden:?}",
                 path.display()

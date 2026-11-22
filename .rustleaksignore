@@ -9,6 +9,7 @@ crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:340
 
 # Reviewed generated hashes and synthetic decoder test values.
 MODULE.bazel.lock:generic-api-key:794
+MODULE.bazel.lock:generic-api-key:808
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2093
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2098
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2114
