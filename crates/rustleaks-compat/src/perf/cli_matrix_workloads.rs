@@ -443,7 +443,8 @@ fn write_gitleaks_rules(root: &Path) -> Result<()> {
     // Tests share one folder and run in parallel, so write a temporary file
     // and rename it: a CLI that reads the rules never sees a partial file.
     let temporary = root.join(format!(
-        "{GITLEAKS_RULES}.{:?}.tmp",
+        "{GITLEAKS_RULES}.{}.{:?}.tmp",
+        std::process::id(),
         std::thread::current().id()
     ));
     std::fs::write(&temporary, rustleaks_core::config::DEFAULT_CONFIG)?;

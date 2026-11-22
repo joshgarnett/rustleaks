@@ -2624,3 +2624,58 @@ fn an_extending_rule_replaces_a_builtin_entropy_predicate() {
     assert!(rule_ids_found(config, &original).is_empty());
     assert_eq!(rule_ids_found(builtin, &original), [id]);
 }
+
+#[test]
+fn required_byte_rules_find_decoded_values_with_or_without_explanations() {
+    // The primary rule's literal `marker=` is outside the decoded value, so
+    // the required rule must be gated by its own literals, not the primary
+    // rule's.
+    const COMPOSITE: &str = r#"
+[[rules]]
+id = "rustleaks.test-primary"
+regex = '''marker=(\S+)'''
+keywords = ["marker", "mark2"]
+[[rules.required]]
+id = "rustleaks.test-helper"
+
+[[rules]]
+id = "rustleaks.test-helper"
+regex = { dialect = "bytes-v1", pattern = "(AIK_CLIENT_[A-Za-z0-9]{24})" }
+keywords = ["aik_client_"]
+"#;
+    let policy = NativePolicy::builder()
+        .with_pack("test-pack-v1", COMPOSITE)
+        .unwrap()
+        .build()
+        .unwrap();
+    let value = ["AIK_CLIENT_", "Qx7Lm2Pz9Rk4Tw8Vb3Nc6Hj1"].concat();
+    let encoded = STANDARD.encode(&value);
+    let options = ScanOptions::builder().max_decode_depth(2).build();
+    for input in [format!("marker={encoded}\n"), format!("marker={value}\n")] {
+        let fragment = Fragment::new(input.as_bytes());
+        let plain = policy
+            .engine()
+            .scan_fragment_controlled(&fragment, &options, &ScanControl::unlimited());
+        let mut ids = plain
+            .findings()
+            .iter()
+            .map(|finding| finding.rule_id().to_string())
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(
+            ids,
+            ["rustleaks.test-helper", "rustleaks.test-primary"],
+            "{input:?}"
+        );
+        for limit in [0, 1, 4_096] {
+            let explained = policy.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &ScanControl::unlimited(),
+                ExplanationOptions::bounded(limit),
+            );
+            assert_eq!(plain.findings(), explained.scan().findings(), "{input:?}");
+        }
+    }
+}

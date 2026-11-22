@@ -221,7 +221,8 @@ are raw offsets and the start of every match is ASCII.
   that budget, span usage includes abandoned anchor attempts and can differ
   between anchored and unanchored scans with the same findings.
 
-Invalid UTF-8 and other non-ASCII input use the unanchored search.
+Invalid UTF-8 and other non-ASCII passes that fail these conditions use the
+unanchored search.
 
 ## Normalization
 

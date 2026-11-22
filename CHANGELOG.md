@@ -28,6 +28,11 @@
   scans. See
   `docs/dev/engine-internals.md#startup-memory-of-the-built-in-rules` for
   where startup memory goes.
+- Fix composite rules in custom native packs (`NativePolicy::with_pack`) when
+  explanations are off: a `[[rules.required]]` rule is now gated by its own
+  keywords and literals, as it already was with explanations. It used the
+  primary rule's keyword data, which could drop or add a composite finding.
+  Built-in rules and CLI configurations were not affected.
 - When a Rustleaks rule and another built-in rule report the same secret at
   the same bytes of the same file and commit, only one finding is reported.
   15 reviewed rule pairs do this, listed in

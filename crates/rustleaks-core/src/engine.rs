@@ -2206,15 +2206,14 @@ impl Engine {
             let Some(rule) = self.config.rules.get(&required.id) else {
                 continue;
             };
-            let rule_ordinal = if context.explanations.has_room() {
-                self.config
-                    .rules
-                    .keys()
-                    .position(|id| id == &required.id)
-                    .unwrap_or(rule_pass.rule_ordinal)
-            } else {
-                rule_pass.rule_ordinal
-            };
+            // The ordinal selects the rule's own keyword and literal data, so
+            // it must be the required rule's even without explanations.
+            let rule_ordinal = self
+                .config
+                .rules
+                .keys()
+                .position(|id| id == &required.id)
+                .unwrap_or(rule_pass.rule_ordinal);
             context.explanations.record(
                 Some(rule_ordinal),
                 rule_pass.decoded_pass,
