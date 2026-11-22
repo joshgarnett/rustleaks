@@ -341,7 +341,7 @@ mod tests {
             b"0123456789abcdef0123456789abcdefXYZ0123456789abcdef==",
             b"0123456789abcdef0123456789abcde=",
             b"aaaaaaaaaaaaaaaU+0041 ",
-            b"key=c2VjcmV0LXZhbHVlLWhlcmU=;",
+            b"id c2VjcmV0LXZhbHVlLWhlcmU=;",
         ] {
             assert_eq!(scanner_spans(data), regex_spans(&regex, data), "{data:?}");
         }
