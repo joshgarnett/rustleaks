@@ -8,14 +8,28 @@ pub(crate) fn lowercase(value: &str) -> String {
 }
 
 pub(crate) fn lowercase_bytes(bytes: &[u8]) -> Vec<u8> {
+    lowercase_bytes_keeping_ascii(bytes).0
+}
+
+/// Lowercases like [`lowercase_bytes`] and also returns whether every ASCII
+/// byte of the output is an input ASCII byte, lowercased.
+///
+/// It is false when a non-ASCII rune lowercases to ASCII, such as the Kelvin
+/// sign to `k`. When it is true, an ASCII string occurs in the output exactly
+/// where it occurs in the input ignoring ASCII case: each rune maps to one
+/// rune, and an ASCII input byte is always a rune of its own.
+pub(crate) fn lowercase_bytes_keeping_ascii(bytes: &[u8]) -> (Vec<u8>, bool) {
     if bytes.is_ascii() {
-        return bytes.to_ascii_lowercase();
+        return (bytes.to_ascii_lowercase(), true);
     }
     let mut output = String::with_capacity(bytes.len());
+    let mut kept = true;
     for character in chars(bytes) {
-        output.push(simple_lowercase(character));
+        let lowered = simple_lowercase(character);
+        kept &= character.is_ascii() || !lowered.is_ascii();
+        output.push(lowered);
     }
-    output.into_bytes()
+    (output.into_bytes(), kept)
 }
 
 /// Decodes the first rune like Go's `utf8.DecodeRune`.
@@ -122,6 +136,27 @@ mod tests {
             assert_eq!(decode_rune(bytes), first, "{bytes:?}");
             assert_eq!(decode_last_rune(bytes), last, "{bytes:?}");
         }
+    }
+
+    #[test]
+    fn only_two_non_ascii_runes_lowercase_to_ascii() {
+        let lowering = (0x80..=0x10_ffff)
+            .filter_map(char::from_u32)
+            .filter(|character| simple_lowercase(*character).is_ascii())
+            .collect::<Vec<_>>();
+        assert_eq!(lowering, ['\u{130}', '\u{212a}']);
+        assert_eq!(
+            lowercase_bytes_keeping_ascii("Key \u{e9}".as_bytes()),
+            ("key \u{e9}".as_bytes().to_vec(), true)
+        );
+        assert_eq!(
+            lowercase_bytes_keeping_ascii(b"A\xffB"),
+            ("a\u{fffd}b".as_bytes().to_vec(), true)
+        );
+        assert_eq!(
+            lowercase_bytes_keeping_ascii("\u{212a}ey".as_bytes()),
+            (b"key".to_vec(), false)
+        );
     }
 
     #[test]

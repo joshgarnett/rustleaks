@@ -19,7 +19,7 @@ mod validation_tests;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{self, Write as _};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, OnceLock};
 
 use regex_automata::{
     Input, MatchKind,
@@ -29,6 +29,7 @@ use regex_automata::{
 };
 
 pub(crate) use literal_anchor::LiteralAnchorShape;
+pub(crate) use required_literals::LiteralSet;
 
 /// Maximum accepted source-pattern length.
 const PATTERN_SIZE_LIMIT: usize = 1 << 20;
@@ -294,39 +295,41 @@ impl Error for GoRegexError {}
 /// the same forward NFA under the same limits, so every acceptance decision is
 /// made at compile time. Building the meta matcher later only moves its cost
 /// to the first search, so rules whose keywords never match never pay it.
-/// Clones share one build.
+/// Until then only the translated pattern text is kept, not its parsed form,
+/// and the first search parses it again. Clones share one build.
 #[derive(Clone)]
 struct LazyBackend(Arc<LazyBackendState>);
 
 struct LazyBackendState {
-    hir: Mutex<Option<regex_syntax::hir::Hir>>,
+    /// Translated pattern and whether it is constrained to the whole input.
+    pending: Option<(Box<str>, bool)>,
     built: OnceLock<Regex>,
 }
 
 impl LazyBackend {
     fn built(regex: Regex) -> Self {
         Self(Arc::new(LazyBackendState {
-            hir: Mutex::new(None),
+            pending: None,
             built: OnceLock::from(regex),
         }))
     }
 
-    fn deferred(hir: regex_syntax::hir::Hir) -> Self {
+    fn deferred(pattern: &str, whole_input: bool) -> Self {
         Self(Arc::new(LazyBackendState {
-            hir: Mutex::new(Some(hir)),
+            pending: Some((pattern.into(), whole_input)),
             built: OnceLock::new(),
         }))
     }
 
     fn get(&self) -> &Regex {
         self.0.built.get_or_init(|| {
-            let hir = self
+            let (pattern, whole_input) = self
                 .0
-                .hir
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take()
-                .expect("a deferred matcher keeps its expression until it is built");
+                .pending
+                .as_ref()
+                .expect("a deferred matcher keeps its pattern until it is built");
+            let hir = GoRegex::parse_hir(pattern, true, *whole_input)
+                .expect("an expression that passed preflight parses again");
             GoRegex::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)
                 .expect("an expression that passed preflight builds its meta matcher")
         })
@@ -341,7 +344,7 @@ pub(crate) struct GoRegex {
     backend: LazyBackend,
     capture_names: Vec<Option<Box<str>>>,
     literal_anchor: Option<Arc<LiteralAnchorShape>>,
-    required_literals: Option<Arc<[Box<[u8]>]>>,
+    required_literals: Option<Arc<[LiteralSet]>>,
 }
 
 impl PartialEq for GoRegex {
@@ -368,7 +371,7 @@ impl fmt::Debug for GoRegex {
 /// Explicit native byte dialect. Its executable matcher never normalizes input
 /// or passes through the compatibility translator.
 /// A built `bytes-v1` matcher and its required literals.
-type ByteBackend = (Regex, Option<Box<[Box<[u8]>]>>);
+type ByteBackend = (Regex, Option<Box<[LiteralSet]>>);
 
 /// How much load-time checking a pattern receives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -385,7 +388,7 @@ pub(crate) enum PatternCheck {
 pub(crate) struct NativeByteRegex {
     source: Box<str>,
     backend: Regex,
-    required_literals: Option<Arc<[Box<[u8]>]>>,
+    required_literals: Option<Arc<[LiteralSet]>>,
 }
 
 impl PartialEq for NativeByteRegex {
@@ -438,9 +441,9 @@ impl NativeByteRegex {
         Ok((backend, required_literals::required_literals(hir)))
     }
 
-    /// Folded ASCII literals of which every match contains one, ignoring
-    /// ASCII case, when such a set is known.
-    pub(crate) fn required_literals(&self) -> Option<&[Box<[u8]>]> {
+    /// Sets of folded ASCII literals, best first, such that every match
+    /// contains one literal of each set, ignoring ASCII case.
+    pub(crate) fn required_literals(&self) -> Option<&[LiteralSet]> {
         self.required_literals.as_deref()
     }
 
@@ -548,7 +551,11 @@ impl GoRegex {
             };
             let literal_anchor = LiteralAnchorShape::analyze(&hir);
             let required = required_literals::required_literals(&hir);
-            (LazyBackend::deferred(hir), literal_anchor, required)
+            (
+                LazyBackend::deferred(&translated.pattern, whole_input),
+                literal_anchor,
+                required,
+            )
         };
 
         Ok(Self {
@@ -561,9 +568,9 @@ impl GoRegex {
         })
     }
 
-    /// Folded ASCII literals of which every match contains one, ignoring
-    /// ASCII case, when such a set is known.
-    pub(crate) fn required_literals(&self) -> Option<&[Box<[u8]>]> {
+    /// Sets of folded ASCII literals, best first, such that every match
+    /// contains one literal of each set, ignoring ASCII case.
+    pub(crate) fn required_literals(&self) -> Option<&[LiteralSet]> {
         self.required_literals.as_deref()
     }
 
@@ -3658,14 +3665,6 @@ mod lazy_backend_tests {
         );
         // The clone built the matcher that the original now shares.
         assert!(lazy.backend.0.built.get().is_some());
-        assert!(
-            lazy.backend
-                .0
-                .hir
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .is_none()
-        );
         assert_eq!(lazy.find_all(haystack), spans);
         let whole = GoRegex::compile_whole("a+").unwrap();
         assert!(whole.is_match(b"aaa"));

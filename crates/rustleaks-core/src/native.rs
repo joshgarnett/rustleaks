@@ -492,20 +492,9 @@ fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
     let structural = predicate::extract(&mut value)?;
     let byte_regexes = extract_native_regexes(&mut value)?;
     let overlaps = extract_native_overlaps(&mut value)?;
-    let transformed;
-    let ordinary = if overlaps.is_some()
-        || predicates.iter().any(Option::is_some)
-        || relations.iter().any(Option::is_some)
-        || structural.iter().any(Option::is_some)
-        || byte_regexes.iter().any(|bytes| *bytes)
-    {
-        transformed =
-            toml::to_string(&value).map_err(|_| NativePolicyError::InvalidPackStructure)?;
-        transformed.as_str()
-    } else {
-        contents
-    };
-    let raw = ConfigLoader::new().parse_toml(ordinary, None)?;
+    // The transformed document is decoded directly. Writing it back to TOML
+    // and parsing that text would give the same value.
+    let raw = ConfigLoader::parse_value(value, None)?;
     if raw.rules.len() != predicates.len() {
         return Err(NativePolicyError::InvalidPackStructure);
     }

@@ -116,11 +116,14 @@ longer choices.
 
 ## Keyword automaton
 
-The keyword automaton is separate from the regex engines. It is a full
-Aho-Corasick DFA when the keywords total at most 16 KiB and the lengths of all
-their prefixes sum to at most 64 Ki bytes. Otherwise the builder chooses the
-kind, and that choice still builds a full DFA for at most 100 keywords. These
-limits do not bound that construction work.
+The keyword automaton is separate from the regex engines. It holds the
+keywords, then every native pattern that is not also a keyword (see
+[Required literals](#required-literals) and [Native rule
+costs](#native-rule-costs)). It is a full Aho-Corasick DFA when its patterns
+total at most 16 KiB and the lengths of all their prefixes sum to at most
+64 Ki bytes. Otherwise the builder chooses the kind, and that choice still
+builds a full DFA for at most 100 patterns. These limits do not bound that
+construction work.
 
 At the 16 KiB limit, the DFA table is about 17 MiB, at most one kilobyte per
 state. Building a state's row follows a failure chain for each byte class
@@ -128,7 +131,36 @@ without a transition, and the chain is no longer than the state's depth. Every
 state is a keyword prefix, so the prefix limit bounds the sum of depths; a
 long keyword counts quadratically. The default keywords total 1,755 bytes,
 their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
-kind never changes which keyword hits are reported.
+kind never changes which keyword hits are reported. With every built-in rule
+the automaton has 940 patterns and its DFA uses about 2.3 MiB; with the
+default rules alone it has 510 patterns and uses about 0.6 MiB.
+
+Each pass runs the automaton once over the Go-lowercased pass. Only keyword
+patterns charge a work unit when found. Native patterns found in the same
+search answer every native lookup for the whole pass, unless
+a non-ASCII rune of the pass lowercases to ASCII. Only the Kelvin sign and
+`İ` (U+0130) do; the test `only_two_non_ascii_runes_lowercase_to_ascii`
+checks this. Otherwise each rune lowercases to one rune, and an ASCII input
+byte is always a rune of its own, so an ASCII pattern occurs in the lowered
+pass exactly where it occurs in the raw pass ignoring ASCII case.
+
+## Required literals
+
+When the engine is built, each rule's expression is analyzed for up to four
+small sets of ASCII literals such that every match contains a literal of each
+set, ignoring ASCII case. The first set is the best one for the whole
+expression; the others come from separate parts of a top-level concatenation.
+For `lob-api-key`, the sets are `live_` or `test_`, and `lob`. A set that
+only repeats the rule's keywords is left out, since the keyword gate already
+checks it. After the keyword gate passes, a buffer that lacks every literal
+of some set skips the expression, which could not match there.
+
+Only ASCII literals and ASCII classes count, because Unicode case folding can
+add non-ASCII forms such as the Kelvin sign for `k`. Invalid UTF-8
+normalization keeps ASCII bytes, so the raw bytes give the same answer as
+the normalized ones. The check charges no work. A skipped search charges no
+normalization bytes, so usage can be lower than without the check, never
+higher.
 
 ## Scan-local buffers
 
@@ -248,23 +280,18 @@ line, and redaction can create separate lines.
 - Native keyword metadata is kept only for `buffer-v1` roots and helpers and
   for `bytes-v1` rules. It counts toward the selected-rule source limit.
 - The per-target byte limit applies to each native input buffer on its own.
-- Native keyword checks have a work checkpoint each. One ASCII
-  case-insensitive automaton covers the ASCII keywords of every native rule.
-  It runs at most once per native input buffer on the raw bytes, stops once
-  every keyword has been seen, and is indivisible like one regex search. The
-  first keyword check on a buffer charges the input length, and every rule's
-  ASCII keyword check then reads the shared result. Unicode searches share
-  one lowercase string per buffer; building it charges two input lengths, and
-  each search charges the folded length.
-- A rule pack rule without keywords would run its expression on every buffer.
-  When the engine is built, the expression is analyzed for a small set of
-  ASCII literals of which every match contains one, ignoring ASCII case. The
-  same automaton looks for them, and a buffer that has none of them skips the
-  expression, which could not match there. Only ASCII literals and ASCII
-  classes count, because Unicode case folding can add non-ASCII forms such as
-  the Kelvin sign. Invalid UTF-8 normalization keeps ASCII bytes, so the raw
-  bytes give the same answer as the normalized ones. The check charges no
-  work, so usage matches a scan without it.
+- Native keyword checks have a work checkpoint each. The ASCII keywords of
+  every native rule and the [required literals](#required-literals) of every
+  rule are native patterns. For a whole pass, the keyword automaton answers
+  them (see [Keyword automaton](#keyword-automaton)). Otherwise, as for a
+  decoded segment, one ASCII case-insensitive automaton over the native
+  patterns runs at most once per native input buffer on the raw bytes, stops
+  once every pattern has been seen, and is indivisible like one regex search.
+  It is a contiguous NFA, several times smaller than a DFA, because it runs
+  only on these buffers. The first keyword check on a buffer charges the
+  input length, and every rule's ASCII keyword check then reads the shared
+  result. Unicode searches share one lowercase string per buffer; building it
+  charges two input lengths, and each search charges the folded length.
 - Native line coordinates count newlines from the end of the previous
   admitted candidate in the same input, one work unit per byte counted, with
   no newline index. When matches arrive in order, which they do, one rule's
@@ -423,7 +450,14 @@ numbers:
 - For R reader threads, the reader stage holds at most 9R fragments and R
   read buffers of the chunk size. See [Directory reader
   threads](#directory-reader-threads).
-- Each worker keeps its own regex search caches.
+- Each worker keeps its own regex search caches: a forward and a reverse
+  lazy DFA cache of up to 2 MiB each for every expression it searches, plus
+  smaller fallback caches. These are most of the memory that grows with the
+  scan. During a 12-thread `dir` scan of the gitlab tree (691 MB) with every
+  built-in rule, they held more than 300 MB of the 418 MB live heap. Peak
+  RSS grew by about 29 MB for each detection thread from 1 to 12 threads. A
+  [required literal](#required-literals) or keyword that rules out a buffer
+  means that expression is not searched and its caches stay small.
 
 On a 36-CPU host with 12 detection threads, history scans of six public
 repositories, from 5,000 to 100,000 commits, took 0.3 to 0.6 times as long
@@ -436,6 +470,28 @@ at 12 threads and used about half the memory of 36 threads. A folder of
 100,000 small files was no faster with more than two threads. With one
 detection thread, a second reader thread made scans at most a few percent
 faster for much more CPU time.
+
+## Startup memory of the built-in rules
+
+On one Apple M5 Ultra Mac with the optimized CLI, an empty scan
+(`rustleaks stdin < /dev/null`) reached a peak RSS of about 35 MB with every
+built-in rule and about 16 MB with
+`--config crates/rustleaks-core/default/gitleaks.toml`. The
+heap footprint peaked at about 25 MiB and 9 MiB. The difference comes from
+the 547 rules and their allowlists:
+
+- Compiled rules. A Go-dialect expression keeps its translated text and its
+  literal analysis until its first search, which builds its matcher. The 56
+  `bytes-v1` expressions and deeply nested expressions build their NFAs when
+  the rules load, about 1.6 MiB in total.
+- The keyword automaton, about 2.3 MiB (see [Keyword
+  automaton](#keyword-automaton)).
+- The compiled configuration: IDs, descriptions, patterns, keywords and
+  allowlist entries. The CLI keeps two copies, one in the engine and one for
+  path filtering and reports, about 2 MiB each.
+- Work while loading: parsing the 591 KB `rustleaks-providers-v1.toml` and
+  every expression. This memory is freed, but the allocator keeps most of it,
+  so peak RSS stays near the highest point of loading.
 
 ## Git history processes
 

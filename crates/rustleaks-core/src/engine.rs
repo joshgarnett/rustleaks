@@ -21,13 +21,16 @@ use crate::decoder::{
 use crate::explanation::{
     ExplanationCollector, ExplanationLog, ExplanationOptions, ExplanationReason,
 };
-use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes};
+use crate::go_unicode::{
+    chars as go_chars, lowercase_bytes as go_lowercase_bytes, lowercase_bytes_keeping_ascii,
+};
 use crate::model::{
     ByteRange, ByteText, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
 use crate::native::{NativeKeyword, NativeRelation, NativeRequired};
 use crate::regex::{
-    ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, NativeByteRegex, NormalizedHaystack,
+    ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, LiteralSet, NativeByteRegex,
+    NormalizedHaystack,
 };
 
 /// Largest total keyword length that receives a full DFA prefilter.
@@ -382,8 +385,14 @@ impl Error for ScanTermination {}
 #[derive(Clone, Debug)]
 pub struct Engine {
     config: CompiledConfig,
+    /// Keywords, then the native patterns that are not keywords.
     prefilter: Option<AhoCorasick>,
+    /// Number of keyword patterns at the start of the prefilter.
     keyword_count: usize,
+    /// Native pattern ID of each prefilter pattern, if it is one.
+    prefilter_native: Box<[Option<u32>]>,
+    /// Whether the prefilter finds every native pattern.
+    native_from_prefilter: bool,
     /// Prefilter pattern indexes of each rule, aligned with `config.rules`.
     rule_keyword_indexes: Vec<Box<[usize]>>,
     /// Literal-anchored search plan of each rule, aligned with `config.rules`.
@@ -396,9 +405,9 @@ pub struct Engine {
     /// and with each rule's `native_keywords`. `None` marks a keyword that
     /// the automaton does not cover.
     native_keyword_patterns: Vec<Option<Box<[Option<u32>]>>>,
-    /// For each native rule without keywords, aligned with `config.rules`,
-    /// the pattern IDs of literals of which every match contains one.
-    native_required_patterns: Vec<Option<Box<[u32]>>>,
+    /// For each rule, aligned with `config.rules`, sets of pattern IDs such
+    /// that every match contains a literal of each set.
+    native_required_patterns: Vec<Option<RequiredPatterns>>,
     /// Rules whose findings a reviewed rule overlap can replace.
     replaced_by: ReplacedBy,
 }
@@ -851,6 +860,23 @@ impl<'a> ScanContext<'a> {
             .is_some_and(|word| word & (1_u64 << (index % 64)) != 0))
     }
 
+    /// Stores the native patterns that the prefilter found in the whole pass,
+    /// so the first native lookup for it does not search again.
+    fn seed_native_keyword_hits(&mut self, key: NativeHitKey, words: Box<[u64]>) {
+        if key.input.pass != self.native_keyword_pass {
+            self.native_keyword_hits.clear();
+            self.native_keyword_pass = key.input.pass;
+        }
+        if self.native_keyword_hits.is_empty() {
+            self.native_keyword_hits.push(None);
+        }
+        self.native_keyword_hits[0] = Some(NativeKeywordHits {
+            key,
+            words,
+            input_charged: false,
+        });
+    }
+
     fn check_cancelled(&self) -> Result<(), ScanTermination> {
         if self.control.is_cancelled() {
             Err(ScanTermination::Cancelled)
@@ -1161,9 +1187,22 @@ impl Engine {
                 record_occurrences.then_some(current_raw.len()),
                 self.keyword_count,
             );
-            if let Some(prefilter) = &self.prefilter {
-                let normalized = go_lowercase_bytes(&current_raw);
+            let mut native_words = self.empty_native_words();
+            if let Some(prefilter) = &self.prefilter
+                && (self.keyword_count > 0 || native_words.is_some())
+            {
+                let (normalized, kept_ascii) = lowercase_bytes_keeping_ascii(&current_raw);
+                if !kept_ascii {
+                    native_words = None;
+                }
                 for found in prefilter.find_overlapping_iter(&normalized) {
+                    let pattern = found.pattern().as_usize();
+                    if let Some(words) = native_words.as_mut() {
+                        self.record_prefilter_native(words, pattern);
+                    }
+                    if pattern >= self.keyword_count {
+                        continue;
+                    }
                     if let Err(termination) = context.work() {
                         return finish_partial(
                             findings,
@@ -1173,12 +1212,24 @@ impl Engine {
                             termination,
                         );
                     }
-                    let keyword = found.pattern().as_usize();
-                    matched_keywords[keyword] = true;
-                    if record_occurrences && self.recorded_keywords[keyword] {
-                        keyword_occurrences.record(keyword, found.start());
+                    matched_keywords[pattern] = true;
+                    if record_occurrences && self.recorded_keywords[pattern] {
+                        keyword_occurrences.record(pattern, found.start());
                     }
                 }
+            }
+            if let Some(words) = native_words {
+                context.seed_native_keyword_hits(
+                    NativeHitKey {
+                        input: NativeInputId {
+                            pass: decode_depth,
+                            segment: None,
+                        },
+                        address: current_raw.as_ptr() as usize,
+                        length: current_raw.len(),
+                    },
+                    words.into_boxed_slice(),
+                );
             }
 
             {
@@ -1446,22 +1497,19 @@ impl Engine {
             return Ok(Vec::new());
         }
 
-        if rule.keywords.is_empty()
-            && rule.native_keywords.is_none()
-            && !self.required_literals_present(
-                rule_pass.rule_ordinal,
-                NativeHitKey {
-                    input: NativeInputId {
-                        pass: rule_pass.decoded_pass,
-                        segment: None,
-                    },
-                    address: rule_pass.current_raw.as_ptr() as usize,
-                    length: rule_pass.current_raw.len(),
+        if !self.required_literals_present(
+            rule_pass.rule_ordinal,
+            NativeHitKey {
+                input: NativeInputId {
+                    pass: rule_pass.decoded_pass,
+                    segment: None,
                 },
-                rule_pass.current_raw,
-                context,
-            )?
-        {
+                address: rule_pass.current_raw.as_ptr() as usize,
+                length: rule_pass.current_raw.len(),
+            },
+            rule_pass.current_raw,
+            context,
+        )? {
             context.explanations.record(
                 Some(rule_pass.rule_ordinal),
                 rule_pass.decoded_pass,
@@ -1528,11 +1576,28 @@ impl Engine {
         self.project_required_findings(fragment, options, rule, rule_pass, findings, context)
     }
 
-    /// Returns whether `bytes` contains one of the literals of which every
+    /// An empty native pattern set for one prefilter pass, when the prefilter
+    /// finds every native pattern.
+    fn empty_native_words(&self) -> Option<Vec<u64>> {
+        self.native_keyword_matcher
+            .as_ref()
+            .filter(|_| self.native_from_prefilter)
+            .map(|matcher| vec![0_u64; matcher.patterns_len().div_ceil(64)])
+    }
+
+    /// Marks the native pattern of prefilter pattern `pattern`, if any.
+    fn record_prefilter_native(&self, words: &mut [u64], pattern: usize) {
+        if let Some(Some(native)) = self.prefilter_native.get(pattern) {
+            let native = *native as usize;
+            words[native / 64] |= 1 << (native % 64);
+        }
+    }
+
+    /// Returns whether `bytes` contains a literal of each set of which every
     /// match of this rule's expression contains one. Returns `true` when no
     /// such set is known. The check charges no work: it reads at most
-    /// 64 bits from the shared pass, which is indivisible like the
-    /// regex search it can skip, so usage stays as it was without the check.
+    /// 256 bits from the shared pass, which is indivisible like the
+    /// regex search it can skip.
     fn required_literals_present(
         &self,
         rule_ordinal: usize,
@@ -1548,12 +1613,19 @@ impl Engine {
         ) else {
             return Ok(true);
         };
-        for pattern in required {
-            if context.native_keyword_hit(key, matcher, bytes, *pattern, false)? {
-                return Ok(true);
+        for set in required {
+            let mut present = false;
+            for pattern in set {
+                if context.native_keyword_hit(key, matcher, bytes, *pattern, false)? {
+                    present = true;
+                    break;
+                }
+            }
+            if !present {
+                return Ok(false);
             }
         }
-        Ok(false)
+        Ok(true)
     }
 
     // Complete all accepted buffers before publishing this rule, preserving
@@ -1849,14 +1921,12 @@ impl Engine {
             );
             return Ok(Vec::new());
         }
-        if rule.native_keywords.as_ref().is_some_and(Vec::is_empty)
-            && !self.required_literals_present(
-                pass.rule_ordinal,
-                NativeHitKey::new(&input),
-                input.bytes,
-                context,
-            )?
-        {
+        if !self.required_literals_present(
+            pass.rule_ordinal,
+            NativeHitKey::new(&input),
+            input.bytes,
+            context,
+        )? {
             context.explanations.record(
                 Some(pass.rule_ordinal),
                 pass.decoded_pass,
@@ -3059,32 +3129,63 @@ impl EngineBuilder {
                 recorded_keywords[*keyword] = true;
             }
         }
-        let prefilter = if keywords.is_empty() {
+        let NativeKeywordIndex {
+            matcher: native_keyword_matcher,
+            patterns: native_patterns,
+            keywords: native_keyword_patterns,
+            required: native_required_patterns,
+        } = build_native_keyword_matcher(&self.config)?;
+        // The prefilter also finds every native pattern, after the keywords,
+        // so its one search over a pass answers the native lookups too. All
+        // native patterns are lowercase ASCII. Unless a non-ASCII rune of the
+        // pass lowercases to ASCII, a native pattern occurs in the lowered
+        // pass exactly where the native automaton finds it ignoring ASCII
+        // case (see `lowercase_bytes_keeping_ascii`). A native pattern equal
+        // to a keyword shares its pattern.
+        let mut prefilter_patterns = keywords
+            .iter()
+            .map(|keyword| keyword.as_bytes().to_vec())
+            .collect::<Vec<_>>();
+        let mut prefilter_native = vec![None; keyword_count];
+        let native_from_prefilter = native_keyword_matcher.is_some()
+            && native_patterns.iter().all(|pattern| pattern.is_ascii());
+        if native_from_prefilter {
+            for (native, pattern) in native_patterns.into_iter().enumerate() {
+                let native = u32::try_from(native).ok();
+                let shared = std::str::from_utf8(&pattern)
+                    .ok()
+                    .and_then(|pattern| keyword_ids.get(pattern).copied());
+                if let Some(shared) = shared {
+                    prefilter_native[shared] = native;
+                } else {
+                    prefilter_patterns.push(pattern);
+                    prefilter_native.push(native);
+                }
+            }
+        }
+        let prefilter = if prefilter_patterns.is_empty() {
             None
         } else {
             let mut builder = AhoCorasickBuilder::new();
             builder.match_kind(MatchKind::Standard);
-            if keyword_dfa_is_bounded(&keywords) {
+            if keyword_dfa_is_bounded(&prefilter_patterns) {
                 builder.kind(Some(AhoCorasickKind::DFA));
             }
             Some(
                 builder
-                    .build(&keywords)
+                    .build(&prefilter_patterns)
                     .map_err(|error| ScanError::Prefilter {
                         message: error.to_string(),
                     })?,
             )
         };
-        let NativeKeywordIndex {
-            matcher: native_keyword_matcher,
-            keywords: native_keyword_patterns,
-            required: native_required_patterns,
-        } = build_native_keyword_matcher(&self.config)?;
         let replaced_by = ReplacedBy::new(&self.config);
         Ok(Engine {
             config: self.config,
             prefilter,
             keyword_count,
+            prefilter_native: prefilter_native.into_boxed_slice(),
+            native_from_prefilter,
             rule_keyword_indexes,
             rule_literal_anchors,
             recorded_keywords,
@@ -3096,11 +3197,17 @@ impl EngineBuilder {
     }
 }
 
+/// Sets of native pattern IDs such that every match of a rule's expression
+/// contains a pattern of each set.
+type RequiredPatterns = Box<[Box<[u32]>]>;
+
 /// Native keyword automaton and the pattern IDs each rule reads from it.
 struct NativeKeywordIndex {
     matcher: Option<AhoCorasick>,
+    /// Folded pattern of each native pattern ID.
+    patterns: Vec<Vec<u8>>,
     keywords: Vec<Option<Box<[Option<u32>]>>>,
-    required: Vec<Option<Box<[u32]>>>,
+    required: Vec<Option<RequiredPatterns>>,
 }
 
 /// Builds one ASCII case-insensitive automaton over all native ASCII keywords.
@@ -3108,9 +3215,9 @@ struct NativeKeywordIndex {
 /// Every rule's ASCII keyword maps to the pattern of its ASCII-lowercase
 /// text, so one pass over a native input answers every rule's ASCII keyword
 /// checks. Matching ignores only ASCII case, like the per-keyword search it
-/// replaces; other bytes compare exactly. A native rule without keywords
-/// also adds the literals of which every match of its expression contains
-/// one, so a buffer without any of them can skip that expression.
+/// replaces; other bytes compare exactly. Each rule also adds the literals
+/// of which every match of its expression contains one, so a buffer without
+/// any of them can skip that expression after its keyword gate passes.
 fn build_native_keyword_matcher(config: &CompiledConfig) -> Result<NativeKeywordIndex, ScanError> {
     let mut patterns: Vec<Vec<u8>> = Vec::new();
     let mut ids: BTreeMap<Vec<u8>, u32> = BTreeMap::new();
@@ -3128,26 +3235,22 @@ fn build_native_keyword_matcher(config: &CompiledConfig) -> Result<NativeKeyword
     let mut keywords = Vec::with_capacity(config.rules.len());
     let mut required = Vec::with_capacity(config.rules.len());
     for rule in config.rules.values() {
+        let sets = rule_required_literals(rule);
+        required.push(if sets.is_empty() {
+            None
+        } else {
+            Some(
+                sets.into_iter()
+                    .map(|set| {
+                        set.iter()
+                            .map(|literal| intern(literal.to_vec()))
+                            .collect::<Result<Box<[u32]>, _>>()
+                    })
+                    .collect::<Result<RequiredPatterns, _>>()?,
+            )
+        });
         let Some(rule_keywords) = &rule.native_keywords else {
             keywords.push(None);
-            // A Gitleaks-format pack rule without keywords runs its
-            // expression on every pass, so it gains the same literal check.
-            let literals = if rule.native_pack && rule.keywords.is_empty() {
-                rule.regex_matcher
-                    .as_ref()
-                    .and_then(GoRegex::required_literals)
-            } else {
-                None
-            };
-            required.push(match literals {
-                Some(literals) => Some(
-                    literals
-                        .iter()
-                        .map(|literal| intern(literal.to_vec()))
-                        .collect::<Result<Box<[u32]>, _>>()?,
-                ),
-                None => None,
-            });
             continue;
         };
         let mut mapped = Vec::with_capacity(rule_keywords.len());
@@ -3158,31 +3261,11 @@ fn build_native_keyword_matcher(config: &CompiledConfig) -> Result<NativeKeyword
             });
         }
         keywords.push(Some(mapped.into_boxed_slice()));
-        let literals = if rule.native_pack && rule_keywords.is_empty() {
-            rule.native_byte_matcher.as_ref().map_or_else(
-                || {
-                    rule.regex_matcher
-                        .as_ref()
-                        .and_then(GoRegex::required_literals)
-                },
-                NativeByteRegex::required_literals,
-            )
-        } else {
-            None
-        };
-        required.push(match literals {
-            Some(literals) => Some(
-                literals
-                    .iter()
-                    .map(|literal| intern(literal.to_vec()))
-                    .collect::<Result<Box<[u32]>, _>>()?,
-            ),
-            None => None,
-        });
     }
     if patterns.is_empty() {
         return Ok(NativeKeywordIndex {
             matcher: None,
+            patterns,
             keywords,
             required,
         });
@@ -3191,7 +3274,13 @@ fn build_native_keyword_matcher(config: &CompiledConfig) -> Result<NativeKeyword
     builder
         .ascii_case_insensitive(true)
         .match_kind(MatchKind::Standard);
-    if keyword_dfa_is_bounded(&patterns) {
+    if patterns.iter().all(|pattern| pattern.is_ascii()) {
+        // The prefilter then answers whole passes (see `EngineBuilder::build`),
+        // so this automaton searches only decoded segments and the rare pass
+        // where a non-ASCII rune lowercases to ASCII. A contiguous NFA is
+        // several times smaller than a DFA and reports the same hits.
+        builder.kind(Some(AhoCorasickKind::ContiguousNFA));
+    } else if keyword_dfa_is_bounded(&patterns) {
         builder.kind(Some(AhoCorasickKind::DFA));
     }
     let matcher = builder
@@ -3201,9 +3290,53 @@ fn build_native_keyword_matcher(config: &CompiledConfig) -> Result<NativeKeyword
         })?;
     Ok(NativeKeywordIndex {
         matcher: Some(matcher),
+        patterns,
         keywords,
         required,
     })
+}
+
+/// Sets of literals such that every match of the rule's expression contains
+/// one literal of each set.
+///
+/// A rule's keyword gate runs first, so a set that only repeats the rule's
+/// keywords could never skip a search and is left out.
+fn rule_required_literals(rule: &CompiledRule) -> Vec<&LiteralSet> {
+    let Some(sets) = rule.native_byte_matcher.as_ref().map_or_else(
+        || {
+            rule.regex_matcher
+                .as_ref()
+                .and_then(GoRegex::required_literals)
+        },
+        NativeByteRegex::required_literals,
+    ) else {
+        return Vec::new();
+    };
+    let keywords = rule.native_keywords.as_ref().map_or_else(
+        || {
+            rule.keywords
+                .iter()
+                .map(|keyword| keyword.as_bytes().to_ascii_lowercase())
+                .collect::<BTreeSet<_>>()
+        },
+        |keywords| {
+            keywords
+                .iter()
+                .filter_map(|keyword| match keyword {
+                    NativeKeyword::Ascii(text) => Some(text.as_bytes().to_ascii_lowercase()),
+                    NativeKeyword::Empty | NativeKeyword::UnicodeLower(_) => None,
+                })
+                .collect()
+        },
+    );
+    sets.iter()
+        .filter(|set| {
+            set.len() != keywords.len()
+                || !set
+                    .iter()
+                    .all(|literal| keywords.contains(literal.as_ref()))
+        })
+        .collect()
 }
 
 /// Returns whether a full keyword DFA has bounded size and build work.

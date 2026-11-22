@@ -916,7 +916,9 @@ fn normalization_usage_includes_capture_allowlist_path_and_decoder_searches() {
     assert!(exact.is_complete());
     assert_eq!(exact.usage().normalization_bytes(), unit + 1);
 
-    let decoder = engine("[[rules]]\nid = 'r'\nregex = 'NEVER'\n");
+    // The expression has no literal that every match contains, so it is
+    // searched, and the decoder search normalizes the input again.
+    let decoder = engine("[[rules]]\nid = 'r'\nregex = 'N.E.V.E.R'\n");
     let exact = bounded_outcome(
         &decoder,
         &Fragment::new(b"\xff"),
@@ -925,6 +927,18 @@ fn normalization_usage_includes_capture_allowlist_path_and_decoder_searches() {
     );
     assert!(exact.is_complete());
     assert_eq!(exact.usage().normalization_bytes(), 2 * unit);
+
+    // Every match of `NEVER` contains `never`, which the input lacks, so the
+    // rule search is skipped and only the decoder search normalizes.
+    let skipped = engine("[[rules]]\nid = 'r'\nregex = 'NEVER'\n");
+    let exact = bounded_outcome(
+        &skipped,
+        &Fragment::new(b"\xff"),
+        &ScanOptions::builder().max_decode_depth(1).build(),
+        ScanBudget::unlimited().max_normalization_bytes(unit),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.usage().normalization_bytes(), unit);
 }
 
 fn owned_finding_fields(finding: &rustleaks_core::model::Finding) -> usize {
