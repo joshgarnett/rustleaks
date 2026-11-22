@@ -9550,3 +9550,82 @@ stopwords = ['''abcdefghijklmnopqrstuvwxyz''', '''014df517-39d1-4453-b7b3-9930c5
 [[rules.allowlists]]
 description = '''Pinned source path prefilter'''
 paths = ['''(?:gitleaks\.toml)''', '''(?:(?i)\.(?:bmp|gif|jpe?g|png|svg|tiff?)$)''', '''(?:(?i)\.(?:eot|[ot]tf|woff2?)$)''', '''(?:go\.(?:mod|sum|work(?:\.sum)?)$)''', '''(?:(?:^|/)vendor/modules\.txt$)''', '''(?:(?:^|/)vendor/(?:github\.com|golang\.org/x|google\.golang\.org|gopkg\.in|istio\.io|k8s\.io|sigs\.k8s\.io)(?:/.*)?$)''', '''(?:(?:^|/)gradlew(?:\.bat)?$)''', '''(?:(?:^|/)gradle\.lockfile$)''', '''(?:(?:^|/)mvnw(?:\.cmd)?$)''', '''(?:(?:^|/)\.mvn/wrapper/MavenWrapperDownloader\.java$)''', '''(?:(?:^|/)node_modules(?:/.*)?$)''', '''(?:(?:^|/)(?:bun\.lockb?|deno\.lock|npm-shrinkwrap\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$)''', '''(?:(?:^|/)bower_components(?:/.*)?$)''', '''(?:(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\.min)?\.js(?:\.map)?$)''', '''(?:(?:^|/)javascript\.json$)''', '''(?:(?:^|/)(?:Pipfile|poetry)\.lock$)''', '''(?:(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$)''', '''(?:(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$)''', '''(?:(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$)''', '''(?:(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$)''', '''(?:\.gem$)''', '''(?:verification-metadata\.xml)''', '''(?:Database.refactorlog)''']
+
+# Rule pairs that can report the same secret at the same place. When both
+# rules report the same file, commit, secret and secret range, only the
+# finding of `keep` is reported.
+
+[[overlaps]]
+description = "Same Grafana key; the default rule keeps its ID"
+keep = "grafana-api-key"
+drop = "rustleaks.grafana-api-key-base64"
+
+[[overlaps]]
+description = "Same Alibaba Cloud AccessKey ID; the default rule keeps its ID"
+keep = "alibaba-access-key-id"
+drop = "rustleaks.alibaba-access-key-id-boundary"
+
+[[overlaps]]
+description = "Same PlanetScale token; the default rule keeps its ID"
+keep = "planetscale-api-token"
+drop = "rustleaks.association.planetscale-api-token"
+
+[[overlaps]]
+description = "Same JFrog API key; the default rule keeps its ID"
+keep = "artifactory-api-key"
+drop = "rustleaks.association.artifactory-api-key"
+
+[[overlaps]]
+description = "Same JFrog API key; the default rule keeps its ID"
+keep = "jfrog-api-key"
+drop = "rustleaks.association.artifactory-api-key"
+
+[[overlaps]]
+description = "Same JFrog reference token; the default rule keeps its ID"
+keep = "artifactory-reference-token"
+drop = "rustleaks.association.artifactory-reference-token"
+
+[[overlaps]]
+description = "Same JFrog reference token; the default rule keeps its ID"
+keep = "jfrog-identity-token"
+drop = "rustleaks.association.artifactory-reference-token"
+
+[[overlaps]]
+description = "Same GitLab incoming mail token; the default rule keeps its ID"
+keep = "gitlab-incoming-mail-token"
+drop = "rustleaks.gitlab-incoming-mail-address-token"
+
+[[overlaps]]
+description = "Same Slack configuration access token; the default rule keeps its ID"
+keep = "slack-config-access-token"
+drop = "rustleaks.slack-config-access-token-166"
+
+[[overlaps]]
+description = "Same xAI key; the wider rule keeps its ID"
+keep = "rustleaks.xai-api-key-delimiter"
+drop = "rustleaks.xai-api-key-80"
+
+[[overlaps]]
+description = "A WorkOS key also fits the Stripe pattern"
+keep = "rustleaks.workos-production-api-key"
+drop = "stripe-access-token"
+
+[[overlaps]]
+description = "A Highnote key also fits the Stripe pattern"
+keep = "rustleaks.highnote-secret-live-key"
+drop = "stripe-access-token"
+
+[[overlaps]]
+description = "A Clerk key also fits the Stripe pattern"
+keep = "rustleaks.clerk-secret-key-delimiter"
+drop = "rustleaks.stripe-access-token-delimiter"
+
+[[overlaps]]
+description = "A Temporal Cloud API key is a JWT"
+keep = "rustleaks.temporal-cloud-api-key"
+drop = "jwt"
+
+[[overlaps]]
+description = "A Monday API token is a JWT"
+keep = "rustleaks.monday-api-token"
+drop = "jwt"

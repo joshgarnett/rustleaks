@@ -544,6 +544,7 @@ pub rustleaks_core::native::NativePolicyError::Config(rustleaks_core::config::Co
 pub rustleaks_core::native::NativePolicyError::DuplicatePackId
 pub rustleaks_core::native::NativePolicyError::Engine(rustleaks_core::ScanError)
 pub rustleaks_core::native::NativePolicyError::InvalidNativeEntropy
+pub rustleaks_core::native::NativePolicyError::InvalidNativeOverlap
 pub rustleaks_core::native::NativePolicyError::InvalidNativePredicate
 pub rustleaks_core::native::NativePolicyError::InvalidNativeRegex
 pub rustleaks_core::native::NativePolicyError::InvalidNativeRequired

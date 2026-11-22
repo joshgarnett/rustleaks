@@ -74,6 +74,19 @@ fn build(selected: bool, extras: bool, before: bool) -> Engine {
     let mut pack: toml::Value = toml::from_str(PROVIDER_RULES_V1).unwrap();
     if before {
         pack["rules"].as_array_mut().unwrap().truncate(60);
+        // Keep only the reviewed overlaps whose pack rules remain.
+        let kept = pack["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|rule| rule["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        pack["overlaps"].as_array_mut().unwrap().retain(|overlap| {
+            ["keep", "drop"].iter().all(|field| {
+                let id = overlap[*field].as_str().unwrap();
+                !id.starts_with("rustleaks.") || kept.iter().any(|rule| rule == id)
+            })
+        });
     }
     let text = toml::to_string(&pack).unwrap();
     let mut policy = NativePolicy::builder();

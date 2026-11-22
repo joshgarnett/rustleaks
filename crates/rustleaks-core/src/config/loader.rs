@@ -879,6 +879,7 @@ fn compile_rule(
         required: rule.required,
         skip_report: rule.skip_report,
         native_pack: false,
+        native_replaced_by: Vec::new(),
     })
 }
 

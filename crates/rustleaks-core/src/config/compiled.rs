@@ -162,6 +162,10 @@ pub struct CompiledRule {
     pub(crate) skip_report: bool,
     /// Whether the rule comes from a native rule pack.
     pub(crate) native_pack: bool,
+    /// IDs of the rules whose finding replaces a finding of this rule with
+    /// the same file, commit, secret and exact secret range. Set only from
+    /// the reviewed `[[overlaps]]` entries of native rule packs.
+    pub(crate) native_replaced_by: Vec<String>,
 }
 
 impl CompiledRule {
@@ -360,7 +364,11 @@ impl CompiledConfig {
                     id,
                 )?));
             };
-            let rule = rule.clone();
+            let mut rule = rule.clone();
+            // Like required rules, a reviewed overlap applies only within the
+            // selected rules.
+            rule.native_replaced_by
+                .retain(|keeper| selected_ids.contains(keeper));
             for keyword in &rule.keywords {
                 if keywords.len() == Self::MAX_SELECTED_RULES
                     && !keywords.contains(keyword.as_str())

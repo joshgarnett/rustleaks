@@ -51,6 +51,8 @@ configuration loader runs:
   rejected. Error messages do not repeat unknown field names or values.
 - A repeated pack ID or any rule ID collision fails with a structured error.
   There is no override: a pack cannot replace or turn off an existing rule.
+  A reviewed overlap (see [Same secret from two rules](#same-secret-from-two-rules))
+  drops one finding only where another rule reports the same secret.
 - `extend`, global allowlists and `minVersion` are rejected inside a pack.
   Rule allowlists and required rules use the normal loader rules.
 - A composition holds at most 32 packs, 1 MiB of pack TOML and 1,024 pack
@@ -58,8 +60,10 @@ configuration loader runs:
   a limit on total compile memory.
 
 The normal loader (`ConfigLoader`, `--config`, configuration variables and
-`extend`) rejects the native-only tables described below. Joining native TOML
-into an ordinary configuration file is not supported.
+`extend`) rejects the native-only tables described below. It ignores a
+top-level `overlaps` key, as it ignores any unknown top-level key, so a
+configuration file cannot declare overlaps. Joining native TOML into an
+ordinary configuration file is not supported.
 
 ## Identity
 
@@ -237,12 +241,49 @@ above 24. This is the source condition `60 / token_count < 2.5`. The token
 data, its sources, licenses and generator are described in the
 [tokenizer data README](../../crates/rustleaks-core/data/README.md).
 
+### Same secret from two rules
+
+A pack can list rule pairs that report the same secret:
+
+```toml
+[[overlaps]]
+description = "A WorkOS key also fits the Stripe pattern"
+keep = "rustleaks.workos-production-api-key"
+drop = "stripe-access-token"
+```
+
+When both rules report the same file, commit, secret and exact secret range,
+the `drop` finding is removed and the `keep` finding is reported. The filter
+runs on the findings of one scanned fragment, after allowlists and before
+redaction, with the generic filter. A finding without an exact secret range,
+such as one from decoded text, is never removed.
+
+- `keep` and `drop` are rule IDs, and `description` is optional. Other fields
+  are rejected.
+- At least one of the two rules is in the same pack. The other can be a
+  default rule or a rule of another pack.
+- At build time both rules must exist and report findings (no
+  `skipReport`). A pair is listed once in a composition, and no rule is both
+  a `keep` and a `drop`, so every removed finding has a reported finding with
+  the same secret.
+- A rule selection keeps an overlap only when both rules are selected.
+  `disabledRules` removes the rule and its overlaps.
+
+Add a pair only when both rules can report the same credential and one of
+them names it better, or both name the same provider. When both name the same
+provider, keep the default rule, so its ID and fingerprints stay. Do not add
+a pair when the secrets differ, such as a prefix of a longer token. Keep
+`INTENDED_REPLACEMENTS` in `tests/rule_precedence.rs` and the table in
+[Built-in rules](../user/built-in-rules.md#findings-from-two-rules) equal to
+the pack entries, and add a case to `tests/rule_overlaps.rs`.
+
 ## Ordering and partial results
 
 A composition keeps the engine's rule order (sorted by rule ID), match order,
-generic and provider overlap filtering, redaction, exact raw spans and
-decoded-source mapping. Pack IDs cannot collide, but two rules can report the
-same occurrence. Nothing groups or removes those findings.
+generic and overlap filtering, redaction, exact raw spans and decoded-source
+mapping. Pack IDs cannot collide, but two rules can report the same
+occurrence. Only the generic filter and the reviewed overlaps above remove
+such findings.
 
 `scan()` on `NativeEngine` returns a `NativeScanOutcome` with the normal
 `ScanOutcome`, the policy identity and optional explanation records. The
@@ -354,6 +395,7 @@ overlap with the default rules. Write the expected findings by hand.
 | `additional_coverage.rs`, `format_coverage.rs`, `special_coverage.rs`, `association_coverage.rs`, `remaining_verified_rules.rs` | The generated provider and connection additions, with expectations in `tests/support/*.json` |
 | `shared_rule_deltas.rs`, `contextual_rule_deltas.rs` | Delimiter companion rules in the provider pack |
 | `native_policy.rs`, `native_predicates.rs` | The native loader, identity, entropy and predicates |
+| `rule_overlaps.rs` | `[[overlaps]]` checks, the overlap filter and each reviewed pair |
 
 Run the narrow target first:
 

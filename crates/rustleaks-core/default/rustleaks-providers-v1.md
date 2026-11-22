@@ -754,6 +754,21 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   allowlist still removes its alphabet stopword. `placeholder123` is still
   accepted; no general placeholder check is added.
 
+## Same secret from two rules
+
+The `[[overlaps]]` entries at the end of the pack list 15 reviewed rule pairs.
+When both rules of a pair report the same file, commit, secret and secret
+range, only the `keep` rule's finding is reported. Where both rules name the
+same provider, the default rule is kept: Grafana, Alibaba Cloud, PlanetScale,
+JFrog (two rules each for API keys and reference tokens), GitLab incoming mail
+and Slack configuration tokens. `xai-api-key-delimiter` is kept over
+`xai-api-key-80`. Where a provider rule names the issuer of a key that a
+broader rule also accepts, the provider rule is kept: WorkOS and Highnote over
+`stripe-access-token`, Clerk over `stripe-access-token-delimiter`, and Temporal
+Cloud and Monday over `jwt`. The [built-in rules
+guide](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md#findings-from-two-rules)
+lists every pair.
+
 ## Shared boundaries
 
 ASCII and bytes:

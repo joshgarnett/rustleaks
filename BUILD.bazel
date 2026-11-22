@@ -149,6 +149,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:native_predicates_test",
     "//crates/rustleaks-core:native_rules_test",
     "//crates/rustleaks-core:provider_rules_test",
+    "//crates/rustleaks-core:rule_overlaps_test",
     "//crates/rustleaks-core:additional_coverage_test",
     "//crates/rustleaks-core:format_coverage_test",
     "//crates/rustleaks-core:special_coverage_test",
