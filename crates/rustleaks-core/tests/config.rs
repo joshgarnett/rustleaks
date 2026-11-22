@@ -1000,11 +1000,45 @@ fn the_corpus_default_is_the_unchanged_gitleaks_file() {
 fn default_config_is_exact_and_effective() {
     assert_eq!(DEFAULT_CONFIG.as_bytes(), DEFAULT_CONFIG_BYTES);
     assert_eq!(sha256_hex(DEFAULT_CONFIG_BYTES), DEFAULT_CONFIG_SHA256);
-    let default = ConfigLoader::new().load_default().unwrap();
+    let default = ConfigLoader::new()
+        .with_default_config(DEFAULT_CONFIG)
+        .load_default()
+        .unwrap();
     assert_eq!(default.rules().len(), 222);
     assert_eq!(default.ordered_rule_ids().len(), 222);
     assert_eq!(default.keywords().len(), 244);
     assert_eq!(default.min_version(), "v8.25.0");
+
+    // The library default adds the 3 extra, 303 provider and 19 connection
+    // rules from the built-in rule files.
+    let builtin = ConfigLoader::new().load_default().unwrap();
+    assert_eq!(builtin.rules().len(), 222 + 3 + 303 + 19);
+    assert_eq!(builtin.min_version(), "v8.25.0");
+}
+
+#[test]
+fn the_builtin_default_checks_min_version_against_the_current_version() {
+    // Both defaults declare minVersion v8.25.0.
+    for (current, newer) in [("8.0.0", true), ("8.25.0", false), ("8.30.0", false)] {
+        let loader = ConfigLoader::new().with_current_version(current).unwrap();
+        assert_eq!(
+            loader.load_default().unwrap().requires_newer_version(),
+            newer,
+            "{current}"
+        );
+        let alone = loader.clone().with_default_config(DEFAULT_CONFIG);
+        assert_eq!(
+            alone.load_default().unwrap().requires_newer_version(),
+            newer,
+            "{current}"
+        );
+    }
+    assert!(
+        !ConfigLoader::new()
+            .load_default()
+            .unwrap()
+            .requires_newer_version()
+    );
 }
 
 #[test]

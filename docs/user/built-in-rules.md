@@ -97,11 +97,11 @@ instead.
 
 ## Built-in rules in the library
 
-`rustleaks-core` keeps its default as the Gitleaks-derived rules alone, so
-that library results stay the same unless you ask for more.
-`ConfigLoader::with_builtin_rules` makes `load_default` and `useDefault`
-include every Rustleaks rule, as the CLI does. `NativePolicy` builds a custom
-composition. See [Using rustleaks-core](library.md#built-in-rules).
+In `rustleaks-core`, `ConfigLoader::load_default` and `useDefault` give
+every built-in rule, as the CLI does. `ConfigLoader::with_default_config`
+replaces the default, for example with `config::DEFAULT_CONFIG` for the
+default rules alone. `NativePolicy` builds a custom composition. See [Using
+rustleaks-core](library.md#built-in-rules).
 
 ## Findings from two rules
 

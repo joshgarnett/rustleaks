@@ -247,9 +247,14 @@ fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
     use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
     let corpus = generator::corpus();
     model::validate(&corpus).unwrap();
-    let default = Engine::builder(ConfigLoader::new().load_default().unwrap())
-        .build()
-        .unwrap();
+    let default = Engine::builder(
+        ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()
+            .unwrap(),
+    )
+    .build()
+    .unwrap();
     let native = NativePolicy::builder()
         .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
         .unwrap()

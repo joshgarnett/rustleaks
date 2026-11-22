@@ -8,7 +8,10 @@ use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use super::*;
 
 fn default_config() -> CompiledConfig {
-    ConfigLoader::new().load_default().unwrap()
+    ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()
+        .unwrap()
 }
 
 fn engine(config: &CompiledConfig) -> Engine {

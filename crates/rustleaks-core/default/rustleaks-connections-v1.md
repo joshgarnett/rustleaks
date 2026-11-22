@@ -2,22 +2,23 @@
 
 The `rustleaks-connections-v1` pack adds 19 namespaced rules for passwords in
 connection strings and credential URLs: 15 password rules, 3 Git credential
-URL rules and 1 hidden helper rule. The pack is opt-in and runs locally. It
-adds no parser, dependency, expression interpreter, validator or client
-connection. It does not check whether a credential is active, and it does not
-change the packaged default rules.
+URL rules and 1 hidden helper rule. Every default scan uses the pack. It
+runs locally. It adds no parser, dependency, expression interpreter,
+validator or client connection. It does not check whether a credential is
+active, and it does not change the packaged default rules.
 
 ## Selection
 
 - CLI: always used, with the default rules, when no configuration is
   selected and in a configuration with `[extend] useDefault = true`.
-- Library: `ConfigLoader::with_builtin_rules` adds all built-in rule files.
+- Library: `ConfigLoader::load_default` and `[extend] useDefault = true`
+  use all built-in rule files, unless `ConfigLoader::with_default_config`
+  replaces the default.
   `NativePolicy::builder().with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?`
   builds a custom composition, with `CONNECTION_RULES_V1` from `rustleaks_core::native`.
 - The pack can be combined with `rustleaks-extra-v1` and
   `rustleaks-providers-v1` in any order. The exact bytes and the order of the
-  packs are part of the policy identity. `ConfigLoader::load_default` without
-  `with_builtin_rules` does not use it.
+  packs are part of the policy identity.
 - The pack uses native byte entropy and `buffer-v1` association tables. The
   normal configuration loader (`ConfigLoader`, `--config`, inline
   configuration or joined TOML files) rejects these tables.

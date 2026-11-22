@@ -1914,7 +1914,7 @@ fn connection_matrix_has_independent_outcomes_under_all_and_default_rules() {
             all_total_5 += expected.all_depth_0.len() + expected.all_depth_5_adds.len();
             default_total_0 += expected.default_depth_0.len();
             default_total_5 += expected.default_depth_0.len() + expected.default_depth_5_adds.len();
-            // The connection pack is opt-in: default rules never report it.
+            // The default rules alone never report a connection rule.
             assert!(
                 default_5
                     .iter()

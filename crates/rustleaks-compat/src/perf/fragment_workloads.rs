@@ -237,7 +237,9 @@ fn sample_entropy(sample: &[u8]) -> f32 {
 #[allow(clippy::too_many_lines)] // Keep first and steady operation timers auditable together.
 pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
     let start = Instant::now();
-    let config = ConfigLoader::new().load_default()?;
+    let config = ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()?;
     let compile_ns = elapsed(start)?;
     if config.rules().len() != crate::DEFAULT_RULES
         || crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
@@ -328,7 +330,10 @@ mod tests {
 
     #[test]
     fn fragment_shapes_and_independent_counts_cover_the_matrix() {
-        let config = ConfigLoader::new().load_default().unwrap();
+        let config = ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()
+            .unwrap();
         for id in WORKLOADS {
             let fixture = Fixture::new(id, &config).unwrap();
             assert_eq!(
@@ -349,7 +354,10 @@ mod tests {
 
     #[test]
     fn fragment_invariants_reject_skipped_and_budget_terminated_scans() {
-        let config = ConfigLoader::new().load_default().unwrap();
+        let config = ConfigLoader::new()
+            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+            .load_default()
+            .unwrap();
         let fixture = Fixture::new("core-fragments-json-16-kib", &config).unwrap();
         let detector = Engine::builder(config).build().unwrap();
         let options = ScanOptions::default();

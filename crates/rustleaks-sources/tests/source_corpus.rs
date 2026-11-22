@@ -799,7 +799,7 @@ fn detect(
     let detector_config = config.unwrap_or_else(|| {
         ConfigLoader::new()
             .load_default()
-            .expect("load pinned default detector config")
+            .expect("load the built-in rules")
     });
     let engine = Engine::builder(detector_config)
         .build()

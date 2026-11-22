@@ -30,7 +30,7 @@ regexes = ['''^ABCD0000$''']
 
 #[test]
 fn composition_is_explicit_and_base_outcomes_remain_equal() {
-    let legacy = Engine::builder(ConfigLoader::new().load_default().unwrap())
+    let legacy = Engine::builder(default_rules_alone().load_default().unwrap())
         .build()
         .unwrap();
     let native = NativePolicy::builder().build().unwrap();
@@ -120,7 +120,7 @@ fn exact_identity_detects_text_order_and_extension_changes_without_debug_disclos
 
 #[test]
 fn empty_rule_tables_preserve_the_default_configuration() {
-    let baseline = ConfigLoader::new().load_default().unwrap();
+    let baseline = default_rules_alone().load_default().unwrap();
     for pack in ["rules = {}", "[rules]\n"] {
         let (config, _) = NativePolicy::builder()
             .with_pack("empty-v1", pack)
@@ -2528,16 +2528,24 @@ fn rule_ids_found(config: rustleaks_core::config::CompiledConfig, input: &str) -
         .collect()
 }
 
-fn builtin_loader() -> ConfigLoader {
-    ConfigLoader::new().with_builtin_rules()
+// The default rules without the Rustleaks rule files.
+fn default_rules_alone() -> ConfigLoader {
+    ConfigLoader::new().with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
 }
 
 #[test]
-fn builtin_rules_are_the_default_rules_plus_every_rule_file() {
+fn the_library_default_is_the_default_rules_plus_every_rule_file() {
     let line = format!("{}\n", groq());
 
-    let gitleaks = ConfigLoader::new().load_default().unwrap();
-    let builtin = builtin_loader().load_default().unwrap();
+    let gitleaks = default_rules_alone().load_default().unwrap();
+    let builtin = ConfigLoader::new().load_default().unwrap();
+    assert_eq!(
+        builtin.ordered_rule_ids(),
+        ConfigLoader::default()
+            .load_default()
+            .unwrap()
+            .ordered_rule_ids()
+    );
     let (composed, _) = NativePolicy::builder()
         .with_pack("rustleaks-extra-v1", rustleaks_core::native::EXTRA_RULES_V1)
         .unwrap()
@@ -2565,22 +2573,22 @@ fn builtin_rules_are_the_default_rules_plus_every_rule_file() {
 }
 
 #[test]
-fn extending_the_default_includes_builtin_rules_only_when_selected() {
+fn extending_the_default_includes_the_builtin_rules() {
     let line = format!("{}\n", groq());
     let extend = "[extend]\nuseDefault = true\n";
-    let builtin = builtin_loader().load_toml(extend).unwrap();
+    let builtin = ConfigLoader::new().load_toml(extend).unwrap();
     assert_eq!(rule_ids_found(builtin, &line), ["rustleaks.groq-api-key"]);
-    let gitleaks = ConfigLoader::new().load_toml(extend).unwrap();
+    let gitleaks = default_rules_alone().load_toml(extend).unwrap();
     assert!(rule_ids_found(gitleaks, &line).is_empty());
 
-    let disabled = builtin_loader()
+    let disabled = ConfigLoader::new()
         .load_toml("[extend]\nuseDefault = true\ndisabledRules = [\"rustleaks.groq-api-key\"]\n")
         .unwrap();
     assert!(disabled.rule("rustleaks.groq-api-key").is_none());
     assert!(rule_ids_found(disabled, &line).is_empty());
 
     // A configuration without an extension gets only its own rules.
-    let own = builtin_loader()
+    let own = ConfigLoader::new()
         .load_toml("[[rules]]\nid = \"own\"\nregex = '''own=([a-z]{8})'''\n")
         .unwrap();
     assert_eq!(own.ordered_rule_ids(), ["own"]);
@@ -2589,9 +2597,7 @@ fn extending_the_default_includes_builtin_rules_only_when_selected() {
 #[test]
 fn replaced_default_text_ignores_the_builtin_rules() {
     let text = "[[rules]]\nid = \"only\"\nregex = '''only=([a-z]{8})'''\n";
-    let loader = ConfigLoader::new()
-        .with_builtin_rules()
-        .with_default_config(text);
+    let loader = ConfigLoader::new().with_default_config(text);
     assert_eq!(loader.load_default().unwrap().ordered_rule_ids(), ["only"]);
     let extended = loader.load_toml("[extend]\nuseDefault = true\n").unwrap();
     assert_eq!(extended.ordered_rule_ids(), ["only"]);
@@ -2604,9 +2610,9 @@ fn an_extending_rule_replaces_a_builtin_entropy_predicate() {
     // config replace the built-in matcher and predicate. Keywords are merged,
     // so the override adds its own.
     let id = "rustleaks.dockerhub-personal-access-token";
-    let builtin = builtin_loader().load_default().unwrap();
+    let builtin = ConfigLoader::new().load_default().unwrap();
     assert!(builtin.rule(id).unwrap().native_entropy().is_some());
-    let config = builtin_loader()
+    let config = ConfigLoader::new()
         .load_toml(&format!(
             "[extend]\nuseDefault = true\n[[rules]]\nid = \"{id}\"\n\
              regex = \'\'\'docker=([a-z]{{8}})\'\'\'\nentropy = 1.0\nkeywords = [\"docker=\"]\n"

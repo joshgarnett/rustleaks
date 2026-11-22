@@ -106,8 +106,7 @@ pub(crate) fn assemble(
         .map_err(|error| format!("could not configure current version: {error}"))?
         .with_resolver(CwdResolver {
             cwd: cwd.to_path_buf(),
-        })
-        .with_builtin_rules();
+        });
     let source = select_config_source(invocation, environment, cwd)?;
     let (full, origin) = load_config(source, cwd, &loader)?;
     let selected = if invocation.options.enable_rules.is_empty() {
@@ -1077,10 +1076,7 @@ mod tests {
 
     #[test]
     fn rule_selection_keeps_builtin_byte_predicates() {
-        let full = ConfigLoader::new()
-            .with_builtin_rules()
-            .load_default()
-            .unwrap();
+        let full = ConfigLoader::new().load_default().unwrap();
         for id in [
             "rustleaks.dockerhub-personal-access-token",
             "rustleaks.dockerhub-organization-access-token",

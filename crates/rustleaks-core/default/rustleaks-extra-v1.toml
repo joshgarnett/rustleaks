@@ -1,4 +1,4 @@
-# Independently authored opt-in rules. See rustleaks-extra-v1.md.
+# Independently authored rules. See rustleaks-extra-v1.md.
 # The first participating capture is the secret. Alternative field orders use
 # separate capture groups; an explicit secretGroup would discard other orders.
 title = "Rustleaks extra rules v1"

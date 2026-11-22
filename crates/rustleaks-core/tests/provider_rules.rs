@@ -1,4 +1,4 @@
-//! Independent synthetic controls for the explicitly selected provider pack.
+//! Independent synthetic controls for the `rustleaks-providers-v1` rules.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 

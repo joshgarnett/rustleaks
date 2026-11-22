@@ -236,7 +236,7 @@ regex = '''(PMAT-[A-Za-z0-9]{26})'''
 secretGroup = 1
 keywords = []
 
-# Native-only structured byte entropy; use NativePolicy or --native-pack.
+# Native-only structured byte entropy; only the built-in rule loader reads it.
 
 [[rules]]
 id = "rustleaks.dockerhub-personal-access-token"

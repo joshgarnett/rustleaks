@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+- In `rustleaks-core`, `ConfigLoader::load_default` and
+  `[extend] useDefault = true` now give every built-in rule, as the CLI does:
+  the default rules plus the `rustleaks-extra-v1`, `rustleaks-providers-v1`
+  and `rustleaks-connections-v1` rules. Library scans that use the default
+  can report more findings, with rule IDs that start with `rustleaks.`.
+  `ConfigLoader::with_builtin_rules` is removed, since its behavior is now
+  the default. `ConfigLoader::with_default_config` replaces the whole
+  default, without the Rustleaks rules; pass `config::DEFAULT_CONFIG` to it
+  for the default rules alone. On one Apple silicon Mac, an empty scan with
+  every built-in rule takes about 44 ms and 36 MiB, against about 27 ms and
+  6.5 MiB with the default rules alone. The CLI does not change.
+- Comments in `rustleaks-extra-v1.toml` and `rustleaks-providers-v1.toml`
+  that described the rule files as opt-in or named the removed
+  `--native-pack` flag are updated. `EXTRA_RULES_V1_SHA256`,
+  `PROVIDER_RULES_V1_SHA256`, the built-in review reference and
+  `NativePolicyIdentity` change once, so review records made with the old
+  built-in reference are reported as stale. The rules do not change.
 - SARIF reports name the tool `rustleaks`, with the Rustleaks version as
   `semanticVersion` and the Rustleaks repository as `informationUri`. They
   named the tool `gitleaks`, with the fixed version `v8.0.0` and the

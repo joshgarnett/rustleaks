@@ -36,9 +36,14 @@ struct AnchoredRule<'a> {
 }
 
 fn default_engine() -> Engine {
-    Engine::builder(ConfigLoader::new().load_default().unwrap())
-        .build()
-        .unwrap()
+    Engine::builder(
+        ConfigLoader::new()
+            .with_default_config(crate::config::DEFAULT_CONFIG)
+            .load_default()
+            .unwrap(),
+    )
+    .build()
+    .unwrap()
 }
 
 fn anchored_rules(engine: &Engine) -> Vec<AnchoredRule<'_>> {

@@ -42,9 +42,9 @@ New Rustleaks rules go into a native pack in `crates/rustleaks-core/default/`:
 `rustleaks-providers-v1` for provider keys and tokens,
 `rustleaks-connections-v1` for passwords in connection strings and URLs, and
 `rustleaks-extra-v1` for the small first-party set. Every default scan uses
-all of them. Before the first stable release a pack changes in place with a
-changelog entry; from then on, a change that alters what a published pack
-detects needs a new pack ID and maintainer approval.
+all of them. A pack changes in place: it keeps its ID and the change gets a
+changelog entry. A change that makes Rustleaks miss secrets it found before
+needs maintainer approval.
 
 For the provider and connection packs:
 

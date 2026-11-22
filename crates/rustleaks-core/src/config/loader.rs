@@ -26,7 +26,8 @@ pub enum ConfigOrigin {
     Path(PathBuf),
     /// Resolver-defined virtual path.
     Virtual(String),
-    /// The byte-exact embedded default.
+    /// The embedded default: the built-in rules, or the text set with
+    /// [`ConfigLoader::with_default_config`].
     EmbeddedDefault,
 }
 
@@ -445,33 +446,24 @@ impl Default for ConfigLoader {
 }
 
 impl ConfigLoader {
-    /// Creates a no-I/O loader using the embedded default configuration.
+    /// Creates a no-I/O loader that uses every built-in rule as the default.
+    ///
+    /// [`Self::load_default`] and `[extend] useDefault = true` give the
+    /// default rules in [`DEFAULT_CONFIG`] plus all rules in the built-in rule
+    /// files (`EXTRA_RULES_V1`, `PROVIDER_RULES_V1` and `CONNECTION_RULES_V1`
+    /// in [`crate::native`]), as the CLI does.
+    ///
+    /// The rules compile on first use and are shared by clones of this
+    /// loader, so a configuration that does not extend the default does not
+    /// pay for them.
     #[must_use]
     pub fn new() -> Self {
         Self {
             resolver: Arc::new(NoIoResolver),
             default_config: Arc::from(DEFAULT_CONFIG),
             current_version: None,
-            builtin_rules: None,
+            builtin_rules: Some(Arc::new(OnceLock::new())),
         }
-    }
-
-    /// Adds every built-in Rustleaks rule to the embedded default rules.
-    ///
-    /// After this call, [`Self::load_default`] and `[extend] useDefault = true`
-    /// give the default rules plus all rules in the built-in rule files
-    /// (`EXTRA_RULES_V1`, `PROVIDER_RULES_V1` and `CONNECTION_RULES_V1` in
-    /// [`crate::native`]). Text set with [`Self::with_default_config`] is used
-    /// unchanged instead. Without this call the default is the
-    /// Gitleaks-derived rules alone.
-    ///
-    /// The rules compile on first use and are shared by clones of this
-    /// loader, so a configuration that does not extend the default does not
-    /// pay for them.
-    #[must_use]
-    pub fn with_builtin_rules(mut self) -> Self {
-        self.builtin_rules = Some(Arc::new(OnceLock::new()));
-        self
     }
 
     #[cfg(test)]
@@ -479,15 +471,30 @@ impl ConfigLoader {
         self.builtin_rules = Some(Arc::new(OnceLock::from(config)));
     }
 
-    // The composed built-in rules, when they replace the embedded default.
-    fn builtin_default(&self) -> Option<CompiledConfig> {
-        let builtin = self.builtin_rules.as_ref()?;
-        if *self.default_config != *DEFAULT_CONFIG {
-            return None;
-        }
+    // The composed built-in rules, unless the default text was replaced.
+    // They compile without this loader's current version, so the
+    // `minVersion` check runs here.
+    fn builtin_default(&self) -> Result<Option<CompiledConfig>, ConfigError> {
+        let Some(builtin) = self.builtin_rules.as_ref() else {
+            return Ok(None);
+        };
         let mut config = CompiledConfig::clone(builtin.get_or_init(compile_builtin_rules));
         config.origin = Some(ConfigOrigin::EmbeddedDefault);
-        Some(config)
+        config.requires_newer_version = self.requires_newer_version(&config.min_version)?;
+        Ok(Some(config))
+    }
+
+    // Without `current_version`, minVersion is not parsed. Supplying it
+    // opts into the parse and warning branch.
+    fn requires_newer_version(&self, min_version: &str) -> Result<bool, ConfigError> {
+        if min_version.is_empty() {
+            return Ok(false);
+        }
+        let Some(current) = &self.current_version else {
+            return Ok(false);
+        };
+        // Semantic versioning gives build metadata no precedence.
+        Ok(without_build(current) < without_build(&parse_version(min_version)?))
     }
 
     /// Replaces the injected extension resolver.
@@ -497,10 +504,16 @@ impl ConfigLoader {
         self
     }
 
-    /// Replaces the text used by `extend.useDefault` and [`Self::load_default`].
+    /// Replaces the default with `contents` alone.
+    ///
+    /// [`Self::load_default`] and `[extend] useDefault = true` then use this
+    /// text unchanged, without the built-in rule files. Pass
+    /// [`DEFAULT_CONFIG`] to use the default rules without the Rustleaks
+    /// rule files.
     #[must_use]
     pub fn with_default_config(mut self, contents: impl Into<Arc<str>>) -> Self {
         self.default_config = contents.into();
+        self.builtin_rules = None;
         self
     }
 
@@ -595,13 +608,14 @@ impl ConfigLoader {
         Ok(config)
     }
 
-    /// Loads and compiles the configured embedded-default text.
+    /// Loads the default: every built-in rule, or the text set with
+    /// [`Self::with_default_config`].
     ///
     /// # Errors
     ///
     /// Returns a structured parse or validation error.
     pub fn load_default(&self) -> Result<CompiledConfig, ConfigError> {
-        if let Some(config) = self.builtin_default() {
+        if let Some(config) = self.builtin_default()? {
             return Ok(config);
         }
         let origin = Some(ConfigOrigin::EmbeddedDefault);
@@ -659,10 +673,14 @@ impl ConfigLoader {
             if !config.extension.path.is_empty() && config.extension.use_default {
                 return Err(ConfigError::ConflictingExtension);
             }
-            let base = if config.extension.use_default
-                && let Some(builtin) = self.builtin_default()
-            {
-                Some(builtin)
+            let builtin = if config.extension.use_default {
+                self.builtin_default()
+                    .map_err(|error| ConfigError::Extended(Box::new(error)))?
+            } else {
+                None
+            };
+            let base = if builtin.is_some() {
+                builtin
             } else if config.extension.use_default {
                 let raw = self
                     .parse_toml(&self.default_config, Some(&ConfigOrigin::EmbeddedDefault))
@@ -712,16 +730,7 @@ impl ConfigLoader {
             raw.allowlists.push(allowlist);
         }
 
-        // Without `current_version`, minVersion is not parsed. Supplying it
-        // opts into the parse and warning branch.
-        let requires_newer_version = if raw.min_version.is_empty() {
-            false
-        } else if let Some(current) = &self.current_version {
-            // Semantic versioning gives build metadata no precedence.
-            without_build(current) < without_build(&parse_version(&raw.min_version)?)
-        } else {
-            false
-        };
+        let requires_newer_version = self.requires_newer_version(&raw.min_version)?;
 
         let mut rules = BTreeMap::new();
         let mut keywords = BTreeSet::new();

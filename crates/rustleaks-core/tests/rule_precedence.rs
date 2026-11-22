@@ -359,7 +359,7 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
         "a routable token starts with a classic token",
     ),
     ("jwt", "curl-auth-header", "the JWT sample is a curl header"),
-    // Opt-in pack rules that widen a default rule. Both findings are kept.
+    // Rustleaks rules that widen a default rule. Both findings are kept.
     (
         "alibaba-access-key-id",
         "rustleaks.alibaba-access-key-id-boundary",

@@ -37218,7 +37218,7 @@
     }
   ],
   "providers_legacy_provenance_sha256": "4095bf10d7d70a9a94f9bd5ee2ff722e1790f8e0a3e95f2575a7fd934ec084dd",
-  "providers_legacy_toml_sha256": "0ed0b47f3756cd05dde861b05eebee0f617c4891de7b98b8db78503768e87293",
+  "providers_legacy_toml_sha256": "48513e0b7e9a4f21dd2dff6e3cf5f9f74639e02c6d767a8598ce8bb178135655",
   "selection": {
     "additional_source": {
       "copyright": [
