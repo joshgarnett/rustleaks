@@ -277,7 +277,7 @@ are not memory limits. Some cases use much more memory than the input size:
 - Each finding keeps a copy of its source line. Many findings on one long line
   can use a lot of memory, even for a small file.
 - Some Rustleaks association rules, such as
-  `rustleaks.association.azure-storage-account-key`, attach every helper in a
+  `rustleaks.association.ramp-client-secret`, attach every helper in a
   piece of the input to every finding of the rule in that piece. Rustleaks
   stores that list once, and the `--complete-profile` limits count it once.
   Verbose output (`--verbose`) prints one `Required` line for each helper of
