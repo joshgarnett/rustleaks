@@ -5,6 +5,9 @@
 //! cost controls, not representative production traffic or expected speedups.
 //! Input bytes and resource expectations follow the constructors and existing
 //! checkpoint contracts, independently of any prefilter implementation.
+//! A rule search is skipped when the input lacks the literal that every match
+//! contains (`svc` or `svc=` here), so the marker-free shapes search nothing
+//! and only the invalid shape keeps all nine searches.
 
 use std::error::Error;
 use std::fmt::Write;
@@ -68,7 +71,13 @@ fn build(size: usize, shape: Shape) -> Fixture {
         // completes cheaply with zero spans. This must not itself justify a
         // full-input presence query, even after the eighth empty anchor.
         Shape::CheapAnchors => input[..3].copy_from_slice(b"svc"),
-        Shape::Invalid => input[size - 1] = 0xff,
+        // Every match contains `svc=`, so the leading marker keeps all nine
+        // searches. Lowercase `z` is outside `[A-Z0-9]`, so each one misses
+        // and normalizes the whole input because of the final invalid byte.
+        Shape::Invalid => {
+            input[..4].copy_from_slice(b"svc=");
+            input[size - 1] = 0xff;
+        }
     }
     Fixture {
         input,
@@ -172,6 +181,9 @@ mod tests {
                         .iter()
                         .all(|byte| *byte == b'z')
                 );
+            } else if id == "core-gate-invalid-nine-misses-256-kib" {
+                assert!(fixture.input.starts_with(b"svc=z"));
+                assert_eq!(equals, Some(3));
             } else {
                 assert_eq!(equals, None);
             }

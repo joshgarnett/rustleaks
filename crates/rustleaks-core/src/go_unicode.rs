@@ -8,14 +8,52 @@ pub(crate) fn lowercase(value: &str) -> String {
 }
 
 pub(crate) fn lowercase_bytes(bytes: &[u8]) -> Vec<u8> {
+    lowercase_bytes_keeping_ascii(bytes).bytes
+}
+
+/// A lowercased pass and what it keeps of the input's ASCII text.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct Lowered {
+    pub(crate) bytes: Vec<u8>,
+    /// Every ASCII byte of the output is an input ASCII byte, lowercased.
+    ///
+    /// It is false when a non-ASCII rune lowercases to ASCII, such as the
+    /// Kelvin sign to `k`. When it is true, an ASCII string occurs in the
+    /// output exactly where it occurs in the input ignoring ASCII case, as
+    /// runes: each rune maps to one rune, and an ASCII input byte is always a
+    /// rune of its own.
+    pub(crate) kept_ascii: bool,
+    /// The input is valid UTF-8, every rune keeps its encoded length, and no
+    /// rune is one that case-insensitive matching pairs with an ASCII letter
+    /// (U+017F for `s`, U+212A for `k`). Then output offsets are input
+    /// offsets, and only ASCII input bytes can match an ASCII letter.
+    pub(crate) same_offsets: bool,
+}
+
+/// Lowercases like [`lowercase_bytes`] and reports what the output keeps.
+pub(crate) fn lowercase_bytes_keeping_ascii(bytes: &[u8]) -> Lowered {
     if bytes.is_ascii() {
-        return bytes.to_ascii_lowercase();
+        return Lowered {
+            bytes: bytes.to_ascii_lowercase(),
+            kept_ascii: true,
+            same_offsets: true,
+        };
     }
     let mut output = String::with_capacity(bytes.len());
+    let mut kept_ascii = true;
+    let mut same_offsets = std::str::from_utf8(bytes).is_ok();
     for character in chars(bytes) {
-        output.push(simple_lowercase(character));
+        let lowered = simple_lowercase(character);
+        kept_ascii &= character.is_ascii() || !lowered.is_ascii();
+        same_offsets &= lowered.len_utf8() == character.len_utf8()
+            && !matches!(character, '\u{17f}' | '\u{212a}');
+        output.push(lowered);
     }
-    output.into_bytes()
+    Lowered {
+        bytes: output.into_bytes(),
+        kept_ascii,
+        same_offsets: same_offsets && kept_ascii,
+    }
 }
 
 /// Decodes the first rune like Go's `utf8.DecodeRune`.
@@ -122,6 +160,39 @@ mod tests {
             assert_eq!(decode_rune(bytes), first, "{bytes:?}");
             assert_eq!(decode_last_rune(bytes), last, "{bytes:?}");
         }
+    }
+
+    #[test]
+    fn only_two_non_ascii_runes_lowercase_to_ascii() {
+        let lowering = (0x80..=0x10_ffff)
+            .filter_map(char::from_u32)
+            .filter(|character| simple_lowercase(*character).is_ascii())
+            .collect::<Vec<_>>();
+        assert_eq!(lowering, ['\u{130}', '\u{212a}']);
+        let lowered = |input: &[u8]| {
+            let lowered = lowercase_bytes_keeping_ascii(input);
+            (lowered.bytes, lowered.kept_ascii, lowered.same_offsets)
+        };
+        assert_eq!(
+            lowered("Key \u{c9}".as_bytes()),
+            ("key \u{e9}".as_bytes().to_vec(), true, true)
+        );
+        // An invalid byte becomes a three-byte U+FFFD.
+        assert_eq!(
+            lowered(b"A\xffB"),
+            ("a\u{fffd}b".as_bytes().to_vec(), true, false)
+        );
+        assert_eq!(
+            lowered("\u{212a}ey".as_bytes()),
+            (b"key".to_vec(), false, false)
+        );
+        // U+017F stays itself, but `(?i)s` matches it.
+        assert_eq!(
+            lowered("\u{17f}ecret".as_bytes()),
+            ("\u{17f}ecret".as_bytes().to_vec(), true, false)
+        );
+        // U+023A (two bytes) lowercases to U+2C65 (three bytes).
+        assert!(!lowered("\u{23a}".as_bytes()).2);
     }
 
     #[test]

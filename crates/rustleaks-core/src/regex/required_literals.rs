@@ -44,17 +44,55 @@ impl Info {
     }
 }
 
-/// Returns the folded literals of which every match contains one, or `None`
-/// when no useful set is known.
-pub(crate) fn required_literals(hir: &Hir) -> Option<Box<[Box<[u8]>]>> {
-    let set = minimize(analyze(hir).necessary?);
-    if set.is_empty()
-        || set.len() > SET_LIMIT
-        || set.iter().any(|literal| literal.len() < MIN_LITERAL_LEN)
-    {
+/// Largest number of sets kept for one expression.
+const SETS_LIMIT: usize = 4;
+
+/// Folded literals of which every match contains one.
+pub(crate) type LiteralSet = Box<[Box<[u8]>]>;
+
+/// Returns sets of folded literals, best first, such that every match
+/// contains one literal of each set, or `None` when no useful set is known.
+///
+/// The first set is the best set for the whole expression. The others come
+/// from separate parts of a top-level concatenation, so a buffer can be
+/// ruled out by any one of them, for example when the first set only
+/// repeats a rule's keywords.
+pub(crate) fn required_literals(hir: &Hir) -> Option<Box<[LiteralSet]>> {
+    let mut top = hir;
+    while let HirKind::Capture(capture) = top.kind() {
+        top = &capture.sub;
+    }
+    let mut candidates = Vec::new();
+    if let HirKind::Concat(children) = top.kind() {
+        concat_into(children, &mut candidates);
+    } else if let Some(set) = analyze(top).necessary {
+        candidates.push(set);
+    }
+    let mut sets: Vec<Set> = Vec::new();
+    for set in candidates {
+        let set = minimize(set);
+        if set.is_empty()
+            || set.len() > SET_LIMIT
+            || set.iter().any(|literal| literal.len() < MIN_LITERAL_LEN)
+            || sets.contains(&set)
+        {
+            continue;
+        }
+        let position = sets
+            .iter()
+            .position(|current| better(&set, Some(current)))
+            .unwrap_or(sets.len());
+        sets.insert(position, set);
+    }
+    sets.truncate(SETS_LIMIT);
+    if sets.is_empty() {
         return None;
     }
-    Some(set.into_iter().map(Vec::into_boxed_slice).collect())
+    Some(
+        sets.into_iter()
+            .map(|set| set.into_iter().map(Vec::into_boxed_slice).collect())
+            .collect(),
+    )
 }
 
 fn analyze(hir: &Hir) -> Info {
@@ -172,12 +210,27 @@ fn better(candidate: &Set, current: Option<&Set>) -> bool {
 
 fn concat(children: &[Hir]) -> Info {
     let mut best: Option<Set> = None;
-    let offer = |set: Set, best: &mut Option<Set>| {
+    let mut offer = |set: Set| {
         let set = minimize(set);
         if !set.is_empty() && better(&set, best.as_ref()) {
-            *best = Some(set);
+            best = Some(set);
         }
     };
+    let exact = concat_offers(children, &mut offer);
+    Info {
+        exact,
+        necessary: best,
+    }
+}
+
+/// Collects every set that a concatenation offers, in the order offered.
+fn concat_into(children: &[Hir], sets: &mut Vec<Set>) {
+    concat_offers(children, &mut |set| sets.push(set));
+}
+
+/// Offers each set of which every match of the concatenation contains one,
+/// and returns the exact set of the whole concatenation, if known.
+fn concat_offers(children: &[Hir], offer: &mut dyn FnMut(Set)) -> Option<Set> {
     // A run of adjacent children with exact sets matches one string of their
     // product, so every match contains one of those strings.
     let mut run = Some(BTreeSet::from([Vec::new()]));
@@ -189,7 +242,7 @@ fn concat(children: &[Hir]) -> Info {
                 if let Some(joined) = product(current, exact) {
                     run = Some(joined);
                 } else {
-                    offer(current.clone(), &mut best);
+                    offer(current.clone());
                     run = Some(exact.clone());
                     all_exact = false;
                 }
@@ -197,23 +250,20 @@ fn concat(children: &[Hir]) -> Info {
             (None, Some(exact)) => run = Some(exact.clone()),
             (current, None) => {
                 if let Some(current) = current {
-                    offer(current.clone(), &mut best);
+                    offer(current.clone());
                 }
                 run = Some(BTreeSet::from([Vec::new()]));
                 all_exact = false;
             }
         }
         if let Some(necessary) = info.necessary {
-            offer(necessary, &mut best);
+            offer(necessary);
         }
     }
     if let Some(current) = run.clone() {
-        offer(current, &mut best);
+        offer(current);
     }
-    Info {
-        exact: if all_exact { run } else { None },
-        necessary: best,
-    }
+    if all_exact { run } else { None }
 }
 
 fn alternation(children: &[Hir]) -> Info {
@@ -244,12 +294,38 @@ mod tests {
     use super::*;
 
     fn literals(pattern: &str) -> Option<Vec<String>> {
+        all_literals(pattern).map(|mut sets| sets.remove(0))
+    }
+
+    fn all_literals(pattern: &str) -> Option<Vec<Vec<String>>> {
         let hir = regex_syntax::parse(pattern).unwrap();
-        required_literals(&hir).map(|set| {
-            set.iter()
-                .map(|literal| String::from_utf8(literal.to_vec()).unwrap())
+        required_literals(&hir).map(|sets| {
+            sets.iter()
+                .map(|set| {
+                    set.iter()
+                        .map(|literal| String::from_utf8(literal.to_vec()).unwrap())
+                        .collect()
+                })
                 .collect()
         })
+    }
+
+    #[test]
+    fn keeps_each_part_of_a_top_level_concatenation() {
+        // The best set comes first; the `lob` part stays as a second set.
+        assert_eq!(
+            all_literals(r"[a-z]{0,5}?lob[ a-z]{0,3}=((?:live|test)_[a-f0-9]{4})"),
+            Some(vec![
+                vec!["live_".to_owned(), "test_".to_owned()],
+                vec!["lob".to_owned()],
+            ])
+        );
+        // A capture around the whole expression is looked through.
+        assert_eq!(
+            all_literals(r"(abc[0-9]+wxyz)"),
+            Some(vec![vec!["wxyz".to_owned()], vec!["abc".to_owned()]])
+        );
+        assert_eq!(all_literals(r"abc|[0-9]+"), None);
     }
 
     #[test]

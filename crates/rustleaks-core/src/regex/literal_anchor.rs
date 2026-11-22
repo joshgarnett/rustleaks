@@ -57,7 +57,27 @@
 //!    match end `e`. A later match has its literal at or after its start,
 //!    which is at or after `e`, so occurrences below `e` are safely discarded.
 //!
-//! The argument never uses the greediness of `P`. Priority only selects a path
+//! 6. *Skipped occurrences.* On an ASCII haystack, each choice may record a
+//!    byte set `B` and a
+//!    distance `D` such that every match of `T` has a byte of `B` within its
+//!    first `D + 1` bytes. A match with its literal at `k` then has a byte of
+//!    `B` in `H[k + l_min .. k + l_max + D + 1]`, where `l_min` and `l_max`
+//!    are the shortest and longest literal lengths. An occurrence whose window
+//!    has no such byte is the literal of no match. Dropping it leaves (3) and
+//!    (5) unchanged: the leftmost match's own occurrence is kept, and the
+//!    remaining attempts still run in nondecreasing start order.
+//!
+//! The argument never uses the greediness of `P`.
+//!
+//! # Other haystacks
+//!
+//! The argument holds unchanged on a valid UTF-8 haystack without U+017F and
+//! U+212A when `P` and `L` match no other non-ASCII character. Those two are
+//! the only non-ASCII characters that case-insensitive matching pairs with an
+//! ASCII letter, so every match of `P L` is then ASCII and every byte the
+//! walk-back and occurrence search read means what it does in ASCII. The
+//! shape records whether `P` and `L` qualify. The caller then promises the
+//! rest; the keyword pass checks it (`Lowered::same_offsets`). Priority only selects a path
 //! within one start, and the same expression makes that choice. Greedy, lazy
 //! and mixed leading repetitions are therefore all exact.
 //!
@@ -66,8 +86,11 @@
 //! An unbounded `T` can keep an attempt alive to the end of the input, so
 //! occurrence density alone does not bound total attempt work. Before each
 //! attempt the budget charges an upper bound on how far that attempt can scan.
-//! Enumeration abandons the anchored path when the charges exceed the haystack
-//! length. Falling back affects only cost; both paths return the same matches.
+//! The unbounded node consumes only its own bytes, so it stops at the first
+//! other byte. When everything after it is bounded, the charge adds that bound
+//! instead of scanning on. Enumeration abandons the anchored path when the
+//! charges exceed the haystack length. Occurrences dropped by (6) are not
+//! charged. Falling back affects only cost; both paths return the same matches.
 //!
 //! Analysis itself runs for every compiled expression, including allowlist
 //! and path expressions. It keeps at most [`MAX_CANDIDATES`] choices, spends
@@ -99,6 +122,10 @@ const MAX_CANDIDATES: usize = 32;
 /// costs one more. The default rules spend at most 168. The largest literal
 /// set, 64 case-insensitive literals of 64 bytes, spends about 8,400.
 const MAX_ENUMERATION_STEPS: usize = 1 << 14;
+/// Anchored attempts may scan this many haystack lengths in total. An
+/// unanchored search reads the haystack forward and its matches in reverse,
+/// so this keeps the anchored path at about the cost of one such search.
+const ATTEMPT_ALLOWANCE: usize = 2;
 /// Membership by byte value. Entries for non-ASCII bytes are always false.
 type ByteSet = [bool; 256];
 
@@ -108,25 +135,46 @@ pub(crate) struct LiteralAnchorShape {
     class: ByteSet,
     max_leading: usize,
     candidates: Vec<LiteralCandidate>,
+    /// `P` and the longest `L` match no non-ASCII character except U+017F
+    /// and U+212A, so the shape also serves the haystacks described above.
+    non_ascii_haystacks: bool,
 }
 
 /// One choice of where the literal node ends, in ascending literal length.
 #[derive(Debug)]
 pub(crate) struct LiteralCandidate {
     literals: Vec<Box<[u8]>>,
+    min_literal_len: usize,
     max_literal_len: usize,
+    /// The remainder's bound on an ASCII haystack.
     tail: TailBound,
+    /// The remainder's bound on any other haystack the shape serves.
+    tail_any: TailBound,
+    /// A byte that every match of the remainder has early on an ASCII
+    /// haystack, if one is known.
+    required: Option<RequiredByte>,
+}
+
+/// Every match of a remainder has a byte of `set` within its first
+/// `within + 1` bytes.
+#[derive(Debug)]
+struct RequiredByte {
+    set: Box<ByteSet>,
+    within: usize,
 }
 
 #[derive(Debug)]
 enum TailBound {
     /// The remainder after the literal consumes at most this many bytes.
     Finite(usize),
-    /// The remainder has an unbounded node after `bounded_prefix` bytes, and
-    /// everything from that node onward consumes only `run` bytes.
+    /// The remainder has an unbounded node after `bounded_prefix` bytes. That
+    /// node consumes only `run` bytes. With `after`, everything after it
+    /// consumes at most that many bytes; without it, everything from the node
+    /// onward consumes only `run` bytes.
     Unbounded {
         bounded_prefix: usize,
         run: Box<ByteSet>,
+        after: Option<usize>,
     },
 }
 
@@ -192,22 +240,36 @@ impl LiteralAnchorShape {
         // Every child through `last` has a finite language, so all choices
         // share the first unbounded node. One walk after the longest choice
         // serves every choice; a shorter one adds the children in between.
-        let shared = TailBound::new(&rest[last + 1..]);
-        let mut between = 0_usize;
+        let shared = TailBound::new(&rest[last + 1..], Haystack::Ascii);
+        let shared_any = TailBound::new(&rest[last + 1..], Haystack::Any);
+        let mut between = (0_usize, 0_usize);
         let mut end = last;
         let mut candidates = Vec::with_capacity(choices.len());
         for (index, literals) in choices.into_iter().rev() {
-            between = rest[index + 1..=end].iter().fold(between, |sum, child| {
-                sum.saturating_add(child.properties().maximum_len().unwrap_or(usize::MAX))
-            });
+            between = rest[index + 1..=end]
+                .iter()
+                .fold(between, |(ascii, any), child| {
+                    (
+                        ascii.saturating_add(Haystack::Ascii.max_len(child).unwrap_or(usize::MAX)),
+                        any.saturating_add(Haystack::Any.max_len(child).unwrap_or(usize::MAX)),
+                    )
+                });
             end = index;
-            candidates.push(LiteralCandidate::new(&literals, shared.after(between)));
+            candidates.push(LiteralCandidate::new(
+                &literals,
+                [shared.after(between.0), shared_any.after(between.1)],
+                RequiredByte::new(&rest[index + 1..]),
+            ));
         }
         candidates.reverse();
+        let non_ascii_haystacks = children[..leading + last + 1]
+            .iter()
+            .all(|child| matches_only_ascii_or_folds(child, 0));
         Some(Self {
             class,
             max_leading,
             candidates,
+            non_ascii_haystacks,
         })
     }
 
@@ -229,15 +291,41 @@ impl LiteralAnchorShape {
 }
 
 impl LiteralCandidate {
-    fn new(literals: &[Vec<u8>], tail: TailBound) -> Self {
+    fn new(
+        literals: &[Vec<u8>],
+        [tail, tail_any]: [TailBound; 2],
+        required: Option<RequiredByte>,
+    ) -> Self {
         Self {
             literals: literals
                 .iter()
                 .map(|literal| literal.as_slice().into())
                 .collect(),
+            min_literal_len: literals.iter().map(Vec::len).min().unwrap_or(0),
             max_literal_len: literals.iter().map(Vec::len).max().unwrap_or(0),
             tail,
+            tail_any,
+            required,
         }
+    }
+
+    /// Returns whether a match can have its literal at `occurrence` (lemma 6).
+    ///
+    /// The bytes are an ASCII haystack. On other haystacks the remainder can
+    /// match multi-byte characters, so no occurrence is ruled out there.
+    fn can_place(&self, bytes: &[u8], occurrence: usize) -> bool {
+        let Some(required) = &self.required else {
+            return true;
+        };
+        let start = occurrence.saturating_add(self.min_literal_len);
+        let end = occurrence
+            .saturating_add(self.max_literal_len)
+            .saturating_add(required.within)
+            .saturating_add(1)
+            .min(bytes.len());
+        bytes
+            .get(start..end)
+            .is_some_and(|window| window.iter().any(|byte| required.set[usize::from(*byte)]))
     }
 
     /// Returns the sorted, deduplicated ASCII-lowercased literal set.
@@ -246,18 +334,51 @@ impl LiteralCandidate {
     }
 }
 
+/// Which haystacks a length or byte bound must hold for.
+#[derive(Clone, Copy)]
+enum Haystack {
+    Ascii,
+    /// Any UTF-8 haystack, where a character can take up to four bytes.
+    Any,
+}
+
+impl Haystack {
+    fn max_len(self, hir: &Hir) -> Option<usize> {
+        match self {
+            Self::Ascii => ascii_max_len(hir, 0),
+            Self::Any => hir.properties().maximum_len(),
+        }
+    }
+}
+
 impl TailBound {
-    fn new(tail: &[Hir]) -> Self {
+    fn new(tail: &[Hir], haystack: Haystack) -> Self {
         let mut bounded_prefix = 0_usize;
         for (index, node) in tail.iter().enumerate() {
-            let Some(maximum) = node.properties().maximum_len() else {
+            let Some(maximum) = haystack.max_len(node) else {
                 let mut run = Box::new([false; 256]);
-                for later in &tail[index..] {
+                if matches!(haystack, Haystack::Any) {
+                    // Any non-ASCII byte may belong to a character it consumes.
+                    run[0x80..].fill(true);
+                }
+                // When everything after the unbounded node is bounded, the
+                // node ends at the first byte it cannot consume and the rest
+                // adds at most its maximum length.
+                let after = tail[index + 1..].iter().try_fold(0_usize, |sum, later| {
+                    sum.checked_add(haystack.max_len(later)?)
+                });
+                let consumed = if after.is_some() {
+                    &tail[index..=index]
+                } else {
+                    &tail[index..]
+                };
+                for later in consumed {
                     collect_consumed_bytes(later, &mut run, 0);
                 }
                 return Self::Unbounded {
                     bounded_prefix,
                     run,
+                    after,
                 };
             };
             bounded_prefix = bounded_prefix.saturating_add(maximum);
@@ -272,11 +393,144 @@ impl TailBound {
             Self::Unbounded {
                 bounded_prefix,
                 run,
+                after,
             } => Self::Unbounded {
                 bounded_prefix: bounded_prefix.saturating_add(bounded),
                 run: run.clone(),
+                after: *after,
             },
         }
+    }
+}
+
+impl RequiredByte {
+    /// Finds the first node of `tail` that every match enters with a known
+    /// byte, and how many bytes the nodes before it can consume.
+    fn new(tail: &[Hir]) -> Option<Self> {
+        let mut within = 0_usize;
+        for node in tail {
+            if node
+                .properties()
+                .minimum_len()
+                .is_some_and(|minimum| minimum > 0)
+                && let Some(set) = first_bytes(node, 0)
+            {
+                return Some(Self {
+                    set: Box::new(set),
+                    within,
+                });
+            }
+            within = within.checked_add(Haystack::Ascii.max_len(node)?)?;
+            if within > MAX_LEADING_CHARS {
+                return None;
+            }
+        }
+        None
+    }
+}
+
+/// Returns the most bytes a match of `hir` can consume in an ASCII haystack,
+/// or `None` if that is unbounded or the walk is too deep.
+///
+/// Anchored search runs only on ASCII haystacks, where every character that
+/// can match is one byte. `Properties::maximum_len` counts the longest UTF-8
+/// form instead, such as three bytes for the Kelvin sign that `(?i)k` adds.
+fn ascii_max_len(hir: &Hir, depth: u32) -> Option<usize> {
+    if depth >= MAX_WALK_DEPTH {
+        return hir.properties().maximum_len();
+    }
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => Some(0),
+        // A literal with a non-ASCII byte cannot match an ASCII haystack; its
+        // byte length is still an upper bound.
+        HirKind::Literal(literal) => Some(literal.0.len()),
+        HirKind::Class(_) => Some(1),
+        HirKind::Repetition(repetition) => {
+            let maximum = usize::try_from(repetition.max?).ok()?;
+            ascii_max_len(&repetition.sub, depth + 1)?.checked_mul(maximum)
+        }
+        HirKind::Capture(capture) => ascii_max_len(&capture.sub, depth + 1),
+        HirKind::Concat(children) => children.iter().try_fold(0_usize, |sum, child| {
+            sum.checked_add(ascii_max_len(child, depth + 1)?)
+        }),
+        HirKind::Alternation(children) => children.iter().try_fold(0_usize, |most, child| {
+            Some(most.max(ascii_max_len(child, depth + 1)?))
+        }),
+    }
+}
+
+/// Returns the ASCII bytes that can start a non-empty match of `hir`, or
+/// `None` when the walk is too deep. Non-ASCII bytes are left out: anchored
+/// search runs only on ASCII haystacks.
+fn first_bytes(hir: &Hir, depth: u32) -> Option<ByteSet> {
+    if depth >= MAX_WALK_DEPTH {
+        return None;
+    }
+    let mut set = [false; 256];
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => {}
+        HirKind::Literal(literal) => {
+            if let Some(&first) = literal.0.first()
+                && first.is_ascii()
+            {
+                set[usize::from(first)] = true;
+            }
+        }
+        HirKind::Class(class) => set = class_members(class),
+        HirKind::Repetition(repetition) => {
+            if repetition.max != Some(0) {
+                set = first_bytes(&repetition.sub, depth + 1)?;
+            }
+        }
+        HirKind::Capture(capture) => set = first_bytes(&capture.sub, depth + 1)?,
+        HirKind::Concat(children) => {
+            // A non-empty match starts in the first child that consumes a
+            // byte, which can be any child up to the first non-empty one.
+            for child in children {
+                let child_set = first_bytes(child, depth + 1)?;
+                for (slot, member) in set.iter_mut().zip(child_set) {
+                    *slot |= member;
+                }
+                if child
+                    .properties()
+                    .minimum_len()
+                    .is_some_and(|minimum| minimum > 0)
+                {
+                    break;
+                }
+            }
+        }
+        HirKind::Alternation(children) => {
+            for child in children {
+                let child_set = first_bytes(child, depth + 1)?;
+                for (slot, member) in set.iter_mut().zip(child_set) {
+                    *slot |= member;
+                }
+            }
+        }
+    }
+    Some(set)
+}
+
+/// Returns whether `hir` can match no non-ASCII character except U+017F and
+/// U+212A, which case-insensitive matching adds for `s` and `k`.
+fn matches_only_ascii_or_folds(hir: &Hir, depth: u32) -> bool {
+    if depth >= MAX_WALK_DEPTH {
+        return false;
+    }
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => true,
+        HirKind::Literal(literal) => literal.0.is_ascii(),
+        HirKind::Class(Class::Unicode(class)) => class.iter().all(|range| {
+            let (start, end) = (range.start(), range.end());
+            end <= '\x7f' || (start == end && matches!(start, '\u{17f}' | '\u{212a}'))
+        }),
+        HirKind::Class(Class::Bytes(class)) => class.iter().all(|range| range.end() <= 0x7f),
+        HirKind::Repetition(repetition) => matches_only_ascii_or_folds(&repetition.sub, depth + 1),
+        HirKind::Capture(capture) => matches_only_ascii_or_folds(&capture.sub, depth + 1),
+        HirKind::Concat(children) | HirKind::Alternation(children) => children
+            .iter()
+            .all(|child| matches_only_ascii_or_folds(child, depth + 1)),
     }
 }
 
@@ -462,6 +716,8 @@ fn collect_consumed_bytes(hir: &Hir, set: &mut ByteSet, depth: u32) {
 struct AttemptBudget<'a> {
     bytes: &'a [u8],
     run: Option<&'a ByteSet>,
+    /// Most bytes consumed after the unbounded node stops.
+    after_run: usize,
     /// Distance from an attempt start to where the unbounded node may begin.
     reach_floor: usize,
     /// First byte at or after the latest floor that stops the unbounded node.
@@ -475,27 +731,37 @@ impl<'a> AttemptBudget<'a> {
         shape: &LiteralAnchorShape,
         candidate: &'a LiteralCandidate,
         bytes: &'a [u8],
+        ascii: bool,
         attempts: usize,
     ) -> Option<Self> {
+        // `P` and `L` match only ASCII on every haystack the shape serves.
         let leading = shape.max_leading + candidate.max_literal_len;
-        let (minimum_tail, run) = match &candidate.tail {
-            TailBound::Finite(maximum) => (*maximum, None),
+        let tail = if ascii {
+            &candidate.tail
+        } else {
+            &candidate.tail_any
+        };
+        let (minimum_tail, run, after_run) = match tail {
+            TailBound::Finite(maximum) => (*maximum, None, 0),
             TailBound::Unbounded {
                 bounded_prefix,
                 run,
-            } => (*bounded_prefix, Some(run.as_ref())),
+                after,
+            } => (*bounded_prefix, Some(run.as_ref()), after.unwrap_or(0)),
         };
         let reach_floor = leading.saturating_add(minimum_tail);
         let attempt_floor = ATTEMPT_COST_FLOOR.saturating_add(reach_floor);
-        if attempts.saturating_mul(attempt_floor) > bytes.len() {
+        let allowance = bytes.len().saturating_mul(ATTEMPT_ALLOWANCE);
+        if attempts.saturating_mul(attempt_floor) > allowance {
             return None;
         }
         Some(Self {
             bytes,
             run,
+            after_run,
             reach_floor,
             run_end: 0,
-            remaining: bytes.len(),
+            remaining: allowance,
         })
     }
 
@@ -517,7 +783,9 @@ impl<'a> AttemptBudget<'a> {
         {
             self.run_end += 1;
         }
-        let charge = ATTEMPT_COST_FLOOR.saturating_add(self.run_end.saturating_sub(start));
+        let charge = ATTEMPT_COST_FLOOR
+            .saturating_add(self.run_end.saturating_sub(start))
+            .saturating_add(self.after_run);
         let Some(remaining) = self.remaining.checked_sub(charge) else {
             return false;
         };
@@ -535,8 +803,9 @@ impl GoRegex {
     /// Returns every whole match using anchored searches at `occurrences`.
     ///
     /// `occurrences` must be sorted, deduplicated and complete for the chosen
-    /// candidate's literals, and the haystack must be pure ASCII. `None` means
-    /// the budget rejected this haystack; call [`Self::find_all_normalized`].
+    /// candidate's literals. The haystack must be pure ASCII, or valid UTF-8
+    /// without U+017F and U+212A. `None` means the shape or the budget rejected
+    /// this haystack; call [`Self::find_all_normalized`].
     pub(crate) fn find_all_literal_anchored(
         &self,
         normalized: &NormalizedHaystack<'_>,
@@ -558,13 +827,14 @@ impl GoRegex {
         let result = (|| {
             let shape = self.literal_anchor.as_deref()?;
             let bytes = normalized.bytes();
-            let budget = AttemptBudget::new(
-                shape,
-                shape.candidates.get(candidate)?,
-                bytes,
-                occurrences.len(),
-            )?;
-            self.enumerate_anchored(bytes, shape, occurrences, Some(budget), || collected += 1)
+            let ascii = bytes.is_ascii();
+            if !shape.non_ascii_haystacks && !ascii {
+                return None;
+            }
+            let candidate = shape.candidates.get(candidate)?;
+            let placed = placeable(candidate, bytes, ascii, occurrences);
+            let budget = AttemptBudget::new(shape, candidate, bytes, ascii, placed.len())?;
+            self.enumerate_anchored(bytes, shape, &placed, Some(budget), || collected += 1)
         })();
         (result, collected)
     }
@@ -576,21 +846,34 @@ impl GoRegex {
     pub(crate) fn find_all_literal_anchored_unbudgeted(
         &self,
         normalized: &NormalizedHaystack<'_>,
+        candidate: usize,
         occurrences: &[usize],
     ) -> Option<Vec<ByteSpan>> {
         let shape = self.literal_anchor.as_deref()?;
-        self.enumerate_anchored(normalized.bytes(), shape, occurrences, None, || {})
+        let bytes = normalized.bytes();
+        let placed = placeable(
+            shape.candidates.get(candidate)?,
+            bytes,
+            bytes.is_ascii(),
+            occurrences,
+        );
+        self.enumerate_anchored(normalized.bytes(), shape, &placed, None, || {})
     }
 
     /// Enumerates each candidate with naive occurrence discovery and no budget.
     ///
-    /// Returns nothing for ineligible expressions and non-ASCII haystacks. This
-    /// is the oracle hook for tests and the regex fuzz target.
+    /// Returns nothing for ineligible expressions and for haystacks the shape
+    /// cannot serve. This is the oracle hook for tests and the regex fuzz
+    /// target.
     pub(crate) fn literal_anchored_candidates(&self, haystack: &[u8]) -> Vec<Vec<ByteSpan>> {
         let Some(shape) = self.literal_anchor.as_deref() else {
             return Vec::new();
         };
-        if !haystack.is_ascii() {
+        let served = haystack.is_ascii()
+            || (shape.non_ascii_haystacks
+                && std::str::from_utf8(haystack)
+                    .is_ok_and(|text| !text.contains(['\u{17f}', '\u{212a}'])));
+        if !served {
             return Vec::new();
         }
         let lowered = haystack.to_ascii_lowercase();
@@ -599,7 +882,8 @@ impl GoRegex {
             .iter()
             .map(|candidate| {
                 let occurrences = naive_occurrences(&lowered, candidate.literals());
-                self.enumerate_anchored(haystack, shape, &occurrences, None, || {})
+                let placed = placeable(candidate, haystack, haystack.is_ascii(), &occurrences);
+                self.enumerate_anchored(haystack, shape, &placed, None, || {})
                     .expect("enumeration without a budget cannot abandon")
             })
             .collect()
@@ -613,7 +897,7 @@ impl GoRegex {
         mut budget: Option<AttemptBudget<'_>>,
         mut collect_span: impl FnMut(),
     ) -> Option<Vec<ByteSpan>> {
-        debug_assert!(bytes.is_ascii());
+        debug_assert!(bytes.is_ascii() || shape.non_ascii_haystacks);
         debug_assert!(occurrences.windows(2).all(|pair| pair[0] < pair[1]));
         let end = bytes.len();
         let mut position = 0;
@@ -651,6 +935,24 @@ impl GoRegex {
         }
         Some(results)
     }
+}
+
+/// Keeps the occurrences where a match can have its literal (lemma 6). Only
+/// an ASCII haystack rules any out.
+fn placeable(
+    candidate: &LiteralCandidate,
+    bytes: &[u8],
+    ascii: bool,
+    occurrences: &[usize],
+) -> Vec<usize> {
+    if !ascii {
+        return occurrences.to_vec();
+    }
+    occurrences
+        .iter()
+        .copied()
+        .filter(|&occurrence| candidate.can_place(bytes, occurrence))
+        .collect()
 }
 
 /// Finds every literal start in `lowered`, sorted and deduplicated.

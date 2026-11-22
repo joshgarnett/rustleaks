@@ -239,6 +239,11 @@ impl ExplanationCollector {
         }
     }
 
+    /// Whether events are recorded at all.
+    pub(crate) const fn is_enabled(&self) -> bool {
+        self.options.maximum != 0
+    }
+
     pub(crate) fn has_room(&self) -> bool {
         !self.log.truncated
             && self.options.maximum != 0

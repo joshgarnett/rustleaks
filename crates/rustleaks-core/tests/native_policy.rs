@@ -2624,3 +2624,100 @@ fn an_extending_rule_replaces_a_builtin_entropy_predicate() {
     assert!(rule_ids_found(config, &original).is_empty());
     assert_eq!(rule_ids_found(builtin, &original), [id]);
 }
+
+/// Scans `inputs` with `pack` and decoding, and checks that every input
+/// reports both rule IDs, with explanations off and at small and large
+/// explanation limits.
+fn assert_composite_found(pack: &str, inputs: &[String]) {
+    let policy = NativePolicy::builder()
+        .with_pack("test-pack-v1", pack)
+        .unwrap()
+        .build()
+        .unwrap();
+    let options = ScanOptions::builder().max_decode_depth(2).build();
+    let control = ScanControl::unlimited();
+    for input in inputs {
+        let fragment = Fragment::new(input.as_bytes());
+        let plain = policy
+            .engine()
+            .scan_fragment_controlled(&fragment, &options, &control);
+        let mut ids = plain
+            .findings()
+            .iter()
+            .map(|finding| finding.rule_id().to_string())
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(
+            ids,
+            ["rustleaks.test-helper", "rustleaks.test-primary"],
+            "{input:?}"
+        );
+        for limit in [0, 1, 4_096] {
+            let explained = policy.scan_fragment_controlled(
+                &fragment,
+                &options,
+                &control,
+                ExplanationOptions::bounded(limit),
+            );
+            assert_eq!(plain.findings(), explained.scan().findings(), "{input:?}");
+        }
+    }
+}
+
+#[test]
+fn required_byte_rules_are_gated_by_their_own_literals() {
+    // The primary rule's literal `marker=` is outside the decoded value, so
+    // the required rule must not be gated by the primary rule's literals.
+    const COMPOSITE: &str = r#"
+[[rules]]
+id = "rustleaks.test-primary"
+regex = '''marker=(\S+)'''
+keywords = ["marker", "mark2"]
+[[rules.required]]
+id = "rustleaks.test-helper"
+
+[[rules]]
+id = "rustleaks.test-helper"
+regex = { dialect = "bytes-v1", pattern = "(AIK_CLIENT_[A-Za-z0-9]{24})" }
+keywords = ["aik_client_"]
+"#;
+    let value = ["AIK_CLIENT_", "Qx7Lm2Pz9Rk4Tw8Vb3Nc6Hj1"].concat();
+    let encoded = STANDARD.encode(&value);
+    assert_composite_found(
+        COMPOSITE,
+        &[format!("marker={encoded}\n"), format!("marker={value}\n")],
+    );
+}
+
+#[test]
+fn required_byte_rules_are_gated_by_their_own_keywords() {
+    // Both rules have one keyword. The required rule must be gated by
+    // `aik_client_`, not by the primary rule's `mark`.
+    const COMPOSITE: &str = r#"
+[[rules]]
+id = "rustleaks.test-primary"
+regex = { dialect = "bytes-v1", pattern = "(MARK[0-9]{8})" }
+keywords = ["mark"]
+[[rules.required]]
+id = "rustleaks.test-helper"
+
+[[rules]]
+id = "rustleaks.test-helper"
+regex = { dialect = "bytes-v1", pattern = "(AIK_CLIENT_[A-Za-z0-9]{24})" }
+keywords = ["aik_client_"]
+"#;
+    let helper = ["AIK_CLIENT_", "Qx7Lm2Pz9Rk4Tw8Vb3Nc6Hj1"].concat();
+    let primary = "MARK40731985 padding";
+    assert_composite_found(
+        COMPOSITE,
+        &[
+            format!(
+                "a {} b {}\n",
+                STANDARD.encode(primary),
+                STANDARD.encode(&helper)
+            ),
+            format!("a {primary} b {helper}\n"),
+        ],
+    );
+}

@@ -2288,3 +2288,234 @@ fn cancelled_overlap_filter_keeps_a_replaced_finding_whose_keeper_is_cut_off() {
     }
     assert!(seen_prefix_with_drop);
 }
+
+/// Native patterns that the prefilter derives from one pass, as in
+/// `scan_fragment_with_context`, or `None` when the pass must use the native
+/// automaton.
+fn prefilter_native_words(engine: &Engine, raw: &[u8]) -> Option<Box<[u64]>> {
+    let mut words = engine.empty_native_words()?;
+    let lowered = lowercase_bytes_keeping_ascii(raw);
+    if !lowered.kept_ascii {
+        return None;
+    }
+    let lowered = lowered.bytes;
+    for found in engine
+        .prefilter
+        .as_ref()
+        .unwrap()
+        .find_overlapping_iter(&lowered)
+    {
+        engine.record_prefilter_native(&mut words, found.pattern().as_usize());
+    }
+    Some(words.into_boxed_slice())
+}
+
+#[test]
+fn prefilter_finds_native_patterns_like_the_native_automaton() {
+    let engine = Engine::builder(ConfigLoader::new().load_default().unwrap())
+        .build()
+        .unwrap();
+    let matcher = engine.native_keyword_matcher.as_ref().unwrap();
+    assert_eq!(matcher.kind(), AhoCorasickKind::ContiguousNFA);
+    assert!(engine.native_from_prefilter);
+    // Every native pattern: ASCII keywords and required literals.
+    let mut patterns = BTreeSet::new();
+    for rule in engine.config.rules.values() {
+        for keyword in rule.native_keywords.iter().flatten() {
+            if let NativeKeyword::Ascii(text) = keyword {
+                patterns.insert(text.as_bytes().to_ascii_lowercase());
+            }
+        }
+        for set in rule_required_literals(rule) {
+            patterns.extend(set.iter().map(|literal| literal.to_vec()));
+        }
+    }
+    assert!(patterns.len() > 400);
+    let mut inputs = Vec::new();
+    for (index, pattern) in patterns.iter().enumerate() {
+        // Mixed case, with non-ASCII and invalid bytes beside the pattern.
+        let mixed = pattern
+            .iter()
+            .enumerate()
+            .map(|(at, byte)| {
+                if (at + index) % 2 == 0 {
+                    byte.to_ascii_uppercase()
+                } else {
+                    *byte
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut input = mixed.clone();
+        input.extend_from_slice("é".as_bytes());
+        input.extend_from_slice(&mixed);
+        input.push(0xff);
+        inputs.push(mixed);
+        inputs.push(input);
+        // A pattern split by a non-ASCII rune or an invalid byte is absent.
+        let middle = pattern.len() / 2;
+        for separator in ["é".as_bytes(), b"\xff".as_slice()] {
+            let mut split = pattern[..middle].to_vec();
+            split.extend_from_slice(separator);
+            split.extend_from_slice(&pattern[middle..]);
+            inputs.push(split);
+        }
+    }
+    inputs.push(patterns.iter().flatten().copied().collect());
+    let mut compared = 0;
+    for input in &inputs {
+        if let Some(words) = prefilter_native_words(&engine, input) {
+            assert_eq!(
+                words,
+                native_keyword_words(matcher, input),
+                "{}",
+                String::from_utf8_lossy(input)
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, inputs.len());
+    // A non-ASCII rune that lowercases to ASCII leaves the pass to the
+    // native automaton: the Kelvin sign lowers to `k` but is not `k`.
+    for rune in ["\u{212a}", "\u{130}"] {
+        let input = format!("{rune}ey");
+        assert!(prefilter_native_words(&engine, input.as_bytes()).is_none());
+    }
+}
+
+#[test]
+fn rules_with_keywords_also_need_their_required_literals() {
+    let engine = engine(
+        r#"
+[[rules]]
+id = "lob-like"
+regex = '''[a-z]{0,5}?lob[ a-z]{0,3}=((?:live|test)_[a-f0-9]{4})'''
+secretGroup = 1
+keywords = ["test_", "live_"]
+"#,
+    );
+    // The `live_`/`test_` set repeats the keywords and is left out.
+    let rule = engine.config.rules.values().next().unwrap();
+    assert_eq!(
+        rule_required_literals(rule),
+        [&Box::from([Box::from(b"lob".as_slice())])]
+    );
+    let scan = |input: &[u8]| {
+        let outcome = engine.scan_fragment_controlled(
+            &Fragment::new(input),
+            &ScanOptions::default(),
+            &ScanControl::unlimited(),
+        );
+        assert!(outcome.is_complete());
+        (
+            outcome.findings().len(),
+            outcome.usage().normalization_bytes(),
+        )
+    };
+    assert_eq!(scan(b"mylob=test_ab12").0, 1);
+    assert_eq!(scan(b"x lob =live_00ff").0, 1);
+    // A search over input with an invalid byte charges its normalization.
+    // Without `lob` the search is skipped and charges nothing.
+    let (found, searched) = scan(b"mylob=test_ab1z\xff");
+    assert_eq!(found, 0);
+    assert!(searched > 0);
+    assert_eq!(scan(b"mylab=test_ab12\xff"), (0, 0));
+}
+
+#[test]
+fn native_keyword_misses_charge_like_the_detection_path() {
+    // Explained scans always take the full detection path, so they are the
+    // reference for findings, usage and where a work budget stops the scan.
+    let engine = Engine::builder(ConfigLoader::new().load_default().unwrap())
+        .build()
+        .unwrap();
+    let gates = engine.native_fast_gates.iter().flatten().count();
+    let native = engine
+        .config
+        .rules
+        .values()
+        .filter(|rule| rule.native_required.is_some() || rule.native_byte_matcher.is_some())
+        .count();
+    let skip = engine
+        .config
+        .rules
+        .values()
+        .filter(|rule| {
+            (rule.native_required.is_some() || rule.native_byte_matcher.is_some())
+                && rule.skip_report
+        })
+        .count();
+    // Every reporting native rule with ASCII keywords, which is all but the
+    // keyword-less ones.
+    assert!(
+        gates >= 25,
+        "{gates} of {native} native rules, {skip} skipReport"
+    );
+    let token = ["ghp_", "abcdefghijklmnopqrstuvwxyz0123456789"].concat();
+    let inputs = [
+        "plain text without any keyword\n".to_owned(),
+        format!("export GITHUB_TOKEN={token}\nmore text\n"),
+        "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n".to_owned(),
+        "caf\u{e9} au lait\n".to_owned(),
+    ];
+    let options = ScanOptions::default();
+    for input in &inputs {
+        let fragment = Fragment::new(input.as_bytes());
+        let scan = |control: &ScanControl<'_>| {
+            let fast = engine.scan_fragment_controlled(&fragment, &options, control);
+            let (full, _) = engine.scan_fragment_explained(
+                &fragment,
+                &options,
+                control,
+                ExplanationOptions::bounded(ExplanationOptions::MAX_RECORDS),
+                false,
+            );
+            (fast, full)
+        };
+        let (fast, full) = scan(&ScanControl::unlimited());
+        assert_eq!(fast.findings(), full.findings(), "{input:?}");
+        assert_eq!(fast.usage(), full.usage(), "{input:?}");
+        let used = fast.usage().work_units();
+        assert!(used > 100, "{input:?}: {used}");
+        // Every work limit stops both scans at the same point.
+        for limit in (0..=used).step_by(7).chain([used - 1]) {
+            let control =
+                ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(limit));
+            let (fast, full) = scan(&control);
+            assert_eq!(
+                fast.termination(),
+                full.termination(),
+                "{input:?} at {limit}"
+            );
+            assert_eq!(fast.findings(), full.findings(), "{input:?} at {limit}");
+            assert_eq!(fast.usage(), full.usage(), "{input:?} at {limit}");
+        }
+    }
+}
+
+#[test]
+fn deferred_byte_matchers_count_captures_like_their_built_matchers() {
+    let engine = Engine::builder(ConfigLoader::new().load_default().unwrap())
+        .build()
+        .unwrap();
+    let mut checked = 0;
+    for rule in engine.config.rules.values() {
+        if let Some(regex) = &rule.native_byte_matcher {
+            assert_eq!(
+                regex.capture_count(),
+                regex.built_capture_count(),
+                "{}",
+                rule.id
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 50, "{checked}");
+    for pattern in [r"a(b)(?:c)(?P<d>e)", r"(?i)(x|(y))z", "plain"] {
+        let regex = crate::regex::NativeByteRegex::compile(pattern).unwrap();
+        assert_eq!(
+            regex.capture_count(),
+            regex.built_capture_count(),
+            "{pattern}"
+        );
+    }
+}

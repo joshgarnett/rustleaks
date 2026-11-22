@@ -53,6 +53,7 @@ labels. A maintainer applies labels during triage.
 | --- | --- |
 | `bug` | Rustleaks behaves incorrectly. Use for `bug: ` issues. |
 | `enhancement` | A new capability or improvement. Use for `feat: ` issues. |
+| `experiment` | An idea worth trying, such as a performance change, that must be measured before it is adopted. Add it next to `enhancement`. |
 | `documentation` | The problem or change is in documentation only. |
 | `dependencies` | The issue concerns a dependency, such as an advisory or a required update. |
 | `question` | The reporter must give more information before work can start. |

@@ -1,18 +1,25 @@
 //! Private encoded-segment decoder and original-offset mapper.
 
 use std::collections::BTreeMap;
-#[cfg(test)]
 use std::convert::Infallible;
 use std::ops::Range;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::OnceLock;
 
 use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, general_purpose};
 
 use crate::model::Base64Mode;
-use crate::regex::{GoRegex, NormalizedHaystack};
+#[cfg(test)]
+use crate::regex::GoRegex;
 
+mod scan;
+
+/// The candidate pattern, as one regex. [`scan`] implements it byte by byte;
+/// tests compare the two.
+#[cfg(test)]
 const ENCODINGS_PATTERN: &str = concat!(
     "(?P<percent>%[0-9A-Fa-f]{2}(?:.*%[0-9A-Fa-f]{2})?)|",
     r"(?P<unicode>(?:(?:U\+[a-fA-F0-9]{4}(?:\s|$))+|(?i)(?:\\{1,2}u[a-fA-F0-9]{4})+))|",
@@ -30,6 +37,7 @@ const GO_RAW_URL_BASE64: general_purpose::GeneralPurpose = general_purpose::Gene
         .with_decode_allow_trailing_bits(true)
         .with_decode_padding_mode(DecodePaddingMode::RequireNone),
 );
+#[cfg(test)]
 static ENCODINGS_REGEX: OnceLock<GoRegex> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -180,13 +188,14 @@ impl EncodedSegment {
 pub(crate) enum DecodeCheckpoint {
     Work(usize),
     CollectedSpans(usize),
-    NormalizationBytes(Option<usize>),
 }
 
 #[derive(Debug)]
 pub(crate) struct Decoder {
     base64_mode: Base64Mode,
     decoded: BTreeMap<Vec<u8>, Arc<[u8]>>,
+    /// The regex that [`scan`] implements, for differential tests.
+    #[cfg(test)]
     encodings: &'static GoRegex,
 }
 
@@ -200,6 +209,7 @@ impl Decoder {
         Self {
             base64_mode,
             decoded: BTreeMap::new(),
+            #[cfg(test)]
             encodings: ENCODINGS_REGEX.get_or_init(|| {
                 GoRegex::compile(ENCODINGS_PATTERN)
                     .expect("the static encoding expression must compile")
@@ -244,7 +254,7 @@ impl Decoder {
     ) -> Result<(Vec<u8>, Vec<EncodedSegment>), E> {
         self.decode_with_resources(data, predecessors, false, |event| match event {
             DecodeCheckpoint::Work(units) => checkpoint(units),
-            DecodeCheckpoint::CollectedSpans(_) | DecodeCheckpoint::NormalizationBytes(_) => Ok(()),
+            DecodeCheckpoint::CollectedSpans(_) => Ok(()),
         })
     }
 
@@ -273,7 +283,7 @@ impl Decoder {
 
     /// Decodes every candidate into segments and the pass output.
     ///
-    /// Decoded values always reach the cache and the segment as `Arc<[u8]>`.
+    /// Accepted decoded values reach the cache and the segment as `Arc<[u8]>`.
     /// Before the first accepted segment a miss decodes into `scratch` so a
     /// pass that decodes nothing never copies `data`. After that a miss
     /// decodes straight into `output`, since the bytes between candidates are
@@ -327,8 +337,13 @@ impl Decoder {
                     );
                     Arc::from(scratch.as_slice())
                 };
-                self.decoded
-                    .insert(encoded_value.to_vec(), Arc::clone(&value));
+                // Only accepted values are kept. Most candidates, such as long
+                // identifiers, decode to nothing and appear once, so caching
+                // them would cost more than decoding them again.
+                if !value.is_empty() {
+                    self.decoded
+                        .insert(encoded_value.to_vec(), Arc::clone(&value));
+                }
                 (value, in_output)
             };
             if decoded_value.is_empty() {
@@ -380,23 +395,22 @@ impl Decoder {
     }
 
     /// Returns every encoding-regex match in order, one entry per match.
+    ///
+    /// The byte scanner in [`scan`] reads `data` directly, so no normalized
+    /// copy is made or charged.
     fn encoding_candidates_controlled<E>(
         &self,
         data: &[u8],
         bounded_spans: bool,
         checkpoint: &mut impl FnMut(DecodeCheckpoint) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        checkpoint(DecodeCheckpoint::NormalizationBytes(
-            NormalizedHaystack::required_owned_bytes(data),
-        ))?;
-        let normalized = NormalizedHaystack::new(data);
         let spans = if bounded_spans {
-            self.encodings
-                .find_all_normalized_controlled(&normalized, || {
-                    checkpoint(DecodeCheckpoint::CollectedSpans(1))
-                })?
+            scan::find_encodings(data, || checkpoint(DecodeCheckpoint::CollectedSpans(1)))?
         } else {
-            let spans = self.encodings.find_all_normalized(&normalized);
+            let spans = match scan::find_encodings(data, || Ok::<(), Infallible>(())) {
+                Ok(spans) => spans,
+                Err(never) => match never {},
+            };
             checkpoint(DecodeCheckpoint::CollectedSpans(spans.len()))?;
             spans
         };
@@ -451,12 +465,13 @@ impl Decoder {
     ) -> Result<Vec<EncodingMatch>, E> {
         self.encoding_candidates_controlled(data, false, &mut |event| match event {
             DecodeCheckpoint::Work(units) => checkpoint(units),
-            DecodeCheckpoint::CollectedSpans(_) | DecodeCheckpoint::NormalizationBytes(_) => Ok(()),
+            DecodeCheckpoint::CollectedSpans(_) => Ok(()),
         })
     }
 }
 
-/// Names the [`ENCODINGS_PATTERN`] alternative that produced one whole match.
+/// Names the alternative of the candidate pattern (see [`scan`]) that produced
+/// one whole match.
 ///
 /// `span` must be the bytes of a match of that pattern. Each alternative is its
 /// own whole capture group, so the capture index equals the first alternative
@@ -752,6 +767,46 @@ fn append_base64_with_mode(encoded: &[u8], output: &mut Vec<u8>, mode: Base64Mod
     {
         return;
     }
+    // Compatible mode keeps a value only if every decoded byte is printable.
+    // The first four characters alone decode to the first three bytes, so
+    // when those fail under both alphabets the whole value would fail too.
+    // Most candidates are long identifiers that fail here.
+    if mode == Base64Mode::Compatible
+        && let Some(first) = encoded.first_chunk::<4>()
+        && !first_bytes_printable(first, false)
+        && !first_bytes_printable(first, true)
+    {
+        return;
+    }
+    append_base64_decoded(encoded, output, mode);
+}
+
+/// Returns whether `quartet` decodes, in the standard or the URL-safe
+/// alphabet, to three printable ASCII bytes.
+fn first_bytes_printable(quartet: &[u8; 4], url_safe: bool) -> bool {
+    let mut value = 0_u32;
+    for &character in quartet {
+        let digit = match character {
+            b'A'..=b'Z' => character - b'A',
+            b'a'..=b'z' => character - b'a' + 26,
+            b'0'..=b'9' => character - b'0' + 52,
+            b'+' if !url_safe => 62,
+            b'/' if !url_safe => 63,
+            b'-' if url_safe => 62,
+            b'_' if url_safe => 63,
+            _ => return false,
+        };
+        value = (value << 6) | u32::from(digit);
+    }
+    value.to_be_bytes()[1..]
+        .iter()
+        .copied()
+        .all(is_printable_ascii)
+}
+
+/// Decodes `encoded` with each alphabet in turn and keeps the first value
+/// that decodes, and in compatible mode is printable.
+fn append_base64_decoded(encoded: &[u8], output: &mut Vec<u8>, mode: Base64Mode) {
     let value_start = output.len();
     let engines = match mode {
         Base64Mode::Compatible => [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64],
@@ -850,6 +905,52 @@ const fn is_printable_ascii(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_bytes_reject_only_values_that_would_not_decode() {
+        // A small deterministic generator, so failures reproduce.
+        let mut state = 0x5eed_u64;
+        let mut next = |bound: usize| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            usize::try_from(state >> 33).unwrap() % bound
+        };
+        let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/-_";
+        let mut accepted = 0;
+        for round in 0..60_000 {
+            let encoded = if round % 3 == 0 {
+                // Values that decode to printable text in one alphabet.
+                let text = (0..12 + next(24))
+                    .map(|_| u8::try_from(0x20 + next(0x5f)).unwrap())
+                    .collect::<Vec<_>>();
+                let encoded = if round % 2 == 0 {
+                    GO_STANDARD_BASE64.encode(&text)
+                } else {
+                    GO_RAW_URL_BASE64.encode(&text)
+                };
+                encoded.into_bytes()
+            } else {
+                let mut encoded = (0..16 + next(24))
+                    .map(|_| alphabet[next(alphabet.len())])
+                    .collect::<Vec<_>>();
+                encoded.extend(std::iter::repeat_n(b'=', next(3)));
+                encoded
+            };
+            let mut fast = Vec::new();
+            append_base64_with_mode(&encoded, &mut fast, Base64Mode::Compatible);
+            let mut full = Vec::new();
+            if encoded
+                .iter()
+                .any(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'))
+            {
+                append_base64_decoded(&encoded, &mut full, Base64Mode::Compatible);
+            }
+            assert_eq!(fast, full, "{}", String::from_utf8_lossy(&encoded));
+            accepted += usize::from(!fast.is_empty());
+        }
+        assert!(accepted > 10_000, "{accepted}");
+    }
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -950,6 +1051,8 @@ mod tests {
             .unwrap()
     }
 
+    /// The recorded cache, without values that decoded to nothing: the Rust
+    /// decoder keeps only accepted values.
     fn oracle_cache(entries: &[OracleCacheEntry]) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut decoded = entries
             .iter()
@@ -959,6 +1062,7 @@ mod tests {
                     oracle_bytes(&entry.decoded_base64),
                 )
             })
+            .filter(|(_, decoded)| !decoded.is_empty())
             .collect::<Vec<_>>();
         decoded.sort_by(|left, right| left.0.cmp(&right.0));
         decoded
@@ -1228,17 +1332,18 @@ mod tests {
             &second_segments[0].decoded_value
         ));
 
+        // A rejected candidate is not cached.
         let rejected = b"AAAAAAAAAAAAAAAA AAAAAAAAAAAAAAAA";
         let (_unchanged, rejected_segments) = decoder.decode(rejected, &[]);
         assert!(rejected_segments.is_empty());
-        assert_eq!(decoder.decoded.len(), 3);
+        assert_eq!(decoder.decoded.len(), 2);
 
         let mut isolated = Decoder::new();
         assert!(isolated.decoded.is_empty());
-        let (_unchanged, isolated_segments) = isolated.decode(rejected, &[]);
-        assert!(isolated_segments.is_empty());
+        let (_unchanged, isolated_segments) = isolated.decode(candidate, &[]);
+        assert_eq!(isolated_segments.len(), 1);
         assert_eq!(isolated.decoded.len(), 1);
-        assert_eq!(decoder.decoded.len(), 3);
+        assert_eq!(decoder.decoded.len(), 2);
     }
 
     /// Replays the pass chain of every decode corpus run with an isolated
@@ -1618,7 +1723,6 @@ mod tests {
         assert_eq!(
             rust_cache(&decoder),
             vec![
-                (b"AAAAAAAAAAAAAAAA".to_vec(), Vec::new()),
                 (
                     b"QUJDREVGR0hJSktMTU5PUA==".to_vec(),
                     b"ABCDEFGHIJKLMNOP".to_vec()

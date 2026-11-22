@@ -440,10 +440,15 @@ fn compare(actual: &[Expected], expected: &[Expected]) -> Result<()> {
 const GITLEAKS_RULES: &str = "gitleaks-rules.toml";
 
 fn write_gitleaks_rules(root: &Path) -> Result<()> {
-    std::fs::write(
-        root.join(GITLEAKS_RULES),
-        rustleaks_core::config::DEFAULT_CONFIG,
-    )?;
+    // Tests share one folder and run in parallel, so write a temporary file
+    // and rename it: a CLI that reads the rules never sees a partial file.
+    let temporary = root.join(format!(
+        "{GITLEAKS_RULES}.{}.{:?}.tmp",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::write(&temporary, rustleaks_core::config::DEFAULT_CONFIG)?;
+    std::fs::rename(&temporary, root.join(GITLEAKS_RULES))?;
     Ok(())
 }
 

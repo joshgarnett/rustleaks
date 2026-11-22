@@ -862,7 +862,7 @@ fn normalization_limits_admit_invalid_byte_amplification_before_allocation() {
 }
 
 #[test]
-fn normalization_usage_includes_capture_allowlist_path_and_decoder_searches() {
+fn normalization_usage_includes_capture_allowlist_and_path_searches() {
     let unit = 3 + std::mem::size_of::<usize>();
     let capture = engine("[[rules]]\nid = 'r'\nregex = '(.)'\n");
     let fragment = Fragment::new(b"\xff");
@@ -916,15 +916,30 @@ fn normalization_usage_includes_capture_allowlist_path_and_decoder_searches() {
     assert!(exact.is_complete());
     assert_eq!(exact.usage().normalization_bytes(), unit + 1);
 
-    let decoder = engine("[[rules]]\nid = 'r'\nregex = 'NEVER'\n");
+    // The expression has no literal that every match contains, so it is
+    // searched and normalizes the input. The decoder reads raw bytes and adds
+    // nothing.
+    let decoder = engine("[[rules]]\nid = 'r'\nregex = 'N.E.V.E.R'\n");
     let exact = bounded_outcome(
         &decoder,
         &Fragment::new(b"\xff"),
         &ScanOptions::builder().max_decode_depth(1).build(),
-        ScanBudget::unlimited().max_normalization_bytes(2 * unit),
+        ScanBudget::unlimited().max_normalization_bytes(unit),
     );
     assert!(exact.is_complete());
-    assert_eq!(exact.usage().normalization_bytes(), 2 * unit);
+    assert_eq!(exact.usage().normalization_bytes(), unit);
+
+    // Every match of `NEVER` contains `never`, which the input lacks, so the
+    // rule search is skipped and nothing is normalized.
+    let skipped = engine("[[rules]]\nid = 'r'\nregex = 'NEVER'\n");
+    let exact = bounded_outcome(
+        &skipped,
+        &Fragment::new(b"\xff"),
+        &ScanOptions::builder().max_decode_depth(1).build(),
+        ScanBudget::unlimited().max_normalization_bytes(0),
+    );
+    assert!(exact.is_complete());
+    assert_eq!(exact.usage().normalization_bytes(), 0);
 }
 
 fn owned_finding_fields(finding: &rustleaks_core::model::Finding) -> usize {

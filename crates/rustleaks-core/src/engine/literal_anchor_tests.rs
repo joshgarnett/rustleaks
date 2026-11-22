@@ -106,7 +106,7 @@ fn assert_paths_agree(
     );
     assert_eq!(
         rule.regex
-            .find_all_literal_anchored_unbudgeted(&normalized, &starts)
+            .find_all_literal_anchored_unbudgeted(&normalized, rule.anchor.candidate, &starts)
             .unwrap(),
         expected,
         "{label}: anchored enumeration differs for {} on {:?}",
@@ -329,10 +329,12 @@ fn keyword_dfa_kind_matches_the_automatic_kind_on_keyword_hits() {
         .match_kind(MatchKind::Standard)
         .build(&keywords)
         .unwrap();
+    // The prefilter also holds native patterns after the keywords.
     let hits = |automaton: &AhoCorasick, input: &[u8]| {
         automaton
             .find_overlapping_iter(input)
             .map(|found| (found.pattern().as_usize(), found.start(), found.end()))
+            .filter(|(pattern, _, _)| *pattern < engine.keyword_count)
             .collect::<Vec<_>>()
     };
     let mut compared = 0_usize;

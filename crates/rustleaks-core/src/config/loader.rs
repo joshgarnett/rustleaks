@@ -538,11 +538,19 @@ impl ConfigLoader {
         contents: &str,
         origin: Option<&ConfigOrigin>,
     ) -> Result<RawConfig, ConfigError> {
-        let mut value =
+        let value =
             toml::from_str::<toml::Value>(contents).map_err(|source| ConfigError::Parse {
                 at: origin_suffix(origin),
                 source,
             })?;
+        Self::parse_value(value, origin)
+    }
+
+    /// Decodes an already parsed TOML document like [`Self::parse_toml`].
+    pub(crate) fn parse_value(
+        mut value: toml::Value,
+        origin: Option<&ConfigOrigin>,
+    ) -> Result<RawConfig, ConfigError> {
         normalize_table_keys(&mut value);
         normalize_weak_types(&mut value);
         value.try_into().map_err(|source| ConfigError::Decode {
