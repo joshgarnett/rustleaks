@@ -1571,7 +1571,7 @@ fn generic_filter_ignores_file_columns_and_end_geometry() {
         .build()
         .unwrap();
 
-    let filtered = filter_findings(vec![generic, specific], 100);
+    let filtered = filter_findings(&ReplacedBy::default(), vec![generic, specific], 100);
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].rule_id().as_bytes(), b"specific");
     assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
@@ -1674,14 +1674,19 @@ fn generic_filter_prototypes() -> Vec<Finding> {
 fn assert_generic_filters_match_frozen(findings: &[Finding]) {
     for redact in [0, 100] {
         assert_eq!(
-            filter_findings(findings.to_vec(), redact),
+            filter_findings(&ReplacedBy::default(), findings.to_vec(), redact),
             frozen_filter_findings(findings.to_vec(), redact),
             "{findings:?}",
         );
     }
     let complete = frozen_filter_findings(findings.to_vec(), 0);
     assert_eq!(
-        filter_findings_cancellable(findings.to_vec(), 0, ScanControl::unlimited()),
+        filter_findings_cancellable(
+            &ReplacedBy::default(),
+            findings.to_vec(),
+            0,
+            ScanControl::unlimited()
+        ),
         (complete.clone(), None),
         "{findings:?}",
     );
@@ -1692,8 +1697,12 @@ fn assert_generic_filters_match_frozen(findings: &[Finding]) {
     let run = |limit: usize| {
         let polls = AtomicUsize::new(0);
         let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
-        let outcome =
-            filter_findings_cancellable(findings.to_vec(), 0, ScanControl::cancellable(&cancel));
+        let outcome = filter_findings_cancellable(
+            &ReplacedBy::default(),
+            findings.to_vec(),
+            0,
+            ScanControl::cancellable(&cancel),
+        );
         (outcome, polls.load(Ordering::SeqCst))
     };
     for limit in (0..=total + 1).chain([usize::MAX]) {
@@ -1800,6 +1809,7 @@ fn generic_filter_polls_before_each_comparison_and_stops_work_on_cancellation() 
             poll == cancel_at
         };
         let (filtered, termination) = filter_findings_with_cancellation(
+            &ReplacedBy::default(),
             findings.clone(),
             100,
             ScanControl::cancellable(&cancel),
@@ -1847,10 +1857,17 @@ fn cancellable_generic_filter_polls_grow_linearly_and_match_the_plain_filter() {
             polls.fetch_add(1, Ordering::SeqCst);
             false
         };
-        let (filtered, termination) =
-            filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&count));
+        let (filtered, termination) = filter_findings_cancellable(
+            &ReplacedBy::default(),
+            findings.clone(),
+            0,
+            ScanControl::cancellable(&count),
+        );
         assert_eq!(termination, None);
-        assert_eq!(filtered, filter_findings(findings, 0));
+        assert_eq!(
+            filtered,
+            filter_findings(&ReplacedBy::default(), findings, 0)
+        );
         assert_eq!(filtered.len(), 2 * lines);
         // 3 * lines findings: two index polls and one outer poll each,
         // plus one comparison per generic finding, whose bucket starts
@@ -1919,12 +1936,19 @@ fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
             polls.fetch_add(1, Ordering::SeqCst);
             false
         };
-        let (filtered, termination) =
-            filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&count));
+        let (filtered, termination) = filter_findings_cancellable(
+            &ReplacedBy::default(),
+            findings.clone(),
+            0,
+            ScanControl::cancellable(&count),
+        );
         assert_eq!(termination, None);
         assert_eq!(polls.load(Ordering::SeqCst), expected_polls, "{findings:?}");
         assert_eq!(ids(&filtered), retained, "{findings:?}");
-        assert_eq!(ids(&filter_findings(findings, 0)), retained);
+        assert_eq!(
+            ids(&filter_findings(&ReplacedBy::default(), findings, 0)),
+            retained
+        );
     }
 
     // Polls are numbered from zero: 0 through 5 classify and index the
@@ -1946,8 +1970,12 @@ fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
     ] {
         let polls = AtomicUsize::new(0);
         let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= limit;
-        let (filtered, termination) =
-            filter_findings_cancellable(findings.clone(), 0, ScanControl::cancellable(&cancel));
+        let (filtered, termination) = filter_findings_cancellable(
+            &ReplacedBy::default(),
+            findings.clone(),
+            0,
+            ScanControl::cancellable(&cancel),
+        );
         assert_eq!(
             termination,
             Some(ScanTermination::Cancelled),
@@ -1957,8 +1985,12 @@ fn generic_suppression_outcomes_and_poll_counts_are_explicit() {
     }
     let polls = AtomicUsize::new(0);
     let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 10;
-    let (filtered, termination) =
-        filter_findings_cancellable(findings, 0, ScanControl::cancellable(&cancel));
+    let (filtered, termination) = filter_findings_cancellable(
+        &ReplacedBy::default(),
+        findings,
+        0,
+        ScanControl::cancellable(&cancel),
+    );
     assert_eq!(termination, None);
     assert_eq!(ids(&filtered), [b"plain".to_vec(), b"specific".to_vec()]);
 }
@@ -1985,7 +2017,7 @@ fn private_filter_replays_the_composite_corpus() {
             .map(finding_from_json)
             .collect();
         let redact = usize::try_from(request["redact_percent"].as_u64().unwrap()).unwrap();
-        let actual = filter_findings(inputs, redact);
+        let actual = filter_findings(&ReplacedBy::default(), inputs, redact);
         let expected = response["findings"].as_array().unwrap();
         assert_eq!(actual.len(), expected.len(), "{id}");
         for (finding, value) in actual.iter().zip(expected) {
@@ -2159,4 +2191,100 @@ fn decode(encoded: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .unwrap()
+}
+
+/// A finding of `rule_id` with `secret` at an exact range in one file.
+fn overlap_probe(rule_id: &[u8], secret: &[u8], start: usize) -> Finding {
+    Finding::builder()
+        .rule_id(rule_id)
+        .location(Location::new(1, 1, 1, 1).unwrap())
+        .file("same.txt")
+        .commit("c")
+        .match_text(secret)
+        .secret(secret)
+        .secret_range(FindingRange::Exact(
+            ByteRange::from_start_len(start, secret.len()).unwrap(),
+        ))
+        .build()
+        .unwrap()
+}
+
+fn overlap_replacements() -> ReplacedBy {
+    ReplacedBy {
+        keepers: [(
+            b"a-drop".as_slice().into(),
+            [b"b-keep".as_slice().into()].into(),
+        )]
+        .into(),
+        kept: [b"b-keep".as_slice().into()].into(),
+    }
+}
+
+#[test]
+fn overlap_filter_drops_only_a_finding_whose_keeper_reports_the_same_place() {
+    let replaced = overlap_replacements();
+    let findings = vec![
+        overlap_probe(b"a-drop", b"tok", 4),
+        overlap_probe(b"a-drop", b"tok", 9),
+        overlap_probe(b"b-keep", b"tok", 4),
+    ];
+    let ids = |findings: &[Finding]| {
+        findings
+            .iter()
+            .map(|finding| {
+                (
+                    finding.rule_id().as_bytes().to_vec(),
+                    finding.secret_range(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = ids(&[findings[1].clone(), findings[2].clone()]);
+    assert_eq!(
+        ids(&filter_findings(&replaced, findings.clone(), 0)),
+        expected
+    );
+    let (filtered, termination) =
+        filter_findings_cancellable(&replaced, findings, 0, ScanControl::cancellable(&|| false));
+    assert_eq!(termination, None);
+    assert_eq!(ids(&filtered), expected);
+}
+
+#[test]
+fn cancelled_overlap_filter_keeps_a_replaced_finding_whose_keeper_is_cut_off() {
+    // Rule-grouped order puts the dropped finding before its keeper.
+    let findings = vec![
+        overlap_probe(b"a-drop", b"tok", 4),
+        overlap_probe(b"b-keep", b"tok", 4),
+    ];
+    let mut seen_prefix_with_drop = false;
+    for allowed in 0..16 {
+        let polls = AtomicUsize::new(0);
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= allowed;
+        let (filtered, termination) = filter_findings_cancellable(
+            &overlap_replacements(),
+            findings.clone(),
+            0,
+            ScanControl::cancellable(&cancel),
+        );
+        let rules: Vec<_> = filtered
+            .iter()
+            .map(|finding| finding.rule_id().as_bytes().to_vec())
+            .collect();
+        match termination {
+            None => assert_eq!(rules, [b"b-keep".to_vec()]),
+            Some(_) => {
+                // A cancelled result is a prefix: nothing decided, the
+                // dropped finding alone, or the keeper alone.
+                assert!(
+                    rules.is_empty()
+                        || rules == [b"a-drop".to_vec()]
+                        || rules == [b"b-keep".to_vec()],
+                    "{allowed}"
+                );
+                seen_prefix_with_drop |= rules == [b"a-drop".to_vec()];
+            }
+        }
+    }
+    assert!(seen_prefix_with_drop);
 }

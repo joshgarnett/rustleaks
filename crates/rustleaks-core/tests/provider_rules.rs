@@ -1189,25 +1189,26 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
     }
 }
 
-/// In the full provider pack, `rustleaks.xai-api-key-delimiter` also reports
-/// an 80-byte xAI body followed by a delimiter or the end of input, at the
-/// same secret span as `rustleaks.xai-api-key-80`. Check and remove that
-/// accepted duplicate so the remaining assertions cover the follow-up rule.
-fn without_same_span_xai(id: &str, full_pack: bool, mut findings: Vec<Finding>) -> Vec<Finding> {
-    if full_pack && id == "rustleaks.xai-api-key-80" {
-        let index = findings
-            .iter()
-            .position(|f| f.rule_id().as_bytes() == XAI.as_bytes())
-            .expect("same-span xAI delimiter finding");
-        let extra = findings.remove(index);
-        assert!(
-            findings
-                .iter()
-                .any(|f| f.rule_id().as_bytes() == id.as_bytes()
-                    && f.secret_range() == extra.secret_range())
-        );
+/// In the full provider pack, `rustleaks.xai-api-key-delimiter` also accepts
+/// an 80-byte xAI body followed by a delimiter or the end of input. A reviewed
+/// overlap makes it replace `rustleaks.xai-api-key-80` at the same secret
+/// range. Returns whether `findings` is that replacement, after checking that
+/// the delimiter rule alone reports `secret` at `secret_range`.
+fn replaced_by_xai_delimiter(
+    id: &str,
+    full_pack: bool,
+    secret: &[u8],
+    secret_range: FindingRange,
+    findings: &[Finding],
+) -> bool {
+    if !(full_pack && id == "rustleaks.xai-api-key-80") {
+        return false;
     }
-    findings
+    assert_eq!(findings.len(), 1, "{id}");
+    assert_eq!(findings[0].rule_id().as_bytes(), XAI.as_bytes());
+    assert_eq!(findings[0].secret().as_bytes(), secret);
+    assert_eq!(findings[0].secret_range(), secret_range);
+    true
 }
 
 #[test]
@@ -1221,8 +1222,16 @@ fn followup_exact_match_secret_locations_and_invalid_bytes_are_independent() {
             (composed().engine(), true),
             (both_packs().engine(), true),
         ] {
-            let findings =
-                without_same_span_xai(case.id, full_pack, scan(engine, input.as_bytes()));
+            let findings = scan(engine, input.as_bytes());
+            if replaced_by_xai_delimiter(
+                case.id,
+                full_pack,
+                case.secret.as_bytes(),
+                range(secret_start, secret_start + case.secret.len()),
+                &findings,
+            ) {
+                continue;
+            }
             assert_eq!(findings.len(), 1, "{}", case.id);
             let finding = &findings[0];
             assert_eq!(finding.rule_id().as_bytes(), case.id.as_bytes());
@@ -1652,11 +1661,19 @@ fn followup_raw_occurrences_and_generic_attribution_are_separate() {
             assert_eq!(old[0].rule_id().as_bytes(), b"generic-api-key");
             assert_eq!(old[0].secret().as_bytes(), case.secret.as_bytes());
         }
-        let raw_after =
-            without_same_span_xai(case.id, true, scan(composed().engine(), raw.as_bytes()));
-        assert_eq!(raw_after.len(), 1, "{}", case.id);
-        assert_eq!(raw_after[0].rule_id().as_bytes(), case.id.as_bytes());
-        assert_eq!(raw_after[0].secret().as_bytes(), case.secret.as_bytes());
+        let raw_after = scan(composed().engine(), raw.as_bytes());
+        let raw_start = raw.len() - case.suffix.len() - case.secret.len();
+        if !replaced_by_xai_delimiter(
+            case.id,
+            true,
+            case.secret.as_bytes(),
+            range(raw_start, raw_start + case.secret.len()),
+            &raw_after,
+        ) {
+            assert_eq!(raw_after.len(), 1, "{}", case.id);
+            assert_eq!(raw_after[0].rule_id().as_bytes(), case.id.as_bytes());
+            assert_eq!(raw_after[0].secret().as_bytes(), case.secret.as_bytes());
+        }
         let label = if case.contextual {
             format!("{}_api_key", case.context)
         } else {
@@ -1675,14 +1692,12 @@ fn followup_raw_occurrences_and_generic_attribution_are_separate() {
             assert_eq!(before[0].secret().as_bytes(), case.secret.as_bytes());
             assert_eq!(before[0].secret_range(), expected);
         }
-        let after = without_same_span_xai(
-            case.id,
-            true,
-            scan(composed().engine(), assigned.as_bytes()),
-        );
-        assert_eq!(after.len(), 1, "{}", case.id);
-        assert_eq!(after[0].rule_id().as_bytes(), case.id.as_bytes());
-        assert_eq!(after[0].secret_range(), expected);
+        let after = scan(composed().engine(), assigned.as_bytes());
+        if !replaced_by_xai_delimiter(case.id, true, case.secret.as_bytes(), expected, &after) {
+            assert_eq!(after.len(), 1, "{}", case.id);
+            assert_eq!(after[0].rule_id().as_bytes(), case.id.as_bytes());
+            assert_eq!(after[0].secret_range(), expected);
+        }
     }
     // Continuing the hex stream across the groups yields entropy
     // 4.0251327245427015: a,7,f,2 occur three times; twelve other hex symbols
@@ -2786,29 +2801,24 @@ fn widened_rules_overlap_default_and_legacy_rules_only_at_shared_forms() {
     // Default alibaba-access-key-id needs exactly 20 bytes and a delimiter
     // from its own set; a comma is not one.
     let twenty = format!("LTAI{}", body(20));
-    expect(
-        format!("key={twenty} "),
-        &[("alibaba-access-key-id", 24), (ALIBABA, 24)],
-    );
+    // Where both report the same secret, a reviewed overlap keeps only the
+    // default rule.
+    expect(format!("key={twenty} "), &[("alibaba-access-key-id", 24)]);
     expect(format!("key={twenty},"), &[(ALIBABA, 24)]);
     expect(format!("key=LTAI{} ", body(19)), &[(ALIBABA, 23)]);
     // Default slack-config-access-token allows one digit only.
     let one = format!("xoxe.xoxp-1-{}", body(166));
     expect(
         format!("key={one}\n"),
-        &[
-            ("slack-config-access-token", one.len()),
-            (SLACK_ACCESS, one.len()),
-        ],
+        &[("slack-config-access-token", one.len())],
     );
     let two = format!("xoxe.xoxp-12-{}", body(166));
     expect(format!("key={two}\n"), &[(SLACK_ACCESS, two.len())]);
     // rustleaks.xai-api-key-80 has no trailing boundary: on an 81-byte body it
-    // reports the 84-byte prefix, while the new rule reports all 85 bytes.
-    expect(
-        format!("key=xai-{}\n", body(80)),
-        &[("rustleaks.xai-api-key-80", 84), (XAI, 84)],
-    );
+    // reports the 84-byte prefix, while the new rule reports all 85 bytes. On
+    // an 80-byte body both report the same secret, and the overlap keeps the
+    // delimiter rule.
+    expect(format!("key=xai-{}\n", body(80)), &[(XAI, 84)]);
     expect(
         format!("key=xai-{}\n", body(81)),
         &[("rustleaks.xai-api-key-80", 84), (XAI, 85)],

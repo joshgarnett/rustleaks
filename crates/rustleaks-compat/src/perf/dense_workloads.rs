@@ -65,7 +65,6 @@ const MANY_FINDINGS: usize = 300_000 / SCALE;
 const MANY_CONFIG: &str = "[[rules]]\nid = 'perf-many'\ndescription = 'many findings'\nregex = 'tok_[0-9]{12}'\nkeywords = ['tok_']\n";
 const CLOUDFLARE_RULE: &str = "cloudflare-api-key";
 const PLANETSCALE_RULE: &str = "planetscale-api-token";
-const PLANETSCALE_ASSOCIATION_RULE: &str = "rustleaks.association.planetscale-api-token";
 const LOWER_ALNUM: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
 const HEX: &[u8] = b"0123456789abcdef";
@@ -326,9 +325,10 @@ fn helper_shape(id: &str, size: usize) -> Result<Shape> {
 
 /// `components`: a `PlanetScale` ID line, then a `pscale_tkn_` token line. The
 /// default `planetscale-api-token` rule reports each token. The provider pack
-/// rule `rustleaks.association.planetscale-api-token` also reports each token,
+/// rule `rustleaks.association.planetscale-api-token` also matches each token,
 /// because it needs a `PlanetScale` ID support match anywhere in the same
-/// buffer (window `0`), and every ID line is one.
+/// buffer (window `0`), and every ID line is one. A reviewed overlap then
+/// drops its finding, since the default rule reports the same secret.
 fn planetscale_pairs(size: usize) -> Result<Shape> {
     const TOKEN_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz0123456789";
     let mut rng = Lcg::new(0x7061_6972);
@@ -344,14 +344,12 @@ fn planetscale_pairs(size: usize) -> Result<Shape> {
         if go_entropy(&token)? < 3.5 {
             return Err("synthetic PlanetScale token has too little entropy".into());
         }
-        for rule in [PLANETSCALE_RULE, PLANETSCALE_ASSOCIATION_RULE] {
-            expected.push(key(rule, "", "", line + 1, 2, &token));
-        }
+        expected.push(key(PLANETSCALE_RULE, "", "", line + 1, 2, &token));
         bytes.extend_from_slice(&token);
         bytes.push(b'\n');
         line += 2;
     }
-    let records = expected.len() / 2;
+    let records = expected.len();
     control_line(&mut bytes, &mut expected)?;
     let mut shape = finish(bytes, expected);
     shape.records = records;

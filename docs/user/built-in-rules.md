@@ -105,15 +105,50 @@ rustleaks-core](library.md#built-in-rules).
 
 ## Findings from two rules
 
-A Rustleaks rule and a default rule can match the same secret. Rustleaks uses
-the same filter as Gitleaks for rules with `generic` in their ID, such as
-`generic-api-key`. The filter drops a finding from such a rule only when all
-of these are true:
+Two built-in rules can match the same secret. Two filters keep some of these
+to one finding.
+
+Rustleaks uses the same filter as Gitleaks for rules with `generic` in their
+ID, such as `generic-api-key`. The filter drops a finding from such a rule
+only when all of these are true:
 
 - another rule finds a secret on the same line and in the same commit;
 - that rule has no `generic` in its ID; and
 - its secret contains the generic secret.
 
 Rustleaks rule IDs do not contain `generic`, so a Rustleaks rule can replace a
-`generic-api-key` finding in this way. In all other cases, both findings are
-reported.
+`generic-api-key` finding in this way.
+
+The second filter covers reviewed pairs of built-in rules. When both rules of
+a pair report the same secret at the same bytes of the same file and commit,
+only one finding is reported:
+
+| Reported | Not reported | Why |
+| --- | --- | --- |
+| `grafana-api-key` | `rustleaks.grafana-api-key-base64` | Same Grafana key |
+| `alibaba-access-key-id` | `rustleaks.alibaba-access-key-id-boundary` | Same Alibaba Cloud AccessKey ID |
+| `planetscale-api-token` | `rustleaks.association.planetscale-api-token` | Same PlanetScale token |
+| `artifactory-api-key` or `jfrog-api-key` | `rustleaks.association.artifactory-api-key` | Same JFrog API key |
+| `artifactory-reference-token` or `jfrog-identity-token` | `rustleaks.association.artifactory-reference-token` | Same JFrog reference token |
+| `gitlab-incoming-mail-token` | `rustleaks.gitlab-incoming-mail-address-token` | Same GitLab incoming mail token |
+| `slack-config-access-token` | `rustleaks.slack-config-access-token-166` | Same Slack configuration token |
+| `rustleaks.xai-api-key-delimiter` | `rustleaks.xai-api-key-80` | Same xAI key |
+| `rustleaks.workos-production-api-key` | `stripe-access-token` | A WorkOS key also fits the Stripe pattern |
+| `rustleaks.highnote-secret-live-key` | `stripe-access-token` | A Highnote key also fits the Stripe pattern |
+| `rustleaks.clerk-secret-key-delimiter` | `rustleaks.stripe-access-token-delimiter` | A Clerk key also fits the Stripe pattern |
+| `rustleaks.temporal-cloud-api-key` | `jwt` | A Temporal Cloud key is a JWT |
+| `rustleaks.monday-api-token` | `jwt` | A Monday token is a JWT |
+
+The secret is always reported. A rule that is not reported for one secret
+still reports every secret that the other rule does not, for example a
+Stripe key without a WorkOS name nearby. If an allowlist, an `--enable-rule`
+selection or `disabledRules` removes the reported rule's finding, the other
+finding stays. Ignore files and baselines apply after this filter, so an
+entry for the reported finding also hides the secret. A configuration file
+cannot add pairs.
+
+In all other cases, both findings are reported. For example,
+`curl-auth-header` reports the token in a curl `Authorization` header next to
+the rule for that token. `rustleaks.endorlabs-api-key` and
+`rustleaks.endorlabs-api-secret` both report a value whose name says only
+`endor`, since either part of the credential can have that name.

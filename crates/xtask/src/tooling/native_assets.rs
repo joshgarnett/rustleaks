@@ -52,8 +52,10 @@ pub(crate) fn generate(root: &Path, check: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Checks that a pack holds only a title and a rule list, and that each
-/// `(provenance object, license file)` pair records the license file's SHA-256.
+/// Checks that a pack holds only a title, a rule list and an optional
+/// `overlaps` list, and that each `(provenance object, license file)` pair
+/// records the license file's SHA-256. The native loader checks each
+/// `overlaps` entry.
 fn validate_pack(
     root: &Path,
     name: &str,
@@ -68,9 +70,11 @@ fn validate_pack(
     let config = config
         .as_table()
         .ok_or_else(|| format!("{name} must be a table"))?;
-    if config.len() != 2
+    let overlaps = config.get("overlaps");
+    if config.len() != 2 + usize::from(overlaps.is_some())
         || config.get("title").and_then(toml::Value::as_str) != Some(title)
         || !config.get("rules").is_some_and(toml::Value::is_array)
+        || overlaps.is_some_and(|overlaps| !overlaps.is_array())
     {
         return Err(format!("{name} contains an unreviewed configuration field"));
     }

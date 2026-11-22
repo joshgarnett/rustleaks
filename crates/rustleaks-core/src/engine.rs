@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::ops::Range;
@@ -399,6 +399,114 @@ pub struct Engine {
     /// For each native rule without keywords, aligned with `config.rules`,
     /// the pattern IDs of literals of which every match contains one.
     native_required_patterns: Vec<Option<Box<[u32]>>>,
+    /// Rules whose findings a reviewed rule overlap can replace.
+    replaced_by: ReplacedBy,
+}
+
+/// For each rule with reviewed `[[overlaps]]` entries, the IDs of the rules
+/// whose finding replaces its finding of the same secret at the same place.
+/// Empty for configurations without native rule packs.
+#[derive(Clone, Debug, Default)]
+struct ReplacedBy {
+    keepers: BTreeMap<RuleIdBytes, Box<[RuleIdBytes]>>,
+    /// Every rule named as a keeper in `keepers`.
+    kept: BTreeSet<RuleIdBytes>,
+}
+
+/// The bytes of a rule ID.
+type RuleIdBytes = Box<[u8]>;
+
+/// File, commit, secret range start and end, and secret of a finding.
+type Occurrence<'a> = (&'a [u8], &'a [u8], usize, usize, &'a [u8]);
+
+impl ReplacedBy {
+    fn new(config: &CompiledConfig) -> Self {
+        let keepers: BTreeMap<RuleIdBytes, Box<[RuleIdBytes]>> = config
+            .rules
+            .values()
+            .filter(|rule| !rule.native_replaced_by.is_empty())
+            .map(|rule| {
+                (
+                    rule.id.as_bytes().into(),
+                    rule.native_replaced_by
+                        .iter()
+                        .map(|id| id.as_bytes().into())
+                        .collect(),
+                )
+            })
+            .collect();
+        let kept = keepers.values().flatten().cloned().collect();
+        Self { keepers, kept }
+    }
+
+    fn keepers(&self, rule_id: &[u8]) -> Option<&[RuleIdBytes]> {
+        self.keepers.get(rule_id).map(AsRef::as_ref)
+    }
+
+    /// For each finding whose rule lists the rule of another finding with
+    /// the same file, commit, secret and exact secret range, returns the
+    /// lowest index of such a keeper finding. A finding without an exact
+    /// secret range is never replaced. Only findings of keeper rules are
+    /// indexed. Calls `cancelled` before each finding of a keeper rule is
+    /// indexed and before each finding is checked, and returns `None` as soon
+    /// as it reports cancellation.
+    fn replaced(
+        &self,
+        findings: &[Finding],
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Option<Vec<Option<usize>>> {
+        let mut replaced = vec![None; findings.len()];
+        if self.keepers.is_empty()
+            || !findings
+                .iter()
+                .any(|finding| self.keepers(finding.rule_id().as_bytes()).is_some())
+        {
+            return Some(replaced);
+        }
+        let mut by_occurrence = BTreeMap::<_, Vec<usize>>::new();
+        for (index, finding) in findings.iter().enumerate() {
+            if !self.kept.contains(finding.rule_id().as_bytes()) {
+                continue;
+            }
+            if cancelled() {
+                return None;
+            }
+            if let Some(key) = occurrence(finding) {
+                by_occurrence.entry(key).or_default().push(index);
+            }
+        }
+        for (index, finding) in findings.iter().enumerate() {
+            if cancelled() {
+                return None;
+            }
+            let (Some(keepers), Some(key)) = (
+                self.keepers(finding.rule_id().as_bytes()),
+                occurrence(finding),
+            ) else {
+                continue;
+            };
+            replaced[index] = by_occurrence.get(&key).and_then(|candidates| {
+                candidates.iter().copied().find(|&other| {
+                    keepers
+                        .iter()
+                        .any(|keeper| keeper.as_ref() == findings[other].rule_id().as_bytes())
+                })
+            });
+        }
+        Some(replaced)
+    }
+}
+
+/// The occurrence of a finding, when its secret range is exact.
+fn occurrence(finding: &Finding) -> Option<Occurrence<'_>> {
+    let range = finding.secret_range().exact()?;
+    Some((
+        finding.file().as_bytes(),
+        finding.commit().as_bytes(),
+        range.start(),
+        range.end(),
+        finding.secret().as_bytes(),
+    ))
 }
 
 /// Where one rule's literal-anchored search takes its occurrences from.
@@ -1037,7 +1145,13 @@ impl Engine {
         let mut keyword_occurrences = KeywordOccurrences::default();
         loop {
             if let Err(termination) = context.work() {
-                return finish_partial(findings, options, context.usage, termination);
+                return finish_partial(
+                    findings,
+                    &self.replaced_by,
+                    options,
+                    context.usage,
+                    termination,
+                );
             }
             matched_keywords.fill(false);
             let record_occurrences = context.control.budget.collected_spans.is_none()
@@ -1051,7 +1165,13 @@ impl Engine {
                 let normalized = go_lowercase_bytes(&current_raw);
                 for found in prefilter.find_overlapping_iter(&normalized) {
                     if let Err(termination) = context.work() {
-                        return finish_partial(findings, options, context.usage, termination);
+                        return finish_partial(
+                            findings,
+                            &self.replaced_by,
+                            options,
+                            context.usage,
+                            termination,
+                        );
                     }
                     let keyword = found.pattern().as_usize();
                     matched_keywords[keyword] = true;
@@ -1102,6 +1222,7 @@ impl Engine {
                             Err(termination) => {
                                 return finish_partial(
                                     findings,
+                                    &self.replaced_by,
                                     options,
                                     context.usage,
                                     termination,
@@ -1149,7 +1270,13 @@ impl Engine {
                     match detected {
                         Ok(detected) => findings.extend(detected),
                         Err(termination) => {
-                            return finish_partial(findings, options, context.usage, termination);
+                            return finish_partial(
+                                findings,
+                                &self.replaced_by,
+                                options,
+                                context.usage,
+                                termination,
+                            );
                         }
                     }
                 }
@@ -1159,7 +1286,13 @@ impl Engine {
                 break;
             }
             if let Err(termination) = context.work() {
-                return finish_partial(findings, options, context.usage, termination);
+                return finish_partial(
+                    findings,
+                    &self.replaced_by,
+                    options,
+                    context.usage,
+                    termination,
+                );
             }
             let bounded_spans = context.control.budget.collected_spans.is_some();
             let decode_result = decoder
@@ -1176,22 +1309,40 @@ impl Engine {
             let (decoded_output, segments) = match decode_result {
                 Ok(output) => output,
                 Err(termination) => {
-                    return finish_partial(findings, options, context.usage, termination);
+                    return finish_partial(
+                        findings,
+                        &self.replaced_by,
+                        options,
+                        context.usage,
+                        termination,
+                    );
                 }
             };
             if let Err(termination) = context.check_cancelled() {
-                return finish_partial(findings, options, context.usage, termination);
+                return finish_partial(
+                    findings,
+                    &self.replaced_by,
+                    options,
+                    context.usage,
+                    termination,
+                );
             }
             if segments.is_empty() {
                 break;
             }
             if let Err(termination) = context.decoded_bytes(decoded_output.len()) {
-                return finish_partial(findings, options, context.usage, termination);
+                return finish_partial(
+                    findings,
+                    &self.replaced_by,
+                    options,
+                    context.usage,
+                    termination,
+                );
             }
             current_raw = Cow::Owned(decoded_output);
             encoded_segments = segments;
         }
-        finish_complete(findings, options, context)
+        finish_complete(findings, &self.replaced_by, options, context)
     }
 
     #[allow(clippy::too_many_lines)] // Rule decisions and their bounded annotations share the same control flow.
@@ -2611,6 +2762,7 @@ fn within_proximity(
 
 fn finish_partial(
     findings: Vec<Finding>,
+    replaced_by: &ReplacedBy,
     options: &ScanOptions,
     usage: ScanUsage,
     termination: ScanTermination,
@@ -2620,7 +2772,7 @@ fn finish_partial(
     // candidates as partial findings. `max_finding_records` bounds this phase
     // when callers require a hard cardinality ceiling.
     ScanOutcome::partial(
-        filter_findings(findings, options.redaction_percent()),
+        filter_findings(replaced_by, findings, options.redaction_percent()),
         usage,
         termination,
     )
@@ -2628,11 +2780,16 @@ fn finish_partial(
 
 fn finish_complete(
     findings: Vec<Finding>,
+    replaced_by: &ReplacedBy,
     options: &ScanOptions,
     context: &ScanContext<'_>,
 ) -> ScanOutcome {
-    let (findings, termination) =
-        filter_findings_cancellable(findings, options.redaction_percent(), context.control);
+    let (findings, termination) = filter_findings_cancellable(
+        replaced_by,
+        findings,
+        options.redaction_percent(),
+        context.control,
+    );
     match termination {
         Some(termination) => ScanOutcome::partial(findings, context.usage, termination),
         None => ScanOutcome::complete(findings, context.usage),
@@ -2640,14 +2797,21 @@ fn finish_complete(
 }
 
 fn filter_findings_cancellable(
+    replaced_by: &ReplacedBy,
     findings: Vec<Finding>,
     redact: usize,
     control: ScanControl<'_>,
 ) -> (Vec<Finding>, Option<ScanTermination>) {
     if control.cancellation.is_none() {
-        return (filter_findings(findings, redact), None);
+        return (filter_findings(replaced_by, findings, redact), None);
     }
-    filter_findings_with_cancellation(findings, redact, control, suppresses_generic_finding)
+    filter_findings_with_cancellation(
+        replaced_by,
+        findings,
+        redact,
+        control,
+        suppresses_generic_finding,
+    )
 }
 
 /// Applies the same bucketed selection as [`filter_findings`] with a
@@ -2660,11 +2824,15 @@ fn filter_findings_cancellable(
 /// linear in the findings plus the comparisons made. On cancellation the
 /// findings decided so far are returned, as a prefix of the list.
 fn filter_findings_with_cancellation(
+    replaced_by: &ReplacedBy,
     findings: Vec<Finding>,
     redact: usize,
     control: ScanControl<'_>,
     mut suppresses: impl FnMut(&Finding, &Finding) -> bool,
 ) -> (Vec<Finding>, Option<ScanTermination>) {
+    let Some(replaced) = replaced_by.replaced(&findings, || control.is_cancelled()) else {
+        return (Vec::new(), Some(ScanTermination::Cancelled));
+    };
     let Some(suppression) = GenericSuppression::build(&findings, || control.is_cancelled()) else {
         return (Vec::new(), Some(ScanTermination::Cancelled));
     };
@@ -2674,6 +2842,10 @@ fn filter_findings_with_cancellation(
         if control.is_cancelled() {
             cancelled = true;
             break;
+        }
+        if replaced[index].is_some() {
+            include.push(false);
+            continue;
         }
         if !suppression.is_generic(index) {
             include.push(true);
@@ -2691,6 +2863,17 @@ fn filter_findings_with_cancellation(
             }
         }
         include.push(retained);
+    }
+    if cancelled {
+        // Only the decided prefix is returned. A replaced finding whose
+        // keeper is not in it stays, so its secret is still reported. Rules
+        // in overlaps are never generic, so no generic check is skipped.
+        let decided = include.len();
+        for (index, keeper) in replaced.iter().take(decided).enumerate() {
+            if keeper.is_some_and(|keeper| keeper >= decided) {
+                include[index] = true;
+            }
+        }
     }
     let termination = cancelled.then_some(ScanTermination::Cancelled);
     (apply_finding_filter(findings, include, redact), termination)
@@ -2803,11 +2986,19 @@ fn apply_finding_filter(findings: Vec<Finding>, include: Vec<bool>, redact: usiz
         .collect()
 }
 
-fn filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
+fn filter_findings(
+    replaced_by: &ReplacedBy,
+    findings: Vec<Finding>,
+    redact: usize,
+) -> Vec<Finding> {
+    let replaced = replaced_by
+        .replaced(&findings, || false)
+        .expect("an unpolled filter is never cancelled");
     let suppression = GenericSuppression::new(&findings);
     let include = (0..findings.len())
         .map(|index| {
-            !suppression.is_generic(index) || suppression.first_suppressor(index).is_none()
+            replaced[index].is_none()
+                && (!suppression.is_generic(index) || suppression.first_suppressor(index).is_none())
         })
         .collect::<Vec<_>>();
 
@@ -2889,6 +3080,7 @@ impl EngineBuilder {
             keywords: native_keyword_patterns,
             required: native_required_patterns,
         } = build_native_keyword_matcher(&self.config)?;
+        let replaced_by = ReplacedBy::new(&self.config);
         Ok(Engine {
             config: self.config,
             prefilter,
@@ -2899,6 +3091,7 @@ impl EngineBuilder {
             native_keyword_matcher,
             native_keyword_patterns,
             native_required_patterns,
+            replaced_by,
         })
     }
 }

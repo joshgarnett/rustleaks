@@ -201,6 +201,14 @@ impl NativePolicy {
     /// before the compatibility parser can discard or overwrite them.
     /// Rule-local allowlists and composites remain supported.
     ///
+    /// A top-level `[[overlaps]]` entry with `keep` and `drop` rule IDs, and
+    /// an optional `description`, names two rules that can report the same
+    /// secret. When both report the same file, commit, secret and exact
+    /// secret range, only the `keep` finding is reported. One of the two rules
+    /// must be in this pack. [`Self::build`] checks that both exist and report
+    /// findings, that no pair repeats, and that no rule is both kept and
+    /// dropped.
+    ///
     /// # Errors
     ///
     /// Returns a structured error for invalid IDs, duplicate packs, limits,
@@ -288,6 +296,7 @@ impl NativePolicy {
         let mut native_required = BTreeMap::new();
         let mut native_bytes = BTreeSet::new();
         let mut pack_rules = BTreeSet::new();
+        let mut overlaps = Vec::new();
         let builtin_review_reference = builtin_pack_reference(&self.packs).map(|packs| Arc::<str>::from(format!(
             "{NATIVE_POLICY_VERSION}|core:{}|default-sha256:{DEFAULT_CONFIG_SHA256}|{packs}|github-classic-pat-v1:{}",
             env!("CARGO_PKG_VERSION"), self.github_classic,
@@ -326,6 +335,7 @@ impl NativePolicy {
             native_predicates.extend(pack.native_predicates);
             native_required.extend(pack.native_required);
             native_bytes.extend(pack.native_bytes);
+            overlaps.extend(pack.overlaps);
             raw.rules.extend(pack.raw.rules);
         }
         // Classify original keywords before compatibility compilation applies
@@ -390,6 +400,7 @@ impl NativePolicy {
                 .ok_or(NativePolicyError::InvalidNativePredicate)?;
             rule.native_predicate = Some(predicate);
         }
+        attach_native_overlaps(&mut config, overlaps)?;
         Ok((
             config,
             NativePolicyIdentity {
@@ -464,6 +475,7 @@ struct ValidatedPack {
     native_predicates: BTreeMap<String, predicate::NativePredicate>,
     native_required: BTreeMap<String, NativeRequired>,
     native_bytes: BTreeSet<String>,
+    overlaps: Vec<NativeOverlap>,
 }
 
 fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
@@ -479,8 +491,10 @@ fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
     let relations = extract_native_required(&mut value)?;
     let structural = predicate::extract(&mut value)?;
     let byte_regexes = extract_native_regexes(&mut value)?;
+    let overlaps = extract_native_overlaps(&mut value)?;
     let transformed;
-    let ordinary = if predicates.iter().any(Option::is_some)
+    let ordinary = if overlaps.is_some()
+        || predicates.iter().any(Option::is_some)
         || relations.iter().any(Option::is_some)
         || structural.iter().any(Option::is_some)
         || byte_regexes.iter().any(|bytes| *bytes)
@@ -552,12 +566,27 @@ fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
             return Err(NativePolicyError::RuleCollision);
         }
     }
+    let overlaps = overlaps.unwrap_or_default();
+    let own = raw
+        .rules
+        .iter()
+        .map(|rule| rule.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut pairs = BTreeSet::new();
+    for overlap in &overlaps {
+        if !(own.contains(overlap.keep.as_str()) || own.contains(overlap.drop.as_str()))
+            || !pairs.insert((overlap.keep.as_str(), overlap.drop.as_str()))
+        {
+            return Err(NativePolicyError::InvalidNativeOverlap);
+        }
+    }
     Ok(ValidatedPack {
         raw,
         native_entropy,
         native_predicates,
         native_required,
         native_bytes,
+        overlaps,
     })
 }
 
@@ -588,7 +617,8 @@ fn validate_pack_table(value: &toml::Value, scope: PackTable) -> Result<(), Nati
             (PackTable::Rule, "regex") if value.is_table() => {
                 parse_native_regex(value)?;
             }
-            (PackTable::Config, "title" | "description" | "minversion")
+            // `overlaps` entries are checked by `extract_native_overlaps`.
+            (PackTable::Config, "title" | "description" | "minversion" | "overlaps")
             | (
                 PackTable::Rule,
                 "id" | "description" | "path" | "regex" | "secretgroup" | "entropy" | "keywords"
@@ -864,6 +894,114 @@ fn extract_rule_required(
             .collect(),
     );
     Ok(Some(native))
+}
+
+/// One reviewed pair of rules that can report the same secret at the same
+/// place. When both report it, only the finding of `keep` is reported.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NativeOverlap {
+    keep: String,
+    drop: String,
+}
+
+/// Removes the top-level `overlaps` array from a pack and parses it. Returns
+/// `None` when the pack has no such key.
+fn extract_native_overlaps(
+    value: &mut toml::Value,
+) -> Result<Option<Vec<NativeOverlap>>, NativePolicyError> {
+    let table = value
+        .as_table_mut()
+        .ok_or(NativePolicyError::InvalidPackStructure)?;
+    let Some(key) = table
+        .keys()
+        .find(|key| key.eq_ignore_ascii_case("overlaps"))
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    let Some(toml::Value::Array(entries)) = table.remove(&key) else {
+        return Err(NativePolicyError::InvalidNativeOverlap);
+    };
+    entries
+        .iter()
+        .map(parse_native_overlap)
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn parse_native_overlap(value: &toml::Value) -> Result<NativeOverlap, NativePolicyError> {
+    let table = value
+        .as_table()
+        .ok_or(NativePolicyError::InvalidNativeOverlap)?;
+    let mut names = BTreeSet::new();
+    let mut keep = None;
+    let mut drop = None;
+    let mut description = None;
+    for (key, value) in table {
+        let key = key.to_ascii_lowercase();
+        let slot = match key.as_str() {
+            "keep" => &mut keep,
+            "drop" => &mut drop,
+            "description" => &mut description,
+            _ => return Err(NativePolicyError::UnknownPackField),
+        };
+        if !names.insert(key) {
+            return Err(NativePolicyError::AmbiguousPackField);
+        }
+        *slot = Some(
+            value
+                .as_str()
+                .ok_or(NativePolicyError::InvalidNativeOverlap)?,
+        );
+    }
+    match (keep, drop) {
+        (Some(keep), Some(drop))
+            if keep != drop
+                && [keep, drop].iter().all(|id| {
+                    valid_identifier(id) && !id.to_ascii_lowercase().contains("generic")
+                }) =>
+        {
+            Ok(NativeOverlap {
+                keep: keep.to_owned(),
+                drop: drop.to_owned(),
+            })
+        }
+        _ => Err(NativePolicyError::InvalidNativeOverlap),
+    }
+}
+
+/// Records each overlap on its `drop` rule. Both rules must exist and report
+/// findings, a pair is listed once, and no rule both keeps and drops, so a
+/// dropped finding always has a kept finding with the same secret.
+fn attach_native_overlaps(
+    config: &mut CompiledConfig,
+    overlaps: Vec<NativeOverlap>,
+) -> Result<(), NativePolicyError> {
+    let mut pairs = BTreeSet::new();
+    for overlap in &overlaps {
+        if !pairs.insert((overlap.keep.as_str(), overlap.drop.as_str())) {
+            return Err(NativePolicyError::InvalidNativeOverlap);
+        }
+    }
+    let kept = overlaps
+        .iter()
+        .map(|overlap| overlap.keep.as_str())
+        .collect::<BTreeSet<_>>();
+    for overlap in &overlaps {
+        let reports = |id: &str| config.rules.get(id).is_some_and(|rule| !rule.skip_report);
+        if kept.contains(overlap.drop.as_str())
+            || !reports(&overlap.keep)
+            || !reports(&overlap.drop)
+        {
+            return Err(NativePolicyError::InvalidNativeOverlap);
+        }
+    }
+    for overlap in overlaps {
+        if let Some(rule) = config.rules.get_mut(&overlap.drop) {
+            rule.native_replaced_by.push(overlap.keep);
+        }
+    }
+    Ok(())
 }
 
 // This private type is the versioned byte-shannon-f64-v1 algorithm. Its fixed
@@ -1156,6 +1294,11 @@ pub enum NativePolicyError {
     /// or lacks the required nonempty typed byte regex.
     #[error("invalid native predicate")]
     InvalidNativePredicate,
+    /// An `[[overlaps]]` entry is malformed, repeated, names no rule of its
+    /// pack, names a rule with `generic` in its ID, names a missing or
+    /// non-reporting rule, or chains with another entry.
+    #[error("invalid native rule overlap")]
+    InvalidNativeOverlap,
     /// A source-byte, pack-count or rule-count limit was exceeded.
     #[error("native composition safety limit exceeded")]
     LimitExceeded,

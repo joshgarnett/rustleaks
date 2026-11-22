@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+- When a Rustleaks rule and another built-in rule report the same secret at
+  the same bytes of the same file and commit, only one finding is reported.
+  15 reviewed rule pairs do this, listed in
+  `docs/user/built-in-rules.md#findings-from-two-rules`. Where both rules name
+  the same provider, the default rule's finding stays and the Rustleaks rule's
+  finding is no longer reported: `rustleaks.grafana-api-key-base64`,
+  `rustleaks.alibaba-access-key-id-boundary`,
+  `rustleaks.association.planetscale-api-token`,
+  `rustleaks.association.artifactory-api-key`,
+  `rustleaks.association.artifactory-reference-token`,
+  `rustleaks.gitlab-incoming-mail-address-token` and
+  `rustleaks.slack-config-access-token-166`. `rustleaks.xai-api-key-80` gives
+  way to `rustleaks.xai-api-key-delimiter`. Where a provider rule names the
+  issuer of a key that a broader rule also accepts, the provider rule's
+  finding stays. `stripe-access-token` is no longer reported for WorkOS and
+  Highnote keys. `rustleaks.stripe-access-token-delimiter` is no longer
+  reported for Clerk keys, and `jwt` for Temporal Cloud and Monday tokens. No secret is lost: each
+  dropped finding has a reported finding with the same secret, and each rule
+  still reports secrets that the other rule does not. Fewer findings means
+  fewer fingerprints; baseline and ignore entries for the dropped findings no
+  longer match anything. An ignore or baseline entry for the reported finding
+  now also hides the secret, since the dropped finding is no longer reported
+  next to it. The pairs are listed in new `[[overlaps]]` entries
+  in `rustleaks-providers-v1.toml`, so `PROVIDER_RULES_V1_SHA256`, the
+  built-in review reference and `NativePolicyIdentity` change.
+  `NativePolicyError::InvalidNativeOverlap` reports a malformed entry.
 - In `rustleaks-core`, `ConfigLoader::load_default` and
   `[extend] useDefault = true` now give every built-in rule, as the CLI does:
   the default rules plus the `rustleaks-extra-v1`, `rustleaks-providers-v1`

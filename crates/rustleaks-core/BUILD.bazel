@@ -53,6 +53,7 @@ _PLAIN_TESTS = [
     "model",
     "native_policy",
     "native_predicates",
+    "rule_overlaps",
     "scan_semantics",
     "triage",
 ]

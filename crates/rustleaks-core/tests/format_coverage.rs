@@ -188,6 +188,31 @@ fn assert_case(case: &Case, findings: &[Finding]) {
     }
 }
 
+/// Reviewed `(drop, keep)` rule pairs of the provider rule file's
+/// `[[overlaps]]` that these cases reach: when both rules report the same
+/// secret at the same range, only the `keep` finding is reported.
+const REPLACED: &[(&str, &str)] = &[("jwt", "rustleaks.monday-api-token")];
+
+/// Checks a required prior occurrence in the full composition. When the
+/// case rule reports the same secret at the same range and a reviewed
+/// overlap names the pair, the prior rule's finding must be gone instead.
+fn assert_required_after(required: &Required, rule: &str, findings: &[Finding]) {
+    let same = |finding: &&Finding| {
+        finding.secret().as_bytes() == required.secret.as_bytes()
+            && finding.secret_range() == range(required.secret_range)
+    };
+    if REPLACED.contains(&(required.rule.as_str(), rule))
+        && for_rule(findings, rule).iter().any(same)
+    {
+        assert!(
+            !for_rule(findings, &required.rule).iter().any(same),
+            "replaced prior occurrence remains"
+        );
+    } else {
+        assert_required(required, findings);
+    }
+}
+
 fn assert_required(required: &Required, findings: &[Finding]) {
     let matches = for_rule(findings, &required.rule);
     let finding = matches
@@ -257,7 +282,7 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
         assert_case(case, &after);
         if let Some(required) = &case.before_required {
             assert_required(required, &prior);
-            assert_required(required, &after);
+            assert_required_after(required, &case.rule, &after);
         }
     }
     for case in cases()
@@ -271,7 +296,7 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
             &scan(previous(), &input, &case.path),
         );
         let after = scan(composed(), &input, &case.path);
-        assert_required(case.before_required.as_ref().unwrap(), &after);
+        assert_required_after(case.before_required.as_ref().unwrap(), &case.rule, &after);
         assert_case(case, &after);
     }
 }
@@ -887,7 +912,7 @@ fn source_context_case_whitespace_and_numeric_fields_remain_ascii() {
 }
 
 #[test]
-fn ordinary_grafana_attribution_and_existing_specific_findings_remain_visible() {
+fn ordinary_grafana_keys_keep_one_default_rule_finding() {
     let secret = format!("eyJrIjoi{}", repeated(80));
     let input = format!("xx {secret};");
     let expected = [3, 3 + secret.len()];
@@ -898,11 +923,22 @@ fn ordinary_grafana_attribution_and_existing_specific_findings_remain_visible() 
         assert_eq!(prior[0].secret().as_bytes(), secret.as_bytes());
         assert_eq!(prior[0].secret_range(), range(expected));
     }
+    // The Base64 rule accepts the same key, and a reviewed overlap keeps only
+    // the default rule's finding.
     let all = scan(composed(), input.as_bytes(), "credentials.txt");
+    assert!(for_rule(&all, "rustleaks.grafana-api-key-base64").is_empty());
+    // A body with `+` is outside the default rule, so the Base64 rule reports.
+    let plus = format!("eyJrIjoi{}+{}", repeated(40), repeated(39));
+    let all = scan(
+        composed(),
+        format!("xx {plus};").as_bytes(),
+        "credentials.txt",
+    );
+    assert!(for_rule(&all, "grafana-api-key").is_empty());
     let added = for_rule(&all, "rustleaks.grafana-api-key-base64");
     assert_eq!(added.len(), 1);
-    assert_eq!(added[0].secret().as_bytes(), secret.as_bytes());
-    assert_eq!(added[0].secret_range(), range(expected));
+    assert_eq!(added[0].secret().as_bytes(), plus.as_bytes());
+    assert_eq!(added[0].secret_range(), range([3, 3 + plus.len()]));
 }
 
 #[test]

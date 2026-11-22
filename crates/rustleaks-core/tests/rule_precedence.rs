@@ -359,21 +359,12 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
         "a routable token starts with a classic token",
     ),
     ("jwt", "curl-auth-header", "the JWT sample is a curl header"),
-    // Rustleaks rules that widen a default rule. Both findings are kept.
-    (
-        "alibaba-access-key-id",
-        "rustleaks.alibaba-access-key-id-boundary",
-        "pack boundary variant of the default rule",
-    ),
+    // Rustleaks rules whose secret differs from the other rule's secret, so
+    // both findings are kept.
     (
         "flyio-access-token",
         "rustleaks.flyio-flyv1",
         "pack rule for the FlyV1 form",
-    ),
-    (
-        "grafana-api-key",
-        "rustleaks.grafana-api-key-base64",
-        "pack rule for standard Base64 bodies",
     ),
     (
         "rustleaks.association.aws-session-token",
@@ -388,22 +379,12 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
     (
         "rustleaks.monday-api-token",
         "jwt",
-        "a Monday token is a JWT",
+        "before an escaped quote the JWT secret also takes the backslash",
     ),
     (
         "rustleaks.slack-config-refresh-token-147",
         "slack-config-refresh-token",
         "the default rule matches a prefix of the longer body",
-    ),
-    (
-        "rustleaks.slack-config-access-token-166",
-        "slack-config-access-token",
-        "the default rule accepts the same token",
-    ),
-    (
-        "rustleaks.xai-api-key-80",
-        "rustleaks.xai-api-key-delimiter",
-        "both pack rules accept an 80-byte body before `;` at the same span",
     ),
 ];
 
@@ -412,6 +393,57 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
 /// finding of a non-generic rule starts on the same line and its secret
 /// contains the generic secret.
 const INTENDED_OVERRIDES: &[(&str, &str)] = &[("generic-api-key", "clojars-api-token")];
+
+/// Reviewed rule pairs `(drop, keep)` that can report the same secret at the
+/// same place. When both report the same file, commit, secret and secret
+/// range, only the `keep` finding is reported. The provider rule file lists
+/// the same pairs in its `[[overlaps]]` entries.
+const INTENDED_REPLACEMENTS: &[(&str, &str)] = &[
+    // The same credential; the default rule keeps its ID.
+    ("rustleaks.grafana-api-key-base64", "grafana-api-key"),
+    (
+        "rustleaks.alibaba-access-key-id-boundary",
+        "alibaba-access-key-id",
+    ),
+    (
+        "rustleaks.association.planetscale-api-token",
+        "planetscale-api-token",
+    ),
+    (
+        "rustleaks.association.artifactory-api-key",
+        "artifactory-api-key",
+    ),
+    ("rustleaks.association.artifactory-api-key", "jfrog-api-key"),
+    (
+        "rustleaks.association.artifactory-reference-token",
+        "artifactory-reference-token",
+    ),
+    (
+        "rustleaks.association.artifactory-reference-token",
+        "jfrog-identity-token",
+    ),
+    (
+        "rustleaks.gitlab-incoming-mail-address-token",
+        "gitlab-incoming-mail-token",
+    ),
+    (
+        "rustleaks.slack-config-access-token-166",
+        "slack-config-access-token",
+    ),
+    (
+        "rustleaks.xai-api-key-80",
+        "rustleaks.xai-api-key-delimiter",
+    ),
+    // A provider rule names the issuer of a key that a broader rule also accepts.
+    ("stripe-access-token", "rustleaks.workos-production-api-key"),
+    ("stripe-access-token", "rustleaks.highnote-secret-live-key"),
+    (
+        "rustleaks.stripe-access-token-delimiter",
+        "rustleaks.clerk-secret-key-delimiter",
+    ),
+    ("jwt", "rustleaks.temporal-cloud-api-key"),
+    ("jwt", "rustleaks.monday-api-token"),
+];
 
 // Reasons a generic finding sits next to the owner's finding. Upstream drops
 // a generic finding only when a specific finding starts on the same line and
@@ -538,6 +570,29 @@ fn rule_text(finding: &Finding) -> String {
     String::from_utf8_lossy(finding.rule_id().as_bytes()).into_owned()
 }
 
+/// The `(drop, keep)` pairs of the provider rule file's `[[overlaps]]`.
+fn provider_overlaps() -> BTreeSet<(&'static str, &'static str)> {
+    static PAIRS: OnceLock<Vec<(String, String)>> = OnceLock::new();
+    PAIRS
+        .get_or_init(|| {
+            let pack: toml::Value = toml::from_str(PROVIDER_RULES_V1).unwrap();
+            pack["overlaps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| {
+                    (
+                        entry["drop"].as_str().unwrap().to_owned(),
+                        entry["keep"].as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect()
+        })
+        .iter()
+        .map(|(drop, keep)| (drop.as_str(), keep.as_str()))
+        .collect()
+}
+
 /// The rule IDs of every packaged pack rule that reports findings. Rules
 /// with `skipReport` only feed composite rules and never report alone.
 fn reporting_pack_rules() -> BTreeSet<String> {
@@ -568,15 +623,26 @@ fn check_case(
             continue;
         }
         // The owner's finding is absent. Accept only a reviewed override
-        // whose replacement reports the same secret.
+        // whose replacement reports the same secret, or a reviewed
+        // replacement with the same secret at the same range.
         let replacement = findings.iter().position(|finding| {
             INTENDED_OVERRIDES.contains(&(expected.rule.as_str(), rule_text(finding).as_str()))
                 && finding.secret().as_bytes() == expected.secret.as_slice()
         });
-        match replacement {
-            Some(index) if is_generic(expected.rule.as_bytes()) => {
+        let replaced = findings.iter().position(|finding| {
+            INTENDED_REPLACEMENTS.contains(&(expected.rule.as_str(), rule_text(finding).as_str()))
+                && finding.secret().as_bytes() == expected.secret.as_slice()
+                && expected
+                    .secret_range
+                    .is_none_or(|range| finding.secret_range() == exact(range))
+        });
+        match (replacement, replaced) {
+            (Some(index), _) if is_generic(expected.rule.as_bytes()) => {
                 claimed[index] = true;
                 seen_overrides.insert(expected.rule.clone());
+            }
+            (_, Some(index)) if !claimed[index] => {
+                claimed[index] = true;
             }
             _ => failures.push(format!(
                 "{}: {} finding is missing",
@@ -685,6 +751,13 @@ fn every_positive_case_keeps_its_exact_finding_with_all_rules_active() {
         );
     }
     assert!(failures.is_empty(), "{failures:#?}");
+    assert_eq!(
+        INTENDED_REPLACEMENTS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        provider_overlaps()
+    );
     // Every reviewed entry is still needed.
     assert_eq!(seen_overlaps.len(), INTENDED_OVERLAPS.len());
     assert_eq!(seen_generic.len(), GENERIC_COFINDINGS.len());
