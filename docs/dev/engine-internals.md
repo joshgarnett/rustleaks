@@ -498,16 +498,15 @@ faster for much more CPU time.
 ## Startup memory of the built-in rules
 
 On one Apple M5 Ultra Mac with the optimized CLI, an empty scan
-(`rustleaks stdin < /dev/null`) reached a peak RSS of about 35 MB with every
+(`rustleaks stdin < /dev/null`) reached a peak RSS of about 31 MB with every
 built-in rule and about 16 MB with
-`--config crates/rustleaks-core/default/gitleaks.toml`. The
-heap footprint peaked at about 25 MiB and 9 MiB. The difference comes from
-the 547 rules and their allowlists:
+`--config crates/rustleaks-core/default/gitleaks.toml`. The heap footprint
+peaked at about 22 MiB and 9 MiB. The difference comes from the 547 rules and
+their allowlists:
 
-- Compiled rules. A Go-dialect expression keeps its translated text and its
-  literal analysis until its first search, which builds its matcher. The 56
-  `bytes-v1` expressions and deeply nested expressions build their NFAs when
-  the rules load, about 1.6 MiB in total.
+- Compiled rules. Each expression keeps its pattern text and its literal
+  analysis until its first search, which builds its matcher. Only deeply
+  nested expressions build at load.
 - The keyword automaton, about 2.3 MiB (see [Keyword
   automaton](#keyword-automaton)).
 - The compiled configuration: IDs, descriptions, patterns, keywords and

@@ -2491,3 +2491,31 @@ fn native_keyword_misses_charge_like_the_detection_path() {
         }
     }
 }
+
+#[test]
+fn deferred_byte_matchers_count_captures_like_their_built_matchers() {
+    let engine = Engine::builder(ConfigLoader::new().load_default().unwrap())
+        .build()
+        .unwrap();
+    let mut checked = 0;
+    for rule in engine.config.rules.values() {
+        if let Some(regex) = &rule.native_byte_matcher {
+            assert_eq!(
+                regex.capture_count(),
+                regex.built_capture_count(),
+                "{}",
+                rule.id
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 50, "{checked}");
+    for pattern in [r"a(b)(?:c)(?P<d>e)", r"(?i)(x|(y))z", "plain"] {
+        let regex = crate::regex::NativeByteRegex::compile(pattern).unwrap();
+        assert_eq!(
+            regex.capture_count(),
+            regex.built_capture_count(),
+            "{pattern}"
+        );
+    }
+}

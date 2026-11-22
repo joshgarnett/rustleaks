@@ -767,6 +767,46 @@ fn append_base64_with_mode(encoded: &[u8], output: &mut Vec<u8>, mode: Base64Mod
     {
         return;
     }
+    // Compatible mode keeps a value only if every decoded byte is printable.
+    // The first four characters alone decode to the first three bytes, so
+    // when those fail under both alphabets the whole value would fail too.
+    // Most candidates are long identifiers that fail here.
+    if mode == Base64Mode::Compatible
+        && let Some(first) = encoded.first_chunk::<4>()
+        && !first_bytes_printable(first, false)
+        && !first_bytes_printable(first, true)
+    {
+        return;
+    }
+    append_base64_decoded(encoded, output, mode);
+}
+
+/// Returns whether `quartet` decodes, in the standard or the URL-safe
+/// alphabet, to three printable ASCII bytes.
+fn first_bytes_printable(quartet: &[u8; 4], url_safe: bool) -> bool {
+    let mut value = 0_u32;
+    for &character in quartet {
+        let digit = match character {
+            b'A'..=b'Z' => character - b'A',
+            b'a'..=b'z' => character - b'a' + 26,
+            b'0'..=b'9' => character - b'0' + 52,
+            b'+' if !url_safe => 62,
+            b'/' if !url_safe => 63,
+            b'-' if url_safe => 62,
+            b'_' if url_safe => 63,
+            _ => return false,
+        };
+        value = (value << 6) | u32::from(digit);
+    }
+    value.to_be_bytes()[1..]
+        .iter()
+        .copied()
+        .all(is_printable_ascii)
+}
+
+/// Decodes `encoded` with each alphabet in turn and keeps the first value
+/// that decodes, and in compatible mode is printable.
+fn append_base64_decoded(encoded: &[u8], output: &mut Vec<u8>, mode: Base64Mode) {
     let value_start = output.len();
     let engines = match mode {
         Base64Mode::Compatible => [&GO_STANDARD_BASE64, &GO_RAW_URL_BASE64],
@@ -865,6 +905,52 @@ const fn is_printable_ascii(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_bytes_reject_only_values_that_would_not_decode() {
+        // A small deterministic generator, so failures reproduce.
+        let mut state = 0x5eed_u64;
+        let mut next = |bound: usize| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            usize::try_from(state >> 33).unwrap() % bound
+        };
+        let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/-_";
+        let mut accepted = 0;
+        for round in 0..60_000 {
+            let encoded = if round % 3 == 0 {
+                // Values that decode to printable text in one alphabet.
+                let text = (0..12 + next(24))
+                    .map(|_| u8::try_from(0x20 + next(0x5f)).unwrap())
+                    .collect::<Vec<_>>();
+                let encoded = if round % 2 == 0 {
+                    GO_STANDARD_BASE64.encode(&text)
+                } else {
+                    GO_RAW_URL_BASE64.encode(&text)
+                };
+                encoded.into_bytes()
+            } else {
+                let mut encoded = (0..16 + next(24))
+                    .map(|_| alphabet[next(alphabet.len())])
+                    .collect::<Vec<_>>();
+                encoded.extend(std::iter::repeat_n(b'=', next(3)));
+                encoded
+            };
+            let mut fast = Vec::new();
+            append_base64_with_mode(&encoded, &mut fast, Base64Mode::Compatible);
+            let mut full = Vec::new();
+            if encoded
+                .iter()
+                .any(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'))
+            {
+                append_base64_decoded(&encoded, &mut full, Base64Mode::Compatible);
+            }
+            assert_eq!(fast, full, "{}", String::from_utf8_lossy(&encoded));
+            accepted += usize::from(!fast.is_empty());
+        }
+        assert!(accepted > 10_000, "{accepted}");
+    }
     use serde::Deserialize;
 
     #[derive(Deserialize)]

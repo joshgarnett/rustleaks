@@ -301,9 +301,18 @@ impl Error for GoRegexError {}
 struct LazyBackend(Arc<LazyBackendState>);
 
 struct LazyBackendState {
-    /// Translated pattern and whether it is constrained to the whole input.
-    pending: Option<(Box<str>, bool)>,
+    pending: Option<PendingBackend>,
     built: OnceLock<Regex>,
+}
+
+/// What a deferred matcher needs to parse and build its expression again.
+struct PendingBackend {
+    /// Translated pattern text.
+    pattern: Box<str>,
+    /// Whether the pattern is constrained to the whole input.
+    whole_input: bool,
+    /// UTF-8 mode: false for the `bytes-v1` dialect.
+    utf8: bool,
 }
 
 impl LazyBackend {
@@ -314,23 +323,27 @@ impl LazyBackend {
         }))
     }
 
-    fn deferred(pattern: &str, whole_input: bool) -> Self {
+    fn deferred(pattern: &str, whole_input: bool, utf8: bool) -> Self {
         Self(Arc::new(LazyBackendState {
-            pending: Some((pattern.into(), whole_input)),
+            pending: Some(PendingBackend {
+                pattern: pattern.into(),
+                whole_input,
+                utf8,
+            }),
             built: OnceLock::new(),
         }))
     }
 
     fn get(&self) -> &Regex {
         self.0.built.get_or_init(|| {
-            let (pattern, whole_input) = self
+            let pending = self
                 .0
                 .pending
                 .as_ref()
                 .expect("a deferred matcher keeps its pattern until it is built");
-            let hir = GoRegex::parse_hir(pattern, true, *whole_input)
+            let hir = GoRegex::parse_hir(&pending.pattern, pending.utf8, pending.whole_input)
                 .expect("an expression that passed preflight parses again");
-            GoRegex::build_meta_backend(&hir, COMPILED_SIZE_LIMIT)
+            GoRegex::build_meta_backend_dialect(&hir, COMPILED_SIZE_LIMIT, pending.utf8)
                 .expect("an expression that passed preflight builds its meta matcher")
         })
     }
@@ -368,10 +381,8 @@ impl fmt::Debug for GoRegex {
     }
 }
 
-/// Explicit native byte dialect. Its executable matcher never normalizes input
-/// or passes through the compatibility translator.
-/// A built `bytes-v1` matcher and its required literals.
-type ByteBackend = (Regex, Option<Box<[LiteralSet]>>);
+/// A `bytes-v1` matcher, its capture count and its required literals.
+type ByteBackend = (LazyBackend, usize, Option<Box<[LiteralSet]>>);
 
 /// How much load-time checking a pattern receives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -385,9 +396,14 @@ pub(crate) enum PatternCheck {
 }
 
 #[derive(Clone)]
+/// Explicit native byte dialect. Its executable matcher never normalizes input
+/// or passes through the compatibility translator. Like [`GoRegex`], it
+/// builds its matcher on first use, except for a deeply nested expression.
 pub(crate) struct NativeByteRegex {
     source: Box<str>,
-    backend: Regex,
+    backend: LazyBackend,
+    /// Capture groups, excluding the whole match.
+    captures: usize,
     required_literals: Option<Arc<[LiteralSet]>>,
 }
 
@@ -419,26 +435,61 @@ impl NativeByteRegex {
                 limit: PATTERN_SIZE_LIMIT,
             });
         }
-        let build: fn(&str) -> Result<_, GoRegexError> = match check {
-            PatternCheck::Full => |pattern| {
-                let hir = GoRegex::preflight_dialect(pattern, COMPILED_SIZE_LIMIT, false)?;
-                Self::build(&hir)
-            },
-            PatternCheck::BuiltIn => {
-                |pattern| Self::build(&GoRegex::parse_hir(pattern, false, false)?)
-            }
+        let (backend, captures, required_literals) = if GoRegex::needs_compile_stack(source) {
+            // Deeply nested expressions build at once on the large compile
+            // stack; a later build could run on a smaller worker stack.
+            let build: fn(&str) -> Result<_, GoRegexError> = match check {
+                PatternCheck::Full => |pattern| {
+                    let hir = GoRegex::preflight_dialect(pattern, COMPILED_SIZE_LIMIT, false)?;
+                    Self::build(&hir)
+                },
+                PatternCheck::BuiltIn => {
+                    |pattern| Self::build(&GoRegex::parse_hir(pattern, false, false)?)
+                }
+            };
+            GoRegex::on_compile_stack(source, build)?
+        } else {
+            let hir = match check {
+                PatternCheck::Full => {
+                    GoRegex::preflight_dialect(source, COMPILED_SIZE_LIMIT, false)?
+                }
+                PatternCheck::BuiltIn => GoRegex::parse_hir(source, false, false)?,
+            };
+            (
+                LazyBackend::deferred(source, false, false),
+                hir.properties().explicit_captures_len(),
+                required_literals::required_literals(&hir),
+            )
         };
-        let (backend, required_literals) = GoRegex::on_compile_stack(source, build)?;
         Ok(Self {
             source: source.into(),
             backend,
+            captures,
             required_literals: required_literals.map(Arc::from),
         })
     }
 
     fn build(hir: &regex_syntax::hir::Hir) -> Result<ByteBackend, GoRegexError> {
         let backend = GoRegex::build_meta_backend_dialect(hir, COMPILED_SIZE_LIMIT, false)?;
-        Ok((backend, required_literals::required_literals(hir)))
+        let captures = backend
+            .group_info()
+            .group_len(regex_automata::PatternID::ZERO)
+            - 1;
+        Ok((
+            LazyBackend::built(backend),
+            captures,
+            required_literals::required_literals(hir),
+        ))
+    }
+
+    /// The capture count of the built matcher, for tests.
+    #[cfg(test)]
+    pub(crate) fn built_capture_count(&self) -> usize {
+        self.backend
+            .get()
+            .group_info()
+            .group_len(regex_automata::PatternID::ZERO)
+            - 1
     }
 
     /// Sets of folded ASCII literals, best first, such that every match
@@ -448,10 +499,7 @@ impl NativeByteRegex {
     }
 
     pub(crate) fn capture_count(&self) -> usize {
-        self.backend
-            .group_info()
-            .group_len(regex_automata::PatternID::ZERO)
-            - 1
+        self.captures
     }
 
     pub(crate) fn find_all_controlled<E>(
@@ -462,7 +510,7 @@ impl NativeByteRegex {
         let mut spans = Vec::new();
         // The backend Searcher advances empty matches by bytes under this
         // dialect, including positions inside UTF-8 and malformed sequences.
-        for whole in self.backend.find_iter(bytes) {
+        for whole in self.backend.get().find_iter(bytes) {
             admit_span()?;
             spans.push(ByteSpan {
                 start: whole.start(),
@@ -474,7 +522,7 @@ impl NativeByteRegex {
 
     pub(crate) fn capture_scratch(&self) -> CaptureScratch {
         CaptureScratch {
-            captures: self.backend.create_captures(),
+            captures: self.backend.get().create_captures(),
             spans: Vec::with_capacity(self.capture_count() + 1),
         }
     }
@@ -488,7 +536,7 @@ impl NativeByteRegex {
         if whole.start > whole.end || whole.end > bytes.len() {
             return None;
         }
-        self.backend.search_captures(
+        self.backend.get().search_captures(
             &Input::new(bytes).span(whole.start..bytes.len()),
             &mut scratch.captures,
         );
@@ -552,7 +600,7 @@ impl GoRegex {
             let literal_anchor = LiteralAnchorShape::analyze(&hir);
             let required = required_literals::required_literals(&hir);
             (
-                LazyBackend::deferred(&translated.pattern, whole_input),
+                LazyBackend::deferred(&translated.pattern, whole_input, true),
                 literal_anchor,
                 required,
             )
