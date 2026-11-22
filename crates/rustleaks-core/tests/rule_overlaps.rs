@@ -17,11 +17,11 @@ use rustleaks_core::{Engine, ScanControl};
 const KEEP: &str = "rustleaks.example-keep";
 const DROP: &str = "rustleaks.example-drop";
 
-/// Two rules that accept the same token: `keep` needs a `key=` prefix.
+/// Two rules that accept the same token: `keep` needs a `use=` prefix.
 const RULES: &str = r#"
 [[rules]]
 id = "rustleaks.example-keep"
-regex = '''key=(tok_[A-Z0-9]{8})\b'''
+regex = '''use=(tok_[A-Z0-9]{8})\b'''
 secretGroup = 1
 keywords = ["tok_"]
 
@@ -91,7 +91,7 @@ fn found(rule: &str, secret: &str, start: usize) -> (String, String, FindingRang
 
 #[test]
 fn without_an_overlap_both_rules_report_the_same_secret() {
-    let findings = scan(&engine(&pack("")), "key=tok_AB12CD34");
+    let findings = scan(&engine(&pack("")), "use=tok_AB12CD34");
     assert_eq!(
         summary(&findings),
         [
@@ -105,7 +105,7 @@ fn without_an_overlap_both_rules_report_the_same_secret() {
 fn an_overlap_keeps_one_finding_for_the_same_secret_at_the_same_place() {
     let engine = engine(&pack(OVERLAP));
     assert_eq!(
-        summary(&scan(&engine, "key=tok_AB12CD34")),
+        summary(&scan(&engine, "use=tok_AB12CD34")),
         [found(KEEP, "tok_AB12CD34", 4)]
     );
     // Where only the dropped rule matches, it still reports.
@@ -115,7 +115,7 @@ fn an_overlap_keeps_one_finding_for_the_same_secret_at_the_same_place() {
     );
     // The same secret at another place is a separate occurrence.
     assert_eq!(
-        summary(&scan(&engine, "key=tok_AB12CD34 tok_AB12CD34")),
+        summary(&scan(&engine, "use=tok_AB12CD34 tok_AB12CD34")),
         [
             found(DROP, "tok_AB12CD34", 17),
             found(KEEP, "tok_AB12CD34", 4)
@@ -124,7 +124,7 @@ fn an_overlap_keeps_one_finding_for_the_same_secret_at_the_same_place() {
     // A cancellable scan that is not cancelled gives the same result.
     let cancel = AtomicBool::new(false);
     let outcome = engine.scan_fragment_controlled(
-        &Fragment::new(b"key=tok_AB12CD34 tok_ZZ99YY88"),
+        &Fragment::new(b"use=tok_AB12CD34 tok_ZZ99YY88"),
         &ScanOptions::default(),
         &ScanControl::cancellable(&cancel),
     );
@@ -143,7 +143,7 @@ fn an_overlap_never_hides_a_secret_that_the_kept_rule_does_not_report() {
     let engine = engine(&pack(OVERLAP));
     // The kept rule's allowlist drops its finding, so the other rule reports.
     assert_eq!(
-        summary(&scan(&engine, "key=tok_ALLOWED1")),
+        summary(&scan(&engine, "use=tok_ALLOWED1")),
         [found(DROP, "tok_ALLOWED1", 4)]
     );
     // A selection without the kept rule reports the dropped rule.
@@ -156,12 +156,12 @@ fn an_overlap_never_hides_a_secret_that_the_kept_rule_does_not_report() {
         .build()
         .unwrap();
     assert_eq!(
-        summary(&scan(&selected, "key=tok_AB12CD34")),
+        summary(&scan(&selected, "use=tok_AB12CD34")),
         [found(DROP, "tok_AB12CD34", 4)]
     );
     // With redaction, the comparison still uses the original secrets.
     let outcome = engine.scan_fragment(
-        &Fragment::new(b"key=tok_AB12CD34"),
+        &Fragment::new(b"use=tok_AB12CD34"),
         &ScanOptions::builder().redaction_percent(100).build(),
     );
     assert_eq!(outcome.findings().len(), 1);
@@ -361,7 +361,7 @@ fn a_configuration_file_cannot_declare_overlaps() {
     );
     let config = ConfigLoader::new().load_toml(&contents).unwrap();
     let engine = Engine::builder(config).build().unwrap();
-    assert_eq!(scan(&engine, "key=tok_AB12CD34").len(), 2);
+    assert_eq!(scan(&engine, "use=tok_AB12CD34").len(), 2);
 }
 
 fn builtin() -> &'static Engine {
