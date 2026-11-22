@@ -2192,3 +2192,99 @@ fn decode(encoded: &str) -> Vec<u8> {
         .decode(encoded)
         .unwrap()
 }
+
+/// A finding of `rule_id` with `secret` at an exact range in one file.
+fn overlap_probe(rule_id: &[u8], secret: &[u8], start: usize) -> Finding {
+    Finding::builder()
+        .rule_id(rule_id)
+        .location(Location::new(1, 1, 1, 1).unwrap())
+        .file("same.txt")
+        .commit("c")
+        .match_text(secret)
+        .secret(secret)
+        .secret_range(FindingRange::Exact(
+            ByteRange::from_start_len(start, secret.len()).unwrap(),
+        ))
+        .build()
+        .unwrap()
+}
+
+fn overlap_replacements() -> ReplacedBy {
+    ReplacedBy {
+        keepers: [(
+            b"a-drop".as_slice().into(),
+            [b"b-keep".as_slice().into()].into(),
+        )]
+        .into(),
+        kept: [b"b-keep".as_slice().into()].into(),
+    }
+}
+
+#[test]
+fn overlap_filter_drops_only_a_finding_whose_keeper_reports_the_same_place() {
+    let replaced = overlap_replacements();
+    let findings = vec![
+        overlap_probe(b"a-drop", b"tok", 4),
+        overlap_probe(b"a-drop", b"tok", 9),
+        overlap_probe(b"b-keep", b"tok", 4),
+    ];
+    let ids = |findings: &[Finding]| {
+        findings
+            .iter()
+            .map(|finding| {
+                (
+                    finding.rule_id().as_bytes().to_vec(),
+                    finding.secret_range(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = ids(&[findings[1].clone(), findings[2].clone()]);
+    assert_eq!(
+        ids(&filter_findings(&replaced, findings.clone(), 0)),
+        expected
+    );
+    let (filtered, termination) =
+        filter_findings_cancellable(&replaced, findings, 0, ScanControl::cancellable(&|| false));
+    assert_eq!(termination, None);
+    assert_eq!(ids(&filtered), expected);
+}
+
+#[test]
+fn cancelled_overlap_filter_keeps_a_replaced_finding_whose_keeper_is_cut_off() {
+    // Rule-grouped order puts the dropped finding before its keeper.
+    let findings = vec![
+        overlap_probe(b"a-drop", b"tok", 4),
+        overlap_probe(b"b-keep", b"tok", 4),
+    ];
+    let mut seen_prefix_with_drop = false;
+    for allowed in 0..16 {
+        let polls = AtomicUsize::new(0);
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= allowed;
+        let (filtered, termination) = filter_findings_cancellable(
+            &overlap_replacements(),
+            findings.clone(),
+            0,
+            ScanControl::cancellable(&cancel),
+        );
+        let rules: Vec<_> = filtered
+            .iter()
+            .map(|finding| finding.rule_id().as_bytes().to_vec())
+            .collect();
+        match termination {
+            None => assert_eq!(rules, [b"b-keep".to_vec()]),
+            Some(_) => {
+                // A cancelled result is a prefix: nothing decided, the
+                // dropped finding alone, or the keeper alone.
+                assert!(
+                    rules.is_empty()
+                        || rules == [b"a-drop".to_vec()]
+                        || rules == [b"b-keep".to_vec()],
+                    "{allowed}"
+                );
+                seen_prefix_with_drop |= rules == [b"a-drop".to_vec()];
+            }
+        }
+    }
+    assert!(seen_prefix_with_drop);
+}

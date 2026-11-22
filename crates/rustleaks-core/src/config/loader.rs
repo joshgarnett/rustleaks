@@ -1141,6 +1141,11 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
         if disabled.contains(id.as_str()) {
             continue;
         }
+        // A disabled rule takes its reviewed overlaps with it, even when the
+        // extending configuration defines a rule with the same ID.
+        base_rule
+            .native_replaced_by
+            .retain(|keeper| !disabled.contains(keeper.as_str()));
         if let Some(current_rule) = current.rules.remove(&id) {
             if !current_rule.description.is_empty() {
                 base_rule.description = current_rule.description;

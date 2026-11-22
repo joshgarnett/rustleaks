@@ -22,7 +22,9 @@
   dropped finding has a reported finding with the same secret, and each rule
   still reports secrets that the other rule does not. Fewer findings means
   fewer fingerprints; baseline and ignore entries for the dropped findings no
-  longer match anything. The pairs are listed in new `[[overlaps]]` entries
+  longer match anything. An ignore or baseline entry for the reported finding
+  now also hides the secret, since the dropped finding is no longer reported
+  next to it. The pairs are listed in new `[[overlaps]]` entries
   in `rustleaks-providers-v1.toml`, so `PROVIDER_RULES_V1_SHA256`, the
   built-in review reference and `NativePolicyIdentity` change.
   `NativePolicyError::InvalidNativeOverlap` reports a malformed entry.

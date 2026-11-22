@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::ops::Range;
@@ -407,7 +407,11 @@ pub struct Engine {
 /// whose finding replaces its finding of the same secret at the same place.
 /// Empty for configurations without native rule packs.
 #[derive(Clone, Debug, Default)]
-struct ReplacedBy(BTreeMap<RuleIdBytes, Box<[RuleIdBytes]>>);
+struct ReplacedBy {
+    keepers: BTreeMap<RuleIdBytes, Box<[RuleIdBytes]>>,
+    /// Every rule named as a keeper in `keepers`.
+    kept: BTreeSet<RuleIdBytes>,
+}
 
 /// The bytes of a rule ID.
 type RuleIdBytes = Box<[u8]>;
@@ -417,40 +421,42 @@ type Occurrence<'a> = (&'a [u8], &'a [u8], usize, usize, &'a [u8]);
 
 impl ReplacedBy {
     fn new(config: &CompiledConfig) -> Self {
-        Self(
-            config
-                .rules
-                .values()
-                .filter(|rule| !rule.native_replaced_by.is_empty())
-                .map(|rule| {
-                    (
-                        rule.id.as_bytes().into(),
-                        rule.native_replaced_by
-                            .iter()
-                            .map(|id| id.as_bytes().into())
-                            .collect(),
-                    )
-                })
-                .collect(),
-        )
+        let keepers: BTreeMap<RuleIdBytes, Box<[RuleIdBytes]>> = config
+            .rules
+            .values()
+            .filter(|rule| !rule.native_replaced_by.is_empty())
+            .map(|rule| {
+                (
+                    rule.id.as_bytes().into(),
+                    rule.native_replaced_by
+                        .iter()
+                        .map(|id| id.as_bytes().into())
+                        .collect(),
+                )
+            })
+            .collect();
+        let kept = keepers.values().flatten().cloned().collect();
+        Self { keepers, kept }
     }
 
     fn keepers(&self, rule_id: &[u8]) -> Option<&[RuleIdBytes]> {
-        self.0.get(rule_id).map(AsRef::as_ref)
+        self.keepers.get(rule_id).map(AsRef::as_ref)
     }
 
-    /// Marks each finding whose rule lists the rule of another finding with
-    /// the same file, commit, secret and exact secret range. A finding
-    /// without an exact secret range is never replaced. Calls `cancelled`
-    /// before each finding is visited, at most twice per finding, and returns
-    /// `None` as soon as it reports cancellation.
+    /// For each finding whose rule lists the rule of another finding with
+    /// the same file, commit, secret and exact secret range, returns the
+    /// lowest index of such a keeper finding. A finding without an exact
+    /// secret range is never replaced. Only findings of keeper rules are
+    /// indexed. Calls `cancelled` before each finding of a keeper rule is
+    /// indexed and before each finding is checked, and returns `None` as soon
+    /// as it reports cancellation.
     fn replaced(
         &self,
         findings: &[Finding],
         mut cancelled: impl FnMut() -> bool,
-    ) -> Option<Vec<bool>> {
-        let mut replaced = vec![false; findings.len()];
-        if self.0.is_empty()
+    ) -> Option<Vec<Option<usize>>> {
+        let mut replaced = vec![None; findings.len()];
+        if self.keepers.is_empty()
             || !findings
                 .iter()
                 .any(|finding| self.keepers(finding.rule_id().as_bytes()).is_some())
@@ -459,6 +465,9 @@ impl ReplacedBy {
         }
         let mut by_occurrence = BTreeMap::<_, Vec<usize>>::new();
         for (index, finding) in findings.iter().enumerate() {
+            if !self.kept.contains(finding.rule_id().as_bytes()) {
+                continue;
+            }
             if cancelled() {
                 return None;
             }
@@ -476,10 +485,12 @@ impl ReplacedBy {
             ) else {
                 continue;
             };
-            replaced[index] = by_occurrence[&key].iter().any(|&other| {
-                keepers
-                    .iter()
-                    .any(|keeper| keeper.as_ref() == findings[other].rule_id().as_bytes())
+            replaced[index] = by_occurrence.get(&key).and_then(|candidates| {
+                candidates.iter().copied().find(|&other| {
+                    keepers
+                        .iter()
+                        .any(|keeper| keeper.as_ref() == findings[other].rule_id().as_bytes())
+                })
             });
         }
         Some(replaced)
@@ -2832,7 +2843,7 @@ fn filter_findings_with_cancellation(
             cancelled = true;
             break;
         }
-        if replaced[index] {
+        if replaced[index].is_some() {
             include.push(false);
             continue;
         }
@@ -2852,6 +2863,17 @@ fn filter_findings_with_cancellation(
             }
         }
         include.push(retained);
+    }
+    if cancelled {
+        // Only the decided prefix is returned. A replaced finding whose
+        // keeper is not in it stays, so its secret is still reported. Rules
+        // in overlaps are never generic, so no generic check is skipped.
+        let decided = include.len();
+        for (index, keeper) in replaced.iter().take(decided).enumerate() {
+            if keeper.is_some_and(|keeper| keeper >= decided) {
+                include[index] = true;
+            }
+        }
     }
     let termination = cancelled.then_some(ScanTermination::Cancelled);
     (apply_finding_filter(findings, include, redact), termination)
@@ -2975,7 +2997,7 @@ fn filter_findings(
     let suppression = GenericSuppression::new(&findings);
     let include = (0..findings.len())
         .map(|index| {
-            !replaced[index]
+            replaced[index].is_none()
                 && (!suppression.is_generic(index) || suppression.first_suppressor(index).is_none())
         })
         .collect::<Vec<_>>();

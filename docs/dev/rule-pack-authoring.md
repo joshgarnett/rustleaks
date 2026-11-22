@@ -259,7 +259,9 @@ redaction, with the generic filter. A finding without an exact secret range,
 such as one from decoded text, is never removed.
 
 - `keep` and `drop` are rule IDs, and `description` is optional. Other fields
-  are rejected.
+  are rejected. A rule with `generic` in its ID (ASCII case-insensitive)
+  cannot be in an overlap, because the generic filter could remove the kept
+  finding.
 - At least one of the two rules is in the same pack. The other can be a
   default rule or a rule of another pack.
 - At build time both rules must exist and report findings (no
@@ -267,7 +269,10 @@ such as one from decoded text, is never removed.
   a `keep` and a `drop`, so every removed finding has a reported finding with
   the same secret.
 - A rule selection keeps an overlap only when both rules are selected.
-  `disabledRules` removes the rule and its overlaps.
+  `disabledRules` removes the rule and its overlaps, also when the extending
+  configuration defines a rule with the same ID.
+- A cancelled scan returns only the findings decided so far. A removed
+  finding whose kept finding is not among them stays in the result.
 
 Add a pair only when both rules can report the same credential and one of
 them names it better, or both name the same provider. When both name the same

@@ -143,7 +143,9 @@ The secret is always reported. A rule that is not reported for one secret
 still reports every secret that the other rule does not, for example a
 Stripe key without a WorkOS name nearby. If an allowlist, an `--enable-rule`
 selection or `disabledRules` removes the reported rule's finding, the other
-finding stays. A configuration file cannot add pairs.
+finding stays. Ignore files and baselines apply after this filter, so an
+entry for the reported finding also hides the secret. A configuration file
+cannot add pairs.
 
 In all other cases, both findings are reported. For example,
 `curl-auth-header` reports the token in a curl `Authorization` header next to

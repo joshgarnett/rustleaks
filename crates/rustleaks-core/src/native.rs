@@ -956,7 +956,10 @@ fn parse_native_overlap(value: &toml::Value) -> Result<NativeOverlap, NativePoli
     }
     match (keep, drop) {
         (Some(keep), Some(drop))
-            if keep != drop && valid_identifier(keep) && valid_identifier(drop) =>
+            if keep != drop
+                && [keep, drop].iter().all(|id| {
+                    valid_identifier(id) && !id.to_ascii_lowercase().contains("generic")
+                }) =>
         {
             Ok(NativeOverlap {
                 keep: keep.to_owned(),
@@ -1292,8 +1295,8 @@ pub enum NativePolicyError {
     #[error("invalid native predicate")]
     InvalidNativePredicate,
     /// An `[[overlaps]]` entry is malformed, repeated, names no rule of its
-    /// pack, names a missing or non-reporting rule, or chains with another
-    /// entry.
+    /// pack, names a rule with `generic` in its ID, names a missing or
+    /// non-reporting rule, or chains with another entry.
     #[error("invalid native rule overlap")]
     InvalidNativeOverlap,
     /// A source-byte, pack-count or rule-count limit was exceeded.

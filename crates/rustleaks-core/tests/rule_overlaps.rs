@@ -248,6 +248,16 @@ fn overlap_entries_are_checked_when_a_pack_is_added() {
             entry("keep = \"bad id\"\ndrop = \"rustleaks.example-drop\""),
             NativePolicyError::InvalidNativeOverlap,
         ),
+        // The generic filter could remove the kept finding, so a rule with
+        // `generic` in its ID takes no part in an overlap.
+        (
+            entry("keep = \"rustleaks.Generic-keep\"\ndrop = \"rustleaks.example-drop\""),
+            NativePolicyError::InvalidNativeOverlap,
+        ),
+        (
+            entry("keep = \"rustleaks.example-keep\"\ndrop = \"generic-api-key\""),
+            NativePolicyError::InvalidNativeOverlap,
+        ),
         (
             format!("{OVERLAP}{OVERLAP}"),
             NativePolicyError::InvalidNativeOverlap,
@@ -313,6 +323,33 @@ fn overlap_entries_are_checked_against_the_whole_composition() {
             .build(),
         Err(NativePolicyError::InvalidNativeOverlap)
     ));
+}
+
+#[test]
+fn a_disabled_kept_rule_takes_its_overlaps_with_it() {
+    let secret = format!("eyJrIjoi{}", body(80));
+    let input = format!("x {secret}\n");
+    // A user rule reuses the ID of the disabled default rule.
+    let config = ConfigLoader::new()
+        .load_toml(
+            r#"
+[extend]
+useDefault = true
+disabledRules = ["grafana-api-key"]
+
+[[rules]]
+id = "grafana-api-key"
+regex = '''\b(eyJrIjoi[A-Za-z0-9]{70,400})'''
+secretGroup = 1
+keywords = ["eyjrijoi"]
+"#,
+        )
+        .unwrap();
+    let engine = Engine::builder(config).build().unwrap();
+    assert_eq!(
+        rules_at(&engine, &input, &secret),
+        sorted(&["grafana-api-key", "rustleaks.grafana-api-key-base64"])
+    );
 }
 
 #[test]
