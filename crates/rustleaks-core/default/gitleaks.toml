@@ -1,8 +1,7 @@
-# Rustleaks default rules, based on the Gitleaks default configuration at
-# commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b. The unchanged upstream copy
-# is compat/config-corpus/default-gitleaks.toml. Rustleaks changes to this file
-# are listed in docs/user/gitleaks-differences.md#default-rules and checked by
-# crates/rustleaks-core/tests/default_rules.rs.
+# Rustleaks default rules. They started from the Gitleaks default
+# configuration at commit b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b (see NOTICE)
+# and are maintained here. crates/rustleaks-core/tests/default_rules.rs checks
+# the allowlists that Rustleaks adds.
 #
 # Upstream header:
 # This file has been auto-generated. Do not edit manually.

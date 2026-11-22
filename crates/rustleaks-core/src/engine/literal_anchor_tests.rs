@@ -376,7 +376,7 @@ struct Sample {
 
 fn samples() -> Vec<Sample> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/generator-corpus/samples-v1.jsonl");
+        .join("../../testdata/generator-corpus/samples-v1.jsonl");
     std::fs::read_to_string(path)
         .unwrap()
         .lines()
@@ -389,7 +389,7 @@ fn decoded(sample: &Sample) -> Vec<u8> {
 }
 
 #[test]
-fn every_eligible_default_rule_agrees_on_every_frozen_rule_sample() {
+fn every_eligible_default_rule_agrees_on_every_rule_sample() {
     let engine = default_engine();
     let rules = anchored_rules(&engine);
     let samples = samples();

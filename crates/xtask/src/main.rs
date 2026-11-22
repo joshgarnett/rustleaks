@@ -4,7 +4,6 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::time::Duration;
 
 mod build_system;
 mod comparison;
@@ -22,23 +21,17 @@ mod security_deep;
 mod tooling;
 mod workflows;
 
-use tooling::{command_output, command_status_with_timeout};
+use tooling::command_output;
 
-/// Pinned Gitleaks revision from `compat/upstream-revision.txt`.
+/// Gitleaks commit that `NOTICE` names for attribution.
 const REVISION: &str = "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b";
-/// SHA-256 of the upstream default configuration at [`REVISION`], from
-/// `compat/upstream-revision.txt`. Only the frozen CLI corpus replay uses it.
-#[cfg(test)]
-const UPSTREAM_CONFIG_SHA256: &str =
-    "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
 /// SHA-256 of the shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`.
-/// It equals `rustleaks_core::config::DEFAULT_CONFIG_SHA256`. The upstream copy
-/// has the pinned SHA-256 in `compat/upstream-revision.txt`.
+/// It equals `rustleaks_core::config::DEFAULT_CONFIG_SHA256`.
 const DEFAULT_RULES_SHA256: &str =
-    "442fca81a914728ebaf843ba59d01bb3e6e71559c1ddb51fddc81fca45df959a";
+    "35c17b31383953534b7e5769082564aab30a52606f32a310a217e99b341280b8";
 const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
-/// Required compile targets, in the order that `docs/dev/testing-and-parity.md`
+/// Required compile targets, in the order that `docs/dev/testing.md`
 /// lists them.
 pub(crate) const REQUIRED_TARGETS: &[&str] = &[
     "x86_64-unknown-linux-gnu",
@@ -64,10 +57,6 @@ fn main() -> ExitCode {
 
 fn run(args: &[String]) -> Result<(), String> {
     match args {
-        [command] if command == "frozen-evidence-check" => {
-            tooling::check_frozen_evidence(&workspace_root()?)
-        }
-        [command] if command == "regression-check" => regression_check(),
         [command] if command == "qualify" => qualify::qualify(),
         [command, arguments @ ..] if command == "generate" => {
             tooling::run_generate(&workspace_root()?, arguments)
@@ -127,8 +116,6 @@ fn run(args: &[String]) -> Result<(), String> {
 /// documentation command check read this list, and a unit test keeps it in
 /// step with the dispatch.
 const XTASK_COMMANDS: &[&str] = &[
-    "frozen-evidence-check",
-    "regression-check",
     "qualify",
     "public-api-check",
     "build-system-check",
@@ -239,24 +226,9 @@ fn fuzz_smoke() -> Result<(), String> {
     fuzzing::smoke(&workspace_root()?)
 }
 
-fn regression_check() -> Result<(), String> {
-    let root = workspace_root()?;
-    tooling::check_frozen_evidence(&root)?;
-    command_status_with_timeout(
-        Command::new("bazelisk")
-            .current_dir(&root)
-            .args(["test", "//:parity"]),
-        Duration::from_mins(30),
-        "Rust frozen regression replay",
-    )?;
-    println!("frozen evidence integrity and Rust regression replay passed");
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::fs;
     use std::time::Duration;
 
     use super::{build_system, workspace_root};
@@ -331,23 +303,6 @@ mod tests {
         assert!(error.contains("failed to reap timed-out lifecycle probe"));
         assert!(child.killed);
         assert!(child.reaped);
-    }
-
-    #[test]
-    fn pinned_constants_match_the_upstream_revision_file() {
-        let pin = fs::read_to_string(
-            workspace_root()
-                .unwrap()
-                .join("compat/upstream-revision.txt"),
-        )
-        .unwrap();
-        assert!(
-            pin.lines()
-                .any(|line| line == format!("revision={}", super::REVISION))
-        );
-        assert!(pin.lines().any(|line| {
-            line == format!("default_config_sha256={}", super::UPSTREAM_CONFIG_SHA256)
-        }));
     }
 
     #[test]

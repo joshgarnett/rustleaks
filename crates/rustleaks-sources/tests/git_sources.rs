@@ -46,7 +46,7 @@ impl Drop for TempRepo {
 }
 
 fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/fixtures/upstream")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/fixtures/upstream")
 }
 
 fn copy_tree(source: &Path, destination: &Path) {

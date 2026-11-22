@@ -21,7 +21,7 @@ use tool_identity::with_rustleaks_identity;
 #[test]
 fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
     let root = std::env::var_os("RUSTLEAKS_REPORT_CORPUS").map_or_else(
-        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/report-corpus"),
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/report-corpus"),
         PathBuf::from,
     );
     let outcomes = json_lines(&root.join("outcomes-v1.jsonl"))
@@ -115,7 +115,7 @@ fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
             continue;
         }
         let expected = if matches!(format, "junit" | "sarif") && limit.is_none() {
-            // The only intended difference from the frozen bytes.
+            // The only intended difference from the recorded bytes.
             with_rustleaks_identity(format, &expected)
         } else {
             expected

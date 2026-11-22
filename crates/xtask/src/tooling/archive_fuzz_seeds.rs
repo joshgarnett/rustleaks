@@ -64,8 +64,7 @@ pub(crate) fn generate_archive_fuzz_seeds(
         "crates/rustleaks-sources/fuzz/support/archive_seeds.rs",
         "crates/rustleaks-sources/fuzz/support/sevenz_seeds.rs",
         "crates/xtask/src/tooling/archive_fuzz_seeds.rs",
-        "compat/source-corpus/requests-v1.jsonl",
-        "compat/upstream-revision.txt",
+        "testdata/source-corpus/requests-v1.jsonl",
     ] {
         input_hashes.insert(input.to_owned(), json!(sha256_file(&root.join(input))?));
     }
@@ -86,7 +85,7 @@ pub(crate) fn generate_archive_fuzz_seeds(
         ("NOTICE", "licenses/NOTICE"),
         ("LICENSE", "licenses/LICENSE"),
         (
-            "compat/fixtures/oracle/rar-test-files-16b785c/LICENSE.cc0",
+            "testdata/fixtures/archives/rar-test-files-16b785c/LICENSE.cc0",
             "licenses/LICENSE.rar-test-files.cc0",
         ),
     ] {

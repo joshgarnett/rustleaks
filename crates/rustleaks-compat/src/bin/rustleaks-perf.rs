@@ -25,7 +25,7 @@ use benchmark_data::{
 use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG_SHA256};
 use rustleaks_core::model::{Finding, Fragment, Location, ScanOptions};
 use rustleaks_core::session::SessionPolicy;
-use rustleaks_core::{Engine, ScanBudget, ScanControl, UPSTREAM_REVISION};
+use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use rustleaks_report::{JsonReporter, Reporter, SarifReporter};
 use rustleaks_sources::{
     CancellationToken, DEFAULT_CHUNK_SIZE, DirectoryOptions, DirectorySource, SourceRunner,
@@ -111,7 +111,6 @@ struct Metric {
 
 #[derive(Serialize)]
 struct Provenance {
-    upstream_revision: &'static str,
     default_config_sha256: &'static str,
     binding: &'static str,
     package_version: &'static str,
@@ -343,7 +342,6 @@ fn provenance() -> Result<Provenance, Box<dyn Error>> {
         hash = fnv_extend(hash, &buffer[..read]);
     }
     Ok(Provenance {
-        upstream_revision: UPSTREAM_REVISION,
         default_config_sha256: DEFAULT_CONFIG_SHA256,
         binding: "unbound-runner",
         package_version: env!("CARGO_PKG_VERSION"),
@@ -1034,7 +1032,7 @@ fn expected(id: &str) -> Expected {
     match id {
         "default-compile" => Expected::new(
             // The byte length of the shipped default rules.
-            100_665,
+            100_568,
             DEFAULT_RULES as u64,
             0,
             DEFAULT_CONFIG_FINGERPRINT,

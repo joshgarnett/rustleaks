@@ -90,17 +90,9 @@ fn native_config_names_precede_backward_compatible_aliases() {
 }
 
 #[test]
-fn implemented_gitleaks_version_matches_the_pinned_upstream_revision() {
-    let revision = fs::read_to_string(compat_file("upstream-revision.txt")).unwrap();
-    let description = revision
-        .lines()
-        .find_map(|line| line.strip_prefix("description="))
-        .unwrap();
-    let version = description
-        .strip_prefix('v')
-        .and_then(|rest| rest.split_once('-'))
-        .map(|(version, _)| version)
-        .unwrap();
+fn a_newer_min_version_warns_against_the_supported_gitleaks_version() {
+    // Rustleaks reads configurations written for Gitleaks 8.30.0 and earlier,
+    // so `minVersion` is compared with 8.30.0.
     let fixture = Fixture::new();
     let result = command(&fixture.0)
         .args(["stdin", "--no-banner"])
@@ -110,10 +102,8 @@ fn implemented_gitleaks_version_matches_the_pinned_upstream_revision() {
     assert_eq!(result.status.code(), Some(0));
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains(&format!(
-            " is newer than Gitleaks {version}, the newest configuration version"
-        )),
-        "{description}: {stderr}"
+        stderr.contains(" is newer than Gitleaks 8.30.0, the newest configuration version"),
+        "{stderr}"
     );
 }
 

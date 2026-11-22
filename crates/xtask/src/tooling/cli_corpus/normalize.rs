@@ -1,61 +1,26 @@
-//! Host-independent stdout, stderr-event, usage, and finding normalization.
+//! Host-independent stdout, stderr-event and finding normalization.
 
-use std::ops::Range;
 use std::path::Path;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
-use crate::tooling::support::sha256_bytes;
-
+/// One classified stderr line. The message text is presentation and is not
+/// part of the observation.
 pub(super) struct Event {
     pub(super) severity: String,
     pub(super) class: String,
     pub(super) fields: Vec<(String, Value)>,
-    pub(super) message: Vec<u8>,
 }
 
-/// Selects how executable names are spelled in normalized output.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Spelling {
-    /// Rewrites Rustleaks names to the historical `gitleaks` spelling. This is
-    /// used only to compare observations with the frozen corpus.
-    Legacy,
-    /// Keeps the `rustleaks` spelling that the CLI prints. This is used for
-    /// reviewed presentation text.
-    Native,
+/// Stderr reduced to classified events outside the usage block.
+pub(super) struct Stderr {
+    pub(super) events: Vec<Event>,
+    pub(super) usage_printed: bool,
 }
 
-impl Spelling {
-    fn names(self, executable: &str) -> Vec<&str> {
-        match self {
-            Self::Legacy => vec![executable, "rustleaks", "gitleaks"],
-            Self::Native => vec![executable, "rustleaks"],
-        }
-    }
-
-    fn target(self) -> &'static str {
-        match self {
-            Self::Legacy => "gitleaks",
-            Self::Native => "rustleaks",
-        }
-    }
-}
-
-/// Native message text and usage block position for legacy stderr events.
-pub(super) struct NativeStderr {
-    /// Native message for each legacy stderr event, in the same order.
-    pub(super) messages: Vec<Vec<u8>>,
-    /// Legacy stderr events produced by the first usage block.
-    pub(super) usage_events: Option<Range<usize>>,
-}
-
-pub(super) fn normalize_bytes(
-    bytes: &[u8],
-    root: &Path,
-    executable: &str,
-    spelling: Spelling,
-) -> Vec<u8> {
+/// Replaces the temporary root with `<TMP>`, spells the executable name
+/// `rustleaks` and removes ANSI escapes.
+pub(super) fn normalize_bytes(bytes: &[u8], root: &Path, executable: &str) -> Vec<u8> {
     let mut value = bytes.to_vec();
     let root_bytes = root.to_string_lossy();
     if cfg!(target_os = "macos") && root_bytes.starts_with("/var/") {
@@ -65,127 +30,55 @@ pub(super) fn normalize_bytes(
     if cfg!(windows) {
         value = replace(&value, b"<TMP>\\", b"<TMP>/");
     }
-    let target = spelling.target().as_bytes();
-    let mut capitalized_target = target.to_vec();
-    capitalized_target[0].make_ascii_uppercase();
-    let mut names = spelling.names(executable);
-    names.sort_by_key(|name| std::cmp::Reverse(name.len()));
-    for name in names {
-        value = replace(&value, name.as_bytes(), target);
-        let mut capitalized = name.as_bytes().to_vec();
-        if let Some(first) = capitalized.first_mut() {
-            first.make_ascii_uppercase();
-        }
-        value = replace(&value, &capitalized, &capitalized_target);
+    if executable != "rustleaks" {
+        value = replace(&value, executable.as_bytes(), b"rustleaks");
     }
     strip_ansi(&value)
 }
 
-pub(super) fn events(bytes: &[u8], root: &Path, executable: &str) -> Vec<Event> {
-    let normalized = normalize_bytes(bytes, root, executable, Spelling::Legacy);
-    let text = String::from_utf8_lossy(&normalized);
-    let lines = text.lines().collect::<Vec<_>>();
-    let (indices, _) = event_lines(&lines);
-    indices
-        .into_iter()
-        .map(|index| event_for(lines[index].trim()))
-        .collect()
+/// Replaces the build version with `<VERSION>`, so that expected output does
+/// not change with each release.
+pub(super) fn version_token(bytes: &[u8]) -> Vec<u8> {
+    replace(bytes, env!("CARGO_PKG_VERSION").as_bytes(), b"<VERSION>")
 }
 
-/// Returns native messages aligned with [`events`].
+/// Classifies each non-blank stderr line outside a usage block.
 ///
-/// Line selection and usage detection use the legacy text so that indices
-/// match the legacy events exactly. Message text comes from the native text.
-pub(super) fn native_stderr(
-    bytes: &[u8],
-    root: &Path,
-    executable: &str,
-) -> Result<NativeStderr, String> {
-    let legacy = normalize_bytes(bytes, root, executable, Spelling::Legacy);
-    let native = normalize_bytes(bytes, root, executable, Spelling::Native);
-    let legacy = String::from_utf8_lossy(&legacy);
-    let native = String::from_utf8_lossy(&native);
-    let legacy = legacy.lines().collect::<Vec<_>>();
-    let native = native.lines().collect::<Vec<_>>();
-    if legacy.len() != native.len() {
-        return Err("native and legacy stderr line counts differ".into());
-    }
-    let (indices, usage_events) = event_lines(&legacy);
-    Ok(NativeStderr {
-        messages: indices
-            .into_iter()
-            .map(|index| event_for(native[index].trim()).message)
-            .collect(),
-        usage_events,
-    })
-}
-
-/// Selects the lines that become stderr events and the event range of the
-/// first usage block.
-fn event_lines(lines: &[&str]) -> (Vec<usize>, Option<Range<usize>>) {
+/// A usage block starts at a `Usage:` line and ends at the next rendered log
+/// line. Its text is presentation, so only the fact that it was printed is
+/// kept.
+pub(super) fn stderr(bytes: &[u8], root: &Path, executable: &str) -> Stderr {
+    let normalized = normalize_bytes(bytes, root, executable);
+    let text = String::from_utf8_lossy(&normalized);
     let mut in_usage = false;
-    let mut result = Vec::new();
-    let mut usage: Option<Range<usize>> = None;
-    let mut usage_closed = false;
-    for (index, line) in lines.iter().enumerate() {
-        let stripped = line.trim();
-        if stripped.is_empty() {
+    let mut usage_printed = false;
+    let mut events = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
             continue;
         }
-        if stripped == "Usage:" {
+        if line == "Usage:" {
             in_usage = true;
+            usage_printed = true;
+            continue;
         }
-        if in_usage && stripped != "Usage:" && rendered_log_line(stripped) {
+        if in_usage && rendered_log_line(line) {
             in_usage = false;
         }
-        if in_usage && versioned_usage_line(stripped) {
-            continue;
+        if !in_usage {
+            events.push(event_for(line));
         }
-        if in_usage && !usage_closed {
-            let start = usage.as_ref().map_or(result.len(), |range| range.start);
-            usage = Some(start..result.len() + 1);
-        } else if !in_usage && usage.is_some() {
-            usage_closed = true;
-        }
-        result.push(index);
     }
-    (result, usage)
+    Stderr {
+        events,
+        usage_printed,
+    }
 }
 
-pub(super) fn usage(
-    bytes: &[u8],
-    root: &Path,
-    executable: &str,
-    spelling: Spelling,
-) -> Option<Vec<u8>> {
-    let normalized = normalize_bytes(bytes, root, executable, spelling);
-    let text = String::from_utf8_lossy(&normalized);
-    let lines = text.lines().collect::<Vec<_>>();
-    let start = lines.iter().position(|line| line.trim() == "Usage:")?;
-    let mut kept = Vec::new();
-    for line in &lines[start..] {
-        let stripped = line.trim();
-        if !kept.is_empty() && rendered_log_line(stripped) {
-            break;
-        }
-        // The legacy projection drops lines that differed across historical
-        // releases. Native text keeps every line.
-        if spelling == Spelling::Native || !versioned_usage_line(stripped) {
-            kept.push(*line);
-        }
-    }
-    let joined = kept.join("\n");
-    let trimmed = joined.trim_end();
-    let mut value = match spelling {
-        Spelling::Legacy => trimmed.replace("Gitleaks", "gitleaks"),
-        Spelling::Native => trimmed.to_owned(),
-    }
-    .into_bytes();
-    value.push(b'\n');
-    Some(value)
-}
-
-pub(super) fn canonical_findings(bytes: &[u8]) -> Result<Vec<String>, String> {
+/// Returns every finding of a JSON report, duplicates kept, sorted by its
+/// compact JSON text.
+pub(super) fn canonical_findings(bytes: &[u8]) -> Result<Vec<Value>, String> {
     let parsed: Value = serde_json::from_slice(bytes)
         .map_err(|error| format!("invalid JSON findings report: {error}"))?;
     if !parsed.is_array() {
@@ -195,35 +88,32 @@ pub(super) fn canonical_findings(bytes: &[u8]) -> Result<Vec<String>, String> {
     let compact = unescape_html_json(&compact);
     let mut findings = split_array(&compact)?;
     findings.sort();
-    Ok(findings)
+    findings
+        .iter()
+        .map(|finding| {
+            serde_json::from_str(finding).map_err(|error| format!("invalid finding: {error}"))
+        })
+        .collect()
 }
 
-pub(super) fn event_json(event: &Event) -> String {
-    let fields = event
-        .fields
-        .iter()
-        .map(|(key, value)| {
-            format!(
-                "{}:{}",
-                quote(key),
-                serde_json::to_string(value).expect("JSON value")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"severity\":{},\"class\":{},\"fields\":{{{fields}}},\"normalized_message_base64\":{}}}",
-        quote(&event.severity),
-        quote(&event.class),
-        quote(&BASE64.encode(&event.message))
-    )
+pub(super) fn event_value(event: &Event) -> Value {
+    json!({
+        "severity": event.severity,
+        "class": event.class,
+        "fields": event.fields.iter().cloned().collect::<Map<_, _>>(),
+    })
+}
+
+/// Returns the severity and normalized text that classification reads.
+fn event_text(line: &str) -> (String, String) {
+    let (severity, text) = severity_and_text(line);
+    let text = normalize_native_file_operation(text, &severity);
+    (severity, normalize_dynamic(&text))
 }
 
 #[allow(clippy::too_many_lines)] // Keep the ordered diagnostic classification policy reviewable.
 fn event_for(line: &str) -> Event {
-    let (severity, text) = severity_and_text(line);
-    let text = normalize_native_file_operation(text, &severity);
-    let text = normalize_dynamic(&text);
+    let (severity, text) = event_text(line);
     let lower = text.to_ascii_lowercase();
     let mut fields = Vec::new();
     let class = if let Some((bytes, human)) = scanned_fields(&text) {
@@ -319,17 +209,12 @@ fn event_for(line: &str) -> Event {
     {
         "source.error"
     } else {
-        fields.push((
-            "message_sha256".into(),
-            Value::from(sha256_bytes(text.as_bytes())),
-        ));
         "diagnostic.other"
     };
     Event {
         severity,
         class: class.into(),
         fields,
-        message: text.into_bytes(),
     }
 }
 
@@ -457,22 +342,6 @@ fn replace_ascii_case_insensitive(text: &str, pattern: &str, replacement: &str) 
 fn rendered_log_line(line: &str) -> bool {
     let (_, text) = severity_and_text(line);
     text != line
-}
-
-fn versioned_usage_line(line: &str) -> bool {
-    (line.starts_with("completion") || line.starts_with("help")) && line.contains("  ")
-        || line.contains("Generate the autocompletion script")
-        || line.starts_with("--diagnostics ")
-        || line.starts_with("--diagnostics-dir")
-        || line.contains("--gitleaks-ignore-path")
-        || line.contains("--ignore-gitleaks-allow")
-        || line.starts_with("order of precedence:")
-        || (line.len() > 2
-            && line.as_bytes()[0].is_ascii_digit()
-            && line.as_bytes()[1] == b'.'
-            && line.as_bytes()[2] == b' ')
-        || line.contains("If none of the four options")
-        || line.contains("Otherwise Gitleaks")
 }
 
 fn report_error(lower: &str) -> bool {
@@ -605,10 +474,6 @@ fn split_array(compact: &str) -> Result<Vec<String>, String> {
     Ok(result)
 }
 
-fn quote(value: &str) -> String {
-    unescape_html_json(&serde_json::to_string(value).expect("string JSON"))
-}
-
 fn unescape_html_json(value: &str) -> String {
     value
         .replace("\\u0026", "&")
@@ -623,25 +488,25 @@ mod tests {
     #[test]
     fn windows_fatal_stat_operations_are_config_selection_errors() {
         for operation in ["CreateFile", "GetFileAttributesEx"] {
-            let event = event_for(&format!(
-                "FTL {operation} missing: The system cannot find the file specified."
-            ));
+            let line =
+                format!("FTL {operation} missing: The system cannot find the file specified.");
+            let event = event_for(&line);
             assert_eq!(event.severity, "fatal");
             assert_eq!(event.class, "config.source-stat-error");
-            assert_eq!(event.message, b"stat missing: <os:not-found>");
+            assert_eq!(event_text(&line).1, "stat missing: <os:not-found>");
         }
     }
 
     #[test]
     fn windows_walk_stat_operations_use_the_portable_lstat_spelling() {
         for operation in ["CreateFile", "GetFileAttributesEx"] {
-            let event = event_for(&format!(
+            let line = format!(
                 "WRN skipping error=\"{operation} missing: The system cannot find the file specified.\" path=missing"
-            ));
-            assert_eq!(event.class, "source.issue");
+            );
+            assert_eq!(event_for(&line).class, "source.issue");
             assert_eq!(
-                event.message,
-                b"skipping error=\"lstat missing: <os:not-found>\" path=missing"
+                event_text(&line).1,
+                "skipping error=\"lstat missing: <os:not-found>\" path=missing"
             );
         }
     }
@@ -654,75 +519,72 @@ mod tests {
 
     #[test]
     fn windows_process_and_report_spellings_normalize_portably() {
-        let git = event_for(
-            "ERR source GitExit failed: Git exited unsuccessfully (exit code: 128); bounded stderr",
+        assert_eq!(
+            event_text(
+                "ERR source GitExit failed: Git exited unsuccessfully (exit code: 128); bounded stderr"
+            )
+            .1,
+            "source GitExit failed: Git exited unsuccessfully (exit status: 128); bounded stderr"
         );
         assert_eq!(
-            git.message,
-            b"source GitExit failed: Git exited unsuccessfully (exit status: 128); bounded stderr"
-        );
-
-        let report = event_for(
-            "ERR could not write json report: could not open report <TMP>/report-dir: Access is denied. (os error 5)",
-        );
-        assert_eq!(
-            report.message,
-            b"could not write json report: could not open report <TMP>/report-dir: Is a directory (os error 21)"
-        );
-
-        let remote = event_for(
-            "ERR skipping finding links: unable to parse remote URL error=\"command failed (4294967295): exit status 1, stderr: \"",
+            event_text(
+                "ERR could not write json report: could not open report <TMP>/report-dir: Access is denied. (os error 5)"
+            )
+            .1,
+            "could not write json report: could not open report <TMP>/report-dir: Is a directory (os error 21)"
         );
         assert_eq!(
-            remote.message,
-            b"skipping finding links: unable to parse remote URL error=\"command failed (-1): signal: killed, stderr: \""
+            event_text(
+                "ERR skipping finding links: unable to parse remote URL error=\"command failed (4294967295): exit status 1, stderr: \""
+            )
+            .1,
+            "skipping finding links: unable to parse remote URL error=\"command failed (-1): signal: killed, stderr: \""
         );
     }
 
     #[test]
-    fn native_spelling_keeps_rustleaks_and_legacy_spelling_is_unchanged() {
+    fn executable_names_use_the_rustleaks_spelling() {
         let root = Path::new("/synthetic-root");
-        let output = b"rustleaks.exe scan\nRustleaks help for rustleaks; see .gitleaksignore\n";
-        assert_eq!(
-            normalize_bytes(output, root, "rustleaks.exe", Spelling::Legacy),
-            b"gitleaks scan\nGitleaks help for gitleaks; see .gitleaksignore\n"
-        );
-        assert_eq!(
-            normalize_bytes(output, root, "rustleaks.exe", Spelling::Native),
-            b"rustleaks scan\nRustleaks help for rustleaks; see .gitleaksignore\n"
-        );
         assert_eq!(
             normalize_bytes(
-                b"/synthetic-root/a gitleaks",
+                b"rustleaks.exe scan; see .gitleaksignore\n",
                 root,
-                "rustleaks",
-                Spelling::Native
+                "rustleaks.exe"
             ),
+            b"rustleaks scan; see .gitleaksignore\n"
+        );
+        assert_eq!(
+            normalize_bytes(b"/synthetic-root/a gitleaks", root, "rustleaks"),
             b"<TMP>/a gitleaks"
         );
     }
 
     #[test]
-    fn native_stderr_aligns_with_legacy_events_and_usage() {
+    fn build_version_becomes_a_token() {
+        let output = format!("rustleaks version {}\n", env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            version_token(output.as_bytes()),
+            b"rustleaks version <VERSION>\n"
+        );
+    }
+
+    #[test]
+    fn usage_block_lines_are_not_events() {
         let root = Path::new("/synthetic-root");
-        let stderr = b"Error: accepts at most 1 arg(s), received 2\nUsage:\n  rustleaks git [flags]\n\nFlags:\n  -h, --help   help for git\n  completion   Generate the autocompletion script\nFTL accepts at most 1 arg(s), received 2\n";
-        let events = events(stderr, root, "rustleaks");
-        let native = native_stderr(stderr, root, "rustleaks").unwrap();
-        assert_eq!(events.len(), 6);
-        assert_eq!(native.messages.len(), events.len());
-        assert_eq!(native.usage_events, Some(1..5));
-        assert_eq!(events[2].message, b"gitleaks git [flags]");
-        assert_eq!(native.messages[2], b"rustleaks git [flags]");
-        assert_eq!(events[5].severity, "fatal");
+        let stderr_bytes = b"Error: accepts at most 1 arg(s), received 2\nUsage:\n  rustleaks git [flags]\n\nFlags:\n  -h, --help   help for git\nFTL accepts at most 1 arg(s), received 2\n";
+        let parsed = stderr(stderr_bytes, root, "rustleaks");
+        assert!(parsed.usage_printed);
+        let classes = parsed
+            .events
+            .iter()
+            .map(|event| (event.severity.as_str(), event.class.as_str()))
+            .collect::<Vec<_>>();
         assert_eq!(
-            usage(stderr, root, "rustleaks", Spelling::Legacy).unwrap(),
-            b"Usage:\n  gitleaks git [flags]\n\nFlags:\n  -h, --help   help for git\n"
+            classes,
+            [("error", "parser.arity"), ("fatal", "parser.arity")]
         );
-        assert_eq!(
-            usage(stderr, root, "rustleaks", Spelling::Native).unwrap(),
-            b"Usage:\n  rustleaks git [flags]\n\nFlags:\n  -h, --help   help for git\n  completion   Generate the autocompletion script\n"
-        );
-        let plain = native_stderr(b"WRN no usage here\n", root, "rustleaks").unwrap();
-        assert_eq!(plain.usage_events, None);
+        let plain = stderr(b"WRN no usage here\n", root, "rustleaks");
+        assert!(!plain.usage_printed);
+        assert_eq!(plain.events.len(), 1);
     }
 }

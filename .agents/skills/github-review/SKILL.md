@@ -23,10 +23,10 @@ requests](../../../CONTRIBUTING.md#pull-requests).
 ## What to check
 
 In order: correctness, security, data loss, concurrency, error semantics,
-public API, the [compatibility
-policy](../../../docs/user/gitleaks-differences.md#compatibility-policy) (no
-lost secret, each finding difference documented and tested), cleanup,
-performance, test quality, maintainability and documentation.
+public API, the [repository
+contract](../../../AGENTS.md#repository-contract) (no lost secret, each
+finding change tested and in the changelog), cleanup, performance, test
+quality, maintainability and documentation.
 
 For this repository, also check:
 

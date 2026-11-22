@@ -1,4 +1,4 @@
-use super::model::{CONFIG_SHA256, Case, Corpus, PROFILE, Positive, Span, fingerprint};
+use super::model::{Case, Corpus, PROFILE, Positive, Span, fingerprint};
 
 const GITHUB: &[u8] = b"ghp_Q7m2Nz4T9x6W1c5V8b3L0r4D7f2H9j6K1p5S";
 const AWS: &[u8] = b"AKIAQWERTYUIOPASDFGH";
@@ -255,7 +255,6 @@ pub(super) fn corpus() -> Corpus {
         provenance: "First-party deterministic synthetic cases. No live or external credential corpus; activity and issuer validity are not verified.".into(),
         intended_population: "Small synthetic structural and labeling controls, not a sample of deployments or a provider-validity benchmark.".into(),
         profile: PROFILE.into(),
-        default_config_sha256: CONFIG_SHA256.into(),
         cases,
     }
 }

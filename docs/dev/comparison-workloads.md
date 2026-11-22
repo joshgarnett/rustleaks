@@ -309,10 +309,10 @@ The licenses were checked in each upstream `LICENSE` file at the pin, and
 How each source is read:
 
 - Gitleaks draws its true positives at random and runs them only during
-  config generation. The cases come from the frozen run in
-  `compat/generator-corpus/samples-v1.jsonl`, checked against its digest in
-  `compat/test-manifest.toml`. `matrix` also fetches Gitleaks at the pin and
-  checks that every sample's rule file exists there.
+  config generation. The cases come from one recorded run in
+  `testdata/generator-corpus/samples-v1.jsonl`. `matrix` also fetches
+  Gitleaks at the commit in `fixtures-matrix.json` and checks that every
+  sample's rule file exists there.
 - Betterleaks tests are Go literals. `matrix` reads string literals joined
   with `+`, package and local constants, composite literals and the
   `rulebuilder` helpers. It skips 155 component-only tests, because a

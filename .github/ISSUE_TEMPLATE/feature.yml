@@ -25,7 +25,7 @@ body:
         - Source adapter
         - Report formatting
         - CLI
-        - Compatibility tooling
+        - Test data and regression tooling
         - Build or maintenance tooling
         - Documentation
     validations:
@@ -33,8 +33,8 @@ body:
   - type: textarea
     id: impact
     attributes:
-      label: Compatibility and security impact
-      description: Explain effects on the compatibility policy, public API, dependencies, unsafe code, sensitive data, resource limits, and target support. State "Unknown" where investigation is needed.
+      label: Behavior and security impact
+      description: Explain effects on configuration meaning, findings, report fields, exit codes, the public API, dependencies, unsafe code, sensitive data, resource limits, and target support. State "Unknown" where investigation is needed.
     validations:
       required: true
   - type: textarea

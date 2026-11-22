@@ -740,7 +740,7 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   whitespace before the colon has no limit; whitespace after it is at most 20
   bytes. No outer object or fragment limit is added.
 - The path must end with the source lowercase suffix
-  `bitwarden cli/data.json`, compared with the frozen Go lowercase tables.
+  `bitwarden cli/data.json`, compared with the Go lowercase tables.
   Those include dotted capital I and exclude long s. Backslashes, repeated
   separators and hyphenated folder names do not match. No path component
   boundary is needed before the suffix.

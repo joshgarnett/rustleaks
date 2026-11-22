@@ -1,4 +1,4 @@
-//! Per-implementation observation and ordered corpus JSON serialization.
+//! One CLI run reduced to the compared observation.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -7,44 +7,40 @@ use std::path::Path;
 use std::process::Command;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::ScopedTempDir;
 use super::fixture;
-use super::normalize::{self, Spelling};
+use super::normalize;
 use super::process::{self, CASE_TIMEOUT, OUTPUT_LIMIT};
 use super::validation::{required_array, required_str};
-use crate::tooling::presentation::DISCLOSURE_MARKER;
 use crate::tooling::support::sha256_bytes;
 
-/// One CLI run as the frozen legacy projection plus native presentation text.
-pub(super) struct Observed {
-    /// Legacy projection compared with the frozen corpus.
-    pub(super) value: Value,
-    /// Presentation text as the CLI prints it, spelled with `rustleaks`.
-    pub(super) native: NativePresentation,
+/// Synthetic inline configuration marker that CLI output must never disclose.
+const DISCLOSURE_MARKER: &str = "CLI_CORPUS_DISCLOSURE_MARKER_8F20C3";
+
+/// Returns true when a request prints only help on stdout: the bare command
+/// or an explicit help flag. Help text is presentation, so its stdout is not
+/// compared.
+pub(super) fn help_stdout(request: &Value) -> bool {
+    request["args"].as_array().is_some_and(|args| {
+        args.is_empty()
+            || args
+                .iter()
+                .any(|arg| matches!(arg.as_str(), Some("-h" | "--help")))
+    })
 }
 
-/// Normalized presentation text that keeps the native executable spelling.
-#[derive(Default)]
-pub(super) struct NativePresentation {
-    /// Normalized standard output.
-    pub(super) stdout: Vec<u8>,
-    /// Complete normalized usage block, when present.
-    pub(super) usage: Option<Vec<u8>>,
-    /// Native message for each legacy stderr event, in the same order.
-    pub(super) messages: Vec<Vec<u8>>,
-    /// Legacy stderr events produced by the first usage block.
-    pub(super) usage_events: Option<std::ops::Range<usize>>,
-}
-
-#[allow(clippy::too_many_lines)] // Observation keeps the ordered black-box protocol in one place.
+/// Runs one request variant and returns the observation that the replay
+/// compares: exit status, stdout bytes outside help output, stderr event
+/// severity, class and fields, whether a usage block was printed, the
+/// disclosure check, the report, findings and child cleanup.
 pub(super) fn observe(
     binary: &Path,
     case_id: &str,
     spec: &Value,
     fake_git_binary: &Path,
-) -> Result<Observed, String> {
+) -> Result<Value, String> {
     let temporary = ScopedTempDir::new(&format!("cli-{}", case_id.to_ascii_lowercase()))?;
     let capture = ScopedTempDir::new(&format!("cli-io-{}", case_id.to_ascii_lowercase()))?;
     let root = &temporary.path;
@@ -99,16 +95,6 @@ pub(super) fn observe(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("rustleaks");
-    let stdout = normalize::normalize_bytes(&result.stdout, root, executable, Spelling::Legacy);
-    let events = normalize::events(&result.stderr, root, executable);
-    let usage = normalize::usage(&result.stderr, root, executable, Spelling::Legacy);
-    let native_stderr = normalize::native_stderr(&result.stderr, root, executable)?;
-    let native = NativePresentation {
-        stdout: normalize::normalize_bytes(&result.stdout, root, executable, Spelling::Native),
-        usage: normalize::usage(&result.stderr, root, executable, Spelling::Native),
-        messages: native_stderr.messages,
-        usage_events: native_stderr.usage_events,
-    };
     let finding_bytes = match spec.get("finding_source").and_then(Value::as_str) {
         Some("report") => report.bytes.as_deref(),
         Some("stdout") => Some(result.stdout.as_slice()),
@@ -127,36 +113,33 @@ pub(super) fn observe(
         return Err(format!("{case_id}/{variant_id}: native -1 status changed"));
     }
     let exit = if native_negative {
-        quote("native-negative-one")
+        json!("native-negative-one")
     } else {
-        result.exit.to_string()
+        json!(result.exit)
     };
-    let stdout_b64 = BASE64.encode(&stdout);
-    let event_json = events.iter().map(normalize::event_json).collect::<Vec<_>>();
-    let usage_json = usage
-        .as_ref()
-        .map_or_else(|| "null".into(), |bytes| byte_record(bytes));
-    let report_json = report.json();
-    let findings_json = findings
-        .as_ref()
-        .map_or_else(|| "null".into(), |items| format!("[{}]", items.join(",")));
-    let finding_count = findings
-        .as_ref()
-        .map(Vec::len)
-        .map_or_else(|| "null".into(), |n| n.to_string());
-    let child_json = child_reaped.map_or_else(|| "null".into(), |value| value.to_string());
-    let json = format!(
-        "{{\"implementation\":{},\"exit\":{exit},\"stdout_base64\":{},\"stdout_bytes\":{},\"stdout_sha256\":{},\"stderr_events\":[{}],\"stderr_usage\":{usage_json},\"stderr_contains_disclosure_marker\":{},\"report\":{report_json},\"findings\":{findings_json},\"finding_count\":{finding_count},\"child_reaped\":{child_json}}}",
-        quote("rust"),
-        quote(&stdout_b64),
-        stdout.len(),
-        quote(&sha256_bytes(&stdout)),
-        event_json.join(","),
-        contains(&result.stderr, DISCLOSURE_MARKER.as_bytes())
-    );
-    let value = serde_json::from_str(&json)
-        .map_err(|error| format!("cannot encode CLI observation: {error}"))?;
-    Ok(Observed { value, native })
+    let stderr = normalize::stderr(&result.stderr, root, executable);
+    let mut observation = json!({
+        "exit": exit,
+        "stderr_events": stderr.events.iter().map(normalize::event_value).collect::<Vec<_>>(),
+        "stderr_usage_printed": stderr.usage_printed,
+        "stderr_contains_disclosure_marker":
+            contains(&result.stderr, DISCLOSURE_MARKER.as_bytes()),
+        "report": report.value(),
+        "finding_count": findings.as_ref().map(Vec::len),
+        "findings": findings,
+        "child_reaped": child_reaped,
+    });
+    if !help_stdout(spec) {
+        let stdout = normalize::version_token(&normalize::normalize_bytes(
+            &result.stdout,
+            root,
+            executable,
+        ));
+        observation["stdout_base64"] = json!(BASE64.encode(&stdout));
+        observation["stdout_bytes"] = json!(stdout.len());
+        observation["stdout_sha256"] = json!(sha256_bytes(&stdout));
+    }
+    Ok(observation)
 }
 
 fn native_negative_one_exit(exit: i64) -> bool {
@@ -176,18 +159,16 @@ struct Report {
 }
 
 impl Report {
-    fn json(&self) -> String {
-        if self.state == "null" {
-            return "null".into();
-        }
-        match &self.bytes {
-            Some(bytes) => format!(
-                "{{\"state\":\"present\",\"bytes_base64\":{},\"bytes\":{},\"sha256\":{}}}",
-                quote(&BASE64.encode(bytes)),
-                bytes.len(),
-                quote(&sha256_bytes(bytes))
-            ),
-            None => format!("{{\"state\":{}}}", quote(self.state)),
+    fn value(&self) -> Value {
+        match (&self.bytes, self.state) {
+            (_, "null") => Value::Null,
+            (Some(bytes), _) => json!({
+                "state": "present",
+                "bytes_base64": BASE64.encode(bytes),
+                "bytes": bytes.len(),
+                "sha256": sha256_bytes(bytes),
+            }),
+            (None, state) => json!({"state": state}),
         }
     }
 }
@@ -212,9 +193,10 @@ fn report(root: &Path, path: Option<&str>) -> Result<Report, String> {
             bytes: None,
         });
     }
+    let bytes = fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     Ok(Report {
         state: "present",
-        bytes: Some(fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?),
+        bytes: Some(normalize::version_token(&bytes)),
     })
 }
 
@@ -279,27 +261,10 @@ fn reap_if_alive(pid: u32) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn byte_record(bytes: &[u8]) -> String {
-    format!(
-        "{{\"bytes_base64\":{},\"bytes\":{},\"sha256\":{}}}",
-        quote(&BASE64.encode(bytes)),
-        bytes.len(),
-        quote(&sha256_bytes(bytes))
-    )
-}
-
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
-}
-
-fn quote(value: &str) -> String {
-    serde_json::to_string(value)
-        .expect("string JSON")
-        .replace("\\u0026", "&")
-        .replace("\\u003c", "<")
-        .replace("\\u003e", ">")
 }
 
 #[cfg(test)]

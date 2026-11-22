@@ -1,4 +1,4 @@
-//! Shared helpers for the tests that replay the frozen corpora under `compat/`.
+//! Shared helpers for the tests that read the corpora under `testdata/`.
 //!
 //! `CanonicalFinding` is the finding record that the corpora store. Its
 //! coordinates are `i64` because some composite-corpus records hold negative
@@ -148,7 +148,7 @@ pub fn decode_base64(encoded: &str) -> Vec<u8> {
             b'0'..=b'9' => byte - b'0' + 52,
             b'+' => 62,
             b'/' => 63,
-            _ => panic!("invalid frozen base64 fixture"),
+            _ => panic!("invalid base64 fixture"),
         };
         accumulator = (accumulator << 6) | u32::from(value);
         bits += 6;

@@ -13,9 +13,7 @@ mod tests;
 
 use std::collections::BTreeMap;
 
-use rustleaks_core::config::{
-    ConfigLoader, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_REVISION, DEFAULT_CONFIG_SHA256,
-};
+use rustleaks_core::config::{ConfigLoader, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_SHA256};
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
@@ -284,13 +282,10 @@ fn project(case: &Case, selected_rule: Option<&str>) -> (Case, Vec<usize>) {
     (projected, indices)
 }
 
-// The loaded default must be the reviewed shipped default, which records its
-// own SHA-256. The upstream copy it is based on is checked against the pin by
-// the configuration corpus checks.
+// The loaded default must be the shipped default, which records its own
+// SHA-256.
 fn verify_config_bytes(actual: &[u8]) -> Result<(), String> {
-    if actual != DEFAULT_CONFIG_BYTES
-        || DEFAULT_CONFIG_REVISION != "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b"
-    {
+    if actual != DEFAULT_CONFIG_BYTES {
         return Err(
             "quality evaluation default configuration differs from the shipped default".into(),
         );

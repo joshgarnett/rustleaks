@@ -97,7 +97,6 @@ For people who use Rustleaks:
 - [Complete scanning](docs/user/complete-scanning.md)
 - [Resource limits](docs/user/resource-limits.md)
 - [Moving from Gitleaks](docs/user/moving-from-gitleaks.md)
-- [Differences from Gitleaks](docs/user/gitleaks-differences.md)
 - [Using rustleaks-core](docs/user/library.md)
 - [Review records](docs/user/review-records.md)
 

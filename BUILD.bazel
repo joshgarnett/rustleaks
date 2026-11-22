@@ -243,18 +243,6 @@ rust_clippy_test(
 )
 
 test_suite(
-    name = "parity",
-    tests = [
-        "//crates/rustleaks-cli:parity_tests",
-        "//crates/rustleaks-core:parity_tests",
-        "//crates/rustleaks-report:parity_tests",
-        "//crates/rustleaks-sources:parity_tests",
-        "//crates/xtask:cli_regression_test",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-test_suite(
     name = "test",
     tests = [
         "//crates/rustleaks-bzip2:rustleaks_bzip2_doc_test",
@@ -303,7 +291,6 @@ test_suite(
     name = "ci",
     tests = [
         ":check",
-        ":parity",
         ":test",
     ],
     visibility = ["//visibility:public"],

@@ -42,7 +42,7 @@ use crate::config::{
 use crate::explanation::{ExplanationLog, ExplanationOptions};
 use crate::model::{Fragment, ScanOptions};
 use crate::regex::PatternCheck;
-use crate::{Engine, ScanBudget, ScanControl, ScanError, ScanOutcome, UPSTREAM_REVISION};
+use crate::{Engine, ScanBudget, ScanControl, ScanError, ScanOutcome};
 
 pub(crate) mod predicate;
 
@@ -287,14 +287,13 @@ impl NativePolicy {
         let mut native_bytes = BTreeSet::new();
         let mut pack_rules = BTreeSet::new();
         let builtin_review_reference = builtin_pack_reference(&self.packs).map(|packs| Arc::<str>::from(format!(
-            "{NATIVE_POLICY_VERSION}|core:{}|upstream:{UPSTREAM_REVISION}|default-sha256:{DEFAULT_CONFIG_SHA256}|{packs}|github-classic-pat-v1:{}",
+            "{NATIVE_POLICY_VERSION}|core:{}|default-sha256:{DEFAULT_CONFIG_SHA256}|{packs}|github-classic-pat-v1:{}",
             env!("CARGO_PKG_VERSION"), self.github_classic,
         )));
         let mut identity = Vec::new();
         for component in [
             NATIVE_POLICY_VERSION,
             env!("CARGO_PKG_VERSION"),
-            UPSTREAM_REVISION,
             DEFAULT_CONFIG_SHA256,
         ] {
             frame(&mut identity, component.as_bytes());
@@ -707,7 +706,7 @@ fn extract_native_regexes(value: &mut toml::Value) -> Result<Vec<bool>, NativePo
 
 // The enclosing contract opts the primary and its helper evaluations into
 // raw-fragment / individual-decoded-buffer coordinates. Ordinary required
-// arrays retain the frozen compatibility behavior.
+// arrays keep the behavior of the default rules.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NativeRequired {
     pub(crate) edges: Vec<NativeRequiredEdge>,

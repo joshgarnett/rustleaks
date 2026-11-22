@@ -117,8 +117,8 @@ linear bound for an entire eager match-enumeration operation. Cancellation
 remains cooperative, and regex evaluation remains indivisible. Ordinary
 allocation failure and allocator overhead remain outside the numeric limits.
 
-Review result: PASS for the tested macOS arm64 configuration. `just parity`,
-`just test`, `just check`, `just fuzz-build`, `just fuzz-smoke` (including
+Review result: PASS for the tested macOS arm64 configuration. The parity
+replay of that time, `just test`, `just check`, `just fuzz-build`, `just fuzz-smoke` (including
 `go_regex`), `just package-check`, `just security`, `just ci` and
 `just perf-check` passed. The retained differential tests found no backend divergence
 in the regex/default-rule corpora or synthetic cases. The generated cargo-vet

@@ -26,7 +26,7 @@ use rustleaks_sources::{
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/fixtures/upstream/testdata/archives")
+        .join("../../testdata/fixtures/upstream/testdata/archives")
         .join(name)
 }
 

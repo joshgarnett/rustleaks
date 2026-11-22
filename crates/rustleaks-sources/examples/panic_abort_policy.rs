@@ -9,7 +9,7 @@ fn main() {
         ArchiveSource, CancellationToken, Source, SourceControl, SourceEvent, SourceIssueKind,
     };
 
-    let bytes = include_bytes!("../../../compat/fixtures/upstream/testdata/archives/files.7z");
+    let bytes = include_bytes!("../../../testdata/fixtures/upstream/testdata/archives/files.7z");
     let mut source = ArchiveSource::new(Cursor::new(bytes.as_slice()), "files.7z");
     let mut fragments = 0_usize;
     let mut issues = Vec::new();

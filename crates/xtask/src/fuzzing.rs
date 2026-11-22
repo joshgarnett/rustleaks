@@ -700,7 +700,7 @@ fn seed(
                 vec![
                     "generate".into(),
                     "regex-fuzz-seeds".into(),
-                    root.join("compat/regex-corpus/requests-v1.jsonl")
+                    root.join("testdata/regex-corpus/requests-v1.jsonl")
                         .to_string_lossy()
                         .into_owned(),
                     corpus.to_string_lossy().into_owned(),

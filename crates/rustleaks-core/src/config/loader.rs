@@ -712,9 +712,8 @@ impl ConfigLoader {
             raw.allowlists.push(allowlist);
         }
 
-        // The pinned Go oracle is a development build and skips parsing
-        // minVersion entirely. Supplying `current_version` opts into the
-        // release-build parse/advisory branch.
+        // Without `current_version`, minVersion is not parsed. Supplying it
+        // opts into the parse and warning branch.
         let requires_newer_version = if raw.min_version.is_empty() {
             false
         } else if let Some(current) = &self.current_version {

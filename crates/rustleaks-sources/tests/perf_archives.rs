@@ -93,7 +93,7 @@ fn select_fuzz_seeds(candidates: Vec<archive_seeds::Seed>) -> Result<Vec<archive
 
 fn seeds(root: &Path) -> Result<Vec<archive_seeds::Seed>> {
     let mut seeds = select_fuzz_seeds(archive_seeds::cases(root)?)?;
-    let archives = root.join("compat/fixtures/upstream/testdata/archives");
+    let archives = root.join("testdata/fixtures/upstream/testdata/archives");
     let expected = [".env.prod", ".gitleaksignore", "api.go", "main.go"]
         .into_iter()
         .map(|name| fs::read(archives.join("files").join(name)))
@@ -103,14 +103,14 @@ fn seeds(root: &Path) -> Result<Vec<archive_seeds::Seed>> {
         format: 2,
         payload: fs::read(archives.join("files.7z"))?,
         expected,
-        origin: "compat/fixtures/upstream/testdata/archives/files.7z",
+        origin: "testdata/fixtures/upstream/testdata/archives/files.7z",
     });
     seeds.push(archive_seeds::Seed {
         id: "gzip-compressed",
         format: 5,
         payload: fs::read(archives.join("files/main.go.gz"))?,
         expected: vec![fs::read(archives.join("files/main.go"))?],
-        origin: "compat/fixtures/upstream/testdata/archives/files/main.go.gz",
+        origin: "testdata/fixtures/upstream/testdata/archives/files/main.go.gz",
     });
     seeds.push(archive_seeds::Seed {
         id: "zlib-compressed",

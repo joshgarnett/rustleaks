@@ -11,16 +11,15 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rustleaks_core::UPSTREAM_REVISION;
 use rustleaks_core::config::{
     AllowlistSpec, CompiledAllowlist, CompiledConfig, Condition, ConfigError, ConfigExtension,
-    ConfigLoader, ConfigOrigin, DEFAULT_CONFIG, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_REVISION,
-    DEFAULT_CONFIG_SHA256, FileSystemResolver, RawConfig, RawGlobalAllowlist, RegexTarget,
-    RequiredRuleSpec, RuleSpec, VirtualResolver,
+    ConfigLoader, ConfigOrigin, DEFAULT_CONFIG, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_SHA256,
+    FileSystemResolver, RawConfig, RawGlobalAllowlist, RegexTarget, RequiredRuleSpec, RuleSpec,
+    VirtualResolver,
 };
 
 fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/fixtures/upstream/testdata/config")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/fixtures/upstream/testdata/config")
 }
 
 fn fixture(relative: &str) -> String {
@@ -313,7 +312,6 @@ fn assert_canonical_config_eq(id: &str, actual: &serde_json::Value, expected: &s
 
 #[test]
 fn config_raw_001_is_constructible_permissive_and_serializable() {
-    // CONFIG-RAW-001; TM-0034..TM-0041.
     let text = r#"
         TITLE = "case insensitive"
         unknownTopLevel = 42
@@ -349,7 +347,6 @@ fn config_raw_001_is_constructible_permissive_and_serializable() {
 
 #[test]
 fn config_compile_002_validates_and_normalizes_rules() {
-    // CONFIG-COMPILE-002; TM-0035..TM-0041 and TM-0072.
     let generic = load_fixture("generic.toml").unwrap();
     let rule = generic.rule("generic-api-key").unwrap();
     assert_eq!(rule.entropy(), 3.5);
@@ -549,7 +546,6 @@ fn source_path_pruning_uses_only_global_path_expressions() {
 
 #[test]
 fn config_allowlist_fixtures_match_error_categories() {
-    // CONFIG-RAW-001 / CONFIG-COMPILE-002; TM-0042..TM-0057.
     for relative in [
         "valid/allowlist_global_multiple.toml",
         "valid/allowlist_global_old_compat.toml",
@@ -717,7 +713,6 @@ fn allowlist_validation_preserves_singleton_duplicate_and_empty_sources() {
 
 #[test]
 fn config_extend_003_matches_merge_matrix_and_is_reentrant() {
-    // CONFIG-EXTEND-003; TM-0029..TM-0031 and TM-0058..TM-0071.
     let extended = load_fixture("valid/extend.toml").unwrap();
     assert_eq!(extended.rules().len(), 3);
     assert_eq!(
@@ -981,32 +976,28 @@ fn config_extend_003_resolvers_are_explicit_and_origin_aware() {
     assert!(unc_registration.rule("registered-unc").is_some());
 }
 
-/// The unchanged upstream Gitleaks default configuration at the pin.
-fn upstream_default() -> String {
+/// The default configuration that the configuration cases in
+/// `testdata/config-corpus/` were written for: the Gitleaks default
+/// configuration that the shipped default rules started from.
+fn corpus_default() -> String {
     fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../compat/config-corpus/default-gitleaks.toml"),
+            .join("../../testdata/config-corpus/default-gitleaks.toml"),
     )
     .unwrap()
 }
 
 #[test]
-fn config_default_004_is_exact_and_effective() {
-    // CONFIG-DEFAULT-004. The pin and its SHA-256 describe the upstream copy.
-    // The shipped default is based on it; its own SHA-256 is
-    // DEFAULT_CONFIG_SHA256, and tests/default_rules.rs checks how the two
-    // differ.
-    assert_eq!(DEFAULT_CONFIG_REVISION, UPSTREAM_REVISION);
-    let pin = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/upstream-revision.txt"),
-    )
-    .unwrap();
-    let pinned_sha256 = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
-    assert!(
-        pin.lines()
-            .any(|line| line == format!("default_config_sha256={pinned_sha256}"))
+fn the_corpus_default_is_the_unchanged_gitleaks_file() {
+    // The configuration cases were written for these exact bytes.
+    assert_eq!(
+        sha256_hex(corpus_default().as_bytes()),
+        "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf"
     );
-    assert_eq!(sha256_hex(upstream_default().as_bytes()), pinned_sha256);
+}
+
+#[test]
+fn default_config_is_exact_and_effective() {
     assert_eq!(DEFAULT_CONFIG.as_bytes(), DEFAULT_CONFIG_BYTES);
     assert_eq!(sha256_hex(DEFAULT_CONFIG_BYTES), DEFAULT_CONFIG_SHA256);
     let default = ConfigLoader::new().load_default().unwrap();
@@ -1050,10 +1041,8 @@ fn all_copied_config_fixtures_are_exercised() {
 }
 
 #[test]
-fn canonical_config_corpus_matches_all_112_fresh_go_outcomes() {
-    // CONFIG-RAW-001 / CONFIG-COMPILE-002 / CONFIG-EXTEND-003 /
-    // CONFIG-DEFAULT-004; TM-0029..TM-0031 and TM-0034..TM-0072.
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/config-corpus");
+fn config_corpus_matches_all_112_expected_outcomes() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/config-corpus");
     let mut resolver = VirtualResolver::new();
     for line in fs::read_to_string(corpus.join("inputs-v1.jsonl"))
         .unwrap()
@@ -1066,11 +1055,11 @@ fn canonical_config_corpus_matches_all_112_fresh_go_outcomes() {
         resolver.insert(path, contents.clone());
         resolver.insert(format!("../testdata/config/{path}"), contents);
     }
-    // The frozen Go outcomes were observed with the upstream default, so the
-    // loader uses the unchanged upstream copy as its default here.
+    // The expected outcomes were written for the Gitleaks default
+    // configuration, so the loader uses it as its default here.
     let loader = ConfigLoader::new()
         .with_resolver(resolver)
-        .with_default_config(upstream_default());
+        .with_default_config(corpus_default());
     let outcomes = fs::read_to_string(corpus.join("outcomes-v1.jsonl"))
         .unwrap()
         .lines()

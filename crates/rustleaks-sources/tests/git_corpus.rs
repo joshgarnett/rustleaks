@@ -1,4 +1,4 @@
-//! Differential replay of the pinned fresh-process Git source corpus.
+//! Replay of the Git source corpus under `testdata/git-corpus/`.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 
@@ -645,11 +645,11 @@ fn json_lines<T: serde::de::DeserializeOwned>(path: &Path) -> Vec<T> {
 }
 
 fn corpus_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/git-corpus")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/git-corpus")
 }
 
 fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/fixtures/upstream")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/fixtures/upstream")
 }
 
 fn encode(value: &[u8]) -> String {
@@ -659,5 +659,5 @@ fn encode(value: &[u8]) -> String {
 fn decode(value: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(value)
-        .expect("valid frozen base64")
+        .expect("valid base64")
 }

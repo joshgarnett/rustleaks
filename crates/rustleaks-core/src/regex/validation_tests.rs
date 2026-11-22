@@ -21,7 +21,7 @@ struct Request {
 fn validation_matches_full_compile_for_frozen_and_default_patterns() {
     let mut patterns = BTreeSet::new();
     let mut requests = 0;
-    for line in include_str!("../../../../compat/regex-corpus/requests-v1.jsonl").lines() {
+    for line in include_str!("../../../../testdata/regex-corpus/requests-v1.jsonl").lines() {
         let request: Request = serde_json::from_str(line).unwrap();
         let bytes = BASE64_STANDARD.decode(request.pattern_base64).unwrap();
         if let Ok(pattern) = String::from_utf8(bytes) {

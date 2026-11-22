@@ -35,7 +35,7 @@ pub struct Seed {
 
 #[allow(clippy::too_many_lines)] // Keep the exact format/fixture matrix together.
 pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
-    let requests = read(root, "compat/source-corpus/requests-v1.jsonl")?;
+    let requests = read(root, "testdata/source-corpus/requests-v1.jsonl")?;
     let requests =
         std::str::from_utf8(&requests).map_err(|_| "source seed corpus is not UTF-8".to_owned())?;
     let mut payloads = BTreeMap::new();
@@ -59,13 +59,13 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
     let tar = synthetic_tar(&[("first.txt", b"first\n"), ("second.txt", b"second\n")]);
     let main = read(
         root,
-        "compat/fixtures/upstream/testdata/archives/files/main.go",
+        "testdata/fixtures/upstream/testdata/archives/files/main.go",
     )?;
     let mut zip_expected = Vec::new();
     for name in [".env.prod", ".gitleaksignore", "api.go", "main.go"] {
         zip_expected.push(read(
             root,
-            &format!("compat/fixtures/upstream/testdata/archives/files/{name}"),
+            &format!("testdata/fixtures/upstream/testdata/archives/files/{name}"),
         )?);
     }
     let mut seeds = vec![
@@ -79,9 +79,12 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
         Seed {
             id: "zip",
             format: 1,
-            payload: read(root, "compat/fixtures/upstream/testdata/archives/files.zip")?,
+            payload: read(
+                root,
+                "testdata/fixtures/upstream/testdata/archives/files.zip",
+            )?,
             expected: zip_expected,
-            origin: "compat/fixtures/upstream/testdata/archives/files.zip",
+            origin: "testdata/fixtures/upstream/testdata/archives/files.zip",
         },
         Seed {
             id: "7z-stored",
@@ -95,7 +98,7 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
             format: 3,
             payload: request("archive-rar5-stored")?,
             expected: vec![RAR_PAYLOAD.to_vec()],
-            origin: "compat/source-corpus/requests-v1.jsonl#archive-rar5-stored",
+            origin: "testdata/source-corpus/requests-v1.jsonl#archive-rar5-stored",
         },
         Seed {
             id: "tar-gzip-two-members",
@@ -123,10 +126,10 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
             format: 7,
             payload: read(
                 root,
-                "compat/fixtures/upstream/testdata/archives/files/main.go.xz",
+                "testdata/fixtures/upstream/testdata/archives/files/main.go.xz",
             )?,
             expected: vec![main.clone()],
-            origin: "compat/fixtures/upstream/testdata/archives/files/main.go.xz",
+            origin: "testdata/fixtures/upstream/testdata/archives/files/main.go.xz",
         },
     ];
     for (id, format, request_id) in [
@@ -150,10 +153,10 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
             format: 13,
             payload: read(
                 root,
-                "compat/fixtures/upstream/testdata/archives/files/main.go.zst",
+                "testdata/fixtures/upstream/testdata/archives/files/main.go.zst",
             )?,
             expected: vec![main],
-            origin: "compat/fixtures/upstream/testdata/archives/files/main.go.zst",
+            origin: "testdata/fixtures/upstream/testdata/archives/files/main.go.zst",
         },
         Seed {
             id: "zlib",
@@ -174,34 +177,34 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
             format: 11,
             payload: request("decompress-safe-s2")?,
             expected: vec![CODEC_PAYLOAD.to_vec()],
-            origin: "compat/source-corpus/requests-v1.jsonl#decompress-safe-s2",
+            origin: "testdata/source-corpus/requests-v1.jsonl#decompress-safe-s2",
         },
         Seed {
             id: "rar5-compressed",
             format: 3,
             payload: request("archive-rar5-compressed")?,
             expected: vec![format!("{}\n", "A".repeat(200)).into_bytes()],
-            origin: "compat/source-corpus/requests-v1.jsonl#archive-rar5-compressed",
+            origin: "testdata/source-corpus/requests-v1.jsonl#archive-rar5-compressed",
         },
         Seed {
             id: "rar2-compressed",
             format: 3,
             payload: request("archive-rar2-compressed")?,
             expected: vec![RAR2_PAYLOAD.to_vec()],
-            origin: "compat/source-corpus/requests-v1.jsonl#archive-rar2-compressed",
+            origin: "testdata/source-corpus/requests-v1.jsonl#archive-rar2-compressed",
         },
         Seed {
             id: "rar3-compressed",
             format: 3,
             payload: read(
                 root,
-                "compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.rar",
+                "testdata/fixtures/archives/rar-test-files-16b785c/testfile.rar3.rar",
             )?,
             expected: vec![read(
                 root,
-                "compat/fixtures/oracle/rar-test-files-16b785c/expected/testfile.txt",
+                "testdata/fixtures/archives/rar-test-files-16b785c/expected/testfile.txt",
             )?],
-            origin: "compat/fixtures/oracle/rar-test-files-16b785c/testfile.rar3.rar",
+            origin: "testdata/fixtures/archives/rar-test-files-16b785c/testfile.rar3.rar",
         },
     ]);
     for (id, encoded, origin) in [

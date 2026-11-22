@@ -6,9 +6,8 @@ This guide is for people who want to know which rules a Rustleaks scan uses.
 
 Without a configuration file, Rustleaks scans with all of its built-in rules:
 
-- the default rules, which are based on the Gitleaks default configuration,
-  with 222 rules and the changes in
-  [Default rules](gitleaks-differences.md#default-rules); and
+- the [default rules](#default-rules), 222 rules that started from the
+  Gitleaks default configuration; and
 - the Rustleaks rules, which add more providers and connection strings.
 
 The Rustleaks rules come from three rule files. They never change or remove a
@@ -29,6 +28,37 @@ All Rustleaks rule IDs start with `rustleaks.`, for example
 
 The rules work only on the bytes they scan. They do not contact a provider,
 and they do not check whether a credential is active.
+
+## Default rules
+
+The default rules are in
+[`gitleaks.toml`](../../crates/rustleaks-core/default/gitleaks.toml). They
+started from the Gitleaks default configuration at commit
+`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` (`v8.30.0-27-gb58d3f1`), and
+Rustleaks changes them in its own releases. Rustleaks has added these
+allowlists:
+
+- `generic-api-key` does not report:
+  - hex digests of 32, 40, 64 or 128 characters under a name with md5, sha,
+    digest, checksum, fingerprint, hash or etag, such as `token_md5`;
+  - 40-character Git object IDs under a name that ends in commit, revision or
+    rev, such as `token_commit`;
+  - Subresource Integrity values such as `sha384-` and a Base64 digest;
+  - Stripe publishable keys (`pk_live_` and `pk_test_`), which Stripe
+    documents as safe to expose;
+  - UUIDs under identifier names such as `token_id`, `client_id` or
+    `keycloak.client-id`. Names that contain `secret`, such as `secret_id`,
+    and key names such as `api_key` are not affected.
+- A global allowlist hides, from every rule, the exact example values that
+  Discord, Azurite, Telegram, Slack and Google publish in their
+  documentation.
+
+Known loss: UUIDs under names such as `client_id` or `keycloak.client-id`
+are public OAuth and Keycloak identifiers, but some test sets label them as
+secrets. `generic-api-key` does not report them.
+
+The global `[allowlist]` table of the Gitleaks file is written as the first
+`[[allowlists]]` entry, which has the same meaning.
 
 ## With a configuration file
 

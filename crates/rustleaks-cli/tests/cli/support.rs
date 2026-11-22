@@ -164,17 +164,6 @@ pub(crate) fn no_match_config() -> &'static str {
     "title='fixture'\n[[rules]]\nid='never'\ndescription='never'\nregex='''NEVER_MATCH_THIS_VALUE'''\n"
 }
 
-/// Returns a file under `compat/`, from the source tree or Bazel runfiles.
-pub(crate) fn compat_file(name: &str) -> PathBuf {
-    let local = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat")
-        .join(name);
-    if local.is_file() {
-        return local;
-    }
-    resolve_runfile(PathBuf::from(format!("compat/{name}")), "compat")
-}
-
 pub(crate) fn tar_named_leaf(name: &[u8], bytes: &[u8]) -> Vec<u8> {
     assert!(name.len() <= 100);
     let mut header = [0_u8; 512];

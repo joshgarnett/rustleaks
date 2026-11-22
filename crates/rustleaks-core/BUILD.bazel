@@ -35,10 +35,10 @@ rustleaks_library(
     compile_data = glob(["default/**", "data/**"]) + [
         "Cargo.toml",
         "README.md",
-        "//compat:parity_corpora",
+        "//testdata:corpora",
     ],
     crate_name = "rustleaks_core",
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     edition = "2024",
     unit_test_tags = ["exclusive"],
 )
@@ -66,8 +66,8 @@ _PACK_TESTS = [
     "shared_rule_deltas",
 ]
 
-# Tests that read files under compat/.
-_COMPAT_TESTS = [
+# Tests that read files under testdata/.
+_TESTDATA_TESTS = [
     "config",
     "default_rule_cases",
     "default_rule_corpus",
@@ -75,7 +75,7 @@ _COMPAT_TESTS = [
     "generic_recall",
 ]
 
-# Tests that replay a frozen corpus under compat/ with the shared corpus module.
+# Tests that read a corpus under testdata/ with the shared corpus module.
 _CORPUS_TESTS = [
     "allowlist",
     "composite_corpus",
@@ -124,17 +124,17 @@ _COVERAGE_TESTS = {
     rustleaks_integration_test(
         name = test + "_test",
         src = "tests/" + test + ".rs",
-        data = ["//compat:all"],
+        data = ["//testdata:all"],
         deps = [":rustleaks_core"],
     )
-    for test in _COMPAT_TESTS
+    for test in _TESTDATA_TESTS
 ]
 
 [
     rustleaks_integration_test(
         name = test + "_test",
         src = "tests/" + test + ".rs",
-        data = ["//compat:all"],
+        data = ["//testdata:all"],
         deps = [":rustleaks_core"],
         srcs = [":corpus_support"],
     )
@@ -169,30 +169,16 @@ rustleaks_integration_test(
         "remaining_verified_rules",
         "special_coverage",
     ]],
-    data = ["//compat:all"],
+    data = ["//testdata:all"],
     deps = [":rustleaks_core"],
     srcs = [":pack_case_support"],
-)
-
-test_suite(
-    name = "parity_tests",
-    tests = [
-        ":allowlist_test",
-        ":composite_corpus_test",
-        ":config_test",
-        ":default_rule_corpus_test",
-        ":detect_corpus_test",
-        ":rustleaks_core_unit_test",
-        ":session_corpus_test",
-    ],
-    visibility = ["//visibility:public"],
 )
 
 test_suite(
     name = "all_tests",
     tests = [
         ":" + test + "_test"
-        for test in _PLAIN_TESTS + _PACK_TESTS + _COMPAT_TESTS + _CORPUS_TESTS + sorted(_COVERAGE_TESTS)
+        for test in _PLAIN_TESTS + _PACK_TESTS + _TESTDATA_TESTS + _CORPUS_TESTS + sorted(_COVERAGE_TESTS)
     ] + [
         ":rule_precedence_test",
         ":rustleaks_core_doc_test",

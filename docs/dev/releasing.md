@@ -17,8 +17,8 @@ changing a release or trusted publishing setting, and using a credential. A succ
 - [ ] `RUSTLEAKS_VERSION` in `bazel/rust_crate.bzl` and the install examples
       in `docs/user/getting-started.md`, `docs/user/ci.md` and
       `docs/user/library.md` name that version.
-- [ ] The Gitleaks revision and default configuration hash agree across the
-      package and the compatibility evidence.
+- [ ] `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and `DEFAULT_RULES_SHA256`
+      in `xtask` agree.
 - [ ] The candidate is merged to `main`.
 
 ### 2. Qualify locally
@@ -35,12 +35,10 @@ just release-dry-run
 
 - [ ] All commands pass.
 - [ ] `cargo xtask qualify` passes on the clean, committed candidate.
-- [ ] If compatibility inputs or behavior changed,
-      `cargo xtask regression-check` passes.
 - [ ] `cargo-semver-checks` passes for each public crate and feature
       profile against the latest version on crates.io, and a person reviewed
       the API change. See the
-      [public API README](../../compat/public-api/README.md).
+      [public API README](../../testdata/public-api/README.md).
 - [ ] The [scanner comparison](comparison.md) of the previous release with
       the candidate shows no unexplained time, memory or finding regression.
 
@@ -119,8 +117,8 @@ If anything differs from the approval packet, follow
 package and external consumer checks then run offline. The fetch changes no
 manifest or lockfile.
 
-`just ci` covers prose and links, Rustdoc, the committed parity tests, all
-first-party tests, and compile checks for the eight declared targets.
+`just ci` covers prose and links, Rustdoc, all first-party tests (including
+the corpus tests and the CLI corpus replay), and compile checks for the eight declared targets.
 `just release-dry-run` inspects the package archive, builds clean external
 Cargo and Bazel consumers, and runs the locked Cargo publish check without
 upload. The package metadata selects docs.rs documentation for all features
@@ -130,7 +128,7 @@ with warnings denied; the hosted dry run repeats that and keeps the exact
 `cargo xtask qualify` checks that the candidate tree is clean and committed,
 runs the bounded composite resource tests, compares the public API with the
 snapshot and builds with the minimum supported Rust version. The other gates
-above cover tests, parity, security, fuzzing and packaging.
+above cover tests, security, fuzzing and packaging.
 
 Qualification is bound to the candidate commit and tree. Reuse a successful
 result while the commit, version, lockfiles, workflow definitions and release

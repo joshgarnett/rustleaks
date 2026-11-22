@@ -3,11 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 pub(super) const MAX_CORPUS_BYTES: usize = 1024 * 1024;
-pub(super) const PROFILE: &str = "gitleaks-b58d3f1";
-/// SHA-256 of the upstream default configuration of [`PROFILE`], the pinned
-/// copy in `compat/config-corpus/default-gitleaks.toml`.
-pub(super) const CONFIG_SHA256: &str =
-    "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf";
+/// Rule set that the cases are written for: the shipped default rules.
+pub(super) const PROFILE: &str = "default-rules";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -60,7 +57,6 @@ pub(super) struct Corpus {
     pub provenance: String,
     pub intended_population: String,
     pub profile: String,
-    pub default_config_sha256: String,
     pub cases: Vec<Case>,
 }
 
@@ -93,7 +89,6 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Corpus, String> {
 pub(super) fn validate(corpus: &Corpus) -> Result<(), String> {
     if corpus.schema_version != 1
         || corpus.profile != PROFILE
-        || corpus.default_config_sha256 != CONFIG_SHA256
         || corpus.generator != "rustleaks-quality-v1"
         || corpus.license != "MIT"
         || corpus.generator_source_fnv1a64 != super::generator::source_fingerprint()

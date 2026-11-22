@@ -196,7 +196,7 @@ struct RegexRequest {
 fn pikevm_differential_covers_the_complete_regex_corpus() {
     let mut compiled = BTreeMap::new();
     let mut request_count = 0;
-    for line in include_str!("../../../../compat/regex-corpus/requests-v1.jsonl").lines() {
+    for line in include_str!("../../../../testdata/regex-corpus/requests-v1.jsonl").lines() {
         let request: RegexRequest = serde_json::from_str(line).unwrap();
         let pattern = BASE64_STANDARD.decode(request.pattern_base64).unwrap();
         let input = BASE64_STANDARD.decode(request.input_base64).unwrap();
@@ -243,7 +243,7 @@ fn pikevm_differential_covers_every_default_rule_sample() {
         })
         .collect::<BTreeMap<_, _>>();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/generator-corpus/samples-v1.jsonl");
+        .join("../../testdata/generator-corpus/samples-v1.jsonl");
     let samples = std::fs::read_to_string(path).unwrap();
     let mut sample_count = 0;
     for line in samples.lines() {

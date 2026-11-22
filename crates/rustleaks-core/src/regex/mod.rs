@@ -3141,9 +3141,9 @@ mod tests {
 
     #[test]
     fn canonical_go_regex_corpus_matches_except_approved_unicode_16_edges() {
-        const MANIFEST: &str = include_str!("../../../../compat/regex-corpus/manifest-v1.json");
-        const REQUESTS: &str = include_str!("../../../../compat/regex-corpus/requests-v1.jsonl");
-        const OUTCOMES: &str = include_str!("../../../../compat/regex-corpus/outcomes-v1.jsonl");
+        const MANIFEST: &str = include_str!("../../../../testdata/regex-corpus/manifest-v1.json");
+        const REQUESTS: &str = include_str!("../../../../testdata/regex-corpus/requests-v1.jsonl");
+        const OUTCOMES: &str = include_str!("../../../../testdata/regex-corpus/outcomes-v1.jsonl");
 
         let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
         let request_count = usize::try_from(manifest["request_count"].as_u64().unwrap()).unwrap();

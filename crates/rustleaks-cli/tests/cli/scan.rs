@@ -315,11 +315,12 @@ fn archive_depth_zero_reads_archive_named_files_as_text() {
 
 #[test]
 fn default_rules_hide_hash_like_values_and_keep_real_formats() {
-    // The default rules add allowlists to the Gitleaks rules. A 32-character
-    // hex digest under a name with md5 is hidden; a GitHub token in its
-    // documented layout is still reported. The unchanged upstream copy of the
-    // Gitleaks default rules, used as a configuration, reports both. Values are built from fixed steps
-    // through their alphabets, so this file holds no credential-shaped text.
+    // The default rules hide a 32-character hex digest under a name with md5
+    // and still report a GitHub token in its documented layout. A
+    // configuration that does not extend the default rules gets none of
+    // their allowlists, so its generic rule reports the digest. Values are
+    // built from fixed steps through their alphabets, so this file holds no
+    // credential-shaped text.
     let cycle = |alphabet: &[u8], step: usize, start: usize, length: usize| {
         (0..length)
             .map(|index| char::from(alphabet[(index * step + start) % alphabet.len()]))
@@ -374,8 +375,8 @@ fn default_rules_hide_hash_like_values_and_keep_real_formats() {
     );
     assert_eq!(scan(None), vec![github.clone()]);
     fixture.write(
-        "pinned.toml",
-        fs::read(compat_file("config-corpus/default-gitleaks.toml")).unwrap(),
+        "standalone.toml",
+        "[[rules]]\nid = \"generic-api-key\"\nregex = '''token_md5 = ([0-9a-f]{32})'''\nsecretGroup = 1\n",
     );
     let generic = (
         "generic-api-key".to_owned(),
@@ -384,5 +385,5 @@ fn default_rules_hide_hash_like_values_and_keep_real_formats() {
         digest,
         String::new(),
     );
-    assert_eq!(scan(Some("pinned.toml")), vec![generic, github]);
+    assert_eq!(scan(Some("standalone.toml")), vec![generic]);
 }

@@ -348,7 +348,7 @@ The quality runs, which match each value, found two differences:
 - **`rustleaks:allow`.** In `fixtures-rustleaks`, Gitleaks reports 3 values
   that Rustleaks does not. Each line carries a `rustleaks:allow` comment,
   which Rustleaks treats like `gitleaks:allow`. This is documented in
-  [Differences from Gitleaks](../../docs/user/gitleaks-differences.md).
+  [Moving from Gitleaks](../../docs/user/moving-from-gitleaks.md#findings-that-can-differ).
 - **File names that look like archives.** In the held-out set, Rustleaks
   reports one value in `docker-compose.branch.yml` that Gitleaks does not.
   With the default `--max-archive-depth 0`, Gitleaks skips every file whose
@@ -356,5 +356,5 @@ The quality runs, which match each value, found two differences:
   in `.branch`, `.gz` or `.zip`, without reading it. Rustleaks reads these
   files as plain text at depth 0. Rustleaks 0.1.0-alpha.9 behaves the same
   way. This behavior is intended and is listed in
-  [Differences from Gitleaks](../../docs/user/gitleaks-differences.md#archives).
+  [Moving from Gitleaks](../../docs/user/moving-from-gitleaks.md#findings-that-can-differ).
   No Rustleaks code changed in response to the held-out result.

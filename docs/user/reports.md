@@ -233,5 +233,4 @@ with an error.
 
 The order of keys in JSON objects and of columns in CSV files can change in a
 later Rustleaks version. Read fields by name, not by position. Field names,
-types and meanings do not change. See the [compatibility
-policy](gitleaks-differences.md#compatibility-policy).
+types and meanings do not change.

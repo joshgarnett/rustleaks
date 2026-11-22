@@ -9,7 +9,7 @@ use rustleaks_compat::evaluation::{check_generated_corpus, evaluate_corpus, gene
 fn maintained_path(name: &str) -> PathBuf {
     env::var_os("BUILD_WORKSPACE_DIRECTORY")
         .map_or_else(|| PathBuf::from("."), PathBuf::from)
-        .join("compat/quality-corpus")
+        .join("testdata/quality-corpus")
         .join(name)
 }
 

@@ -8,7 +8,7 @@ its commands and `Cargo.lock` unchanged.
 
 | Target | What it covers | Input limit | Seeds |
 | --- | --- | --- | --- |
-| `go_regex` | Go regex translation, compiling, captures, empty matches, invalid bytes and repeated matching | 4 KiB | Generated from `compat/regex-corpus/requests-v1.jsonl` |
+| `go_regex` | Go regex translation, compiling, captures, empty matches, invalid bytes and repeated matching | 4 KiB | Generated from `testdata/regex-corpus/requests-v1.jsonl` |
 | `config` | TOML parsing, compiling and `load_toml`, rule extension, allowlists and composite rules | 8 KiB | `seeds/config/` |
 | `fragment_scan` | Decoders, locations, invalid bytes, overlaps, redaction, limits and repeated scans | 8 KiB | `seeds/fragment_scan/` |
 | `session` | Baseline JSON, ignore records, deduplication and session state | 16 KiB | `seeds/session/` |
@@ -34,7 +34,8 @@ work units and 512 findings.
   bytes. It also runs fixed baseline and ignore suppression cases.
 
 The targets check for panics, memory errors and resource problems. They make
-no Go parity claim; the frozen corpus replay covers parity.
+no claim about expected findings; the corpus tests under `testdata/` check
+those.
 
 ## Running
 

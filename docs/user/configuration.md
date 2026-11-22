@@ -11,7 +11,7 @@ configuration file works without changes. Rustleaks ships one default
 configuration with 222 rules. It is based on the Gitleaks default rules and
 adds allowlists that hide some values that are clearly not secrets, such as
 hex digests under hash names and published documentation examples. See
-[Default rules](gitleaks-differences.md#default-rules).
+[Default rules](built-in-rules.md#default-rules).
 
 A small configuration that adds one rule to the default rules looks like this:
 
@@ -213,7 +213,8 @@ A finding matches a baseline entry when these fields are equal: rule ID,
 description, start and end line, start and end column, file, commit, author,
 email, date, commit message and entropy. The match and secret must also be
 equal, unless the scan uses `--redact`. Because columns are compared exactly,
-make baselines with Rustleaks or with the same Gitleaks revision. See [Line
+make baselines with Rustleaks, or with Gitleaks 8.30.0 at commit
+`b58d3f1`, which counts columns the same way. See [Line
 and column numbers](reports.md#line-and-column-numbers) for how columns are
 counted.
 

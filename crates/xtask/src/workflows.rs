@@ -6,22 +6,19 @@ use std::path::Path;
 
 const CODEQL_ACTION_PIN: &str = "33d7b85da1a04171e211befe2c739303b9a4c066";
 const SECRET_SCANNING_CONFIG: &str = r#"paths-ignore:
-  - "compat/allowlist-corpus/**"
-  - "compat/assertion-corpus/**"
-  - "compat/cli-corpus/**"
-  - "compat/composite-corpus/**"
-  - "compat/config-corpus/**"
-  - "compat/decoder-corpus/**"
-  - "compat/detect-corpus/**"
-  - "compat/generator-corpus/**"
-  - "compat/git-corpus/**"
-  - "compat/regex-corpus/**"
-  - "compat/report-corpus/**"
-  - "compat/session-corpus/**"
-  - "compat/source-corpus/**"
-  - "compat/api-dispositions-v1.jsonl"
-  - "compat/api-inventory-v1.json"
-  - "compat/fixtures/**"
+  - "testdata/allowlist-corpus/**"
+  - "testdata/cli-corpus/**"
+  - "testdata/composite-corpus/**"
+  - "testdata/config-corpus/**"
+  - "testdata/decoder-corpus/**"
+  - "testdata/detect-corpus/**"
+  - "testdata/generator-corpus/**"
+  - "testdata/git-corpus/**"
+  - "testdata/regex-corpus/**"
+  - "testdata/report-corpus/**"
+  - "testdata/session-corpus/**"
+  - "testdata/source-corpus/**"
+  - "testdata/fixtures/**"
   - "crates/rustleaks-core/default/gitleaks.toml"
 "#;
 
@@ -946,18 +943,11 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
                     .unwrap_or(tail)
             })
             .ok_or_else(|| format!("CI omits native lane {job}"))?;
-        for required in [
-            "//:test",
-            "rust-cli-regression-${{ matrix.target }}",
-            "rustleaks/bazel-testlogs/crates/xtask/cli_regression_test/test.outputs/cli-regression-ledger.json",
-            "--nozip_undeclared_test_outputs",
-            "if-no-files-found: error",
-        ] {
-            if !lane.contains(required) {
-                return Err(format!(
-                    "native lane {job} omits Rust evidence {required:?}"
-                ));
-            }
+        if !lane
+            .lines()
+            .any(|line| line.contains(" test ") && line.trim_end().ends_with("//:test"))
+        {
+            return Err(format!("native lane {job} omits //:test"));
         }
     }
     for (runner, target) in [
@@ -988,7 +978,6 @@ fn validate_ci_matrix(source: &str) -> Result<(), String> {
         "run: just security",
         "run: just fuzz-smoke",
         "run: just release-dry-run",
-        "run: cargo xtask frozen-evidence-check",
         "name: Required",
     ] {
         if !source.contains(required) {
@@ -1102,15 +1091,13 @@ mod tests {
     }
 
     #[test]
-    fn native_ledgers_require_exact_json_and_unzipped_outputs() {
+    fn native_lanes_must_run_every_test() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let source = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
             .expect("read CI workflow");
         super::validate_ci_matrix(&source).unwrap();
-        let zipped = source.replace("--nozip_undeclared_test_outputs", "");
-        assert!(super::validate_ci_matrix(&zipped).is_err());
-        let broad = source.replace("test.outputs/cli-regression-ledger.json", "test.outputs/**");
-        assert!(super::validate_ci_matrix(&broad).is_err());
+        let without = source.replace("--jobs=1 //:test\n", "--jobs=1 //:build\n");
+        assert!(super::validate_ci_matrix(&without).is_err());
     }
 
     #[test]

@@ -1,0 +1,118 @@
+{
+  "controls": [
+    {
+      "id": "MUT-CLI-CONFIG-LEVEL-1-2-SWAP",
+      "case_id": "CLI-BB-005",
+      "variant_id": "explicit-over-env",
+      "expected_failure_class": "selected-findings"
+    },
+    {
+      "id": "MUT-CLI-REDACT-FOLLOWING-CONSUMED",
+      "case_id": "CLI-BB-018",
+      "variant_id": "following-positional",
+      "expected_failure_class": "safe-arity"
+    },
+    {
+      "id": "MUT-CLI-DIR-SURPLUS-REACHES-SOURCE",
+      "case_id": "CLI-BB-004",
+      "variant_id": "dir-surplus",
+      "expected_failure_class": "safe-arity"
+    },
+    {
+      "id": "MUT-CLI-FORMAT-ONLY-WRITES",
+      "case_id": "CLI-BB-020",
+      "variant_id": "format-only",
+      "expected_failure_class": "dormant-report"
+    },
+    {
+      "id": "MUT-CLI-STDOUT-INFERS-JSON",
+      "case_id": "CLI-BB-021",
+      "variant_id": "missing-format",
+      "expected_failure_class": "stdout-format"
+    },
+    {
+      "id": "MUT-CLI-TERMINAL-USES-LEAK-CODE",
+      "case_id": "CLI-BB-029",
+      "variant_id": "invalid-repository",
+      "expected_failure_class": "terminal-exit"
+    },
+    {
+      "id": "MUT-CLI-REPORT-AFTER-EXIT-SELECTION",
+      "case_id": "CLI-BB-029",
+      "variant_id": "invalid-repository",
+      "expected_failure_class": "report-before-exit"
+    },
+    {
+      "id": "MUT-CLI-CONFIG-DISCLOSURE",
+      "case_id": "CLI-BB-009",
+      "variant_id": "malformed-inline-marker",
+      "expected_failure_class": "non-disclosure"
+    },
+    {
+      "id": "MUT-CLI-FAILED-SETUP-TRUNCATES",
+      "case_id": "CLI-BB-024",
+      "variant_id": "preexisting-later-setup-failure",
+      "expected_failure_class": "safe-preflight"
+    },
+    {
+      "id": "MUT-CLI-REPORT-OPEN-FAILURE-SUCCEEDS",
+      "case_id": "CLI-BB-024",
+      "variant_id": "report-open-directory",
+      "expected_failure_class": "report-open-failure"
+    },
+    {
+      "id": "MUT-CLI-VERSION-PERSISTENT-REJECT",
+      "case_id": "CLI-BB-001",
+      "variant_id": "version-persistent-flag",
+      "expected_failure_class": "persistent-grammar"
+    },
+    {
+      "id": "MUT-CLI-SHORT-ATTACHED-CONFIG-REJECT",
+      "case_id": "CLI-BB-032",
+      "variant_id": "short-attached-config",
+      "expected_failure_class": "shorthand-grammar"
+    },
+    {
+      "id": "MUT-CLI-UPPERCASE-TEMPLATE-ACCEPT",
+      "case_id": "CLI-BB-023",
+      "variant_id": "raw-uppercase",
+      "expected_failure_class": "raw-template-grammar"
+    },
+    {
+      "id": "MUT-CLI-REPORT-BYTE-FLIP",
+      "case_id": "CLI-BB-002",
+      "variant_id": "dir",
+      "expected_failure_class": "report-bytes"
+    },
+    {
+      "id": "MUT-CLI-COMPLETE-FINDING-DROP",
+      "case_id": "CLI-BB-033",
+      "variant_id": "spaces-unicode",
+      "expected_failure_class": "complete-findings"
+    },
+    {
+      "id": "MUT-CLI-EXIT-NO-FINDING",
+      "case_id": "CLI-BB-019",
+      "variant_id": "no-finding",
+      "expected_failure_class": "exit"
+    },
+    {
+      "id": "MUT-CLI-STDERR-SEVERITY",
+      "case_id": "CLI-BB-019",
+      "variant_id": "default",
+      "expected_failure_class": "stderr-severity"
+    },
+    {
+      "id": "MUT-CLI-TIMEOUT-CHILD-NOT-REAPED",
+      "case_id": "CLI-BB-031",
+      "variant_id": "source-timeout",
+      "expected_failure_class": "process-cleanup"
+    },
+    {
+      "id": "MUT-CLI-OUTPUT-LIMIT-CHILD-NOT-REAPED",
+      "case_id": "CLI-BB-029",
+      "variant_id": "child-stderr-output-limit",
+      "expected_failure_class": "process-cleanup"
+    }
+  ]
+}

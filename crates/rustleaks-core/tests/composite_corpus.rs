@@ -116,8 +116,8 @@ struct OracleError {
 }
 
 #[test]
-fn frozen_composite_and_redaction_corpus_matches_go() {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/composite-corpus");
+fn composite_and_redaction_corpus_matches_expected_outcomes() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/composite-corpus");
     let requests = json_lines::<Request>(&corpus.join("requests-v1.jsonl"));
     let responses = json_lines::<Response>(&corpus.join("outcomes-v1.jsonl"))
         .into_iter()
@@ -146,7 +146,7 @@ fn frozen_composite_and_redaction_corpus_matches_go() {
                     assert!(load_config(&request).is_err(), "{}", request.id);
                     continue;
                 }
-                assert!(response.error.is_none(), "{}: Go oracle error", request.id);
+                assert!(response.error.is_none(), "{}: recorded error", request.id);
                 if request.fragment.start_line.is_negative() {
                     valid_domain_exclusions.insert(request.id);
                     continue;
@@ -169,7 +169,7 @@ fn frozen_composite_and_redaction_corpus_matches_go() {
                 assert_eq!(actual, expected, "composite corpus case {}", request.id);
             }
             "redact" => {
-                assert!(response.error.is_none(), "{}: Go oracle error", request.id);
+                assert!(response.error.is_none(), "{}: recorded error", request.id);
                 let finding = build_finding(&request.redaction);
                 assert_eq!(
                     response.original.as_ref(),
@@ -184,14 +184,14 @@ fn frozen_composite_and_redaction_corpus_matches_go() {
                 );
             }
             "mask_secret" | "filter_probe" => {
-                assert!(response.error.is_none(), "{}: Go oracle error", request.id);
+                assert!(response.error.is_none(), "{}: recorded error", request.id);
                 if request.operation == "mask_secret" {
                     assert!(!response.mask_secret_base64.is_empty(), "{}", request.id);
                 }
                 private_operations.insert(request.id);
             }
             "probe_missing_required" => {
-                assert!(response.error.is_none(), "{}: Go oracle error", request.id);
+                assert!(response.error.is_none(), "{}: recorded error", request.id);
                 assert!(response.findings.is_empty(), "{}", request.id);
                 valid_domain_exclusions.insert(request.id);
             }
@@ -309,7 +309,7 @@ fn assert_detect_resource_case(
 ) {
     let (request, response) = composite_case(id);
     assert_eq!(request.operation, "detect", "{id}");
-    assert!(response.error.is_none(), "{id}: Go oracle error");
+    assert!(response.error.is_none(), "{id}: recorded error");
     let config = load_config(&request).unwrap_or_else(|error| panic!("{id}: {error}"));
     let actual = Engine::builder(config)
         .build()
@@ -344,15 +344,15 @@ fn assert_detect_resource_case(
 }
 
 fn composite_case(id: &str) -> (Request, Response) {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../compat/composite-corpus");
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/composite-corpus");
     let request = json_lines::<Request>(&corpus.join("requests-v1.jsonl"))
         .into_iter()
         .find(|request| request.id == id)
-        .unwrap_or_else(|| panic!("missing frozen composite request {id}"));
+        .unwrap_or_else(|| panic!("missing composite request {id}"));
     let response = json_lines::<Response>(&corpus.join("outcomes-v1.jsonl"))
         .into_iter()
         .find(|response| response.id == id)
-        .unwrap_or_else(|| panic!("missing frozen composite outcome {id}"));
+        .unwrap_or_else(|| panic!("missing composite outcome {id}"));
     (request, response)
 }
 
@@ -366,7 +366,7 @@ fn load_config(request: &Request) -> Result<CompiledConfig, String> {
     }
     if !request.config_fixture.is_empty() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../compat/fixtures/upstream/testdata/config")
+            .join("../../testdata/fixtures/upstream/testdata/config")
             .join(&request.config_fixture);
         let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
         return ConfigLoader::new()

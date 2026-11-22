@@ -10,17 +10,15 @@
 
 <!-- List exact commands run and results. Explain any required check not run. -->
 
-## Compatibility and security
+## Behavior and security
 
 <!-- Describe functional impact (configuration meaning, findings, spans,
-fingerprints, report fields, exit codes, supported commands and flags, and any
-new difference from Gitleaks with its documentation),
-sensitive data, dependencies, unsafe code, resource limits, or write
-"No impact" with a reason.
+fingerprints, report fields, exit codes, supported commands and flags, and
+changed cases under testdata/), sensitive data, dependencies, unsafe code,
+resource limits, or write "No impact" with a reason.
 
-List presentation changes with their presentation dispositions or comparison
-changes (see docs/dev/testing-and-parity.md#presentation-dispositions), or
-write "None". -->
+List presentation changes and the tests whose expectations changed, or write
+"None". -->
 
 ## Issues
 

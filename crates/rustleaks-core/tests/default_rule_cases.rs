@@ -1,5 +1,5 @@
-//! Default rule cases that the frozen upstream samples do not cover: the two
-//! Dropbox rules without upstream samples, and every frozen positive sample
+//! Default rule cases that the recorded generator samples do not cover: the
+//! two Dropbox rules without samples, and every positive sample
 //! after one or two layers of encoding.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
@@ -212,7 +212,7 @@ struct SampleFinding {
 
 fn ordinary_positives() -> Vec<Sample> {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../compat/generator-corpus/samples-v1.jsonl");
+        .join("../../testdata/generator-corpus/samples-v1.jsonl");
     fs::read_to_string(corpus)
         .unwrap()
         .lines()
@@ -288,8 +288,8 @@ fn tags(finding: &Finding) -> Vec<&[u8]> {
     finding.tags().iter().map(ByteText::as_bytes).collect()
 }
 
-/// Runs every frozen positive sample through `chain` and checks the decoded
-/// finding against the frozen depth-0 match and secret.
+/// Runs every positive sample through `chain` and checks the decoded finding
+/// against the recorded depth-0 match and secret.
 fn assert_encoded_samples(chain: &[Encoding]) -> (usize, usize) {
     let samples = ordinary_positives();
     assert_eq!(samples.len(), 6_368);

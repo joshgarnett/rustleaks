@@ -253,7 +253,6 @@ fn profile(value: &Value, directory: Option<&Path>) -> Result<Projection, String
         || provenance["build"] != value["build"]
         || provenance["host"] != value["host"]
         || provenance["baseline_eligible"] != (value["source"]["dirty"] == false)
-        || provenance["upstream_revision"] != crate::REVISION
         || provenance["default_config_sha256"] != crate::DEFAULT_RULES_SHA256
         || provenance["package_version"] != crate::RELEASE_VERSION
         || provenance["target_os"] != value["host"]["os"]

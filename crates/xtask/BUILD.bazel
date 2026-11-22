@@ -42,7 +42,7 @@ rust_test(
     data = [
         "//:build_contract_files",
         "//:workspace_files",
-        "//compat:all",
+        "//testdata:all",
     ],
     deps = all_crate_deps(normal = True, normal_dev = True),
     rustc_env = {
@@ -75,7 +75,7 @@ rust_test(
     name = "cli_regression_test",
     aliases = aliases(normal = True, normal_dev = True),
     args = [
-        "tooling::cli_corpus::tests::frozen_cli_corpus_replays_with_native_binaries",
+        "tooling::cli_corpus::tests::cli_corpus_replays_with_native_binaries",
         "--exact",
         "--ignored",
     ],
@@ -83,7 +83,7 @@ rust_test(
     data = [
         "//:build_contract_files",
         "//:workspace_files",
-        "//compat:all",
+        "//testdata:all",
         "//crates/rustleaks-cli:rustleaks",
         "//crates/rustleaks-compat:rustleaks_cli_fixture",
     ] + _CLI_GIT_DATA,
@@ -93,7 +93,7 @@ rust_test(
         "CARGO_MANIFEST_DIR": "crates/xtask",
         "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
-    # Frozen one-second timeout cases require copied helpers to enter main and
+    # One-second timeout cases require copied helpers to enter main and
     # record their PIDs before cancellation, including during repeated runs.
     tags = ["exclusive"],
     visibility = ["//visibility:public"],

@@ -20,17 +20,17 @@ gh pr list --state all --search "<distinct problem terms>"
 gh issue view <issue-number> --comments
 ```
 
-Compare an existing issue with the current tree, the compatibility policy
-and the relevant tests before you treat it as current. Never invent an issue
+Compare an existing issue with the current tree, the documentation and the
+relevant tests before you treat it as current. Never invent an issue
 number.
 
 ## Draft
 
 Use the matching form under `.github/ISSUE_TEMPLATE/` and keep its required
-fields and title prefix (`bug: `, `compat: ` or `feat: `). A difference
-listed in [Differences from
-Gitleaks](../../../docs/user/gitleaks-differences.md) is intended and is not
-a compatibility gap. Use only synthetic or reviewed public data.
+fields and title prefix (`bug: ` or `feat: `). A difference from Gitleaks is
+not a defect by itself; [Moving from
+Gitleaks](../../../docs/user/moving-from-gitleaks.md) lists the known ones.
+Use only synthetic or reviewed public data.
 
 State the problem, the wanted outcome, when it is done, the exact revision
 and environment, and checks already run. In a pull request, use
