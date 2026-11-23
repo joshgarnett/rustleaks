@@ -974,30 +974,30 @@
       "coverage": "selected-release-build-graph",
       "documents": [
         {
-          "archive_path": "licenses/packages/regex-automata-0.4.18/LICENSE-APACHE",
+          "archive_path": "licenses/packages/regex-automata-0.4.19/LICENSE-APACHE",
           "origin": {
-            "archive_sha256": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2",
+            "archive_sha256": "41d60ef07df457506a0a1a2073112eb4aae5733dbd2813c3da77d1b0fd441158",
             "kind": "registry-archive"
           },
           "original_path": "LICENSE-APACHE",
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
         },
         {
-          "archive_path": "licenses/packages/regex-automata-0.4.18/LICENSE-MIT",
+          "archive_path": "licenses/packages/regex-automata-0.4.19/LICENSE-MIT",
           "origin": {
-            "archive_sha256": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2",
+            "archive_sha256": "41d60ef07df457506a0a1a2073112eb4aae5733dbd2813c3da77d1b0fd441158",
             "kind": "registry-archive"
           },
           "original_path": "LICENSE-MIT",
           "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
         }
       ],
-      "id": "pkg:cargo/regex-automata@0.4.18",
+      "id": "pkg:cargo/regex-automata@0.4.19",
       "license_expression": "MIT OR Apache-2.0",
       "license_file": null,
       "name": "regex-automata",
       "source": {
-        "archive_sha256": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2",
+        "archive_sha256": "41d60ef07df457506a0a1a2073112eb4aae5733dbd2813c3da77d1b0fd441158",
         "kind": "registry",
         "registry": "registry+https://github.com/rust-lang/crates.io-index"
       },
@@ -1011,45 +1011,45 @@
         "x86_64-unknown-linux-gnu",
         "x86_64-unknown-linux-musl"
       ],
-      "version": "0.4.18"
+      "version": "0.4.19"
     },
     {
       "coverage": "selected-release-build-graph",
       "documents": [
         {
-          "archive_path": "licenses/packages/regex-syntax-0.8.11/LICENSE-APACHE",
+          "archive_path": "licenses/packages/regex-syntax-0.8.12/LICENSE-APACHE",
           "origin": {
-            "archive_sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+            "archive_sha256": "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6",
             "kind": "registry-archive"
           },
           "original_path": "LICENSE-APACHE",
           "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
         },
         {
-          "archive_path": "licenses/packages/regex-syntax-0.8.11/LICENSE-MIT",
+          "archive_path": "licenses/packages/regex-syntax-0.8.12/LICENSE-MIT",
           "origin": {
-            "archive_sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+            "archive_sha256": "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6",
             "kind": "registry-archive"
           },
           "original_path": "LICENSE-MIT",
           "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
         },
         {
-          "archive_path": "licenses/packages/regex-syntax-0.8.11/src/unicode_tables/LICENSE-UNICODE",
+          "archive_path": "licenses/packages/regex-syntax-0.8.12/src/unicode_tables/LICENSE-UNICODE",
           "origin": {
-            "archive_sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+            "archive_sha256": "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6",
             "kind": "registry-archive"
           },
           "original_path": "src/unicode_tables/LICENSE-UNICODE",
           "sha256": "74db5baf44a41b1000312c673544b3374e4198af5605c7f9080a402cec42cfa3"
         }
       ],
-      "id": "pkg:cargo/regex-syntax@0.8.11",
+      "id": "pkg:cargo/regex-syntax@0.8.12",
       "license_expression": "MIT OR Apache-2.0",
       "license_file": null,
       "name": "regex-syntax",
       "source": {
-        "archive_sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+        "archive_sha256": "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6",
         "kind": "registry",
         "registry": "registry+https://github.com/rust-lang/crates.io-index"
       },
@@ -1063,7 +1063,7 @@
         "x86_64-unknown-linux-gnu",
         "x86_64-unknown-linux-musl"
       ],
-      "version": "0.8.11"
+      "version": "0.8.12"
     },
     {
       "coverage": "selected-release-build-graph",
@@ -6006,13 +6006,13 @@
   "input_sha256": {
     ".bazelrc": "d7349453c297f3d7022669d8a0589171924be4e214663c364f1cb183ed12bc7a",
     ".bazelversion": "1b9487d55bea47fea50d226cc9c53bc548877ad2a318bac8fbc8b320f429e5c5",
-    "Cargo.lock": "84e3a45ce9b7d0dae09bd06d3cf315da11b7854e2d8c6bbf9c97fe9d22579ee5",
+    "Cargo.lock": "88bd6ecb895b7ca41838a9dc6a655f718d0c1920840d8226717073781dd6c4d5",
     "Cargo.toml": "ce40029b7ac4d57f21aeedb08e10f651f5083e8514184d613a63f34a264ef0c6",
     "LICENSE": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21",
     "MODULE.bazel": "dfce969f5da12d920b2f5707be5ca32e7f60c59dff6a189fe80982b31c75dec9",
     "MODULE.bazel.lock": "18f0df8f0613785ae944a0101cdb0ff527e49687c28093c77fb15bd594a26e8f",
     "bazel/BUILD.bazel": "754dfddf376ecd444508f64dce61eab14544fa31ba6f8213defbd26f90d74f66",
-    "cargo-bazel-lock.json": "4f155ad735fbf2abd99d7157fc132a56a52c7e964530a9f9f730db0036d39b88",
+    "cargo-bazel-lock.json": "b30ac1af4556c213a556abdcdec65996c3e4912cde07f0359b47388f6c39f0f7",
     "crates/rustleaks-bzip2/Cargo.toml": "14143d5714fe69243287c0c3a84c7d3e752ecbf1c0c2cbb39f19fdf8f49c1954",
     "crates/rustleaks-bzip2/LICENSE-APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
     "crates/rustleaks-bzip2/LICENSE-MIT": "a45da9aad6e4c77faac5b8be230daf2e2cab653b66e95b0f21e353116fed2da9",
