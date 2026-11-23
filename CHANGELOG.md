@@ -6,7 +6,9 @@
   alternation whose branches share a repetition prefix, such as `ab*b|ab*c`,
   now reports the leftmost-first match, as Go does. A regex search no longer
   panics when the bounded backtracker cannot take any input. The regex cache
-  pool uses 8 shards instead of one per CPU. The audits are in
+  pool uses 8 shards instead of one per CPU. Applications that use the
+  library get these changes when they resolve these versions or later. No
+  built-in rule's findings change. The audits are in
   `docs/dependency-audits/maintenance-2026-11-23.md`. The CodeQL, Scorecard
   and dependency review actions are also updated.
 - Install Rustleaks with Homebrew (`brew install joshgarnett/tap/rustleaks`)

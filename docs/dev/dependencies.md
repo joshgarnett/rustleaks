@@ -135,7 +135,11 @@ The unsafe boundary of the published core is narrow:
 
 The regex features above reach the lazy DFA transition indexing and the
 thread-aware cache pool of `regex-automata 0.4.19`. The
-[backend review](../dependency-audits/regex-meta-backend.md) covers them.
+[backend review](../dependency-audits/regex-meta-backend.md) covers them for
+0.4.18, and the
+[2026-11-23 delta review](../dependency-audits/maintenance-2026-11-23.md)
+covers the changes in 0.4.19, including the pool's fixed default of 8
+shards.
 Owned code uses pooled safe search APIs and never mixes caches between
 expressions. The pool keeps scratch space across scans; concurrent searches
 and cloned engines can keep more caches.
