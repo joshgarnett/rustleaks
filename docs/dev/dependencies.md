@@ -103,7 +103,7 @@ lz4_flex@0.14.2
 lzma-rust2@0.25.0
 memchr@2.8.3
 proc-macro2@1.0.107
-regex-automata@0.4.18
+regex-automata@0.4.19
 semver@1.0.28
 serde_core@1.0.229
 serde_json@1.0.154
@@ -134,7 +134,7 @@ The unsafe boundary of the published core is narrow:
 - proc-macro crates run at build time and are not linked into the library.
 
 The regex features above reach the lazy DFA transition indexing and the
-thread-aware cache pool of `regex-automata 0.4.18`. The
+thread-aware cache pool of `regex-automata 0.4.19`. The
 [backend review](../dependency-audits/regex-meta-backend.md) covers them.
 Owned code uses pooled safe search APIs and never mixes caches between
 expressions. The pool keeps scratch space across scans; concurrent searches

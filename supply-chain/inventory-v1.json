@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "84e3a45ce9b7d0dae09bd06d3cf315da11b7854e2d8c6bbf9c97fe9d22579ee5",
+  "cargo_lock_sha256": "88bd6ecb895b7ca41838a9dc6a655f718d0c1920840d8226717073781dd6c4d5",
   "feature_resolution": "locked default workspace metadata across declared target edges",
   "format_version": 1,
   "generated_by": "cargo xtask generate vet-inventory",
@@ -870,10 +870,10 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "local-full-audit",
+        "coverage": "local-delta-audit",
         "criteria": "safe-to-deploy"
       },
-      "checksum": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2",
+      "checksum": "41d60ef07df457506a0a1a2073112eb4aae5733dbd2813c3da77d1b0fd441158",
       "core_normal_or_build_graph": true,
       "dependency_kinds": [
         "normal"
@@ -906,7 +906,7 @@
       "links": null,
       "name": "regex-automata",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "version": "0.4.18",
+      "version": "0.4.19",
       "workspace_consumers": [
         "rustleaks-cli",
         "rustleaks-compat",
@@ -921,10 +921,10 @@
       ],
       "build_script": false,
       "cargo_vet": {
-        "coverage": "local-full-audit",
+        "coverage": "local-delta-audit",
         "criteria": "safe-to-deploy"
       },
-      "checksum": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+      "checksum": "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6",
       "core_normal_or_build_graph": true,
       "dependency_kinds": [
         "normal"
@@ -944,7 +944,7 @@
       "links": null,
       "name": "regex-syntax",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "version": "0.8.11",
+      "version": "0.8.12",
       "workspace_consumers": [
         "rustleaks-cli",
         "rustleaks-compat",
@@ -1747,7 +1747,7 @@
   "summary": {
     "exemption_crate_name_count": 1,
     "exemption_record_count": 1,
-    "local_delta_audit_record_count": 35,
+    "local_delta_audit_record_count": 37,
     "local_full_audit_record_count": 58,
     "peer_import_source_count": 5,
     "peer_imported_audit_package_count": 2,

@@ -65,7 +65,9 @@ table below to find a package.
 | `rawzip` | 0.5.1 to 0.5.2 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `regex-automata` | 0.4.18 | [core-regex-automata-batch-14.md](core-regex-automata-batch-14.md) | Full |
 | `regex-automata` | 0.4.18 | [regex-meta-backend.md](regex-meta-backend.md) | Selected features |
+| `regex-automata` | 0.4.18 to 0.4.19 | [maintenance-2026-11-23.md](maintenance-2026-11-23.md) | Delta |
 | `regex-syntax` | 0.8.11 | [core-regex-syntax-batch-13.md](core-regex-syntax-batch-13.md) | Full |
+| `regex-syntax` | 0.8.11 to 0.8.12 | [maintenance-2026-11-23.md](maintenance-2026-11-23.md) | Delta |
 | `rustix` | 1.1.4 | [maintenance-rustix-batch-40.md](maintenance-rustix-batch-40.md) | Full |
 | `rustix` | 1.1.4 to 1.1.6 | [maintenance-2026-11.md](maintenance-2026-11.md) | Delta |
 | `semver` | 1.0.28 | [core-leaves-batch-2.md](core-leaves-batch-2.md) | Full |

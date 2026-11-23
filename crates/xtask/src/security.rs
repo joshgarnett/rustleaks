@@ -363,7 +363,7 @@ fn reviewed_unsafe_packages() -> (BTreeSet<String>, BTreeSet<String>) {
         "lzma-rust2@0.25.0",
         "memchr@2.8.3",
         "proc-macro2@1.0.107",
-        "regex-automata@0.4.18",
+        "regex-automata@0.4.19",
         "semver@1.0.28",
         "serde_core@1.0.229",
         "serde_json@1.0.154",

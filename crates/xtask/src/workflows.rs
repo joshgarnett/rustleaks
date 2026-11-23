@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-const CODEQL_ACTION_PIN: &str = "33d7b85da1a04171e211befe2c739303b9a4c066";
+const CODEQL_ACTION_PIN: &str = "1bd86f2fdb4b86187fa4059f16f31a3202acc9ea";
 /// The only secret any workflow reads: the packaging App key, in the
 /// protected publish job of `packages.yml`.
 const PACKAGING_SECRET: &str = "private-key: ${{ secrets.PACKAGING_APP_PRIVATE_KEY }}";
@@ -89,7 +89,7 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
 
 fn validate_codeql_workflow(source: &str) -> Result<(), String> {
     for action in ["init", "analyze"] {
-        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.39.3");
+        let required = format!("github/codeql-action/{action}@{CODEQL_ACTION_PIN} # v4.39.4");
         if !source.contains(&required) {
             return Err(format!(
                 "CodeQL workflow omits reviewed action pin {required:?}"
@@ -661,9 +661,9 @@ fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
         "contents: read",
         "id-token: write",
         "security-events: write",
-        "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0",
+        "ossf/scorecard-action@23f22cd43608bae7a1f1fa2603d7314dee9538a5 # v2.6.0",
         "publish_results: true",
-        "github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3",
+        "github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4",
     ] {
         if !source.contains(required) {
             return Err(format!(
@@ -1589,8 +1589,8 @@ mod tests {
     #[test]
     fn requires_reviewed_codeql_commit_pins() {
         let source = format!(
-            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.39.3\n\
-             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.39.3\n"
+            "github/codeql-action/init@{CODEQL_ACTION_PIN} # v4.39.4\n\
+             github/codeql-action/analyze@{CODEQL_ACTION_PIN} # v4.39.4\n"
         );
         validate_codeql_workflow(&source).unwrap();
         assert!(validate_codeql_workflow(&source.replace(CODEQL_ACTION_PIN, PIN)).is_err());

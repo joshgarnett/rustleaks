@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Regex updates: `regex-syntax` 0.8.12 and `regex-automata` 0.4.19. An
+  alternation whose branches share a repetition prefix, such as `ab*b|ab*c`,
+  now reports the leftmost-first match, as Go does. A regex search no longer
+  panics when the bounded backtracker cannot take any input. The regex cache
+  pool uses 8 shards instead of one per CPU. The audits are in
+  `docs/dependency-audits/maintenance-2026-11-23.md`. The CodeQL, Scorecard
+  and dependency review actions are also updated.
 - Install Rustleaks with Homebrew (`brew install joshgarnett/tap/rustleaks`)
   on macOS and Linux, with Scoop on Windows, or from the new `.deb` and
   `.rpm` packages for Linux x86_64 and ARM64 with glibc 2.28 or later. All

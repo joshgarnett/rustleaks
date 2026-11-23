@@ -3565,6 +3565,24 @@ mod native_byte_tests {
     }
 
     #[test]
+    fn alternation_with_shared_repetition_prefix_keeps_leftmost_first_branch_order() {
+        // Go prefers the first branch that matches: `ab*b` matches `abb`
+        // before `ab*c` is tried. Lifting `ab*` out of both branches would
+        // match `abbc` instead.
+        let regex = GoRegex::compile(r"ab*b|ab*c").unwrap();
+        assert_eq!(regex.find_all(b"abbc"), vec![span(0, 3)]);
+        captures(
+            r"(ab*b|ab*c)",
+            b"abbc",
+            &[Some(span(0, 3)), Some(span(0, 3))],
+        );
+        // The first branch is tried with every count before the second, so
+        // `a*?b` matches `aab` rather than `a*?a` matching `a`.
+        let lazy = GoRegex::compile(r"a*?b|a*?a").unwrap();
+        assert_eq!(lazy.find_all(b"aab"), vec![span(0, 3)]);
+    }
+
+    #[test]
     fn every_byte_width_invalid_byte_and_control_character_obeys_exact_bridge_cap() {
         for bridge in [
             b"z".as_slice(),

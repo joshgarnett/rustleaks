@@ -289,11 +289,23 @@ criteria = "safe-to-deploy"
 version = "0.4.18"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
 
+[[audits.regex-automata]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "0.4.18 -> 0.4.19"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-23.md; integration checks are separate evidence"
+
 [[audits.regex-syntax]]
 who = "OpenAI Codex"
 criteria = "safe-to-deploy"
 version = "0.8.11"
 notes = "locked Rustleaks graph; complete source and selected-feature review recorded in the pull request"
+
+[[audits.regex-syntax]]
+who = "Claude Code"
+criteria = "safe-to-deploy"
+delta = "0.8.11 -> 0.8.12"
+notes = "Complete production Rust, manifest, build-script and license delta review in docs/dependency-audits/maintenance-2026-11-23.md; integration checks are separate evidence"
 
 [[audits.rustix]]
 who = "OpenAI Codex"
