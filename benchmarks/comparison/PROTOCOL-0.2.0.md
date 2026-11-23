@@ -14,9 +14,9 @@ first timed run. Rustleaks code did not change between this file and the
 
 ## Host
 
-Apple M5 Ultra, 36 cores, 256 GB memory, macOS 27.2.1, Git 2.56.1,
-Python 3.9.6, one host only. Results apply only to this host, these
-versions and these inputs. Before each run: no builds, agents, profilers or
+Apple M5 Ultra, 36 cores, 256 GB memory, macOS 27.2.1, Git 2.54.0 (Apple
+Git-157, the Xcode `git`), Python 3.9.6, one host only. Results apply only
+to this host, these versions and these inputs. Before each run: no builds, agents, profilers or
 other benchmarks; Bazel servers stopped; load average and thermal state
 recorded by the harness.
 
@@ -25,7 +25,7 @@ recorded by the harness.
 | ID | Version | Build | SHA-256 |
 | --- | --- | --- | --- |
 | rustleaks-0.1.0-alpha.12 | 0.1.0-alpha.12 | macOS arm64 release archive, `SHA256SUMS` checked | `cdd258d2d4a9ad42f3f2021dae463bf39fa95ee5ae8fa7e0cea5707c1bbee18a` |
-| rustleaks-candidate-4a50422 | `main` at commit `4a50422b` | `bazelisk build --config=release-macos-aarch64` | `2a17da87a99132fb28556a230aad234042f0875dee08c70a24bd4ad5adbc27e8` |
+| rustleaks-candidate-4a50422 | `main` at commit `4a504220` | `bazelisk build --config=release-macos-aarch64` | `2a17da87a99132fb28556a230aad234042f0875dee08c70a24bd4ad5adbc27e8` |
 | gitleaks-8.30.1 | 8.30.1 | release archive (go-re2) | `ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f` |
 | betterleaks-1.10.1 | 1.10.1 | release archive | `13ac5109fa85a590c7ba6e7f130311e0c60a2bf582c3aac073176c93b46621a8` |
 | betterleaks-2.0.0-rc.8 | 2.0.0-rc.8 | release archive | `5253cd8409d5468c28c4f6b5aa88dd0d8dfcb6caab2faee7697fef66afb12d42` |
@@ -38,7 +38,7 @@ and after each run. The baseline for ratios is 0.1.0-alpha.12.
 ## Workloads
 
 - `public-repos`, `synthetic`, `fixtures-matrix` and `constructed-v1` as in
-  the 2026-11 protocol, checked with
+  the 2026-11 protocol. The first three were checked with
   `cargo xtask compare-workloads verify --set all` (91 workloads) before the
   run.
 - Held-out set 1: sealed on 2026-11-17, inventory SHA-256

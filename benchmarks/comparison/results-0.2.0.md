@@ -20,12 +20,23 @@ repository.
   scanner produced.
 - Memory is the peak RSS of the largest single process. In `git` mode that
   can be a `git` child.
+- "(varies)" marks a cell whose finding count was the same in every sample
+  but whose set of findings was not.
 
 ## Deviations and failures
 
-None. All 1,050 timed cells and 54 quality cells finished, with 3,150
-measured samples. No sample failed or timed out, and no cell was skipped or
-flagged. The harness checked every tool hash before and after each run.
+All 1,050 timed cells and 54 quality cells finished, with 3,150 measured
+samples. No sample failed or timed out, and no cell was skipped. The harness
+checked every tool hash before and after each run. It flagged 27 cells:
+
+- The gitlab folder cells of both Rustleaks builds, Gitleaks and Betterleaks
+  1.10.1 in R1. These tools load the `.gitleaksignore` at the gitlab root,
+  as the protocol allows with `--target-config run`.
+- 23 Kingfisher cells whose set of findings changed between samples: gitlab,
+  mongo, rails and ruby in R1; django, lucene, mongo, rails and ruby in R2;
+  and 14 thread and features cells on rails and django in R5. Kingfisher
+  reports each distinct value once and picks one of its locations, which can
+  change between runs.
 
 ## Candidate against 0.1.0-alpha.12
 
@@ -39,8 +50,8 @@ more than 5% more CPU time, with wall time unchanged and less memory:
 | base64-uris-4mib | 1.03 [0.97, 1.03] | 1.13 [1.08, 1.14] | 0.91 [0.90, 0.91] |
 | dense-generic-single-line-400k | 0.98 [0.94, 0.99] | 1.08 [1.05, 1.12] | 0.88 [0.86, 0.92] |
 
-Neither interval lies wholly above 1.10, the limit the protocol sets for a
-listed regression, so their cause was not investigated.
+The protocol lists cells more than 10% slower or larger, which these are
+not, so their cause was not investigated.
 
 Ratios on the public repositories and the held-out performance inputs:
 
@@ -81,9 +92,12 @@ Ratios on the public repositories and the held-out performance inputs:
 
 The finding count changed in 18 timed cells: gitlab in R1, the five
 `dense-planetscale-pairs` workloads in R4, and the held-out `git`, 100 MB
-and 500 MB inputs in R6 (default and thread cells). In every quality report,
-the candidate and 0.1.0-alpha.12 have the same true positives and the same
-missed values.
+and 500 MB inputs in R6 (default and thread cells). It also changed in five
+quality cells: `fixtures-gitleaks` (6,925 to 6,898), `fixtures-betterleaks`
+(1,348 to 1,336), `fixtures-kingfisher-v1` (1,261 to 1,249),
+`fixtures-rustleaks` (1,881 to 1,876) and held-out set 1 (2,673 to 2,660).
+In every quality report, the candidate and 0.1.0-alpha.12 have the same true
+positives and the same missed values.
 
 Each finding that 0.1.0-alpha.12 reports and the candidate does not was
 checked: the candidate reports the same secret, at the same file, commit
@@ -95,11 +109,11 @@ No secret was lost, and the candidate reports no finding that
 
 | Dropped rule | Kept rule | Where |
 | --- | --- | --- |
-| `rustleaks.alibaba-access-key-id-boundary` | `alibaba-access-key-id` | gitlab, held-out sets, Gitleaks and Kingfisher examples |
+| `rustleaks.alibaba-access-key-id-boundary` | `alibaba-access-key-id` | gitlab, held-out sets, Gitleaks, Betterleaks and Kingfisher examples |
 | `rustleaks.association.planetscale-api-token` | `planetscale-api-token` | `dense-planetscale-pairs`, Betterleaks examples |
 | `rustleaks.grafana-api-key-base64` | `grafana-api-key` | Gitleaks, Kingfisher, Betterleaks and Rustleaks examples |
 | `stripe-access-token` | `rustleaks.workos-production-api-key`, `rustleaks.highnote-secret-live-key` | Betterleaks and Kingfisher examples |
-| `jwt` | `rustleaks.temporal-cloud-api-key`, `rustleaks.monday-api-token` | Kingfisher and Rustleaks examples |
+| `jwt` | `rustleaks.temporal-cloud-api-key`, `rustleaks.monday-api-token` | Betterleaks, Kingfisher and Rustleaks examples |
 | `rustleaks.xai-api-key-80` | `rustleaks.xai-api-key-delimiter` | Kingfisher examples |
 | `rustleaks.stripe-access-token-delimiter` | `rustleaks.clerk-secret-key-delimiter` | Rustleaks examples |
 | `rustleaks.gitlab-incoming-mail-address-token` | `gitlab-incoming-mail-token` | Betterleaks examples |
@@ -149,7 +163,7 @@ faster with a warm cache.
 The candidate is the fastest on 13 of 14 repositories. On typescript,
 Betterleaks 1.10.1 is 2% faster. The candidate uses the
 least memory of the six tools on 11 repositories; on gitlab, mongo and
-linux, Gitleaks and Betterleaks 1.10.1 use less.
+linux, Gitleaks and both Betterleaks versions use less.
 
 ## History scans of public repositories (R2)
 
@@ -171,8 +185,10 @@ linux, Gitleaks and Betterleaks 1.10.1 use less.
 Fastest tool per repository: Kingfisher on 5 (bootstrap, croc, django,
 mongo, prometheus), the candidate on 4 (flask, jq, lucene, select2) and
 Betterleaks 2.0.0-rc.8 on 3 (rails, ruby, typescript; on ruby the two
-medians differ by less than 0.1 ms). The candidate has the lowest peak RSS
-on 11 of 12 repositories; on ruby 0.1.0-alpha.12 is lower.
+medians differ by about 0.1 ms). The candidate has the lowest peak RSS
+on 11 of 12 repositories. On ruby 0.1.0-alpha.12 is lower; there the peak
+comes from a `git` child, and the candidate's scanner process alone uses
+206 MiB against 252 MiB.
 
 Kingfisher scans blobs, while Gitleaks, Betterleaks and Rustleaks scan each
 commit's patch (see the scope differences in the
@@ -214,8 +230,10 @@ Most of these take under 60 ms, where the candidate's startup of about
 
 ## Thread scaling (R5)
 
-Each tool runs with the same thread count through its own setting, as
-recorded by the harness. Median wall time:
+Each tool gets the same thread count through its own setting, as recorded
+by the harness. The mechanisms differ: Gitleaks keeps 40 goroutines,
+Betterleaks 2 starts 4 workers per `GOMAXPROCS`, and Rustleaks takes
+`--jobs`. Median wall time:
 
 django, `git` mode:
 
@@ -310,7 +328,7 @@ of 0.1.0-alpha.12.
 is findings on text with no label. Precision is the harness's strict
 precision: true positives divided by true positives plus findings on
 negatives, unlabeled findings and second findings on a value already
-matched.
+matched or reported more than once.
 
 | Workload | Tool | Findings | TP | FN | FP on negatives | Unlabeled | Precision | Recall | F1 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -372,10 +390,11 @@ matched.
 Notes:
 
 - The candidate and 0.1.0-alpha.12 match the same labeled values on every
-  workload. The candidate reports fewer findings on the fixture sets and on
+  workload. The candidate reports fewer findings on `fixtures-gitleaks`,
+  `fixtures-betterleaks`, `fixtures-kingfisher-v1`, `fixtures-rustleaks` and
   held-out set 1, so its strict precision is equal or higher.
-- The candidate has the highest F1 of the six tools on `constructed-v1` and
-  held-out set 2. On held-out set 1, Betterleaks 2.0.0-rc.8 has a slightly
+- The two Rustleaks builds share the highest F1 of the six tools on
+  `constructed-v1` and held-out set 2. On held-out set 1, Betterleaks 2.0.0-rc.8 has a slightly
   higher F1 (0.828 against 0.825) and higher recall. Kingfisher has the
   highest precision and the lowest recall on all three.
 - `fixtures-rustleaks-dotgit` places values inside `.git` folders.
