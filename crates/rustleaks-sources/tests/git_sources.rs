@@ -817,7 +817,7 @@ fn complete_archive_options_reach_git_blobs_without_changing_text_hunks() {
 
 #[cfg(all(feature = "archives", unix))]
 #[test]
-fn complete_git_expands_tgz_aliases_and_legacy_keeps_binary_exclusion() {
+fn git_expands_tgz_blobs_in_normal_and_complete_mode() {
     let repository = TempRepo::copy_fixture("small");
     let archive = fs::read(fixture_root().join("testdata/archives/nested.tar.gz")).unwrap();
     fs::write(repository.path().join("bundle.TGZ"), archive).unwrap();
@@ -835,19 +835,15 @@ fn complete_git_expands_tgz_aliases_and_legacy_keeps_binary_exclusion() {
             .archive_file_options(file_options);
         let (fragments, issues) = collect(&mut source);
         assert!(issues.is_empty());
-        if complete {
-            let leaf = fragments
-                .iter()
-                .find(|fragment| {
-                    fragment.file_path().as_bytes() == b"bundle.TGZ!archives/files.zip!files/api.go"
-                })
-                .expect("complete mode admits and expands the binary alias blob");
-            assert_eq!(leaf.content().as_bytes(), expected);
-            assert_eq!(leaf.start_line(), 1);
-            assert!(leaf.commit_metadata().is_some());
-        } else {
-            assert!(fragments.is_empty());
-        }
+        let leaf = fragments
+            .iter()
+            .find(|fragment| {
+                fragment.file_path().as_bytes() == b"bundle.TGZ!archives/files.zip!files/api.go"
+            })
+            .unwrap_or_else(|| panic!("complete={complete}: the .TGZ blob is read as gzip TAR"));
+        assert_eq!(leaf.content().as_bytes(), expected);
+        assert_eq!(leaf.start_line(), 1);
+        assert!(leaf.commit_metadata().is_some());
     }
 }
 

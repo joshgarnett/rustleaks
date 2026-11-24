@@ -1567,7 +1567,7 @@ mod tgz_targets {
     }
 
     #[test]
-    fn complete_tgz_preserves_leaf_bytes_paths_and_spans_at_one_depth() {
+    fn tgz_preserves_leaf_bytes_paths_and_spans_at_one_depth() {
         let bytes = tar_gzip(&[("leaf.txt", b"token=A001")]);
         for name in ["outer.tgz", "outer.TGZ"] {
             let outcome = run(
@@ -1590,8 +1590,17 @@ mod tgz_targets {
             assert_eq!(actual.len(), 1);
             assert_eq!(actual[0].content().as_bytes(), b"token=A001");
         }
-        let mut legacy = ArchiveSource::new(Cursor::new(bytes.clone()), "outer.tgz");
-        assert!(fragments(&mut legacy).unwrap().is_empty());
+        // A normal scan reads the same `.tgz` as gzip TAR.
+        let normal = run(
+            &mut ArchiveSource::new(Cursor::new(bytes.clone()), "outer.tgz"),
+            &token_detector(),
+            ScanOptions::default(),
+        );
+        assert_eq!(normal.termination(), &SourceTermination::Completed);
+        assert!(normal.issues().is_empty());
+        assert_eq!(normal.findings().len(), 1);
+        assert_eq!(normal.findings()[0].file().as_bytes(), b"outer.tgz!leaf.txt");
+        assert_eq!(normal.findings()[0].secret().as_bytes(), b"A001");
         let cap = bytes.len();
         let mut backup = ArchiveSource::with_options(
             Cursor::new(bytes),

@@ -605,10 +605,7 @@ impl GitSource {
         if file.binary {
             #[cfg(feature = "archives")]
             if let Some(options) = self.archives.clone()
-                && crate::archive::name_is_archive(
-                    &file.path,
-                    self.archive_file_options.complete_target_bytes().is_some(),
-                )
+                && crate::archive::name_is_archive(&file.path)
             {
                 return self.visit_archive_blob(&file, options, cancellation, emit);
             }
