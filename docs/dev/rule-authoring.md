@@ -344,8 +344,10 @@ A change to the default rules needs normal review, and:
   `crates/rustleaks-core/tests/default_rules.rs`, which names the allowlists
   that Rustleaks adds;
 - updates of `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and
-  `DEFAULT_RULES_SHA256` in `xtask`, and a regenerated quality baseline
-  (see [Quality corpus](#quality-corpus));
+  `DEFAULT_RULES_SHA256` in `xtask`, a regenerated quality baseline (see
+  [Quality corpus](#quality-corpus)), and updated `default-compile` and
+  `gitleaks-compile` performance values (see [Performance
+  values](#performance-values));
 - an update to [Default rules](../user/built-in-rules.md#default-rules) when
   users see the change, and a changelog entry; and
 - a measurement on a held-out set that was not used to design the change.
@@ -463,8 +465,26 @@ bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline
 just quality-eval
 ```
 
+Any edit to a rule file changes the baseline, which records a fingerprint
+of each rule file. Regenerate it with the `baseline` command above.
+
 Never change a label to improve a detector result. See the
 [quality corpus README](../../testdata/quality-corpus/README.md).
+
+### Performance values
+
+The `default-compile` performance workload compiles every built-in rule. Any
+edit to a rule file changes its expected values: `DEFAULT_RULES`, `DEFAULT_RULE_BYTES` and
+`DEFAULT_CONFIG_FINGERPRINT` in `crates/rustleaks-eval/src/bin/rustleaks-perf.rs`,
+and the `default-compile` entry of `PERF_INVARIANTS` in
+`crates/xtask/src/performance/mod.rs`. Work out the rule count, the byte
+length and the rule ID hash from the rule files, never from the runner
+output. The xtask test
+`compile_invariants_describe_the_built_in_rule_files` reads the files and
+checks both places.
+A change to `gitleaks.toml` also changes `GITLEAKS_RULES`,
+`GITLEAKS_CONFIG_FINGERPRINT` and the `gitleaks-compile` entry, which the
+same test checks.
 
 ### Notes for each pack
 
@@ -481,11 +501,11 @@ These notes add to the steps above.
   cases and a new run of the quality comparison. Nothing is downloaded.
 - Quality evaluation: the [quality
   corpus](../../testdata/quality-corpus/README.md) compares every built-in
-  rule with the rules in `gitleaks.toml` alone on the same inputs. It has Azure field orders,
-  repeats, invalid bytes, percent-encoded wrappers, MongoDB percent-encoded
-  user information, short passwords, templates and near misses. Sovereign
-  Azure endpoints and MongoDB IPv6 inputs are positive gap cases, not
-  negative examples.
+  rule with the rules in `gitleaks.toml` alone on the same inputs. It has
+  Azure field orders, repeats, invalid bytes, percent-encoded wrappers,
+  MongoDB percent-encoded user information, short passwords, templates and
+  near misses. Sovereign Azure endpoints and MongoDB IPv6 inputs are
+  positive gap cases, not negative examples.
 - The pack is accepted only when the comparison shows no lost held-out
   positives, no new alerts on reviewed negatives and no unreviewed duplicate
   alerts. The one reviewed duplicate is the `mongodb-provider-overlap` case,

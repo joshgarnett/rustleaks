@@ -64,8 +64,10 @@ report records:
   a digest of all arguments, the compile action key, the Rust action graph
   hash and the hashes of generated argument files;
 - lockfile hashes, the workload definition hash and the executable hash;
-- the packaged default configuration hash, which must match its pinned
-  SHA-256 before the build; and
+- the SHA-256 of `gitleaks.toml`, which must match its pinned value
+  before the build. The `default-*` workloads also compile the three
+  Rustleaks rule files, which this hash does not cover. The source identity
+  below identifies them; and
 - the source identity: `HEAD`, dirty status, and a digest of tracked and
   untracked files that are not ignored.
 
@@ -260,7 +262,8 @@ Expected findings, work counts, decoded bytes and limit issues come from the
 fixture generators and the documented limits, never from scanner output.
 The `gitleaks-rules`, `workers` and `fragments` work counts model the rules
 in `gitleaks.toml`, which have one rule without keywords. The built-in rules
-have 27 rules without keywords, so these groups use `gitleaks.toml` alone. Small
+have 27 rules without keywords, so these groups use `gitleaks.toml` alone.
+Small
 negative controls make sure that a broken filter or an incomplete scan fails.
 
 Notes for some groups:
