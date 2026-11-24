@@ -67,7 +67,7 @@ impl IgnoreSet {
                         fields,
                     }),
                 }
-                // Normalization above needs owned storage. Rebuild directly so
+                // Normalization below needs owned storage. Rebuild directly so
                 // temporary replacement buffers never escape this iteration.
                 let normalized = normalize_ignore_entry(token);
                 self.entries.insert(normalized.into());
@@ -106,7 +106,7 @@ impl IgnoreSet {
 pub struct IgnoreParseOutcome {
     /// The exact normalized membership set.
     pub ignores: IgnoreSet,
-    /// Nonfatal compatibility diagnostics.
+    /// Problems found while parsing. They do not fail the parse.
     pub issues: Vec<IgnoreIssue>,
 }
 
@@ -152,19 +152,21 @@ fn normalize_ignore_entry(entry: &[u8]) -> Vec<u8> {
     result
 }
 
+// Go's `unicode.IsSpace` set is the Unicode White_Space property, which is
+// what `char::is_whitespace` checks.
 fn trim_go_space(bytes: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = bytes.len();
     while start < end {
         let (value, width) = decode_rune(&bytes[start..end]);
-        if !is_go_space(u32::from(value)) {
+        if !value.is_whitespace() {
             break;
         }
         start += width;
     }
     while start < end {
         let (value, width) = decode_last_rune(&bytes[start..end]);
-        if !is_go_space(u32::from(value)) {
+        if !value.is_whitespace() {
             break;
         }
         end -= width;
@@ -172,24 +174,8 @@ fn trim_go_space(bytes: &[u8]) -> &[u8] {
     &bytes[start..end]
 }
 
-const fn is_go_space(value: u32) -> bool {
-    matches!(
-        value,
-        0x0009..=0x000d
-            | 0x0020
-            | 0x0085
-            | 0x00a0
-            | 0x1680
-            | 0x2000..=0x200a
-            | 0x2028
-            | 0x2029
-            | 0x202f
-            | 0x205f
-            | 0x3000
-    )
-}
-
-/// A permissive report entry retained from a Go-compatible baseline.
+/// A permissive report entry read from a baseline in the Gitleaks JSON
+/// report format.
 #[derive(Clone, Default, PartialEq)]
 pub struct BaselineFinding {
     rule_id: ByteText,
@@ -326,7 +312,7 @@ impl BaselineFinding {
     pub const fn link(&self) -> &ByteText {
         &self.link
     }
-    /// Returns the upstream-compatible `f32` entropy.
+    /// Returns the entropy as `f32`, as Gitleaks reports store it.
     #[must_use]
     pub const fn entropy(&self) -> f32 {
         self.entropy
@@ -508,7 +494,7 @@ pub enum BaselineLoadError {
     },
 }
 
-#[allow(clippy::float_cmp)] // Pinned Go baseline equality uses exact float32 `==`.
+#[allow(clippy::float_cmp)] // Baseline equality compares float32 entropy with exact `==`.
 fn baseline_equal(entry: &BaselineFinding, finding: &Finding, redact: usize) -> bool {
     let location = finding.location();
     entry.rule_id == *finding.rule_id()
@@ -1382,7 +1368,7 @@ mod tests {
 
     /// Restates the compared fields through public accessors only, so the index
     /// is checked against a definition it does not share.
-    #[allow(clippy::float_cmp)] // Upstream compares float32 with `==`.
+    #[allow(clippy::float_cmp)] // Baseline equality compares float32 with `==`.
     fn oracle_equal(entry: &BaselineFinding, candidate: &Finding, redact: usize) -> bool {
         let location = candidate.location();
         let same_match = redact > 0

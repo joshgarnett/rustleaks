@@ -1,8 +1,8 @@
 //! Byte-preserving values exchanged with the detection engine.
 //!
-//! Upstream Gitleaks stores source data in Go strings, which may contain
-//! arbitrary bytes. The types in this module consequently do not require
-//! UTF-8 and expose explicit UTF-8 and lossy-display conversions.
+//! Source data can contain arbitrary bytes, as Go strings in Gitleaks can.
+//! The types in this module consequently do not require UTF-8 and expose
+//! explicit UTF-8 and lossy-display conversions.
 
 use std::borrow::{Borrow, Cow};
 use std::error::Error;
@@ -367,10 +367,10 @@ impl FindingRange {
     }
 }
 
-/// A finding's upstream-compatible line and byte-column coordinates.
+/// A finding's line and byte-column coordinates, as in Gitleaks reports.
 ///
-/// Lines and columns deliberately permit zero. Direct upstream scans start at
-/// line zero, while file fragments commonly start at line one.
+/// Lines and columns can be zero: direct scans start at line zero, and file
+/// fragments usually start at line one.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Location {
     start_line: usize,
@@ -380,7 +380,7 @@ pub struct Location {
 }
 
 impl Location {
-    pub(crate) const fn from_upstream(
+    pub(crate) const fn from_parts_unchecked(
         start_line: usize,
         end_line: usize,
         start_column: usize,
@@ -500,7 +500,7 @@ impl CommitMetadata {
         &self.author_email
     }
 
-    /// Returns the upstream date text without interpreting it.
+    /// Returns the commit date text without interpreting it.
     #[must_use]
     pub const fn date(&self) -> &ByteText {
         &self.date
@@ -566,7 +566,7 @@ impl CommitMetadataBuilder {
         self
     }
 
-    /// Sets the upstream date text.
+    /// Sets the commit date text. It is not interpreted.
     #[must_use]
     pub fn date(mut self, value: impl Into<ByteText>) -> Self {
         self.metadata.date = value.into();
@@ -669,7 +669,8 @@ impl Fragment {
         &self.symlink_file
     }
 
-    /// Returns the original Windows path retained for compatibility.
+    /// Returns the original Windows path kept beside the normalized path, or
+    /// an empty value.
     #[must_use]
     pub const fn windows_file_path(&self) -> &ByteText {
         &self.windows_file_path
@@ -1041,7 +1042,8 @@ impl PartialEq for RequiredList {
 /// A secret finding produced by the core engine.
 ///
 /// Text and metadata remain byte-preserving. Entropy is stored as `f32` so
-/// callers can compare [`f32::to_bits`] with upstream `math.Float32bits`.
+/// callers can compare [`f32::to_bits`] with Go `math.Float32bits` values
+/// in Gitleaks reports.
 #[derive(Clone, PartialEq)]
 pub struct Finding {
     rule_id: ByteText,
@@ -1186,7 +1188,7 @@ impl Finding {
         self
     }
 
-    /// Returns the upstream-compatible entropy value.
+    /// Returns the entropy as `f32`, as Gitleaks reports store it.
     #[must_use]
     pub const fn entropy(&self) -> f32 {
         self.entropy
@@ -1410,7 +1412,7 @@ fn mask_secret(secret: &[u8], percent: usize) -> Vec<u8> {
     clippy::cast_sign_loss
 )]
 fn go_redaction_retained_len(byte_len: usize, percent: usize) -> usize {
-    // The casts and binary64 arithmetic are intentional: upstream converts
+    // The casts and binary64 arithmetic are intentional: Gitleaks converts
     // the byte length and percentage to float64 before math.RoundToEven.
     ((byte_len as f64) * f64::from(u32::try_from(100 - percent).unwrap_or(0)) / 100.0)
         .round_ties_even() as usize
@@ -1816,7 +1818,8 @@ impl FindingBuilder {
 /// substring of a malformed carrier; this is not whole-carrier validation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Base64Mode {
-    /// Preserves the pinned upstream alphabets, padding, and printable-byte filters.
+    /// Uses the Gitleaks base64 alphabets, padding rules and printable-byte
+    /// filter.
     #[default]
     Compatible,
     /// Accepts standard or URL-safe base64 with canonical trailing bits,
@@ -1849,7 +1852,7 @@ impl ScanOptions {
 
     /// Returns the maximum number of recursive decode passes.
     ///
-    /// This compatibility option is not an aggregate allocation limit. A
+    /// This option is not an aggregate allocation limit. A
     /// controlled scan can additionally cap the cumulative successful decoded
     /// pass bytes with [`crate::ScanBudget::max_decoded_bytes`].
     #[must_use]
@@ -1860,9 +1863,9 @@ impl ScanOptions {
     /// Returns the inclusive, exact per-rule content-regexp input size, or
     /// `None`.
     ///
-    /// Upstream's integer-megabyte option truncates before comparison. A
-    /// compatibility adapter for an upstream value `M > 0` must therefore use
-    /// `(M + 1) * 1_000_000 - 1`, with checked or saturating arithmetic.
+    /// A whole-megabyte limit `M > 0` that truncates before comparing, like
+    /// the CLI's `--max-target-megabytes`, maps to `(M + 1) * 1_000_000 - 1`,
+    /// with checked or saturating arithmetic.
     /// Keyword and path gates run first, and path-only rules bypass this value;
     /// it is not a fragment allocation or total-work limit.
     #[must_use]
@@ -1889,7 +1892,7 @@ impl Default for ScanOptions {
     fn default() -> Self {
         Self {
             base64_mode: Base64Mode::Compatible,
-            // NewDetector scans only the raw fragment until the CLI supplies 5.
+            // The library decodes nothing by default; the CLI sets 5.
             max_decode_depth: 0,
             max_target_bytes: None,
             redaction_percent: 0,
@@ -1929,7 +1932,7 @@ impl ScanOptionsBuilder {
     /// Sets the requested redaction percentage.
     ///
     /// Values at or above 100 are retained here and mean full redaction at the
-    /// reporting boundary, matching upstream's accepted `uint` option domain.
+    /// reporting boundary, as in Gitleaks, which accepts any `uint`.
     #[must_use]
     pub const fn redaction_percent(mut self, value: usize) -> Self {
         self.options.redaction_percent = value;

@@ -113,14 +113,14 @@ const MAX_WALK_DEPTH: u32 = 32;
 const MAX_LEADING_CHARS: usize = 4_096;
 /// Maximum literal-node choices retained for one expression.
 ///
-/// The default rules need at most 12. Each choice retains at most
-/// [`MAX_LITERALS`] literals of at most [`MAX_LITERAL_LEN`] bytes.
+/// Each choice retains at most [`MAX_LITERALS`] literals of at most
+/// [`MAX_LITERAL_LEN`] bytes.
 const MAX_CANDIDATES: usize = 32;
 /// Work units for enumerating literal languages in one expression.
 ///
 /// Each visited node costs one unit and each literal a cross product builds
-/// costs one more. The default rules spend at most 168. The largest literal
-/// set, 64 case-insensitive literals of 64 bytes, spends about 8,400.
+/// costs one more. The largest literal set, 64 case-insensitive literals of
+/// 64 bytes, spends about 8,400.
 const MAX_ENUMERATION_STEPS: usize = 1 << 14;
 /// Anchored attempts may scan this many haystack lengths in total. An
 /// unanchored search reads the haystack forward and its matches in reverse,
@@ -279,6 +279,7 @@ impl LiteralAnchorShape {
     }
 
     /// Returns `N`, the most characters the leading repetitions can consume.
+    #[cfg(test)]
     pub(crate) fn max_leading(&self) -> usize {
         self.max_leading
     }
@@ -806,6 +807,7 @@ impl GoRegex {
     /// candidate's literals. The haystack must be pure ASCII, or valid UTF-8
     /// without U+017F and U+212A. `None` means the shape or the budget rejected
     /// this haystack; call [`Self::find_all_normalized`].
+    #[cfg(test)]
     pub(crate) fn find_all_literal_anchored(
         &self,
         normalized: &NormalizedHaystack<'_>,
@@ -863,8 +865,12 @@ impl GoRegex {
     /// Enumerates each candidate with naive occurrence discovery and no budget.
     ///
     /// Returns nothing for ineligible expressions and for haystacks the shape
-    /// cannot serve. This is the oracle hook for tests and the regex fuzz
-    /// target.
+    /// cannot serve. Tests and the `go_regex` fuzz target compare it with
+    /// [`GoRegex::find_all`].
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn literal_anchored_candidates(&self, haystack: &[u8]) -> Vec<Vec<ByteSpan>> {
         let Some(shape) = self.literal_anchor.as_deref() else {
             return Vec::new();

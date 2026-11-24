@@ -1,8 +1,10 @@
 //! Native rule-pack composition and scan explanations.
 //!
 //! An [`Engine`] scans with only the configuration it is built from. Native
-//! composition starts from the embedded default and appends separately
-//! identified TOML packs, rejecting replacements. Identity
+//! composition starts from the rules in [`DEFAULT_CONFIG`] only and appends
+//! separately identified TOML packs, rejecting replacements. It does not add
+//! the built-in rule files that [`ConfigLoader::load_default`] includes; add
+//! them with [`NativePolicy::with_pack`]. Identity
 //! equality compares exact input bytes, including formatting, pack order and
 //! extension selection. It is not a hash and makes no cryptographic claim.
 //!
@@ -56,7 +58,7 @@ pub const EXTRA_RULES_V1: &str = include_str!("../default/rustleaks-extra-v1.tom
 /// SHA-256 of [`EXTRA_RULES_V1`].
 pub const EXTRA_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-extra-v1.sha256");
 
-/// The `rustleaks-providers-v1` rule pack, adapted from MIT Betterleaks and
+/// The `rustleaks-providers-v1` rule file, adapted from MIT Betterleaks and
 /// Apache-2.0 Veles sources. Not part of [`DEFAULT_CONFIG`]; [`ConfigLoader`]
 /// adds it to the default.
 pub const PROVIDER_RULES_V1: &str = include_str!("../default/rustleaks-providers-v1.toml");
@@ -64,7 +66,7 @@ pub const PROVIDER_RULES_V1: &str = include_str!("../default/rustleaks-providers
 /// SHA-256 of [`PROVIDER_RULES_V1`].
 pub const PROVIDER_RULES_V1_SHA256: &str = include_str!("../default/rustleaks-providers-v1.sha256");
 
-/// The `rustleaks-connections-v1` rule pack of ASCII connection credentials,
+/// The `rustleaks-connections-v1` rule file of ASCII connection credentials,
 /// adapted from Apache-2.0 Kingfisher and Veles and MIT Betterleaks sources.
 /// Not part of [`DEFAULT_CONFIG`]; [`ConfigLoader`] adds it to the default.
 pub const CONNECTION_RULES_V1: &str = include_str!("../default/rustleaks-connections-v1.toml");
@@ -92,8 +94,9 @@ pub(crate) const BUILTIN_PACKS: [(&str, &str); 3] = [
 
 /// Exact policy identity with configuration bytes omitted from diagnostics.
 ///
-/// Identity includes the policy and crate versions, the default
-/// configuration's Gitleaks revision and hash, ordered pack IDs and exact TOML bytes, and extension selection.
+/// Identity includes the policy and crate versions, the SHA-256 of
+/// [`DEFAULT_CONFIG`], the extension selection, and each pack ID with its
+/// exact TOML bytes, in order.
 /// Equal identities imply equal configuration inputs, not equal source input,
 /// scan options, budgets, or runtime results. Byte formatting changes produce
 /// a different identity deliberately. This type does not serialize implicitly:
@@ -118,11 +121,11 @@ impl NativePolicyIdentity {
     /// Returns an immutable, source-omitting reference for a supported builtin
     /// composition, including checked content hashes and enabled extensions.
     ///
-    /// Present for the default rules alone and exact packaged packs selected as
-    /// `rustleaks-extra-v1`, `rustleaks-providers-v1` or
-    /// `rustleaks-connections-v1`, including every composition order.
-    /// Custom packs return `None` and require a
-    /// caller-owned fingerprint bound to exact identity.
+    /// Present for the default rules alone, and for any subset and order of
+    /// the unchanged built-in rule files `rustleaks-extra-v1`,
+    /// `rustleaks-providers-v1` and `rustleaks-connections-v1`. Custom packs
+    /// return `None` and require a caller-owned fingerprint bound to exact
+    /// identity.
     #[must_use]
     pub fn builtin_review_reference(&self) -> Option<&str> {
         self.builtin_review_reference.as_deref()
@@ -140,7 +143,8 @@ impl NativePolicyIdentity {
     }
 }
 
-/// Explicit composition request; not selected by existing engine APIs.
+/// A composition of the rules in [`DEFAULT_CONFIG`] and the packs that you
+/// add.
 #[derive(Clone, Default)]
 pub struct NativePolicy {
     packs: Vec<(String, String)>,
@@ -168,7 +172,11 @@ impl NativePolicy {
     /// Maximum aggregate native rules across appended packs.
     pub const MAX_NATIVE_RULES: usize = 1_024;
 
-    /// Starts a native policy with only the embedded default rules.
+    /// Starts a policy with the rules in [`DEFAULT_CONFIG`] only.
+    ///
+    /// Add [`EXTRA_RULES_V1`], [`PROVIDER_RULES_V1`] and
+    /// [`CONNECTION_RULES_V1`], in that order, with [`Self::with_pack`] to
+    /// use the same rules as [`ConfigLoader::load_default`].
     #[must_use]
     pub fn builder() -> Self {
         Self::default()
@@ -179,8 +187,8 @@ impl NativePolicy {
     /// Scalar `entropy` works as in [`ConfigLoader`]. A native byte predicate uses
     /// `entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt", threshold = 3.5 }`.
     /// The comparator is `lt` or `le`, and the finite threshold is in `0..=8`.
-    /// A structured entropy value requires this loader; the compatibility
-    /// [`ConfigLoader`] rejects it instead of silently dropping the predicate.
+    /// A structured entropy value requires this loader; [`ConfigLoader`]
+    /// rejects it instead of silently dropping the predicate.
     ///
     /// A typed `regex = { dialect = "bytes-v1", pattern = "..." }` opts into
     /// raw-byte content matching with Unicode disabled by default. String
@@ -193,12 +201,13 @@ impl NativePolicy {
     /// They run after entropy and before finding admission and allowlists.
     ///
     /// IDs are 1 to 96 ASCII letters, digits, dots, underscores or hyphens.
-    /// The caller must version the ID when publishing changed pack semantics.
+    /// Give a custom pack a new ID when its meaning changes; the built-in
+    /// rule files keep their IDs.
     /// Exact bytes also participate in identity, so reusing an ID cannot hide
     /// a configuration change. Native rule IDs start with `rustleaks.`.
     /// Extension directives, global allowlists and advisory minimum versions
     /// are rejected. Unknown fields and case-colliding aliases are rejected
-    /// before the compatibility parser can discard or overwrite them.
+    /// before the [`ConfigLoader`] parser can discard or overwrite them.
     /// Rule-local allowlists and composites remain supported.
     ///
     /// A top-level `[[overlaps]]` entry with `keep` and `drop` rule IDs, and
@@ -273,12 +282,13 @@ impl NativePolicy {
     ///
     /// Returns errors for collisions, resource ceilings, unsupported pack
     /// directives or configuration compilation failures.
-    #[allow(clippy::too_many_lines)] // Pack composition, collision checks and identity binding share one ordered flow.
     pub fn compile(self) -> Result<(CompiledConfig, NativePolicyIdentity), NativePolicyError> {
         self.compile_with(false)
     }
 
-    #[allow(clippy::too_many_lines)] // See `compile`.
+    // `force_full_check` is for the test that checks the built-in patterns in
+    // full.
+    #[allow(clippy::too_many_lines)] // Pack composition, collision checks and identity binding share one ordered flow.
     fn compile_with(
         self,
         force_full_check: bool,
@@ -295,7 +305,6 @@ impl NativePolicy {
         let mut native_predicates = BTreeMap::new();
         let mut native_required = BTreeMap::new();
         let mut native_bytes = BTreeSet::new();
-        let mut pack_rules = BTreeSet::new();
         let mut overlaps = Vec::new();
         let builtin_review_reference = builtin_pack_reference(&self.packs).map(|packs| Arc::<str>::from(format!(
             "{NATIVE_POLICY_VERSION}|core:{}|default-sha256:{DEFAULT_CONFIG_SHA256}|{packs}|github-classic-pat-v1:{}",
@@ -327,7 +336,6 @@ impl NativePolicy {
                 if !ids.insert(rule.id.clone()) {
                     return Err(NativePolicyError::RuleCollision);
                 }
-                pack_rules.insert(rule.id.clone());
             }
             frame(&mut identity, id.as_bytes());
             frame(&mut identity, contents.as_bytes());
@@ -338,7 +346,7 @@ impl NativePolicy {
             overlaps.extend(pack.overlaps);
             raw.rules.extend(pack.raw.rules);
         }
-        // Classify original keywords before compatibility compilation applies
+        // Classify original keywords before `ConfigLoader` compilation applies
         // Go lowercase. A Unicode keyword can lowercase to ASCII (for example
         // Kelvin sign), so its original category cannot be recovered later.
         let mut keyword_rules = native_bytes.clone();
@@ -369,11 +377,6 @@ impl NativePolicy {
         for (id, keywords) in native_keywords {
             if let Some(rule) = config.rules.get_mut(&id) {
                 rule.native_keywords = Some(keywords);
-            }
-        }
-        for id in &pack_rules {
-            if let Some(rule) = config.rules.get_mut(id) {
-                rule.native_pack = true;
             }
         }
         for (id, predicate) in native_entropy {
@@ -433,7 +436,8 @@ fn builtin_pack_reference(packs: &[(String, String)]) -> Option<String> {
             _ => return None,
         }
     }
-    // Preserve every composition without connections byte for byte.
+    // Each composition of the built-in rule files has its own reference. Do
+    // not change these strings: stored review records hold them.
     Some(if connections {
         format!(
             "extra-sha256:{extra}|providers-sha256:{}|connections-sha256:{CONNECTION_RULES_V1_SHA256}|pack-order:{}",
@@ -485,8 +489,8 @@ fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
             source,
         })?;
     validate_pack_table(&value, PackTable::Config)?;
-    // These private transforms retain native metadata outside the compatibility
-    // raw structs. Exact caller-supplied bytes remain in policy identity.
+    // These private transforms retain native metadata outside the
+    // `ConfigLoader` raw structs. Exact caller-supplied bytes remain in policy identity.
     let predicates = extract_native_entropy(&mut value)?;
     let relations = extract_native_required(&mut value)?;
     let structural = predicate::extract(&mut value)?;
@@ -579,7 +583,7 @@ fn validate_pack(contents: &str) -> Result<ValidatedPack, NativePolicyError> {
     })
 }
 
-// This is deliberately separate from the permissive compatibility loader.
+// This is deliberately separate from the permissive `ConfigLoader` parser.
 // The scope transitions bound traversal depth to Config -> Rule -> Allowlist
 // or Required; arrays must contain tables, never positional struct sequences.
 #[derive(Clone, Copy)]
@@ -648,12 +652,13 @@ fn validate_pack_tables(value: &toml::Value, scope: PackTable) -> Result<(), Nat
         }
         Ok(())
     } else {
-        // Keep the compatibility loader's named single-table shorthand.
+        // Keep the `ConfigLoader` named single-table shorthand.
         validate_pack_table(value, scope)
     }
 }
 
-// Keep classification separate from compatibility-normalized keyword text.
+// Keep classification separate from the lowercased keyword text that
+// `ConfigLoader` compiles.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NativeKeyword {
     Empty,
@@ -1308,7 +1313,7 @@ mod identity_regressions {
     };
 
     #[test]
-    fn connection_support_preserves_existing_builtin_reference_bytes() {
+    fn builtin_review_reference_strings_are_stable() {
         let extra = ("rustleaks-extra-v1".to_owned(), EXTRA_RULES_V1.to_owned());
         let providers = (
             "rustleaks-providers-v1".to_owned(),

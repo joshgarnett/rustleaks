@@ -18,7 +18,7 @@ struct Request {
 }
 
 #[test]
-fn validation_matches_full_compile_for_frozen_and_default_patterns() {
+fn validation_matches_full_compile_for_corpus_and_default_patterns() {
     let mut patterns = BTreeSet::new();
     let mut requests = 0;
     for line in include_str!("../../../../testdata/regex-corpus/requests-v1.jsonl").lines() {

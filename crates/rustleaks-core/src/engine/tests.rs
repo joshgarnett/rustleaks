@@ -14,13 +14,13 @@ fn engine(config: &str) -> Engine {
         .unwrap()
 }
 
-fn upstream_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> SourceLocation {
-    super::upstream_location(newlines, raw, start, end, &Cell::new(None))
+fn source_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> SourceLocation {
+    super::source_location(newlines, raw, start, end, &Cell::new(None))
 }
 
-// Frozen capture-first extraction, retained only as differential evidence.
+// Simple capture-first extraction that the optimized code is compared with.
 // The explicit table below states the expected results independently.
-fn frozen_extract_secret<'a>(
+fn reference_extract_secret<'a>(
     regex: &GoRegex,
     matched: &'a [u8],
     secret_group: i64,
@@ -129,9 +129,9 @@ fn extract_secret_preserves_every_group_and_search_branch() {
         let regex = &regexes[pattern];
         let label = format!("{pattern} on {matched:?}, group {group_index}");
         assert_eq!(
-            extracted_view(frozen_extract_secret(regex, matched, group_index)),
+            extracted_view(reference_extract_secret(regex, matched, group_index)),
             expected,
-            "frozen {label}",
+            "reference {label}",
         );
         assert_eq!(
             extracted_view(extract_secret(regex, matched, group_index, &mut None)),
@@ -223,8 +223,8 @@ regex = '''(?s)\A\nZX9\n\z'''
     );
 }
 
-// Frozen per-rule map lookup, retained only as differential evidence.
-fn frozen_keyword_gate_open(
+// Simple per-rule map lookup that the optimized code is compared with.
+fn reference_keyword_gate_open(
     rule: &CompiledRule,
     keyword_ids: &BTreeMap<String, usize>,
     matched_keywords: &[bool],
@@ -249,7 +249,7 @@ fn prefilter_keyword_ids(config: &CompiledConfig) -> BTreeMap<String, usize> {
 }
 
 #[test]
-fn keyword_indexes_match_the_frozen_lookup_for_every_matched_subset() {
+fn keyword_indexes_match_the_reference_lookup_for_every_matched_subset() {
     let detector = engine(
         r#"
 [[rules]]
@@ -299,7 +299,7 @@ keywords = ["\U0000212Aey", "\U00000130x"]
         {
             assert_eq!(
                 keyword_gate_open(rule, indexes, &matched),
-                frozen_keyword_gate_open(rule, &keyword_ids, &matched),
+                reference_keyword_gate_open(rule, &keyword_ids, &matched),
                 "rule {}, mask {mask:b}",
                 rule.id,
             );
@@ -331,7 +331,7 @@ keywords = ["\U0000212Aey", "\U00000130x"]
 }
 
 #[test]
-fn default_rule_keyword_indexes_match_the_frozen_lookup() {
+fn default_rule_keyword_indexes_match_the_reference_lookup() {
     let detector = Engine::builder(ConfigLoader::new().load_default().unwrap())
         .build()
         .unwrap();
@@ -566,8 +566,8 @@ keywords = ["agvsbg8g"]
     }
 }
 
-// Frozen ordered-map computation, retained only as differential evidence.
-fn frozen_shannon_entropy(bytes: &[u8]) -> f64 {
+// Simple ordered-map computation that the optimized code is compared with.
+fn reference_shannon_entropy(bytes: &[u8]) -> f64 {
     if bytes.is_empty() {
         return 0.0;
     }
@@ -612,7 +612,7 @@ fn entropy_values_are_specified_by_exact_bits() {
     ] {
         let actual = shannon_entropy(input);
         assert_eq!(actual.to_bits(), expected_bits, "{input:?}");
-        assert_eq!(frozen_shannon_entropy(input).to_bits(), expected_bits);
+        assert_eq!(reference_shannon_entropy(input).to_bits(), expected_bits);
     }
     let every_ascii = (0_u8..128).collect::<Vec<_>>();
     assert_eq!(
@@ -634,15 +634,18 @@ fn ascii_entropy_sums_counts_in_ascending_symbol_order() {
     }
     let expected = entropy_of_ordered_counts(&counts, input.len());
     assert_eq!(shannon_entropy(&input).to_bits(), expected.to_bits());
-    assert_eq!(frozen_shannon_entropy(&input).to_bits(), expected.to_bits());
+    assert_eq!(
+        reference_shannon_entropy(&input).to_bits(),
+        expected.to_bits()
+    );
 }
 
 #[test]
-fn entropy_histogram_is_bit_identical_to_the_frozen_map() {
+fn entropy_histogram_is_bit_identical_to_the_reference_map() {
     let check = |input: &[u8]| {
         assert_eq!(
             shannon_entropy(input).to_bits(),
-            frozen_shannon_entropy(input).to_bits(),
+            reference_shannon_entropy(input).to_bits(),
             "{input:?}",
         );
     };
@@ -770,7 +773,7 @@ stopwords = ["abcd"]
             (
                 b"threshold".to_vec(),
                 b"abc".to_vec(),
-                entropy_to_f32(frozen_shannon_entropy(b"abc")).to_bits(),
+                entropy_to_f32(reference_shannon_entropy(b"abc")).to_bits(),
             ),
             (b"zero".to_vec(), b"abcd".to_vec(), 2.0_f32.to_bits()),
         ]
@@ -842,9 +845,9 @@ fn newline_indices_keep_only_the_lf_in_every_chunk_position() {
 }
 
 #[test]
-fn upstream_location_matches_pinned_helper_assertions() {
+fn source_location_matches_expected_positions() {
     let raw = vec![b'x'; 57];
-    let first = upstream_location(&[0, 40, 56], &raw, 35, 38);
+    let first = source_location(&[0, 40, 56], &raw, 35, 38);
     assert_eq!(
         (
             first.start_line,
@@ -856,7 +859,7 @@ fn upstream_location_matches_pinned_helper_assertions() {
         ),
         (1, 36, 1, 38, 0, 40)
     );
-    let second = upstream_location(&[0, 40, 56], &raw, 40, 44);
+    let second = source_location(&[0, 40, 56], &raw, 40, 44);
     assert_eq!(
         (
             second.start_line,
@@ -871,7 +874,7 @@ fn upstream_location_matches_pinned_helper_assertions() {
 }
 
 #[test]
-fn upstream_location_preserves_newline_and_empty_span_edges() {
+fn source_location_preserves_newline_and_empty_span_edges() {
     let raw = b"a\nbc\nd\r";
     for (start, end, expected) in [
         (0, 0, (0, 0, 1, 0, 0, 1)),
@@ -883,7 +886,7 @@ fn upstream_location_preserves_newline_and_empty_span_edges() {
         (5, 6, (2, 2, 2, 2, 0, 6)),
         (0, 6, (0, 0, 1, 0, 0, 6)),
     ] {
-        let location = upstream_location(&[1, 4], raw, start, end);
+        let location = source_location(&[1, 4], raw, start, end);
         assert_eq!(
             (
                 location.start_line,
@@ -898,7 +901,7 @@ fn upstream_location_preserves_newline_and_empty_span_edges() {
         );
     }
     assert_eq!(
-        upstream_location(&[], b"", 0, 0),
+        source_location(&[], b"", 0, 0),
         SourceLocation {
             start_line: 1,
             end_line: 1,
@@ -909,7 +912,7 @@ fn upstream_location_preserves_newline_and_empty_span_edges() {
         }
     );
     assert_eq!(
-        upstream_location(&[], b"ab", 0, 0),
+        source_location(&[], b"ab", 0, 0),
         SourceLocation {
             start_line: 0,
             end_line: 0,
@@ -920,7 +923,7 @@ fn upstream_location_preserves_newline_and_empty_span_edges() {
         }
     );
     assert_eq!(
-        upstream_location(&[], b"ab", 2, 2),
+        source_location(&[], b"ab", 2, 2),
         SourceLocation {
             start_line: 1,
             end_line: 1,
@@ -955,8 +958,8 @@ fn indexed_location_matches_the_previous_loop_for_all_small_spans() {
             for start in 0..=length {
                 for end in start..=length {
                     assert_eq!(
-                        upstream_location(&indexed, &raw, start, end),
-                        linear_upstream_location(&newlines, &raw, start, end),
+                        source_location(&indexed, &raw, start, end),
+                        linear_source_location(&newlines, &raw, start, end),
                         "length {length}, newline mask {mask}, span {start}..{end}"
                     );
                 }
@@ -965,9 +968,9 @@ fn indexed_location_matches_the_previous_loop_for_all_small_spans() {
     }
 }
 
-// Frozen previous helper used only as differential evidence. The explicit
+// Simple linear version that the optimized code is compared with. The explicit
 // edge cases above specify expected results independently of this loop.
-fn linear_upstream_location(
+fn linear_source_location(
     newlines: &[usize],
     raw: &[u8],
     start: usize,
@@ -1133,8 +1136,8 @@ fn cached_locations_match_pinned_loop_for_reordered_crlf_and_empty_spans() {
         let cache = Cell::new(None);
         for &(start, end) in spans.iter().chain(spans.iter().rev()) {
             assert_eq!(
-                super::upstream_location(&newlines, raw, start, end, &cache),
-                linear_upstream_location(&newlines, raw, start, end),
+                super::source_location(&newlines, raw, start, end, &cache),
+                linear_source_location(&newlines, raw, start, end),
                 "raw {raw:?}, span {start}..{end}",
             );
         }
@@ -1369,7 +1372,7 @@ regexes = ['''^ZX9(?: ZX9){3}$''']
     assert_eq!(next.findings().len(), 1);
 }
 
-// Frozen uncached predicate used only for comparison with the local memo.
+// Simple uncached predicate that the local memo is compared with.
 fn uncached_finding_allowed(
     fragment: &Fragment,
     full_match: &[u8],
@@ -1577,14 +1580,14 @@ fn generic_filter_ignores_file_columns_and_end_geometry() {
     assert_eq!(filtered[0].secret().as_bytes(), b"REDACTED");
 }
 
-// Frozen quadratic filters, retained only as differential evidence. The
+// Simple quadratic filters that the optimized code is compared with. The
 // explicit cases below state the expected results independently.
-fn frozen_filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
-    let include = frozen_include(&findings);
+fn reference_filter_findings(findings: Vec<Finding>, redact: usize) -> Vec<Finding> {
+    let include = reference_include(&findings);
     apply_finding_filter(findings, include, redact)
 }
 
-fn frozen_include(findings: &[Finding]) -> Vec<bool> {
+fn reference_include(findings: &[Finding]) -> Vec<bool> {
     findings
         .iter()
         .map(|finding| {
@@ -1671,15 +1674,15 @@ fn generic_filter_prototypes() -> Vec<Finding> {
     ]
 }
 
-fn assert_generic_filters_match_frozen(findings: &[Finding]) {
+fn assert_generic_filters_match_reference(findings: &[Finding]) {
     for redact in [0, 100] {
         assert_eq!(
             filter_findings(&ReplacedBy::default(), findings.to_vec(), redact),
-            frozen_filter_findings(findings.to_vec(), redact),
+            reference_filter_findings(findings.to_vec(), redact),
             "{findings:?}",
         );
     }
-    let complete = frozen_filter_findings(findings.to_vec(), 0);
+    let complete = reference_filter_findings(findings.to_vec(), 0);
     assert_eq!(
         filter_findings_cancellable(
             &ReplacedBy::default(),
@@ -1690,8 +1693,8 @@ fn assert_generic_filters_match_frozen(findings: &[Finding]) {
         (complete.clone(), None),
         "{findings:?}",
     );
-    // The retained flags of the complete frozen filter, by list index.
-    let retained = frozen_include(findings);
+    // The retained flags of the complete reference filter, by list index.
+    let retained = reference_include(findings);
     let (index_polls, decided) = expected_filter_polls(findings);
     let total = decided.last().copied().unwrap_or(index_polls);
     let run = |limit: usize| {
@@ -1753,15 +1756,15 @@ fn assert_generic_filters_match_frozen(findings: &[Finding]) {
 }
 
 #[test]
-fn generic_buckets_match_the_frozen_quadratic_filter_exhaustively() {
+fn generic_buckets_match_the_reference_quadratic_filter_exhaustively() {
     let prototypes = generic_filter_prototypes();
-    assert_generic_filters_match_frozen(&[]);
+    assert_generic_filters_match_reference(&[]);
     for first in &prototypes {
-        assert_generic_filters_match_frozen(std::slice::from_ref(first));
+        assert_generic_filters_match_reference(std::slice::from_ref(first));
         for second in &prototypes {
-            assert_generic_filters_match_frozen(&[first.clone(), second.clone()]);
+            assert_generic_filters_match_reference(&[first.clone(), second.clone()]);
             for third in &prototypes {
-                assert_generic_filters_match_frozen(&[
+                assert_generic_filters_match_reference(&[
                     first.clone(),
                     second.clone(),
                     third.clone(),
@@ -1779,7 +1782,7 @@ fn generic_buckets_match_the_frozen_quadratic_filter_exhaustively() {
                 prototypes[choice].clone()
             })
             .collect::<Vec<_>>();
-        assert_generic_filters_match_frozen(&list);
+        assert_generic_filters_match_reference(&list);
     }
 }
 
