@@ -279,7 +279,7 @@ impl Archive {
             return Err(Error::other("Additional streams unsupported"));
         }
         if nid == K_MAIN_STREAMS_INFO {
-            Self::read_streams_info(header, archive, limit)?;
+            Self::read_streams_info(header, archive, limit, max_entries)?;
             nid = header.read_u8()?;
         }
         if nid == K_FILES_INFO {
@@ -395,6 +395,7 @@ impl Archive {
                 &mut archive,
                 next_header_size_int,
                 limits.memory_kb,
+                limits.entries,
             )?;
             buf = decoded;
             archive = Archive::default();
@@ -434,8 +435,9 @@ impl Archive {
         archive: &mut Archive,
         limit: usize,
         memory_limit_kb: usize,
+        max_entries: usize,
     ) -> Result<Vec<u8>, Error> {
-        Self::read_streams_info(header, archive, limit)?;
+        Self::read_streams_info(header, archive, limit, max_entries)?;
         let block = archive
             .blocks
             .first()
@@ -506,6 +508,7 @@ impl Archive {
         header: &mut R,
         archive: &mut Archive,
         limit: usize,
+        max_entries: usize,
     ) -> Result<(), Error> {
         let mut nid = header.read_u8()?;
         if nid == K_PACK_INFO {
@@ -514,7 +517,7 @@ impl Archive {
         }
 
         if nid == K_UNPACK_INFO {
-            Self::read_unpack_info(header, archive, limit)?;
+            Self::read_unpack_info(header, archive, limit, max_entries)?;
             nid = header.read_u8()?;
         } else {
             archive.blocks.clear();
@@ -895,16 +898,26 @@ impl Archive {
 
         Ok(())
     }
+    /// Reads the block table. Each block decodes at least one entry, so an
+    /// archive with more blocks than `max_entries` is rejected with
+    /// [`Error::MaxEntriesLimited`] before the table is allocated.
     fn read_unpack_info<R: Read>(
         header: &mut R,
         archive: &mut Archive,
         limit: usize,
+        max_entries: usize,
     ) -> Result<(), Error> {
         let nid = header.read_u8()?;
         if nid != K_FOLDER {
             return Err(Error::other(format!("Expected kFolder, got {nid}")));
         }
         let num_blocks = bounded_count(read_variable_u64(header)?, limit, "num blocks")?;
+        if num_blocks > max_entries {
+            return Err(Error::MaxEntriesLimited {
+                max: max_entries,
+                actual: num_blocks,
+            });
+        }
 
         archive
             .blocks
@@ -1980,6 +1993,43 @@ mod tests {
             10,
         );
         assert!(matches!(result, Err(Error::Other(_))), "{result:?}");
+    }
+
+    #[test]
+    fn block_count_above_the_entry_limit_is_rejected_before_the_block_table() {
+        // kFolder, a block count, then the external flag.
+        for (count, max_entries) in [(11, 10), (5_000_000, 1_000_000)] {
+            let mut header = vec![crate::archive::K_FOLDER];
+            number(&mut header, count as u64);
+            header.push(0);
+            let mut archive = Archive::default();
+            let result = Archive::read_unpack_info(
+                &mut Cursor::new(header),
+                &mut archive,
+                usize::MAX,
+                max_entries,
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::MaxEntriesLimited { max, actual })
+                        if max == max_entries && actual == count
+                ),
+                "{result:?}"
+            );
+            assert_eq!(archive.blocks.capacity(), 0);
+        }
+        // At the limit, the blocks are read; this header ends early.
+        let result = Archive::read_unpack_info(
+            &mut Cursor::new(vec![crate::archive::K_FOLDER, 10, 0]),
+            &mut Archive::default(),
+            usize::MAX,
+            10,
+        );
+        assert!(
+            !matches!(result, Err(Error::MaxEntriesLimited { .. })),
+            "{result:?}"
+        );
     }
 
     #[test]
