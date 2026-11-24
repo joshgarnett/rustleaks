@@ -15,7 +15,7 @@
   archive. `--log-opts` values come after these options and can turn them
   back on. `color.ui=always` in a Git configuration no longer makes history
   scans fail. `--pre-commit` still applies the repository's clean filters
-  (`filter.<driver>.clean`), as `git add` does.
+  (`filter.<driver>.clean` and `.process`), as `git add` does.
 - A rule in an extending configuration with the ID of a built-in rule that
   depends on helper rules, such as `rustleaks.azure-servicebus-key-comma`,
   now reports matches of its own `regex`. Before, it reported nothing.
@@ -31,20 +31,21 @@
   release to a pre-release. `Update Package Managers` checks the release tag
   against the release commit, and its publish job runs only Git, the
   GitHub CLI and the pinned token action.
-- 7z header parsing no longer allocates by sizes the archive declares
-  beyond its limits. An encoded header must decode to no more than the 7z
-  memory limit (64 MiB, or the member limit if lower), or the archive is
-  skipped with a limit warning. An archive that declares more entries, or
-  more blocks, than the entry limit is skipped before its file or block
-  table is built, with the same warning as for too many entries. 7z members compressed with Zstandard are decoded as a stream, so
-  memory no longer grows with the member size. A Zstandard member whose
-  compressed size is above the memory limit is now scanned instead of
-  skipped.
+- 7z header parsing no longer allocates the decoded header, the file table or
+  the block table by sizes the archive declares beyond its limits. Other
+  header tables are still bounded only by the header length. An encoded header
+  must decode to no more than the 7z memory limit (64 MiB, or the member limit
+  if lower), or the archive is skipped with a limit warning. An archive that
+  declares more entries, or more blocks, than the entry limit is skipped
+  before its file or block table is built, with the same warning as for too
+  many entries. 7z members compressed with Zstandard are decoded as a stream,
+  so memory no longer grows with the member size. A Zstandard member whose
+  compressed size is above the memory limit is now scanned instead of skipped.
 - A configuration file that fails to parse or decode no longer prints its
-  text. The error names the kind of error and the file, and for a parse
-  error the line and column. A configuration in the scanned folder can name any readable file
-  in `[extend]` or through a symbolic link, so the old message could print
-  lines of a file outside the scan, even with `--redact`. Inline
+  text. The error names the kind of error and the file, and for a parse error
+  the line and column. A configuration in the scanned folder can name any
+  readable file in `[extend]` or through a symbolic link, so the old message
+  could print lines of a file outside the scan, even with `--redact`. Inline
   configuration errors already showed only the kind of error.
 - With `--redact`, a finding of a decoded secret now has its whole `Line`
   replaced by the redacted secret. The line held the secret in encoded form,

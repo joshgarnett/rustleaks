@@ -415,8 +415,9 @@ changing anything; set it, after approval, to push. The workflow:
 5. only when `publish` is set and every job above passed, runs the
    `publish` job in the protected `release` environment. This job runs only
    Git, the GitHub CLI and the pinned token action: it checks out no
-   Rustleaks code and runs no setup action or Cargo. It clones both repositories again and stops unless
-   `main` is still the commit that `check-channels` checked. Then it creates
+   Rustleaks code and runs no setup action or Cargo. It clones both
+   repositories again and stops unless `main` is still the commit that
+   `check-channels` checked. Then it creates
    a one-hour token with `actions/create-github-app-token` from the
    `PACKAGING_APP_ID` variable and `PACKAGING_APP_PRIVATE_KEY` secret,
    limited to contents write on the two repositories, and commits and

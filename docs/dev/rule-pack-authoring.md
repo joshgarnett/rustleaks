@@ -133,10 +133,11 @@ normalization:
 
 So the ASCII keyword `accesskey` does not match `accessKey` through Unicode
 folding, while `Key` matches `KEY`. Keywords that an extending configuration
-adds to such a rule follow the same checks, after Go lowercasing. Each keyword check reads only the buffer
-that its rule searches. The shared prefilter still includes these keywords,
-but native rules do not use its result. `keywords()` returns the normalized
-keywords and does not describe this native behavior.
+adds to such a rule follow the same checks, after Go lowercasing. Each
+keyword check reads only the buffer that its rule searches. The shared
+prefilter still includes these keywords, but native rules do not use its
+result. `keywords()` returns the normalized keywords and does not describe
+this native behavior.
 
 ### Required relations in one buffer
 
