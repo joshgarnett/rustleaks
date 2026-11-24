@@ -152,7 +152,9 @@ impl ReportPlan {
                 format!("could not use report path {}: {error}", path.display())
             })?;
         }
+        // A stream name, such as `/dev/stdout` or `NUL`, needs no folder.
         if let ReportTarget::File(path) = &target
+            && !report_file::is_stream_name(path)
             && let Some(parent) = path
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())

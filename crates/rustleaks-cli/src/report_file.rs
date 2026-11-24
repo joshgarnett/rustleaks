@@ -2,9 +2,12 @@
 //!
 //! A report can hold secrets, so the file is opened with these rules:
 //!
-//! - On Unix, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` name streams that
-//!   the process already has open. They are opened as a plain path, and
-//!   their symbolic links are followed.
+//! - Stream names are opened as a plain path, as `File::create` opens them.
+//!   On Unix they are `/dev/stdout`, `/dev/stderr` and `/dev/fd/N`, which
+//!   name streams that the process already has open; their symbolic links
+//!   are followed. On Windows they are the DOS device names, such as `NUL`
+//!   and `CON`, and paths that start with `\\.\`. Windows gives no file
+//!   information for a device handle, so the checks below cannot run there.
 //! - A path with nothing at it gets a new file. `create_new` does not follow
 //!   a symbolic link, and on Unix the new file has mode `0600`.
 //! - A symbolic link at the path is refused. Its target is not opened.
@@ -14,6 +17,20 @@
 //!   truncated. The file keeps its owner and mode.
 //! - Another existing entry, such as `/dev/null` or a named pipe, is opened
 //!   with the same check and is not truncated.
+//!
+//! Only the last component of the path is checked. Links in the parent
+//! folders are followed.
+//!
+//! On Unix, the existing entry is opened with `O_CREAT` but without
+//! `O_EXCL`, as `File::create` opens it, so the Linux `protected_regular`
+//! and `protected_fifos` checks for sticky folders such as `/tmp` still
+//! apply. The standard library has no portable `O_NOFOLLOW` or `O_NONBLOCK`.
+//! So if a link replaces the entry between the check and the open, the open
+//! follows it: a missing target is created empty with mode `0600`, and a
+//! named pipe with no reader blocks the open. The identity check then
+//! refuses the file, so no report is written to it and nothing is
+//! truncated. The same check refuses a new file that was created in place
+//! of a removed entry.
 
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io;
@@ -93,7 +110,7 @@ pub(crate) fn open(path: &Path) -> Result<File, OpenError> {
 
 /// Reports a name that a Unix system gives to a stream of this process.
 #[cfg(unix)]
-fn is_stream_name(path: &Path) -> bool {
+pub(crate) fn is_stream_name(path: &Path) -> bool {
     let Some(path) = path.to_str() else {
         return false;
     };
@@ -103,9 +120,39 @@ fn is_stream_name(path: &Path) -> bool {
             .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
 }
 
-#[cfg(not(unix))]
-fn is_stream_name(_path: &Path) -> bool {
+/// Reports a Windows device path: one that starts with `\\.\`, or whose last
+/// component is a DOS device name.
+#[cfg(windows)]
+pub(crate) fn is_stream_name(path: &Path) -> bool {
+    path.as_os_str()
+        .to_str()
+        .is_some_and(|text| text.starts_with(r"\\.\"))
+        || path
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(is_dos_device_name)
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn is_stream_name(_path: &Path) -> bool {
     false
+}
+
+/// Reports a DOS device name, such as `NUL`, `con` or `COM1.txt`. Windows
+/// opens the device for these names in any folder, with any letter case and
+/// with any extension.
+#[cfg(any(windows, test))]
+fn is_dos_device_name(name: &str) -> bool {
+    let stem = name.split_once('.').map_or(name, |(stem, _)| stem);
+    let stem = stem.to_ascii_uppercase();
+    match stem.as_str() {
+        "NUL" | "CON" | "AUX" | "PRN" | "CONIN$" | "CONOUT$" => true,
+        _ => ["COM", "LPT"].iter().any(|prefix| {
+            stem.strip_prefix(prefix).is_some_and(|number| {
+                matches!(number, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            })
+        }),
+    }
 }
 
 #[cfg(unix)]
@@ -137,7 +184,22 @@ fn open_existing(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
-#[cfg(not(windows))]
+/// Opens an existing entry with `O_CREAT`, so the kernel checks for sticky
+/// folders apply as they do to `File::create`. See the module notes.
+#[cfg(unix)]
+fn open_existing(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        // Truncate only after the identity check.
+        .truncate(false)
+        .mode(0o600)
+        .open(path)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn open_existing(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).open(path)
 }
@@ -191,6 +253,58 @@ mod tests {
         ] {
             assert!(!is_stream_name(Path::new(name)), "{name}");
         }
+    }
+
+    #[test]
+    fn dos_device_names_match_any_case_and_extension() {
+        for name in [
+            "NUL", "nul", "Nul.txt", "CON", "con.json", "AUX", "PRN", "COM1", "com9.log", "LPT1",
+            "lpt9", "CONIN$", "conout$",
+        ] {
+            assert!(is_dos_device_name(name), "{name}");
+        }
+        for name in [
+            "NULL",
+            "NUL1",
+            "COM",
+            "COM0",
+            "COM10",
+            "LPT",
+            "LPTX",
+            "report.json",
+            "xNUL",
+            "",
+        ] {
+            assert!(!is_dos_device_name(name), "{name}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_device_paths_are_stream_names() {
+        for name in ["NUL", r"C:\work\nul", r"C:\work\CON.txt", r"\\.\NUL"] {
+            assert!(is_stream_name(Path::new(name)), "{name}");
+        }
+        assert!(!is_stream_name(Path::new(r"C:\work\report.json")));
+        check(Path::new("NUL")).unwrap();
+        drop(open(Path::new("NUL")).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_created_in_place_of_the_checked_one_is_refused() {
+        let root = temporary_directory("recreated");
+        let path = root.join("report.json");
+        fs::write(&path, b"first").unwrap();
+        let first = fs::symlink_metadata(&path).unwrap();
+        // Keep the first file alive under another name, so the new file
+        // cannot reuse its inode number.
+        fs::rename(&path, root.join("kept.json")).unwrap();
+        fs::write(&path, b"second").unwrap();
+        let second = open_existing(&path).unwrap().metadata().unwrap();
+        assert!(!same_entry(&first, &second));
+        assert!(same_entry(&fs::symlink_metadata(&path).unwrap(), &second));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

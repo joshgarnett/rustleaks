@@ -418,3 +418,26 @@ fn dev_stdout_report_path_writes_to_standard_output() {
         ["fixture-token"]
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn nul_report_path_discards_the_report() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    for name in ["NUL", "nul", r"\\.\NUL"] {
+        let result = output_with_stdin(&mut json_report_command(&fixture.0, name), b"token=AB12\n");
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "{name}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.stdout.is_empty(), "{name}");
+    }
+    // No file named NUL is created in the folder.
+    let names = fs::read_dir(&fixture.0)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["config.toml"]);
+}
