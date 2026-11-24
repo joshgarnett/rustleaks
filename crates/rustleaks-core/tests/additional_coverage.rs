@@ -3,7 +3,6 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
-use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 use base64::Engine as _;
@@ -18,12 +17,11 @@ use serde::Deserialize;
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
-use native_harness::{all_packs_config, exact_range as range, scan};
+use native_harness::{exact_range as range, scan, shipped_config, without_rules};
 
 #[derive(Deserialize)]
 #[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Cases {
-    baseline_rule_ids: Vec<String>,
     primary: Vec<Case>,
     cases: Vec<Case>,
 }
@@ -64,11 +62,7 @@ fn cases() -> &'static Cases {
 
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        all_packs_config()
-            .select_rules(cases().baseline_rule_ids.iter().map(String::as_str))
-            .unwrap()
-    })
+    CONFIG.get_or_init(shipped_config)
 }
 
 fn selected() -> &'static Engine {
@@ -81,27 +75,21 @@ fn selected() -> &'static Engine {
     })
 }
 
-fn composed() -> &'static Engine {
+fn shipped() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
 
-// The rules in `config()` without this file's primary rules.
+// The shipped rules without this file's primary rules.
 fn without_primary_rules() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        let added: BTreeSet<_> = cases()
-            .primary
-            .iter()
-            .map(|case| case.rule.as_str())
-            .collect();
-        let ids = config()
-            .rules()
-            .keys()
-            .map(String::as_str)
-            .filter(|id| !added.contains(id));
-        let without = config().select_rules(ids).unwrap();
-        assert_eq!(without.rules().len(), 335);
+        let primary = cases().primary.iter().map(|case| case.rule.as_str());
+        let without = without_rules(config(), primary);
+        assert_eq!(
+            without.rules().len() + cases().primary.len(),
+            config().rules().len()
+        );
         Engine::builder(without).build().unwrap()
     })
 }
@@ -190,7 +178,6 @@ fn assert_case(case: &Case, findings: &[Finding]) {
 #[test]
 fn reviewed_primary_shapes_have_exact_independent_geometry() {
     assert_eq!(cases().primary.len(), 105);
-    assert_eq!(config().rules().len(), 440);
     assert_eq!(selected().config().rules().len(), 105);
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
@@ -209,6 +196,35 @@ fn authored_near_misses_filters_bounds_paths_and_byte_scopes_hold() {
     }
 }
 
+/// `rustleaks.openrouter-api-key` does not end at a comma, so its
+/// `delimiter-5` case has no finding of that rule. The shipped rule
+/// `rustleaks.openrouter-api-key-boundary` covers the comma boundary and
+/// reports the key once.
+#[test]
+fn shipped_boundary_rule_reports_the_openrouter_key_before_a_comma() {
+    let case = cases()
+        .cases
+        .iter()
+        .find(|case| case.rule == "rustleaks.openrouter-api-key" && case.name == "delimiter-5")
+        .unwrap();
+    let input = STANDARD.decode(&case.input_base64).unwrap();
+    let start = input
+        .windows(9)
+        .position(|window| window == b"sk-or-v1-")
+        .unwrap();
+    let end = input.len() - 1;
+    assert_eq!(input[end], b',');
+    let findings = scan(shipped(), &input, &case.path);
+    assert!(selected_findings(&findings, &case.rule).is_empty());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].rule_id().as_bytes(),
+        b"rustleaks.openrouter-api-key-boundary"
+    );
+    assert_eq!(findings[0].secret().as_bytes(), &input[start..end]);
+    assert_eq!(findings[0].secret_range(), range([start, end]));
+}
+
 fn has_occurrence(findings: &[Finding], secret: &[u8], expected: [usize; 2]) -> bool {
     findings.iter().any(|finding| {
         finding.secret().as_bytes() == secret && finding.secret_range() == range(expected)
@@ -216,7 +232,7 @@ fn has_occurrence(findings: &[Finding], secret: &[u8], expected: [usize; 2]) -> 
 }
 
 #[test]
-fn full_composition_distinguishes_occurrences_from_provider_attribution() {
+fn shipped_rules_report_each_case_and_record_what_other_rules_find() {
     for case in cases()
         .cases
         .iter()
@@ -245,10 +261,10 @@ fn full_composition_distinguishes_occurrences_from_provider_attribution() {
                 case.name
             );
         }
-        assert_case(case, &scan(composed(), &input, &case.path));
+        assert_case(case, &scan(shipped(), &input, &case.path));
         if case.count > 0 {
             assert!(
-                has_occurrence(&scan(composed(), &input, &case.path), secret, expected),
+                has_occurrence(&scan(shipped(), &input, &case.path), secret, expected),
                 "{} {} after",
                 case.rule,
                 case.name
@@ -258,7 +274,7 @@ fn full_composition_distinguishes_occurrences_from_provider_attribution() {
 }
 
 #[test]
-fn every_added_rule_retains_invalid_prefix_bytes_and_exact_secret_ranges() {
+fn every_primary_rule_retains_invalid_prefix_bytes_and_exact_secret_ranges() {
     for case in &cases().primary {
         let original = STANDARD.decode(&case.input_base64).unwrap();
         let mut input = vec![0xff, b' '];
@@ -305,7 +321,7 @@ fn selected_ascii_secrets_never_expand_into_unicode_or_invalid_bytes() {
     }
 }
 
-fn added_rules() -> Vec<toml::Value> {
+fn primary_rules() -> Vec<toml::Value> {
     [PROVIDER_RULES_V1, CONNECTION_RULES_V1]
         .into_iter()
         .flat_map(|text| {
@@ -322,7 +338,7 @@ fn added_rules() -> Vec<toml::Value> {
 }
 
 fn engine_with_allowlist(specification: &toml::Value) -> Engine {
-    let mut rules = added_rules();
+    let mut rules = primary_rules();
     for rule in &mut rules {
         let fields = rule.as_table_mut().unwrap();
         fields
@@ -381,7 +397,7 @@ fn native_rule_allowlists_and_inherited_global_policy_remain_effective() {
 }
 
 #[test]
-fn every_added_rule_preserves_case_insensitive_secret_stopwords() {
+fn every_primary_rule_preserves_case_insensitive_secret_stopwords() {
     let words = cases()
         .primary
         .iter()
@@ -440,7 +456,7 @@ fn strict_and_inclusive_byte_entropy_keep_their_equality_boundary() {
 }
 
 #[test]
-fn every_added_rule_remains_subject_to_explicit_resource_limits() {
+fn every_primary_rule_remains_subject_to_explicit_resource_limits() {
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         let fragment = Fragment::builder(input.as_slice())

@@ -83,23 +83,14 @@ _CORPUS_TESTS = [
     "session_corpus",
 ]
 
-# Rule-pack coverage tests and the JSON data files each one compiles in.
-_COVERAGE_TESTS = {
-    "additional_coverage": ["additional_coverage"],
-    "association_coverage": [
-        "association_coverage",
-        "remaining_verified_rules",
-    ],
-    "format_coverage": [
-        "association_coverage",
-        "format_coverage",
-    ],
-    "remaining_verified_rules": ["remaining_verified_rules"],
-    "special_coverage": [
-        "association_coverage",
-        "special_coverage",
-    ],
-}
+# Rule coverage tests. Each one compiles in tests/support/<test>.json.
+_COVERAGE_TESTS = [
+    "additional_coverage",
+    "association_coverage",
+    "format_coverage",
+    "remaining_verified_rules",
+    "special_coverage",
+]
 
 [
     rustleaks_integration_test(
@@ -145,11 +136,11 @@ _COVERAGE_TESTS = {
     rustleaks_integration_test(
         name = test + "_test",
         src = "tests/" + test + ".rs",
-        compile_data = ["tests/support/" + data + ".json" for data in files],
+        compile_data = ["tests/support/" + test + ".json"],
         deps = [":rustleaks_core"],
         srcs = [":native_harness_support"],
     )
-    for test, files in _COVERAGE_TESTS.items()
+    for test in _COVERAGE_TESTS
 ]
 
 rustleaks_integration_test(
@@ -178,7 +169,7 @@ test_suite(
     name = "all_tests",
     tests = [
         ":" + test + "_test"
-        for test in _PLAIN_TESTS + _PACK_TESTS + _TESTDATA_TESTS + _CORPUS_TESTS + sorted(_COVERAGE_TESTS)
+        for test in _PLAIN_TESTS + _PACK_TESTS + _TESTDATA_TESTS + _CORPUS_TESTS + _COVERAGE_TESTS
     ] + [
         ":rule_precedence_test",
         ":rustleaks_core_doc_test",

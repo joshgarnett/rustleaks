@@ -17,13 +17,12 @@ use serde::Deserialize;
 mod native_harness;
 
 use native_harness::{
-    all_packs_config, base64_bytes as bytes, baseline_rule_ids, byte_entropy, coordinates,
-    optional_range as range, scan_with_depth,
+    base64_bytes as bytes, byte_entropy, coordinates, optional_range as range, scan_with_depth,
+    shipped_config, without_rules,
 };
 
 #[derive(Deserialize)]
 struct Fixture {
-    baseline_rule_ids: Vec<String>,
     selected_rule_ids: Vec<String>,
     graphs: Vec<Graph>,
     primary: Vec<Case>,
@@ -106,20 +105,9 @@ fn fixture() -> &'static Fixture {
     })
 }
 
-/// The rule IDs in `config()`, a fixed set. Its only copy is `baseline_rule_ids`
-/// in `support/remaining_verified_rules.json`; it does not follow rule file
-/// changes.
-fn config_rule_ids() -> Vec<String> {
-    baseline_rule_ids(include_str!("support/remaining_verified_rules.json"))
-}
-
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        all_packs_config()
-            .select_rules(config_rule_ids().iter().map(String::as_str))
-            .unwrap()
-    })
+    CONFIG.get_or_init(shipped_config)
 }
 fn scan(engine: &Engine, case: &Case) -> Vec<Finding> {
     scan_with_depth(
@@ -148,18 +136,18 @@ fn graph_engines() -> &'static BTreeMap<String, Engine> {
             .collect()
     })
 }
-fn full() -> &'static Engine {
+fn shipped() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
-fn baseline() -> &'static Engine {
+/// The shipped rules without this file's selected rules.
+fn without_selected_rules() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        let selected = config()
-            .select_rules(fixture().baseline_rule_ids.iter().map(String::as_str))
-            .unwrap();
-        assert_eq!(selected.rules().len(), 476);
-        Engine::builder(selected).build().unwrap()
+        let selected = fixture().selected_rule_ids.iter().map(String::as_str);
+        Engine::builder(without_rules(config(), selected))
+            .build()
+            .unwrap()
     })
 }
 fn packagist() -> &'static Engine {
@@ -289,7 +277,6 @@ fn assert_case(case: &Case, findings: &[Finding]) {
 
 #[test]
 fn every_concrete_family_case_checks_independent_geometry() {
-    assert_eq!(config().rules().len(), 534);
     assert_eq!(fixture().selected_rule_ids.len(), 58);
     assert_eq!(fixture().graphs.len(), 26);
     assert_eq!(fixture().primary.len(), 26);
@@ -370,7 +357,7 @@ fn exact_source_byte_patterns_preserve_bridges_bounds_guards_and_capture_policy(
     assert_eq!(fixture().source_bytes.len(), 182);
     for case in &fixture().source_bytes {
         let selected = &graph_engines()[&case.source_id];
-        for engine in [selected, full()] {
+        for engine in [selected, shipped()] {
             assert_case(case, &scan(engine, case));
         }
         let input = bytes(&case.input_base64);
@@ -392,7 +379,7 @@ fn exact_source_byte_patterns_preserve_bridges_bounds_guards_and_capture_policy(
 fn full_match_windows_multiline_keywords_and_input_buffers_keep_exact_records() {
     assert_eq!(fixture().buffers.len(), 206);
     for case in &fixture().buffers {
-        for engine in [&graph_engines()[&case.source_id], full()] {
+        for engine in [&graph_engines()[&case.source_id], shipped()] {
             assert_case(case, &scan(engine, case));
         }
     }
@@ -402,7 +389,7 @@ fn full_match_windows_multiline_keywords_and_input_buffers_keep_exact_records() 
 fn packagist_roles_are_independent_bounded_occurrences_without_pair_selection() {
     assert_eq!(fixture().packagist.len(), 81);
     for case in &fixture().packagist {
-        for engine in [packagist(), full()] {
+        for engine in [packagist(), shipped()] {
             assert_case(case, &scan(engine, case));
         }
         if case.custom_allowlist {
@@ -446,15 +433,15 @@ fn packagist_roles_are_independent_bounded_occurrences_without_pair_selection() 
 }
 
 #[test]
-fn complete_composition_preserves_baseline_findings() {
+fn shipped_rules_keep_what_other_rules_find() {
     for case in fixture().primary.iter().chain(
         fixture()
             .packagist
             .iter()
             .filter(|c| c.name.ends_with("/standalone")),
     ) {
-        let before = scan(baseline(), case);
-        let after = scan(full(), case);
+        let before = scan(without_selected_rules(), case);
+        let after = scan(shipped(), case);
         assert_case(case, &after);
         for f in &before {
             // Generic findings can be suppressed by an exact specific rule.
@@ -1038,9 +1025,26 @@ fn batched_mutation_compilation_matches_isolated_compilation() {
         .map(|graph| (selected_rules(), graph_ids(graph)))
         .collect();
     for (graph, engine) in graphs.iter().zip(custom_batch(unchanged)) {
+        // The shipped configuration also records that it is the embedded
+        // default, so compare its parts and not its origin.
+        let batched = engine.config();
+        let shipped = config().select_rules(graph_ids(graph)).unwrap();
+        assert_eq!(batched.rules(), shipped.rules(), "{}", graph.source_id);
         assert_eq!(
-            engine.config(),
-            &config().select_rules(graph_ids(graph)).unwrap(),
+            batched.ordered_rule_ids(),
+            shipped.ordered_rule_ids(),
+            "{}",
+            graph.source_id
+        );
+        assert_eq!(
+            batched.keywords(),
+            shipped.keywords(),
+            "{}",
+            graph.source_id
+        );
+        assert_eq!(
+            batched.allowlists(),
+            shipped.allowlists(),
             "{}",
             graph.source_id
         );

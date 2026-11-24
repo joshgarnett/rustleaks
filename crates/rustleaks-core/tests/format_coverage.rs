@@ -17,12 +17,11 @@ use serde::Deserialize;
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
-use native_harness::{all_packs_config, baseline_rule_ids, exact_range as range, for_rule, scan};
+use native_harness::{exact_range as range, for_rule, scan, shipped_config, without_rules};
 
 #[derive(Deserialize)]
 #[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Cases {
-    baseline_rule_ids: Vec<String>,
     primary: Vec<Case>,
     cases: Vec<Case>,
     entropy: Vec<Entropy>,
@@ -99,20 +98,9 @@ fn cases() -> &'static Cases {
         .get_or_init(|| serde_json::from_str(include_str!("support/format_coverage.json")).unwrap())
 }
 
-/// The rule IDs in `config()`, a fixed set. Its only copy is `baseline_rule_ids`
-/// in `support/association_coverage.json`; it does not follow rule file
-/// changes.
-fn config_rule_ids() -> Vec<String> {
-    baseline_rule_ids(include_str!("support/association_coverage.json"))
-}
-
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        all_packs_config()
-            .select_rules(config_rule_ids().iter().map(String::as_str))
-            .unwrap()
-    })
+    CONFIG.get_or_init(shipped_config)
 }
 
 fn selected() -> &'static Engine {
@@ -128,19 +116,19 @@ fn selected() -> &'static Engine {
     })
 }
 
-fn composed() -> &'static Engine {
+fn shipped() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
 
-fn baseline() -> &'static Engine {
+/// The shipped rules without this file's primary rules.
+fn without_primary_rules() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        let config = config()
-            .select_rules(cases().baseline_rule_ids.iter().map(String::as_str))
-            .unwrap();
-        assert_eq!(config.rules().len(), 440);
-        Engine::builder(config).build().unwrap()
+        let primary = cases().primary.iter().map(|case| case.rule.as_str());
+        Engine::builder(without_rules(config(), primary))
+            .build()
+            .unwrap()
     })
 }
 
@@ -195,9 +183,9 @@ fn assert_case(case: &Case, findings: &[Finding]) {
 /// secret at the same range, only the `keep` finding is reported.
 const REPLACED: &[(&str, &str)] = &[("jwt", "rustleaks.monday-api-token")];
 
-/// Checks a required prior occurrence in the full composition. When the
+/// Checks a required finding of another rule with the shipped rules. When the
 /// case rule reports the same secret at the same range and a reviewed
-/// overlap names the pair, the prior rule's finding must be gone instead.
+/// overlap names the pair, the other rule's finding must be gone instead.
 fn assert_required_after(required: &Required, rule: &str, findings: &[Finding]) {
     let same = |finding: &&Finding| {
         finding.secret().as_bytes() == required.secret.as_bytes()
@@ -239,7 +227,6 @@ fn assert_required(required: &Required, findings: &[Finding]) {
 fn primary_formats_and_every_authored_family_case_are_executable() {
     assert_eq!(cases().primary.len(), 27);
     assert_eq!(cases().cases.len(), 491);
-    assert_eq!(config().rules().len(), 476);
     assert_eq!(selected().config().rules().len(), 27);
     for case in cases().primary.iter().chain(&cases().cases) {
         let input = STANDARD.decode(&case.input_base64).unwrap();
@@ -248,7 +235,7 @@ fn primary_formats_and_every_authored_family_case_are_executable() {
 }
 
 #[test]
-fn full_composition_separates_new_occurrences_from_extraction_and_attribution() {
+fn shipped_rules_report_each_format_and_keep_what_other_rules_find() {
     assert_eq!(
         cases()
             .primary
@@ -267,7 +254,7 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
     );
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
-        let prior = scan(baseline(), &input, &case.path);
+        let prior = scan(without_primary_rules(), &input, &case.path);
         let [start, end] = case.secret_range.unwrap();
         let overlap = prior.iter().any(|finding| match finding.secret_range() {
             FindingRange::Exact(span) => span.start() < end && start < span.end(),
@@ -280,7 +267,7 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
                 && finding.secret_range() == range([start, end])
         });
         assert_eq!(exact, case.before_exact.unwrap(), "{}", case.name);
-        let after = scan(composed(), &input, &case.path);
+        let after = scan(shipped(), &input, &case.path);
         assert_case(case, &after);
         if let Some(required) = &case.before_required {
             assert_required(required, &prior);
@@ -295,9 +282,9 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
         let input = STANDARD.decode(&case.input_base64).unwrap();
         assert_required(
             case.before_required.as_ref().unwrap(),
-            &scan(baseline(), &input, &case.path),
+            &scan(without_primary_rules(), &input, &case.path),
         );
-        let after = scan(composed(), &input, &case.path);
+        let after = scan(shipped(), &input, &case.path);
         assert_required_after(case.before_required.as_ref().unwrap(), &case.rule, &after);
         assert_case(case, &after);
     }
@@ -344,7 +331,7 @@ fn native_entropy_tuples_and_exact_comparator_boundaries_are_retained() {
     }
 }
 
-fn added_rules() -> Vec<toml::Value> {
+fn primary_rules() -> Vec<toml::Value> {
     let pack: toml::Value = toml::from_str(PROVIDER_RULES_V1).unwrap();
     pack["rules"]
         .as_array()
@@ -361,7 +348,7 @@ fn added_rules() -> Vec<toml::Value> {
 }
 
 fn engine_with_local_allowlist(specification: &toml::Value) -> Engine {
-    let mut rules = added_rules();
+    let mut rules = primary_rules();
     for rule in &mut rules {
         rule.as_table_mut()
             .unwrap()
@@ -525,7 +512,7 @@ fn custom_global_target_rules_and_commit_allowlists_have_positive_controls() {
     // removed, isolating global allowlist semantics. Native entropy and all
     // native primary outcomes are checked independently above.
     for case in &cases().primary {
-        let mut rule = added_rules()
+        let mut rule = primary_rules()
             .into_iter()
             .find(|rule| rule["id"].as_str() == Some(case.rule.as_str()))
             .unwrap();
@@ -804,7 +791,7 @@ fn base64_and_nested_base64_preserve_source_projection_and_exact_decoded_secrets
 }
 
 #[test]
-fn one_composed_engine_keeps_concurrent_primary_and_negative_contracts() {
+fn one_shipped_engine_keeps_primary_and_negative_cases_across_threads() {
     std::thread::scope(|scope| {
         for _ in 0..4 {
             scope.spawn(|| {
@@ -817,7 +804,7 @@ fn one_composed_engine_keeps_concurrent_primary_and_negative_contracts() {
                         assert_case(
                             case,
                             &scan(
-                                composed(),
+                                shipped(),
                                 &STANDARD.decode(&case.input_base64).unwrap(),
                                 &case.path,
                             ),
@@ -918,7 +905,7 @@ fn ordinary_grafana_keys_keep_one_default_rule_finding() {
     let secret = format!("eyJrIjoi{}", repeated(80));
     let input = format!("xx {secret};");
     let expected = [3, 3 + secret.len()];
-    for engine in [baseline(), composed()] {
+    for engine in [without_primary_rules(), shipped()] {
         let all = scan(engine, input.as_bytes(), "credentials.txt");
         let prior = for_rule(&all, "grafana-api-key");
         assert_eq!(prior.len(), 1);
@@ -927,12 +914,12 @@ fn ordinary_grafana_keys_keep_one_default_rule_finding() {
     }
     // The Base64 rule accepts the same key, and a reviewed overlap keeps only
     // the default rule's finding.
-    let all = scan(composed(), input.as_bytes(), "credentials.txt");
+    let all = scan(shipped(), input.as_bytes(), "credentials.txt");
     assert!(for_rule(&all, "rustleaks.grafana-api-key-base64").is_empty());
     // A body with `+` is outside the default rule, so the Base64 rule reports.
     let plus = format!("eyJrIjoi{}+{}", repeated(40), repeated(39));
     let all = scan(
-        composed(),
+        shipped(),
         format!("xx {plus};").as_bytes(),
         "credentials.txt",
     );

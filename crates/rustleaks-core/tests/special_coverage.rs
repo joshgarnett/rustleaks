@@ -18,13 +18,12 @@ use serde::Deserialize;
 mod native_harness;
 
 use native_harness::{
-    all_packs_config, baseline_rule_ids, coordinates, for_rule, optional_range as range, scan,
+    coordinates, for_rule, optional_range as range, scan, shipped_config, without_rules,
 };
 
 #[derive(Deserialize)]
 #[allow(clippy::struct_field_names)] // Field names mirror fixture JSON keys.
 struct Cases {
-    baseline_rule_ids: Vec<String>,
     selected_rule_ids: Vec<String>,
     primary: Vec<Case>,
     cases: Vec<Case>,
@@ -114,20 +113,9 @@ fn cases() -> &'static Cases {
     })
 }
 
-/// The rule IDs in `config()`, a fixed set. Its only copy is `baseline_rule_ids`
-/// in `support/association_coverage.json`; it does not follow rule file
-/// changes.
-fn config_rule_ids() -> Vec<String> {
-    baseline_rule_ids(include_str!("support/association_coverage.json"))
-}
-
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        all_packs_config()
-            .select_rules(config_rule_ids().iter().map(String::as_str))
-            .unwrap()
-    })
+    CONFIG.get_or_init(shipped_config)
 }
 
 fn selected() -> &'static Engine {
@@ -143,19 +131,19 @@ fn selected() -> &'static Engine {
     })
 }
 
-fn composed() -> &'static Engine {
+fn shipped() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
 
-fn baseline() -> &'static Engine {
+/// The shipped rules without this file's selected rules.
+fn without_selected_rules() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        let config = config()
-            .select_rules(cases().baseline_rule_ids.iter().map(String::as_str))
-            .unwrap();
-        assert_eq!(config.rules().len(), 467);
-        Engine::builder(config).build().unwrap()
+        let selected = cases().selected_rule_ids.iter().map(String::as_str);
+        Engine::builder(without_rules(config(), selected))
+            .build()
+            .unwrap()
     })
 }
 
@@ -240,7 +228,6 @@ fn assert_records(rule: &str, expected: &[Record], findings: &[Finding], name: &
 
 #[test]
 fn every_concrete_family_case_and_endpoint_has_exact_independent_expectations() {
-    assert_eq!(config().rules().len(), 476);
     assert_eq!(selected().config().rules().len(), 9);
     assert_eq!(cases().primary.len(), 18);
     assert_eq!(cases().cases.len(), 217);
@@ -287,7 +274,7 @@ fn native_tuple_identity_retains_each_parent_and_only_its_own_helper() {
         let options = ScanOptions::builder()
             .max_decode_depth(case.max_decode_depth)
             .build();
-        for engine in [selected(), composed()] {
+        for engine in [selected(), shipped()] {
             let result = engine.scan_fragment(&fragment, &options);
             assert!(result.is_complete(), "{}", case.name);
             assert_records(&case.rule, &case.expected, result.findings(), &case.name);
@@ -347,7 +334,7 @@ fn helper_selection_and_native_entropy_cannot_be_bypassed() {
 }
 
 #[test]
-fn complete_composition_preserves_prior_occurrences_and_accounts_for_new_secrets() {
+fn shipped_rules_keep_what_other_rules_find_and_report_each_case() {
     for case in cases().primary.iter().chain(
         cases()
             .cases
@@ -355,8 +342,8 @@ fn complete_composition_preserves_prior_occurrences_and_accounts_for_new_secrets
             .filter(|case| case.before_required.is_some()),
     ) {
         let input = STANDARD.decode(&case.input_base64).unwrap();
-        let prior = scan(baseline(), &input, &case.path);
-        let after = scan(composed(), &input, &case.path);
+        let prior = scan(without_selected_rules(), &input, &case.path);
+        let after = scan(shipped(), &input, &case.path);
         assert_records(&case.rule, &case.expected, &after, &case.name);
         if let Some(exact_before) = case.before_exact {
             let expected = &case.expected[0];
@@ -400,7 +387,7 @@ fn complete_composition_preserves_prior_occurrences_and_accounts_for_new_secrets
     }
 }
 
-fn added_rules() -> Vec<toml::Value> {
+fn selected_rules() -> Vec<toml::Value> {
     [PROVIDER_RULES_V1, CONNECTION_RULES_V1]
         .into_iter()
         .flat_map(|source| {
@@ -422,7 +409,7 @@ fn added_rules() -> Vec<toml::Value> {
 }
 
 fn local_allowlist(predicate: &toml::Value) -> Engine {
-    let mut rules = added_rules();
+    let mut rules = selected_rules();
     for rule in &mut rules {
         rule.as_table_mut()
             .unwrap()
@@ -550,7 +537,7 @@ fn global_target_and_commit_controls_keep_their_unrelated_positive_cases() {
     // native entropy/association metadata. It isolates global semantics; the
     // native tuple and entropy contracts are checked separately above.
     for case in &cases().primary {
-        let mut rule = added_rules()
+        let mut rule = selected_rules()
             .into_iter()
             .find(|rule| rule["id"].as_str() == Some(case.rule.as_str()))
             .unwrap();
@@ -785,7 +772,7 @@ fn mongodb_whole_tuple_entropy_rejection_is_not_masked_by_source_filters() {
 
     // Remove exactly the helper entropy predicate. All parent/helper regexes,
     // source filters, association and inherited policy remain active.
-    let mut rules = added_rules();
+    let mut rules = selected_rules();
     let tuple = rules
         .iter_mut()
         .find(|value| value["id"].as_str() == Some(helper))
@@ -836,7 +823,7 @@ fn ordinary_single_rule(rule: toml::Value) -> Engine {
 #[test]
 fn yaml_source_and_inherited_paths_are_independent_of_its_required_suffix() {
     let id = "rustleaks.kubernetes-secret-yaml-long-context";
-    let original = added_rules()
+    let original = selected_rules()
         .into_iter()
         .find(|rule| rule["id"].as_str() == Some(id))
         .unwrap();
