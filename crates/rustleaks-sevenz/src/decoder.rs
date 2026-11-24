@@ -82,10 +82,12 @@ pub fn add_decoder<'b, I: Read>(
     let method = if let Some(m) = method {
         m
     } else {
-        return Err(Error::UnsupportedCompressionMethod(format!(
-            "{:?}",
-            coder.encoder_method_id()
-        )));
+        let id: String = coder
+            .encoder_method_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        return Err(Error::UnsupportedCompressionMethod(format!("id {id}")));
     };
     match method.id() {
         EncoderMethod::ID_COPY => Ok(Decoder::Copy(input)),
@@ -103,7 +105,7 @@ pub fn add_decoder<'b, I: Read>(
             if mem_size > max_mem_limit_kb {
                 return Err(Error::MaxMemLimited {
                     max_kb: max_mem_limit_kb,
-                    actaul_kb: mem_size,
+                    actual_kb: mem_size,
                 });
             }
             let lz =
@@ -116,7 +118,7 @@ pub fn add_decoder<'b, I: Read>(
             if mem_size > max_mem_limit_kb {
                 return Err(Error::MaxMemLimited {
                     max_kb: max_mem_limit_kb,
-                    actaul_kb: mem_size,
+                    actual_kb: mem_size,
                 });
             }
 
