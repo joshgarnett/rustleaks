@@ -6,8 +6,8 @@ description: Investigate, draft, create or edit Rustleaks GitHub issues, includi
 # Rustleaks GitHub issues
 
 Follow [Issues](../../../CONTRIBUTING.md#issues) in `CONTRIBUTING.md`. It
-says what belongs in an issue, which form to use, what counts as a
-compatibility gap, and how labels work. Do not open an issue for a tracker,
+says what belongs in an issue, which form to use, when a difference from
+Gitleaks is a defect, and how labels work. Do not open an issue for a tracker,
 log, status report or plan.
 
 ## Investigate first

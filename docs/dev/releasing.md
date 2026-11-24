@@ -1,6 +1,6 @@
 # Releasing
 
-This page is for maintainers. It lists the steps to qualify and publish a
+This page is for maintainers. It lists the steps to check and publish a
 release. It does not authorize a release. Only `rustleaks-core` is
 published to crates.io. The CLI ships as release archives, as `.deb` and
 `.rpm` packages for the Linux glibc targets, and through the Homebrew tap
@@ -17,15 +17,32 @@ run is not approval.
 ### 1. Prepare the candidate
 
 - [ ] The maintainer approved the version.
-- [ ] The workspace manifests and `CHANGELOG.md` name that version.
-- [ ] `RUSTLEAKS_VERSION` in `bazel/rust_crate.bzl` and the install examples
-      in `docs/user/getting-started.md`, `docs/user/ci.md` and
-      `docs/user/library.md` name that version.
+- [ ] These files name that version: `[workspace.package]` in the root
+      `Cargo.toml`; the `=VERSION` path dependency pins in
+      `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-compat/Cargo.toml`,
+      `crates/rustleaks-report/Cargo.toml` and
+      `crates/rustleaks-sources/Cargo.toml`; the `module()` version in
+      `MODULE.bazel`; `RUSTLEAKS_VERSION` in `bazel/rust_crate.bzl`;
+      `CHANGELOG.md`; and the install examples in
+      `docs/user/getting-started.md`, `docs/user/ci.md` and
+      `docs/user/library.md`. `cargo xtask build-system-check`, which
+      `just test` runs, fails when `MODULE.bazel` or `RUSTLEAKS_VERSION`
+      differs from the Cargo version.
+- [ ] The generated files that name the version are regenerated:
+      `just deps-repin` (`Cargo.lock` and `cargo-bazel-lock.json`),
+      `cargo xtask generate vet-inventory`,
+      `cargo xtask release-artifact notices` and
+      `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline`
+      (`testdata/quality-corpus/baseline-v1.json`).
+- [ ] The status wording matches the version (alpha, pre-release or
+      stable) in `README.md` (status and install sections),
+      `CONTRIBUTING.md`, `crates/rustleaks-core/README.md`,
+      `docs/user/library.md` and `docs/user/getting-started.md`.
 - [ ] `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and `DEFAULT_RULES_SHA256`
       in `xtask` agree.
 - [ ] The candidate is merged to `main`.
 
-### 2. Qualify locally
+### 2. Run the local checks
 
 From a clean clone of the candidate commit:
 
@@ -39,15 +56,15 @@ just release-dry-run
 
 - [ ] All commands pass.
 - [ ] `cargo xtask qualify` passes on the clean, committed candidate.
-- [ ] `cargo-semver-checks` passes for each public crate and feature
-      profile against the latest version on crates.io, and a person reviewed
-      the API change. See the
+- [ ] `cargo-semver-checks` passes for `rustleaks-core` against the latest
+      version on crates.io, and a person reviewed the API change. See the
       [public API README](../../testdata/public-api/README.md).
-- [ ] The [scanner comparison](comparison.md) of the previous release with
-      the candidate shows no unexplained time, memory or finding regression.
+- [ ] A [scanner comparison](comparison.md) of the previous release with
+      this candidate commit shows no unexplained time, memory or finding
+      regression. A comparison of an earlier commit does not count.
 
 To compare the two builds, list the previous release archive and an
-optimized build of the candidate in a private tools manifest (see
+optimized build of the candidate commit in a private tools manifest (see
 [Tools manifest](comparison.md#tools-manifest)), then run on a quiet host:
 
 ```sh
@@ -126,7 +143,7 @@ If anything differs from the approval packet, follow
 
 ## Appendix
 
-### Local qualification details
+### Local check details
 
 `cargo fetch --locked` downloads the exact locked registry inputs. The
 package and external consumer checks then run offline. The fetch changes no
@@ -145,22 +162,22 @@ runs the bounded composite resource tests, compares the public API with the
 snapshot and builds with the minimum supported Rust version. The other gates
 above cover tests, security, fuzzing and packaging.
 
-Qualification is bound to the candidate commit and tree. Reuse a successful
-result while the commit, version, lockfiles, workflow definitions and release
-inputs are unchanged. Do not run the full local suite again only because the
-candidate moves from qualification to publication. A changed candidate or
-release input needs new qualification for the affected part.
+The release checks are bound to the candidate commit and tree. Reuse a
+successful result while the commit, version, lockfiles, workflow definitions
+and release inputs are unchanged. Do not run the full local suite again only
+because the candidate moves from checking to publication. A changed candidate
+or release input needs the affected checks again.
 
 ### Non-publishing release candidate
 
 `Release Dry Run` runs after the candidate is merged to `main`. It does not
 use a protected environment. It rejects any commit other than the current
 `origin/main`, receives no registry token, and fails if either usual
-crates.io token variable is set. Qualification therefore uses no approval
-that protects a later publication.
+crates.io token variable is set. The release checks therefore use no
+approval that protects a later publication.
 
-The package job and the native matrix run beside acceptance, Rust
-qualification, security, extended AddressSanitizer fuzz, and worktree and
+The package job and the native matrix run beside acceptance, Rust release
+checks, security, extended AddressSanitizer fuzz, and worktree and
 history self-scan jobs. The summary accepts the candidate only when every job
 passes.
 
@@ -217,7 +234,7 @@ component and document counts. Notice files are inside the archive and
 covered by its checksums and attestation.
 
 Notice collection is attribution evidence only. Any other source or
-redistribution requirement stays part of release qualification.
+redistribution requirement stays part of the release checks.
 
 #### Archive verification
 
@@ -308,8 +325,8 @@ download replacement inputs. The two GNU lanes must produce the same source
 archive. Public verification on GNU targets downloads the source archive and
 relink proof and checks their bindings before it extracts or runs the
 executable. Publication keeps one source archive and both relink proofs. With
-the four Linux packages, a release has 67 public assets. Changed source or runtime evidence needs a new qualification
-and dry run.
+the four Linux packages, a release has 67 public assets. Changed source or
+runtime evidence needs new release checks and a new dry run.
 
 ### Approval packet
 
@@ -328,10 +345,10 @@ Stop if a required check is missing, failing, pending, stale or unexplained.
 Name the exact version, candidate, dry run ID and external action in the
 request. An approval stays valid for that unchanged action while its checks
 run; do not ask again. A changed value, a wider scope or a different retry
-needs new approval. Crates.io publication and the GitHub tag or release are
-separate actions, and each approval must name the action it covers.
-Qualification needs no approval, because it cannot publish, tag or use a
-registry token.
+needs new approval. Crates.io publication, the GitHub tag or release, and
+the package manager push are separate actions, and each approval must name
+the action it covers. The release checks need no approval, because they
+cannot publish, tag or use a registry token.
 
 ### Publishing the crate
 

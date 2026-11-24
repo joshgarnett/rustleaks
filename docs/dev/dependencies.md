@@ -87,34 +87,9 @@ native `-sys` crates, and any package that declares Cargo's `links` key.
 This check reads the dependency graph. It is not compile evidence; the
 target compile checks are separate.
 
-The cargo-geiger check requires used unsafe code in exactly these 23 packages
-on every checked host:
-
-```text
-aho-corasick@1.1.5
-alloc-no-stdlib@3.0.0
-alloc-stdlib@0.3.0
-block-buffer@0.12.1
-brotli-decompressor@6.3.2
-const-oid@0.10.2
-hybrid-array@0.4.15
-itoa@1.0.18
-lz4_flex@0.14.2
-lzma-rust2@0.25.0
-memchr@2.8.3
-proc-macro2@1.0.107
-regex-automata@0.4.19
-semver@1.0.28
-serde_core@1.0.229
-serde_json@1.0.154
-sha2@0.11.1
-syn@3.0.9
-toml_parser@1.1.5+spec-1.1.0
-twox-hash@2.1.5
-unicode-ident@1.0.27
-winnow@1.0.5
-zmij@1.0.23
-```
+The cargo-geiger check requires used unsafe code, on every checked host, in
+exactly the common packages listed in `reviewed_unsafe_packages` in
+`crates/xtask/src/security.rs`.
 
 Some targets also show used unsafe code in `cpufeatures@0.3.1` and
 `libc@0.2.191`. These are the only two reviewed additions. The check fails
@@ -280,12 +255,13 @@ not an alternative.
   system and AES code is removed.
 - `src/reader.rs` adds checked offsets and sizes, fallible allocation,
   bounded metadata and a memory limit set by the caller.
-- `src/decoder.rs` keeps the coder graph private and checks it before any
-  decoder is built.
+- `src/reader.rs` checks the coder graph (`validate_coder_graph`) before any
+  decoder is built; the graph fields in `src/block.rs` stay private to the
+  crate.
 - `tests/oracle_codecs.rs` holds direct codec fixtures.
 - `rustleaks-sources` checks next-header ranges and declared sizes before
-  parsing, applies archive limits during iteration and contains panics. The
-  compressed 7z path is rejected under `panic=abort`.
+  parsing, applies archive limits during iteration and contains panics. All
+  7z input is rejected under `panic=abort`.
 
 The archive boundary is implemented in
 `crates/rustleaks-sources/src/archive.rs` and tested in

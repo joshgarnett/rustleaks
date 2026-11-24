@@ -15,9 +15,8 @@ provenance, licenses, and analysis of selected and previously unselected
 source. Its direct-PikeVM execution boundary is historical. This review
 updates the reachable paths and resource argument without replacing that
 evidence or treating prior test results as validation of the new backend.
-The frozen compatibility behavior matrix also retains its historical PikeVM
-backend description. Current backend identity is recorded by the private
-`backend_version` contract and this review; frozen evidence bytes are unchanged.
+Current backend identity is recorded by the private `backend_version`
+contract and this review.
 
 ## Compilation and API boundary
 

@@ -13,8 +13,13 @@ a test, and how the test data under `testdata/` is used.
   never copy the current Rust output into the expected value.
 - Include positive cases, negative cases and near misses. A negative case
   must fail if the rule or check becomes too broad.
+- Every intended functional change has a test that fails when the behavior
+  breaks.
 - Use synthetic values or reviewed copied fixtures. Never use a live
-  credential.
+  credential. Never edit a copied fixture: keep its bytes, modes, symbolic
+  links, provenance, hashes, licenses and attribution.
+- Keep suspected findings and fuzz crash artifacts private until their
+  contents are reviewed.
 - Give each case a stable name.
 - Keep functional assertions apart from timing. Timing measurements belong to
   the performance tools. See [Performance](performance.md).
@@ -81,11 +86,11 @@ holds, which tests read it, and how to regenerate the generated files.
 
 Most corpora under `testdata/` hold cases that were recorded from Gitleaks
 when Rustleaks started, with their expected outcomes. They are Rustleaks
-test data: the expected outcomes are the expected Rustleaks behavior. A
-reviewed change to that behavior may change a case. Write the new expected
-value from the intended behavior, never from the current output, and add a
-changelog entry when findings, spans, fingerprints, report fields, exit codes
-or error classes change.
+test data: the expected outcomes are the expected Rustleaks behavior. A case
+changes only with a reviewed change to the behavior it covers. Write the new
+expected value from the intended behavior, never from the current output, and
+add a changelog entry when findings, spans, fingerprints, report fields, exit
+codes or error classes change.
 
 The tests that read a corpus compare these fields exactly: rule IDs,
 matches, secrets, locations, source and commit metadata, entropy, tags,

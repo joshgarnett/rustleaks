@@ -27,6 +27,11 @@ share results. No result on this page is a portable speed guarantee.
 - Normal Bazel tests check the outcome of every workload, including report
   bytes. Timing is never part of `just test`.
 
+Library users who decide whether to move synchronous scans off an async
+executor must measure their own target, runtime, configuration and request
+mix. The costs of the engine's fast paths are in [Engine
+internals](engine-internals.md).
+
 ## Commands
 
 | Command | What it does |
@@ -154,7 +159,7 @@ for byte in `ORIGINAL_LIMITS`. It is for diagnosis, not a default.
 | `decoded-carrier` | Each 4,096 record case, as `inputs/<id>/` | 8 |
 
 Other families fail with "no check subset for this family". Each unit runs
-one CLI process with a cleared environment, all three native packs,
+one CLI process with a cleared environment, all three Rustleaks rule files,
 `--max-decode-depth 5`, `--max-archive-depth 0`, `--base64-mode compatible`,
 an empty ignore file and `--timeout 600`. Each case's answers must expect
 `github-pat`.
@@ -180,9 +185,9 @@ A `stopped` unit is incomplete coverage, not a pass. A unit whose standard
 error or report cannot be read fails with a `problem` text. The command exits
 nonzero when a unit fails. Output lines hold names and counts, never a token.
 
-The measured outcomes are in [Resource
-limits](../user/resource-limits.md#large-inputs-under-the-example-profile).
-The 20,000-line Base64 row there comes from a separate scan of a synthetic
+The measured outcomes are in [Example profile on large
+inputs](engine-internals.md#example-profile-on-large-inputs). Its 20,000-line
+Base64 row comes from a separate scan of a synthetic
 input, run by hand with the same options. No fixture family generates it, so
 `--check` does not cover it.
 
@@ -435,27 +440,3 @@ A workflow that shares a summary must upload that exact file only, with
 `retention-days: 7` and `if-no-files-found: error`. Never upload the private
 folder, use wildcard paths, or print raw files into workflow logs. No
 scheduled job runs these reports.
-
-## Costs of the fast paths
-
-These costs follow from current behavior:
-
-- Each finding charges its complete physical line against the logical payload
-  budget, so dense findings on one long line use that budget quickly.
-- Findings on the same original line of at least 4 KiB share one stored copy.
-  Public clones and session snapshots copy the line again.
-- The anchored literal search runs only on ASCII input. Non-ASCII and invalid
-  UTF-8 input use the unanchored search and get none of that speedup.
-- With a cancellation signal, bulk work charges poll the signal once per work
-  unit. The faster single bulk charge applies only to scans without a signal.
-  Decoder predecessor charges and native line coordinates are linear in the
-  input, so this polling is too. See [Engine
-  internals](engine-internals.md#cancellation).
-- Hostile input or large Unicode classes can make the lazy DFA cache thrash or
-  give up. The search then falls back to PikeVM. One search stays linear in
-  input length for a fixed pattern, but the speedup is lost.
-- There is no linear-time bound for a whole scan that enumerates every match.
-
-Library users who decide whether to move synchronous scans off an async
-executor must measure their own target, runtime, configuration and request
-mix.

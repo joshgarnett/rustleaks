@@ -28,10 +28,6 @@ contributors. For how to run and add tests, see
 Each folder has a README that says what its cases cover and which test reads
 each file.
 
-`cli-corpus/` holds recorded CLI cases. `//crates/xtask:cli_regression_test`
-replays them and checks exit codes, findings, reports, error classes and
-child process cleanup. It does not check help or message wording.
-
 ## Corpus files
 
 Most `*-corpus/` folders use the same layout:
@@ -102,7 +98,7 @@ Do not edit generated files by hand. Regenerate them with these commands:
 | --- | --- |
 | `quality-corpus/cases-v1.json` | `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- generate` |
 | `quality-corpus/baseline-v1.json` | `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline` |
-| `public-api/rustleaks-core-0.1.0-alpha.1.txt` (the current API; the name is fixed) | `cargo +nightly-2026-08-21 public-api -p rustleaks-core -sss --color never`, with `cargo-public-api` 0.52.0 |
+| `public-api/rustleaks-core.txt` | `cargo +nightly-2026-08-21 public-api -p rustleaks-core -sss --color never`, with `cargo-public-api` 0.52.0 |
 
 The quality tool also accepts `check` and `check-baseline`. `just quality-eval`
 prints the current quality report. `cargo xtask public-api-check` compares

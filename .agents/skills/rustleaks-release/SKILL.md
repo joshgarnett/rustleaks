@@ -12,15 +12,17 @@ the facts agents get wrong.
 ## Approval
 
 - The release actions under [Approval
-  boundaries](../../../AGENTS.md#approval-boundaries) need explicit maintainer
-  approval: selecting a version, creating a tag or GitHub release, publishing
-  a crate, and using a credential.
+  boundaries](../../../AGENTS.md#approval-boundaries) and in
+  [Releasing](../../../docs/dev/releasing.md) need explicit maintainer
+  approval.
 - A local or hosted dry run does not authorize publication.
-- Publishing to crates.io (`publish.yml`) and creating the GitHub release
-  (`release.yml`) are separate actions. Each needs its own approval.
-- An approval names the version, candidate commit, dry run ID and action.
-  When any of these changes, ask again. When the maintainer approved the exact
-  unchanged action, do not ask a second time.
+- Each external action needs its own approval: the crate (`publish.yml`), the
+  GitHub release (`release.yml`) and the package manager push
+  (`packages.yml` with `publish` set).
+- An approval names the version and action, and the candidate commit and
+  dry run ID where the workflow takes them. When any of these changes, ask
+  again. When the maintainer approved the exact unchanged action, do not ask
+  a second time.
 - Local checks and the dry run publish nothing and use no secret, so they need
   no environment approval.
 
