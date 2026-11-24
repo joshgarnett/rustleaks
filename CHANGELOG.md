@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+- A normal scan now reads a file whose name ends in `.tgz` as a
+  gzip-compressed TAR archive, as a complete scan already did. Before, a
+  normal scan skipped such a file as binary, so secrets inside it were
+  missed.
+- Git runs with `LC_ALL=C` and without `LANGUAGE` during scans and remote
+  discovery, unless the caller's command environment sets them. With a
+  translated Git, harmless rename-limit and auto-gc warnings were reported
+  as Git errors, a repository without a remote failed discovery, and a
+  complete scan could end incomplete.
+- `ReviewPolicy::for_builtin` works when the policy has two or more
+  built-in rule files, including every built-in rule as the CLI uses them.
+  It returned `ReviewError::InvalidReference` because policy references did
+  not allow the `,` that the built-in reference uses. Policy references now
+  allow `,`.
+- The `rustleaks-core` crate package no longer includes
+  `data/cl100k_base.tiktoken`, which only tests use.
+- `CompiledRule` equality no longer depends on whether the rule came from a
+  rule file added with `NativePolicy::with_pack`.
+
 - `git` history scans and `--staged` scans now report secrets in text files
   that the repository's `.gitattributes` marks as binary, such as with
   `*.env -diff` or `*.lock binary`. Git showed no patch for these files, so
@@ -42,12 +61,6 @@
   keeps the needed rule without reporting its findings. Before, the
   remaining rule reported nothing, and with `--enable-rule` Rustleaks logged
   an error for each missing required rule.
-- Release checks of the `.deb` and `.rpm` packages reject data after the
-  first gzip stream, a tar without its end blocks, and data after the cpio
-  trailer. The Homebrew tap and Scoop bucket no longer move from a stable
-  release to a pre-release. `Update Package Managers` checks the release tag
-  against the release commit, and its publish job runs only Git, the
-  GitHub CLI and the pinned token action.
 - 7z header parsing no longer allocates the decoded header, the file table or
   the block table by sizes the archive declares beyond its limits. Other
   header tables are still bounded only by the header length. An encoded header
@@ -81,8 +94,7 @@
   pool uses 8 shards instead of one per CPU. Applications that use the
   library get these changes when they resolve these versions or later. No
   built-in rule's findings change. The audits are in
-  `docs/dependency-audits/maintenance-2026-11-23.md`. The CodeQL, Scorecard
-  and dependency review actions are also updated.
+  `docs/dependency-audits/maintenance-2026-11-23.md`.
 - Install Rustleaks with Homebrew (`brew install joshgarnett/tap/rustleaks`)
   on macOS and Linux, with Scoop on Windows, or from the new `.deb` and
   `.rpm` packages for Linux x86_64 and ARM64 with glibc 2.28 or later. All
@@ -92,8 +104,9 @@
   checksums and signed attestation. A release now has 67 assets. The new
   `Update Package Managers` workflow writes the formula and manifest from
   a published release, checks each install, and pushes them after
-  approval. A version without a pre-release suffix is published as the
-  latest GitHub release instead of a pre-release.
+  approval. The tap and bucket never move from a stable release to a
+  pre-release. A version without a pre-release suffix is published as a
+  GitHub release instead of a pre-release.
 - Scans with all built-in rules use less CPU time and memory. Findings, their
   order, reports and exit codes do not change. A rule's regular expression is
   no longer searched when the text lacks a literal that every match must
@@ -103,8 +116,8 @@
   with a byte scanner instead of a regular expression, rejects base64 values
   whose first bytes would not decode to printable text, and caches only values
   it accepts. Most regular expressions build their matcher at their first
-  search instead of at load. The figures below compare with the previous
-  `main` on an Apple M5 Ultra Mac (36 logical CPUs, macOS 27.2.1), with 12
+  search instead of at load. The figures below compare with the code before
+  this change on an Apple M5 Ultra Mac (36 logical CPUs, macOS 27.2.1), with 12
   threads and the median of three runs. Folder scans of 13 public repositories
   used 17 to 46 percent less CPU time (linux 19.7 s to 10.7 s) and 20 to 33
   percent less peak memory (linux 263 MB to 202 MB). They finished up to 18
@@ -149,8 +162,7 @@
   longer match anything. An ignore or baseline entry for the reported finding
   now also hides the secret, since the dropped finding is no longer reported
   next to it. The pairs are listed in new `[[overlaps]]` entries
-  in `rustleaks-providers-v1.toml`, so `PROVIDER_RULES_V1_SHA256`, the
-  built-in review reference and `NativePolicyIdentity` change.
+  in `rustleaks-providers-v1.toml`.
   `NativePolicyError::InvalidNativeOverlap` reports a malformed entry.
 - In `rustleaks-core`, `ConfigLoader::load_default` and
   `[extend] useDefault = true` now give every built-in rule, as the CLI does:
@@ -160,16 +172,14 @@
   `ConfigLoader::with_builtin_rules` is removed, since its behavior is now
   the default. `ConfigLoader::with_default_config` replaces the whole
   default, without the Rustleaks rules; pass `config::DEFAULT_CONFIG` to it
-  for the default rules alone. On one Apple silicon Mac, an empty CLI scan
-  with every built-in rule takes about 39 ms and 31 MB of peak memory,
-  against about 28 ms and 16 MB with the default rules alone. The CLI does
-  not change.
-- Comments in `rustleaks-extra-v1.toml` and `rustleaks-providers-v1.toml`
-  that described the rule files as opt-in or named the removed
-  `--native-pack` flag are updated. `EXTRA_RULES_V1_SHA256`,
-  `PROVIDER_RULES_V1_SHA256`, the built-in review reference and
-  `NativePolicyIdentity` change once, so review records made with the old
-  built-in reference are reported as stale. The rules do not change.
+  for the default rules alone. The CLI already used every built-in rule.
+- The built-in review reference and `NativePolicyIdentity` change, so review
+  records made with 0.1.0-alpha.12 are reported as stale. The causes are the
+  new `[[overlaps]]` entries, comments in the rule files that no longer
+  describe them as opt-in, and a new header in the default rules file, which
+  no longer names a Gitleaks commit. `DEFAULT_CONFIG_SHA256`,
+  `EXTRA_RULES_V1_SHA256` and `PROVIDER_RULES_V1_SHA256` change. Only the
+  overlap entries change which findings are reported.
 - SARIF reports name the tool `rustleaks`, with the Rustleaks version as
   `semanticVersion` and the Rustleaks repository as `informationUri`. They
   named the tool `gitleaks`, with the fixed version `v8.0.0` and the
@@ -184,7 +194,9 @@
   now documented as legacy names. They keep working, with no warning. Help
   lists `--no-color` with the legacy flag names. A new guide,
   `docs/user/moving-from-gitleaks.md`, lists what keeps working and the
-  Rustleaks names to use.
+  Rustleaks names to use and the differences from Gitleaks. It replaces
+  `docs/user/gitleaks-differences.md`. The default rule allowlists are
+  described in `docs/user/built-in-rules.md`.
 - Help and the `minVersion` warning no longer describe Rustleaks as an
   implementation of Gitleaks. The warning now reads `config minVersion
   <version> is newer than Gitleaks 8.30.0, the newest configuration version
@@ -196,16 +208,8 @@
   `honor_allow_markers`, which has the same meaning.
 - Rustleaks no longer tracks a Gitleaks revision. The public constants
   `rustleaks_core::UPSTREAM_REVISION` and
-  `rustleaks_core::config::DEFAULT_CONFIG_REVISION` are removed. The
-  built-in review reference and `NativePolicyIdentity` no longer include the
-  Gitleaks commit, so both change once, and review records made with the
-  old built-in reference are reported as stale. The default rules file has a new
-  header comment, so `DEFAULT_CONFIG_SHA256` changes; the rules do not.
-  Findings, report fields and exit codes do not change.
-- `docs/user/gitleaks-differences.md` is replaced by
-  `docs/user/moving-from-gitleaks.md`, which now lists the differences from
-  Gitleaks, and the default rule allowlists are described in
-  `docs/user/built-in-rules.md`.
+  `rustleaks_core::config::DEFAULT_CONFIG_REVISION` are removed. Findings,
+  report fields and exit codes do not change.
 
 ## [0.1.0-alpha.12] - 2026-11-21
 
