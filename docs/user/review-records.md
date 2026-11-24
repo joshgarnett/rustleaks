@@ -118,6 +118,6 @@ output.
 One review accepts at most 4,096 records and 100,000 findings. A policy
 reference can be at most 1,024 bytes, a source reference 256 bytes and a rule
 ID 128 bytes. References and rule IDs can use ASCII letters, digits and
-`._-:/+=;|`. A request over a limit fails with an error instead of returning
-an incomplete review. These limits cover review data only, so also set
+`._-:/+=;|`. Policy references can also use `,`. A request over a limit
+fails with an error instead of returning an incomplete review. These limits cover review data only, so also set
 detection budgets before you scan.
