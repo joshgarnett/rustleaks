@@ -291,8 +291,9 @@ fn inspect_observation(kind: &str, path: &Path) -> Result<Value, String> {
         let mut command = Command::new("python3");
         command
             .args([
+                "-I",
                 "-c",
-                include_str!("investigation/controller.txt"),
+                include_str!("investigation/controller.py"),
                 "--inspect-observation",
                 kind,
             ])

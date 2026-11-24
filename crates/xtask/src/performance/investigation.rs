@@ -17,7 +17,7 @@ mod window_matrix;
 
 pub(crate) use window_matrix::WORKLOADS as MATRIX_WORKLOADS;
 
-const CONTROLLER: &str = include_str!("investigation/controller.txt");
+const CONTROLLER: &str = include_str!("investigation/controller.py");
 const PROFILE_SCOPE: &str = "profile-v1-instrumented-steady-loop";
 const PROFILE_FLAGS: &[&str] = &[
     "--@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=line-tables-only",
@@ -180,7 +180,7 @@ fn collect(
     let mut command = Command::new("python3");
     command
         .current_dir(&prepared.root)
-        .args(["-c", CONTROLLER, mode])
+        .args(["-I", "-c", CONTROLLER, mode])
         .arg(&prepared.binary)
         .arg(workload)
         .arg(output)
@@ -973,7 +973,7 @@ mod tests {
     #[cfg(unix)]
     fn native_collector_rejects_empty_observations_and_bounds_all_output_files() {
         let output = Command::new("python3")
-            .args(["-c", CONTROLLER, "--self-test"])
+            .args(["-I", "-c", CONTROLLER, "--self-test"])
             .output()
             .unwrap();
         assert!(
