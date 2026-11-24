@@ -167,9 +167,9 @@ pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
         default_config_sha256: DEFAULT_CONFIG_SHA256,
         rule_files: [
             ("gitleaks.toml", DEFAULT_CONFIG),
-            ("rustleaks-extra-v1", EXTRA_RULES_V1),
-            ("rustleaks-providers-v1", PROVIDER_RULES_V1),
-            ("rustleaks-connections-v1", CONNECTION_RULES_V1),
+            ("rustleaks-extra-v1.toml", EXTRA_RULES_V1),
+            ("rustleaks-providers-v1.toml", PROVIDER_RULES_V1),
+            ("rustleaks-connections-v1.toml", CONNECTION_RULES_V1),
         ]
         .into_iter()
         .map(|(name, text)| RuleFile {

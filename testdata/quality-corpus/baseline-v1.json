@@ -10,20 +10,20 @@
       "fnv1a64": "01a333386f527aaf"
     },
     {
-      "name": "rustleaks-extra-v1",
+      "name": "rustleaks-extra-v1.toml",
       "fnv1a64": "ec37905ae439c876"
     },
     {
-      "name": "rustleaks-providers-v1",
+      "name": "rustleaks-providers-v1.toml",
       "fnv1a64": "e3e5f931c0e0fd28"
     },
     {
-      "name": "rustleaks-connections-v1",
+      "name": "rustleaks-connections-v1.toml",
       "fnv1a64": "61d3cd592e6e06b3"
     }
   ],
   "corpus_fnv1a64": "6620ac36b3ff8de9",
-  "evaluator_source_fnv1a64": "d41adb4a71d834a1",
+  "evaluator_source_fnv1a64": "01aaf6c62d8bc7e5",
   "generator_source_fnv1a64": "f24917eebfd42b8d",
   "fingerprint_purpose": "FNV-1a fingerprints detect accidental drift; they are not authenticity or collision-resistance guarantees. Source and build revision must accompany release evidence.",
   "assessments": [
