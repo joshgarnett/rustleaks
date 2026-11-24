@@ -1,11 +1,14 @@
 use std::cmp::Ordering;
-use std::io;
+use std::io::{self, Read};
 
 use super::{block_input_bound, Decoder, ReadState};
-use crate::block::tests::decode;
+use crate::block::tests::{
+    decode, expected_multi_block_output, EMPTY_STREAM, MULTI_BLOCK_STREAM, SINGLE_BLOCK_STREAM,
+};
 use crate::block::{combine_crc, BLOCK_MAGIC, FINAL_MAGIC};
 use crate::crc::Hasher;
 use crate::header::Header;
+use crate::DecoderReader;
 
 const SINGLE_BLOCK_TEXT: &[u8] = b"rustleaks combined crc test\n";
 const TEXT_AFTER_NOISE: &[u8] = b"rustleaks text after the noise\n";
@@ -30,6 +33,47 @@ fn test_encoder_output_decodes_for_short_text() {
     assert_eq!(decode(&encode_stream(9, &[]), 3).unwrap(), b"");
     let stream = encode_stream(9, &[b"first block\n", b"second block\n"]);
     assert_eq!(decode(&stream, 5).unwrap(), b"first block\nsecond block\n");
+}
+
+#[test]
+fn decodes_concatenated_streams_in_order() {
+    let mut input = SINGLE_BLOCK_STREAM.to_vec();
+    input.extend_from_slice(EMPTY_STREAM);
+    input.extend_from_slice(MULTI_BLOCK_STREAM);
+    input.extend_from_slice(SINGLE_BLOCK_STREAM);
+
+    let mut expected = SINGLE_BLOCK_TEXT.to_vec();
+    expected.extend_from_slice(&expected_multi_block_output());
+    expected.extend_from_slice(SINGLE_BLOCK_TEXT);
+
+    assert_eq!(decode(&input, 7).unwrap(), expected);
+    assert_eq!(decode(&input, 4096).unwrap(), expected);
+}
+
+#[test]
+fn rejects_data_after_the_last_stream() {
+    for tail in [&b"\0"[..], b"BZ", b"BZh", b"not bzip2", b"BZh0"] {
+        let mut input = SINGLE_BLOCK_STREAM.to_vec();
+        input.extend_from_slice(tail);
+
+        let (output, error) = decode_until_error(&input);
+        assert_eq!(output, SINGLE_BLOCK_TEXT, "tail {tail:?}");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData, "tail {tail:?}");
+        assert_eq!(
+            error.to_string(),
+            "data after a bzip2 stream is not a bzip2 stream",
+            "tail {tail:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_truncated_second_stream() {
+    let mut input = SINGLE_BLOCK_STREAM.to_vec();
+    input.extend_from_slice(&SINGLE_BLOCK_STREAM[..20]);
+
+    let (output, _) = decode_until_error(&input);
+    assert_eq!(output, SINGLE_BLOCK_TEXT);
 }
 
 #[test]
@@ -92,6 +136,19 @@ fn block_input_bound_covers_worst_case_block() {
         let worst_bits = fixed_bits + 32_767 * 6 + 6 * 258 * 39 + (max_blocksize + 1) * 20;
         let worst_bytes = worst_bits.div_ceil(8) + 8;
         assert!(block_input_bound(&header) >= worst_bytes, "level {}", level);
+    }
+}
+
+fn decode_until_error(input: &[u8]) -> (Vec<u8>, io::Error) {
+    let mut reader = DecoderReader::new(input);
+    let mut output = Vec::new();
+    let mut buffer = [0; 1024];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => panic!("input decoded without an error"),
+            Ok(read) => output.extend_from_slice(&buffer[..read]),
+            Err(error) => return (output, error),
+        }
     }
 }
 

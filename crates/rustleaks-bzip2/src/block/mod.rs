@@ -66,6 +66,14 @@ impl Block {
         }
     }
 
+    /// Prepares the block for the next stream and keeps its buffer.
+    pub fn restart(&mut self, header: Header) {
+        self.header = header;
+        self.tt.clear();
+        self.combined_crc = 0;
+        self.state = State::NotReady;
+    }
+
     pub fn is_not_ready(&self) -> bool {
         match self.state {
             State::NotReady => true,

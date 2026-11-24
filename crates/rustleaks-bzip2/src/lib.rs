@@ -1,7 +1,7 @@
 //! `rustleaks_bzip2` is a pure Rust bzip2 decoder.
 //!
 //! [`DecoderReader`] wraps a [`Read`](std::io::Read) of compressed bytes and
-//! yields the decoded bytes.
+//! yields the decoded bytes of every stream in the input.
 //!
 //! ## Usage
 //!

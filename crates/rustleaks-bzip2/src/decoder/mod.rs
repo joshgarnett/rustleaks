@@ -16,9 +16,12 @@ const HEADER_LEN: usize = 4;
 ///
 /// Compressed input is passed to [`Decoder::write`]. An empty write marks the
 /// end of the input. [`Decoder::read`] decodes the next block once enough
-/// input is buffered and returns its bytes.
+/// input is buffered and returns its bytes. Streams that follow each other in
+/// the input are decoded in order.
 pub(crate) struct Decoder {
     header_block: Option<(Header, Block)>,
+    /// The block of the last finished stream, kept to reuse its buffer.
+    spare_block: Option<Block>,
 
     /// Number of bits of `in_buf` that are already decoded.
     skip_bits: usize,
@@ -26,6 +29,8 @@ pub(crate) struct Decoder {
 
     /// An empty write was seen, so no more input follows.
     input_done: bool,
+    /// Number of streams decoded up to their end-of-stream marker.
+    streams: usize,
     eof: bool,
 }
 
@@ -36,7 +41,7 @@ pub(crate) enum ReadState {
     NeedsWrite(usize),
     /// This many decoded bytes are in the output buffer.
     Read(usize),
-    /// The stream is decoded.
+    /// Every stream in the input is decoded.
     Eof,
 }
 
@@ -45,11 +50,13 @@ impl Decoder {
     pub(crate) fn new() -> Self {
         Self {
             header_block: None,
+            spare_block: None,
 
             skip_bits: 0,
             in_buf: Vec::new(),
 
             input_done: false,
+            streams: 0,
             eof: false,
         }
     }
@@ -101,17 +108,32 @@ impl Decoder {
                         let start = self.skip_bits / 8;
                         let mut header_bytes = [0_u8; HEADER_LEN];
                         header_bytes.copy_from_slice(&self.in_buf[start..start + HEADER_LEN]);
-                        let header = Header::parse(header_bytes)?;
-                        let block = Block::new(header.clone());
+                        let header = match Header::parse(header_bytes) {
+                            Ok(header) => header,
+                            Err(_) if self.streams > 0 => return Err(trailing_data()),
+                            Err(error) => return Err(error.into()),
+                        };
+                        let block = match self.spare_block.take() {
+                            Some(mut block) => {
+                                block.restart(header.clone());
+                                block
+                            }
+                            None => Block::new(header.clone()),
+                        };
                         self.header_block = Some((header, block));
                         self.skip_bits = (start + HEADER_LEN) * 8;
                     } else if !self.input_done {
                         return Ok(ReadState::NeedsWrite(HEADER_LEN - available));
-                    } else {
+                    } else if self.streams == 0 {
                         return Err(io::Error::new(
                             io::ErrorKind::UnexpectedEof,
                             "bzip2 input is empty or shorter than its header",
                         ));
+                    } else if available > 0 {
+                        return Err(trailing_data());
+                    } else {
+                        self.eof = true;
+                        return Ok(ReadState::Eof);
                     }
                 }
                 Some((header, block)) if block.is_not_ready() => {
@@ -138,13 +160,24 @@ impl Decoder {
                     }
                     if block.is_stream_end() {
                         // The end-of-stream marker and combined CRC were read.
-                        self.eof = true;
-                        return Ok(ReadState::Eof);
+                        // The stream is padded to a whole byte, and the next
+                        // stream starts at the following byte.
+                        self.skip_bits = self.skip_bits.div_ceil(8) * 8;
+                        self.spare_block = self.header_block.take().map(|(_, block)| block);
+                        self.streams += 1;
                     }
                 }
             }
         }
     }
+}
+
+/// Data after a stream must be another stream, as with gzip members.
+fn trailing_data() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "data after a bzip2 stream is not a bzip2 stream",
+    )
 }
 
 /// Number of input bytes that always hold one whole compressed block and the

@@ -7,6 +7,10 @@ const INPUT_CHUNK: usize = 8 * 1024;
 
 /// A high-level decoder that wraps a [`Read`] and implements [`Read`], yielding decompressed bytes
 ///
+/// Streams that follow each other in the input, as `pbzip2` or `cat` write
+/// them, are decoded in order. Data after the last stream that is not
+/// another bzip2 stream is an error.
+///
 /// ```no_run
 /// use std::fs::File;
 /// use std::io;
