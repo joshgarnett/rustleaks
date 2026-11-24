@@ -228,6 +228,26 @@ pub struct GitSource {
 /// that read the value as a flag and in those that read it as a hook path.
 pub(super) const CONFIG_OVERRIDES: [&str; 2] = ["-c", "core.fsmonitor="];
 
+/// Object names of the empty tree in SHA-1 and SHA-256 repositories.
+const EMPTY_TREE_SHA1: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const EMPTY_TREE_SHA256: &str = "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321";
+
+/// The `-c attr.tree=<empty tree>` override for `git log` and
+/// `git diff --staged`. A repository's `.gitattributes` can mark a text file
+/// as binary (`-diff` or `binary`), and Git then shows no patch for it.
+/// Reading attributes from the empty tree lets Git decide from the content
+/// alone, as the directory scan does. Git 2.43 and later read `attr.tree`;
+/// earlier versions ignore it. A value that does not name a tree of the
+/// repository's object format has no effect, so the name must match it. A
+/// worktree `git diff` keeps the attributes, since it needs the clean
+/// filters that they name.
+fn attribute_override(empty_tree: &str) -> [OsString; 2] {
+    [
+        OsString::from("-c"),
+        OsString::from(format!("attr.tree={empty_tree}")),
+    ]
+}
+
 /// Options for every `git diff` that the source runs. A repository's own
 /// configuration and attributes can name commands for textconv filters and
 /// external diff tools; these options keep Git from running them and keep
@@ -347,9 +367,58 @@ impl GitSource {
         self
     }
 
-    fn arguments(&self) -> Vec<OsString> {
+    /// Whether the Git command of this mode reads attributes from the empty
+    /// tree. See [`attribute_override`].
+    const fn reads_empty_attributes(&self) -> bool {
+        !matches!(self.mode, GitMode::Diff { staged: false })
+    }
+
+    /// Returns the name of the empty tree in the repository's object format.
+    /// When Git cannot report the format, such as before Git 2.28 or outside
+    /// a repository, this is the SHA-1 name; the scan command then reports
+    /// any failure itself.
+    fn empty_tree(&self, cancellation: &dyn Cancellation) -> Result<&'static str, SourceError> {
         let mut arguments = vec![OsString::from("-C"), self.repository.as_os_str().to_owned()];
         arguments.extend(CONFIG_OVERRIDES.map(OsString::from));
+        arguments.extend([
+            OsString::from("rev-parse"),
+            OsString::from("--show-object-format"),
+        ]);
+        let mut output = Vec::new();
+        let result = stream_command(
+            &self.executable,
+            &arguments,
+            self.limits.stderr_bytes(),
+            &self.environment,
+            cancellation,
+            SourceStage::GitCommand,
+            &mut |chunk| {
+                if output.len().saturating_add(chunk.len()) > 64 {
+                    return Ok(SourceControl::Stop);
+                }
+                output.extend_from_slice(chunk);
+                Ok(SourceControl::Continue)
+            },
+        );
+        match result {
+            Ok(listed)
+                if !listed.stopped
+                    && listed.status.is_some_and(|status| status.success())
+                    && output.trim_ascii_end() == b"sha256" =>
+            {
+                Ok(EMPTY_TREE_SHA256)
+            }
+            Err(SourceError::Cancelled) => Err(SourceError::Cancelled),
+            Ok(_) | Err(_) => Ok(EMPTY_TREE_SHA1),
+        }
+    }
+
+    fn arguments(&self, empty_tree: &str) -> Vec<OsString> {
+        let mut arguments = vec![OsString::from("-C"), self.repository.as_os_str().to_owned()];
+        arguments.extend(CONFIG_OVERRIDES.map(OsString::from));
+        if self.reads_empty_attributes() {
+            arguments.extend(attribute_override(empty_tree));
+        }
         match &self.mode {
             GitMode::Log { options } => {
                 arguments.extend([
@@ -400,8 +469,13 @@ impl Source for GitSource {
             return Err(SourceError::Cancelled);
         }
         let this = &*self;
+        let empty_tree = if this.reads_empty_attributes() {
+            this.empty_tree(cancellation)?
+        } else {
+            EMPTY_TREE_SHA1
+        };
         if let Some(plan) = history::plan(this, cancellation)? {
-            return history::visit(this, &plan, cancellation, emit);
+            return history::visit(this, &plan, empty_tree, cancellation, emit);
         }
         let mut stream = PatchStream::new(this.limits);
         // Each file record is parsed and emitted once the next record starts,
@@ -409,7 +483,7 @@ impl Source for GitSource {
         // The last record waits for Git to exit successfully.
         let output = stream_command(
             &this.executable,
-            &this.arguments(),
+            &this.arguments(empty_tree),
             this.limits.stderr_bytes(),
             &this.environment,
             cancellation,
