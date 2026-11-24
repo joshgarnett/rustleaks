@@ -48,13 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Identifying the rules and the source
 
-- `ReviewPolicy::for_builtin` works for the default rules and the packaged
-  packs. Its reference includes the package versions, the hashes of the selected
-  rules and the enabled extensions.
-- For your own packs, use `ReviewPolicy::caller_bound` with a reference from
-  your own store that is tied to the exact pack bytes. A pack name and version
-  alone are not enough. Before each review, the library checks that the scan
-  used the same rules as the policy.
+- `ReviewPolicy::for_builtin` works for the default rules and the built-in
+  rule files. Its reference includes the package versions, the hashes of the
+  selected rules and the enabled extensions.
+- For your own rule files, use `ReviewPolicy::caller_bound` with a reference
+  from your own store that is tied to the exact bytes of the rule file. A rule
+  file name and version alone are not enough. Before each review, the
+  library checks that the scan used the same rules as the policy.
 - `ReviewSource::caller_bound` takes a reference to the exact bytes you
   scanned, and their source details, from your own store. When the bytes
   change, use a new reference, even if only one line was added or replaced at

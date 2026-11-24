@@ -1,31 +1,27 @@
 # Rustleaks extra rules v1
 
-The `rustleaks-extra-v1` pack adds 3 namespaced rules for Azure Service Bus
-and Event Hubs keys, Azure App Configuration keys and MongoDB URI passwords.
-It has no hidden helper rules. Every default scan uses the pack. It runs
-locally. It does not contact a provider or check whether a credential is
-active. It uses the normal matching, allowlist, overlap filtering and
-decoding behavior, and it does not change the packaged default rules.
+This file is the reference for maintainers of the `rustleaks-extra-v1`
+rules. For the rules a scan uses, see [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md).
+
+This rule file adds 3 namespaced rules for Azure Service Bus and Event Hubs
+keys, Azure App Configuration keys and MongoDB URI passwords. It has no
+hidden helper rules. Every default scan uses these rules. They run locally.
+They do not contact a provider or check whether a credential is active. They
+use the normal matching, allowlist, overlap filtering and decoding behavior.
 
 ## Selection
 
-- CLI: always used, with the default rules, when no configuration is
-  selected and in a configuration with `[extend] useDefault = true`.
-- Library: `ConfigLoader::load_default` and `[extend] useDefault = true`
-  use all built-in rule files, unless `ConfigLoader::with_default_config`
-  replaces the default.
-  `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?.build()?`
-  builds a custom composition, with `EXTRA_RULES_V1` from `rustleaks_core::native`.
-- The pack can be combined with `rustleaks-providers-v1` and
-  `rustleaks-connections-v1` in any order. The exact bytes and the order of
-  the packs are part of the policy identity.
-- The pack uses no native-only tables. The pack file also loads with
-  `--config` or `ConfigLoader`, but then it is a plain configuration with
-  only these 3 rules and without the default rules.
+- The rule file uses no native-only tables. It also loads with `--config` or
+  `ConfigLoader`, but then it is a plain configuration with only these 3
+  rules and without the default rules.
+- In a custom composition, add it with
+  `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)`.
+  `EXTRA_RULES_V1` is in `rustleaks_core::native`.
 
-See [Built-in
-rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
-for users and [Rule pack
+See [Using
+rustleaks-core](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
+for the library and [Rule pack
 authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
 for contributors.
 
@@ -71,7 +67,7 @@ MongoDB notes:
 - Escaping in source languages needs a decoding pass that the caller selects.
   The rules do not guess unknown escapes or decide validity from a partial
   match.
-- The pack is not a complete connection string parser.
+- The rules are not a complete connection string parser.
 - Known gaps for Azure: sovereign cloud endpoints, custom hosts, new fields
   between App Configuration fields, Unicode whitespace around fields and
   strings outside the size bounds.
@@ -79,7 +75,7 @@ MongoDB notes:
   information, more than 4 standard hosts and very long credentials.
 - Default generic rules can still find key values in these gaps. A missing
   finding never shows that an input has no credentials.
-- The pack does not suppress or replace existing provider rules. When a
+- These rules do not suppress or replace existing provider rules. When a
   MongoDB password also has the shape of a provider token, both rules can
   report the same occurrence.
 
