@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::Read;
 
 use lzma_rust2::{
     Lzma2Reader, LzmaReader,
@@ -13,7 +13,7 @@ use crate::codec::{
     lz4::Lz4Decoder,
     zstd::{ZstdBuffers, ZstdDecoder},
 };
-use crate::{ByteReader, archive::EncoderMethod, block::Block, block::Coder, error::Error};
+use crate::{archive::EncoderMethod, block::Block, block::Coder, error::Error};
 
 /// Buffers for the Zstandard coders of one block, taken in decoder order.
 pub(crate) type ZstdPool<'b> = std::slice::IterMut<'b, ZstdBuffers>;
@@ -90,11 +90,11 @@ pub fn add_decoder<'b, I: Read>(
     match method.id() {
         EncoderMethod::ID_COPY => Ok(Decoder::Copy(input)),
         EncoderMethod::ID_LZMA => {
-            let dict_size = get_lzma_dic_size(coder)?;
-            if coder.properties.is_empty() {
-                return Err(Error::Other("LZMA properties too short".into()));
-            }
-            let props = coder.properties[0];
+            // One byte of literal and position bits, then a 32-bit dictionary size.
+            let &[props, d0, d1, d2, d3, ..] = coder.properties.as_slice() else {
+                return Err(Error::other("LZMA properties too short"));
+            };
+            let dict_size = u32::from_le_bytes([d0, d1, d2, d3]);
             let mem_size = usize::try_from(
                 lzma_get_memory_usage_by_props(dict_size, props)
                     .map_err(|error| Error::other(error.to_string()))?,
@@ -212,11 +212,6 @@ fn get_lzma2_dic_size(coder: &Coder) -> Result<u32, Error> {
     Ok(size)
 }
 
-fn get_lzma_dic_size(coder: &Coder) -> io::Result<u32> {
-    let mut props = &coder.properties[1..5];
-    props.read_u32()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +250,21 @@ mod tests {
             &mut [].iter_mut(),
         );
         assert!(matches!(result, Err(Error::MaxMemLimited { .. })));
+    }
+
+    #[test]
+    fn rejects_short_lzma_properties() {
+        for properties in [vec![], vec![0x5d, 0, 0, 1]] {
+            let result = add_decoder(
+                &[][..],
+                1,
+                &coder(EncoderMethod::ID_LZMA, properties),
+                64 * 1024,
+                &mut [].iter_mut(),
+            );
+            assert!(
+                matches!(&result, Err(Error::Other(message)) if message == "LZMA properties too short")
+            );
+        }
     }
 }
