@@ -1,10 +1,10 @@
-//! bzip2 low-level block APIs
+//! bzip2 block decoder
 
 use std::mem;
 
 use tinyvec::ArrayVec;
 
-pub use self::error::BlockError;
+pub(crate) use self::error::BlockError;
 use crate::bitreader::BitReader;
 #[cfg(target_pointer_width = "64")]
 use crate::bitreader::CachedBitReader;
@@ -16,8 +16,8 @@ use crate::move_to_front::MoveToFrontDecoder;
 mod bwt;
 mod error;
 
-const BLOCK_MAGIC: u64 = 0x314159265359;
-const FINAL_MAGIC: u64 = 0x177245385090;
+pub(crate) const BLOCK_MAGIC: u64 = 0x314159265359;
+pub(crate) const FINAL_MAGIC: u64 = 0x177245385090;
 
 pub(crate) struct Block {
     header: Header,
@@ -40,6 +40,8 @@ enum State {
     ReadyForRead,
     Reading,
     NotReady,
+    /// The end-of-stream marker and a matching combined CRC were read.
+    StreamEnd,
 }
 
 impl Block {
@@ -64,24 +66,17 @@ impl Block {
         }
     }
 
-    pub fn is_ready_for_read(&self) -> bool {
-        match self.state {
-            State::ReadyForRead => true,
-            State::Reading | State::NotReady => false,
-        }
-    }
-
-    pub fn is_reading(&self) -> bool {
-        match self.state {
-            State::Reading => true,
-            State::ReadyForRead | State::NotReady => false,
-        }
-    }
-
     pub fn is_not_ready(&self) -> bool {
         match self.state {
             State::NotReady => true,
-            State::ReadyForRead | State::Reading => false,
+            State::ReadyForRead | State::Reading | State::StreamEnd => false,
+        }
+    }
+
+    pub fn is_stream_end(&self) -> bool {
+        match self.state {
+            State::StreamEnd => true,
+            State::ReadyForRead | State::Reading | State::NotReady => false,
         }
     }
 
@@ -110,10 +105,11 @@ impl Block {
                         let expected_combined_crc = reader
                             .read_u32(32)
                             .ok_or_else(|| BlockError::new("whole stream crc truncated"))?;
-                        self.state = State::NotReady;
                         if expected_combined_crc == self.combined_crc {
+                            self.state = State::StreamEnd;
                             Ok(0)
                         } else {
+                            self.state = State::NotReady;
                             Err(BlockError::new("combined stream crc mismatch"))
                         }
                     }
@@ -131,7 +127,7 @@ impl Block {
 
                 Ok(n)
             }
-            State::NotReady => Err(BlockError::new("not ready")),
+            State::NotReady | State::StreamEnd => Err(BlockError::new("not ready")),
         }
     }
 
@@ -412,9 +408,9 @@ impl Block {
     }
 }
 
-const fn combine_crc(combined_crc: u32, block_crc: u32) -> u32 {
+pub(crate) const fn combine_crc(combined_crc: u32, block_crc: u32) -> u32 {
     combined_crc.rotate_left(1) ^ block_crc
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

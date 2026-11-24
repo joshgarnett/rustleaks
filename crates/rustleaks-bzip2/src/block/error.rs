@@ -7,7 +7,7 @@ use std::io;
 /// The specific decoder reason is available through its `Display`
 /// implementation rather than a structured public field.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlockError {
+pub(crate) struct BlockError {
     reason: &'static str,
 }
 

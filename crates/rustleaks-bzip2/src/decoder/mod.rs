@@ -1,220 +1,163 @@
-//! bzip2 decoding APIs
+//! bzip2 decoding state machine
 
-pub use self::error::DecoderError;
+use std::io;
+
 pub use self::reader::DecoderReader;
 use crate::bitreader::BitReader;
 use crate::block::Block;
 use crate::header::Header;
 
-mod error;
 mod reader;
 
-/// A low-level decoder implementation
+/// Length of the `BZh1` to `BZh9` stream header.
+const HEADER_LEN: usize = 4;
+
+/// A decoder that does no IO by itself.
 ///
-/// This decoder does no IO by itself, instead enough data
-/// has to be written to it in order for it to be able
-/// to decode the next block. After that the decompressed content
-/// for the block can be read until all of the data from the block
-/// has been exhausted.
-/// Repeating this process for every block in sequence will result
-/// into the entire file being decompressed.
-///
-/// ```
-/// use rustleaks_bzip2::decoder::{Decoder, ReadState, WriteState};
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// // Canonical bzip2 encoding of an empty byte sequence.
-/// let mut compressed_file: &[u8] = &[
-///     0x42, 0x5a, 0x68, 0x39, 0x17, 0x72, 0x45,
-///     0x38, 0x50, 0x90, 0x00, 0x00, 0x00, 0x00,
-/// ];
-/// let mut output = Vec::new();
-///
-/// let mut decoder = Decoder::new();
-///
-/// assert!(
-///     !compressed_file.is_empty(),
-///     "empty files will cause the following loop to spin forever"
-/// );
-///
-/// let mut buf = [0; 1024];
-/// loop {
-///     match decoder.read(&mut buf)? {
-///         ReadState::NeedsWrite(space) => {
-///             // `Decoder` needs more data to be written to it before it
-///             // can decode the next block.
-///             // If we reached the end of the file `compressed_file.len()` will be 0,
-///             // signaling to the `Decoder` that the last block is smaller and it can
-///             // proceed with reading.
-///             match decoder.write(&compressed_file)? {
-///                 WriteState::NeedsRead => unreachable!(),
-///                 WriteState::Written(written) => compressed_file = &compressed_file[written..],
-///             };
-///         }
-///         ReadState::Read(n) => {
-///             // `n` uncompressed bytes have been read into `buf`
-///             output.extend_from_slice(&buf[..n]);
-///         }
-///         ReadState::Eof => {
-///             // we reached the end of the file
-///             break;
-///         }
-///     }
-/// }
-///
-/// assert!(output.is_empty());
-/// # Ok(())
-/// # }
-/// ```
-pub struct Decoder {
+/// Compressed input is passed to [`Decoder::write`]. An empty write marks the
+/// end of the input. [`Decoder::read`] decodes the next block once enough
+/// input is buffered and returns its bytes.
+pub(crate) struct Decoder {
     header_block: Option<(Header, Block)>,
 
+    /// Number of bits of `in_buf` that are already decoded.
     skip_bits: usize,
     in_buf: Vec<u8>,
 
+    /// An empty write was seen, so no more input follows.
+    input_done: bool,
     eof: bool,
 }
 
-/// State returned by [`Decoder::write`]
-pub enum WriteState {
-    /// Enough data has already been written to [`Decoder`]
-    /// in order for it to be able to decode the next block.
-    /// Now call [`Decoder::read`] to read the decompressed data.
-    NeedsRead,
-    /// N. number of bytes have been written.
-    Written(usize),
-}
-
 /// State returned by [`Decoder::read`]
-pub enum ReadState {
-    /// Not enough data has been written to the underlying [`Decoder`]
-    /// in order to allow the next block to be decoded. Call
-    /// [`Decoder::write`] to write more data. If the end of the file
-    /// has been reached, call [`Decoder::write`] with an empty buffer.
+pub(crate) enum ReadState {
+    /// More input is needed to decode the next block or header. Write at
+    /// most this many bytes, or an empty buffer at the end of the input.
     NeedsWrite(usize),
-    /// N. number of data has been read
+    /// This many decoded bytes are in the output buffer.
     Read(usize),
-    /// The end of the compressed file has been reached and
-    /// there is no more data to read
+    /// The stream is decoded.
     Eof,
 }
 
 impl Decoder {
     /// Construct a new [`Decoder`], ready to decompress a new bzip2 file
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             header_block: None,
 
             skip_bits: 0,
             in_buf: Vec::new(),
 
+            input_done: false,
             eof: false,
         }
     }
 
-    fn space(&self) -> usize {
-        match &self.header_block {
-            Some((_, block)) if block.is_reading() => 0,
-            Some((header, _)) => {
-                let max_length = header.max_blocksize() as usize + (self.skip_bits / 8) + 1;
-                max_length - self.in_buf.len()
-            }
-            None => 100_000 + 4,
+    /// Adds compressed input. An empty `buf` marks the end of the input.
+    pub(crate) fn write(&mut self, buf: &[u8]) {
+        if buf.is_empty() {
+            self.input_done = true;
+        } else {
+            self.in_buf.extend_from_slice(buf);
         }
     }
 
-    /// Write more compressed data into this [`Decoder`]
-    ///
-    /// See the documentation for [`WriteState`] to decide
-    /// what to do next.
-    pub fn write(&mut self, buf: &[u8]) -> Result<WriteState, DecoderError> {
-        let space = self.space();
+    /// Bytes of `in_buf` that are not yet decoded, counting a partly decoded
+    /// byte as not decoded.
+    fn available(&self) -> usize {
+        self.in_buf.len() - self.skip_bits / 8
+    }
 
-        match &mut self.header_block {
-            Some((_, block)) if block.is_reading() => Ok(WriteState::NeedsRead),
-            Some((header, block)) => {
-                let written = space.min(buf.len());
-
-                self.in_buf.extend_from_slice(&buf[..written]);
-
-                let minimum = (self.skip_bits / 8) + header.max_blocksize() as usize;
-                if buf.is_empty() || self.in_buf.len() >= minimum {
-                    block.set_ready_for_read();
-                }
-
-                Ok(WriteState::Written(written))
-            }
-            None => {
-                let written = space.min(buf.len());
-                self.in_buf.extend_from_slice(&buf[..written]);
-
-                if self.in_buf.len() < 4 {
-                    return Ok(WriteState::Written(buf.len()));
-                }
-
-                let mut header_bytes = [0_u8; 4];
-                header_bytes.copy_from_slice(&self.in_buf[..4]);
-                let header = Header::parse(header_bytes)?;
-                let block = Block::new(header.clone());
-                self.header_block = Some((header, block));
-
-                self.skip_bits = 4 * 8;
-
-                if written == buf.len() {
-                    return Ok(WriteState::Written(written));
-                }
-
-                match self.write(&buf[written..])? {
-                    WriteState::NeedsRead => Ok(WriteState::NeedsRead),
-                    WriteState::Written(n) => Ok(WriteState::Written(n + written)),
-                }
-            }
+    /// Drops the decoded whole bytes at the start of `in_buf` once they are
+    /// more than half of it. Each byte is then moved at most once for each
+    /// byte decoded, and `in_buf` stays below twice the bytes it must hold.
+    fn compact(&mut self) {
+        let bytes = self.skip_bits / 8;
+        if bytes > self.in_buf.len() / 2 {
+            self.in_buf.drain(..bytes);
+            self.skip_bits -= bytes * 8;
         }
     }
 
-    /// Read more decompressed data from this [`Decoder`]
+    /// Reads decoded bytes into `buf`.
     ///
-    /// See the documentation for [`ReadState`] to decide
-    /// what to do next.
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<ReadState, DecoderError> {
-        match &mut self.header_block {
-            Some(_) if self.eof => Ok(ReadState::Eof),
-            Some((_, block)) if block.is_not_ready() => Ok(ReadState::NeedsWrite(self.space())),
-            Some((_, block)) => {
-                let mut reader = BitReader::new(&self.in_buf);
-                reader.advance_by(self.skip_bits);
+    /// See [`ReadState`] for what to do next.
+    pub(crate) fn read(&mut self, buf: &mut [u8]) -> Result<ReadState, io::Error> {
+        if self.eof {
+            return Ok(ReadState::Eof);
+        }
+        if buf.is_empty() {
+            return Ok(ReadState::Read(0));
+        }
 
-                let ready_for_read = block.is_ready_for_read();
-
-                let read = block.read(&mut reader, buf)?;
-
-                if read == 0 {
-                    if !buf.is_empty() {
-                        self.eof = ready_for_read;
+        loop {
+            match &mut self.header_block {
+                None => {
+                    self.compact();
+                    let available = self.available();
+                    if available >= HEADER_LEN {
+                        // A stream starts at a whole byte.
+                        let start = self.skip_bits / 8;
+                        let mut header_bytes = [0_u8; HEADER_LEN];
+                        header_bytes.copy_from_slice(&self.in_buf[start..start + HEADER_LEN]);
+                        let header = Header::parse(header_bytes)?;
+                        let block = Block::new(header.clone());
+                        self.header_block = Some((header, block));
+                        self.skip_bits = (start + HEADER_LEN) * 8;
+                    } else if !self.input_done {
+                        return Ok(ReadState::NeedsWrite(HEADER_LEN - available));
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "bzip2 input is empty or shorter than its header",
+                        ));
                     }
-
-                    return Ok(ReadState::NeedsWrite(self.space()));
                 }
-
-                self.skip_bits = reader.position();
-
-                if block.is_not_ready() {
-                    let bytes = self.skip_bits / 8;
-
-                    self.in_buf.drain(..bytes);
-
-                    self.skip_bits -= bytes * 8;
+                Some((header, block)) if block.is_not_ready() => {
+                    let bound = block_input_bound(header);
+                    self.compact();
+                    let available = self.available();
+                    if available >= bound || self.input_done {
+                        if let Some((_, block)) = &mut self.header_block {
+                            block.set_ready_for_read();
+                        }
+                    } else {
+                        return Ok(ReadState::NeedsWrite(bound - available));
+                    }
                 }
+                Some((_, block)) => {
+                    let mut reader = BitReader::new(&self.in_buf);
+                    reader.advance_by(self.skip_bits);
 
-                Ok(ReadState::Read(read))
+                    let read = block.read(&mut reader, buf)?;
+                    self.skip_bits = reader.position();
+
+                    if read > 0 {
+                        return Ok(ReadState::Read(read));
+                    }
+                    if block.is_stream_end() {
+                        // The end-of-stream marker and combined CRC were read.
+                        self.eof = true;
+                        return Ok(ReadState::Eof);
+                    }
+                }
             }
-            None => Ok(ReadState::NeedsWrite(self.space())),
         }
     }
 }
 
-impl Default for Decoder {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Number of input bytes that always hold one whole compressed block and the
+/// 8 bytes the cached bit reader looks ahead.
+///
+/// A block has at most `max_blocksize + 1` symbols of at most 20 bits, at
+/// most 32,767 selectors of at most 6 bits, and 6 tables of at most 258
+/// lengths that a bzip2 encoder writes in at most 39 bits each. With the
+/// fixed fields this is under `max_blocksize * 5 / 2 + 32,200` bytes.
+/// Incompressible data makes a block larger than `max_blocksize`.
+fn block_input_bound(header: &Header) -> usize {
+    header.max_blocksize() as usize * 5 / 2 + 32 * 1024
 }
+
+#[cfg(test)]
+mod tests;
