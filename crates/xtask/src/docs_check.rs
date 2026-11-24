@@ -4,10 +4,9 @@
 //! comments, package descriptions, documented commands, and planning or
 //! tracker files that belong outside the repository. It also checks the
 //! commands that workflows and the justfile run, and that automation does not
-//! restore the retired Go oracle. Every documentation
-//! problem is reported before the check fails. Long sentences are reported as
-//! warnings and do not fail the check. Workflow and I/O errors stop the check
-//! early.
+//! install or run Go tooling. Every documentation problem is reported before
+//! the check fails. Long sentences are reported as warnings and do not fail
+//! the check. Workflow and I/O errors stop the check early.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -1187,6 +1186,10 @@ fn xtask_problems(prefix: &str, arguments: &[&str]) -> Vec<String> {
         "generate" => crate::tooling::GENERATE_TARGETS,
         "perf" => crate::PERF_SUBCOMMANDS,
         "compare" => crate::comparison::COMPARE_SUBCOMMANDS,
+        "compare-quality" => crate::comparison_quality::SUBCOMMANDS,
+        "compare-workloads" => crate::comparison_workloads::SUBCOMMANDS,
+        "fuzz" => crate::fuzzing::FUZZ_SUBCOMMANDS,
+        "release-artifact" => crate::release_artifact::RELEASE_ARTIFACT_SUBCOMMANDS,
         _ => return Vec::new(),
     };
     if accepted.contains(&argument) {
@@ -1198,18 +1201,18 @@ fn xtask_problems(prefix: &str, arguments: &[&str]) -> Vec<String> {
     }
 }
 
-/// Text that automation must not contain. The live Go oracle is retired, and
-/// expected values must never come from a fresh Go run, so automation must not
-/// install or run Go or check out the upstream Gitleaks repository.
-const RETIRED_GO_TEXT: &[&str] = &[
+/// Text that automation must not contain. Automation must not install or run
+/// Go or check out the Gitleaks repository; expected values never come from a
+/// Go run.
+const FORBIDDEN_GO_TEXT: &[&str] = &[
     "actions/setup-go@",
     "repository: gitleaks/gitleaks",
     ".go-version",
     "package-ecosystem: gomod",
 ];
 
-/// Go subcommands that automation must not run. See [`RETIRED_GO_TEXT`].
-const RETIRED_GO_COMMANDS: &[&str] = &["build", "env", "install", "run", "test", "version"];
+/// Go subcommands that automation must not run. See [`FORBIDDEN_GO_TEXT`].
+const FORBIDDEN_GO_COMMANDS: &[&str] = &["build", "env", "install", "run", "test", "version"];
 
 /// Checks the workflows, the justfile and the Dependabot configuration: every
 /// `just` recipe and xtask command they run must exist, and none may restore Go.
@@ -1238,26 +1241,26 @@ fn automation_problems(
     for (path, contents) in &files {
         let found = snippet_command_problems(contents, recipes)
             .into_iter()
-            .chain(retired_go_problems(contents));
+            .chain(go_tooling_problems(contents));
         problems.extend(found.map(|problem| format!("{path}: {problem}")));
     }
     if root.join(".go-version").exists() {
-        problems.push(".go-version: the retired Go toolchain pin must not be restored".into());
+        problems.push(".go-version: a Go toolchain pin must not exist".into());
     }
     Ok(problems)
 }
 
-/// Returns problems for text that would restore the retired Go oracle.
-fn retired_go_problems(contents: &str) -> Vec<String> {
-    let mut problems = RETIRED_GO_TEXT
+/// Returns problems for text that would install or run Go tooling.
+fn go_tooling_problems(contents: &str) -> Vec<String> {
+    let mut problems = FORBIDDEN_GO_TEXT
         .iter()
         .filter(|text| contents.contains(**text))
-        .map(|text| format!("restores retired Go tooling `{text}`"))
+        .map(|text| format!("installs or runs Go tooling `{text}`"))
         .collect::<Vec<_>>();
     let words = contents.split_whitespace().collect::<Vec<_>>();
     for pair in words.windows(2) {
-        if pair[0] == "go" && RETIRED_GO_COMMANDS.contains(&pair[1]) {
-            problems.push(format!("restores a host Go command `go {}`", pair[1]));
+        if pair[0] == "go" && FORBIDDEN_GO_COMMANDS.contains(&pair[1]) {
+            problems.push(format!("runs a host Go command `go {}`", pair[1]));
         }
     }
     problems
@@ -1280,7 +1283,7 @@ mod tests {
 
     use super::{
         Checked, Findings, automation_problems, check_document, command_problems,
-        is_command_check_exempt, justfile_recipes, manifest_problems, retired_go_problems,
+        go_tooling_problems, is_command_check_exempt, justfile_recipes, manifest_problems,
         snippet_command_problems, tracker_problems, walk,
     };
     use crate::tooling::ScopedTempDir;
@@ -1844,16 +1847,16 @@ mod tests {
     }
 
     #[test]
-    fn automation_commands_and_retired_go_are_checked() {
+    fn automation_commands_and_go_tooling_are_checked() {
         let recipes = recipes();
         let workflow = "      - run: cargo xtask nope-check\n      - run: just check\n";
         assert_eq!(
             snippet_command_problems(workflow, &recipes),
             ["names unknown xtask command `cargo xtask nope-check`"]
         );
-        assert!(retired_go_problems("run: bazelisk test //:ci\n").is_empty());
-        assert_eq!(retired_go_problems("run: go version\n").len(), 1);
-        assert_eq!(retired_go_problems("uses: actions/setup-go@v5\n").len(), 1);
+        assert!(go_tooling_problems("run: bazelisk test //:ci\n").is_empty());
+        assert_eq!(go_tooling_problems("run: go version\n").len(), 1);
+        assert_eq!(go_tooling_problems("uses: actions/setup-go@v5\n").len(), 1);
         let root = crate::workspace_root().unwrap();
         let justfile = fs::read_to_string(root.join("justfile")).unwrap();
         let recipes = justfile_recipes(&justfile);

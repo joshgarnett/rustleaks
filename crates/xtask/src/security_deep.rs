@@ -15,16 +15,6 @@ use crate::fuzzing::profiles::{self, Deadline, Profile};
 use crate::fuzzing::{self, private, process};
 use crate::tooling::sha256_file;
 
-const TARGETS: &[&str] = &[
-    "go_regex",
-    "config",
-    "fragment_scan",
-    "session",
-    "archive",
-    "reader_schedule",
-    "git_patch",
-    "template",
-];
 const STRESS: &[(&str, &str)] = &[
     ("core", "//crates/rustleaks-core:security_stress_test"),
     ("sources", "//crates/rustleaks-sources:security_stress_test"),
@@ -59,7 +49,10 @@ impl Request {
         let mut request = Self {
             output: None,
             profile: Profile::Deep,
-            targets: TARGETS.iter().map(|name| (*name).into()).collect(),
+            targets: fuzzing::TARGETS
+                .iter()
+                .map(|target| target.name.into())
+                .collect(),
             seconds: None,
             seed: 1,
             deadline_seconds: 7200,
@@ -273,7 +266,7 @@ fn execute(
             Ok(Step::pass(json!({"toolchain":crate::security::MIRI_TOOLCHAIN,"package":package,"case":case,"scope":"executed Miri path only"})))
         })?;
     }
-    for target in TARGETS {
+    for target in fuzzing::TARGETS.iter().map(|target| target.name) {
         let selected = request.targets.iter().any(|name| name == target);
         let fuzz_output = bundle.path.join(format!("campaign-{target}"));
         let passed = run.stage(&format!("fuzz-{target}"), selected, |root, _, deadline| {

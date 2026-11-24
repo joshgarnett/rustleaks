@@ -1,9 +1,9 @@
 //! Bounded report schema checks and one-way public projection.
 
 use super::{
-    INPUT_LIMIT, KIND, LegacyRequest, MEASUREMENT_SCOPE, PROFILE_SCOPE, Path, PathBuf, Prepared,
-    REPRESENTATIVE_SCOPE, SAMPLE_SCOPE, Value, WINDOW_SCOPE, digest, exact_keys, json,
-    read_private, sha256_bytes,
+    INPUT_LIMIT, KIND, MEASUREMENT_SCOPE, PROFILE_SCOPE, Path, PathBuf, Prepared,
+    REPRESENTATIVE_SCOPE, SAMPLE_SCOPE, StandardRequest, Value, WINDOW_SCOPE, digest, exact_keys,
+    json, read_private, sha256_bytes,
 };
 
 pub(super) const PROFILE_ARTIFACTS: &[&str] = &[
@@ -68,7 +68,7 @@ pub(super) fn summarize(
         return existing::matrix(value, artifacts, verification);
     }
     let (status, measurements, profiles, workload) = match value["kind"].as_str() {
-        Some(KIND) => legacy(value)?,
+        Some(KIND) => standard(value)?,
         Some("profile") => profile(value, artifacts)?,
         Some("calibration") => existing::calibration(value)?,
         _ => return Err("unsupported performance report kind or schema".into()),
@@ -184,7 +184,7 @@ fn prepared(value: &Value) -> Result<Prepared, String> {
     })
 }
 
-fn legacy(value: &Value) -> Result<Projection, String> {
+fn standard(value: &Value) -> Result<Projection, String> {
     exact_keys(
         value,
         &[
@@ -222,7 +222,7 @@ fn legacy(value: &Value) -> Result<Projection, String> {
             .collect::<Vec<_>>()
             .join("\n"),
         &prepared,
-        &LegacyRequest::parse(&[])?,
+        &StandardRequest::parse(&[])?,
     )?;
     let measurements = rows
         .iter()

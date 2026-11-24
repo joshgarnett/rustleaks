@@ -64,7 +64,7 @@ const PERF_INVARIANTS: &[PerfInvariant] = &[
     PerfInvariant {
         workload: "default-compile",
         // The byte length of the shipped default rules.
-        logical_bytes: 100_665,
+        logical_bytes: 100_568,
         result_count: 222,
         output_bytes: 0,
         outcome_fnv1a64: "bba0f636d5a02d49",
@@ -402,50 +402,8 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
             "rust-toolchain.toml",
         ],
     )?;
-    build["workload_definition_sha256"] = json!(hash_paths(
-        root,
-        &[
-            "crates/rustleaks-compat/src/bin/rustleaks-perf.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/benchmark_data.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/representative.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/fragment_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/edge_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/normalization_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/worker_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/decode_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/report_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/default_rule_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/default_rule_realistic.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/default_rule_custom.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/default_rule_contention.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/default_rule_tests.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/representative_io.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/source_scale_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/suite_support.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/pack_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/cli_matrix_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/dense_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/git_shape_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/filter_workloads.rs".to_owned(),
-            "crates/rustleaks-compat/src/perf/investigation.rs".to_owned(),
-            "crates/rustleaks-sources/tests/perf_archives.rs".to_owned(),
-            "crates/rustleaks-sources/fuzz/support/archive_seeds.rs".to_owned(),
-            "crates/rustleaks-sources/fuzz/support/archive_scale.rs".to_owned(),
-            "crates/rustleaks-sources/fuzz/support/archive_frame.rs".to_owned(),
-            "crates/xtask/src/performance/mod.rs".to_owned(),
-            "crates/xtask/src/performance/reporting.rs".to_owned(),
-            "crates/xtask/src/performance/reporting/import.rs".to_owned(),
-            "crates/xtask/src/performance/reporting/import/existing.rs".to_owned(),
-            "crates/xtask/src/performance/reporting/tests.rs".to_owned(),
-            "crates/xtask/src/performance/representative_suite.rs".to_owned(),
-            "crates/xtask/src/performance/representative_suite/source_scale.rs".to_owned(),
-            "crates/xtask/src/performance/representative_suite/groups.rs".to_owned(),
-            "crates/xtask/src/performance/investigation.rs".to_owned(),
-            "crates/xtask/src/performance/investigation/controller.txt".to_owned(),
-            "crates/xtask/src/performance/investigation/window_matrix.rs".to_owned(),
-            "crates/xtask/src/performance/investigation/window_tests.rs".to_owned(),
-        ]
-    )?);
+    build["workload_definition_sha256"] =
+        json!(hash_paths(root, &workload_definition_files(root)?)?);
     if fs::metadata(&binary)
         .map_err(|error| error.to_string())?
         .len()
@@ -466,6 +424,62 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
     };
     prepared.ensure_unchanged()?;
     Ok(prepared)
+}
+
+/// Directory whose every `.rs` file defines benchmark workloads.
+const PERF_WORKLOAD_DIRECTORY: &str = "crates/rustleaks-compat/src/perf";
+
+/// Other files that define the benchmark workloads, outside
+/// [`PERF_WORKLOAD_DIRECTORY`].
+const PERF_WORKLOAD_FILES: &[&str] = &[
+    "crates/rustleaks-sources/tests/perf_archives.rs",
+    "crates/rustleaks-sources/fuzz/support/archive_seeds.rs",
+    "crates/rustleaks-sources/fuzz/support/archive_scale.rs",
+    "crates/rustleaks-sources/fuzz/support/archive_frame.rs",
+    "crates/xtask/src/performance/mod.rs",
+    "crates/xtask/src/performance/reporting.rs",
+    "crates/xtask/src/performance/reporting/import.rs",
+    "crates/xtask/src/performance/reporting/import/existing.rs",
+    "crates/xtask/src/performance/reporting/tests.rs",
+    "crates/xtask/src/performance/representative_suite.rs",
+    "crates/xtask/src/performance/representative_suite/source_scale.rs",
+    "crates/xtask/src/performance/representative_suite/groups.rs",
+    "crates/xtask/src/performance/investigation.rs",
+    "crates/xtask/src/performance/investigation/controller.py",
+    "crates/xtask/src/performance/investigation/window_matrix.rs",
+    "crates/xtask/src/performance/investigation/window_tests.rs",
+];
+
+/// Lists the files hashed into `workload_definition_sha256`: the benchmark
+/// binary, every `.rs` file in [`PERF_WORKLOAD_DIRECTORY`] in sorted order,
+/// then [`PERF_WORKLOAD_FILES`]. Scanning the directory means a new workload
+/// module cannot be left out of the digest.
+fn workload_definition_files(root: &Path) -> Result<Vec<String>, String> {
+    let directory = root.join(PERF_WORKLOAD_DIRECTORY);
+    let mut scanned = Vec::new();
+    for entry in fs::read_dir(&directory)
+        .map_err(|error| format!("cannot list {PERF_WORKLOAD_DIRECTORY}: {error}"))?
+    {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        let name = name
+            .to_str()
+            .ok_or_else(|| format!("{PERF_WORKLOAD_DIRECTORY} has a non-UTF-8 file name"))?;
+        if Path::new(name)
+            .extension()
+            .is_some_and(|extension| extension == "rs")
+        {
+            scanned.push(format!("{PERF_WORKLOAD_DIRECTORY}/{name}"));
+        }
+    }
+    if scanned.is_empty() {
+        return Err(format!("{PERF_WORKLOAD_DIRECTORY} has no workload sources"));
+    }
+    scanned.sort();
+    let mut files = vec!["crates/rustleaks-compat/src/bin/rustleaks-perf.rs".to_owned()];
+    files.extend(scanned);
+    files.extend(PERF_WORKLOAD_FILES.iter().map(|&name| name.to_owned()));
+    Ok(files)
 }
 
 fn verify_default_config(bytes: &[u8]) -> Result<String, String> {
@@ -963,6 +977,39 @@ mod tests {
         assert!(verify_default_config(&bytes).is_err());
     }
 
+    #[test]
+    fn default_compile_invariants_describe_the_shipped_default_rules() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../rustleaks-core/default/gitleaks.toml");
+        let text = fs::read_to_string(path).unwrap();
+        let invariant = PERF_INVARIANTS
+            .iter()
+            .find(|invariant| invariant.workload == "default-compile")
+            .unwrap();
+        assert_eq!(invariant.logical_bytes, text.len() as u64);
+        let mut section = "";
+        let mut hash = FNV_OFFSET;
+        let mut rules = 0_u64;
+        for line in text.lines() {
+            if line.starts_with('[') {
+                section = line;
+            } else if section == "[[rules]]"
+                && let Some(id) = line
+                    .strip_prefix("id = \"")
+                    .and_then(|rest| rest.strip_suffix('"'))
+            {
+                rules += 1;
+                for byte in id.bytes().chain([0]) {
+                    hash ^= u64::from(byte);
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+            }
+        }
+        assert_eq!(invariant.result_count, rules);
+        assert_eq!(invariant.output_bytes, 0);
+        assert_eq!(invariant.outcome_fnv1a64, format!("{hash:016x}"));
+    }
+
     fn prepared() -> Prepared {
         Prepared {
             root: PathBuf::new(),
@@ -1116,6 +1163,24 @@ mod tests {
             .unwrap()
             .extend([json!("-C"), json!("opt-level=0")]);
         assert!(action_identity(&overridden).is_err());
+    }
+
+    #[test]
+    fn workload_definition_covers_every_compat_perf_module() {
+        let root = workspace_root().unwrap();
+        let files = workload_definition_files(&root).unwrap();
+        for module in ["gate_controls.rs", "representative.rs", "investigation.rs"] {
+            let name = format!("{PERF_WORKLOAD_DIRECTORY}/{module}");
+            assert!(files.contains(&name), "{name}");
+        }
+        for name in &files {
+            assert!(root.join(name).is_file(), "{name}");
+        }
+        assert_eq!(
+            files.len(),
+            files.iter().collect::<BTreeSet<_>>().len(),
+            "duplicate workload definition file"
+        );
     }
 
     #[test]

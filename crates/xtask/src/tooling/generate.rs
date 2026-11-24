@@ -1,4 +1,4 @@
-//! Dispatch for maintained Rust-owned repository generators.
+//! Dispatch for `cargo xtask generate`.
 use std::path::Path;
 
 /// Generator targets accepted by [`run`]. The documentation command check

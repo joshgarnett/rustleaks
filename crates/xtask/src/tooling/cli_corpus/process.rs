@@ -19,7 +19,7 @@ pub(super) struct ResultData {
     pub(super) stderr: Vec<u8>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Each child limit and environment input is explicit at the call site.
 pub(super) fn run<S: AsRef<std::ffi::OsStr>>(
     program: &Path,
     args: &[S],
@@ -127,7 +127,7 @@ pub(super) fn run<S: AsRef<std::ffi::OsStr>>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Each child limit and environment input is explicit at the call site.
 pub(super) fn command<S: AsRef<std::ffi::OsStr>>(
     program: &Path,
     args: &[S],

@@ -165,7 +165,10 @@ pub(super) fn prepare(
         files.insert(format!("inputs/{}", input.file), (bytes, 0o644));
     }
     let manifest = manifest(commit, &files)?;
-    files.insert("manifest.json".into(), (json_bytes(&manifest)?, 0o644));
+    files.insert(
+        "manifest.json".into(),
+        (notices::json_bytes(&manifest)?, 0o644),
+    );
     fs::create_dir_all(output).map_err(|error| error.to_string())?;
     let path = output.join(source_name());
     let stem = source_name().trim_end_matches(".tar.gz").to_owned();
@@ -304,7 +307,7 @@ fn validate_files(root: &Path, commit: &str, files: &Files) -> Result<(), String
             "corresponding-source reconstruction instructions differ from the candidate".into(),
         );
     }
-    let expected_manifest = json_bytes(&manifest(commit, files)?)?;
+    let expected_manifest = notices::json_bytes(&manifest(commit, files)?)?;
     if file_bytes(files, "manifest.json")? != expected_manifest {
         return Err(
             "corresponding-source manifest, patch order, or material checksums differ".into(),
@@ -361,12 +364,6 @@ fn manifest(commit: &str, files: &Files) -> Result<Value, String> {
         "inputs":INPUTS.iter().map(|input| json!({"path":format!("inputs/{}",input.file),"sha256":input.sha256,"url":input.url})).collect::<Vec<_>>(),
         "files":materials,
     }))
-}
-
-fn json_bytes(value: &Value) -> Result<Vec<u8>, String> {
-    let mut bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
-    bytes.push(b'\n');
-    Ok(bytes)
 }
 
 struct ExpectedMember {
@@ -863,7 +860,7 @@ pub(super) fn validate_relink_proof(
         "nativeSmoke":{"help":value["nativeSmoke"]["help"],"version":value["nativeSmoke"]["version"]},
         "modifiedEntryVerified":value["modifiedEntryVerified"],
     });
-    if value != expected_shape || bytes != json_bytes(&value)? {
+    if value != expected_shape || bytes != notices::json_bytes(&value)? {
         return Err("source relink proof has unknown fields or noncanonical serialization".into());
     }
     if value["schemaVersion"] != 1

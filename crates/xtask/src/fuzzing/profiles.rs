@@ -1,4 +1,4 @@
-//! Versioned optional campaign policy; ordinary smoke defaults remain unchanged.
+//! Fuzz profiles (smoke, extended, deep) and their time and size limits.
 
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
