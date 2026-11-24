@@ -49,6 +49,15 @@ with these rules:
   streams that Rustleaks already has open, such as a pipe or a file that the
   shell redirects to. Only these exact names are treated this way. `-` is
   the portable way to write to standard output.
+- On Windows, a DOS device name such as `NUL`, `CON`, `AUX`, `PRN`, `COM1`
+  to `COM9` or `LPT1` to `LPT9`, in any letter case and with or without an
+  extension, and a path that starts with `\\.\` are opened by name.
+  `--report-path NUL` discards the report.
+
+Rustleaks checks only the last part of the path. Symbolic links in the
+folders above it are followed. For example, with `--report-path
+out/report.json`, a link named `report.json` is refused, but if `out` is a
+link to another folder, the report is written in that folder.
 
 Mode `0600` also applies when Rustleaks runs as root in a container. A
 report that root writes to a folder shared with the host can then be read
@@ -60,8 +69,10 @@ symbolic link at the path is refused in the same way.
 
 In a folder that other users can write to, such as `/tmp`, another user can
 create a file at the report path before the scan. Rustleaks then writes the
-report to that file, which keeps that user as its owner. Write reports to a
-folder that only you can write to.
+report to that file, which keeps that user as its owner, unless the system
+refuses to open it. Linux refuses this in a sticky folder such as `/tmp`
+when `fs.protected_regular` is on. Write reports to a folder that only you
+can write to.
 
 ## Redaction
 

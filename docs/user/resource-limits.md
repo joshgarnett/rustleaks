@@ -219,12 +219,15 @@ The limits work as follows:
   model is not decoded: Rustleaks reports a warning and skips that member
   and the rest of the RAR archive. The RAR3 test archives in Rustleaks, made
   with RAR at its best compression (`-m5`), set 25 MiB. Rustleaks keeps the
-  model in larger structures than RAR does. In a measured worst case, it took
-  about 200 MiB of memory when set to 25 MiB, and about 450 MiB when set to
-  64 MiB. The model grows with the decoded data, so it reaches that size only
-  when a member fills it. A RAR archive inside a RAR archive keeps the outer
-  model while it reads the inner one, so nested RAR archives can hold one
-  model for each level, up to the archive depth.
+  model in larger structures than RAR does. The worst case measured so far
+  took about 200 MiB of memory when set to 25 MiB, and about 450 MiB when
+  set to 64 MiB. These are measurements, not limits. From the sizes of its
+  structures, the model can take at most about 34 times the size it sets,
+  about 2.1 GiB at 64 MiB. The model grows with the decoded data, so it
+  reaches its size only when a member fills it. A RAR archive inside a RAR
+  archive keeps the outer model while it reads the inner one. With
+  `--max-archive-depth N`, nested RAR archives can hold up to N models at
+  once, so up to N times these amounts.
 - **Git.** An archive file from Git history is copied to temporary storage
   before it is read. A file larger than `git_blob_bytes` or the temporary
   storage limit is skipped with a warning, and the history scan continues.

@@ -8,8 +8,9 @@
 - A symbolic link at `--report-path` is refused: the scan fails with exit
   code 1 before it starts, and the file that the link points to is not
   changed. Before, Rustleaks followed the link and replaced that file. On
-  Unix, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` still work, and `-`
-  still writes to standard output.
+  Unix, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` still work. On
+  Windows, `NUL` and the other DOS device names still work. `-` still
+  writes to standard output.
 - A `--baseline-path` file larger than 256 MiB is not loaded. As with a
   baseline that cannot be read, Rustleaks logs an error and scans without
   the baseline. Before, a baseline file of any size was read into memory.

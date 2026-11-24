@@ -167,11 +167,18 @@ See [Using rustleaks-core](../user/library.md#review-records).
   does not lower it. Rustleaks keeps the model in larger structures than the
   reference decoder. The context count is capped at the model size divided
   by 12, and the suballocator bounds the state arrays and text. Memory is
-  therefore at most a fixed multiple of the model size. In a measured worst
-  case the structures took about 7 to 8 times the model size, about 450 MiB
-  for a 64 MiB model. A RAR archive inside a RAR archive keeps the outer decoder
-  and its model while the inner member is read, so nested RAR archives can
-  hold one model for each level, up to the archive depth.
+  therefore at most a fixed multiple of the model size. The worst case
+  measured so far took about 7 to 8 times the model size, about 450 MiB for
+  a 64 MiB model. That is a measurement, not a limit. An estimate from the
+  structure sizes gives the bound: at most one context (56 bytes) for each
+  12-byte unit and two states (24 bytes each) for each unit, with `Vec`
+  growth that can double each array, the minimum capacity of 4 for a
+  state array, allocator overhead and the temporary maps of the free-block
+  merge pass. That is at most about 34 bytes for each model byte, about
+  2.1 GiB for a 64 MiB model. A RAR archive inside a RAR archive keeps the
+  outer decoder and its model while the inner member is read. With
+  `--max-archive-depth N`, nested RAR archives can hold up to N models at
+  once, so the totals above are multiplied by N. The CLI does not cap N.
 - The XZ decoder sizes its dictionary from the stream header without a
   Rustleaks limit. Bzip2 blocks are at most 900 kB, and large-window Brotli is
   rejected.
@@ -226,15 +233,29 @@ See [Using rustleaks-core](../user/library.md#review-records).
 - CSV and template reports keep control characters from paths, rule IDs and
   other fields. JUnit replaces C0 controls but keeps C1 controls. Print
   these reports to a terminal only when the input is trusted.
+- Only the last component of the report path is checked for a symbolic
+  link. Links in parent folders are followed.
 - An existing regular file at the report path is replaced in place and
   keeps its owner and mode. In a folder that other users can write to,
-  another user can create that file first and read the report. A hard link
-  at the report path is written through. On Unix, `/dev/stdout`,
-  `/dev/stderr` and `/dev/fd/N` are opened by name and follow links. On
-  Windows, a new report gets the folder's default permissions, and the
-  check of an existing file compares only its type, because the standard
-  library has no stable file identity there; the open does not follow a
-  link.
+  another user can create that file first and read the report, unless the
+  kernel refuses the open. The existing entry is opened with `O_CREAT`, as
+  `File::create` opens it, so Linux `protected_regular` and
+  `protected_fifos` apply in sticky folders. A hard link at the report path
+  is written through.
+- The standard library has no portable `O_NOFOLLOW` or `O_NONBLOCK`, and
+  Rustleaks adds no dependency for them. A link swapped in between the
+  check and the open is followed: a missing target is created empty with
+  mode `0600`, and a named pipe with no reader blocks the report write.
+  The device and inode check after the open then refuses the file, so no
+  report is written to it and nothing is truncated. The same check refuses
+  a new file created in place of a removed entry.
+- On Unix, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` are opened by name
+  and follow links. On Windows, DOS device names such as `NUL` and `CON`
+  and `\\.\` paths are opened by name, because Windows gives no file
+  information for a device handle. On Windows, a new report gets the
+  folder's default permissions, and the check of an existing file compares
+  only its type, because the standard library has no stable file identity
+  there; the open does not follow a link.
 - A baseline file can be up to 256 MiB. The parsed entries can take more
   memory than the file. The user chooses the path.
 - `--verbose` output and report files are an explicit disclosure.
