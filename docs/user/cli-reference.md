@@ -252,7 +252,7 @@ The `git`, `dir` and `stdin` commands accept every flag in this section. The
 
 | Flag | Short | Value | Default | Effect |
 | --- | --- | --- | --- | --- |
-| `--report-path` | `-r` | Path | None | Write a report to this file. `-` writes it to standard output. |
+| `--report-path` | `-r` | Path | None | Write a report to this file. `-` writes it to standard output. A symbolic link at the path is refused. See [Report files](reports.md#report-files). |
 | `--report-format` | `-f` | `json`, `csv`, `junit`, `sarif` or `template` | From the extension of `--report-path` | The report format. The extension works for `.json`, `.csv` and `.sarif`. |
 | `--report-template` | | Path | None | The template file. Also give `--report-format template`. |
 | `--exit-code` | | Whole number | `1` | The exit code when the scan finds secrets. See [Exit codes](#exit-codes). |

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- On Unix, a new `--report-path` file is created with mode `0600`, so only
+  its owner can read it. Before, it got the default mode from the umask. An
+  existing file keeps its owner and mode.
+- A symbolic link at `--report-path` is refused: the scan fails with exit
+  code 1 before it starts, and the file that the link points to is not
+  changed. Before, Rustleaks followed the link and replaced that file. On
+  Unix, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` still work, and `-`
+  still writes to standard output.
+- A `--baseline-path` file larger than 256 MiB is not loaded. As with a
+  baseline that cannot be read, Rustleaks logs an error and scans without
+  the baseline. Before, a baseline file of any size was read into memory.
 - A normal scan now reads a file whose name ends in `.tgz` as a
   gzip-compressed TAR archive, as a complete scan already did. Before, a
   normal scan skipped such a file as binary, so secrets inside it were

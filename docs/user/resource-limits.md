@@ -243,6 +243,7 @@ archives inside it at the same time.
 | `--enable-rule` IDs | 4,096. The selected rules and the rules they require can hold at most 8 MiB of rule source text. |
 | `extend` levels in a configuration | 2 |
 | One configuration file, including `.gitleaks.toml` or `.rustleaks.toml` in the scanned folder and each `[extend]` file | 16 MiB. A larger file fails to load before Rustleaks reads more than 16 MiB of it. |
+| `--baseline-path` file | 256 MiB. Rustleaks reads no more than 256 MiB of a larger file. It logs an error and scans without the baseline, as for a baseline it cannot read. See [Baselines](configuration.md#baselines). |
 | One regular expression | 1 MiB of source, 4,096 levels of nesting, and 256 MiB for each compiled form. A repeat count can be at most 1,000, and the counts of nested repeats multiplied together can be at most 1,000. |
 | Native rule files in one `NativePolicy` (library) | 32 files, 1 MiB of TOML, 1,024 rules |
 | One line of an ignore file | 64 KiB. Parsing of that file stops at a longer line. Rustleaks reads an ignore file one line at a time, so it never holds more than one line of the file in memory, plus the entries it keeps. |
