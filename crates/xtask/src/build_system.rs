@@ -349,8 +349,9 @@ fn root_rust_targets(root: &Path) -> Result<String, String> {
         .ok_or_else(|| "BUILD.bazel omits the _RUST_TARGETS list".to_owned())
 }
 
-/// Requires the `RUSTLEAKS_VERSION` that Bazel targets use to equal the Cargo
-/// workspace package version.
+/// Requires the `RUSTLEAKS_VERSION` that Bazel targets use and the
+/// `module()` version in `MODULE.bazel` to equal the Cargo workspace package
+/// version.
 fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
     let cargo = workspace
         .get("workspace")
@@ -360,11 +361,40 @@ fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
         .ok_or("Cargo.toml has no workspace package version")?;
     let rules = fs::read_to_string(root.join("bazel/rust_crate.bzl"))
         .map_err(|error| format!("cannot read bazel/rust_crate.bzl: {error}"))?;
+    let module = fs::read_to_string(root.join("MODULE.bazel"))
+        .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
+    check_version_text(cargo, &rules, &module)
+}
+
+fn check_version_text(cargo: &str, rules: &str, module: &str) -> Result<(), String> {
     require_contains(
-        &rules,
+        rules,
         &format!("\nRUSTLEAKS_VERSION = \"{cargo}\"\n"),
         "bazel/rust_crate.bzl workspace version",
-    )
+    )?;
+    let found = module_version(module).ok_or("MODULE.bazel module() has no version")?;
+    if found != cargo {
+        return Err(format!(
+            "MODULE.bazel module() version {found} differs from the Cargo workspace version {cargo}"
+        ));
+    }
+    Ok(())
+}
+
+/// Returns the `version` attribute of the top-level `module(...)` call.
+fn module_version(module: &str) -> Option<&str> {
+    let start = if module.starts_with("module(") {
+        0
+    } else {
+        module.find("\nmodule(")? + 1
+    };
+    let call = &module[start..];
+    let call = &call[..call.find("\n)")?];
+    call.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("version = \"")?
+            .strip_suffix("\",")
+    })
 }
 
 fn check_compile_assets(crate_root: &Path, build: &str) -> Result<(), String> {
@@ -912,7 +942,24 @@ fn require_not_contains(haystack: &str, needle: &str, context: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{check_bazel_ignore, check_test_membership};
+    use super::{check_bazel_ignore, check_test_membership, check_version_text};
+
+    #[test]
+    fn version_check_requires_bazel_rules_and_module_to_match_cargo() {
+        let rules = "load(\"x\")\nRUSTLEAKS_VERSION = \"1.2.3\"\n";
+        let module = "module(\n    name = \"rustleaks\",\n    version = \"1.2.3\",\n)\n\nbazel_dep(name = \"git\", version = \"2.55.0\")\n";
+        assert!(check_version_text("1.2.3", rules, module).is_ok());
+        let stale_module = module.replace("\"1.2.3\"", "\"1.2.2\"");
+        assert!(
+            check_version_text("1.2.3", rules, &stale_module)
+                .unwrap_err()
+                .contains("MODULE.bazel")
+        );
+        let no_version = "module(\n    name = \"rustleaks\",\n)\n\nbazel_dep(name = \"git\", version = \"1.2.3\")\n";
+        assert!(check_version_text("1.2.3", rules, no_version).is_err());
+        let stale_rules = rules.replace("1.2.3", "1.2.2");
+        assert!(check_version_text("1.2.3", &stale_rules, module).is_err());
+    }
 
     #[test]
     fn test_membership_requires_the_suite_and_root_lists() {
