@@ -103,7 +103,11 @@ pub(crate) fn output_with_stdin(command: &mut Command, bytes: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(bytes).unwrap();
+    // The command may exit before it reads its input, for example when it
+    // refuses an argument; a broken pipe on this write is then expected.
+    if let Err(error) = child.stdin.take().unwrap().write_all(bytes) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
+    }
     child.wait_with_output().unwrap()
 }
 
