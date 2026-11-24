@@ -2423,8 +2423,17 @@ impl Unpack29 {
         }
     }
 
+    /// Sets the largest PPMd model, in bytes, that a block header may set.
+    /// A PPMd block that sets a larger model fails with `Error::Limit`
+    /// before the model is built. The limit stays set for every member.
+    pub fn set_ppmd_model_limit(&mut self, max_model_bytes: usize) {
+        self.ppmd.set_max_model_bytes(max_model_bytes);
+    }
+
     fn reset_non_solid(&mut self) {
+        let ppmd_model_limit = self.ppmd.max_model_bytes();
         *self = Self::new();
+        self.ppmd.set_max_model_bytes(ppmd_model_limit);
     }
 
     #[cfg(test)]
@@ -4524,6 +4533,39 @@ exercise LZSS block table selection.</P></BODY></HTML>\n"
         decoder.copy_match(4, 0, 5).unwrap();
 
         assert_eq!(decoder.output, b"ZZZZZ");
+    }
+
+    #[test]
+    fn ppmd_model_limit_rejects_larger_models_and_decodes_the_rest() {
+        let input = b"rar29 ppmd model limit text payload\n".repeat(32);
+        let packed = unpack29_encode_ppmd_literals(&input).unwrap();
+        assert_eq!(packed[0] & 0xa0, 0xa0, "the block builds a new model");
+        let model_bytes = (usize::from(packed[1]) + 1) << 20;
+
+        let mut decoder = Unpack29::new();
+        decoder.set_ppmd_model_limit(model_bytes - 1);
+        // The limit stays set when each non-solid member resets the decoder.
+        for _ in 0..2 {
+            assert_eq!(
+                decoder.decode_non_solid_member(&packed, input.len()),
+                Err(Error::Limit("RAR PPMd model exceeds memory limit"))
+            );
+        }
+        let mut solid = Unpack29::new();
+        solid.set_ppmd_model_limit(model_bytes - 1);
+        assert_eq!(
+            solid.decode_member(&packed, input.len()),
+            Err(Error::Limit("RAR PPMd model exceeds memory limit"))
+        );
+
+        let mut decoder = Unpack29::new();
+        decoder.set_ppmd_model_limit(model_bytes);
+        assert_eq!(
+            decoder
+                .decode_non_solid_member(&packed, input.len())
+                .unwrap(),
+            input
+        );
     }
 
     #[test]

@@ -342,6 +342,69 @@ fn corrupt_and_limit_failures_are_structured() {
     assert!(issues.contains(&SourceIssueKind::Limit));
 }
 
+/// The recorded RAR3 fixture, whose one member is a PPMd block, with the
+/// model size byte of that block set to `model_byte` (the size in MiB minus
+/// one). The member holds a short text, so the model size does not change the
+/// decoded bytes.
+fn rar3_ppmd_fixture(model_byte: u8) -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/fixtures/archives/rar-test-files-16b785c/testfile.rar3.rar");
+    let mut bytes = fs::read(path).expect("read RAR3 fixture");
+    let header_size =
+        |offset: usize| usize::from(u16::from_le_bytes([bytes[offset + 5], bytes[offset + 6]]));
+    let file_header = 7 + header_size(7);
+    assert_eq!(bytes[file_header + 2], 0x74, "file header");
+    let packed = file_header + header_size(file_header);
+    assert_eq!(bytes[packed] & 0xa0, 0xa0, "PPMd block that builds a model");
+    assert_eq!(bytes[packed + 1], 24, "the fixture sets a 25 MiB model");
+    bytes[packed + 1] = model_byte;
+    bytes
+}
+
+#[test]
+fn rar3_ppmd_model_over_the_limit_is_skipped_with_a_limit_warning() {
+    let scan = |bytes: Vec<u8>| {
+        let mut source = ArchiveSource::new(Cursor::new(bytes), "model.rar");
+        let mut fragments = Vec::new();
+        let mut issues = Vec::new();
+        source
+            .visit(&CancellationToken::new(), &mut |event| {
+                match event {
+                    SourceEvent::Fragment { fragment, issue } => {
+                        fragments.push(fragment.content().as_bytes().to_vec());
+                        issues.extend(issue.map(|issue| (issue.stage(), issue.kind())));
+                    }
+                    SourceEvent::Issue(issue) => issues.push((issue.stage(), issue.kind())),
+                    _ => unreachable!("future source event"),
+                }
+                Ok(SourceControl::Continue)
+            })
+            .expect("RAR limits are recoverable");
+        (fragments, issues)
+    };
+
+    // 25 MiB as recorded, and 64 MiB, the largest model that is read.
+    for model_byte in [24, 63] {
+        let (fragments, issues) = scan(rar3_ppmd_fixture(model_byte));
+        assert_eq!(
+            fragments,
+            [b"Testing 123\n".to_vec()],
+            "model byte {model_byte}"
+        );
+        assert!(issues.is_empty(), "model byte {model_byte}: {issues:?}");
+    }
+    // 65 MiB, and 256 MiB, the largest model the format can set.
+    for model_byte in [64, 255] {
+        let (fragments, issues) = scan(rar3_ppmd_fixture(model_byte));
+        assert!(fragments.is_empty(), "model byte {model_byte}");
+        assert_eq!(
+            issues,
+            [(SourceStage::Limit, SourceIssueKind::Limit)],
+            "model byte {model_byte}"
+        );
+    }
+}
+
 #[test]
 fn seven_zip_declared_header_range_is_rejected_before_backend_parsing() {
     let mut bytes = vec![0_u8; 32];

@@ -434,6 +434,8 @@ pub struct PpmdDecoder {
     range: RangeDecoder,
     allocated: bool,
     max_contexts: usize,
+    // Largest model size, in bytes, that a block header may set.
+    max_model_bytes: usize,
     suballoc: Suballocator,
 }
 
@@ -547,8 +549,20 @@ impl PpmdDecoder {
             range: RangeDecoder::new(),
             allocated: false,
             max_contexts: MIN_MODEL_CONTEXTS,
+            max_model_bytes: usize::MAX,
             suballoc: Suballocator::default(),
         }
+    }
+
+    /// Sets the largest model size that a block header may set. A block that
+    /// sets a larger model fails with `Error::Limit` before the model is
+    /// built.
+    pub fn set_max_model_bytes(&mut self, max_model_bytes: usize) {
+        self.max_model_bytes = max_model_bytes;
+    }
+
+    pub fn max_model_bytes(&self) -> usize {
+        self.max_model_bytes
     }
 
     // Units occupied by a context's state array. Single-state (binary)
@@ -574,6 +588,12 @@ impl PpmdDecoder {
         } else {
             None
         };
+        // The model size is in the block header. Check it before the model
+        // is built or the rest of the header is read.
+        let dictionary_mb = max_mb.map_or(0, |max_mb| usize::from(max_mb) + 1);
+        if dictionary_mb.saturating_mul(1024 * 1024) > self.max_model_bytes {
+            return Err(Error::Limit("RAR PPMd model exceeds memory limit"));
+        }
         if first_byte & 0x40 != 0 {
             *esc_char = input.read_ppmd_byte()?;
         }
@@ -586,7 +606,6 @@ impl PpmdDecoder {
             if max_order == 1 {
                 return Err(Error::InvalidData("RAR PPMd order is invalid"));
             }
-            let dictionary_mb = max_mb.unwrap_or(0) as usize + 1;
             self.max_contexts = model_context_limit(dictionary_mb);
             self.suballoc
                 .reset(dictionary_mb.saturating_mul(1024 * 1024));
@@ -1951,6 +1970,52 @@ mod tests {
         assert_eq!(
             decoder.decode_init(0x20 | 1, &mut input, &mut esc),
             Err(Error::NeedMoreInput)
+        );
+    }
+
+    #[test]
+    fn decode_init_rejects_model_over_limit_before_building_it() {
+        let mut decoder = PpmdDecoder::new();
+        decoder.set_max_model_bytes(64 << 20);
+        // Reset flag and order 8, then the model size byte 255 (256 MiB) and
+        // a range coder header.
+        let mut input = Bytes {
+            input: &[255, 0, 0, 0, 0],
+        };
+        let mut esc = 2;
+
+        assert_eq!(
+            decoder.decode_init(0x20 | 7, &mut input, &mut esc),
+            Err(Error::Limit("RAR PPMd model exceeds memory limit"))
+        );
+        assert!(!decoder.allocated);
+        assert_eq!(decoder.contexts.capacity(), 0);
+        assert_eq!(decoder.text.capacity(), 0);
+        assert_eq!(decoder.suballoc.size_bytes, 0);
+        // The rest of the header is not read.
+        assert_eq!(input.input.len(), 4);
+    }
+
+    #[test]
+    fn decode_init_accepts_model_at_limit_and_rejects_one_more_mib() {
+        let mut esc = 2;
+        let mut decoder = PpmdDecoder::new();
+        decoder.set_max_model_bytes(64 << 20);
+        let mut input = Bytes {
+            input: &[63, 0, 0, 0, 0],
+        };
+        decoder.decode_init(0x20 | 7, &mut input, &mut esc).unwrap();
+        assert!(decoder.allocated);
+        assert_eq!(decoder.suballoc.size_bytes, 64 << 20);
+
+        let mut decoder = PpmdDecoder::new();
+        decoder.set_max_model_bytes(64 << 20);
+        let mut input = Bytes {
+            input: &[64, 0, 0, 0, 0],
+        };
+        assert_eq!(
+            decoder.decode_init(0x20 | 7, &mut input, &mut esc),
+            Err(Error::Limit("RAR PPMd model exceeds memory limit"))
         );
     }
 

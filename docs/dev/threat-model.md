@@ -160,13 +160,18 @@ See [Using rustleaks-core](../user/library.md#review-records).
   removed on every exit path, including a killed process. The spool limit
   bounds the bytes held at once by one traversal. A memory-backed temporary
   folder turns spool files into memory use.
-- The RAR3 PPMd model is limited only by the model size in the member
-  header, up to 256 MB in the RAR format. Rustleaks keeps the model in
-  larger structures, so at that size it can take more than 2 GB. It grows
-  with the decoded data, up to about 80 bytes for each decoded byte in a
-  measured worst case, so one member within the 64 MiB limit can reach that
-  size. A RAR archive inside a RAR archive can hold more than one model at
-  once.
+- A RAR3 PPMd block header sets the model size, up to 256 MiB in the RAR
+  format. The decoder compares it with a fixed 64 MiB limit
+  (`MAX_PPMD_MODEL_BYTES` in `archive/rar.rs`) before it builds the model,
+  and a larger model gives a limit issue for the member. The member limit
+  does not lower it. Rustleaks keeps the model in larger structures than the
+  reference decoder. The context count is capped at the model size divided
+  by 12, and the suballocator bounds the state arrays and text. Memory is
+  therefore at most a fixed multiple of the model size. In a measured worst
+  case the structures took about 7 to 8 times the model size, about 450 MiB
+  for a 64 MiB model. A RAR archive inside a RAR archive keeps the outer decoder
+  and its model while the inner member is read, so nested RAR archives can
+  hold one model for each level, up to the archive depth.
 - The XZ decoder sizes its dictionary from the stream header without a
   Rustleaks limit. Bzip2 blocks are at most 900 kB, and large-window Brotli is
   rejected.

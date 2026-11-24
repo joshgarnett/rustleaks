@@ -46,6 +46,8 @@ pub enum Error {
     InvalidData(&'static str),
     /// More compressed input is required.
     NeedMoreInput,
+    /// The stream needs more memory than the limit the caller set.
+    Limit(&'static str),
     /// The operation was cancelled.
     Cancelled,
 }
@@ -53,7 +55,7 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidData(message) => formatter.write_str(message),
+            Self::InvalidData(message) | Self::Limit(message) => formatter.write_str(message),
             Self::NeedMoreInput => formatter.write_str("codec input is truncated"),
             Self::Cancelled => formatter.write_str("codec operation was cancelled"),
         }

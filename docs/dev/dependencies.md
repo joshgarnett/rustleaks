@@ -246,7 +246,7 @@ not an alternative.
 - Removes the container, writer, encryption, recovery, parallel and file
   system code, and every dependency.
 - Adds checked arithmetic, fallible growth, Huffman checks, bounded RAR VM
-  programs and filters, and output limits set by the caller.
+  programs and filters, output limits set by the caller, and a PPMd model size limit set by the caller.
 - The RAR3 and RAR5 encoders are compiled only for tests, which encode data
   and decode it back. They stay in place so the code is easy to compare with
   upstream. `rustleaks-sources` calls only the RAR3 and RAR5 decoders and the
