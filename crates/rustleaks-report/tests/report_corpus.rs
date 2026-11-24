@@ -19,11 +19,8 @@ mod tool_identity;
 use tool_identity::with_rustleaks_identity;
 
 #[test]
-fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
-    let root = std::env::var_os("RUSTLEAKS_REPORT_CORPUS").map_or_else(
-        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/report-corpus"),
-        PathBuf::from,
-    );
+fn every_representable_builtin_report_case_matches_recorded_report_bytes() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/report-corpus");
     let outcomes = json_lines(&root.join("outcomes-v1.jsonl"))
         .into_iter()
         .map(|value| (text(&value, "id").to_owned(), value))
@@ -57,8 +54,8 @@ fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
             .is_some_and(|findings| findings.iter().any(|finding| finding["tags_nil"] == true))
         {
             // Rust's public Finding has an owned Vec and cannot represent a
-            // programmatic nil Go slice. The production detector emits [] and
-            // the declared compatibility domain records this one disposition.
+            // programmatic nil Go slice. The detector emits [], so the corpus
+            // records this case as one disposition.
             dispositions.push(id.to_owned());
             continue;
         }
@@ -106,8 +103,8 @@ fn every_representable_builtin_report_case_replays_exact_oracle_bytes() {
         let mut destination = FailingWriter::new(limit);
         let result = reporter.write(&mut destination, &findings);
         if id == "junit-writer-error" {
-            // The pinned writer ignores its XML-header error and continues;
-            // Rust returns the first destination error immediately.
+            // The recorded Gitleaks writer ignores its XML-header error and
+            // continues; Rustleaks returns the first destination error at once.
             assert!(result.is_err());
             assert!(destination.bytes.is_empty());
             assert_eq!(expected.len(), 39);
