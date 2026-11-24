@@ -14,6 +14,21 @@
   archive. `--log-opts` values come after these options and can turn them
   back on. `color.ui=always` in a Git configuration no longer makes history
   scans fail.
+- A rule in an extending configuration with the ID of a built-in rule that
+  depends on helper rules, such as `rustleaks.azure-servicebus-key-comma`,
+  now reports matches of its own `regex`. Before, it reported nothing.
+  Keywords added to such a rule without a `regex` now also let it run.
+- When `disabledRules` or `--enable-rule` leaves out a rule that a remaining
+  rule needs, through `[[rules.required]]` or a built-in helper, Rustleaks
+  keeps the needed rule without reporting its findings. Before, the
+  remaining rule reported nothing, and with `--enable-rule` Rustleaks logged
+  an error for each missing required rule.
+- Release checks of the `.deb` and `.rpm` packages reject data after the
+  first gzip stream, a tar without its end blocks, and data after the cpio
+  trailer. The Homebrew tap and Scoop bucket no longer move from a stable
+  release to a pre-release. `Update Package Managers` checks the release tag
+  against the release commit, and its publish job runs only Git and the
+  GitHub CLI.
 - A configuration file that fails to parse or decode no longer prints its
   text. The error names the kind of error, the file and the line and
   column. A configuration in the scanned folder can name any readable file
