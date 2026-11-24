@@ -578,7 +578,22 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
             .iter()
             .map(|value| value.to_string_lossy())
             .collect::<Vec<_>>(),
-        ["-C", "repo", "log", "-p", "-U0", "--all", "", "foo..."]
+        [
+            "-C",
+            "repo",
+            "-c",
+            "core.fsmonitor=",
+            "log",
+            "-p",
+            "-U0",
+            "--no-textconv",
+            "--no-ext-diff",
+            "--no-color",
+            "--no-show-signature",
+            "--all",
+            "",
+            "foo..."
+        ]
     );
 
     assert_eq!(GitSource::new("").arguments()[1].to_string_lossy(), ".");
@@ -595,11 +610,22 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
         PathBuf::from("repo space/é")
     );
     assert_eq!(
-        arguments[2..]
+        arguments[4..]
             .iter()
             .map(|value| value.to_string_lossy())
             .collect::<Vec<_>>(),
-        ["log", "-p", "-U0", "-U3", "--pretty=short", "--no-patch"]
+        [
+            "log",
+            "-p",
+            "-U0",
+            "--no-textconv",
+            "--no-ext-diff",
+            "--no-color",
+            "--no-show-signature",
+            "-U3",
+            "--pretty=short",
+            "--no-patch"
+        ]
     );
 
     let explicit = GitSource::new("repo").mode(GitMode::LogArguments(vec![
@@ -615,9 +641,15 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
         [
             "-C",
             "repo",
+            "-c",
+            "core.fsmonitor=",
             "log",
             "-p",
             "-U0",
+            "--no-textconv",
+            "--no-ext-diff",
+            "--no-color",
+            "--no-show-signature",
             "--all",
             "path with spaces"
         ]

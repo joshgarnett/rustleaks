@@ -850,3 +850,108 @@ fn complete_git_expands_tgz_aliases_and_legacy_keeps_binary_exclusion() {
         }
     }
 }
+
+/// Writes an executable script that records each run next to itself and
+/// prints a replacement for the content Git would show.
+#[cfg(unix)]
+fn recording_script(directory: &Path, name: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let path = directory.join(name);
+    fs::write(
+        &path,
+        format!("#!/bin/sh\n: > \"$(dirname \"$0\")/{name}.ran\"\necho hidden\n"),
+    )
+    .expect("write recording script");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make script executable");
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn repository_config_cannot_run_commands_or_replace_patch_content() {
+    let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let root = TempRepo(std::env::temp_dir().join(format!(
+        "rustleaks-git-config-commands-{}-{unique}",
+        std::process::id()
+    )));
+    let repository = root.path().join("repository");
+    let tools = root.path().join("tools");
+    fs::create_dir_all(&repository).expect("create synthetic repository");
+    fs::create_dir_all(&tools).expect("create script directory");
+    let git = |arguments: &[&str]| {
+        let output = support::command()
+            .arg("-C")
+            .arg(&repository)
+            .args([
+                "-c",
+                "user.name=Synthetic Test",
+                "-c",
+                "user.email=synthetic@example.invalid",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.fsmonitor=",
+            ])
+            .args(arguments)
+            .output()
+            .expect("run isolated Git");
+        assert!(output.status.success(), "isolated Git {arguments:?} failed");
+    };
+    git(&["init", "--quiet"]);
+    fs::write(repository.join(".gitattributes"), "*.txt diff=hide\n").expect("write attributes");
+    fs::write(repository.join("value.txt"), "raw committed content\n").expect("write file");
+    git(&["add", "--", ".gitattributes", "value.txt"]);
+    git(&["commit", "--quiet", "-m", "synthetic commit"]);
+
+    let textconv = recording_script(&tools, "textconv");
+    let monitor = recording_script(&tools, "fsmonitor");
+    let signature = recording_script(&tools, "gpg");
+    for (key, value) in [
+        ("diff.hide.textconv", textconv.to_str().unwrap()),
+        ("core.fsmonitor", monitor.to_str().unwrap()),
+        ("gpg.program", signature.to_str().unwrap()),
+        ("log.showSignature", "true"),
+        ("color.ui", "always"),
+    ] {
+        git(&["config", "--local", key, value]);
+    }
+    fs::write(repository.join("value.txt"), "raw staged content\n").expect("stage change");
+    git(&["add", "--", "value.txt"]);
+    fs::write(repository.join("value.txt"), "raw worktree content\n").expect("worktree change");
+
+    let processes = std::num::NonZeroUsize::new(2).unwrap();
+    let cases = [
+        (GitMode::Log { options: None }, "raw committed content\n"),
+        (
+            GitMode::LogArguments(vec!["--all".into()]),
+            "raw committed content\n",
+        ),
+        (GitMode::Diff { staged: true }, "raw staged content\n"),
+        (GitMode::Diff { staged: false }, "raw worktree content\n"),
+    ];
+    for (mode, expected) in cases {
+        for many in [false, true] {
+            let mut source = support::git_source(&repository).mode(mode.clone());
+            if many {
+                source = source.history_processes(processes);
+            }
+            let (fragments, issues) = collect(&mut source);
+            assert!(issues.is_empty(), "{mode:?}: {issues:?}");
+            let contents = fragments
+                .iter()
+                .filter(|fragment| fragment.file_path().as_bytes() == b"value.txt")
+                .map(|fragment| fragment.content().as_bytes().to_vec())
+                .collect::<Vec<_>>();
+            assert_eq!(contents, [expected.as_bytes()], "{mode:?}");
+        }
+    }
+    for name in ["textconv", "fsmonitor", "gpg"] {
+        assert!(
+            !tools.join(format!("{name}.ran")).exists(),
+            "Git ran the repository's {name} command"
+        );
+    }
+}

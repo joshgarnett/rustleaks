@@ -58,11 +58,15 @@ your `PATH`, so Git must be installed.
 
 By default Rustleaks runs `git log -p -U0 --full-history --all
 --diff-filter=tuxdb`, which covers every commit reachable from any branch or
-tag. Only the lines that each commit adds are scanned.
+tag. Only the lines that each commit adds are scanned. Every Git command
+also passes `-c core.fsmonitor=`, and every `git log` and `git diff` passes
+`--no-textconv --no-ext-diff --no-color`, so the scanned repository's
+configuration cannot start a program or replace the content Rustleaks
+reads. `git log` also passes `--no-show-signature`.
 
 | Flag | Value | Effect |
 | --- | --- | --- |
-| `--log-opts` | Text | Replaces the options after `git log -p -U0`. Rustleaks splits the value at each space and does not use shell quoting, so do not put quotes inside the value. Rustleaks warns about a word that starts and ends with a quote. Example: `--log-opts="main..HEAD"`. |
+| `--log-opts` | Text | Replaces the options after `git log -p -U0 --no-textconv --no-ext-diff --no-color --no-show-signature`. Rustleaks splits the value at each space and does not use shell quoting, so do not put quotes inside the value. Rustleaks warns about a word that starts and ends with a quote. Example: `--log-opts="main..HEAD"`. |
 | `--staged` | None | Scan changes that are staged but not committed yet (`git diff --staged`). |
 | `--pre-commit` | None | Scan changes in the working tree that are not staged yet (`git diff`). |
 | `--platform` | `github`, `gitlab`, `azuredevops`, `gitea`, `bitbucket` or `none` | Build links to findings for this platform. `none` turns links off. Without this flag, or with an empty value or `unknown`, Rustleaks finds the platform from the remote URL. Case does not matter. |

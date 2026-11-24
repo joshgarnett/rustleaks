@@ -222,6 +222,30 @@ pub struct GitSource {
     archive_file_options: crate::FileOptions,
 }
 
+/// Configuration that every `git log` and `git diff` of the source sets. A
+/// repository's `core.fsmonitor` can name a command that Git starts when it
+/// reads the index. An empty value turns the monitor off in Git versions
+/// that read the value as a flag and in those that read it as a hook path.
+pub(super) const CONFIG_OVERRIDES: [&str; 2] = ["-c", "core.fsmonitor="];
+
+/// Options for every `git diff` that the source runs. A repository's own
+/// configuration and attributes can name commands for textconv filters and
+/// external diff tools; these options keep Git from running them and keep
+/// the raw content in the patch. `--no-color` keeps the output parseable
+/// when a user configuration sets `color.ui=always`.
+pub(super) const DIFF_OPTIONS: [&str; 3] = ["--no-textconv", "--no-ext-diff", "--no-color"];
+
+/// Options for every `git log` that the source runs: [`DIFF_OPTIONS`] and
+/// `--no-show-signature`, which keeps `log.showSignature` from starting the
+/// configured signature program. Caller `--log-opts` come after these and
+/// can turn them back on.
+pub(super) const LOG_OPTIONS: [&str; 4] = [
+    "--no-textconv",
+    "--no-ext-diff",
+    "--no-color",
+    "--no-show-signature",
+];
+
 impl GitSource {
     /// Creates a Git source using the default history command.
     #[must_use]
@@ -325,6 +349,7 @@ impl GitSource {
 
     fn arguments(&self) -> Vec<OsString> {
         let mut arguments = vec![OsString::from("-C"), self.repository.as_os_str().to_owned()];
+        arguments.extend(CONFIG_OVERRIDES.map(OsString::from));
         match &self.mode {
             GitMode::Log { options } => {
                 arguments.extend([
@@ -332,6 +357,7 @@ impl GitSource {
                     OsString::from("-p"),
                     OsString::from("-U0"),
                 ]);
+                arguments.extend(LOG_OPTIONS.map(OsString::from));
                 if let Some(options) = options.as_ref().filter(|value| !value.is_empty()) {
                     arguments.extend(options.split(' ').map(OsString::from));
                 } else {
@@ -348,14 +374,12 @@ impl GitSource {
                     OsString::from("-p"),
                     OsString::from("-U0"),
                 ]);
+                arguments.extend(LOG_OPTIONS.map(OsString::from));
                 arguments.extend(options.iter().cloned());
             }
             GitMode::Diff { staged } => {
-                arguments.extend([
-                    OsString::from("diff"),
-                    OsString::from("-U0"),
-                    OsString::from("--no-ext-diff"),
-                ]);
+                arguments.extend([OsString::from("diff"), OsString::from("-U0")]);
+                arguments.extend(DIFF_OPTIONS.map(OsString::from));
                 if *staged {
                     arguments.push(OsString::from("--staged"));
                 }
