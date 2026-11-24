@@ -7,14 +7,17 @@
   `*.env -diff` or `*.lock binary`. Git showed no patch for these files, so
   Rustleaks skipped them without a warning, and a complete scan still
   counted as complete. `git log` and `git diff --staged` now pass
-  `-c attr.tree=` with the empty tree of the repository's object format, so
-  Git decides from the content alone, as `dir` does. Rustleaks runs
-  `git rev-parse --show-object-format` once before these scans to choose the
-  tree. This needs Git 2.43 or later; earlier versions ignore the setting.
-  Attributes from `.git/info/attributes` and `core.attributesFile` still
-  apply. `--pre-commit` keeps the attributes, because it needs the clean
-  filters that they name. History scans of repositories that mark large
-  text files this way read more data and can report more findings.
+  `-c attr.tree=` with the empty tree of the repository's object format and
+  run without `GIT_ATTR_SOURCE`, so Git decides from the content alone.
+  Rustleaks runs `git rev-parse --show-object-format` once before these
+  scans to choose the tree. This needs Git 2.43 or later; earlier versions
+  ignore the setting. Because the content decides, a file with a NUL byte
+  near its start that `.gitattributes` marks as text (`diff`) is now
+  skipped as binary in these scans; before, Rustleaks scanned it. Attributes
+  from `.git/info/attributes` and `core.attributesFile` still apply.
+  `--pre-commit` keeps the attributes, because it needs the clean filters
+  that they name. History scans of repositories that mark large text files
+  as binary read more data and can report more findings.
 - Git history and diff scans no longer run the textconv, external diff,
   fsmonitor or signature programs that the scanned repository's
   configuration names. Every `git log` and `git diff` passes

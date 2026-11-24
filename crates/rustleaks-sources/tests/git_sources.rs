@@ -957,8 +957,11 @@ fn repository_config_cannot_run_commands_or_replace_patch_content() {
 }
 
 /// A file that `.gitattributes` marks as binary is read by its content in
-/// history and staged scans, in SHA-1 and SHA-256 repositories. A worktree
-/// diff keeps the attributes, so the file stays binary there.
+/// history and staged scans, in SHA-1 and SHA-256 repositories, also when
+/// `GIT_ATTR_SOURCE` names the commit's attributes. A file with a NUL byte
+/// is binary by its content even when the attributes mark it as text
+/// (`diff`). A worktree diff keeps the attributes, so the file marked
+/// binary stays binary there.
 #[test]
 fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
     for format in ["sha1", "sha256"] {
@@ -993,11 +996,16 @@ fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
         git(&["init", "--quiet", &format!("--object-format={format}")]);
         fs::write(
             repository.join(".gitattributes"),
-            "*.env -diff\n*.lock binary\n",
+            "*.env -diff\n*.lock binary\n*.dat diff\n",
         )
         .expect("write attributes");
         fs::write(repository.join("first.env"), "first marked text\n").expect("write file");
         fs::write(repository.join("real.bin"), b"binary\0content\n").expect("write file");
+        fs::write(
+            repository.join("forced.dat"),
+            b"binary\0content\nforced text\n",
+        )
+        .expect("write file");
         git(&["add", "--", "."]);
         git(&["commit", "--quiet", "-m", "first synthetic commit"]);
         fs::write(repository.join("second.lock"), "second marked text\n").expect("write file");
@@ -1035,6 +1043,8 @@ fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
                 .history_processes(two)
                 .history_batch_commits(one),
             support::git_source(&repository).mode(GitMode::LogArguments(vec!["--all".into()])),
+            support::git_source(&repository)
+                .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
         ] {
             assert_eq!(contents(&mut source), history, "{format}");
         }

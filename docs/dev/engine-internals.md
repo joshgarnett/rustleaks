@@ -525,11 +525,13 @@ one for each detection thread, up to 6 (`MAX_GIT_HISTORY_PROCESSES` in
 `crates/rustleaks-cli/src/run.rs`). The code is in
 `crates/rustleaks-sources/src/git/history.rs`.
 
-Before a history or `--staged` scan, `visit` runs
+Before a history or `--staged` scan, `GitSource::visit` in
+`crates/rustleaks-sources/src/git.rs` runs
 `git rev-parse --show-object-format` to choose the SHA-1 or SHA-256 empty
 tree for `-c attr.tree=`, which keeps `.gitattributes` from hiding text
 files as binary. Any other output or a failure selects the SHA-1 name, and
-the scan command then reports a real failure itself.
+the scan command then reports a real failure itself. These commands run
+without `GIT_ATTR_SOURCE`, which would take precedence.
 
 With more than one, and with the default history options, `plan`:
 

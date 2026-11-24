@@ -65,8 +65,10 @@ repository's configuration cannot start these programs or replace the
 content Rustleaks reads with their output. `git log` and `git diff --staged`
 also read Git attributes from an empty tree (`-c attr.tree=`), so a text file
 that the repository's `.gitattributes` marks as binary (`-diff` or `binary`)
-is still scanned. This needs Git 2.43 or later; earlier versions ignore the
-setting and skip such a file. `--pre-commit` runs `git diff` on the worktree,
+is still scanned. Git then decides from the content alone: a file with a NUL
+byte near its start is skipped as binary, even when `.gitattributes` marks it
+as text (`diff`). This needs Git 2.43 or later; earlier versions ignore the
+setting and follow `.gitattributes`. `--pre-commit` runs `git diff` on the worktree,
 which keeps the attributes: it still applies the repository's clean filters,
 as `git add` does, and skips a file that `.gitattributes` marks as binary.
 

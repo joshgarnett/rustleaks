@@ -31,9 +31,11 @@ pub use patch::fuzz_parse_patch;
 use patch::{
     ParsedFile, PatchStream, copy_limited, fallible_clone_metadata, patch_error_to_source,
 };
+#[cfg(feature = "archives")]
+use process::stream_command;
 use process::{
     CommandIo, OutputBudget, StreamedOutput, first_non_ignored_stderr, git_exit_message,
-    stream_command, stream_command_with,
+    stream_command_with,
 };
 
 // Patch, line, file, hunk and metadata ceilings apply to one commit. History
@@ -236,11 +238,24 @@ const EMPTY_TREE_SHA256: &str = "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b
 /// `git diff --staged`. A repository's `.gitattributes` can mark a text file
 /// as binary (`-diff` or `binary`), and Git then shows no patch for it.
 /// Reading attributes from the empty tree lets Git decide from the content
-/// alone, as the directory scan does. Git 2.43 and later read `attr.tree`;
-/// earlier versions ignore it. A value that does not name a tree of the
-/// repository's object format has no effect, so the name must match it. A
-/// worktree `git diff` keeps the attributes, since it needs the clean
-/// filters that they name.
+/// alone: a file with a NUL byte near its start is binary, including one
+/// that the repository's attributes mark as text (`diff`). Git 2.43 and
+/// later read `attr.tree`; earlier versions ignore it. `GIT_ATTR_SOURCE`
+/// takes precedence, so these commands run without it. A value that does
+/// not name a tree of the repository's object format has no effect, so the
+/// name must match it. A worktree `git diff` keeps the attributes, since it
+/// needs the clean filters that they name.
+/// Returns the empty tree name for `git rev-parse --show-object-format`
+/// output. A Git version without the option prints it back; such a version
+/// reads only SHA-1 repositories.
+fn empty_tree_for_format(output: &[u8]) -> &'static str {
+    if output.trim_ascii_end() == b"sha256" {
+        EMPTY_TREE_SHA256
+    } else {
+        EMPTY_TREE_SHA1
+    }
+}
+
 fn attribute_override(empty_tree: &str) -> [OsString; 2] {
     [
         OsString::from("-c"),
@@ -374,9 +389,8 @@ impl GitSource {
     }
 
     /// Returns the name of the empty tree in the repository's object format.
-    /// When Git cannot report the format, such as before Git 2.28 or outside
-    /// a repository, this is the SHA-1 name; the scan command then reports
-    /// any failure itself.
+    /// When Git cannot report the format, such as outside a repository, this
+    /// is the SHA-1 name; the scan command then reports any failure itself.
     fn empty_tree(&self, cancellation: &dyn Cancellation) -> Result<&'static str, SourceError> {
         let mut arguments = vec![OsString::from("-C"), self.repository.as_os_str().to_owned()];
         arguments.extend(CONFIG_OVERRIDES.map(OsString::from));
@@ -385,10 +399,14 @@ impl GitSource {
             OsString::from("--show-object-format"),
         ]);
         let mut output = Vec::new();
-        let result = stream_command(
+        let result = stream_command_with(
             &self.executable,
             &arguments,
-            self.limits.stderr_bytes(),
+            CommandIo {
+                input: None,
+                stderr: &OutputBudget::new(self.limits.stderr_bytes()),
+                clear_attribute_source: true,
+            },
             &self.environment,
             cancellation,
             SourceStage::GitCommand,
@@ -396,17 +414,15 @@ impl GitSource {
                 if output.len().saturating_add(chunk.len()) > 64 {
                     return Ok(SourceControl::Stop);
                 }
-                output.extend_from_slice(chunk);
+                output.extend_from_slice(&chunk);
                 Ok(SourceControl::Continue)
             },
         );
         match result {
             Ok(listed)
-                if !listed.stopped
-                    && listed.status.is_some_and(|status| status.success())
-                    && output.trim_ascii_end() == b"sha256" =>
+                if !listed.stopped && listed.status.is_some_and(|status| status.success()) =>
             {
-                Ok(EMPTY_TREE_SHA256)
+                Ok(empty_tree_for_format(&output))
             }
             Err(SourceError::Cancelled) => Err(SourceError::Cancelled),
             Ok(_) | Err(_) => Ok(EMPTY_TREE_SHA1),
@@ -481,16 +497,20 @@ impl Source for GitSource {
         // Each file record is parsed and emitted once the next record starts,
         // so memory follows the largest record instead of the whole history.
         // The last record waits for Git to exit successfully.
-        let output = stream_command(
+        let output = stream_command_with(
             &this.executable,
             &this.arguments(empty_tree),
-            this.limits.stderr_bytes(),
+            CommandIo {
+                input: None,
+                stderr: &OutputBudget::new(this.limits.stderr_bytes()),
+                clear_attribute_source: this.reads_empty_attributes(),
+            },
             &this.environment,
             cancellation,
             SourceStage::GitCommand,
             &mut |chunk| {
                 stream
-                    .push(chunk)
+                    .push(&chunk)
                     .map_err(|error| patch_error_to_source(error, &this.repository))?;
                 this.emit_ready_files(&mut stream, cancellation, emit)
             },

@@ -127,6 +127,7 @@ fn list_commits(
         CommandIo {
             input: None,
             stderr: &OutputBudget::new(source.limits.stderr_bytes()),
+            clear_attribute_source: false,
         },
         &source.environment,
         cancellation,
@@ -199,6 +200,7 @@ fn pretty_format_is_unset(
         CommandIo {
             input: None,
             stderr: &OutputBudget::new(source.limits.stderr_bytes()),
+            clear_attribute_source: false,
         },
         &source.environment,
         cancellation,
@@ -491,6 +493,7 @@ fn run_batches(shared: &Shared<'_>) -> Option<SourceError> {
             CommandIo {
                 input: Some(&shared.plan.commits[shared.plan.batches[job.batch].clone()]),
                 stderr: &shared.plan.stderr,
+                clear_attribute_source: true,
             },
             shared.environment,
             &shared.abort,

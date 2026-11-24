@@ -707,6 +707,21 @@ fn history_and_staged_diffs_read_attributes_from_the_empty_tree() {
 }
 
 #[test]
+fn object_format_output_selects_the_empty_tree() {
+    assert_eq!(empty_tree_for_format(b"sha256\n"), EMPTY_TREE_SHA256);
+    assert_eq!(empty_tree_for_format(b"sha256\r\n"), EMPTY_TREE_SHA256);
+    for output in [
+        b"sha1\n".as_slice(),
+        b"sha1\r\n",
+        b"--show-object-format\n",
+        b"",
+        b"sha2567\n",
+    ] {
+        assert_eq!(empty_tree_for_format(output), EMPTY_TREE_SHA1, "{output:?}");
+    }
+}
+
+#[test]
 fn classifies_only_pinned_stderr_warnings_as_ignorable() {
     assert!(first_non_ignored_stderr(b"Auto packing the repository in background for optimum performance.\nSee \"git help gc\" for manual housekeeping.\n").is_none());
     assert_eq!(

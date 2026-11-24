@@ -154,10 +154,12 @@ reasons for a difference:
   rule that a remaining rule needs through `[[rules.required]]`, Rustleaks
   keeps the needed rule without reporting its findings, so the remaining
   rule still reports. Gitleaks then reports nothing for the remaining rule.
-- **Files marked binary in Git.** When a repository's `.gitattributes`
-  marks a text file as binary (`-diff` or `binary`), Gitleaks does not scan
-  it in `git` history or `--staged` scans. Rustleaks scans it with Git 2.43
-  or later. With `--pre-commit`, both skip it. See [git](cli-reference.md#git).
+- **Git attributes.** When a repository's `.gitattributes` marks a text
+  file as binary (`-diff` or `binary`), Gitleaks does not scan it in `git`
+  history or `--staged` scans. Rustleaks scans it with Git 2.43 or later.
+  When `.gitattributes` marks a file with a NUL byte as text (`diff`),
+  Gitleaks scans it and Rustleaks skips it as binary. With `--pre-commit`,
+  both follow `.gitattributes`. See [git](cli-reference.md#git).
 - **Unicode.** Rustleaks uses newer Unicode tables than the Go version that
   Gitleaks used (Unicode 15). For characters added to Unicode after version
   15, case folding and Unicode character classes in rules can give different

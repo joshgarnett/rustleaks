@@ -162,10 +162,11 @@ See [Using rustleaks-core](../user/library.md#review-records).
   folder turns spool files into memory use.
 - The RAR3 PPMd model is limited only by the model size in the member
   header, up to 256 MB in the RAR format. Rustleaks keeps the model in
-  larger structures, so at that size it can take more than 2 GB. It grows with the decoded data, up to about 80 bytes for each
-  decoded byte in a measured worst case, so one member within the 64 MiB
-  limit can reach that size. A RAR archive inside a RAR archive can hold
-  more than one model at once.
+  larger structures, so at that size it can take more than 2 GB. It grows
+  with the decoded data, up to about 80 bytes for each decoded byte in a
+  measured worst case, so one member within the 64 MiB limit can reach that
+  size. A RAR archive inside a RAR archive can hold more than one model at
+  once.
 - The XZ decoder sizes its dictionary from the stream header without a
   Rustleaks limit. Bzip2 blocks are at most 900 kB, and large-window Brotli is
   rejected.
@@ -181,13 +182,15 @@ See [Using rustleaks-core](../user/library.md#review-records).
   (`filter.<driver>.clean` and `.process`), whose output replaces the
   content that is scanned, as it does for `git add`.
 - History and staged scans read Git attributes from the empty tree
-  (`attr.tree`), so the repository's `.gitattributes` cannot mark a text
-  file as binary (`-diff` or `binary`) to keep it out of the patch. Git
-  before 2.43 ignores `attr.tree`. Attributes from `.git/info/attributes`,
-  `core.attributesFile` and the system file still apply. A worktree
-  `git diff` (`--pre-commit`) keeps all attributes. In each of these cases
-  Git shows no patch for a file marked binary, and the scan reads it only
-  when it is an archive, with no issue.
+  (`attr.tree`) and run Git without `GIT_ATTR_SOURCE`, so the repository's
+  `.gitattributes` cannot mark a text file as binary (`-diff` or `binary`)
+  to keep it out of the patch. Git then decides from the content, so a file
+  with a NUL byte near its start is binary even when `.gitattributes` marks
+  it as text (`diff`). Git before 2.43 ignores `attr.tree`. Attributes from
+  `.git/info/attributes`, `core.attributesFile` and the system file still
+  apply. A worktree `git diff` (`--pre-commit`) keeps all attributes. In
+  each of these cases Git shows no patch for a binary file, and the scan
+  reads it only when it is an archive, with no issue.
 - Fuzzing covers the patch parser in process. It does not run Git. Each
   input is also parsed in one-byte and varied chunks, which must give the
   same result as the whole input.
