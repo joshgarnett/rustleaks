@@ -40,10 +40,10 @@ different point.
 
 `just fuzz-smoke` builds the archive corpus from shared synthetic seed
 builders and reviewed fixtures. The generator writes a `corpus/` folder, a
-manifest with hashes and origins, and the license files. The corpus has 90
+manifest with hashes and origins, and the license files. The corpus has 94
 inputs. It covers all sixteen format selectors, RAR2, RAR3 and RAR5, and
-Snappy and S2 framing. The 7z seeds cover COPY, Deflate and LZ4 with plain
-headers. Other 7z methods, encoded headers and larger coder graphs are not
+Snappy and S2 framing. The 7z seeds cover COPY, Deflate, LZ4 and Zstandard
+with plain headers. Other 7z methods, encoded headers and larger coder graphs are not
 covered.
 
 To build and check the corpus on its own:
@@ -62,10 +62,11 @@ Notes on the seeds:
   header. The generator frames them with `archive_frame::migrate_legacy`,
   which uses their first byte as both the format selector and the control
   byte. The target does not run an input without the header.
-- `support/sevenz_seeds.rs` builds the two compressed 7z seeds. Each holds one
+- `support/sevenz_seeds.rs` builds the three coded 7z seeds. Each holds one
   `value.txt` member with `CODEC_PAYLOAD` repeated eight times. Deflate uses
   `miniz_oxide 0.9.1` raw compression at level 6. LZ4 uses `lz4_flex 0.14.0`
-  with the default frame encoder.
+  with the default frame encoder. Zstandard uses one frame of raw blocks
+  with a 1 KiB window, written by the builder itself.
 - The XZ seed holds the shared two-member USTAR fixture, compressed with
   Python `lzma` (`FORMAT_XZ`, `CHECK_CRC32`, LZMA2, 4 KiB dictionary). The
   LZIP seed holds the shared codec payload in raw LZMA1 (4 KiB dictionary,

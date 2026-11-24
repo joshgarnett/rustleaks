@@ -1,4 +1,4 @@
-use std::io::{self, Cursor, Read};
+use std::io::{self, Read};
 
 use lzma_rust2::{
     Lzma2Reader, LzmaReader,
@@ -7,10 +7,41 @@ use lzma_rust2::{
 };
 use rustleaks_bzip2::DecoderReader as Bzip2Decoder;
 
-use crate::codec::{brotli::BrotliDecoder, deflate::DeflateDecoder, lz4::Lz4Decoder};
-use crate::{ByteReader, archive::EncoderMethod, block::Coder, error::Error};
+use crate::codec::{
+    brotli::BrotliDecoder,
+    deflate::DeflateDecoder,
+    lz4::Lz4Decoder,
+    zstd::{ZstdBuffers, ZstdDecoder},
+};
+use crate::{ByteReader, archive::EncoderMethod, block::Block, block::Coder, error::Error};
 
-pub enum Decoder<R: Read> {
+/// Buffers for the Zstandard coders of one block, taken in decoder order.
+pub(crate) type ZstdPool<'b> = std::slice::IterMut<'b, ZstdBuffers>;
+
+/// Allocates the working memory of the Zstandard coders in `block`.
+///
+/// All Zstandard decoders of a block are open at the same time, so they
+/// share the memory limit.
+pub(crate) fn zstd_buffers(
+    block: &Block,
+    memory_limit_kb: usize,
+) -> Result<Vec<ZstdBuffers>, Error> {
+    let count = block
+        .coders
+        .iter()
+        .filter(|coder| coder.encoder_method_id() == EncoderMethod::ID_ZSTD)
+        .count();
+    let mut buffers = Vec::new();
+    buffers
+        .try_reserve_exact(count)
+        .map_err(|_| Error::other("unable to allocate the 7z Zstandard buffer table"))?;
+    for _ in 0..count {
+        buffers.push(ZstdBuffers::new(memory_limit_kb / count)?);
+    }
+    Ok(buffers)
+}
+
+pub enum Decoder<'b, R: Read> {
     Copy(R),
     Lzma(Box<LzmaReader<R>>),
     Lzma2(Box<Lzma2Reader<R>>),
@@ -20,10 +51,10 @@ pub enum Decoder<R: Read> {
     Bzip2(Bzip2Decoder<R>),
     Deflate(Box<DeflateDecoder<R>>),
     Lz4(Lz4Decoder<R>),
-    Buffered(Cursor<Vec<u8>>),
+    Zstd(Box<ZstdDecoder<'b, R>>),
 }
 
-impl<R: Read> Read for Decoder<R> {
+impl<R: Read> Read for Decoder<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Decoder::Copy(r) => r.read(buf),
@@ -35,17 +66,18 @@ impl<R: Read> Read for Decoder<R> {
             Decoder::Bzip2(r) => r.read(buf),
             Decoder::Deflate(r) => r.read(buf),
             Decoder::Lz4(r) => r.read(buf),
-            Decoder::Buffered(r) => r.read(buf),
+            Decoder::Zstd(r) => r.read(buf),
         }
     }
 }
 
-pub fn add_decoder<I: Read>(
+pub fn add_decoder<'b, I: Read>(
     input: I,
     uncompressed_len: usize,
     coder: &Coder,
     max_mem_limit_kb: usize,
-) -> Result<Decoder<I>, Error> {
+    zstd: &mut ZstdPool<'b>,
+) -> Result<Decoder<'b, I>, Error> {
     let method = EncoderMethod::by_id(coder.encoder_method_id());
     let method = if let Some(m) = method {
         m
@@ -109,8 +141,11 @@ pub fn add_decoder<I: Read>(
             Ok(Decoder::Lz4(de))
         }
         EncoderMethod::ID_ZSTD => {
-            let output = crate::codec::zstd::decode(input, uncompressed_len, max_mem_limit_kb)?;
-            Ok(Decoder::Buffered(Cursor::new(output)))
+            let buffers = zstd
+                .next()
+                .ok_or_else(|| Error::other("no buffers for a 7z Zstandard coder"))?;
+            let de = ZstdDecoder::new(input, uncompressed_len, buffers)?;
+            Ok(Decoder::Zstd(Box::new(de)))
         }
         EncoderMethod::ID_BCJ_X86 => {
             let de = BcjReader::new_x86(input, 0);
@@ -200,13 +235,25 @@ mod tests {
     fn rejects_lzma_dictionary_above_memory_limit() {
         let mut properties = vec![0x5d];
         properties.extend_from_slice(&(1024_u32 * 1024).to_le_bytes());
-        let result = add_decoder(&[][..], 1, &coder(EncoderMethod::ID_LZMA, properties), 1);
+        let result = add_decoder(
+            &[][..],
+            1,
+            &coder(EncoderMethod::ID_LZMA, properties),
+            1,
+            &mut [].iter_mut(),
+        );
         assert!(matches!(result, Err(Error::MaxMemLimited { .. })));
     }
 
     #[test]
     fn rejects_lzma2_dictionary_above_memory_limit() {
-        let result = add_decoder(&[][..], 1, &coder(EncoderMethod::ID_LZMA2, vec![20]), 1);
+        let result = add_decoder(
+            &[][..],
+            1,
+            &coder(EncoderMethod::ID_LZMA2, vec![20]),
+            1,
+            &mut [].iter_mut(),
+        );
         assert!(matches!(result, Err(Error::MaxMemLimited { .. })));
     }
 }

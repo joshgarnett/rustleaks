@@ -43,6 +43,20 @@ pub enum Error {
     },
     /// Feature or operation not supported.
     Unsupported(Cow<'static, str>),
+    /// The declared decoded size of an encoded header is above the memory limit.
+    HeaderSizeLimited {
+        /// Maximum allowed size in bytes.
+        max_bytes: usize,
+        /// Declared size in bytes.
+        actual_bytes: u64,
+    },
+    /// The archive declares more entries than the entry limit.
+    MaxEntriesLimited {
+        /// Maximum allowed entries.
+        max: usize,
+        /// Declared entries.
+        actual: usize,
+    },
 }
 
 impl From<std::io::Error> for Error {

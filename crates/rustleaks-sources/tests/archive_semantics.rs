@@ -14,7 +14,7 @@ use rustleaks_sources::{
 };
 use sevenz_seeds::{Member, Method, archive};
 
-const METHODS: [Method; 3] = [Method::Copy, Method::Deflate, Method::Lz4];
+const METHODS: [Method; 4] = [Method::Copy, Method::Deflate, Method::Lz4, Method::Zstd];
 
 #[derive(Default)]
 struct Events {
@@ -102,7 +102,8 @@ fn compressed_methods_preserve_complete_payloads_and_member_order() {
                 Member::new("first.txt", &first, method),
                 Member::new("second.txt", second, method),
             ];
-            if !matches!(method, Method::Copy) && size > 4096 {
+            // Zstandard members use raw blocks, which do not compress.
+            if !matches!(method, Method::Copy | Method::Zstd) && size > 4096 {
                 assert!(members[0].packed.len() < first.len(), "actual compression");
             }
             let events = collect(archive(&members), limits(2, first.len() + second.len()));
@@ -199,7 +200,7 @@ fn crc_corruption_reports_a_decode_issue_and_container_truncation_publishes_noth
         );
         let mut broken = Member::new("broken.txt", &content, method);
         match method {
-            Method::Copy | Method::Lz4 => broken.packed[0] ^= 1,
+            Method::Copy | Method::Lz4 | Method::Zstd => broken.packed[0] ^= 1,
             Method::Deflate => broken.packed[0] |= 0b110, // Reserved block type.
             Method::Lzma2(_) => broken.packed[0] = 3,     // Reserved chunk type.
         }
@@ -404,6 +405,78 @@ fn decoder_memory_over_the_memory_limit_is_a_limit_issue() {
     );
 }
 
+/// Returns the stage, kind and message of every issue.
+fn issue_messages(
+    bytes: Vec<u8>,
+    limits: ArchiveLimits,
+) -> Vec<(SourceStage, SourceIssueKind, String)> {
+    let mut issues = Vec::new();
+    let result = source(bytes, limits).visit(&CancellationToken::new(), &mut |event| {
+        match event {
+            SourceEvent::Issue(issue) => {
+                issues.push((issue.stage(), issue.kind(), issue.message().to_owned()));
+            }
+            _ => panic!("unexpected source event"),
+        }
+        Ok(SourceControl::Continue)
+    });
+    assert_eq!(result, Ok(SourceControl::Continue));
+    issues
+}
+
+#[test]
+fn header_limits_are_limit_issues_before_any_member() {
+    use sevenz_seeds::{Folder, encoded_header_archive};
+    // Header, End: an empty archive in two decoded bytes. The 1 MiB member
+    // limit sets a 1 MiB memory limit, which also bounds the decoded header.
+    for method in METHODS {
+        let header = Folder::new(&[("header", &[1, 0])], &[method]);
+        let events = collect(encoded_header_archive(&header), limits(1, 1 << 20));
+        assert!(events.members.is_empty() && events.issues.is_empty());
+        let mut header = Folder::new(&[("header", &[1, 0])], &[method]);
+        header.overstate_last_member(1 << 20);
+        assert_eq!(
+            issue_messages(encoded_header_archive(&header), limits(1, 1 << 20)),
+            [(
+                SourceStage::Limit,
+                SourceIssueKind::Limit,
+                "7z decoded header size exceeds limit".to_owned()
+            )],
+            "{method:?}"
+        );
+    }
+    let bytes = archive(&[
+        Member::new("first.txt", b"first", Method::Copy),
+        Member::new("second.txt", b"second", Method::Copy),
+    ]);
+    assert_eq!(
+        issue_messages(bytes, limits(1, 1 << 20)),
+        [(
+            SourceStage::Limit,
+            SourceIssueKind::Limit,
+            "7z entry limit exceeded".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn zstd_member_with_more_input_than_the_memory_limit_is_scanned() {
+    // Raw Zstandard blocks are larger than their content, so a member at
+    // the 1 MiB member limit has more than 1 MiB of compressed input. The
+    // decoder streams it and holds neither the input nor the output whole.
+    let content = payload(1 << 20);
+    let member = Member::new("value.txt", &content, Method::Zstd);
+    assert!(member.packed.len() > 1 << 20);
+    // The in-memory input is spooled, so the spool limit must hold it.
+    let limits = ArchiveLimits::new(4, 1, 1 << 20, 1 << 21, 1 << 22).unwrap();
+    let events = collect(archive(&[member]), limits);
+    assert!(events.issues.is_empty(), "{:?}", events.issues);
+    assert_eq!(
+        events.members,
+        [(b"fixture.7z!value.txt".to_vec(), content)]
+    );
+}
+
 fn graph_collect(bytes: Vec<u8>, limits: ArchiveLimits, strict: bool) -> Events {
     let mut events = Events::default();
     let mut source = ArchiveSource::with_options(
@@ -505,12 +578,21 @@ fn declared_early_eof_is_compatible_by_default_and_rejected_only_when_requested(
             folders.last_mut().unwrap().overstate_last_member(7);
             let bytes = sevenz_seeds::folder_archive(&folders);
             let compatible = graph_collect(bytes.clone(), limits(2, 1 << 20), false);
-            assert!(compatible.issues.is_empty(), "{method:?}/{layout}");
             let mut expected = vec![(b"fixture.7z!first.txt".to_vec(), first.clone())];
             if layout != 0 {
                 expected.push((b"fixture.7z!second.txt".to_vec(), second.to_vec()));
             }
             assert_eq!(compatible.members, expected, "{method:?}/{layout}");
+            if matches!(method, Method::Zstd) {
+                // The Zstandard decoder checks the declared size itself.
+                assert_eq!(
+                    compatible.issues,
+                    [(SourceStage::Decode, SourceIssueKind::Decode)],
+                    "{layout}"
+                );
+            } else {
+                assert!(compatible.issues.is_empty(), "{method:?}/{layout}");
+            }
             let strict = graph_collect(bytes, limits(2, 1 << 20), true);
             // Members are scanned while they are read, so the short member
             // is published before its length is known to be short.
