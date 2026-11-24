@@ -75,11 +75,18 @@ is small and is not a sample of real repositories.
 
 ## Assessments
 
-The full default assessment and the full native assessment score every
-positive on the same inputs. The native assessment adds the
-`rustleaks-extra-v1` pack. Neither assessment changes the default rules.
+Two assessments score every positive on the same inputs:
 
-A single-rule assessment scores only the positives that expect that rule.
+- `all-default-rules` uses every built-in rule, as a scan does by default:
+  `gitleaks.toml` and the `rustleaks-extra-v1`, `rustleaks-providers-v1` and
+  `rustleaks-connections-v1` rule files.
+- `gitleaks-toml-rules` uses the rules in `gitleaks.toml` alone. It shows
+  what the Rustleaks rule files add.
+
+Neither assessment changes a rule.
+
+A single-rule assessment selects one rule from the built-in rules and
+scores only the positives that expect that rule.
 Other positives become unknown regions for that assessment, so a provider
 rule is not penalized for other providers' secrets.
 `scored_positive_indices` refers to the positions of the positives in the
@@ -133,12 +140,9 @@ rule selections and counts; the case IDs are synthetic names. JSON parse
 errors do not repeat the input. This does not make user-supplied metadata
 safe to publish.
 
-The loaded default rules must equal the shipped default rules
-(`rustleaks_core::config::DEFAULT_CONFIG_BYTES`), which record their own
-SHA-256 in `DEFAULT_CONFIG_SHA256`. Reports also record the fingerprint of
-the loaded bytes, the rule profile (`default-rules`), the native pack
-identity and bytes, the generator and evaluator source fingerprints and the
-corpus fingerprint. These fingerprints use FNV-1a, which detects accidental changes
+Reports record the SHA-256 of `gitleaks.toml` (`DEFAULT_CONFIG_SHA256`), the
+fingerprint of each built-in rule file, the rule profile (`default-rules`),
+the generator and evaluator source fingerprints and the corpus fingerprint. These fingerprints use FNV-1a, which detects accidental changes
 but does not prove authenticity. Saved run evidence must also record the
 source revision and build identity. The report fingerprints do not identify a
 release binary.

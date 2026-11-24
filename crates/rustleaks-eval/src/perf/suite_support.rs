@@ -176,7 +176,7 @@ pub(super) struct RuleFileSelection {
 
 pub(super) fn rule_file_selection(ids: &[&str]) -> Result<RuleFileSelection> {
     let mut rule_files = Vec::with_capacity(ids.len());
-    let mut rules = crate::DEFAULT_RULES;
+    let mut rules = crate::GITLEAKS_RULES;
     let mut identity = b"default".to_vec();
     for id in ids {
         let (name, contents) = *RULE_FILES

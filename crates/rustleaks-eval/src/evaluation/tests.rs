@@ -210,6 +210,7 @@ fn committed_corpus_and_baseline_replay_exactly() {
     );
     let report: serde_json::Value = serde_json::from_slice(&baseline).unwrap();
     assert_eq!(report["assessments"][0]["selection"], "all-default-rules");
+    assert_eq!(report["assessments"][1]["selection"], "gitleaks-toml-rules");
     assert!(report["assessments"].as_array().unwrap().len() > 1);
     let rendered = String::from_utf8(baseline).unwrap();
     for case in model::parse(&corpus).unwrap().cases {
@@ -243,11 +244,10 @@ fn changed_loaded_default_bytes_fail_identity_check() {
 }
 
 #[test]
-fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
-    use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
+fn built_in_rules_keep_gitleaks_coverage_and_reviewed_negative_alerts() {
     let corpus = generator::corpus();
     model::validate(&corpus).unwrap();
-    let default = Engine::builder(
+    let gitleaks = Engine::builder(
         ConfigLoader::new()
             .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
             .load_default()
@@ -255,13 +255,11 @@ fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
     )
     .build()
     .unwrap();
-    let native = NativePolicy::builder()
-        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-        .unwrap()
+    let default = Engine::builder(ConfigLoader::new().load_default().unwrap())
         .build()
         .unwrap();
-    let baseline = assess("default", &default, corpus.cases.iter(), None);
-    let candidate = assess("native", native.engine(), corpus.cases.iter(), None);
+    let baseline = assess("gitleaks", &gitleaks, corpus.cases.iter(), None);
+    let candidate = assess("default", &default, corpus.cases.iter(), None);
     assert_eq!(baseline.status, "measured");
     assert_eq!(candidate.status, "measured");
     for (before, after) in baseline.cases.iter().zip(&candidate.cases) {

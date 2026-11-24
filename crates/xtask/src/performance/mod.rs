@@ -27,6 +27,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 const PERF_WORKLOADS: &[&str] = &[
     "default-compile",
+    "gitleaks-compile",
     "default-no-keyword-1-kib",
     "default-no-keyword-16-kib",
     "default-no-keyword",
@@ -63,7 +64,15 @@ struct PerfInvariant {
 const PERF_INVARIANTS: &[PerfInvariant] = &[
     PerfInvariant {
         workload: "default-compile",
-        // The byte length of the shipped default rules.
+        // The byte length of the four built-in rule files together.
+        logical_bytes: 739_792,
+        result_count: 547,
+        output_bytes: 0,
+        outcome_fnv1a64: "15e6ae4b8b6c4ebe",
+    },
+    PerfInvariant {
+        workload: "gitleaks-compile",
+        // The byte length of `gitleaks.toml`.
         logical_bytes: 100_568,
         result_count: 222,
         output_bytes: 0,
@@ -977,37 +986,81 @@ mod tests {
         assert!(verify_default_config(&bytes).is_err());
     }
 
-    #[test]
-    fn default_compile_invariants_describe_the_shipped_default_rules() {
-        let path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../rustleaks-core/default/gitleaks.toml");
-        let text = fs::read_to_string(path).unwrap();
-        let invariant = PERF_INVARIANTS
-            .iter()
-            .find(|invariant| invariant.workload == "default-compile")
-            .unwrap();
-        assert_eq!(invariant.logical_bytes, text.len() as u64);
-        let mut section = "";
-        let mut hash = FNV_OFFSET;
-        let mut rules = 0_u64;
+    /// Rule IDs of each `[[rules]]` table in a rule file, in file order. The
+    /// ID is the first `id` key of the table, as a basic or literal string.
+    fn declared_rule_ids(text: &str) -> Vec<String> {
+        let mut ids = Vec::new();
+        let mut in_rule = false;
         for line in text.lines() {
             if line.starts_with('[') {
-                section = line;
-            } else if section == "[[rules]]"
-                && let Some(id) = line
-                    .strip_prefix("id = \"")
-                    .and_then(|rest| rest.strip_suffix('"'))
-            {
-                rules += 1;
-                for byte in id.bytes().chain([0]) {
-                    hash ^= u64::from(byte);
-                    hash = hash.wrapping_mul(FNV_PRIME);
-                }
+                in_rule = line == "[[rules]]";
+            } else if in_rule && let Some(value) = line.strip_prefix("id = ") {
+                let id = value
+                    .strip_prefix("'''")
+                    .and_then(|rest| rest.strip_suffix("'''"))
+                    .or_else(|| {
+                        value
+                            .strip_prefix('"')
+                            .and_then(|rest| rest.strip_suffix('"'))
+                    })
+                    .or_else(|| {
+                        value
+                            .strip_prefix('\'')
+                            .and_then(|rest| rest.strip_suffix('\''))
+                    })
+                    .unwrap_or_else(|| panic!("unexpected rule ID form {value}"));
+                ids.push(id.to_owned());
+                in_rule = false;
             }
         }
-        assert_eq!(invariant.result_count, rules);
+        ids
+    }
+
+    /// Checks a compile invariant against the rule files it compiles. The
+    /// runner fingerprints each rule ID and a zero byte, in report order,
+    /// which for the built-in rules is the file order below.
+    fn assert_compile_invariant(workload: &str, files: &[&str]) {
+        let invariant = PERF_INVARIANTS
+            .iter()
+            .find(|invariant| invariant.workload == workload)
+            .unwrap();
+        let default = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rustleaks-core/default");
+        let mut bytes = 0_u64;
+        let mut ids = Vec::new();
+        for file in files {
+            let text = fs::read_to_string(default.join(file)).unwrap();
+            bytes += text.len() as u64;
+            ids.extend(declared_rule_ids(&text));
+        }
+        let mut hash = FNV_OFFSET;
+        for id in &ids {
+            for byte in id.bytes().chain([0]) {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+        }
+        assert_eq!(invariant.logical_bytes, bytes, "{workload} bytes");
+        assert_eq!(invariant.result_count, ids.len() as u64, "{workload} rules");
         assert_eq!(invariant.output_bytes, 0);
-        assert_eq!(invariant.outcome_fnv1a64, format!("{hash:016x}"));
+        assert_eq!(
+            invariant.outcome_fnv1a64,
+            format!("{hash:016x}"),
+            "{workload} hash"
+        );
+    }
+
+    #[test]
+    fn compile_invariants_describe_the_built_in_rule_files() {
+        assert_compile_invariant(
+            "default-compile",
+            &[
+                "gitleaks.toml",
+                "rustleaks-extra-v1.toml",
+                "rustleaks-providers-v1.toml",
+                "rustleaks-connections-v1.toml",
+            ],
+        );
+        assert_compile_invariant("gitleaks-compile", &["gitleaks.toml"]);
     }
 
     fn prepared() -> Prepared {
@@ -1059,7 +1112,7 @@ mod tests {
         validate_records(&output, &prepared, &request).unwrap();
         for (before, after) in [
             (DEFAULT_RULES_SHA256, "wrong"),
-            ("\"result_count\":222", "\"result_count\":221"),
+            ("\"result_count\":547", "\"result_count\":546"),
             ("actual compiler", "unavailable"),
             ("test-head", "stale-head"),
             ("\"dirty\":false", "\"dirty\":true"),
@@ -1202,7 +1255,7 @@ mod tests {
 
     #[test]
     fn requests_are_bounded_and_selection_is_exact() {
-        assert_eq!(Request::parse(&[]).unwrap().workloads.len(), 23);
+        assert_eq!(Request::parse(&[]).unwrap().workloads.len(), 24);
         assert!(Request::parse(&["--iterations".into(), "0".into()]).is_err());
         assert!(Request::parse(&["--iterations".into(), "11".into()]).is_err());
         assert!(Request::parse(&["--warmup".into(), "11".into()]).is_err());

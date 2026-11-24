@@ -13,6 +13,7 @@ use std::fs::{self, File};
 use std::hint::black_box;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -22,7 +23,7 @@ use benchmark_data::{
     BM_PATH_ALLOWED, BM_PATH_NOT_ALLOWED, BM_REGEX_ALLOWED, BM_REGEX_NOT_ALLOWED,
     PRIVATE_KEY_SAMPLE,
 };
-use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG_SHA256};
+use rustleaks_core::config::{CompiledConfig, ConfigError, ConfigLoader, DEFAULT_CONFIG_SHA256};
 use rustleaks_core::model::{Finding, Fragment, Location, ScanOptions};
 use rustleaks_core::session::SessionPolicy;
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
@@ -35,11 +36,19 @@ use serde::Serialize;
 
 const SCHEMA_VERSION: u32 = 2;
 const MEASUREMENT_SCOPE: &str = "legacy-v1-includes-verification";
-/// Rules in `gitleaks.toml`, the default rule file without the Rustleaks rule
-/// files. A `rustleaks` scan uses both by default.
-const DEFAULT_RULES: usize = 222;
-/// `config_metric` fingerprint of the rules in `gitleaks.toml`.
-const DEFAULT_CONFIG_FINGERPRINT: u64 = 0xbba0_f636_d5a0_2d49;
+/// Rule entries in every built-in rule file, which a `rustleaks` scan and
+/// `ConfigLoader::new().load_default()` use by default: 222 in
+/// `gitleaks.toml`, 3 in `rustleaks-extra-v1`, 303 in
+/// `rustleaks-providers-v1` and 19 in `rustleaks-connections-v1`.
+const DEFAULT_RULES: usize = 547;
+/// Byte length of the four built-in rule files together.
+const DEFAULT_RULE_BYTES: u64 = 739_792;
+/// `rule_fingerprint` of the built-in rules in report order.
+const DEFAULT_CONFIG_FINGERPRINT: u64 = 0x15e6_ae4b_8b6c_4ebe;
+/// Rules in `gitleaks.toml` alone, without the Rustleaks rule files.
+const GITLEAKS_RULES: usize = 222;
+/// `rule_fingerprint` of the rules in `gitleaks.toml`.
+const GITLEAKS_CONFIG_FINGERPRINT: u64 = 0xbba0_f636_d5a0_2d49;
 const DEFAULT_INPUT_BYTES: usize = 1_048_576;
 const HOSTILE_INPUT_BYTES: usize = 262_144;
 const SOURCE_FILES: usize = 64;
@@ -78,6 +87,7 @@ keywords = ["token"]
 
 const WORKLOADS: &[&str] = &[
     "default-compile",
+    "gitleaks-compile",
     "default-no-keyword-1-kib",
     "default-no-keyword-16-kib",
     "default-no-keyword",
@@ -364,7 +374,12 @@ fn logical_unit(workload: &str) -> &'static str {
 
 fn run_workload(id: &str, iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
     match id {
-        "default-compile" => run_default_compile(iterations),
+        "default-compile" => run_compile(iterations, default_config, default_rule_text()),
+        "gitleaks-compile" => run_compile(
+            iterations,
+            gitleaks_config,
+            rustleaks_core::config::DEFAULT_CONFIG_BYTES,
+        ),
         "default-no-keyword-1-kib" => run_default_keyword(iterations, KeywordCase::None, 1_024),
         "default-no-keyword-16-kib" => {
             run_default_keyword(iterations, KeywordCase::None, 16 * 1_024)
@@ -413,14 +428,51 @@ fn engine(config: &str) -> Result<Engine, Box<dyn Error>> {
     Ok(Engine::builder(ConfigLoader::new().load_toml(config)?).build()?)
 }
 
-fn run_default_compile(iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
+/// Every built-in rule, as a `rustleaks` scan uses by default.
+fn default_config() -> Result<CompiledConfig, ConfigError> {
+    ConfigLoader::new().load_default()
+}
+
+/// The rules in `gitleaks.toml` alone.
+fn gitleaks_config() -> Result<CompiledConfig, ConfigError> {
+    ConfigLoader::new()
+        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
+        .load_default()
+}
+
+/// The text of the four built-in rule files in load order. Workloads that
+/// compile the default rules use it as their configuration identity.
+fn default_rule_text() -> &'static [u8] {
+    static TEXT: LazyLock<Vec<u8>> = LazyLock::new(|| {
+        [
+            rustleaks_core::config::DEFAULT_CONFIG,
+            rustleaks_core::native::EXTRA_RULES_V1,
+            rustleaks_core::native::PROVIDER_RULES_V1,
+            rustleaks_core::native::CONNECTION_RULES_V1,
+        ]
+        .concat()
+        .into_bytes()
+    });
+    &TEXT
+}
+
+/// Compiles rules and builds an engine. The logical bytes are the length of
+/// the rule files that `load` compiles.
+fn run_compile(
+    iterations: usize,
+    load: fn() -> Result<CompiledConfig, ConfigError>,
+    rule_files: &[u8],
+) -> Result<(u128, Metric), Box<dyn Error>> {
     let start = Instant::now();
     let mut last = None;
     for _ in 0..iterations {
-        let config = ConfigLoader::new()
-            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-            .load_default()?;
-        let metric = config_metric(&config);
+        let config = load()?;
+        let metric = Metric {
+            logical_bytes: u64::try_from(rule_files.len())?,
+            result_count: u64::try_from(config.rules().len())?,
+            output_bytes: 0,
+            fingerprint: rule_fingerprint(&config),
+        };
         let detector = Engine::builder(config).build()?;
         black_box(&detector);
         last = Some(metric);
@@ -443,9 +495,7 @@ fn run_default_keyword(
     case: KeywordCase,
     input_bytes: usize,
 ) -> Result<(u128, Metric), Box<dyn Error>> {
-    let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()?;
+    let config = default_config()?;
     let input = match case {
         KeywordCase::None => vec![0u8; input_bytes],
         KeywordCase::One => keyword_input(&config, 1, input_bytes)?,
@@ -507,10 +557,7 @@ fn keyword_input(
 }
 
 fn run_default_positive(iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
-    let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()?
-        .select_rules(["private-key"])?;
+    let config = default_config()?.select_rules(["private-key"])?;
     run_scan(
         iterations,
         Engine::builder(config).build()?,
@@ -591,9 +638,11 @@ fn run_controlled_scan(
     fragment: Fragment,
     options: ScanOptions,
 ) -> Result<(u128, Metric), Box<dyn Error>> {
+    // A safety bound, not an expected count. The built-in rules include
+    // rules without keywords, which cost about one work unit per input byte.
     let control = ScanControl::unlimited().with_budget(
         ScanBudget::unlimited()
-            .max_work_units(1_000_000)
+            .max_work_units(4 * DEFAULT_INPUT_BYTES)
             .max_finding_records(1_000),
     );
     let mut last = None;
@@ -784,9 +833,7 @@ fn run_bm_regex(
 }
 
 fn run_bm_aggregate_paths(iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> {
-    let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()?;
+    let config = gitleaks_config()?;
     let start = Instant::now();
     let mut last = None;
     for _ in 0..iterations {
@@ -935,19 +982,14 @@ fn allowlist_config(field: &str, values: &[&str]) -> Result<String, Box<dyn Erro
     Ok(config)
 }
 
-fn config_metric(config: &CompiledConfig) -> Metric {
+/// Fingerprints the rule IDs of a configuration in report order.
+fn rule_fingerprint(config: &CompiledConfig) -> u64 {
     let mut hash = FNV_OFFSET;
     for id in config.ordered_rule_ids() {
         hash = fnv_extend(hash, id.as_bytes());
         hash = fnv_extend(hash, &[0]);
     }
-    Metric {
-        logical_bytes: u64::try_from(rustleaks_core::config::DEFAULT_CONFIG_BYTES.len())
-            .expect("default config length fits u64"),
-        result_count: u64::try_from(config.rules().len()).expect("rule count fits u64"),
-        output_bytes: 0,
-        fingerprint: hash,
-    }
+    hash
 }
 
 fn findings_fingerprint(findings: &[Finding]) -> u64 {
@@ -1041,12 +1083,19 @@ fn expected(id: &str) -> Expected {
     let empty = fnv_extend(FNV_OFFSET, &0u64.to_le_bytes());
     match id {
         "default-compile" => Expected::new(
-            // The byte length of the shipped default rules.
-            100_568,
+            DEFAULT_RULE_BYTES,
             DEFAULT_RULES as u64,
             0,
             DEFAULT_CONFIG_FINGERPRINT,
-            "222 compiled default rules",
+            "547 compiled built-in rules",
+        ),
+        "gitleaks-compile" => Expected::new(
+            // The byte length of `gitleaks.toml`.
+            100_568,
+            GITLEAKS_RULES as u64,
+            0,
+            GITLEAKS_CONFIG_FINGERPRINT,
+            "222 compiled gitleaks.toml rules",
         ),
         "default-no-keyword-1-kib" => Expected::new(
             1_024,
@@ -1289,7 +1338,7 @@ mod tests {
 
     #[test]
     fn all_performance_categories_run_with_invariants() {
-        for id in WORKLOADS.iter().take(15) {
+        for id in WORKLOADS.iter().filter(|id| !id.starts_with("bm-")) {
             let (_, metric) = run_workload(id, 1).expect("performance workload");
             validate_metric(id, &metric, expected(id)).expect("performance invariant");
         }

@@ -110,6 +110,7 @@ fn build(
         keyword_count: 0,
         // One pass, one rule entry, and one checkpoint per literal candidate.
         expected_work: Some(matches + 2),
+        builtin_default: false,
     })
 }
 
@@ -129,6 +130,7 @@ fn stopword_fixture(bytes: usize, symbol: &str) -> Fixture {
         keyword_count: 0,
         // One pass, one rule entry, and one greedy full-fragment match.
         expected_work: Some(3),
+        builtin_default: false,
     }
 }
 
@@ -155,6 +157,7 @@ fn tail_location_fixture(bytes: usize, matches: usize) -> Result<Fixture, Box<dy
         decoded_bytes: 0,
         keyword_count: 0,
         expected_work: Some(matches + 2),
+        builtin_default: false,
     })
 }
 

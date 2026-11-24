@@ -495,11 +495,7 @@ fn run_config(
     );
     for _ in 0..iterations {
         let start = Instant::now();
-        let config = black_box(
-            ConfigLoader::new()
-                .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-                .load_toml(black_box(text))?,
-        );
+        let config = black_box(ConfigLoader::new().load_toml(black_box(text))?);
         result.elapsed_ns += elapsed(start)?;
         if config.rules().len() != expected_rules
             || config.allowlists().len() != expected_allowlists

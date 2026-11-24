@@ -452,8 +452,9 @@ A new test file must be registered. See
 
 ### Quality corpus
 
-The synthetic quality corpus in `testdata/quality-corpus/` compares the
-default rules with `rustleaks-extra-v1`. Its labels are written
+The synthetic quality corpus in `testdata/quality-corpus/` scores every
+built-in rule, as a scan uses them by default, and the rules in
+`gitleaks.toml` alone on the same inputs. Its labels are written
 independently of detector output. Regenerate and check it with:
 
 ```sh
@@ -479,8 +480,8 @@ These notes add to the steps above.
 - A refresh needs a review of provider format changes, new independent test
   cases and a new run of the quality comparison. Nothing is downloaded.
 - Quality evaluation: the [quality
-  corpus](../../testdata/quality-corpus/README.md) compares the default rules
-  with and without this pack on the same inputs. It has Azure field orders,
+  corpus](../../testdata/quality-corpus/README.md) compares every built-in
+  rule with the rules in `gitleaks.toml` alone on the same inputs. It has Azure field orders,
   repeats, invalid bytes, percent-encoded wrappers, MongoDB percent-encoded
   user information, short passwords, templates and near misses. Sovereign
   Azure endpoints and MongoDB IPv6 inputs are positive gap cases, not

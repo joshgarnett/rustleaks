@@ -36,7 +36,7 @@ internals](engine-internals.md).
 
 | Command | What it does |
 | --- | --- |
-| `just perf-run` | Runs the 23 standard workloads with an optimized build and prints JSON Lines |
+| `just perf-run` | Runs the 24 standard workloads with an optimized build and prints JSON Lines |
 | `just perf-check` | Runs every standard workload and checks its exact outcome and the build identity |
 | `just perf-fixtures` | Builds or verifies synthetic fixtures with independent answers |
 | `just perf-representative` | Runs the representative phase measurements |
@@ -80,12 +80,18 @@ timing scope or outcome.
 
 ## Standard workloads
 
-The 23 standard workloads use the timing scope
+The 24 standard workloads use the timing scope
 `legacy-v1-includes-verification`. Their timers include finding or output
 fingerprinting and, in some cases, dropping the outcome. Fixture preparation
 and build steps are outside the timers. Report workloads count findings; scan
 workloads count input bytes. Do not combine the two into one bytes per second
 series.
+
+The workloads named `default-*` use every built-in rule, as a scan does by
+default: the 547 rules in `gitleaks.toml` and the three Rustleaks rule files.
+`gitleaks-compile` compiles the 222 rules in `gitleaks.toml` alone. The
+`bm-*` workloads are the Gitleaks allowlist benchmarks and use the
+`gitleaks.toml` allowlists.
 
 `just perf-check` runs every standard
 workload, checks its exact outcome and the build identity, and sets no time
@@ -193,7 +199,7 @@ input, run by hand with the same options. No fixture family generates it, so
 
 ## Representative measurements
 
-The representative suite adds timers for each operation. It keeps the 23
+The representative suite adds timers for each operation. It keeps the 24
 standard workloads unchanged. Run it on its own, after all
 builds and fuzzing on the host have stopped:
 
@@ -231,18 +237,19 @@ a group, or one workload ID, with `--workload`. Start large groups with
 `--samples 3 --iterations 1`.
 
 The base workloads cover core mixed, dense, minified, invalid UTF-8,
-multiline and many-rule inputs; default-rule controls; decode depth 0 and 5;
+multiline and many-rule inputs; `core-default-*` controls with every
+built-in rule; decode depth 0 and 5;
 session merge; JSON and SARIF output; sources; Git; archives; and CLI
 commands. Select them by ID, for example `core-mixed-16-kib`.
 
 | Group | What it covers |
 | --- | --- |
 | `edges` | Long lines, many candidates, stopwords, invalid UTF-8, empty matches and percent decoding |
-| `workers` | 12 MiB in 768 fragments on 1, 4 or 8 threads, with a shared engine or one clone per worker |
+| `workers` | 12 MiB in 768 fragments on 1, 4 or 8 threads, with a shared engine or one clone per worker, and the rules in `gitleaks.toml` |
 | `decode-report` | Decoder, baseline classification, report output and configuration compile operations |
 | `source-scale` | 26 workloads for traversal, chunking, Git history shape, archive limits and CLI behavior |
-| `default-rules` | Default rules at decode depth 0 on keyword, near-miss, Unicode, minified, realistic and contention inputs |
-| `fragments` | JSON, log and invalid UTF-8 records in fragments from 16 KiB to 12 MiB |
+| `gitleaks-rules` | The rules in `gitleaks.toml` at decode depth 0 on keyword, near-miss, Unicode, minified, realistic and contention inputs |
+| `fragments` | JSON, log and invalid UTF-8 records in fragments from 16 KiB to 12 MiB, with the rules in `gitleaks.toml` |
 | `packs` | Rustleaks rule files at library level: startup, keyword admission, mixed input and workers |
 | `cli-matrix` | Fresh CLI processes in `dir` and `git` modes on one generated repository |
 | `dense` | Dense findings from 25,000 to 400,000 bytes, long lines and many findings |
@@ -250,7 +257,10 @@ commands. Select them by ID, for example `core-mixed-16-kib`.
 | `filters` | Allowlist, stopword, capture group, composite rule and finding construction costs |
 
 Expected findings, work counts, decoded bytes and limit issues come from the
-fixture generators and the documented limits, never from scanner output. Small
+fixture generators and the documented limits, never from scanner output.
+The `gitleaks-rules`, `workers` and `fragments` work counts model the rules
+in `gitleaks.toml`, which have one rule without keywords. The built-in rules
+have 27 rules without keywords, so these groups use `gitleaks.toml` alone. Small
 negative controls make sure that a broken filter or an incomplete scan fails.
 
 Notes for some groups:

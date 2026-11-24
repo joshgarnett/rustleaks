@@ -38,7 +38,7 @@ impl RepresentativeWorker {
         let config = fixture.compile()?;
         if config.rules().len() != fixture.expected_rules
             || fixture.expected_rules == crate::DEFAULT_RULES
-                && crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
+                && crate::rule_fingerprint(&config) != crate::DEFAULT_CONFIG_FINGERPRINT
         {
             return Err("investigation compiled rules differ".into());
         }

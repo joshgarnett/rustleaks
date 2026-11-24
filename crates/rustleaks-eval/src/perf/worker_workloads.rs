@@ -1,4 +1,5 @@
-//! Fixed fragment batches on persistent caller-owned worker threads.
+//! Fixed fragment batches on persistent caller-owned worker threads, with the
+//! rules in `gitleaks.toml` alone.
 
 use std::error::Error;
 use std::hint::black_box;
@@ -7,7 +8,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::Instant;
 
-use rustleaks_core::config::{ConfigLoader, DEFAULT_CONFIG_BYTES};
+use rustleaks_core::config::DEFAULT_CONFIG_BYTES;
 use rustleaks_core::model::{Fragment, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
 use serde_json::json;
@@ -20,12 +21,12 @@ const FRAGMENTS: usize = 768;
 const INPUT_BYTES: usize = 12 * 1024 * 1024;
 
 pub(super) const WORKLOADS: &[&str] = &[
-    "core-workers-default-shared-1",
-    "core-workers-default-shared-4",
-    "core-workers-default-shared-8",
-    "core-workers-default-cloned-1",
-    "core-workers-default-cloned-4",
-    "core-workers-default-cloned-8",
+    "core-workers-gitleaks-shared-1",
+    "core-workers-gitleaks-shared-4",
+    "core-workers-gitleaks-shared-8",
+    "core-workers-gitleaks-cloned-1",
+    "core-workers-gitleaks-cloned-4",
+    "core-workers-gitleaks-cloned-8",
 ];
 
 #[derive(Clone, Copy)]
@@ -229,14 +230,12 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Err
         return Err("worker iterations are outside representative bounds".into());
     }
     let start = Instant::now();
-    let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()?;
+    let config = crate::gitleaks_config()?;
     let compile_ns = elapsed(start)?;
-    if config.rules().len() != crate::DEFAULT_RULES
-        || crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
+    if config.rules().len() != crate::GITLEAKS_RULES
+        || crate::rule_fingerprint(&config) != crate::GITLEAKS_CONFIG_FINGERPRINT
     {
-        return Err("worker default configuration differs from the shipped default rules".into());
+        return Err("worker default configuration differs from the gitleaks.toml rules".into());
     }
     let fixture = Fixture::new(FIXTURE, &config)?;
     if fixture.fragments.len() != FRAGMENTS || fixture.input.len() != INPUT_BYTES {
@@ -253,14 +252,14 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Err
         DEFAULT_CONFIG_BYTES,
     );
     compile.outcome_fnv1a64.clone_from(&rule_ids);
-    compile.counts["rules"] = json!(crate::DEFAULT_RULES);
+    compile.counts["rules"] = json!(crate::GITLEAKS_RULES);
     let start = Instant::now();
     let detector = Engine::builder(config).build()?;
     let mut construction = phase(
         "engine-construction",
         1,
         elapsed(start)?,
-        crate::DEFAULT_RULES as u64,
+        crate::GITLEAKS_RULES as u64,
         "compiled-rules",
         DEFAULT_CONFIG_BYTES,
         DEFAULT_CONFIG_BYTES,
@@ -358,7 +357,7 @@ mod tests {
     #[test]
     fn persistent_workers_validate_small_batches_in_both_ownership_modes() {
         let raw = b"token=ABCDEFGHIJKLMNOP";
-        let config = ConfigLoader::new()
+        let config = rustleaks_core::config::ConfigLoader::new()
             .load_toml(super::super::SIMPLE_CONFIG)
             .unwrap();
         let detector = Engine::builder(config).build().unwrap();
