@@ -1957,7 +1957,7 @@ fn best_match(
 
 #[cfg(test)]
 fn match_length(input: &[u8], pos: usize, offset: usize, max_length: usize) -> usize {
-    super::fast::match_length(input, pos, offset, max_length)
+    super::match_finder::match_length(input, pos, offset, max_length)
 }
 
 #[cfg(test)]

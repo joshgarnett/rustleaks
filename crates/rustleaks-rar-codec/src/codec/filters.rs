@@ -65,7 +65,7 @@ pub(crate) fn e8e9_decode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     let cmp_mask = if include_e9 { 0xfe } else { 0xff };
     let opcode_limit = data.len() - 4;
     let mut opcode_pos = 0usize;
-    while let Some(pos) = super::fast::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
+    while let Some(pos) = super::x86::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
         let cur_pos = pos + 1;
         let offset = file_offset.wrapping_add(cur_pos as u32);
         let addr = u32::from_le_bytes([
@@ -96,7 +96,7 @@ pub(crate) fn e8e9_encode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     let cmp_mask = if include_e9 { 0xfe } else { 0xff };
     let opcode_limit = data.len() - 4;
     let mut opcode_pos = 0usize;
-    while let Some(pos) = super::fast::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
+    while let Some(pos) = super::x86::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
         let cur_pos = pos + 1;
         let offset = file_offset.wrapping_add(cur_pos as u32);
         let addr = u32::from_le_bytes([

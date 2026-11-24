@@ -8,19 +8,24 @@ use std::io::Read;
 #[cfg(test)]
 use std::ops::Range;
 
-pub const LEVEL_TABLE_SIZE: usize = 20;
-pub const MAIN_TABLE_SIZE: usize = 306;
-pub const DISTANCE_TABLE_SIZE_50: usize = 64;
-pub const DISTANCE_TABLE_SIZE_70: usize = 80;
-pub const ALIGN_TABLE_SIZE: usize = 16;
-pub const LENGTH_TABLE_SIZE: usize = 44;
+pub(crate) const LEVEL_TABLE_SIZE: usize = 20;
+pub(crate) const MAIN_TABLE_SIZE: usize = 306;
+pub(crate) const DISTANCE_TABLE_SIZE_50: usize = 64;
+pub(crate) const DISTANCE_TABLE_SIZE_70: usize = 80;
+pub(crate) const ALIGN_TABLE_SIZE: usize = 16;
+pub(crate) const LENGTH_TABLE_SIZE: usize = 44;
 #[cfg(test)]
 const DEFAULT_DICTIONARY_SIZE: usize = 4 * 1024 * 1024;
 #[cfg(test)]
 const MAX_ENCODER_MATCH_OFFSET: usize = DEFAULT_DICTIONARY_SIZE;
 #[cfg(test)]
 const MAX_ENCODER_MATCH_LENGTH: usize = 4096;
+// The block size constants below tune the test-only encoder. Their notes
+// are upstream `rars` tuning notes; the measured corpus is not in this
+// repository.
+
 /// The largest block the format allows a writer to emit.
+#[cfg(test)]
 const MAX_COMPRESSED_BLOCK_OUTPUT: usize = 4 * 1024 * 1024;
 /// How much input goes into one compressed block.
 ///
@@ -30,7 +35,9 @@ const MAX_COMPRESSED_BLOCK_OUTPUT: usize = 4 * 1024 * 1024;
 /// costs no match range. Measured over the corpus, 64 KiB packs 6.4% smaller
 /// than a mebibyte and within 0.2% of the best size tried at any point between
 /// 16 KiB and 256 KiB.
+#[cfg(test)]
 pub(crate) const LZ_BLOCK_SIZE: usize = 64 * 1024;
+#[cfg(test)]
 const _: () = assert!(LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 
 /// The most input one block may cover once blocks are being extended.
@@ -42,7 +49,9 @@ const _: () = assert!(LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 /// optimal parse prices every position in a block and its arrays scale with
 /// the block, so a mebibyte is the point where the extra table sets saved stop
 /// being worth the pages.
+#[cfg(test)]
 pub(crate) const MAX_LZ_BLOCK_SIZE: usize = 1024 * 1024;
+#[cfg(test)]
 const _: () = assert!(MAX_LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 
 /// How far a chunk's byte distribution may sit from the open block's before
@@ -192,14 +201,14 @@ const MAX_MATCH_CANDIDATES: usize = 256;
 
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompressedBlock {
+pub(crate) struct CompressedBlock {
     pub header: CompressedBlockHeader,
     pub header_len: usize,
     pub payload: Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CompressedBlockHeader {
+pub(crate) struct CompressedBlockHeader {
     pub flags: u8,
     pub is_last: bool,
     pub has_tables: bool,
@@ -214,7 +223,7 @@ struct OwnedCompressedBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableLengths {
+pub(crate) struct TableLengths {
     pub main: Vec<u8>,
     pub distance: Vec<u8>,
     pub align: Vec<u8>,
@@ -222,7 +231,7 @@ pub struct TableLengths {
 }
 
 #[derive(Debug, Clone)]
-pub struct DecodeTables {
+pub(crate) struct DecodeTables {
     pub main: HuffmanTable,
     pub distance: HuffmanTable,
     pub align: HuffmanTable,
@@ -231,7 +240,7 @@ pub struct DecodeTables {
 }
 
 impl DecodeTables {
-    pub fn from_lengths(lengths: &TableLengths) -> Result<Self> {
+    pub(crate) fn from_lengths(lengths: &TableLengths) -> Result<Self> {
         let align_mode = lengths
             .align
             .iter()
@@ -264,7 +273,7 @@ impl DecodeMode {
 }
 
 #[cfg(test)]
-pub fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
+pub(crate) fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
     if input.len() < 3 {
         return Err(Error::NeedMoreInput);
     }
@@ -324,7 +333,7 @@ pub fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
     })
 }
 
-pub fn read_level_lengths(input: &[u8]) -> Result<([u8; LEVEL_TABLE_SIZE], usize)> {
+pub(crate) fn read_level_lengths(input: &[u8]) -> Result<([u8; LEVEL_TABLE_SIZE], usize)> {
     let mut bits = BitReader::new(input);
     let mut lengths = [0; LEVEL_TABLE_SIZE];
     let mut pos = 0;
@@ -353,7 +362,7 @@ pub fn read_level_lengths(input: &[u8]) -> Result<([u8; LEVEL_TABLE_SIZE], usize
     Ok((lengths, bits.bit_pos))
 }
 
-pub fn table_length_count(algorithm_version: u8) -> Result<usize> {
+pub(crate) fn table_length_count(algorithm_version: u8) -> Result<usize> {
     match algorithm_version {
         0 => Ok(MAIN_TABLE_SIZE + DISTANCE_TABLE_SIZE_50 + ALIGN_TABLE_SIZE + LENGTH_TABLE_SIZE),
         1 => Ok(MAIN_TABLE_SIZE + DISTANCE_TABLE_SIZE_70 + ALIGN_TABLE_SIZE + LENGTH_TABLE_SIZE),
@@ -363,7 +372,10 @@ pub fn table_length_count(algorithm_version: u8) -> Result<usize> {
     }
 }
 
-pub fn read_table_lengths(input: &[u8], algorithm_version: u8) -> Result<(TableLengths, usize)> {
+pub(crate) fn read_table_lengths(
+    input: &[u8],
+    algorithm_version: u8,
+) -> Result<(TableLengths, usize)> {
     let table_size = table_length_count(algorithm_version)?;
     let (level_lengths, level_bits) = read_level_lengths(input)?;
     let level_decoder = HuffmanTable::from_lengths(&level_lengths)?;
@@ -432,7 +444,7 @@ pub fn read_table_lengths(input: &[u8], algorithm_version: u8) -> Result<(TableL
 }
 
 #[cfg(test)]
-pub fn encode_table_lengths_with_bit_count(
+pub(crate) fn encode_table_lengths_with_bit_count(
     lengths: &TableLengths,
     algorithm_version: u8,
 ) -> Result<(Vec<u8>, usize)> {
@@ -1288,7 +1300,6 @@ fn encode_lz_block(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 fn encode_lz_block_in_window(
     combined: &[u8],
     block: std::ops::Range<usize>,
@@ -2042,7 +2053,6 @@ fn encode_tokens_with_progress(
 /// match found one byte ahead (when computed) so the caller can reuse it for
 /// the next position instead of searching again.
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 fn lazy_match_decision(
     input: &[u8],
     pos: usize,
@@ -2157,7 +2167,7 @@ fn best_match(
 
 #[cfg(test)]
 fn match_length(input: &[u8], pos: usize, distance: usize, max_length: usize) -> usize {
-    super::fast::match_length(input, pos, distance, max_length)
+    super::match_finder::match_length(input, pos, distance, max_length)
 }
 
 #[cfg(test)]
@@ -2821,7 +2831,7 @@ fn e8e9_decode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     let cmp_mask = if include_e9 { 0xfe } else { 0xff };
     let opcode_limit = data.len() - 4;
     let mut opcode_pos = 0usize;
-    while let Some(pos) = super::fast::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
+    while let Some(pos) = super::x86::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
         let cur_pos = pos + 1;
         let offset = file_offset.wrapping_add(cur_pos as u32) % X86_FILTER_FILE_SIZE;
         let addr = u32::from_le_bytes([
@@ -2852,7 +2862,7 @@ fn e8e9_encode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     let cmp_mask = if include_e9 { 0xfe } else { 0xff };
     let opcode_limit = data.len() - 4;
     let mut opcode_pos = 0usize;
-    while let Some(pos) = super::fast::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
+    while let Some(pos) = super::x86::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
         let cur_pos = pos + 1;
         let offset = file_offset.wrapping_add(cur_pos as u32) % X86_FILTER_FILE_SIZE;
         let addr = u32::from_le_bytes([
@@ -2928,7 +2938,7 @@ fn length_bonus(distance: usize) -> usize {
     usize::from(distance > 0x100) + usize::from(distance > 0x2000) + usize::from(distance > 0x40000)
 }
 
-pub fn slot_to_length(slot: usize, extra_bits: u32) -> Result<usize> {
+pub(crate) fn slot_to_length(slot: usize, extra_bits: u32) -> Result<usize> {
     if slot < 8 {
         return Ok(slot + 2);
     }
@@ -2947,7 +2957,7 @@ pub fn slot_to_length(slot: usize, extra_bits: u32) -> Result<usize> {
     Ok((((4 | (slot & 3)) << bit_count) | extra_bits as usize) + 2)
 }
 
-pub fn distance_slot_bit_count(slot: usize) -> Result<usize> {
+pub(crate) fn distance_slot_bit_count(slot: usize) -> Result<usize> {
     if slot < 4 {
         Ok(0)
     } else {
@@ -2960,7 +2970,7 @@ pub fn distance_slot_bit_count(slot: usize) -> Result<usize> {
     }
 }
 
-pub fn slot_to_distance(slot: usize, extra_bits: u32) -> Result<usize> {
+pub(crate) fn slot_to_distance(slot: usize, extra_bits: u32) -> Result<usize> {
     if slot < 4 {
         return Ok(slot + 1);
     }
@@ -2977,7 +2987,7 @@ pub fn slot_to_distance(slot: usize, extra_bits: u32) -> Result<usize> {
 }
 
 #[derive(Debug, Clone)]
-pub struct HuffmanTable {
+pub(crate) struct HuffmanTable {
     symbols: Vec<HuffmanSymbol>,
     first_code: [u16; 16],
     first_index: [usize; 16],
@@ -2992,7 +3002,7 @@ struct HuffmanSymbol {
 }
 
 impl HuffmanTable {
-    pub fn from_lengths(lengths: &[u8]) -> Result<Self> {
+    pub(crate) fn from_lengths(lengths: &[u8]) -> Result<Self> {
         let mut count = [0u16; 16];
         for &length in lengths {
             if length > 15 {

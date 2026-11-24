@@ -1,6 +1,5 @@
 //! RAR compression codecs, filters, PPMd, and RARVM components.
 
-mod fast;
 mod filters;
 #[cfg(test)]
 mod huffman;
@@ -10,6 +9,7 @@ mod ppmd;
 pub mod rar29;
 pub mod rar50;
 pub(crate) mod rarvm;
+mod x86;
 
 /// Copies `input` into a new vector. A failed allocation returns
 /// `InvalidData(message)`.

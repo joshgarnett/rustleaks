@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
+// The code stays close to the upstream `rars` code so the two are easy to
+// compare. Upstream items have no rustdoc, and rewriting the format
+// arithmetic for the workspace style lints would make the comparison harder.
+// The caller in `rustleaks-sources` checks containers, limits and errors.
 #![allow(missing_docs)]
-// The decoder is retained close to its pinned upstream form so provenance and
-// differential review remain mechanical. Workspace style lints are enforced
-// at the checked container boundary instead of rewriting format arithmetic.
 #![allow(clippy::all, clippy::pedantic)]
 //! Safe RAR3 and RAR5 decoders and the RAR CRC-32.
 //!

@@ -12,13 +12,13 @@ const FLAG_Z: u32 = 2;
 const FLAG_S: u32 = 0x8000_0000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Program {
+pub(crate) struct Program {
     pub static_data: Vec<u8>,
     pub instructions: Vec<Instruction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Instruction {
+pub(crate) struct Instruction {
     pub opcode: Opcode,
     pub byte_mode: bool,
     pub operands: Vec<Operand>,
@@ -26,7 +26,7 @@ pub struct Instruction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Opcode {
+pub(crate) enum Opcode {
     Mov = 0,
     Cmp = 1,
     Add = 2,
@@ -70,7 +70,7 @@ pub enum Opcode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Operand {
+pub(crate) enum Operand {
     Register(u8),
     Immediate(u32),
     RegisterIndirect(u8),
@@ -79,7 +79,7 @@ pub enum Operand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Invocation<'a> {
+pub(crate) struct Invocation<'a> {
     pub input: &'a [u8],
     pub regs: [u32; 7],
     pub global_data: &'a [u8],
@@ -88,14 +88,14 @@ pub struct Invocation<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExecutionResult {
+pub(crate) struct ExecutionResult {
     pub output: Vec<u8>,
     pub globals: Vec<u8>,
     pub regs: [u32; 8],
 }
 
 impl Program {
-    pub fn parse(blob: &[u8]) -> Result<Self> {
+    pub(crate) fn parse(blob: &[u8]) -> Result<Self> {
         if blob.is_empty() {
             return Err(Error::InvalidData("RARVM program blob is empty"));
         }
