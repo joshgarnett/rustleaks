@@ -1045,15 +1045,25 @@ fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
             support::git_source(&repository).mode(GitMode::LogArguments(vec!["--all".into()])),
             support::git_source(&repository)
                 .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+            support::git_source(&repository)
+                .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())])
+                .history_processes(two)
+                .history_batch_commits(one),
         ] {
             assert_eq!(contents(&mut source), history, "{format}");
         }
-        let mut staged = support::git_source(&repository).mode(GitMode::Diff { staged: true });
-        assert_eq!(
-            contents(&mut staged),
-            [("third.env".to_owned(), "staged marked text\n".to_owned())],
-            "{format}"
-        );
+        for mut staged in [
+            support::git_source(&repository).mode(GitMode::Diff { staged: true }),
+            support::git_source(&repository)
+                .mode(GitMode::Diff { staged: true })
+                .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+        ] {
+            assert_eq!(
+                contents(&mut staged),
+                [("third.env".to_owned(), "staged marked text\n".to_owned())],
+                "{format}"
+            );
+        }
         let mut worktree = support::git_source(&repository).mode(GitMode::Diff { staged: false });
         assert_eq!(contents(&mut worktree), [], "{format}");
     }

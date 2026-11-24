@@ -234,17 +234,6 @@ pub(super) const CONFIG_OVERRIDES: [&str; 2] = ["-c", "core.fsmonitor="];
 const EMPTY_TREE_SHA1: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const EMPTY_TREE_SHA256: &str = "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321";
 
-/// The `-c attr.tree=<empty tree>` override for `git log` and
-/// `git diff --staged`. A repository's `.gitattributes` can mark a text file
-/// as binary (`-diff` or `binary`), and Git then shows no patch for it.
-/// Reading attributes from the empty tree lets Git decide from the content
-/// alone: a file with a NUL byte near its start is binary, including one
-/// that the repository's attributes mark as text (`diff`). Git 2.43 and
-/// later read `attr.tree`; earlier versions ignore it. `GIT_ATTR_SOURCE`
-/// takes precedence, so these commands run without it. A value that does
-/// not name a tree of the repository's object format has no effect, so the
-/// name must match it. A worktree `git diff` keeps the attributes, since it
-/// needs the clean filters that they name.
 /// Returns the empty tree name for `git rev-parse --show-object-format`
 /// output. A Git version without the option prints it back; such a version
 /// reads only SHA-1 repositories.
@@ -256,6 +245,17 @@ fn empty_tree_for_format(output: &[u8]) -> &'static str {
     }
 }
 
+/// The `-c attr.tree=<empty tree>` override for `git log` and
+/// `git diff --staged`. A repository's `.gitattributes` can mark a text file
+/// as binary (`-diff` or `binary`), and Git then shows no patch for it.
+/// Reading attributes from the empty tree lets Git decide from the content
+/// alone: a file with a NUL byte near its start is binary, including one
+/// that the repository's attributes mark as text (`diff`). Git 2.43 and
+/// later read `attr.tree`; earlier versions ignore it. `GIT_ATTR_SOURCE`
+/// takes precedence, so these commands run without it. A value that does
+/// not name a tree of the repository's object format has no effect, so the
+/// name must match it. A worktree `git diff` keeps the attributes, since it
+/// needs the clean filters that they name.
 fn attribute_override(empty_tree: &str) -> [OsString; 2] {
     [
         OsString::from("-c"),

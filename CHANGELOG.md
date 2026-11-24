@@ -17,7 +17,8 @@
   from `.git/info/attributes` and `core.attributesFile` still apply.
   `--pre-commit` keeps the attributes, because it needs the clean filters
   that they name. History scans of repositories that mark large text files
-  as binary read more data and can report more findings.
+  as binary read more data and can report more findings. A `GIT_ATTR_SOURCE`
+  value that Git rejects no longer makes history and `--staged` scans fail.
 - Git history and diff scans no longer run the textconv, external diff,
   fsmonitor or signature programs that the scanned repository's
   configuration names. Every `git log` and `git diff` passes
