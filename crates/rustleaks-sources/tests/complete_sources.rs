@@ -250,7 +250,7 @@ fn mime_window_is_fixed_and_assembled_independently_of_short_reads() {
 }
 
 #[test]
-fn plain_and_padded_base64_tokens_survive_legacy_cut_positions() {
+fn plain_and_padded_base64_tokens_survive_normal_cut_positions() {
     let engine = detector("[[rules]]\nid='pat'\nregex='ghp_[0-9a-zA-Z]{36}'\nkeywords=['ghp_']\n");
     let secret = b"ghp_0123456789abcdefghijklmnopqrstuvwxyz";
     let encoded = base64::engine::general_purpose::STANDARD.encode(secret);
@@ -757,7 +757,7 @@ fn aggregate_new_dimensions_require_matching_fragment_reservations() {
 }
 
 #[cfg(feature = "archives")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/sevenz_seeds.rs"]
 mod sevenz_seeds;
 
@@ -1018,14 +1018,14 @@ fn complete_directory_excludes_a_dangling_link_before_resolution() {
             assert!(outcome.findings().is_empty());
         }
     }
-    // The legacy gate order still reports the link issue before continuing.
-    let mut legacy = DirectorySource::with_options(
+    // A normal scan still reports the link issue before continuing.
+    let mut normal = DirectorySource::with_options(
         &tree.0,
         DirectoryOptions::default()
             .follow_symlinks(true)
             .path_config(config),
     );
-    let outcome = run(&mut legacy, &token_detector(), ScanOptions::default());
+    let outcome = run(&mut normal, &token_detector(), ScanOptions::default());
     assert_eq!(outcome.termination(), &SourceTermination::Completed);
     assert_eq!(outcome.issues().len(), 1);
     assert_eq!(outcome.findings().len(), 1);
@@ -1097,11 +1097,11 @@ fn aggregate_span_and_normalization_limits_do_not_multiply_with_workers() {
 }
 
 #[cfg(feature = "archives")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;
 #[cfg(feature = "archives")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
 
@@ -1223,13 +1223,13 @@ mod excluded_archive_members {
                     assert!(outcome.findings().is_empty());
                 }
             }
-            let legacy = run(
+            let normal = run(
                 &mut source(data, name, false, true, 10),
                 &token_detector(),
                 ScanOptions::default(),
             );
-            assert_eq!(legacy.termination(), &SourceTermination::Completed);
-            assert_eq!(legacy.issues().len(), 1);
+            assert_eq!(normal.termination(), &SourceTermination::Completed);
+            assert_eq!(normal.issues().len(), 1);
         }
     }
 
@@ -1312,13 +1312,13 @@ mod excluded_archive_members {
         assert_eq!(half.len(), 2071);
         half.truncate(half.len() / 2);
 
-        // Members are scanned while they are read. A legacy scan publishes
+        // Members are scanned while they are read. A normal scan publishes
         // the bytes read before a failure, so the ZIP member whose CRC fails
         // at its end is scanned, and the TAR member that ends before the
         // truncated gzip stream is too. A complete target is published only
         // when it ends without a failure, so the member whose CRC fails is
         // never published, while the whole TAR member is.
-        // (bytes, name, legacy issues, legacy findings, complete stage,
+        // (bytes, name, normal issues, normal findings, complete stage,
         // owned message, complete findings)
         let crc_findings: Found = &[
             (b"A001", b"crc.zip!first.txt"),
@@ -1366,35 +1366,35 @@ mod excluded_archive_members {
         for (
             data,
             name,
-            legacy_issues,
-            legacy_findings,
+            normal_issues,
+            normal_findings,
             complete_stage,
             owned_message,
             complete_findings,
         ) in cases
         {
-            let legacy = run(
+            let normal = run(
                 &mut source(data.clone(), name, false, false, 10),
                 &token_detector(),
                 ScanOptions::default(),
             );
             assert_eq!(
-                legacy.termination(),
+                normal.termination(),
                 &SourceTermination::Completed,
                 "{name}"
             );
-            let issues = legacy
+            let issues = normal
                 .issues()
                 .iter()
                 .map(|issue| (issue.stage(), issue.kind()))
                 .collect::<Vec<_>>();
-            assert_eq!(issues, legacy_issues, "{name}");
-            let findings = legacy
+            assert_eq!(issues, normal_issues, "{name}");
+            let findings = normal
                 .findings()
                 .iter()
                 .map(|finding| (finding.secret().as_bytes(), finding.file().as_bytes()))
                 .collect::<Vec<_>>();
-            assert_eq!(findings, legacy_findings, "{name}");
+            assert_eq!(findings, normal_findings, "{name}");
 
             let complete = run(
                 &mut source(data, name, true, false, 10),
@@ -1501,13 +1501,13 @@ mod exact_leaf_exclusions {
                 nonmatching.termination(),
                 SourceTermination::SourceError(_)
             ));
-            let legacy = run(
+            let normal = run(
                 &mut source(bytes, "values.7z", false, "values.7z!skip.txt"),
                 &token_detector(),
                 ScanOptions::default(),
             );
-            assert_eq!(legacy.termination(), &SourceTermination::Completed);
-            assert_eq!(legacy.findings().len(), 2);
+            assert_eq!(normal.termination(), &SourceTermination::Completed);
+            assert_eq!(normal.findings().len(), 2);
         }
     }
 
@@ -1533,13 +1533,13 @@ mod exact_leaf_exclusions {
             nonmatching.termination(),
             SourceTermination::SourceError(_)
         ));
-        let legacy = run(
+        let normal = run(
             &mut source(outer, "outer.tar", false, "outer.tar!value.gz"),
             &token_detector(),
             ScanOptions::default(),
         );
-        assert_eq!(legacy.termination(), &SourceTermination::Completed);
-        assert_eq!(legacy.findings().len(), 2);
+        assert_eq!(normal.termination(), &SourceTermination::Completed);
+        assert_eq!(normal.findings().len(), 2);
     }
 }
 
@@ -1599,7 +1599,10 @@ mod tgz_targets {
         assert_eq!(normal.termination(), &SourceTermination::Completed);
         assert!(normal.issues().is_empty());
         assert_eq!(normal.findings().len(), 1);
-        assert_eq!(normal.findings()[0].file().as_bytes(), b"outer.tgz!leaf.txt");
+        assert_eq!(
+            normal.findings()[0].file().as_bytes(),
+            b"outer.tgz!leaf.txt"
+        );
         assert_eq!(normal.findings()[0].secret().as_bytes(), b"A001");
         let cap = bytes.len();
         let mut backup = ArchiveSource::with_options(

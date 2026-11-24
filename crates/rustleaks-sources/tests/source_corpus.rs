@@ -1,4 +1,4 @@
-//! Differential replay of reader and direct-file source outcomes.
+//! Replays recorded reader and direct-file source cases and compares the outcomes.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 
@@ -22,7 +22,10 @@ use rustleaks_sources::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag mirrors one optional field of a recorded request"
+)]
 struct Request {
     id: String,
     operation: String,
@@ -171,7 +174,7 @@ impl SourceReader for ScheduledReader {
 }
 
 #[test]
-fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions() {
+fn complete_source_corpus_matches_recorded_outcomes_or_safe_dispositions() {
     let root = corpus_root();
     let requests = json_lines::<Request>(&root.join("requests-v1.jsonl"));
     let request_count = requests.len();
@@ -187,11 +190,11 @@ fn complete_source_corpus_matches_frozen_go_outcomes_or_exact_safe_dispositions(
         let _context = RequestContext(&request.id);
         let expected = outcomes.get(&request.id).expect("matching outcome");
         if cfg!(windows) && windows_platform_disposition(&request) {
-            // The recorded outcomes are Darwin-native. Upstream applies the
-            // alias-size gate before symlink resolution, so zero-length
-            // Windows symlink metadata has a different exact disposition.
-            // The permission row depends on Unix mode bits. Focused native
-            // tests retain executable Windows symlink coverage.
+            // The recorded outcomes come from macOS. The size check uses the
+            // symlink's own metadata before resolution, so a zero-length
+            // Windows symlink has a different outcome. The permission row
+            // depends on Unix mode bits. Focused file source tests cover
+            // Windows symlinks.
             assert_eq!(request.operation, "files");
             dispositions += 1;
             continue;
@@ -288,11 +291,10 @@ fn replay(request: &Request, expected: &Outcome) {
         Err(_) => Some("source"),
     };
     let expected_error = expected.error.as_ref().map(|error| error.class.as_str());
-    // Rust deliberately turns corrupt/decode source failures into structured
-    // recoverable issues. The pinned multi-volume backend panics when only its
-    // unnamed first-part stream is available; Rust gives that input the same
-    // safe structured disposition. Cancellation and callback failure remain
-    // terminal.
+    // Corrupt archives and decode failures give recoverable issues, not a
+    // source error. A multi-volume RAR whose first part is the only input
+    // gets the same issue, where the recorded outcome is a panic.
+    // Cancellation and callback failure stay terminal.
     let safe_archive_disposition = expected_error == Some("source")
         || (request.id == "archive-rar5-multivolume" && expected_error == Some("panic"));
     if !safe_archive_disposition {
@@ -312,12 +314,9 @@ fn replay(request: &Request, expected: &Outcome) {
         .map(|(fragment, _, _)| fragment_wire(fragment))
         .collect::<Vec<_>>();
     if request.operation == "reader" {
-        // The deprecated Go DetectReader/StreamDetectReader APIs expose only
-        // findings plus a final error; they do not expose their intermediate
-        // fragments. Keep that absence explicit while comparing every
-        // observable finding/error/issue below. Rust's fragments are still
-        // exercised by the focused file/source tests and are not presented as
-        // pinned-Go differential evidence here.
+        // Recorded reader cases hold findings and a final error, but no
+        // fragments. Every finding, error and issue is compared below. The
+        // focused file source tests cover the fragments.
         assert!(expected.fragments.is_empty(), "{}", request.id);
     } else {
         assert_fragments(request, &actual_fragments, &expected.fragments);
@@ -363,10 +362,9 @@ fn issue_fragment(issue: &SourceIssue, mapping: Option<&PathMapping>) -> Fragmen
         || Fragment::new(Vec::<u8>::new()),
         |path| {
             let logical = LogicalPath::from_native(path);
-            // Upstream constructs error fragments before its successful-read
-            // Windows projection. Preserve the native spelling in FilePath
-            // and leave WindowsFilePath empty, as FileSource::error_fragment
-            // does for observable read errors.
+            // A read-error fragment keeps the native spelling in FilePath
+            // and leaves WindowsFilePath empty, as FileSource::error_fragment
+            // does.
             let file = logical
                 .windows_original()
                 .unwrap_or_else(|| logical.normalized());
@@ -859,8 +857,8 @@ fn compare_fragments(
     let comparable = |wire: &FragmentWire| FragmentWire {
         raw_base64: wire.raw_base64.clone(),
         bytes_base64: wire.raw_base64.clone(),
-        // Rust has one owned byte representation and cannot reproduce Go's
-        // nil-versus-empty slice distinction without reintroducing aliasing.
+        // A fragment holds its content once, so the recorded flag for an
+        // empty `Bytes` field is not compared.
         bytes_nil: false,
         file_base64: wire.file_base64.clone(),
         windows_file_base64: wire.windows_file_base64.clone(),
@@ -873,17 +871,16 @@ fn compare_fragments(
     let expected = expected
         .iter()
         .map(|source| {
-            // Upstream yields a zero-byte read-error fragment before reaching
-            // its Windows path-projection branch.
+            // A zero-byte read-error fragment has no Windows path form.
             let path_projected = !source.bytes_nil
                 || !decode(&source.raw_base64).is_empty()
                 || source.start_line != 0;
             let mut wire = comparable(source);
             if cfg!(windows) && path_projected {
-                // The oracle outcome is Darwin-native. Derive upstream's
-                // Windows FilePath/WindowsFilePath pair exactly: FilePath is
-                // slash-normalized, completed archive segments stay
-                // normalized, and only the current member is native.
+                // The recorded outcome comes from macOS. Derive the Windows
+                // FilePath and WindowsFilePath pair: FilePath uses `/`,
+                // completed archive segments use `/`, and only the current
+                // member keeps native separators.
                 let original = windows_representable(&decode(&wire.file_base64));
                 let normalized = original
                     .iter()
@@ -1044,7 +1041,7 @@ fn json_lines<T: for<'de> Deserialize<'de>>(path: &Path) -> Vec<T> {
 fn decode(value: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(value)
-        .expect("valid frozen base64")
+        .expect("valid recorded base64")
 }
 
 fn encode(value: &[u8]) -> String {

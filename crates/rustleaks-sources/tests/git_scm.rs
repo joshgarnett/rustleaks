@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use rustleaks_core::model::{Finding, Location};
 use rustleaks_sources::{
-    Cancellation, CancellationToken, RemoteMetadata, ScmErrorKind, ScmPlatform, scm_link,
+    Cancellation, CancellationToken, RemoteMetadata, ScmErrorKind, ScmPlatform,
 };
 
 static NEXT_TEMP_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -91,7 +91,7 @@ fn bootstrap_source_link_matches_the_recorded_bytes() {
 }
 
 #[test]
-fn matrix_l_remote_normalization_platform_names_match_the_contract() {
+fn remote_normalization_platform_names_match_the_contract() {
     let cases = [
         ("", ScmPlatform::Unknown, "unknown"),
         ("UnKnOwN", ScmPlatform::Unknown, "unknown"),
@@ -118,9 +118,9 @@ fn matrix_l_remote_normalization_platform_names_match_the_contract() {
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "one table keeps every pinned upstream link vector auditable"
+    reason = "one table keeps every expected link case together"
 )]
-fn matrix_m_link_templates_are_exact() {
+fn link_templates_are_exact() {
     let cases = [
         (
             ScmPlatform::GitHub,
@@ -324,7 +324,6 @@ fn link_paths_only_escape_original_spaces_and_percent_bytes() {
 fn absent_unknown_disabled_and_commitless_metadata_produce_no_link() {
     let populated = finding("abc123", "src/lib.rs", 1, 1);
     let commitless = finding("", "src/lib.rs", 1, 1);
-    assert_eq!(scm_link(None, &populated).expect("no allocation"), None);
     assert_eq!(
         RemoteMetadata::new(ScmPlatform::Unknown, "https://example.com/o/r")
             .link_for(&populated)

@@ -202,7 +202,7 @@ fn cancelled_git_child_is_not_left_waitable_or_zombie() {
 }
 
 #[test]
-fn matrix_b_text_patch_hunks_preserve_added_bytes_and_no_newline() {
+fn text_patch_hunks_preserve_added_bytes_and_no_newline() {
     let patch = b"commit 0123456789abcdef\nAuthor: Test User <user@example.com>\nDate:   Tue Nov 2 18:37:53 2021 -0500\n\n    title\n\ndiff --git a/a.txt b/a.txt\nindex 1111111..2222222 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n-old\n+new\n+tail\n\\ No newline at end of file\n";
     let files = parse_patch(
         patch,
@@ -222,7 +222,7 @@ fn matrix_b_text_patch_hunks_preserve_added_bytes_and_no_newline() {
 }
 
 #[test]
-fn matrix_c_strict_byte_paths_decode_git_quoting() {
+fn strict_byte_paths_decode_git_quoting() {
     assert_eq!(
         decode_patch_path(
             br#""b/tab\tand\303\251.txt""#,
@@ -552,7 +552,7 @@ fn malformed_old_hunk_positions_are_structured_errors() {
             "invalid old position must reject the complete patch: {position}"
         );
     }
-    // The pinned parser uses signed int64 for this unused old position.
+    // The parser accepts any signed 64-bit value for this unused old position.
     for position in ["-1", "+1", "-9223372036854775808", "9223372036854775807"] {
         let patch =
             format!("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -{position},1 +1 @@\n-old\n+new\n");
@@ -561,14 +561,14 @@ fn malformed_old_hunk_positions_are_structured_errors() {
             GitLimits::default(),
             &crate::CancellationToken::new(),
         )
-        .expect("pinned signed old position");
+        .expect("signed old position");
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].hunks[0].added, b"new\n");
     }
 }
 
 #[test]
-fn matrix_a_exact_argv_preserves_literal_space_splitting() {
+fn exact_argv_preserves_literal_space_splitting() {
     let source = GitSource::new("repo").mode(GitMode::Log {
         options: Some("--all  foo...".to_owned()),
     });
@@ -770,7 +770,7 @@ fn classifies_only_known_stderr_warnings_as_ignorable() {
 }
 
 #[test]
-fn matrix_j_resource_boundaries_fail_closed() {
+fn resource_boundaries_fail_closed() {
     assert!(GitLimits::new(0, 1, 1, 1).is_err());
     assert!(GitLimits::new(1, 0, 1, 1).is_err());
     assert!(GitLimits::new(1, 1, 0, 1).is_err());
@@ -849,7 +849,7 @@ fn run_streamed(
 }
 
 #[test]
-fn matrix_h_exit_status_and_bounded_stderr_are_diagnostic() {
+fn exit_status_and_bounded_stderr_are_diagnostic() {
     let executable = std::env::current_exe().expect("current test executable");
     let environment = [
         (
@@ -985,7 +985,7 @@ fn matrix_h_exit_status_and_bounded_stderr_are_diagnostic() {
 }
 
 #[test]
-fn matrix_d_metadata_uses_go_unicode_whitespace() {
+fn metadata_trims_unicode_whitespace() {
     let patch = "commit abc\nAuthor: \u{3000}A User\u{00a0} <a@example.com>\nDate:   Tue Nov 2 18:37:53 2021 -0500\n\n    \u{3000}title\u{00a0}\n\ndiff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -0,0 +1 @@\n+x\n";
     let files = parse_patch(
         patch.as_bytes(),
@@ -1079,7 +1079,7 @@ fn malformed_diff_and_hunk_fail_closed() {
 }
 
 #[test]
-fn matrix_j_cancellation_is_polled_during_large_parser_streams() {
+fn cancellation_is_polled_during_large_parser_streams() {
     let input = vec![b'x'; 64 * 1024];
     assert!(matches!(
         parse_patch(
@@ -1092,7 +1092,7 @@ fn matrix_j_cancellation_is_polled_during_large_parser_streams() {
 }
 
 #[test]
-fn matrix_k_parser_resource_boundaries_are_exact() {
+fn parser_resource_boundaries_are_exact() {
     let cancellation = crate::CancellationToken::new();
     assert_eq!(
         decode_patch_path(b"b/abcd", true, 4, &cancellation).expect("exact path"),

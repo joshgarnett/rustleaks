@@ -33,7 +33,8 @@ const MESSAGE_BYTES: usize = 256 * 1024;
 /// Output of the batch that the parser reads that can wait for it.
 const HEAD_BUFFER_BYTES: usize = 4 * 1024 * 1024;
 /// Output of later batches that can wait for the parser, together. On large
-/// public histories, less made batches wait for space, and more gave little.
+/// public histories, a smaller buffer made batches wait for space, and a
+/// larger one gave little.
 const REORDER_BUFFER_BYTES: usize = 128 * 1024 * 1024;
 /// Batches whose output can wait for the parser, for each Git process.
 const QUEUED_BATCHES_PER_PROCESS: usize = 2;

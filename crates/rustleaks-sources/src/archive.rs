@@ -126,7 +126,7 @@ fn positive(value: usize, field: &'static str) -> Result<NonZeroUsize, SourceCon
     NonZeroUsize::new(value).ok_or_else(|| SourceConfigError::positive(field))
 }
 
-/// Options for the optional safe native archive decorator.
+/// Options for [`ArchiveSource`].
 #[derive(Clone, Debug, Default)]
 pub struct ArchiveOptions {
     limits: ArchiveLimits,
@@ -190,15 +190,16 @@ impl ArchiveOptions {
 
     /// Requires each 7z member stream to produce its declared uncompressed size.
     ///
-    /// Disabled by default to preserve the pinned archive backend's acceptance
-    /// of early EOF. When enabled, a size mismatch produces a recoverable decode
+    /// Disabled by default: a 7z member that ends early is scanned and gives
+    /// no issue. When enabled, a size mismatch produces a recoverable decode
     /// issue at the end of that member and stops that 7z archive. Members are
     /// scanned while they are read, so earlier members and the bytes of the
     /// short member are already published. Existing member and aggregate
     /// ceilings still apply. Complete-target file options always require this
     /// check, and a complete target never publishes the short member. This
     /// does not prove archive authenticity or add CRC validation beyond the
-    /// decoder's checks.
+    /// decoder's checks. The CLI does not set this option. Tests use it to
+    /// cover the length check outside complete mode.
     #[must_use]
     pub const fn strict_7z_member_lengths(mut self, enabled: bool) -> Self {
         self.strict_7z_member_lengths = enabled;
@@ -212,7 +213,8 @@ impl ArchiveOptions {
     }
 }
 
-/// Name-driven, synchronous archive decorator around a reader-backed file source.
+/// Reads archives and compressed files, chosen by file name, and scans their
+/// members.
 ///
 /// Unrecognized names are scanned as ordinary bytes. Recognized names consume
 /// one depth before any decoding, including externally compressed TAR files.
@@ -706,7 +708,10 @@ impl<'a> ArchiveState<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
     fn member(
         &mut self,
         input: Input<'_>,
@@ -791,7 +796,10 @@ impl<'a> ArchiveState<'a> {
     }
 
     /// Decompresses a stream, then scans it as a TAR or as one member.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
     fn decode(
         &mut self,
         codec: Codec,
@@ -822,7 +830,10 @@ impl<'a> ArchiveState<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
     fn decode_input(
         &mut self,
         codec: Codec,
@@ -1222,7 +1233,10 @@ impl<'a> ArchiveState<'a> {
         }
     }
 
-    #[allow(clippy::too_many_lines)] // Keep the complete dependency containment boundary adjacent.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the 7z decoder calls and their error mapping stay in one function"
+    )]
     fn extract_7z(
         &mut self,
         source: &mut dyn ReadSeek,
@@ -2321,7 +2335,7 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_complete_pinned_name_profile() {
+    fn recognizes_archive_and_compressed_names() {
         for name in [
             "x.7Z",
             "x.br",

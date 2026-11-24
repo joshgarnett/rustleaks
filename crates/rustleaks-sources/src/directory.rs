@@ -18,7 +18,8 @@ use crate::{
 
 mod readers;
 
-const DEFAULT_MAX_SYMLINK_HOPS: NonZeroUsize = NonZeroUsize::new(64).unwrap();
+/// The most symlinks that the walk follows to resolve one path.
+const MAX_SYMLINK_HOPS: usize = 64;
 
 /// Files and issues that the walk may hold ahead of the callback for each
 /// reader thread when `DirectoryOptions::read_threads` is above 1.
@@ -62,7 +63,6 @@ pub struct DirectoryOptions {
     logical_root: Option<PathBuf>,
     emit_limit_issues: bool,
     scan_git_metadata: bool,
-    max_symlink_hops: NonZeroUsize,
     read_threads: NonZeroUsize,
     #[cfg(feature = "archives")]
     archive_options: Option<crate::ArchiveOptions>,
@@ -120,9 +120,9 @@ impl DirectoryOptions {
     /// Scans plain-text metadata files in `.git` folders that path
     /// allowlists would otherwise skip.
     ///
-    /// The default is off, which keeps the pinned traversal: a `.git` folder
-    /// that matches a path allowlist is skipped as a whole. When enabled, such
-    /// a folder is entered, but only these entries are visited: `config`,
+    /// The default is off: a `.git` folder that matches a path allowlist is
+    /// skipped as a whole. When enabled, such a folder is entered, but only
+    /// these entries are visited: `config`,
     /// `config.worktree`, `HEAD`, `FETCH_HEAD`, `ORIG_HEAD`, `description`,
     /// `packed-refs`, `.git-credentials` and `credentials` directly inside it;
     /// every file below `hooks`, `info` and `logs` except names ending in
@@ -136,8 +136,7 @@ impl DirectoryOptions {
     /// this option. Each selected entry still passes the path allowlists, the
     /// size limit and the symlink rules, and a `.git` folder that is a
     /// symlink is never entered. A `.git` folder that no path allowlist
-    /// matches is walked in full, as before, so the option never removes
-    /// input.
+    /// matches is walked in full, so the option never removes input.
     #[must_use]
     pub const fn scan_git_metadata(mut self, enabled: bool) -> Self {
         self.scan_git_metadata = enabled;
@@ -198,7 +197,8 @@ impl DirectoryOptions {
         self
     }
 
-    /// Enables the optional native archive decorator for discovered files.
+    /// Reads found archives and compressed files through
+    /// [`ArchiveSource`](crate::ArchiveSource).
     #[cfg(feature = "archives")]
     #[must_use]
     pub fn archives(mut self, options: crate::ArchiveOptions) -> Self {
@@ -218,7 +218,6 @@ impl Default for DirectoryOptions {
             logical_root: None,
             emit_limit_issues: false,
             scan_git_metadata: false,
-            max_symlink_hops: DEFAULT_MAX_SYMLINK_HOPS,
             read_threads: NonZeroUsize::MIN,
             #[cfg(feature = "archives")]
             archive_options: None,
@@ -315,7 +314,7 @@ impl DirectorySource {
             return Ok(SourceControl::Continue);
         }
 
-        // Upstream applies these gates to symlink metadata before resolution.
+        // These checks use the symlink's own metadata, before it is resolved.
         if metadata.len() == 0 {
             return Ok(SourceControl::Continue);
         }
@@ -413,7 +412,7 @@ impl DirectorySource {
         let mut git_root = git_root;
         if self.path_allowed(path) {
             // An allowlisted `.git` folder is entered only for its selected
-            // metadata. Any other allowlisted folder is skipped as before.
+            // metadata. Any other allowlisted folder is skipped.
             if !self.names_git_folder(path, git_root) {
                 return Ok(SourceControl::Continue);
             }
@@ -485,7 +484,7 @@ impl DirectorySource {
     /// a non-regular file found directly is, so a scan never blocks on it
     /// or reads it without end.
     fn followed_target(&self, path: &Path) -> Result<Option<PathBuf>, SourceIssue> {
-        let target = resolve_symlink(path, self.options.max_symlink_hops.get())?;
+        let target = resolve_symlink(path, MAX_SYMLINK_HOPS)?;
         let target_metadata = fs::metadata(&target).map_err(|error| {
             SourceIssue::new(
                 SourceStage::Symlink,

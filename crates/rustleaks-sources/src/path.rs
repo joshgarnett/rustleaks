@@ -7,9 +7,9 @@ pub const INNER_PATH_SEPARATOR: &str = "!";
 
 /// Byte-preserving logical path metadata derived from a native path.
 ///
-/// On Unix, native path bytes are retained exactly. On Windows, ill-formed
-/// UTF-16 is replaced one code unit at a time as Go does when constructing a
-/// UTF-8 string, and the normalized form replaces native backslashes with `/`.
+/// On Unix, native path bytes are retained exactly. On Windows, each
+/// ill-formed UTF-16 code unit is replaced with U+FFFD, and the normalized
+/// form replaces native backslashes with `/`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogicalPath {
     normalized: ByteText,
@@ -61,8 +61,8 @@ impl LogicalPath {
         normalized.extend_from_slice(inner);
         #[cfg(windows)]
         let windows_original = {
-            // Upstream slash-normalizes every completed outer archive path and
-            // retains native separators only for the current inner member.
+            // Every completed outer archive path uses `/`. Only the current
+            // inner member keeps its native separators.
             let mut original = self.normalized.as_bytes().to_vec();
             original.extend_from_slice(INNER_PATH_SEPARATOR.as_bytes());
             original.extend_from_slice(_native_inner);
@@ -96,6 +96,8 @@ fn native_path_bytes(path: &Path) -> Vec<u8> {
     result
 }
 
+// No supported target compiles this branch: every supported target is Unix
+// or Windows. It stays so the crate still builds on other targets.
 #[cfg(not(any(unix, windows)))]
 fn native_path_bytes(path: &Path) -> Vec<u8> {
     path.to_string_lossy().into_owned().into_bytes()

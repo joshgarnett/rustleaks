@@ -423,7 +423,7 @@ fn history_larger_than_the_per_commit_limits_scans_completely() {
 }
 
 #[test]
-fn default_log_matches_current_pinned_added_fragment_stream() {
+fn default_log_matches_recorded_added_fragment_stream() {
     let repository = TempRepo::copy_fixture("small");
     let mut source = support::git_source(repository.path());
     let (fragments, issues) = collect(&mut source);
@@ -433,14 +433,14 @@ fn default_log_matches_current_pinned_added_fragment_stream() {
     for fragment in &fragments {
         actual.extend_from_slice(fragment.content().as_bytes());
     }
-    let ignore = fs::read(repository.path().join("api/ignoreCommit.go"))
-        .expect("read pinned ignore fixture");
-    let legacy = fs::read(fixture_root().join("testdata/expected/git/small.txt"))
-        .expect("read pinned legacy golden");
+    let ignore =
+        fs::read(repository.path().join("api/ignoreCommit.go")).expect("read ignore fixture");
+    let recorded = fs::read(fixture_root().join("testdata/expected/git/small.txt"))
+        .expect("read recorded fragment stream");
     let mut expected = Vec::new();
     expected.extend_from_slice(&ignore);
     expected.extend_from_slice(&ignore);
-    expected.extend_from_slice(&legacy);
+    expected.extend_from_slice(&recorded);
     assert_eq!(actual, expected);
 
     let secret = fragments
@@ -458,7 +458,7 @@ fn default_log_matches_current_pinned_added_fragment_stream() {
 }
 
 #[test]
-fn matrix_f_diff_and_index_fragments_have_zero_metadata() {
+fn diff_and_index_fragments_have_zero_metadata() {
     let repository = TempRepo::copy_fixture("staged");
     let mut source = support::git_source(repository.path()).mode(GitMode::Diff { staged: true });
     let (fragments, issues) = collect(&mut source);
@@ -501,7 +501,7 @@ fn patch_byte_and_line_ceilings_are_structured_limit_failures() {
 }
 
 #[test]
-fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
+fn callback_failure_remains_distinct_after_git_is_reaped() {
     let repository = TempRepo::copy_fixture("small");
     let mut callbacks = 0;
     assert_eq!(
@@ -524,7 +524,7 @@ fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
 
 #[cfg(feature = "archives")]
 #[test]
-fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
+fn binary_and_history_archives_reuse_safe_archive_expansion() {
     let repository = TempRepo::copy_fixture("archives");
     let mut source = support::git_source(repository.path()).archives(ArchiveOptions::default());
     let (fragments, issues) = collect(&mut source);
@@ -561,7 +561,7 @@ fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
 
 #[cfg(feature = "archives")]
 #[test]
-fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
+fn archive_blob_exact_over_and_early_stop_are_structured() {
     let repository = TempRepo::copy_fixture("archives");
     let commit = "db8789716fc664dbce0ed2d492570e92abf717a5";
     let blob_size = usize::try_from(
@@ -896,11 +896,8 @@ fn translated_locale_does_not_turn_the_rename_limit_warning_into_an_issue() {
     )));
     fs::create_dir_all(root.path()).expect("create script directory");
     let git = locale_warning_git(root.path());
-    let translated = [
-        ("LANG", "de_DE.UTF-8"),
-        ("LC_MESSAGES", "de_DE.UTF-8"),
-    ]
-    .map(|(key, value)| (key.into(), value.into()));
+    let translated = [("LANG", "de_DE.UTF-8"), ("LC_MESSAGES", "de_DE.UTF-8")]
+        .map(|(key, value)| (key.into(), value.into()));
     for mode in [
         GitMode::Log { options: None },
         GitMode::LogArguments(vec!["--all".into()]),

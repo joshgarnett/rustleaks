@@ -1,4 +1,4 @@
-//! Safe, bounded RAR container parsing and native decompression.
+//! Safe, bounded RAR container parsing and decompression.
 //!
 //! The container is read as a stream. One member is decoded at a time, in
 //! memory, and handed to the caller before the next member is read.
@@ -995,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_rar3_rar5_and_solid_oracle_fixtures() {
+    fn extracts_rar3_rar5_and_solid_recorded_fixtures() {
         type Fixture<'a> = (&'a str, &'a [u8], &'a [&'a [u8]]);
 
         let cancelled = AtomicBool::new(false);

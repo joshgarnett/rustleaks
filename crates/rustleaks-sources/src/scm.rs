@@ -37,7 +37,7 @@ pub enum ScmPlatform {
 }
 
 impl ScmPlatform {
-    /// Returns the upstream-compatible command-line spelling.
+    /// Returns the name that `--platform` accepts.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -198,8 +198,7 @@ impl RemoteMetadata {
 
     /// Discovers a remote using an explicitly selected Git executable.
     ///
-    /// This is useful for embedding applications with a configured Git path
-    /// and for proving that `NoPlatform` never starts a child process.
+    /// This is useful for embedding applications with a configured Git path.
     ///
     /// # Errors
     ///
@@ -397,18 +396,6 @@ impl RemoteMetadata {
         }
         Ok(Some(ByteText::new(link)))
     }
-}
-
-/// Constructs a link when remote metadata is available.
-///
-/// # Errors
-///
-/// Returns allocation errors from [`RemoteMetadata::link_for`].
-pub fn scm_link(
-    remote: Option<&RemoteMetadata>,
-    finding: &Finding,
-) -> Result<Option<ByteText>, ScmError> {
-    remote.map_or(Ok(None), |remote| remote.link_for(finding))
 }
 
 struct ChildOutput {
