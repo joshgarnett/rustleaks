@@ -7,15 +7,12 @@
 **/fuzz/corpus/
 
 # Coverage and profiling output
-/coverage/
 *.profraw
 *.profdata
-tarpaulin-report.html
 
 # Local environment and secrets
 .env
 .env.*
-!.env.example
 !testdata/fixtures/**/.env*
 .direnv/
 

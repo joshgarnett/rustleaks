@@ -33,7 +33,6 @@ def rustleaks_library(
         crate_name,
         edition,
         version = RUSTLEAKS_VERSION,
-        aliases_extra = {},
         crate_features = [],
         deps = [],
         compile_data = [],
@@ -55,7 +54,7 @@ def rustleaks_library(
 
     rust_library(
         name = name,
-        aliases = aliases() | aliases_extra,
+        aliases = aliases(),
         compile_data = compile_data,
         crate_features = crate_features,
         crate_name = crate_name,
@@ -70,7 +69,7 @@ def rustleaks_library(
     if unit_test:
         rust_test(
             name = name + "_unit_test",
-            aliases = aliases(normal = True, normal_dev = True) | aliases_extra,
+            aliases = aliases(normal = True, normal_dev = True),
             crate = ":" + name,
             crate_features = crate_features,
             data = data,
@@ -104,7 +103,6 @@ def rustleaks_integration_test(
         name,
         src,
         deps,
-        edition = "2024",
         compile_data = [],
         data = [],
         env = {},
@@ -120,7 +118,7 @@ def rustleaks_integration_test(
         crate_root = src,
         data = data,
         deps = all_crate_deps(normal = True, normal_dev = True) + deps,
-        edition = edition,
+        edition = "2024",
         env = env,
         rustc_env = {
             "CARGO_MANIFEST_DIR": native.package_name(),

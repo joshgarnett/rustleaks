@@ -2,10 +2,10 @@
 # trailing or blank whitespace that the fixtures need.
 testdata/fixtures/upstream/testdata/** -text -whitespace
 testdata/fixtures/archives/** -text -whitespace
-crates/rustleaks-compcol/src/brotli/dictionary.bin -text -whitespace
 testdata/config-corpus/default-gitleaks.toml -text -whitespace
 crates/rustleaks-core/default/gitleaks.toml -text -whitespace
-# Pack identities and copied license texts bind exact bytes on every checkout.
+# Rule files, their SHA-256 identities and copied license texts bind exact
+# bytes on every checkout.
 crates/rustleaks-core/default/rustleaks-*.toml -text -whitespace
 crates/rustleaks-core/default/rustleaks-*.sha256 -text
 crates/rustleaks-core/default/LICENSE.* -text -whitespace

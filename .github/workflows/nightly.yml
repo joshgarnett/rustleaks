@@ -30,7 +30,6 @@ jobs:
       - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
-          install-bazelisk: "false"
           install-fuzz: "true"
       - name: Run extended campaigns
         working-directory: rustleaks
@@ -52,6 +51,8 @@ jobs:
           persist-credentials: false
       - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
+        with:
+          install-just: "false"
       - name: Check newest allowed dependencies without committing
         working-directory: rustleaks
         run: |

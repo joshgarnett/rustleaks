@@ -270,7 +270,7 @@ jobs:
               else
                 current="$(sed -n 's#.*/releases/download/v\([^/]*\)/.*#\1#p' "${checkout}/${file}" | sort -u)"
               fi
-              cargo run --locked -p xtask -- release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
+              cargo xtask release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
             fi
             # The publish job pushes only on top of the commit checked here.
             echo "${repository}=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"

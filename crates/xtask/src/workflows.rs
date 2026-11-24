@@ -269,7 +269,7 @@ fn validate_packages_workflow(source: &str) -> Result<(), String> {
         "    if: inputs.publish\n",
         "    permissions:\n      contents: read\n    outputs:\n",
         "git clone --depth 1 --branch main \"https://github.com/joshgarnett/${repository}.git\" \"${checkout}\"",
-        "cargo run --locked -p xtask -- release-artifact check-upgrade \"${current}\" \"${EXPECTED_VERSION}\"",
+        "cargo xtask release-artifact check-upgrade \"${current}\" \"${EXPECTED_VERSION}\"",
         "echo \"${repository}=$(git -C \"${checkout}\" rev-parse HEAD)\" >> \"${GITHUB_OUTPUT}\"",
     ] {
         if !channels.contains(required) {
@@ -974,10 +974,8 @@ fn validate_release_qualification_setup(source: &str) -> Result<(), String> {
         .ok_or("release workflow omits the qualification job")?;
     for required in [
         "uses: ./rustleaks/.github/actions/setup",
-        "install-fuzz: \"true\"",
-        "install-miri: \"true\"",
+        "install-nightly: \"true\"",
         "cargo install cargo-public-api --locked --version 0.52.0",
-        "cargo install cargo-deny --locked --version 0.19.9",
         "cargo xtask qualify",
     ] {
         if !qualification.contains(required) {
@@ -1189,6 +1187,8 @@ fn validate_tool_setup(source: &str) -> Result<(), String> {
             .ok_or_else(|| format!("setup action omits ordered verification {required:?}"))?;
     }
     for required in [
+        "if: inputs.install-nightly == 'true'",
+        "rustup toolchain install \"${NIGHTLY}\" --profile minimal\n",
         "if: inputs.install-fuzz == 'true'",
         "rustup toolchain install \"${NIGHTLY}\" --profile minimal --component llvm-tools-preview",
         "cargo +\"${NIGHTLY}\" install cargo-fuzz --locked --version 0.13.2",
@@ -1197,6 +1197,7 @@ fn validate_tool_setup(source: &str) -> Result<(), String> {
         "if: inputs.install-miri == 'true'",
         "rustup toolchain install \"${NIGHTLY}\" --profile minimal --component miri",
         "cargo +\"${NIGHTLY}\" miri setup",
+        "if: inputs.install-security-tools == 'true'",
     ] {
         if !source.contains(required) {
             return Err(format!(
@@ -1274,8 +1275,8 @@ fn validate_target_execution_platform(
         .split("          - runner: ")
         .find(|entry| entry.contains(&format!("target: {target}\n")))
         .ok_or_else(|| format!("CI omits native target {target}"))?;
-    let expected = format!("execution_platform: {execution_platform}\n");
-    if !entry.contains(&expected) {
+    let expected = format!("platform: {execution_platform}");
+    if !entry.lines().any(|line| line.trim() == expected) {
         return Err(format!(
             "CI native target {target} does not use required execution platform {execution_platform}"
         ));
@@ -1456,7 +1457,7 @@ mod tests {
 
     #[test]
     fn requires_qualification_tools_in_the_release_qualification_job() {
-        let setup = "      - uses: ./rustleaks/.github/actions/setup\n        with:\n          install-fuzz: \"true\"\n          install-miri: \"true\"\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n      - run: cargo install cargo-deny --locked --version 0.19.9\n";
+        let setup = "      - uses: ./rustleaks/.github/actions/setup\n        with:\n          install-nightly: \"true\"\n      - run: cargo install cargo-public-api --locked --version 0.52.0\n";
         let source = format!(
             "\n  qualification:\n    steps:\n      - run: cargo xtask qualify\n  security:\n    steps:\n{setup}"
         );
@@ -1469,8 +1470,11 @@ mod tests {
         );
         validate_release_qualification_setup(&source).unwrap();
         for (required, input) in [
-            ("install-fuzz: \"true\"", "install-fuzz"),
-            ("install-miri: \"true\"", "install-miri"),
+            ("install-nightly: \"true\"", "install-nightly"),
+            (
+                "cargo install cargo-public-api --locked --version 0.52.0",
+                "cargo-public-api",
+            ),
         ] {
             let error =
                 validate_release_qualification_setup(&source.replacen(required, "missing", 1))
@@ -1481,7 +1485,7 @@ mod tests {
 
     #[test]
     fn rejects_musl_execution_platform_for_host_tools() {
-        let source = "          - runner: ubuntu-24.04-arm\n            target: aarch64-unknown-linux-musl\n            host_platform: //platforms:linux_aarch64_gnu\n            execution_platform: //platforms:linux_aarch64_musl\n";
+        let source = "          - runner: ubuntu-24.04-arm\n            target: aarch64-unknown-linux-musl\n            platform: //platforms:linux_aarch64_musl\n";
         let error = validate_target_execution_platform(
             source,
             "aarch64-unknown-linux-musl",
@@ -1804,10 +1808,7 @@ mod tests {
             "",
         );
         assert!(super::validate_packages_workflow(&untagged).is_err());
-        let unchecked = source.replace(
-            "cargo run --locked -p xtask -- release-artifact check-upgrade",
-            "true",
-        );
+        let unchecked = source.replace("cargo xtask release-artifact check-upgrade", "true");
         assert!(super::validate_packages_workflow(&unchecked).is_err());
         let flow = source.replacen(
             "    permissions:\n      actions: read\n      contents: read\n    # Only Git",

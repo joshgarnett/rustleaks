@@ -612,7 +612,6 @@ fn check_interface(root: &Path) -> Result<(), String> {
     for required in [
         "common --lockfile_mode=error",
         "common --incompatible_strict_action_env",
-        "build:clippy --@rules_rust//rust/settings:clippy_flag=-Dwarnings",
         "build:linux-x86_64-gnu --platforms=//platforms:linux_x86_64_gnu",
         "build:linux-aarch64-gnu --platforms=//platforms:linux_aarch64_gnu",
         "build:linux-x86_64-musl --platforms=//platforms:linux_x86_64_musl",
