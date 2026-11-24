@@ -96,13 +96,7 @@ jobs:
         uses: ./rustleaks/.github/actions/setup
         with:
           install-miri: "true"
-      - name: Install pinned security tools
-        working-directory: rustleaks
-        run: |
-          cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo install cargo-vet --locked --version 0.10.2
-          cargo install cargo-geiger --locked --version 0.13.0
+          install-security-tools: "true"
       - name: Run dependency and owned-code security policy
         working-directory: rustleaks
         run: just security
@@ -120,7 +114,6 @@ jobs:
       - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
-          install-bazelisk: "false"
           install-fuzz: "true"
       - name: Build targets and replay bounded smoke campaigns
         working-directory: rustleaks
@@ -170,43 +163,37 @@ jobs:
             architecture: x86_64
             target: x86_64-unknown-linux-gnu
             config: linux-x86_64-gnu
-            host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_gnu
+            platform: //platforms:linux_x86_64_gnu
             test_compilation_mode: fastbuild
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-gnu
             config: linux-aarch64-gnu
-            host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_gnu
+            platform: //platforms:linux_aarch64_gnu
             test_compilation_mode: fastbuild
           - runner: ubuntu-24.04
             architecture: x86_64
             target: x86_64-unknown-linux-musl
             config: linux-x86_64-musl
-            host_platform: //platforms:linux_x86_64_gnu
-            execution_platform: //platforms:linux_x86_64_gnu
+            platform: //platforms:linux_x86_64_gnu
             test_compilation_mode: fastbuild
           - runner: ubuntu-24.04-arm
             architecture: aarch64
             target: aarch64-unknown-linux-musl
             config: linux-aarch64-musl
-            host_platform: //platforms:linux_aarch64_gnu
-            execution_platform: //platforms:linux_aarch64_gnu
+            platform: //platforms:linux_aarch64_gnu
             test_compilation_mode: fastbuild
           - runner: macos-15-intel
             architecture: x86_64
             target: x86_64-apple-darwin
             config: macos-x86_64
-            host_platform: //platforms:macos_x86_64
-            execution_platform: //platforms:macos_x86_64
+            platform: //platforms:macos_x86_64
             test_compilation_mode: opt
           - runner: macos-15
             architecture: arm64
             target: aarch64-apple-darwin
             config: macos-aarch64
-            host_platform: //platforms:macos_aarch64
-            execution_platform: //platforms:macos_aarch64
+            platform: //platforms:macos_aarch64
             test_compilation_mode: fastbuild
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -228,13 +215,12 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
+          PLATFORM: ${{ matrix.platform }}
           TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
         run: |
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" //:build
-          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
-          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${HOST_PLATFORM}" --extra_execution_platforms="${EXECUTION_PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 //:test
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" //:build
+          bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --extra_execution_platforms="${PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --extra_execution_platforms="${PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 //:test
 
   native-windows:
     name: Native ${{ matrix.target }}
@@ -246,14 +232,12 @@ jobs:
             architecture: X64
             target: x86_64-pc-windows-msvc
             config: windows-x86_64-msvc
-            host_platform: //platforms:windows_x86_64_msvc
-            execution_platform: //platforms:windows_x86_64_msvc
+            platform: //platforms:windows_x86_64_msvc
           - runner: windows-11-arm
             architecture: Arm64
             target: aarch64-pc-windows-msvc
             config: windows-aarch64-msvc
-            host_platform: //platforms:windows_aarch64_msvc
-            execution_platform: //platforms:windows_aarch64_msvc
+            platform: //platforms:windows_aarch64_msvc
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
@@ -284,14 +268,13 @@ jobs:
         working-directory: rustleaks
         env:
           BAZEL_CONFIG: ${{ matrix.config }}
-          EXECUTION_PLATFORM: ${{ matrix.execution_platform }}
-          HOST_PLATFORM: ${{ matrix.host_platform }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --config="$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //:build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --extra_execution_platforms="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --build_tests_only //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:HOST_PLATFORM" --extra_execution_platforms="$env:EXECUTION_PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --extra_execution_platforms="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   required:

@@ -30,7 +30,6 @@ jobs:
       - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
-          install-bazelisk: "false"
           install-fuzz: "true"
       - name: Run slower campaigns
         working-directory: rustleaks

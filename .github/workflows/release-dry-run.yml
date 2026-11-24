@@ -35,6 +35,12 @@ jobs:
           ref: ${{ inputs.candidate }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up the Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
       - name: Require the current protected branch commit
         env:
           CANDIDATE: ${{ inputs.candidate }}
@@ -44,14 +50,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
           test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
           git fetch --no-tags origin main
           test "$(git rev-parse origin/main)" = "${CANDIDATE}"
           test -z "$(git status --short)"
-          actual_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          actual_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "rustleaks-core") | .version')"
           test "${actual_version}" = "${EXPECTED_VERSION}"
       - name: Confirm no publication credentials are present
         run: |
@@ -153,9 +159,6 @@ jobs:
           persist-credentials: false
       - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
-      - name: Install the pinned public API tool
-        working-directory: rustleaks
-        run: cargo install cargo-public-api --locked --version 0.52.0
       - name: Hydrate locked dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
@@ -167,7 +170,7 @@ jobs:
         run: just ci
 
   qualification:
-    name: Rust regression and release hardening
+    name: Release checks (cargo xtask qualify)
     needs: candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -181,18 +184,16 @@ jobs:
       - name: Set up tools
         uses: ./rustleaks/.github/actions/setup
         with:
-          install-fuzz: "true"
-          install-miri: "true"
+          install-just: "false"
+          install-bazelisk: "false"
+          install-nightly: "true"
       - name: Install the pinned public API tool
         working-directory: rustleaks
         run: cargo install cargo-public-api --locked --version 0.52.0
-      - name: Install the pinned dependency policy tool
-        working-directory: rustleaks
-        run: cargo install cargo-deny --locked --version 0.19.9
-      - name: Hydrate locked qualification dependencies
+      - name: Hydrate locked dependencies
         working-directory: rustleaks
         run: cargo fetch --locked
-      - name: Run complete Rust qualification
+      - name: Run cargo xtask qualify
         working-directory: rustleaks
         run: cargo xtask qualify
 
@@ -212,13 +213,7 @@ jobs:
         uses: ./rustleaks/.github/actions/setup
         with:
           install-miri: "true"
-      - name: Install pinned security tools
-        working-directory: rustleaks
-        run: |
-          cargo install cargo-deny --locked --version 0.19.9
-          cargo install cargo-audit --locked --version 0.22.2
-          cargo install cargo-vet --locked --version 0.10.2
-          cargo install cargo-geiger --locked --version 0.13.0
+          install-security-tools: "true"
       - name: Hydrate locked dependencies
         working-directory: rustleaks
         run: cargo fetch --locked

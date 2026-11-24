@@ -19,15 +19,23 @@ inputs:
     required: false
     default: "true"
   nightly-toolchain:
-    description: Pinned nightly Rust toolchain for fuzzing and Miri.
+    description: Pinned nightly Rust toolchain for fuzzing, Miri and the public API check.
     required: false
     default: nightly-2026-08-21
+  install-nightly:
+    description: Install the nightly toolchain without extra components or tools.
+    required: false
+    default: "false"
   install-fuzz:
     description: Install the nightly toolchain with cargo-fuzz and fetch the locked fuzz dependencies.
     required: false
     default: "false"
   install-miri:
     description: Install the nightly toolchain with Miri.
+    required: false
+    default: "false"
+  install-security-tools:
+    description: Install the pinned cargo-deny, cargo-audit, cargo-vet and cargo-geiger versions.
     required: false
     default: "false"
 
@@ -69,6 +77,15 @@ runs:
         rustc -vV
         cargo -vV
 
+    - name: Install the nightly toolchain
+      if: inputs.install-nightly == 'true'
+      shell: bash
+      env:
+        NIGHTLY: ${{ inputs.nightly-toolchain }}
+      run: |
+        set -euo pipefail
+        rustup toolchain install "${NIGHTLY}" --profile minimal
+
     - name: Install fuzz tools
       if: inputs.install-fuzz == 'true'
       shell: bash
@@ -92,6 +109,16 @@ runs:
         set -euo pipefail
         rustup toolchain install "${NIGHTLY}" --profile minimal --component miri
         cargo +"${NIGHTLY}" miri setup
+
+    - name: Install security tools
+      if: inputs.install-security-tools == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cargo install cargo-deny --locked --version 0.19.9
+        cargo install cargo-audit --locked --version 0.22.2
+        cargo install cargo-vet --locked --version 0.10.2
+        cargo install cargo-geiger --locked --version 0.13.0
 
     - name: Install Just
       if: inputs.install-just == 'true'

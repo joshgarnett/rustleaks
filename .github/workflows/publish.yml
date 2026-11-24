@@ -59,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
           test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
