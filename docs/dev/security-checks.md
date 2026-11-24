@@ -387,15 +387,15 @@ candidate, see the [public API README](../../testdata/public-api/README.md).
 Scan the worktree and Git history with Rustleaks before a release. Pull
 requests run the worktree scan, and the nightly workflow runs both scans.
 
-- The root `.rustleaks.toml` extends the default rules and skips the test
-  corpora under `testdata/` (and under `compat/` in older commits), copied
-  fixtures, the rule test fixtures and
-  case files, a few rule tests, examples and rule documents that hold
-  synthetic credentials, Git metadata and build output. In `CHANGELOG.md` it
-  allows only two quoted synthetic passwords. In the providers pack
+- The root `.rustleaks.toml` extends the built-in rules. It skips files that
+  hold synthetic credentials: the test corpora under `testdata/` (and under
+  `compat/` in older commits), copied fixtures, the rule test fixtures and
+  case files, a few rule tests, examples and rule documents. It also skips
+  Git metadata and build output. In `CHANGELOG.md` it
+  allows only two quoted synthetic passwords. In the providers rule file
   provenance record and the native coverage review record it allows only Git
-  revision lines, and in the release license index only SHA-256 hash lines. A directory scan
-  skips every file that matches an allowlist path, so only the Git history
+  revision lines, and in the release license index only SHA-256 hash lines.
+  A directory scan skips every file that matches an allowlist path, so only the Git history
   scan applies these line rules.
 - The root `.rustleaksignore` lists reviewed fingerprints of synthetic
   examples and generated hashes. A worktree fingerprint includes the line
@@ -435,7 +435,8 @@ Untrusted pull request code never runs from `pull_request_target`,
 | --- | --- |
 | Pull request | `just ci`, the worktree self-scan, `just security` (cargo-deny, RustSec, locked cargo-vet, unsafe inventory, Miri and panic policy), `just fuzz-smoke` (builds and runs the fuzz targets), `just release-dry-run`, dependency review on graph changes, current stable and MSRV, and the native platform lanes. No pull request job gets secrets |
 | Nightly | Longer fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 120 seconds), newest allowed dependency resolution in a checkout that is not committed, and the worktree and history self-scan |
-| Weekly | The CI workflow on its weekly schedule runs every CI job, including `just security` and all native target lanes. `weekly.yml` runs slower fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 600 seconds), which keep the smoke input limits and do not run the deep profile, and a Bazel coverage review, which measures ordinary tests, not fuzz coverage. CodeQL and OpenSSF Scorecard run on their own schedules |
+| Weekly | The CI workflow on its weekly schedule runs every CI job, including `just security` and all native target lanes. `weekly.yml` runs slower fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 600 seconds), which keep the smoke input limits and do not run the deep profile, and a Bazel coverage review, which measures ordinary tests, not fuzz coverage. |
+| CodeQL and Scorecard | CodeQL runs on every pull request, on each push to `main` and weekly. OpenSSF Scorecard runs on each push to `main` and weekly |
 | Release candidate | A manual dry run without secrets for the exact `main` commit and version. See [Releasing](releasing.md) |
 
 For the publication workflows, see
@@ -466,12 +467,10 @@ these files:
 - Release inputs: package, release, checksum, SBOM, provenance and
   attestation inputs.
 
-An independent approving review is required only when the live ruleset or
-the maintainer asks for one. GitHub does not let authors approve their own
-pull requests, so a ruleset for a sole maintainer may leave out a required
-approval. The full branch diff, required checks, open conversations,
-mergeability and boundary evidence are still required. An owner bypass does
-not replace any of them.
+[Pull requests](../../CONTRIBUTING.md#pull-requests) has the merge and
+review rules. For changes to these files, the review also covers the full
+branch diff and the evidence for each boundary the change touches. An owner
+bypass does not replace any of these.
 
 GitHub secret scanning, push protection, private vulnerability reporting,
 branch protection, protected release environments, trusted publishing and

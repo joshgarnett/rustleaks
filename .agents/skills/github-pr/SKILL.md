@@ -1,6 +1,6 @@
 ---
 name: github-pr
-description: Check, create or update a Rustleaks pull request from a complete branch diff with accurate check results and issue links. Use for pull request preparation and changes, not issue authoring, commit creation, substantive review or merging.
+description: Check, create or update a Rustleaks pull request from a complete branch diff with accurate check results and issue links. Use for pull request preparation and changes, not issue authoring, commit creation, full review or merging.
 ---
 
 # Rustleaks pull requests

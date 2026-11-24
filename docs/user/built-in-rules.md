@@ -4,41 +4,49 @@ This guide is for people who want to know which rules a Rustleaks scan uses.
 
 ## What a scan uses
 
-Without a configuration file, Rustleaks scans with all of its built-in rules:
+Rustleaks has 547 built-in rules. Without a configuration file, every scan
+uses all of them. The count includes helper rules that other rules depend
+on. Helper rules do not report findings by themselves.
 
-- the [default rules](#default-rules), 222 rules that started from the
-  Gitleaks default configuration; and
-- the Rustleaks rules, which add more providers and connection strings.
+The built-in rules are:
 
-The Rustleaks rules come from three rule files. They do not change the
-default rules. For a few reviewed pairs, a Rustleaks rule's finding replaces a
-default rule's finding for the same secret; see [Findings from two
-rules](#findings-from-two-rules).
+- the [Gitleaks-based rules](#gitleaks-based-rules), 222 rules that started
+  from the Gitleaks default configuration; and
+- the Rustleaks rules, which add more service providers and connection
+  strings.
 
-| Rule file | What it adds | Details |
-| --- | --- | --- |
-| `rustleaks-extra-v1` | Azure Service Bus and Event Hubs keys, Azure App Configuration secrets, and MongoDB URI passwords | [rule reference (for maintainers)](../../crates/rustleaks-core/default/rustleaks-extra-v1.md) |
-| `rustleaks-providers-v1` | API keys and tokens for many service providers, such as Groq, NVIDIA, Figma, Slack session tokens, Mapbox and Vercel | [rule reference (for maintainers)](../../crates/rustleaks-core/default/rustleaks-providers-v1.md) |
-| `rustleaks-connections-v1` | Passwords in database connection strings, JDBC and ODBC URLs, libpq keyword strings, service URIs and Git URLs with credentials | [rule reference (for maintainers)](../../crates/rustleaks-core/default/rustleaks-connections-v1.md) |
+| Rules | What they find |
+| --- | --- |
+| Gitleaks-based rules | API keys, tokens and private keys for many services, and generic secrets such as `api_key = "..."` |
+| Rustleaks extra rules | Azure Service Bus and Event Hubs keys, Azure App Configuration secrets, and MongoDB URI passwords |
+| Rustleaks provider rules | API keys and tokens for many more service providers, such as Groq, NVIDIA, Figma, Slack session tokens, Mapbox and Vercel |
+| Rustleaks connection rules | Passwords in database connection strings, JDBC and ODBC URLs, libpq keyword strings, service URIs and Git URLs with credentials |
 
-Some Rustleaks rules are helpers that other rules depend on. They do not
-report findings by themselves.
+The rules are kept in four files so that each file keeps its source and
+license. You do not choose between them: a scan uses all four. Maintainers
+can read the reference page of each Rustleaks rule file:
+[extra](../../crates/rustleaks-core/default/rustleaks-extra-v1.md),
+[providers](../../crates/rustleaks-core/default/rustleaks-providers-v1.md) and
+[connections](../../crates/rustleaks-core/default/rustleaks-connections-v1.md).
 
 All Rustleaks rule IDs start with `rustleaks.`, for example
-`rustleaks.groq-api-key`. This keeps them apart from the default rule IDs.
-`--enable-rule` can select them by ID.
+`rustleaks.groq-api-key`. This keeps them apart from the Gitleaks-based rule
+IDs. `--enable-rule` can select any built-in rule by ID.
+
+For a few reviewed pairs of rules that find the same secret, Rustleaks
+reports only one of the two findings. See [Findings from two
+rules](#findings-from-two-rules).
 
 The rules work only on the bytes they scan. They do not contact a provider,
 and they do not check whether a credential is active.
 
-## Default rules
+## Gitleaks-based rules
 
-The default rules are in
+The Gitleaks-based rules are in
 [`gitleaks.toml`](../../crates/rustleaks-core/default/gitleaks.toml). They
-started from the Gitleaks default configuration at commit
-`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` (`v8.30.0-27-gb58d3f1`), and
-Rustleaks changes them in its own releases. Rustleaks has added these
-allowlists:
+started from the Gitleaks default configuration at the commit named in
+[Moving from Gitleaks](moving-from-gitleaks.md), and Rustleaks changes them
+in its own releases. Rustleaks has added these allowlists:
 
 - `generic-api-key` does not report:
   - hex digests of 32, 40, 64 or 128 characters under a name with md5, sha,
@@ -56,13 +64,10 @@ allowlists:
   Discord, Azurite, Telegram, Slack and Google publish in their
   documentation.
 
-The global `[allowlist]` table of the Gitleaks file is written as the first
-`[[allowlists]]` entry, which has the same meaning.
-
 ## With a configuration file
 
 A configuration file replaces the built-in rules. To keep them and add your
-own rules, extend the default:
+own rules, extend the built-in rules:
 
 ```toml
 [extend]
@@ -73,27 +78,26 @@ id = "my-token"
 regex = '''my_token_[0-9a-f]{32}'''
 ```
 
-`useDefault = true` gives the default rules and all Rustleaks rules.
-`disabledRules` can turn off any of them by ID. A rule in your file with the
-same ID as a built-in rule changes it. If you set `regex` or `entropy` on a
-Rustleaks rule, your value replaces the built-in matcher or entropy check. A
-`regex` also removes the rule's built-in link to its helper rules, so the
-rule then reports every match of your regex on its own.
+`useDefault = true` gives every built-in rule. `disabledRules` can turn off
+any of them by ID. A rule in your file with the same ID as a built-in rule
+changes it. If you set `entropy` on a Rustleaks rule, your value replaces its
+entropy check. If you set `regex` on a Rustleaks rule, your regex replaces the
+built-in pattern, and the rule no longer needs its helper rules. It then
+reports every match of your regex.
 
-To scan with the default rules only, pass a configuration
-that does not extend the default, such as a copy of
+To scan with the Gitleaks-based rules only, pass a configuration that does
+not extend the built-in rules, such as a copy of
 [`gitleaks.toml`](../../crates/rustleaks-core/default/gitleaks.toml).
 
 See [Configuration](configuration.md) for where Rustleaks looks for a
 configuration.
 
-## The rule files and --config
+## Copying a Rustleaks rule file
 
-Some Rustleaks rules use fields that only the built-in loader understands,
-such as byte-based entropy checks. The providers and connections rule files
-fail with an error when you pass them with `--config`, through a
-configuration variable, or as an `extend` path. Use `useDefault = true`
-instead.
+The providers and connections rule files use fields that only the built-in
+loader reads, such as byte-based entropy checks. If you pass a copy of one
+with `--config`, a configuration variable or an `extend` path, loading fails.
+Use `useDefault = true` instead.
 
 ## Built-in rules in the library
 

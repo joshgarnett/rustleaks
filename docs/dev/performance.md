@@ -44,7 +44,8 @@ internals](engine-internals.md).
 | `just perf-calibrate` | Measures local noise and a deliberate slowdown control (Unix) |
 | `just perf-report` | Collects or checks a private performance report |
 
-To run one standard workload with a warmup and a fixed number of iterations:
+To run one standard workload with a warmup and a fixed number of
+iterations, call xtask directly, because `just perf-run` takes no arguments:
 
 ```sh
 bazelisk run //crates/xtask:xtask -- perf run --workload default-one-keyword --warmup 1 --iterations 10
@@ -90,8 +91,9 @@ workloads count input bytes. Do not combine the two into one bytes per second
 series.
 
 The workloads named `default-*` use every built-in rule, as a scan does by
-default: 547 rules, 222 in `gitleaks.toml` and 325 in the three Rustleaks rule
-files. `gitleaks-compile` compiles the 222 rules in `gitleaks.toml` alone. The
+default. `gitleaks-compile` compiles only the Gitleaks-based rules in
+`gitleaks.toml`. [Built-in rules](../user/built-in-rules.md) gives the rule
+counts. The
 `bm-*` workloads are the Gitleaks allowlist benchmarks and use the
 `gitleaks.toml` allowlists.
 
@@ -167,13 +169,15 @@ for byte in `ORIGINAL_LIMITS`. It is for diagnosis, not a default.
 | `decoded-carrier` | Each 4,096 record case, as `inputs/<id>/` | 8 |
 
 Other families fail with "no check subset for this family". Each unit runs
-one CLI process with a cleared environment, all three Rustleaks rule files,
-`--max-decode-depth 5`, `--max-archive-depth 0`, `--base64-mode compatible`,
+one CLI process with a cleared environment and no rule options, so it uses
+every built-in rule, with `--max-decode-depth 5`, `--max-archive-depth 0`, `--base64-mode compatible`,
 an empty ignore file and `--timeout 600`. Each case's answers must expect
 `github-pat`.
 
 Reports and logs stay in a private scratch folder named
 `rustleaks-private-fuzz-<id>` in the system temporary folder (`TMPDIR`). The
+name has `fuzz` in it because the check uses the same private output helper
+as the fuzz runner. The
 check refuses a scratch folder inside the checkout. The folder is removed when
 no unit fails. Otherwise it is kept, and the check prints the error and the
 folder path to standard error. Each unit has a `unit-<n>` folder with its
@@ -203,7 +207,9 @@ input, run by hand with the same options. No fixture family generates it, so
 
 The representative suite adds timers for each operation. It keeps the 24
 standard workloads unchanged. Run it on its own, after all
-builds and fuzzing on the host have stopped:
+builds and fuzzing on the host have stopped. `just perf-representative`
+runs every workload. It takes no arguments, so to choose a workload, call
+xtask directly:
 
 ```sh
 just perf-representative
@@ -252,7 +258,7 @@ commands. Select them by ID, for example `core-mixed-16-kib`.
 | `source-scale` | 26 workloads for traversal, chunking, Git history shape, archive limits and CLI behavior |
 | `gitleaks-rules` | The rules in `gitleaks.toml` at decode depth 0 on keyword, near-miss, Unicode, minified, realistic and contention inputs |
 | `fragments` | JSON, log and invalid UTF-8 records in fragments from 16 KiB to 12 MiB, with the rules in `gitleaks.toml` |
-| `packs` | Rustleaks rule files at library level: startup, keyword admission, mixed input and workers |
+| `packs` | The three Rustleaks rule files at library level: startup, keyword admission, mixed input and workers. The name is older than the removal of rule packs. |
 | `cli-matrix` | Fresh CLI processes in `dir` and `git` modes on one generated repository |
 | `dense` | Dense findings from 25,000 to 400,000 bytes, long lines and many findings |
 | `git-shapes` | Git reader shapes: one huge hunk, many files, many branches, merges and renames |
@@ -282,7 +288,7 @@ Notes for some groups:
   sample. Every fragment must finish with one finding, no decoded bytes and
   no termination.
 
-### Packs, CLI, dense, Git and filter groups
+### Rule file, CLI, dense, Git and filter groups
 
 These five groups are timed only by hand. Unit tests run every one of
 them at a smaller size and check the exact outcome, so `just test` covers
@@ -325,8 +331,8 @@ parent exists and has no symbolic links. The folder gets mode 0700 and files
 get mode 0600, because raw profiles can include local paths.
 
 ```sh
-bazelisk run //crates/xtask:xtask -- perf profile --output /private/tmp/rustleaks-profile --workload core-default-many-keywords-16-kib --seconds 15
-bazelisk run //crates/xtask:xtask -- perf calibrate --output /private/tmp/rustleaks-calibration --workload core-default-many-keywords-16-kib --pairs 9 --iterations 5
+just perf-profile --output /private/tmp/rustleaks-profile --workload core-default-many-keywords-16-kib --seconds 15
+just perf-calibrate --output /private/tmp/rustleaks-calibration --workload core-default-many-keywords-16-kib --pairs 9 --iterations 5
 ```
 
 ### Profiling
@@ -382,8 +388,8 @@ decode case.
 each pair. A fixed matrix runs 16 cells with one prepared build:
 
 ```sh
-bazelisk run //crates/xtask:xtask -- perf calibrate --output /private/tmp/rustleaks-window-calibration --workload core-dense-16-kib --pairs 9 --iterations 100 --window-blocks 10 --first-side a
-bazelisk run //crates/xtask:xtask -- perf calibrate --matrix observation-window-v2 --output /private/tmp/rustleaks-window-matrix
+just perf-calibrate --output /private/tmp/rustleaks-window-calibration --workload core-dense-16-kib --pairs 9 --iterations 100 --window-blocks 10 --first-side a
+just perf-calibrate --matrix observation-window-v2 --output /private/tmp/rustleaks-window-matrix
 ```
 
 The matrix has a 3,600-second deadline, 900 seconds per cell and 120 seconds

@@ -10,10 +10,11 @@ The latest recorded comparison, of the 0.2.0 candidate, followed
 [benchmarks/comparison/PROTOCOL-0.2.0.md](../../benchmarks/comparison/PROTOCOL-0.2.0.md).
 Its results are in
 [benchmarks/comparison/results-0.2.0.md](../../benchmarks/comparison/results-0.2.0.md).
-The earlier 2026-11 comparison followed
-[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md),
-with results in
-[benchmarks/comparison/results-2026-11.md](../../benchmarks/comparison/results-2026-11.md).
+Older protocols and results are in the same folder.
+
+Related pages: [Comparison workloads](comparison-workloads.md) explains how
+the workloads are fetched and generated, and [Comparison quality
+inputs](comparison-quality.md) explains the labeled quality corpus.
 
 ## What the harness does
 
@@ -40,13 +41,13 @@ needs a Unix host for `wait4` and process groups.
 
 | Command | What it does |
 | --- | --- |
-| `cargo xtask compare run` | Runs tools on workloads and writes a private run folder |
-| `cargo xtask compare score` | Matches findings one to one, for a run folder or for two reports |
-| `cargo xtask compare report` | Writes `summary.json` and `report.md` for a run folder |
-| `cargo xtask compare self-test` | Runs the synthetic self-test with fake scanners |
-| `just compare ARGS` | Runs `cargo xtask compare ARGS` through Bazel |
+| `just compare run` | Runs tools on workloads and writes a private run folder |
+| `just compare score` | Matches findings one to one, for a run folder or for two reports |
+| `just compare report` | Writes `summary.json` and `report.md` for a run folder |
+| `just compare self-test` | Runs the synthetic self-test with fake scanners |
 
-The self-test also runs in `just test` as part of the xtask unit tests.
+Each `just compare` command runs xtask through Bazel. The self-test also
+runs in `just test` as part of the xtask unit tests.
 
 ## Inputs
 
@@ -207,7 +208,7 @@ The labeled corpora and the CredData adapter are described in
 ## Running a comparison
 
 ```sh
-cargo xtask compare run \
+just compare run \
   --tools /path/to/tools.json \
   --workloads benchmarks/comparison/workloads/public-repos.json \
   --cache-root /path/to/cache \
@@ -220,6 +221,10 @@ because raw reports contain secrets. Keep it outside the repository.
 
 Useful options:
 
+- `--workloads FILE` adds a workload manifest. At least one is needed, and
+  it can be repeated.
+- `--baseline ID` names the tool that the ratios compare with. Without it,
+  the first Rustleaks tool is the baseline.
 - `--tool ID` and `--workload ID` select a subset. Both can be repeated.
 - `--modes dir,git` selects the scan modes.
 - `--threads 1,4,all` sets the threads lane values. `all` means every
@@ -276,20 +281,16 @@ lists the first 1,000 rows of each list; `score.json` has every row.
 | `threads` | Defaults | 1, 4 and all cores | Each tool's own thread setting |
 | `features` | Defaults | 4 | Decode depth 0 and 5 with archives off, then decode depth 5 with archive depth 8; Kingfisher with dedup on and off |
 | `shared-rules` | 5 synthetic rules loaded into every tool | 1 and 4 | Decode and archive depth 0; Kingfisher dedup off |
-| `rustleaks-2x2` | Rustleaks only: built-in rule files on and off, for builds that have `--native-pack` | 1 and 4 | `--complete-profile` on and off. A build without `--native-pack` always uses every built-in rule, so its rule-files-off cells are unsupported. The [0.2.0 protocol](../../benchmarks/comparison/PROTOCOL-0.2.0.md) does not use this lane. |
+| `rustleaks-2x2` | Rustleaks only: built-in rule files on and off. Only 0.1.x alpha builds that had `--native-pack` can turn them off. | 1 and 4 | `--complete-profile` on and off. On 0.2.0 and later builds the rule-files-off cells are unsupported. The [0.2.0 protocol](../../benchmarks/comparison/PROTOCOL-0.2.0.md) does not use this lane. |
 
 Only the `defaults` lane gets cold cells unless `--cold-lanes` adds more.
 
 Each tool sets threads in its own way, and the ways are not the same:
 
 - Rustleaks scans with one detection thread for each CPU, up to 12, by
-  default. For a binary with `--jobs`, the harness passes `--jobs N` in every
-  thread cell. For a binary without `--jobs`, the 1-thread cells use no
-  profile, and for more than 1 thread the harness generates a
-  `--complete-profile` file with high limits and the requested `workers`
-  value. A profile also makes Rustleaks read each file whole. A binary
-  without either option runs only the 1-thread cells, and the other cells are
-  listed as skipped.
+  default. The harness passes `--jobs N` in every thread cell. Older alpha
+  builds without `--jobs` get a generated `--complete-profile` file instead,
+  or only their 1-thread cells.
 - Gitleaks and Betterleaks get `GOMAXPROCS`. Gitleaks keeps a fixed 40
   detection goroutines. Betterleaks 2 starts 4 times `GOMAXPROCS` workers.
 - Kingfisher gets `--jobs`.
@@ -361,8 +362,8 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 - Warm cells get 1 warmup and 3 measured runs. `--runs-fast`, `--runs-slow`
   and `--long-runs` set the count for cells under 1 second, of 1 second or
   more, and of 300 seconds or more; all three default to 3, so a full
-  comparison takes hours. Medians are stable at this count; confidence
-  intervals are wider than with more runs.
+  comparison takes hours. Confidence intervals are wider than with more
+  runs.
 - Cold cells start every run with an empty `HOME`, `TMPDIR` and cache
   folders, so compiled rule caches start empty. They have no warmups. The
   operating system page cache is not purged, because that needs root.
@@ -378,7 +379,8 @@ such as `BETTERLEAKS_VALIDATE` never reach a tool.
 - A cell with 8 or more samples is split at the largest gap between sorted
   samples. It is flagged as bimodal when the gap is at least 3 times the
   larger MAD of the two sides and at least 5 percent of the median. The
-  smaller side must also hold at least 15 percent of the samples.
+  smaller side must also hold at least 15 percent of the samples. With the
+  default 3 runs, this check does not run.
 - A cell whose findings differ between runs is marked in the report.
 
 ## Scoring
@@ -432,7 +434,7 @@ before you share them.
 To compare two reports without a run folder:
 
 ```sh
-cargo xtask compare score \
+just compare score \
   --left kingfisher=/path/kingfisher.json \
   --right rustleaks=/path/rustleaks.json \
   --target /path/to/input --output /path/to/private/score

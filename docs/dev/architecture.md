@@ -78,12 +78,13 @@ maintenance tools. They are never published.
 ### Configuration
 
 `rustleaks-core` parses TOML into a validated, immutable compiled
-configuration (`config` module). The default rules,
-`crates/rustleaks-core/default/gitleaks.toml`, are built into the crate. They
-started from the Gitleaks default configuration.
-The Rustleaks rule files load through `native::NativePolicy`, which adds
-stricter validation before the normal loader runs. `ConfigLoader` adds all
-of them to the default rules. Regex types stay private.
+configuration (`config` module). The built-in rules are built into the
+crate: the Gitleaks-based rules in
+`crates/rustleaks-core/default/gitleaks.toml`, which started from the
+Gitleaks default configuration, and the Rustleaks rule files beside it. The
+Rustleaks rule files load through `native::NativePolicy`, which adds stricter
+validation before the normal loader runs. `ConfigLoader` adds all of them to
+the Gitleaks-based rules. Regex types stay private.
 
 ### Detection and decoding
 
@@ -94,12 +95,10 @@ allowlists, required (composite) rules and location mapping. The decoder
 scans the decoded bytes again, up to the decode depth. The result is a
 `ScanOutcome`: complete, or partial with a structured termination.
 
-### Regex and Git
+### Regex
 
 The regex frontend (`regex/`) translates Go regex syntax to the private
-`regex-automata` backend. It is private to `rustleaks-core`. Git processes
-and the construction of links to findings (`scm.rs`) live in
-`rustleaks-sources`.
+`regex-automata` backend. It is private to `rustleaks-core`.
 
 ### Sources
 
@@ -107,7 +106,9 @@ A source (`Source` trait in `rustleaks-sources/src/source.rs`) produces
 fragments and structured `SourceIssue` values. `SourceRunner` can scan
 fragments on several worker threads with bounded queues and optional budgets.
 It submits only fragments that finished scanning to a session. Complete-target
-mode reads each eligible input to the end before scanning it.
+mode reads each eligible input to the end before scanning it. Git processes
+and the construction of links to findings (`scm.rs`) also live in
+`rustleaks-sources`.
 
 ### Findings and reports
 
@@ -131,10 +132,10 @@ identify the product.
 
 ### A detection rule
 
-- A change to the default rules follows [Changing the default
-  rules](rule-authoring.md#changing-the-default-rules).
-- Add a new rule to a Rustleaks rule file. See [Changing a
-  pack](rule-authoring.md#changing-a-pack).
+- A change to the Gitleaks-based rules follows [Changing the Gitleaks-based
+  rules](rule-authoring.md#changing-the-gitleaks-based-rules).
+- Add a new rule to a Rustleaks rule file. See [Changing a rule
+  file](rule-authoring.md#changing-a-rule-file).
 - Engine behavior that rules depend on, such as a new predicate, belongs in
   `rustleaks-core` with tests in `crates/rustleaks-core/tests/`.
 

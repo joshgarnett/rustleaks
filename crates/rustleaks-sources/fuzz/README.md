@@ -113,20 +113,20 @@ parser counts, separate controls, limits and the unframed formats.
 
 ## Running
 
-Run these commands from the repository root. Archive and framed seeds are
-generated automatically:
+To run only this crate's targets, from the repository root:
 
 ```sh
-just fuzz-build
-just fuzz-smoke
-just fuzz run --output /private/tmp/rustleaks-source-fuzz-run
+just fuzz run --targets archive,reader_schedule,git_patch \
+  --output /private/tmp/rustleaks-source-fuzz-run
 ```
 
+The archive and framed seeds are generated automatically. Do not run an
+unreviewed pull request corpus through a trusted cache.
 The output folder must be new and outside the checkout. Treat crash inputs
-and diagnostics as sensitive. Do not run an unreviewed pull request corpus
-through a trusted cache. Direct `cargo fuzz` commands print raw crash bytes
-and do not keep the private output rules. See the [private fuzz
-workflow](../../../docs/dev/security-checks.md#private-local-fuzz-evidence)
-for replay, minimizing and corpus promotion, and the [larger structured
-tests](../../../docs/dev/security-checks.md#larger-structured-tests) for
-inputs above these limits.
+and diagnostics as sensitive. Direct `cargo fuzz` commands print raw crash
+bytes, so use `just fuzz`. `just fuzz-build` and `just fuzz-smoke` cover
+every fuzz target in the three crates. See
+[Fuzzing](../../../docs/dev/security-checks.md#fuzzing) for replay,
+minimizing and corpus promotion.
+For inputs above these limits, see the [larger structured
+tests](../../../docs/dev/security-checks.md#larger-structured-tests).

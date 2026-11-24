@@ -13,7 +13,9 @@ it on yourself.
 ```rust
 use rustleaks_core::explanation::ExplanationOptions;
 use rustleaks_core::model::{Fragment, ScanOptions};
-use rustleaks_core::native::NativePolicy;
+use rustleaks_core::native::{
+    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
+};
 use rustleaks_core::triage::{
     ReviewClassification, ReviewOccurrence, ReviewPolicy, ReviewReason, ReviewRecord,
     ReviewSource,
@@ -21,7 +23,11 @@ use rustleaks_core::triage::{
 use rustleaks_core::ScanControl;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let engine = NativePolicy::builder().build()?;
+    let engine = NativePolicy::builder()
+        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?
+        .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?
+        .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?
+        .build()?;
     let policy = ReviewPolicy::for_builtin(engine.identity())?;
     let source = ReviewSource::caller_bound("snapshot-001")?;
     let scan = engine.scan_fragment_controlled(
@@ -46,11 +52,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Identifying the rules and the source
+This engine uses every built-in rule, as the CLI does. See [Choosing rule
+files](library.md#choosing-rule-files) for how `NativePolicy` builds it.
 
-- `ReviewPolicy::for_builtin` works for the default rules and the built-in
-  rule files. Its reference includes the package versions, the hashes of the
-  selected rules and the enabled extensions.
+## Naming the rules and the source
+
+- `ReviewPolicy::for_builtin` works for engines built only from the built-in
+  rule files. Its reference includes the package version, the hashes of the
+  rule files and the optional checks that are turned on, such as
+  `github-classic-pat-v1`.
 - For your own rule files, use `ReviewPolicy::caller_bound` with a reference
   from your own store that is tied to the exact bytes of the rule file. A rule
   file name and version alone are not enough. Before each review, the
@@ -104,8 +114,8 @@ rules found the same secret bytes at the same byte range. Every finding stays
 in exactly one group. Findings in decoded text have no exact range, so each
 one is in a group of its own. Equal secrets at different places stay in
 different groups. Group numbers are for display only and are not stable
-between scans. The groups keep the completion state of the scan, also for an
-empty partial scan.
+between scans. `PresentationGroups::is_complete()` returns the state of the
+scan, also when a partial scan has no findings.
 
 ## Threads and limits in your program
 

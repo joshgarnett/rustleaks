@@ -87,11 +87,11 @@ These limits apply to each expression or component, not to the whole engine.
   including the reverse NFA. A temporary forward NFA checks the PikeVM
   working set before any search cache exists. It is dropped before the meta
   engine is built from the same parsed expression.
-- The embedded default rules and the built-in packs skip the temporary
-  forward NFA, which makes startup faster. The test
-  `builtin_rules_pass_full_pattern_checks` runs the full check on all of
-  that text. Custom configurations, custom packs and replaced default text
-  always get the full check.
+- The built-in rule files skip the temporary forward NFA, which makes
+  startup faster. The test `builtin_rules_pass_full_pattern_checks` runs the
+  full check on all of that text. Custom configurations, rule files added
+  with `NativePolicy::with_pack`, and replaced default text always get the
+  full check.
 - If the reverse NFA is too large, compilation retries without DFA
   acceleration, so the forward pattern is still accepted.
 - The `bytes-v1` dialect has no separate repeat limit. The NFA and working
@@ -129,11 +129,13 @@ At the 16 KiB limit, the DFA table is about 17 MiB, at most one kilobyte per
 state. Building a state's row follows a failure chain for each byte class
 without a transition, and the chain is no longer than the state's depth. Every
 state is a keyword prefix, so the prefix limit bounds the sum of depths; a
-long keyword counts quadratically. The keywords of `gitleaks.toml` total
-1,755 bytes, their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
-kind never changes which keyword hits are reported. With every built-in rule
-the automaton has 940 patterns and its DFA uses about 2.3 MiB; with the
-default rules alone it has 510 patterns and uses about 0.6 MiB.
+long keyword counts quadratically. At 0.2.0, the keywords of `gitleaks.toml`
+total about 1.8 KB, their prefix lengths sum to about 9,300 bytes, and the
+longest is 34 bytes. The automaton kind never changes which keyword hits are
+reported. At 0.2.0, with every built-in rule the automaton has about 940
+patterns and its DFA uses about 2.3 MiB. With only the Gitleaks-based rules
+(`gitleaks.toml`) it has about 510 patterns and uses about 0.6 MiB. These
+figures change with the rules.
 
 Each pass runs the automaton once over the Go-lowercased pass. Only keyword
 patterns charge a work unit when found. Native patterns found in the same
@@ -300,7 +302,9 @@ line, and redaction can create separate lines.
   candidate registry. The Go-normalized buffer is shared by the primary and
   its helpers and released after projection.
 - Native keyword metadata is kept only for `buffer-v1` roots and helpers and
-  for `bytes-v1` rules. It counts toward the selected-rule source limit.
+  for `bytes-v1` rules. It counts toward the 8 MiB limit on rule text in a
+  rule selection (`CompiledConfig::MAX_SELECTED_BYTES`, used by
+  `--enable-rule`).
 - The per-target byte limit applies to each native input buffer on its own.
 - Native keyword checks have a work checkpoint each. The ASCII keywords of
   every native rule and the [required literals](#required-literals) of every
@@ -310,13 +314,15 @@ line, and redaction can create separate lines.
   patterns runs at most once per native input buffer on the raw bytes, stops
   once every pattern has been seen, and is indivisible like one regex search.
   It is a contiguous NFA, several times smaller than a DFA, because it runs
-  only on these buffers. When the keyword automaton already answered a pass
-  and none of a reporting native rule's ASCII keywords occur, the engine
-  charges what the keyword checks would charge, in the same order, and skips
-  the rule's detection path. Explained scans always take the full path. The first keyword check on a buffer charges the
-  input length, and every rule's ASCII keyword check then reads the shared
-  result. Unicode searches share one lowercase string per buffer; building it
-  charges two input lengths, and each search charges the folded length.
+  only on these buffers.
+- When the keyword automaton already answered a pass and none of a reporting
+  native rule's ASCII keywords occur, the engine charges what the keyword
+  checks would charge, in the same order, and skips the rule's detection
+  path. Explained scans always take the full path. The first keyword check on
+  a buffer charges the input length, and every rule's ASCII keyword check
+  then reads the shared result. Unicode searches share one lowercase string
+  per buffer. Building it charges two input lengths, and each search charges
+  the folded length.
 - Native line coordinates count newlines from the end of the previous
   admitted candidate in the same input, one work unit per byte counted, with
   no newline index. When matches arrive in order, which they do, one rule's
@@ -478,13 +484,16 @@ grows with these numbers:
 - Each worker keeps its own regex search caches: a forward and a reverse
   lazy DFA cache of up to 2 MiB each for every expression it searches, plus
   smaller fallback caches. These are most of the memory that grows with the
-  scan. A `dir` scan of the gitlab tree (691 MB) with every built-in rule
-  reached a peak RSS of about 102 MB with one detection thread and about
-  352 MB with 12, about 23 MB for each added thread. A
+  scan. Pull request #194 measured this on an Apple M5 Ultra with macOS
+  27.2.1, an optimized build and the median of three runs. A `dir` scan of
+  the gitlab tree (691 MB) with every built-in rule reached a peak RSS of
+  about 102 MB with one detection thread and about 352 MB with 12. That is
+  about 23 MB for each added thread. A
   [required literal](#required-literals) or keyword that rules out a buffer
   means that expression is not searched and its caches stay small.
 
-On a 36-CPU host with 12 detection threads, history scans of six public
+The figures in this paragraph were measured for pull request #163 on macOS
+with 36 CPUs. With 12 detection threads, history scans of six public
 repositories, from 5,000 to 100,000 commits, took 0.3 to 0.6 times as long
 with 6 Git processes as with one. All Git processes together used about as
 much memory as one Git process for the whole history, or less. Rustleaks
@@ -498,7 +507,8 @@ faster for much more CPU time.
 
 ## Startup memory of the built-in rules
 
-On one Apple M5 Ultra Mac with the optimized CLI, an empty scan
+In the measurements for pull request #194 (Apple M5 Ultra, macOS 27.2.1,
+optimized CLI), an empty scan
 (`rustleaks stdin < /dev/null`) reached a peak RSS of about 31 MB with every
 built-in rule and about 16 MB with
 `--config crates/rustleaks-core/default/gitleaks.toml`. The heap footprint
@@ -513,9 +523,9 @@ their allowlists:
 - The compiled configuration: IDs, descriptions, patterns, keywords and
   allowlist entries. The CLI keeps two copies, one in the engine and one for
   path filtering and reports, about 2 MiB each.
-- Work while loading: parsing the 591 KB `rustleaks-providers-v1.toml` and
-  every expression. This memory is freed, but the allocator keeps most of it,
-  so peak RSS stays near the highest point of loading.
+- Work while loading: parsing `rustleaks-providers-v1.toml` (about 590 KB
+  at 0.2.0) and every expression. This memory is freed, but the allocator
+  keeps most of it, so peak RSS stays near the highest point of loading.
 
 ## Git history processes
 
@@ -684,15 +694,17 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
 - A final `.tgz` suffix, in any ASCII case, is read as gzip-compressed TAR
   in normal and complete scans. It uses one archive depth level, like
   `.tar.gz`.
-- Complete mode forces strict 7z member lengths, even if
-  `ArchiveOptions::strict_7z_member_lengths(false)` was set. A short member
-  fails. The default outside complete mode is `false`, which accepts a
-  member that ends before its declared length. Outside complete mode, a caller can turn it on
-  with `strict_7z_member_lengths(true)`. A length mismatch then gives a
-  recoverable decode issue at the end of the short member and stops that
-  archive. Earlier members, and outside complete mode the bytes of the short
-  member, are already published. Strict lengths add no authenticity or CRC
-  check.
+- Strict 7z member lengths:
+  - In complete mode, lengths are always strict, even if
+    `ArchiveOptions::strict_7z_member_lengths(false)` was set. A short member
+    fails. Earlier members are already published.
+  - In normal mode, the default is `false`, which accepts a member that ends
+    before its declared length. A caller can turn the check on with
+    `strict_7z_member_lengths(true)`. A length mismatch then gives a
+    recoverable decode issue at the end of the short member and stops that
+    archive. Earlier members and the bytes of the short member are already
+    published.
+  - Strict lengths add no authenticity or CRC check.
 - Members stream. Each plain member reaches the file scanner through a reader
   that fills every read unless the member ends, so piece boundaries do not
   depend on how a decoder splits its output. A 7z member keeps its
@@ -754,8 +766,8 @@ user guide keeps only the advice that follows from them.
 How the scans were run:
 
 - An optimized build (`bazelisk build -c opt //crates/rustleaks-cli:rustleaks`).
-- All rules: the default rules plus the `rustleaks-extra-v1`,
-  `rustleaks-providers-v1` and `rustleaks-connections-v1` rule files.
+- Every built-in rule, which is the default, with the rules as they were
+  when pull request #151 was measured (2026-11-16).
 - `--complete-profile` with the example profile, `--max-decode-depth 5`,
   `--max-archive-depth 0` and `--base64-mode compatible`.
 - Synthetic inputs with known GitHub tokens. Each row is one scan of one file,
@@ -775,7 +787,8 @@ The last row comes from a separate scan with the same options. A second run
 of that input with a much larger profile completed. It needed about 71
 million work units in one file with `--base64-mode compatible`, and about 95
 million with `--base64-mode extended`. The example profile allows 10 million
-for one file. With the default rules alone, the same input completed under
+for one file. With only the Gitleaks-based rules (`--config
+crates/rustleaks-core/default/gitleaks.toml`), the same input completed under
 the example profile in both modes and needed less than 250,000 work units.
 
 ## What these limits do not bound

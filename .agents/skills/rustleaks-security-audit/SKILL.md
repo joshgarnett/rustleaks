@@ -18,8 +18,9 @@ current tree.
 Assume findings, crash inputs, reports, Git metadata, paths, and diagnostics
 may contain a live credential or private vulnerability detail. Keep raw values
 out of issues, commits, chat, and normal logs. Work from a private copy, record
-a hash, and reduce it to a nonfunctional synthetic reproducer before adding a
-test. Do not test a suspected credential by using it.
+a hash, and reduce it to a synthetic reproducer that does not work as a
+credential before adding a test. Do not test a suspected credential by using
+it.
 
 Owned crates must continue to forbid unsafe Rust. Treat dependency unsafe
 inventory as a change signal, not proof of safety or reachability. Review any
@@ -29,11 +30,11 @@ advisory, vetting, unsafe, or native exception, or a change that the
 repository contract reserves for the maintainer, needs maintainer approval.
 See [Approval boundaries](../../../AGENTS.md#approval-boundaries).
 
-Before retaining an approved cargo-vet exemption, apply the [exemption
+Before keeping an approved cargo-vet exemption, apply the [exemption
 policy](../../../docs/dev/security-checks.md#exemptions). Confirm that
 configured peer evidence is absent. Record why the required criterion cannot
 be certified, and find out whether the concern is reachable in the dependency
-graph. Record the scope, resolution condition, owner, and the applicable
+graph. Record the scope, resolution condition, owner, and the
 review date or approved boundary-change trigger. Never use an exemption for a
 known concern reachable in the runtime graph or as a silent criteria
 downgrade.
@@ -45,7 +46,7 @@ those changes.
 
 ## Test the boundary
 
-Add deterministic regressions for the actual failure mode and applicable
+Add deterministic regressions for the actual failure mode and the
 structured error, cancellation, budget, path, redaction, or panic policy.
 Use synthetic seeds. Run the affected Bazel test or corpus first, then:
 
@@ -54,8 +55,7 @@ just security
 just ci
 ```
 
-The final `just ci` result includes the corpus tests and the CLI corpus
-replay. Run `just fuzz-smoke`, and add `just package-check` when public APIs, default
+Run `just fuzz-smoke`, and add `just package-check` when public APIs, default
 assets, features, manifests, or dependencies change. Do not run
 `just package-check` for an ordinary owned source-code fix; add it only when
 one of those package-facing boundaries changes. Follow the incident procedure

@@ -7,12 +7,13 @@ rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rul
 This rule file adds 303 namespaced rules for provider API keys, tokens and
 related credentials. 31 of them are hidden helper rules: 30 association
 helpers and 1 Azure Service Bus tuple helper. The other 272 rules report
-findings. Every default scan uses these rules. They run locally. They do not
+findings. Every scan uses these rules unless a configuration replaces the
+built-in rules. They run locally. They do not
 contact a provider or check whether a credential is active. They cover
 selected formats. They do not claim complete coverage of any provider or
 scanner.
 
-## Selection
+## Loading the rule file
 
 - The rule file uses native-only tables:
   - 213 rules use `byte-shannon-f64-v1` byte entropy: 151 reject values
@@ -25,7 +26,7 @@ scanner.
   configuration or joined TOML files) rejects these tables before scanning.
 - A rule selection, such as `--enable-rule`, keeps the hidden helpers that a
   selected rule needs. They do not report findings of their own.
-- In a custom composition, add it with
+- To add it to a `NativePolicy` yourself, use
   `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)`.
   `PROVIDER_RULES_V1` is in `rustleaks_core::native`.
 
@@ -80,7 +81,7 @@ counts characters.
   not.
 - `AQ.Ab8RN6` is a Google or Gemini API key candidate. The syntax does not
   prove Gemini access, key activity or key restrictions. Google `AIza` keys
-  stay with the default rule.
+  stay with the Gitleaks-based rule.
 
 ### Escaped and segment companions (5 rules)
 
@@ -95,15 +96,17 @@ counts characters.
 - The Anthropic and DigitalOcean rules keep the leading word boundary.
   Anthropic prefixes, bodies and `AA` endings are case-sensitive.
   DigitalOcean accepts ASCII case variants of the prefix and hexadecimal
-  body. Ordinary endings stay with the default rules.
+  body. Ordinary endings stay with the Gitleaks-based rules.
 - OpenAI accepts exactly 5 left and right segment length pairs for each role:
   (20,20), (20,58), (20,74), (58,20) and (74,20). Segment bytes are
   alphanumeric, underscore or hyphen. The prefix, roles and marker are
-  case-sensitive. Leading and trailing ASCII word boundaries are required.
-  The (58,74) family and the unscoped `sk-` form stay with the default rule.
+  case-sensitive. Leading and trailing ASCII word boundaries are required. The
+  (58,74) family and the unscoped `sk-` form stay with the Gitleaks-based
+  rule.
 - Fly.io is case-sensitive. The body alphabet is alphanumeric, `=`, `_`, `-`,
   `,`, `/` and `+`. The `fo1_`, `fm1a_`, `fm1r_` and `fm2_` formats stay with
-  the default rule. The separator can be LF, so the secret can span lines.
+  the Gitleaks-based rule. The separator can be LF, so the secret can span
+  lines.
 - OpenAI and Fly.io end at an ordinary or escaped quote or backtick, ASCII
   whitespace, a semicolon, a literal lowercase `\n` or `\r`, or end of input.
 
@@ -161,7 +164,8 @@ of the match; only the token is the secret.
   when it can, while padding can make it the delimiter. Non-ASCII terminal
   characters and invalid bytes keep the normal character and range
   behavior.
-- The cookie body has no length limit. See [Shared boundaries](#shared-boundaries).
+- The cookie body has no length limit. See [Shared
+  boundaries](#shared-boundaries).
 
 ### Finite Veles formats (4 rules)
 
@@ -178,7 +182,7 @@ of the match; only the token is the secret.
   expression only, not a claim of equal behavior with the source scanner's
   streaming code.
 - Low-entropy matches are reported when these rules run alone. Global
-  allowlists still apply in a composition.
+  allowlists still apply in a normal scan.
 - `xai-api-key-80` uses only the Apache 80-byte body expression, and
   `xai-token-` management keys do not match it. The MIT form for 70 to 120
   byte bodies is the separate `xai-api-key-delimiter` rule in
@@ -214,17 +218,17 @@ of the match; only the token is the secret.
   secret regexes, 2 stopwords and the strict entropy rejection. Nothing is
   left out. Predicate whitespace is kept as written; it is not widened to the
   detector whitespace class.
-- The default global allowlist joins its regexes with the legacy flag scope.
-  For these 6 prefix forms only the first global expression
-  (true, false or null) can be reached. The other 12 need a whole value of
-  repeated letters, stars or dots, or a leading `$`, `{`, `%`, `@` or slash.
-  None of them can match a captured token here.
+- The global allowlist of `gitleaks.toml` joins its regexes with the legacy
+  flag scope. For these 6 prefix forms only the first global expression (true,
+  false or null) can be reached. The other 12 need a whole value of repeated
+  letters, stars or dots, or a leading `$`, `{`, `%`, `@` or slash. None of
+  them can match a captured token here.
 
 ### Shared-prefix delimiter companions (24 rules)
 
 These rules add occurrences before a literal backslash and quote (single,
 double or backtick) or a vertical tab. Ordinary delimiters and end of input
-stay with the default rules. No decoding pass is needed. Prefixes, token
+stay with the Gitleaks-based rules. No decoding pass is needed. Prefixes, token
 alphabets, bounds, alternatives and captures follow the pinned Betterleaks
 source. Each rule uses byte entropy with `reject = "le"`.
 
@@ -322,7 +326,7 @@ vertical tab and escaped quote gaps.
   those families. `openai-api-key-legacy-delimiter` covers the (58,74) role
   segment pairs and the bare (20,20) form before escaped quotes or a vertical
   tab. The 20-segment role companion covers the new forms. Ordinary endings
-  stay with the default rules.
+  stay with the Gitleaks-based rules.
 - Every rule carries the full source secret predicates, each regex scoped on
   its own. Go predicate whitespace is separate from detector whitespace,
   which includes vertical tab. Overlapping assignments keep native match
@@ -537,30 +541,32 @@ pinned Apache-2.0 Veles detectors.
   whitespace includes it. All token alphabets are explicit ASCII.
 - The full versioned GitLab token and the 147-byte Slack refresh body can
   appear next to shorter findings from other rules. Before an escaped quote,
-  the default `jwt` finding for a Monday token includes one extra backslash,
-  while the Monday rule extracts the exact credential. Ordinary Monday JWT
-  and Grafana forms can gain provider attribution without a new occurrence.
+  the Gitleaks-based `jwt` finding for a Monday token includes one extra
+  backslash, while the Monday rule extracts the exact credential. Ordinary
+  Monday JWT and Grafana forms can gain provider attribution without a new
+  occurrence.
 - Three rules match the same secret span as another rule for a shared form.
   For these, the overlap filter reports one finding; see [Same secret from
   two rules](#same-secret-from-two-rules):
-  - `alibaba-access-key-id-boundary` and the default `alibaba-access-key-id`
-    rule both match a 20-byte body before a delimiter that the default rule
-    accepts, such as a space. Only the default rule's finding is reported.
-    Other lengths and a comma give only the `alibaba-access-key-id-boundary`
-    finding.
-  - `slack-config-access-token-166` and the default
+  - `alibaba-access-key-id-boundary` and the Gitleaks-based
+    `alibaba-access-key-id` rule both match a 20-byte body before a delimiter
+    that the Gitleaks-based rule accepts, such as a space. Only the
+    Gitleaks-based rule's finding is reported. Other lengths and a comma give
+    only the `alibaba-access-key-id-boundary` finding.
+  - `slack-config-access-token-166` and the Gitleaks-based
     `slack-config-access-token` rule both match a one-digit segment with a
-    166-byte body. Only the default rule's finding is reported. Segments of 2
-    to 10 digits give only the `slack-config-access-token-166` finding.
+    166-byte body. Only the Gitleaks-based rule's finding is reported.
+    Segments of 2 to 10 digits give only the
+    `slack-config-access-token-166` finding.
   - `xai-api-key-delimiter` and `xai-api-key-80` both match an 80-byte body
     before a delimiter or the end of input. Only the `xai-api-key-delimiter`
     finding is reported. On an 81 to 120 byte alphanumeric body,
     `xai-api-key-80` reports its 84-byte prefix and `xai-api-key-delimiter`
     reports the full token. The secrets differ, so both are reported.
-- The source marks the Betterleaks Alibaba rule `skipReport`, as a part of
-  its `alibaba-secret-key` rule. This rule file reports it, as the default rule
-  does. `xai-api-key-delimiter` also reports `xai-token-` management keys,
-  as the source does. `slack-config-refresh-token-147` keeps a one-digit
+- The source marks the Betterleaks Alibaba rule `skipReport`, as a part of its
+  `alibaba-secret-key` rule. This rule file reports it, as the Gitleaks-based
+  rule does. `xai-api-key-delimiter` also reports `xai-token-` management
+  keys, as the source does. `slack-config-refresh-token-147` keeps a one-digit
   segment.
 
 ### Connection keys and structured context (6 rules, 1 hidden)
@@ -574,24 +580,24 @@ pinned Apache-2.0 Veles detectors.
 | `kubernetes-secret-yaml-long-context` | One Kubernetes Secret data item with 201 to 1000 ASCII bytes between `kind` and the data item, in either order | Data item, key and value | Source YAML path, keyword, template and empty value predicates |
 | `cloudflare-api-token-context` | One of 7 credential labels and a 40-byte token before a comma | Token | None |
 
-- The Azure key rules in the default rules and the extra rule file still apply
-  on their own.
+- The Azure key rules in the Gitleaks-based rules and the extra rule file
+  still apply on their own.
 - The Service Bus parent needs its own complete tuple through the helper. The
   helper keeps the source whole-tuple entropy and exclusions, and the parent
   also needs key entropy above 3.5. The detection input and both ends of the
   full match must be the same, also inside decoded inputs.
 - The JWT rule is a text pattern for an authentication candidate. It is not a
   JSON or JOSE parser and does not check signatures. Bare unsigned data and
-  signed JWTs do not match. The default `jwt` rule can report a signed
+  signed JWTs do not match. The Gitleaks-based `jwt` rule can report a signed
   escaped token with its trailing backslash.
 - The Kubernetes rule rejects matches that cross `---` or `...` document
   marker lines, including indented marker-like lines, and rejects overlaps
-  with a short-context default match. Mapping keys that start with
+  with a short-context Gitleaks-based match. Mapping keys that start with
   `---suffix` or `...suffix` still match. It does not parse YAML.
 - The Kubernetes finding location is that of the whole match. It starts on
   the `kind` or `data` line, not on the line of the data item. With decoding
   on, a Base64 value whose decoded text also matches gives a second finding
-  with `decoded:base64` tags, as for the default `kubernetes-secret-yaml`
+  with `decoded:base64` tags, as for the Gitleaks-based `kubernetes-secret-yaml`
   rule.
 - Cloudflare excludes the public `CF_ACCOUNT_ID`. Its forward ASCII context
   does not reproduce the Veles pair algorithm. It keeps the source terminal
@@ -673,11 +679,13 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   every parent. The engine builds that list once and shares it, so its work
   and memory grow with parents plus helpers. A caller that reads the list of
   every parent still reads parents times helpers entries.
-- The default AWS access token rule and other default rules stay visible.
-  Some parents report the same occurrence as a default rule. For example,
-  when a PlanetScale ID helper is in the buffer,
-  `rustleaks.association.planetscale-api-token` reports the same token as
-  the default `planetscale-api-token` rule, under its own ID. Nothing removes these duplicate findings.
+- The Gitleaks-based AWS access token rule and other Gitleaks-based rules
+  stay visible. Some parents match the same occurrence as a Gitleaks-based
+  rule. For example, when a PlanetScale ID helper is in the buffer,
+  `rustleaks.association.planetscale-api-token` matches the same token as
+  `planetscale-api-token`. An `[[overlaps]]` entry then keeps only the
+  Gitleaks-based finding; see [Same secret from two
+  rules](#same-secret-from-two-rules).
 
 ### Private Packagist credential roles (2 rules)
 
@@ -749,22 +757,20 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   property is null. It does not reproduce Veles weighted tuple selection or
   the broader generated Kingfisher path expression. It does not check that
   the JSON is complete.
-- The generic rule keeps its own entropy threshold. The default global
-  allowlist still removes its alphabet stopword. `placeholder123` is still
-  accepted; no general placeholder check is added.
+- The generic rule keeps its own entropy threshold. The global allowlist of
+  `gitleaks.toml` still removes its alphabet stopword. `placeholder123` is
+  still accepted; no general placeholder check is added.
 
 ## Same secret from two rules
 
 The `[[overlaps]]` entries at the end of the rule file list 15 reviewed
 rule pairs. When both rules of a pair report the same file, commit, secret
 and secret range, only the `keep` rule's finding is reported. Where both
-rules name the same provider, the default rule is kept: Grafana, Alibaba
-Cloud, PlanetScale, JFrog (two rules each for API keys and reference tokens),
-GitLab incoming mail and Slack configuration tokens. `xai-api-key-delimiter` is kept over
-`xai-api-key-80`. Where a provider rule names the issuer of a key that a
-broader rule also accepts, the provider rule is kept: WorkOS and Highnote over
-`stripe-access-token`, Clerk over `stripe-access-token-delimiter`, and Temporal
-Cloud and Monday over `jwt`. The [built-in rules
+rules name the same provider, the Gitleaks-based rule is kept. Where a
+provider rule names the issuer of a key that a broader rule also accepts,
+the provider rule is kept. Two pairs are inside this file:
+`xai-api-key-delimiter` is kept over `xai-api-key-80`, and
+`clerk-secret-key-delimiter` is kept over `stripe-access-token-delimiter`. The [built-in rules
 guide](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md#findings-from-two-rules)
 lists every pair.
 
@@ -798,7 +804,7 @@ Entropy:
 
 Inherited policy:
 
-- A composition keeps the default global allowlists. For the
+- A `NativePolicy` keeps the global allowlists of `gitleaks.toml`. For the
   Betterleaks rules, its 13 secret regex exclusions and 2 stopwords match the
   source's global secret exclusions for the ASCII domain. The Veles rules
   inherit them as an extra layer.

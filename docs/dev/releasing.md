@@ -6,38 +6,48 @@ published to crates.io. The CLI ships as release archives, as `.deb` and
 `.rpm` packages for the Linux glibc targets, and through the Homebrew tap
 `joshgarnett/homebrew-tap` and the Scoop bucket `joshgarnett/scoop-bucket`.
 
+## Approvals
+
 Each of these actions needs its own maintainer approval: selecting a
 version, creating a GitHub release or tag, publishing a crate, pushing to the
 tap and bucket, changing a release or trusted publishing setting, and using a
-credential. A successful local or hosted dry
-run is not approval.
+credential. A successful local or hosted dry run is not approval. The release
+checks need no approval, because they cannot publish, tag or use a registry
+token.
+
+Ask with the [approval packet](#approval-packet). Name the exact version,
+candidate, dry run ID and external action in the request. Crates.io
+publication, the GitHub tag or release, and the package manager push are
+separate actions, and each approval must name the action it covers. An
+approval stays valid for that unchanged action while its checks run; do not
+ask again. A changed value, a wider scope or a different retry needs new
+approval.
 
 ## Checklist
 
 ### 1. Prepare the candidate
 
 - [ ] The maintainer approved the version.
-- [ ] These files name that version: `[workspace.package]` in the root
-      `Cargo.toml`; the `=VERSION` path dependency pins in
-      `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-eval/Cargo.toml`,
-      `crates/rustleaks-report/Cargo.toml` and
-      `crates/rustleaks-sources/Cargo.toml`; the `module()` version in
-      `MODULE.bazel`; `RUSTLEAKS_VERSION` in `bazel/rust_crate.bzl`;
-      `CHANGELOG.md`; and the install examples in
-      `docs/user/getting-started.md`, `docs/user/ci.md` and
-      `docs/user/library.md`. `cargo xtask build-system-check`, which
-      `just test` runs, fails when `MODULE.bazel` or `RUSTLEAKS_VERSION`
-      differs from the Cargo version.
+- [ ] These files name that version:
+      - `[workspace.package]` in the root `Cargo.toml`;
+      - the `=VERSION` path dependency pins in
+        `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-eval/Cargo.toml`,
+        `crates/rustleaks-report/Cargo.toml` and
+        `crates/rustleaks-sources/Cargo.toml`;
+      - the `module()` version in `MODULE.bazel` and `RUSTLEAKS_VERSION` in
+        `bazel/rust_crate.bzl`;
+      - `CHANGELOG.md` and the Status section of `README.md`; and
+      - the install examples in `docs/user/getting-started.md`,
+        `docs/user/ci.md` and `docs/user/library.md`.
+
+      `cargo xtask build-system-check`, which `just test` runs, fails when
+      `MODULE.bazel` or `RUSTLEAKS_VERSION` differs from the Cargo version.
 - [ ] The generated files that name the version are regenerated:
       `just deps-repin` (`Cargo.lock` and `cargo-bazel-lock.json`),
       `cargo xtask generate vet-inventory`,
       `cargo xtask release-artifact notices` and
       `bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline`
       (`testdata/quality-corpus/baseline-v1.json`).
-- [ ] The status wording matches the version (alpha, pre-release or
-      stable) in `README.md` (status and install sections),
-      `CONTRIBUTING.md`, `crates/rustleaks-core/README.md`,
-      `docs/user/library.md` and `docs/user/getting-started.md`.
 - [ ] `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and `DEFAULT_RULES_SHA256`
       in `xtask` agree.
 - [ ] The candidate is merged to `main`.
@@ -87,13 +97,13 @@ finding counts that changed.
       and the version.
 - [ ] Every job passes. See
       [Non-publishing release candidate](#non-publishing-release-candidate).
-- [ ] The independently scheduled CodeQL result for the commit is green.
+- [ ] The CodeQL run for the candidate's push to `main` is green.
 
 ### 4. Ask for approval
 
 - [ ] Prepare the [approval packet](#approval-packet).
-- [ ] Get a separate approval for the crates.io publication, for the
-      GitHub release and for the package manager push.
+- [ ] Get a separate [approval](#approvals) for the crates.io publication,
+      for the GitHub release and for the package manager push.
 
 ### 5. Revalidate just before publishing
 
@@ -106,10 +116,14 @@ finding counts that changed.
 - [ ] Evidence that can change without a source edit, such as the advisory
       database result, is still fresh.
 
-If any of these fail, or the candidate, version, workflow, package bytes or
-release inputs changed, run a new dry run. The publication workflow repeats
-the identity, dry run, artifact retention and package byte checks before it
-requests a crates.io credential.
+The release checks are bound to the candidate commit and tree. Reuse a
+successful result while the commit, version, lockfiles, workflow definitions,
+package bytes and release inputs are unchanged, and do not run the full local
+suite again only because the candidate moves from checking to publication.
+If any item above fails, or one of those inputs changed, run the affected
+checks and a new dry run. The publication workflow repeats the identity, dry
+run, artifact retention and package byte checks before it requests a
+crates.io credential.
 
 ### 6. Publish
 
@@ -149,9 +163,8 @@ If anything differs from the approval packet, follow
 package and external consumer checks then run offline. The fetch changes no
 manifest or lockfile.
 
-`just ci` covers prose and links, Rustdoc, all first-party tests (including
-the corpus tests and the CLI corpus replay), and compile checks for the eight declared targets.
-`just release-dry-run` inspects the package archive, builds clean external
+[Security checks](security-checks.md) lists what `just ci` and
+`just security` run. `just release-dry-run` inspects the package archive, builds clean external
 Cargo and Bazel consumers, and runs the locked Cargo publish check without
 upload. The package metadata selects docs.rs documentation for all features
 with warnings denied; the hosted dry run repeats that and keeps the exact
@@ -162,11 +175,8 @@ runs the bounded composite resource tests, compares the public API with the
 snapshot and builds with the minimum supported Rust version. The other gates
 above cover tests, security, fuzzing and packaging.
 
-The release checks are bound to the candidate commit and tree. Reuse a
-successful result while the commit, version, lockfiles, workflow definitions
-and release inputs are unchanged. Do not run the full local suite again only
-because the candidate moves from checking to publication. A changed candidate
-or release input needs the affected checks again.
+When to reuse these results is in
+[Revalidate just before publishing](#5-revalidate-just-before-publishing).
 
 ### Non-publishing release candidate
 
@@ -341,14 +351,7 @@ Before any external action, present:
 - the requested external actions, and the rollback or yank plan.
 
 Stop if a required check is missing, failing, pending, stale or unexplained.
-
-Name the exact version, candidate, dry run ID and external action in the
-request. An approval stays valid for that unchanged action while its checks
-run; do not ask again. A changed value, a wider scope or a different retry
-needs new approval. Crates.io publication, the GitHub tag or release, and
-the package manager push are separate actions, and each approval must name
-the action it covers. The release checks need no approval, because they
-cannot publish, tag or use a registry token.
+[Approvals](#approvals) says what the request must name.
 
 ### Publishing the crate
 
@@ -449,9 +452,7 @@ A pre-release pushed to the tap or bucket becomes what `brew install` and
 `scoop install` give everyone. Once a repository holds a stable release,
 `check-upgrade` refuses to write a pre-release to it, because the Scoop
 manifest's `checkver: github` follows stable releases. A pre-release can
-replace a pre-release, and a stable release can replace either. Before the
-first stable release, push a pre-release only to test a channel, and push
-the next release soon after.
+replace a pre-release, and a stable release can replace either.
 
 ### Rollback
 

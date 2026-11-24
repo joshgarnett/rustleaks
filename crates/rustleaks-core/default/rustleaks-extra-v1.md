@@ -6,16 +6,17 @@ rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rul
 
 This rule file adds 3 namespaced rules for Azure Service Bus and Event Hubs
 keys, Azure App Configuration keys and MongoDB URI passwords. It has no
-hidden helper rules. Every default scan uses these rules. They run locally.
+hidden helper rules. Every scan uses these rules unless a configuration
+replaces the built-in rules. They run locally.
 They do not contact a provider or check whether a credential is active. They
 use the normal matching, allowlist, overlap filtering and decoding behavior.
 
-## Selection
+## Loading the rule file
 
 - The rule file uses no native-only tables. It also loads with `--config` or
   `ConfigLoader`, but then it is a plain configuration with only these 3
-  rules and without the default rules.
-- In a custom composition, add it with
+  rules and without the other built-in rules.
+- To add it to a `NativePolicy` yourself, use
   `NativePolicy::builder().with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)`.
   `EXTRA_RULES_V1` is in `rustleaks_core::native`.
 
@@ -73,8 +74,8 @@ MongoDB notes:
   strings outside the size bounds.
 - Known gaps for MongoDB: IPv6 addresses, Unix sockets, literal non-ASCII user
   information, more than 4 standard hosts and very long credentials.
-- Default generic rules can still find key values in these gaps. A missing
-  finding never shows that an input has no credentials.
+- The Gitleaks-based generic rules can still find key values in these gaps. A
+  missing finding never shows that an input has no credentials.
 - These rules do not suppress or replace existing provider rules. When a
   MongoDB password also has the shape of a provider token, both rules can
   report the same occurrence.

@@ -14,7 +14,7 @@ contributors. For how to run and add tests, see
 | `config-corpus/` | Configuration loading, extension and validation errors | `//crates/rustleaks-core:config_test` |
 | `decoder-corpus/` | The decoders and detection on decoded text | `//crates/rustleaks-core:rustleaks_core_unit_test`, `//crates/rustleaks-core:detect_corpus_test` |
 | `detect-corpus/` | Detection on single fragments, without decoding | `//crates/rustleaks-core:detect_corpus_test`, `//crates/rustleaks-sources:git_scm_test` |
-| `generator-corpus/` | Positive and negative samples for the default rules | `//crates/rustleaks-core:default_rule_corpus_test` and others |
+| `generator-corpus/` | Positive and negative samples for the Gitleaks-based rules (`gitleaks.toml`) | `//crates/rustleaks-core:default_rule_corpus_test` and others |
 | `git-corpus/` | Git log and diff sources | `//crates/rustleaks-sources:git_corpus_test` |
 | `regex-corpus/` | Regular expression syntax and matching | `//crates/rustleaks-core:rustleaks_core_unit_test` |
 | `report-corpus/` | JSON, CSV, JUnit, SARIF and template reports | `//crates/rustleaks-report:report_corpus_test` |

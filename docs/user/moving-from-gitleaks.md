@@ -20,8 +20,7 @@ output. See [NOTICE](../../NOTICE) for attribution.
   [Baselines](configuration.md#baselines).
 - **Allow comments.** `gitleaks:allow` on a line hides its findings.
 - **Reports.** JSON, CSV, JUnit, SARIF and template reports keep their
-  fields. Templates cannot use Sprig or other helper functions. See
-  [Reports](reports.md).
+  fields. See [Reports](reports.md).
 - **Columns.** Line and column numbers are counted as in Gitleaks 8.30.0
   (`b58d3f1`), so baselines made with that version match. See [Line and
   column numbers](reports.md#line-and-column-numbers).
@@ -85,7 +84,8 @@ See [Using Rustleaks in CI and Git hooks](ci.md) for examples.
 ### Added in Rustleaks
 
 - [Built-in rules](built-in-rules.md): Rustleaks rules for service provider
-  tokens, connection strings and other secrets, used with the default rules.
+  tokens, connection strings and other secrets, used together with the
+  Gitleaks-based rules.
 - `--base64-mode extended`, which finds more Base64 text. See
   [Decoding](configuration.md#decoding).
 - `--complete-profile`, which fails a scan that did not cover all of its
@@ -143,9 +143,10 @@ reasons for a difference:
   whose IDs start with `rustleaks.`. A scan that Gitleaks passes can then
   exit with code 1, and baselines and ignore files from Gitleaks do not
   cover these findings. See [Built-in rules](built-in-rules.md).
-- **Default rule allowlists.** The default rules hide some values that are
-  clearly not secrets, such as hex digests under hash names and published
-  documentation examples. See [Default rules](built-in-rules.md#default-rules).
+- **Allowlists in the Gitleaks-based rules.** The Gitleaks-based rules hide
+  some values that are clearly not secrets, such as hex digests under hash
+  names and published documentation examples. See [Gitleaks-based
+  rules](built-in-rules.md#gitleaks-based-rules).
   To get the Gitleaks findings for these values, use the [Gitleaks default
   configuration](https://github.com/gitleaks/gitleaks/blob/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b/config/gitleaks.toml)
   as your configuration.

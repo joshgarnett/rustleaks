@@ -15,13 +15,9 @@ See [Moving from Gitleaks](moving-from-gitleaks.md).
 
 ## Install
 
-Each install method below gets the same program from a
-[GitHub release](#from-a-github-release). Homebrew and Scoop check the
-archive's SHA-256 checksum. The Linux packages hold the release archive's
-program and documents without changes.
-
-Homebrew, Scoop and the `.deb` and `.rpm` packages are available from
-version 0.2.0. Earlier releases have only the release archives.
+Every install method below installs the same program as the
+[release archives](#from-a-github-release). Homebrew and Scoop check its
+SHA-256 checksum.
 
 ### With Homebrew
 
@@ -70,14 +66,13 @@ For the RPM package, download `${STEM}.rpm` instead and run
 `sudo dnf install "./${STEM}.rpm"`. There is no package repository: to
 upgrade, install the package of a newer release the same way. The package
 version of a pre-release uses `~` in place of `-`, for example
-`0.2.0~rc.1`, so that it sorts before `0.2.0`.
+`0.3.0~rc.1`, so that it sorts before `0.3.0`.
 
 ### From a GitHub release
 
 Each release on the
 [releases page](https://github.com/joshgarnett/rustleaks/releases) has one
-archive for each supported target. Releases before 0.2.0 are marked as
-pre-releases.
+archive for each supported target.
 
 | Target | Archive |
 | --- | --- |
@@ -97,18 +92,10 @@ Each archive contains one folder named like the archive, without `.tar.gz`.
 The folder holds the `rustleaks` program (`rustleaks.exe` on Windows),
 `README.md`, `LICENSE`, `NOTICE` and a `licenses` folder.
 
-Next to each archive, the release has these files with the same name start:
-
-- `.SHA256SUMS`, the checksums;
-- `.attestation.jsonl`, the GitHub attestation bundle;
-- `.cdx.json`, a CycloneDX SBOM;
-- `.provenance.json`, `.manifest.json` and `.reproducibility.json`, which
-  describe how the archive was built; and
-- `.source-relink.json`, `.deb` and `.rpm`, for the Linux glibc targets
-  only.
-
-The release also has one `rustleaks-VERSION-corresponding-source.tar.gz`
-archive with source material for the Linux glibc builds.
+Next to each archive, the release has a `.SHA256SUMS` file with the
+checksums and an `.attestation.jsonl` file with the GitHub attestation
+bundle. The other release files are listed in [Other release
+files](#other-release-files).
 
 This example installs the Linux x86_64 build with the GitHub CLI:
 
@@ -137,6 +124,20 @@ Move the program to a folder on your `PATH` if you want to run it as
 
 The `rustleaks` command is not published on crates.io. Only the
 `rustleaks-core` library is published there.
+
+#### Other release files
+
+Next to each archive, the release also has these files with the same name
+start:
+
+- `.cdx.json`, a CycloneDX SBOM;
+- `.provenance.json`, `.manifest.json` and `.reproducibility.json`, which
+  describe how the archive was built; and
+- `.source-relink.json`, `.deb` and `.rpm`, for the Linux glibc targets
+  only.
+
+The release also has one `rustleaks-VERSION-corresponding-source.tar.gz`
+archive with source material for the Linux glibc builds.
 
 ### Build from source
 
@@ -190,8 +191,8 @@ Scan the output of another command:
 cat app.log | rustleaks stdin
 ```
 
-All three commands use the default rules unless you give a configuration. See
-[Configuration](configuration.md).
+All three commands use every [built-in rule](built-in-rules.md) unless you
+give a configuration. See [Configuration](configuration.md).
 
 ## Reading the output
 

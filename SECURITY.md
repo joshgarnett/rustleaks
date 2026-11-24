@@ -1,44 +1,49 @@
 # Security policy
 
+This page is for people who want to report a security problem in Rustleaks,
+or who want to know what Rustleaks protects.
+
 ## Supported versions
 
 Security fixes target the current development line and the latest published
 release. Older releases, including the 0.1.0 alpha releases, and source
-snapshots are not supported unless a release advisory states otherwise.
+snapshots are not supported unless a release advisory says otherwise.
 
 ## Reporting
 
-Do not include real credentials, exploit payloads, or non-public vulnerability
-details in a public issue. Use [GitHub private vulnerability
+Do not put real credentials, exploit payloads or details of an unfixed problem
+in a public issue. Use [GitHub private vulnerability
 reporting](https://github.com/joshgarnett/rustleaks/security/advisories/new).
 
 Maintainers should acknowledge a private report within three business days,
-provide an initial assessment within seven business days, coordinate
-disclosure with the reporter, and avoid publishing details before a fix or
-agreed disclosure date.
+give a first assessment within seven business days, agree on disclosure with
+the reporter, and not publish details before a fix or the agreed disclosure
+date.
 
-## Security expectations
+## What Rustleaks protects
 
-The library preserves arbitrary input bytes, returns structured errors for
-hostile configuration, and uses cooperative cancellation and explicit resource
-budgets for controlled scans. Owned crates forbid unsafe code. Allocation
-failure can still abort, cancellation is cooperative rather than a hard
-deadline, and dependency code may contain narrowly reviewed unsafe internals;
-see [Resource limits](docs/user/resource-limits.md), [Engine
-internals](docs/dev/engine-internals.md) and
-[Dependencies](docs/dev/dependencies.md).
+- The library keeps input bytes as they are and returns errors for bad
+  configuration.
+- Scans can be stopped and given limits. A stop happens between steps, not
+  at once, and running out of memory can still end the process. See
+  [Resource limits](docs/user/resource-limits.md).
+- Rustleaks code uses no unsafe Rust. Some dependencies do; see
+  [Dependencies](docs/dev/dependencies.md).
 
-Finding, baseline, and fragment `Debug` output omits retained byte contents.
-Reports and serialized findings keep raw fields, such as `Secret`, `Match`
-and `Line`, unless `--redact` is used. Owned buffers are not zeroized, and removing detected secret byte sequences
-does not prove that remaining source-derived metadata is safe to disclose.
+Findings and reports hold secrets:
 
-`deny.toml` sets the policy for dependency advisories, licenses, versions and
-sources, and `just security` checks it. `supply-chain-exceptions.toml` has no
-active exceptions, and `just security` fails if one is added. Accepting an
-exception needs maintainer approval and a change to that check.
+- Reports and serialized findings keep the `Secret`, `Match` and `Line`
+  fields unless you use `--redact`. See [Report
+  files](docs/user/reports.md#report-files) for how Rustleaks creates report
+  files.
+- `Debug` output of findings, baselines and fragments leaves out their bytes.
+- Rustleaks does not clear secret bytes from memory after use.
+- A redacted report can still hold other text from the scanned files, such as
+  file names and commit messages.
 
-The threat boundaries, exact local commands and response procedure are
-documented in the [threat model](docs/dev/threat-model.md),
-[security checks](docs/dev/security-checks.md) and
-[incident response](docs/dev/incident-response.md).
+## For maintainers
+
+The threat boundaries, the security checks and the response procedure are in
+the [threat model](docs/dev/threat-model.md), [Security
+checks](docs/dev/security-checks.md) and [Incident
+response](docs/dev/incident-response.md).

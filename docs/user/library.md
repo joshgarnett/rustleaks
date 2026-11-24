@@ -2,13 +2,10 @@
 
 This guide is for Rust developers who want to scan bytes for secrets inside
 their own program. It covers the `rustleaks-core` library: building an
-engine, scanning, limits, findings, ignore files and baselines, custom rule
-compositions and review records.
+engine, scanning, limits, findings, ignore files and baselines, choosing
+rule files and review records.
 
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
-
-This guide describes the current source. See the
-[changelog](../../CHANGELOG.md) for what is not released yet.
 
 ## Add the library
 
@@ -16,10 +13,13 @@ This guide describes the current source. See the
 cargo add rustleaks-core
 ```
 
-`rustleaks-core` needs Rust 1.95 or later. It has no optional features. The
-API can change in a minor release before 1.0, such as 0.3.0, and not in a
-patch release, such as 0.2.1. `cargo add` accepts later 0.2 patch releases. To
-pin the exact version, add it with `=`:
+`rustleaks-core` needs Rust 1.95 or later. It has no optional features.
+Before 1.0, a minor release, such as 0.3.0, can change the library API. A
+patch release, such as 0.2.1, does not. Rustleaks keeps configuration files,
+ignore files, baselines, allow comments and report fields working, and a
+release that changes one of them says so in the changelog.
+`cargo add` accepts later 0.2 patch releases. To pin the exact version, add it
+with `=`:
 
 ```sh
 cargo add rustleaks-core@=0.2.0
@@ -39,7 +39,7 @@ it compiles every rule.
 
 ## A first scan
 
-This example loads the default rules and scans one byte string. The value is
+This example loads every built-in rule and scans one byte string. The value is
 synthetic test data, not a credential. The `rustleaks:allow` comment is
 outside the scanned bytes and does not change the result.
 
@@ -78,9 +78,9 @@ then builds the engine.
 
 | Call | Result |
 | --- | --- |
-| `ConfigLoader::new().load_default()` | Every [built-in rule](built-in-rules.md), the same rules as the CLI: the 222 default rules plus the Rustleaks rules. |
+| `ConfigLoader::new().load_default()` | Every [built-in rule](built-in-rules.md), the same rules as the CLI. |
 | `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). |
-| `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. Rules they require stay without reporting. |
+| `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. A rule that a kept rule needs through `[[rules.required]]` stays, but does not report findings. |
 
 A configuration can use `[extend] useDefault = true` to build on the
 built-in rules. A configuration with `[extend] path = "..."` needs file
@@ -110,8 +110,10 @@ configurations from memory instead.
 The CLI is different: it reads a relative `extend.path` from the current
 working folder.
 
-The loader ignores `minVersion` unless you set a current version with
-`ConfigLoader::new().with_current_version("8.30.0")?`. The call fails if the
+`minVersion` in a configuration names a Gitleaks version. The loader ignores
+it unless you set a current version. To check it as the CLI does, call
+`ConfigLoader::new().with_current_version("8.30.0")?`: 8.30.0 is the Gitleaks
+version whose configuration format Rustleaks reads. The call fails if the
 version you give is not valid. With a version set, invalid `minVersion`
 values are errors and `CompiledConfig::requires_newer_version()` tells you
 whether the configuration asks for a newer version.
@@ -245,12 +247,12 @@ scanned bytes. Do not guess a range that is `Unavailable`.
 
 Findings keep secret bytes in memory and are not cleared when dropped. Their
 `Debug` output leaves the contents out. `Finding::redacted(percent)` masks the
-primary secret only; it does not change `required_findings()`.
+main secret only. It does not change `required_findings()`.
 `Finding::without_detected_secrets()` removes every detected secret,
-including the values of required findings. `Finding` also implements `serde::Serialize` with the
-JSON report field names. That output includes the secret. Before you log
-findings or send them elsewhere, use one of these methods or copy only the
-fields you need.
+including the values of required findings. `Finding` also implements
+`serde::Serialize` with the JSON report field names. That output includes the
+secret. Before you log findings or send them elsewhere, use one of these
+methods or copy only the fields you need.
 
 ## Sessions, ignore files and baselines
 
@@ -290,9 +292,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 - `IgnoreSet::parse_go_compatible` reads `.rustleaksignore` and
-  `.gitleaksignore` content. `IgnoreSet::extend_go_compatible` adds more
-  files to the same set. See [Ignore files](configuration.md#ignore-files)
-  for the format.
+  `.gitleaksignore` content, in the Gitleaks ignore file format.
+  `IgnoreSet::extend_go_compatible` adds more files to the same set. See
+  [Ignore files](configuration.md#ignore-files) for the format.
 - `Baseline::load_go_json(path)` or `Baseline::from_go_json(bytes)` reads a
   JSON report. Add it with `SessionPolicyBuilder::baseline`.
 - If you scan with redaction, also call
@@ -309,47 +311,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Built-in rules
 
 `ConfigLoader::new().load_default()` and `[extend] useDefault = true` give
-every built-in rule, the same rules as the CLI: the default rules plus the
-Rustleaks rules. See [Built-in rules](built-in-rules.md) for what they
-cover. The Rustleaks rules compile the first time a loader needs them, once
-for the loader and its clones, so a configuration that does not extend the
-default does not pay for them. Reuse the loader or the `CompiledConfig`
-instead of creating a new loader for each scan.
+every built-in rule, the same rules as the CLI. See [Built-in
+rules](built-in-rules.md) for what they find. The Rustleaks rules compile the
+first time a loader needs them, once for the loader and its clones, so a
+configuration that does not extend the built-in rules does not pay for them.
+Reuse the loader or the `CompiledConfig` instead of creating a new loader for
+each scan.
 
-To use the default rules alone, pass `config::DEFAULT_CONFIG` to
-`with_default_config`. Any text passed to `with_default_config` replaces the
-whole default, without the Rustleaks rules.
+To use only the [Gitleaks-based rules](built-in-rules.md#gitleaks-based-rules)
+in `gitleaks.toml`, pass `config::DEFAULT_CONFIG` to `with_default_config`.
+Any text passed to `with_default_config` replaces all built-in rules, so the
+Rustleaks rules are not added:
 
 ```rust
-use rustleaks_core::config::ConfigLoader;
-use rustleaks_core::model::{Fragment, ScanOptions};
-use rustleaks_core::Engine;
+use rustleaks_core::config::{self, ConfigLoader};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = ConfigLoader::new().load_default()?;
-    assert!(config.rule("rustleaks.groq-api-key").is_some());
-    let engine = Engine::builder(config).build()?;
-    let outcome = engine.scan_fragment(&Fragment::new(b"no secrets here"), &ScanOptions::default());
-    assert!(outcome.findings().is_empty());
+    let all = ConfigLoader::new().load_default()?;
+    assert!(all.rule("rustleaks.groq-api-key").is_some());
+
+    let gitleaks_based = ConfigLoader::new()
+        .with_default_config(config::DEFAULT_CONFIG)
+        .load_default()?;
+    assert!(gitleaks_based.rule("aws-access-token").is_some());
+    assert!(gitleaks_based.rule("rustleaks.groq-api-key").is_none());
     Ok(())
 }
 ```
 
-### Custom compositions
+### Choosing rule files
 
-`NativePolicy` starts from the default rules and adds rule files that you
-choose, with an identity that records them. `with_pack` adds one rule file.
-The built-in rule files can be added in any order. The exact bytes and the
-order of the rule files are part of the identity.
+Most programs do not need this section. `load_default` already gives every
+built-in rule.
+
+Use `NativePolicy` when you need a record of exactly which rule files an
+engine uses, for example for [review records](review-records.md), or to add
+your own rule files that use fields only Rustleaks reads. The built-in rules
+are kept in four files: `gitleaks.toml` (`config::DEFAULT_CONFIG`) and three
+Rustleaks rule files (`native::EXTRA_RULES_V1`, `native::PROVIDER_RULES_V1`
+and `native::CONNECTION_RULES_V1`).
+
+`NativePolicy::builder()` starts with the rules in `gitleaks.toml` only.
+`with_pack` adds one rule file. The API calls an added rule file a pack. The
+engine also has an identity: a record of which rule files it was built from,
+with their exact bytes and order.
+
+This example adds the three Rustleaks rule files, which gives the same rules
+as `load_default`. The rule files can be added in any order; the order
+changes only the identity:
 
 ```rust
 use rustleaks_core::explanation::ExplanationOptions;
 use rustleaks_core::model::{Fragment, ScanOptions};
-use rustleaks_core::native::{CONNECTION_RULES_V1, NativePolicy, PROVIDER_RULES_V1};
+use rustleaks_core::native::{
+    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
+};
 use rustleaks_core::ScanControl;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = NativePolicy::builder()
+        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)?
         .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?
         .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?
         .build()?;
@@ -368,6 +389,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Use the rule file IDs shown above, such as `rustleaks-providers-v1`.
   `builtin_review_reference()` returns a value only for the built-in rule
   files under their own IDs.
+- `ExplanationOptions::disabled()` records no diagnostic events.
+  `ExplanationOptions::bounded(n)` records up to `n` numeric diagnostic
+  events about the scan. They contain no source bytes.
 - `NativeEngine::engine()` returns the plain `Engine`, which works with
   sessions.
 - `NativePolicy::compile()` returns the `CompiledConfig` and the
@@ -375,8 +399,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - You can also add your own rule files with `with_pack`. Their rule IDs
   must start with `rustleaks.`. A rule file cannot replace or disable an
   existing rule.
-- `ExplanationOptions::bounded(n)` records up to `n` numeric diagnostic
-  events about the scan. They contain no source bytes.
 
 ## Review records
 

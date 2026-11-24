@@ -5,12 +5,10 @@ in GitHub Actions, or in a Git hook before each commit.
 
 ## Exit codes in automation
 
-With the defaults, findings and errors both exit with 1. If your pipeline must
-tell them apart, choose another value for findings, for example
-`--exit-code 3`. Do not use 2 or 126. See [Exit
-codes](cli-reference.md#exit-codes) for every code.
+Findings and errors both exit with 1 by default. To tell them apart, see
+[Exit codes](cli-reference.md#exit-codes).
 
-A missing or unreadable baseline file does not fail the scan. See
+A baseline file that cannot be used does not fail the scan. See
 [Baselines](configuration.md#baselines).
 
 ## GitHub Actions
@@ -72,6 +70,9 @@ Notes:
 - The SARIF tool name is `rustleaks`. See [SARIF](reports.md#sarif).
 - The upload step runs even when the scan step fails, for example because it
   found secrets.
+- The install step checks the archive's SHA-256 checksum. To also check its
+  signed attestation, add the `gh attestation verify` step from [From a
+  GitHub release](getting-started.md#from-a-github-release).
 - For stronger supply-chain safety, pin each action to a full commit SHA.
 
 ### Scan only the commits in a pull request
@@ -90,10 +91,9 @@ place of the Scan step above:
 
 ## Scanning a range of history
 
-By default `rustleaks git` scans every commit reachable from any branch or
-tag. `--log-opts` replaces the `git log` options. See
-[git](cli-reference.md#git) for the default options and how Rustleaks splits
-the value. Examples:
+By default `rustleaks git` scans every commit reachable from any ref.
+`--log-opts` replaces the `git log` options. See [git](cli-reference.md#git)
+for the default options and how Rustleaks splits the value. Examples:
 
 ```sh
 # Commits on the current branch since main
@@ -181,6 +181,6 @@ Links appear in the `Link` field of reports and in `--verbose` output.
 | --- | --- |
 | `--no-banner` | Hide the banner in logs. |
 | `--log-level LEVEL` | `trace`, `debug`, `info` (the default), `warn`, `error` or `fatal`. |
-| `--timeout N` | Stop after N seconds. A scan that times out exits with 1, or with 2 under `--complete-profile`, and reports only what it found so far. |
+| `--timeout N` | Stop after N seconds. See [Limits and decoding](cli-reference.md#limits-and-decoding) for the exit code. |
 | `--baseline-path FILE` | Report only findings that are not in an earlier JSON report. See [Baselines](configuration.md#baselines). |
 | `--complete-profile FILE` | Fail with exit code 2 unless the scan covered all of its input. See [Complete scanning](complete-scanning.md). |

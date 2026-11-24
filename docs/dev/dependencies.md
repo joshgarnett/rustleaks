@@ -21,11 +21,14 @@ that enforce this policy are in [Security checks](security-checks.md).
   may use all three. `rustleaks-eval` and `xtask` are unpublished leaves.
 - Owned crates forbid unsafe code. A dependency with necessary unsafe code
   needs isolation, a written reason, license review and adversarial tests.
-- License and advisory checks must pass before a release. An advisory may be
-  waived only with a time-limited entry, backed by evidence, in
-  `supply-chain-exceptions.toml`. Never remove the check to hide it.
+- License and advisory checks must pass before a release. `just security`
+  rejects any entry in `supply-chain-exceptions.toml`. Accepting an
+  exception needs maintainer approval and a change to that check, and the
+  exception must be time-limited and backed by evidence. Never remove the
+  check to hide an advisory.
 - Published crates use semver ranges that work with the MSRV, Rust 1.95
-  (`rust-version` in the root `Cargo.toml`). Development uses the pinned toolchain in `rust-toolchain.toml`. CI also
+  (`rust-version` in the root `Cargo.toml`). Development uses the pinned
+  toolchain in `rust-toolchain.toml`. CI also
   builds with the MSRV and runs the native platform lanes.
 - Any change to a dependency version, feature, target or publication boundary
   reopens the review on this page.
@@ -39,7 +42,8 @@ There is no Go module or other executable oracle in the dependency graph.
 `rustleaks-core` requires `regex-syntax ^0.8.5` and
 `regex-automata ^0.4.12`, so that applications can share these maintained
 release lines. These versions use Unicode 16 tables. So Unicode properties and
-case folding can differ from the pinned Go behavior for code points assigned
+case folding can differ from the Go behavior recorded in the test corpora
+for code points assigned
 or changed after Unicode 15. The private frontend still accepts only Go
 property names. The generated Go lowercase tables used outside regular
 expressions stay on Unicode 15. A regex dependency update needs the full
@@ -133,7 +137,7 @@ graph is pinned exactly.
   normal dependencies, build script, native code or unsafe Rust. Version
   0.8.0 streams decoded output from the fixed 1 MiB window instead of
   building the whole member in memory. A synthetic archive regression keeps
-  expected bytes that were checked against the pinned Go decoder. The
+  expected bytes that were checked against the Go decoder. The
   [compcol 0.7.8 review](../dependency-audits/compcol-0.7.8.md) records the
   repeated-match correction and a notice issue in unselected bzip2 code,
   which Rustleaks neither compiles nor redistributes. The
@@ -306,11 +310,14 @@ A replacement is a separate dependency change that needs approval. Name the
 exact crate, version, source, checksum, features, graph, licenses, unsafe and
 native inventory, MSRV and compatibility result. After approval:
 
-1. Follow the build maintenance procedure and run `just deps-repin`.
+1. Follow the [build maintenance
+   procedure](../../.agents/skills/rustleaks-build-maintenance/SKILL.md) and
+   run `just deps-repin`.
 2. Review all Cargo and Bazel lockfile changes.
 3. Remove the old crate and its targets. Keep licenses and notices.
 4. Run the dependency, archive, corpus, fuzz, panic-abort, native,
-   clean-clone, package and release checks.
+   [clean-clone](../../CONTRIBUTING.md#clean-clone-checks), package and
+   release checks.
 
 Archive support must not shrink without notice.
 

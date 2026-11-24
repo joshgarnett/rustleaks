@@ -20,6 +20,11 @@ resource limits, or write "No impact" with a reason.
 List presentation changes and the tests whose expectations changed, or write
 "None". -->
 
+## Changelog
+
+<!-- Say which CHANGELOG.md entry this adds, or why none is needed. See
+CONTRIBUTING.md#changelog. -->
+
 ## Issues
 
 <!-- Link real issues with `Closes #N` when this change resolves them, or

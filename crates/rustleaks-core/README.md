@@ -3,9 +3,8 @@
 `rustleaks-core` is the detection engine of
 [Rustleaks](https://github.com/joshgarnett/rustleaks), a secret scanner. It
 scans bytes that you give it for secrets, such as API keys and passwords. It
-reads Gitleaks 8.30.0 configuration files, ignore files, baselines and allow
-comments, and keeps the Gitleaks report fields. Its findings can differ from
-Gitleaks; see [Moving from
+reads configuration files, ignore files, baselines and allow comments written
+for Gitleaks 8.30.0. Its findings can differ from Gitleaks. See [Moving from
 Gitleaks](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/moving-from-gitleaks.md).
 
 The engine is synchronous. It does not read files, run Git, read environment
@@ -15,6 +14,7 @@ them. An `Engine` can be shared between threads.
 
 Before 1.0, a minor release, such as 0.3.0, can change the API. A patch
 release, such as 0.2.1, does not.
+
 Rustleaks is an independent project and is not affiliated with or endorsed by
 Gitleaks.
 
@@ -53,18 +53,16 @@ review records.
 
 ## Rules
 
-The crate includes the rules below. `ConfigLoader::load_default` gives all
-of them, as the CLI does. Rule counts include helper rules. To load other
-rules, see [Built-in
-rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
-in the library guide.
+The crate includes 547 built-in rules, counting helper rules that do not
+report findings by themselves. `ConfigLoader::load_default` gives all of
+them, the same rules as the `rustleaks` command. [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
+lists what they find.
 
-| Rule set | Constant | Rules | Details |
-| --- | --- | ---: | --- |
-| Default rules, started from the Gitleaks default rules | `config::DEFAULT_CONFIG` | 222 | [Default rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md#default-rules) |
-| `rustleaks-extra-v1` | `native::EXTRA_RULES_V1` | 3 | [Rule reference](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-extra-v1.md) |
-| `rustleaks-providers-v1` | `native::PROVIDER_RULES_V1` | 303 | [Rule reference](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-providers-v1.md) |
-| `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 19 | [Rule reference](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-connections-v1.md) |
+The rules are kept in four files so that each file keeps its source and
+license. You do not need to choose between them. To build an engine from only
+some of the files, see [Choosing rule
+files](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#choosing-rule-files).
 
 ## Limits
 

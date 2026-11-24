@@ -1,5 +1,9 @@
 # Bounded cl100k tokenizer data
 
+This page is for maintainers of the built-in rules. The files here are data
+for the `vercel-cl100k-ratio-v1` predicate of the
+`rustleaks.vercel-ai-gateway-key` rule.
+
 `cl100k-vercel60-v1.bin` contains only lookup records reachable when counting
 ordinary cl100k tokens in `[vV][cC][kK]_[A-Za-z0-9_-]{56}`. It is immutable
 compile-time data. The runtime never reads a file, initializes a vocabulary,
@@ -28,9 +32,11 @@ runtime dependency, thread-local machinery or unsafe code is imported.
 | `cl100k_base.tiktoken` | 1,681,126 | `223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7` |
 | `cl100k-vercel60-v1.bin` | 470,103 | `ad1a8cb135ace0e3dd9507246248658d2d99761353d96e31b1f33626d677ab28` |
 
-`xtask generate native-pack-identity` regenerates the derived table;
-`xtask generate native-pack-identity --check` verifies it.
-`cargo xtask build-system-check` also runs this verification. The maintained generator verifies original
+`cargo xtask generate native-pack-identity` regenerates the derived table,
+and `cargo xtask generate native-pack-identity --check` verifies it. The
+command name is older than the removal of rule packs; it also regenerates
+other rule file data. `cargo xtask build-system-check` also runs this
+verification. The generator verifies original
 source size and hash, both license hashes, 100,256 unique tokens and ranks,
 all 256 singleton tokens, and every one-to-three-digit token. It derives all
 records and compares every output byte, not just an output digest.

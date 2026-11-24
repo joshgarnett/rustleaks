@@ -1,10 +1,12 @@
 # Comparison workloads
 
-This page describes the inputs for comparing Rustleaks with other secret
-scanners: pinned public repositories, generated synthetic workloads, and a
-matrix of each tool's own rule examples. It explains what each set is, why it
-was chosen, which inputs Rustleaks was tuned on, and how to fetch and check
-them. The labeled quality corpus is described separately.
+This page is for contributors who run the [scanner
+comparison](comparison.md). It describes the inputs for comparing Rustleaks
+with other secret scanners: pinned public repositories, generated synthetic
+workloads, and a matrix of each tool's own rule examples. It explains what
+each set is, why it was chosen, which inputs Rustleaks was tuned on, and how
+to fetch and check them. The labeled quality corpus is described in
+[Comparison quality inputs](comparison-quality.md).
 
 No third-party content is stored in this repository. The commands fetch or
 build every input at run time into a cache folder that you choose. The
@@ -16,11 +18,11 @@ repository holds only the manifests under
 
 | Command | What it does |
 | --- | --- |
-| `cargo xtask compare-workloads fetch --cache DIR` | Fetches the pinned public repositories |
-| `cargo xtask compare-workloads generate --cache DIR` | Generates the synthetic workloads and their labels |
-| `cargo xtask compare-workloads matrix --cache DIR` | Builds the home-fixtures matrix from pinned upstream sources |
-| `cargo xtask compare-workloads verify --cache DIR` | Checks cached workloads before a run |
-| `cargo xtask compare-workloads self-test` | Checks the commands offline on tiny synthetic data |
+| `just compare-workloads fetch --cache DIR` | Fetches the pinned public repositories |
+| `just compare-workloads generate --cache DIR` | Generates the synthetic workloads and their labels |
+| `just compare-workloads matrix --cache DIR` | Builds the home-fixtures matrix from pinned upstream sources |
+| `just compare-workloads verify --cache DIR` | Checks cached workloads before a run |
+| `just compare-workloads self-test` | Checks the commands offline on tiny synthetic data |
 
 Options:
 
@@ -51,10 +53,10 @@ Linux only.
 Example:
 
 ```sh
-cargo xtask compare-workloads fetch --cache ~/rustleaks-cache --only croc,flask
-cargo xtask compare-workloads generate --cache ~/rustleaks-cache --sizes 1,16
-cargo xtask compare-workloads matrix --cache ~/rustleaks-cache
-cargo xtask compare-workloads verify --cache ~/rustleaks-cache
+just compare-workloads fetch --cache ~/rustleaks-cache --only croc,flask
+just compare-workloads generate --cache ~/rustleaks-cache --sizes 1,16
+just compare-workloads matrix --cache ~/rustleaks-cache
+just compare-workloads verify --cache ~/rustleaks-cache
 ```
 
 ## Cache layout
@@ -301,7 +303,7 @@ that every tool can be run on every other tool's examples.
 | betterleaks | Rule tests in `rules/**/*.go` | v2.0.0-rc.8, `b4b1c4455987636400ce693bd9d8a8e2cf375ed9` | MIT | 2,005 |
 | kingfisher | `examples` and `negative_examples` of first-party rules | v2.19.1, `0b57b8122e10050db3cefffde1a555a061e0b280` | Apache-2.0 | 41 |
 | kingfisher-v1 | `examples` and `negative_examples` of the 1.x catalog (optional) | v1.113.0, `82d050530cdef9af070b8f9a75701c9c27a948c3` | Apache-2.0 | 2,146 |
-| rustleaks | Rule pack test cases in `crates/rustleaks-core/tests/support/` | this repository | MIT | 3,883 |
+| rustleaks | Rule file test cases in `crates/rustleaks-core/tests/support/` | this repository | MIT | 3,883 |
 
 The licenses were checked in each upstream `LICENSE` file at the pin, and
 `matrix` checks them again on every run.
@@ -354,7 +356,7 @@ an independent ground truth. A tool without a matching rule is expected to
 miss another tool's examples.
 
 The gitleaks and rustleaks workloads are marked `tuned: true`, because
-Rustleaks tests replay them. Rustleaks pack rules and the Betterleaks and
+Rustleaks tests replay them. The Rustleaks rule files and the Betterleaks and
 Kingfisher catalogs share upstream rule sources; reports must say so.
 
 ## Labels
@@ -388,10 +390,10 @@ them.
 - Do not change pinned commits or the generator to suit one tool. A change
   starts a new comparison and needs a new held-out set.
 - To change synthetic workloads, edit the generator, run
-  `cargo xtask compare-workloads generate --cache DIR --write-manifest` at
+  `just compare-workloads generate --cache DIR --write-manifest` at
   full scale, and commit the new `synthetic.json`.
 - To update a fixture source, change its pin in `fixtures-matrix.json`, run
   `matrix`, and update the expected counts.
-- `cargo xtask compare-workloads self-test` checks the tools offline with tiny
+- `just compare-workloads self-test` checks the tools offline with tiny
   synthetic data, including a fetch from a local Git repository. Bazel runs it
   through the xtask unit tests.

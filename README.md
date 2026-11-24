@@ -5,27 +5,20 @@ and standard input. It is written in Rust. The detection engine is also
 available as the `rustleaks-core` library.
 
 Rustleaks reads configuration files, ignore files, baselines and allow
-comments written for Gitleaks 8.30.0, and its reports keep the same fields
-and exit codes. Its findings can differ from Gitleaks. If you use Gitleaks
-now, start with [Moving from Gitleaks](docs/user/moving-from-gitleaks.md).
-
-Rustleaks builds on the behavior, default rules, tests and fixtures of
-[Gitleaks](https://github.com/gitleaks/gitleaks), and thanks its maintainers
-and contributors. Rustleaks is an independent project. It is not affiliated
-with or endorsed by Gitleaks.
+comments written for Gitleaks. If you use Gitleaks now, start with
+[Moving from Gitleaks](docs/user/moving-from-gitleaks.md).
 
 ## Status
 
-The current release is 0.2.0. Before 1.0, a minor release, such as 0.3.0, can
-change commands, options and the library API. The
-[changelog](CHANGELOG.md) lists each change.
+The current release is 0.2.0. Rustleaks keeps commands, flags,
+configuration files, ignore files, baselines, allow comments, report fields
+and exit codes working. A release that removes or changes one of them says
+so in the [changelog](CHANGELOG.md). Before 1.0, a minor release, such as
+0.3.0, can also change the library API. A patch release, such as 0.2.1, does
+not change the library API.
 
-- The `rustleaks` command is published on the
-  [GitHub releases page](https://github.com/joshgarnett/rustleaks/releases),
-  in a Homebrew tap and a Scoop bucket, and as `.deb` and `.rpm` packages. It
-  is not on crates.io.
-- The `rustleaks-core` library is published on
-  [crates.io](https://crates.io/crates/rustleaks-core).
+The `rustleaks` command is not on crates.io. The `rustleaks-core` library is,
+at [crates.io/crates/rustleaks-core](https://crates.io/crates/rustleaks-core).
 
 The documentation describes the current source. Features listed under
 Unreleased in the [changelog](CHANGELOG.md) are not in a release yet.
@@ -101,7 +94,7 @@ documentation](https://docs.rs/rustleaks-core).
 
 ## Documentation
 
-For people who use Rustleaks:
+For people who use the `rustleaks` command:
 
 - [Getting started](docs/user/getting-started.md)
 - [Command reference](docs/user/cli-reference.md)
@@ -112,6 +105,9 @@ For people who use Rustleaks:
 - [Complete scanning](docs/user/complete-scanning.md)
 - [Resource limits](docs/user/resource-limits.md)
 - [Moving from Gitleaks](docs/user/moving-from-gitleaks.md)
+
+For Rust developers who use the library:
+
 - [Using rustleaks-core](docs/user/library.md)
 - [Review records](docs/user/review-records.md)
 
@@ -130,6 +126,13 @@ Do not put real credentials or private vulnerability details in a public
 issue. Use [private vulnerability
 reporting](https://github.com/joshgarnett/rustleaks/security/advisories/new).
 See the [security policy](SECURITY.md).
+
+## Thanks
+
+Rustleaks builds on the behavior, rules, tests and fixtures of
+[Gitleaks](https://github.com/gitleaks/gitleaks), and thanks its maintainers
+and contributors. Rustleaks is an independent project. It is not affiliated
+with or endorsed by Gitleaks.
 
 ## License
 

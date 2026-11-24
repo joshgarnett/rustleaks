@@ -44,14 +44,11 @@ Run all commands from the repository root.
 | Every test ten times, without the cache | `just flake-check` |
 | Test files registered in Bazel | `cargo xtask build-system-check` |
 | Quality corpus report | `just quality-eval` |
-| Labeled inputs for scanner comparisons | `cargo xtask compare-quality generate --out CACHE`, see [Comparison quality inputs](comparison-quality.md) |
-| The full local gate | `just ci` |
+| Labeled inputs for scanner comparisons | `just compare-quality generate --out CACHE` (on Windows, `cargo xtask compare-quality`), see [Comparison quality inputs](comparison-quality.md) |
 
-Run `just flake-check` after a change to timers, cancellation, subprocesses,
-directory traversal, temporary paths or concurrency. Every run must pass.
-
-`cargo xtask qualify` is a release candidate check; see
-[Releasing](releasing.md).
+[Local workflow](../../CONTRIBUTING.md#local-workflow) says which broader
+command each kind of change needs, including `just flake-check`, `just ci`
+and `cargo xtask qualify`.
 
 ## Adding a test
 
@@ -89,8 +86,8 @@ when Rustleaks started, with their expected outcomes. They are Rustleaks
 test data: the expected outcomes are the expected Rustleaks behavior. A case
 changes only with a reviewed change to the behavior it covers. Write the new
 expected value from the intended behavior, never from the current output, and
-add a changelog entry when findings, spans, fingerprints, report fields, exit
-codes or error classes change.
+add a [changelog entry](../../CONTRIBUTING.md#changelog) when the change
+needs one.
 
 The tests that read a corpus compare these fields exactly: rule IDs,
 matches, secrets, locations, source and commit metadata, entropy, tags,
