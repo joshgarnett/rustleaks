@@ -1,11 +1,12 @@
-//! Native rule pack workloads at library level: startup with each pack and all
-//! packs, keyword admission, a mixed input with plants, and shared-engine
-//! worker scaling.
+//! Rustleaks rule file workloads at library level: startup with each rule file
+//! and all rule files, keyword admission, a mixed input with plants, and
+//! shared-engine worker scaling. Their IDs start with `packs-`.
 //!
-//! These workloads guard the pack scan paths: one shared keyword pass for
-//! native rules, the allowlist compile cache, matcher construction on first
-//! use, and the required-literal skip for keyword-less pack rules. Expected
-//! findings come from the planted values and their byte offsets.
+//! These workloads guard the scan paths of the Rustleaks rule files: one shared
+//! keyword pass for native rules, the allowlist compile cache, matcher
+//! construction on first use, and the required-literal skip for keyword-less
+//! rules. Expected findings come from the planted values and their byte
+//! offsets.
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -17,8 +18,9 @@ use serde_json::json;
 
 use super::source_scale_workloads::{FindingKey, GITHUB_RULE, key, token_row, verify_findings};
 use super::suite_support::{
-    DATABASE_URI_RULE, Lcg, PACKS, PackSelection, Result, check_rule_count, checked_github_token,
-    compile_packs, database_uri, keyword_census, pack_selection, prose_line,
+    DATABASE_URI_RULE, Lcg, RULE_FILES, Result, RuleFileSelection, check_rule_count,
+    checked_github_token, compile_rule_files, database_uri, keyword_census, prose_line,
+    rule_file_selection,
 };
 use super::worker_workloads::with_team;
 use super::{Phase, elapsed, fingerprint, outcome_signature, phase};
@@ -48,8 +50,8 @@ const WORKER_FRAGMENTS: usize = 64;
 /// One plant of each kind per this many filler lines.
 const PLANT_EVERY: usize = 64;
 
-fn selected_packs(id: &str) -> Result<Vec<&'static str>> {
-    let all = PACKS.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+fn selected_rule_files(id: &str) -> Result<Vec<&'static str>> {
+    let all = RULE_FILES.iter().map(|(name, _)| *name).collect::<Vec<_>>();
     let suffix = id.rsplit('-').next().ok_or("missing pack selection")?;
     let suffix = if id.starts_with("packs-workers-") {
         "all"
@@ -74,9 +76,9 @@ struct Input {
 }
 
 /// Lines of filler with a GitHub token row and a database URI row planted
-/// every `PLANT_EVERY` lines. The URI is a finding only with the connections
-/// pack. Columns follow the one-fragment rule: the first line counts from 1,
-/// later lines from 2.
+/// every `PLANT_EVERY` lines. The URI is a finding only with the connection
+/// rule file. Columns follow the one-fragment rule: the first line counts from
+/// 1, later lines from 2.
 fn mixed_input(config: &CompiledConfig, size: usize, connections: bool) -> Result<Input> {
     let mut rng = Lcg::new(0x7061_636b);
     let mut bytes = Vec::with_capacity(size + 128);
@@ -199,16 +201,16 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     if !(1..=super::MAX_ITERATIONS).contains(&iterations) {
         return Err("pack iterations are outside representative bounds".into());
     }
-    let packs = selected_packs(id)?;
-    let connections = packs.contains(&"rustleaks-connections-v1");
-    // Pack text, its declared rule count and the identity bytes are prepared
-    // before the timer, which covers only the native policy compile.
-    let selection = pack_selection(&packs)?;
+    let rule_files = selected_rule_files(id)?;
+    let connections = rule_files.contains(&"rustleaks-connections-v1");
+    // Rule file text, its declared rule count and the identity bytes are
+    // prepared before the timer, which covers only the native policy compile.
+    let selection = rule_file_selection(&rule_files)?;
     let start = Instant::now();
-    let config = black_box(compile_packs(&selection)?);
+    let config = black_box(compile_rule_files(&selection)?);
     let compile_ns = elapsed(start)?;
     check_rule_count(&config, &selection)?;
-    let PackSelection {
+    let RuleFileSelection {
         rules, identity, ..
     } = selection;
     let input = if id.starts_with("packs-startup-") {
@@ -231,7 +233,7 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
         &identity,
     );
     compile.outcome_fnv1a64.clone_from(&rule_ids);
-    compile.counts = json!({"rules": rules, "packs": packs, "loader": "native-policy"});
+    compile.counts = json!({"rules": rules, "packs": rule_files, "loader": "native-policy"});
     let start = Instant::now();
     let engine = black_box(Engine::builder(config).build()?);
     let mut construction = phase(
@@ -283,7 +285,7 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
             }
             result.outcome_fnv1a64 = signature;
             result.counts = json!({
-                "workers": 1, "packs": packs, "decode_depth": 0, "plants": input.plants,
+                "workers": 1, "packs": rule_files, "decode_depth": 0, "plants": input.plants,
                 "work_units": outcome.usage().work_units(),
                 "finding_records": outcome.usage().finding_records(),
             });
@@ -363,7 +365,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pack_workloads_have_exact_outcomes_at_test_scale() {
+    fn rule_file_workloads_have_exact_outcomes_at_test_scale() {
         for id in WORKLOADS {
             let phases = run(id, 1).unwrap_or_else(|error| panic!("{id}: {error}"));
             assert_eq!(phases.len(), 4, "{id}");

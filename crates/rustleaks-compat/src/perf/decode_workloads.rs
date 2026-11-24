@@ -182,7 +182,7 @@ impl Fixture {
         for (index, finding) in outcome.findings().iter().enumerate() {
             let start = index * stride;
             let end = start + token_bytes;
-            // A fragment with no newline uses the pinned fallback line: line
+            // A fragment with no newline uses the fallback line: line
             // zero, previous offset zero, and the whole fragment as its line.
             let location = Location::new(0, 0, start + 1, end)?;
             if finding.rule_id().as_bytes() != b"token"
@@ -306,8 +306,8 @@ struct Span {
     end: usize,
 }
 
-// Pinned upstream columns are measured from the preceding newline byte, and a
-// line after the first begins with that newline.
+// Columns are measured from the preceding newline byte, and a line after the
+// first begins with that newline.
 fn expected_finding(
     input: &[u8],
     span: &Span,

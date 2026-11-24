@@ -1,3 +1,9 @@
+//! Fixed inputs for the benchmark workloads.
+//!
+//! The commit, regex and path inputs of the eight allowlist benchmarks
+//! (`bm-0001` to `bm-0008`) are ported from the Gitleaks allowlist benchmarks
+//! at commit `b58d3f1`. See `NOTICE`.
+
 pub const BENCH_COMMITS: &[&str] = &[
     "ba1beca8ac634d8b202e0daffebecceeb6dda2fc",
     "74b19abcd33ff3a6cac8aebdcfccacde9ad40f5c",
