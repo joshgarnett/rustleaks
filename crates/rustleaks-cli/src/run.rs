@@ -27,15 +27,16 @@ use crate::{completion, help};
 /// Process context injected into one command execution.
 #[derive(Clone, Debug, Default)]
 pub struct RunEnvironment {
-    /// Current directory used for relative config extension resolution.
+    /// Directory that relative paths on the command line and in `[extend]`
+    /// are resolved against.
     pub cwd: PathBuf,
-    /// Optional path-valued configuration environment variable.
+    /// The `RUSTLEAKS_CONFIG` value.
     pub config_path: Option<OsString>,
-    /// Optional inline TOML configuration environment variable.
+    /// The `RUSTLEAKS_CONFIG_TOML` value.
     pub config_toml: Option<OsString>,
-    /// Optional backward-compatible Gitleaks configuration path.
+    /// The legacy `GITLEAKS_CONFIG` value.
     pub legacy_config_path: Option<OsString>,
-    /// Optional backward-compatible inline Gitleaks configuration.
+    /// The legacy `GITLEAKS_CONFIG_TOML` value.
     pub legacy_config_toml: Option<OsString>,
 }
 
