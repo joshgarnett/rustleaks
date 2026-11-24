@@ -14,7 +14,7 @@ use crate::{
     block::*,
     crc,
     crc::Hasher,
-    decoder::{ZstdPool, add_decoder, zstd_buffers},
+    decoder::{ZstdBufferCache, ZstdPool, add_decoder},
     error::Error,
 };
 
@@ -460,8 +460,8 @@ impl Archive {
             })?;
 
         reader.seek(SeekFrom::Start(block_offset))?;
-        let mut zstd = zstd_buffers(block, memory_limit_kb)?;
-        let mut zstd = zstd.iter_mut();
+        let mut zstd_cache = ZstdBufferCache::default();
+        let mut zstd = zstd_cache.for_block(block, memory_limit_kb)?;
         let coder_len = block.coders.len();
         let pack_size = archive.pack_sizes[first_pack_stream_index] as usize;
         let input_reader = BufReader::with_capacity(
@@ -1774,12 +1774,14 @@ impl<R: Read + Seek> ArchiveReader<R> {
         mut each: F,
     ) -> Result<(), Error> {
         let block_count = self.archive.blocks.len();
+        let mut zstd = ZstdBufferCache::default();
         for block_index in 0..block_count {
             let block_decoder = BlockDecoder::new(
                 self.memory_limit_kb,
                 block_index,
                 &self.archive,
                 &mut self.source,
+                &mut zstd,
             );
             block_decoder.for_each_entries(&mut each)?;
         }
@@ -1807,6 +1809,7 @@ pub struct BlockDecoder<'a, R: Read + Seek> {
     block_index: usize,
     archive: &'a Archive,
     source: &'a mut R,
+    zstd: &'a mut ZstdBufferCache,
 }
 
 impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
@@ -1817,17 +1820,20 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
     /// * `block_index` - Index of the block to decode within the archive
     /// * `archive` - Reference to the archive containing the block
     /// * `source` - Mutable reference to the reader providing archive data
-    pub fn new(
+    /// * `zstd` - Zstandard working memory, reused from block to block
+    pub(crate) fn new(
         memory_limit_kb: usize,
         block_index: usize,
         archive: &'a Archive,
         source: &'a mut R,
+        zstd: &'a mut ZstdBufferCache,
     ) -> Self {
         Self {
             memory_limit_kb,
             block_index,
             archive,
             source,
+            zstd,
         }
     }
 
@@ -1846,9 +1852,9 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
             block_index,
             archive,
             source,
+            zstd,
         } = self;
-        let mut zstd = zstd_buffers(&archive.blocks[block_index], memory_limit_kb)?;
-        let mut zstd = zstd.iter_mut();
+        let mut zstd = zstd.for_block(&archive.blocks[block_index], memory_limit_kb)?;
         let (mut block_reader, _size) = ArchiveReader::build_decode_stack(
             source,
             archive,
