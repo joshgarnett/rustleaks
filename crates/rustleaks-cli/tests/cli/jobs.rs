@@ -232,12 +232,17 @@ fn directory_findings_reports_and_warnings_do_not_depend_on_jobs() {
         stored_zip(&[(b"c.txt", b"token=ZIP00001\n")]),
     );
     expected.push(token("input/bundle.zip!c.txt", 1, "ZIP00001", ""));
-    // Without a profile, `.tgz` is not an archive name, as in Gitleaks.
     fixture.write(
         "input/bundle.tar.gz",
         stored_gzip(&tar(&[(b"e.txt", b"token=TGZ00001\n")])),
     );
     expected.push(token("input/bundle.tar.gz!e.txt", 1, "TGZ00001", ""));
+    // A final `.tgz` suffix is a gzip TAR archive without a profile too.
+    fixture.write(
+        "input/bundle.tgz",
+        stored_gzip(&tar(&[(b"f.txt", b"token=TGZ00002\n")])),
+    );
+    expected.push(token("input/bundle.tgz!f.txt", 1, "TGZ00002", ""));
     fixture.write(
         "input/nested.tar",
         tar(&[(
