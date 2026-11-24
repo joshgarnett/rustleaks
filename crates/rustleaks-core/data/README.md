@@ -6,7 +6,8 @@ compile-time data. The runtime never reads a file, initializes a vocabulary,
 allocates tokenizer storage, or downloads data.
 
 The original `cl100k_base.tiktoken` is retained byte-for-byte for reproducible
-generation and tests against the full vocabulary. It comes from
+generation and tests against the full vocabulary. It is in the repository but
+not in the crate package. It comes from
 [tiktoken-rs 0.12.1](https://static.crates.io/crates/tiktoken-rs/tiktoken-rs-0.12.1.crate),
 archive SHA-256 `2aeff724640cfe13037336ddf35befdffd2909cbdb65cf041cc8a4cf8c584cfa`,
 repository revision `72a5a800651a1cea1ad609292446ba02c80e3bcd`.
@@ -61,4 +62,4 @@ counts, `N+1` little-endian u32 offsets, `N` original little-endian u32 ranks,
 and the concatenated token bytes. Keys are sorted lexicographically by raw
 bytes. The runtime uses ordinary checked byte indexing without aligned casts.
 Only the derived table is used by production code; the original asset is used
-by the maintenance gate and tests.
+by the generator and tests.
