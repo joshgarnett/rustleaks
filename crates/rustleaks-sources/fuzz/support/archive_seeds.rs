@@ -24,6 +24,7 @@ const TAR_XZ: &str = "/Td6WFoAAAFpIt42AgAhAQAAAAA3J5fW4Av/AF9dADMaSqwMcyl56jsEt7
 // tests regenerate exact bytes with the pinned encoders and decode each seed.
 const SEVENZ_DEFLATE: &str = "N3q8ryccAASTqGUpKAAAAAAAAABAAAAAAAAAANpuxb7dybERACAIA8DeKVgtAlbcJac2bu8e1C/ui1lpByvNGekmvCJiqIF9AQQGAAEJKAAHCwEAAQMEAQgM/+AAAAAAAAAACgH/hothAAgAAAUBERUAdgBhAGwAdQBlAC4AdAB4AHQAAAAAAA==";
 const SEVENZ_LZ4: &str = "N3q8ryccAASfakFYNwAAAAAAAABBAAAAAAAAAIqsixUEIk0YYECCKAAAAP8NcG9ydGFibGUgc2FmZSBjb2RlYyBwYXlsb2FkChwAq2B5bG9hZAoAAAAAAQQGAAEJNwAHCwEAAQQE9xEEDP/gAAAAAAAAAAoB/4aLYQAIAAAFAREVAHYAYQBsAHUAZQAuAHQAeAB0AAAAAAA=";
+const SEVENZ_ZSTD: &str = "N3q8ryccAARsfSNR6QAAAAAAAABJAAAAAAAAAGG5oK0otS/9AAABBwBwb3J0YWJsZSBzYWZlIGNvZGVjIHBheWxvYWQKcG9ydGFibGUgc2FmZSBjb2RlYyBwYXlsb2FkCnBvcnRhYmxlIHNhZmUgY29kZWMgcGF5bG9hZApwb3J0YWJsZSBzYWZlIGNvZGVjIHBheWxvYWQKcG9ydGFibGUgc2FmZSBjb2RlYyBwYXlsb2FkCnBvcnRhYmxlIHNhZmUgY29kZWMgcGF5bG9hZApwb3J0YWJsZSBzYWZlIGNvZGVjIHBheWxvYWQKcG9ydGFibGUgc2FmZSBjb2RlYyBwYXlsb2FkCgEEBgABCf/pAAAAAAAAAAAHCwEAAQQE9xEBDP/gAAAAAAAAAAoB/4aLYQAIAAAFAREVAHYAYQBsAHUAZQAuAHQAeAB0AAAAAAA=";
 
 pub struct Seed {
     pub id: &'static str,
@@ -214,6 +215,7 @@ pub fn cases(root: &Path) -> Result<Vec<Seed>, String> {
             "synthetic:7z-deflate-miniz-level6-v1",
         ),
         ("7z-lz4", SEVENZ_LZ4, "synthetic:7z-lz4-default-frame-v1"),
+        ("7z-zstd", SEVENZ_ZSTD, "synthetic:7z-zstd-raw-blocks-v1"),
     ] {
         seeds.push(Seed {
             id,

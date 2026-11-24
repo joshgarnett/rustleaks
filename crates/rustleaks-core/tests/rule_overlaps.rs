@@ -169,6 +169,44 @@ fn an_overlap_never_hides_a_secret_that_the_kept_rule_does_not_report() {
 }
 
 #[test]
+fn a_kept_rule_that_stays_only_as_a_helper_does_not_drop_findings() {
+    // `parent` needs the kept rule. Selecting `parent` and the dropped rule
+    // keeps the kept rule as a helper that does not report, so the dropped
+    // rule's finding stays.
+    const PARENT: &str = "rustleaks.example-parent";
+    let parent = format!(
+        r#"
+[[rules]]
+id = "{PARENT}"
+regex = '''pair=([0-9]{{4}})'''
+secretGroup = 1
+keywords = ["pair="]
+[rules.required]
+contract = "buffer-v1"
+edges = [{{ id = "{KEEP}", relation = "full-match-window", window = "0" }}]
+"#
+    );
+    let (config, _) = NativePolicy::builder()
+        .with_pack("example-v1", &pack(&format!("{OVERLAP}{parent}")))
+        .unwrap()
+        .compile()
+        .unwrap();
+    let input = "pair=1234 use=tok_AB12CD34";
+    let full = Engine::builder(config.clone()).build().unwrap();
+    assert_eq!(
+        summary(&scan(&full, input)),
+        [found(KEEP, "tok_AB12CD34", 14), found(PARENT, "1234", 5)]
+    );
+    let selected = config.select_rules([PARENT, DROP]).unwrap();
+    assert!(selected.rule(KEEP).unwrap().skip_report());
+    let selected = Engine::builder(selected).build().unwrap();
+    assert_eq!(
+        summary(&scan(&selected, input)),
+        [found(DROP, "tok_AB12CD34", 14), found(PARENT, "1234", 5)]
+    );
+}
+
+#[test]
 fn an_overlap_can_name_a_default_rule_and_needs_reporting_rules() {
     // `stripe-access-token` is a default rule.
     let stripe = r#"

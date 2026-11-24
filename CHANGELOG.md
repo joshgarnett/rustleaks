@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+- Git history and diff scans no longer run the textconv, external diff,
+  fsmonitor or signature programs that the scanned repository's
+  configuration names. Every `git log` and `git diff` passes
+  `--no-textconv`, `--no-ext-diff`, `--no-color` and `-c core.fsmonitor=`,
+  and `git log` also passes `--no-show-signature`. A repository's
+  `.gitattributes` and `.git/config` could set a textconv filter, which Git
+  ran during the scan and whose output replaced the file content, so a
+  secret could be hidden. Scans now see the raw content. A file that a
+  textconv filter used to turn into text, such as a document converted by a
+  driver you set up, is now shown as binary and scanned only when it is an
+  archive. `--log-opts` values come after these options and can turn them
+  back on. `color.ui=always` in a Git configuration no longer makes history
+  scans fail. `--pre-commit` still applies the repository's clean filters
+  (`filter.<driver>.clean` and `.process`), as `git add` does.
+- A rule in an extending configuration with the ID of a built-in rule that
+  depends on helper rules, such as `rustleaks.azure-servicebus-key-comma`,
+  now reports matches of its own `regex`. Before, it reported nothing.
+  Keywords added to such a rule without a `regex` now also let it run.
+- When `disabledRules` or `--enable-rule` leaves out a rule that a remaining
+  rule needs, through `[[rules.required]]` or a built-in helper, Rustleaks
+  keeps the needed rule without reporting its findings. Before, the
+  remaining rule reported nothing, and with `--enable-rule` Rustleaks logged
+  an error for each missing required rule.
+- Release checks of the `.deb` and `.rpm` packages reject data after the
+  first gzip stream, a tar without its end blocks, and data after the cpio
+  trailer. The Homebrew tap and Scoop bucket no longer move from a stable
+  release to a pre-release. `Update Package Managers` checks the release tag
+  against the release commit, and its publish job runs only Git, the
+  GitHub CLI and the pinned token action.
+- 7z header parsing no longer allocates the decoded header, the file table or
+  the block table by sizes the archive declares beyond its limits. Other
+  header tables are still bounded only by the header length. An encoded header
+  must decode to no more than the 7z memory limit (64 MiB, or the member limit
+  if lower), or the archive is skipped with a limit warning. An archive that
+  declares more entries, or more blocks, than the entry limit is skipped
+  before its file or block table is built, with the same warning as for too
+  many entries. 7z members compressed with Zstandard are decoded as a stream,
+  so memory no longer grows with the member size. A Zstandard member whose
+  compressed size is above the memory limit is now scanned instead of skipped.
+- A configuration file that fails to parse or decode no longer prints its
+  text. The error names the kind of error and the file, and for a parse error
+  the line and column. A configuration in the scanned folder can name any
+  readable file in `[extend]` or through a symbolic link, so the old message
+  could print lines of a file outside the scan, even with `--redact`. Inline
+  configuration errors already showed only the kind of error.
+- With `--redact`, a finding of a decoded secret now has its whole `Line`
+  replaced by the redacted secret. The line held the secret in encoded form,
+  so replacing the decoded bytes left it unchanged, and a report template
+  that prints `{{.Line}}` showed the encoded secret. `Finding::redacted`
+  does the same in the library. Other findings and the JSON, CSV, JUnit and
+  SARIF reports do not change.
+- Diagnostics and verbose output escape the Unicode bidirectional controls
+  (U+061C, U+200E, U+200F, U+202A to U+202E and U+2066 to U+2069) as they
+  already escape control characters, so a path cannot change the order in
+  which a terminal shows the line.
 - Regex updates: `regex-syntax` 0.8.12 and `regex-automata` 0.4.19. An
   alternation whose branches share a repetition prefix, such as `ab*b|ab*c`,
   now reports the leftmost-first match, as Go does. A regex search no longer
@@ -201,6 +256,10 @@
 - The documentation separates user guides from developer guides, describes
   the current compatibility policy and lists the developer docs in
   `docs/dev/README.md`.
+- `rustleaks-sources` removes the unused `SourceStage::ArchiveIdentify`,
+  `SourceStage::Spool` and `SourceStage::Callback` stages and the unused
+  `SourceIssueKind::GitParse` and `SourceIssueKind::GitCommand` issue kinds.
+  No source produced them. Code that names them no longer compiles.
 
 ## [0.1.0-alpha.11] - 2026-11-20
 

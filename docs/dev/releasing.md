@@ -395,8 +395,8 @@ published version. Leave `publish` unset to check a release without
 changing anything; set it, after approval, to push. The workflow:
 
 1. requires that `vVERSION` is a published release whose commit is on
-   `main`, and that it is a pre-release exactly when the version has a
-   pre-release suffix;
+   `main`, that the `vVERSION` tag points at that same commit, and that it
+   is a pre-release exactly when the version has a pre-release suffix;
 2. downloads the macOS, Linux glibc and Windows archives and verifies their
    signed attestations against `release-dry-run.yml` and `main`. Then
    `cargo xtask release-artifact package-managers` writes
@@ -405,22 +405,36 @@ changing anything; set it, after approval, to push. The workflow:
 3. installs the formula from a local tap on macOS Apple silicon, macOS Intel
    and Linux x86_64, and the manifest with Scoop on Windows x86_64 and ARM64.
    Each job requires that the installed binary matches the release manifest
-   and runs a redacted scan. Homebrew on Linux ARM64 is not checked here; and
-4. only when `publish` is set and every install job passed, runs the
-   `publish` job in the protected `release` environment. It creates a
-   one-hour token with `actions/create-github-app-token` from the
+   and runs a redacted scan. Homebrew on Linux ARM64 is not checked here;
+4. only when `publish` is set, runs `check-channels` without a credential.
+   It clones `main` of both repositories and runs
+   `release-artifact check-upgrade` from xtask, which refuses a version
+   older than the one in either repository, and a pre-release when the
+   repository holds a stable release. It records the commit it checked in
+   each repository; and
+5. only when `publish` is set and every job above passed, runs the
+   `publish` job in the protected `release` environment. This job runs only
+   Git, the GitHub CLI and the pinned token action: it checks out no
+   Rustleaks code and runs no setup action or Cargo. It clones both
+   repositories again and stops unless `main` is still the commit that
+   `check-channels` checked. Then it creates
+   a one-hour token with `actions/create-github-app-token` from the
    `PACKAGING_APP_ID` variable and `PACKAGING_APP_PRIVATE_KEY` secret,
-   limited to contents write on the two repositories. It refuses a version
-   older than the one in either repository
-   (`cargo xtask release-artifact check-upgrade`), then commits and pushes
-   the changed file to `main` of each. The xtask build and both clones run
-   before the token exists. The two pushes are separate: if the second
-   fails, rerun the workflow with the same version, which skips the
-   repository that is already up to date.
+   limited to contents write on the two repositories, and commits and
+   pushes the changed file to `main` of each. The push is not forced, so it
+   fails if `main` moved. The two pushes are separate: if the second fails,
+   start a new run of the workflow with the same version, which skips the
+   repository that is already up to date. Do not use "Re-run failed jobs":
+   it reuses the commits that the old `check-channels` recorded, so the
+   repository that was already pushed fails the check.
 
 A pre-release pushed to the tap or bucket becomes what `brew install` and
-`scoop install` give everyone. Push one only to test a channel, and push the
-next release soon after.
+`scoop install` give everyone. Once a repository holds a stable release,
+`check-upgrade` refuses to write a pre-release to it, because the Scoop
+manifest's `checkver: github` follows stable releases. A pre-release can
+replace a pre-release, and a stable release can replace either. Before the
+first stable release, push a pre-release only to test a channel, and push
+the next release soon after.
 
 ### Rollback
 

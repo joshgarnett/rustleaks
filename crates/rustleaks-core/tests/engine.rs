@@ -570,9 +570,7 @@ skipReport = true
     );
 }
 
-#[test]
-fn extension_disabled_required_rule_fails_closed_at_runtime() {
-    let base = r#"
+const COMPOSITE_BASE: &str = r#"
 [[rules]]
 id = "primary"
 regex = '''PRIMARY'''
@@ -583,7 +581,29 @@ regex = '''PRIMARY'''
 id = "secondary"
 regex = '''SECONDARY'''
 "#;
-    let resolver = VirtualResolver::new().with_file("base.toml", base);
+
+/// Rule IDs of the findings and of their required findings.
+fn composite_ids(engine: &Engine, input: &[u8]) -> Vec<(String, Vec<String>)> {
+    engine
+        .scan_fragment(&Fragment::new(input), &ScanOptions::default())
+        .findings()
+        .iter()
+        .map(|finding| {
+            (
+                finding.rule_id().as_str().unwrap().to_owned(),
+                finding
+                    .required_findings()
+                    .iter()
+                    .map(|required| required.rule_id().as_str().unwrap().to_owned())
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn extension_keeps_a_disabled_required_rule_as_a_helper() {
+    let resolver = VirtualResolver::new().with_file("base.toml", COMPOSITE_BASE);
     let config = ConfigLoader::new()
         .with_resolver(resolver)
         .load_toml_at(
@@ -591,21 +611,37 @@ regex = '''SECONDARY'''
             Some(ConfigOrigin::virtual_path("root.toml")),
         )
         .unwrap();
-    assert!(config.rule("secondary").is_none());
-    assert_eq!(
-        config.rule("primary").unwrap().required_rules()[0].id,
-        "secondary"
-    );
-
+    // `secondary` stays for `primary` but does not report on its own.
+    assert!(config.rule("secondary").unwrap().skip_report());
     let engine = Engine::builder(config).build().unwrap();
-    assert!(
-        engine
-            .scan_fragment(
-                &Fragment::new(b"PRIMARY SECONDARY"),
-                &ScanOptions::default()
-            )
-            .findings()
-            .is_empty()
+    assert_eq!(
+        composite_ids(&engine, b"PRIMARY SECONDARY"),
+        [("primary".to_owned(), vec!["secondary".to_owned()])]
+    );
+    assert!(composite_ids(&engine, b"SECONDARY").is_empty());
+}
+
+#[test]
+fn selection_keeps_a_required_rule_as_a_helper() {
+    let config = ConfigLoader::new().load_toml(COMPOSITE_BASE).unwrap();
+    let selected = config.select_rules(["primary"]).unwrap();
+    assert_eq!(selected.ordered_rule_ids(), ["primary"]);
+    assert!(selected.rule("secondary").unwrap().skip_report());
+    let engine = Engine::builder(selected).build().unwrap();
+    assert_eq!(
+        composite_ids(&engine, b"PRIMARY SECONDARY"),
+        [("primary".to_owned(), vec!["secondary".to_owned()])]
+    );
+    assert!(composite_ids(&engine, b"PRIMARY").is_empty());
+    assert!(composite_ids(&engine, b"SECONDARY").is_empty());
+
+    // A selected required rule alone reports, as it does in the full set.
+    let engine = Engine::builder(config.select_rules(["secondary"]).unwrap())
+        .build()
+        .unwrap();
+    assert_eq!(
+        composite_ids(&engine, b"PRIMARY SECONDARY"),
+        [("secondary".to_owned(), vec![])]
     );
 }
 

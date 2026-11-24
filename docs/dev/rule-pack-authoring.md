@@ -132,10 +132,12 @@ normalization:
   decoded as lossy UTF-8.
 
 So the ASCII keyword `accesskey` does not match `accessKey` through Unicode
-folding, while `Key` matches `KEY`. Each keyword check reads only the buffer
-that its rule searches. The shared prefilter still includes these keywords,
-but native rules do not use its result. `keywords()` returns the normalized
-keywords and does not describe this native behavior.
+folding, while `Key` matches `KEY`. Keywords that an extending configuration
+adds to such a rule follow the same checks, after Go lowercasing. Each
+keyword check reads only the buffer that its rule searches. The shared
+prefilter still includes these keywords, but native rules do not use its
+result. `keywords()` returns the normalized keywords and does not describe
+this native behavior.
 
 ### Required relations in one buffer
 
@@ -151,9 +153,13 @@ edges = [
 ]
 ```
 
-- The helper rules must exist in the compiled selection. The table needs a
-  content regex, at least one edge, unique helper IDs, and exact contract
-  and relation names.
+- The helper rules must exist in the composition. A rule selection or
+  `disabledRules` that leaves out a helper of a reporting rule keeps the
+  helper as a rule that does not report. The table needs a content regex,
+  at least one edge, unique helper IDs, and exact contract and relation
+  names.
+- An extending configuration that sets `regex` on the rule removes the
+  relation, so the rule becomes a plain rule with the merged keywords.
 - `same-candidate` takes no window. The helper must match the same input
   buffer with the same start and end of the whole, untrimmed match. Helpers
   may use different captures of that match.

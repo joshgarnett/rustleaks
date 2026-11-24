@@ -1239,18 +1239,22 @@ impl<'a> ArchiveState<'a> {
             };
             return emit_issue(issue, emit);
         }
-        let mut reader = match open_7z(source, memory_limit) {
+        let entry_limit = self.options.limits.entries.get();
+        let remaining_entries = entry_limit.saturating_sub(self.budget.entries.get());
+        let mut reader = match open_7z(source, memory_limit, remaining_entries) {
             Ok(reader) => reader,
             Err(failure) => {
-                return emit_issue(
+                let issue = if failure.kind() == SourceIssueKind::Limit {
+                    limit_issue(self.physical_path, failure.into_message())
+                } else {
                     issue(
                         self.physical_path,
                         SourceStage::Decode,
                         failure.kind(),
                         failure.into_message(),
-                    ),
-                    emit,
-                );
+                    )
+                };
+                return emit_issue(issue, emit);
             }
         };
         let archive_entries = reader.archive().files.len();
@@ -1519,13 +1523,19 @@ impl SevenOpenFailure {
     }
 }
 
+/// Parses the 7z header.
+///
+/// The header may declare at most `max_entries` entries, and an encoded
+/// header may decode to at most the memory limit. Either limit gives a
+/// limit failure before the file table or the decoded header is allocated.
 fn open_7z<R: Read + Seek>(
     source: R,
     memory_limit: usize,
+    max_entries: usize,
 ) -> Result<rustleaks_sevenz::ArchiveReader<R>, SevenOpenFailure> {
     #[cfg(panic = "abort")]
     {
-        let _ = (source, memory_limit);
+        let _ = (source, memory_limit, max_entries);
         return Err(SevenOpenFailure {
             kind: SourceIssueKind::UnsupportedArchive,
             message: "7z decoding is unavailable when dependency panics abort the process"
@@ -1537,7 +1547,7 @@ fn open_7z<R: Read + Seek>(
     {
         let memory_limit_kb = memory_limit.div_ceil(1024).max(1);
         let parsed = catch_unwind(AssertUnwindSafe(|| {
-            rustleaks_sevenz::ArchiveReader::new_with_memory_limit_kb(source, memory_limit_kb)
+            rustleaks_sevenz::ArchiveReader::new_with_limits(source, memory_limit_kb, max_entries)
         }));
         let Ok(reader) = parsed else {
             return Err(SevenOpenFailure {
@@ -1545,9 +1555,19 @@ fn open_7z<R: Read + Seek>(
                 message: "7z parser panicked on untrusted input".to_owned(),
             });
         };
-        reader.map_err(|error| SevenOpenFailure {
-            kind: SourceIssueKind::CorruptArchive,
-            message: error.to_string(),
+        reader.map_err(|error| match error {
+            rustleaks_sevenz::Error::MaxEntriesLimited { .. } => SevenOpenFailure {
+                kind: SourceIssueKind::Limit,
+                message: "7z entry limit exceeded".to_owned(),
+            },
+            rustleaks_sevenz::Error::HeaderSizeLimited { .. } => SevenOpenFailure {
+                kind: SourceIssueKind::Limit,
+                message: "7z decoded header size exceeds limit".to_owned(),
+            },
+            error => SevenOpenFailure {
+                kind: SourceIssueKind::CorruptArchive,
+                message: error.to_string(),
+            },
         })
     }
 }
@@ -2264,7 +2284,7 @@ mod tests {
     #[cfg(panic = "abort")]
     #[test]
     fn abort_profile_rejects_7z_before_dependency_construction() {
-        match open_7z(Cursor::new(Vec::new()), MEMORY_BYTES) {
+        match open_7z(Cursor::new(Vec::new()), MEMORY_BYTES, 1) {
             Err(failure) if failure.kind() == SourceIssueKind::UnsupportedArchive => {
                 assert!(failure.into_message().contains("panics abort"));
             }

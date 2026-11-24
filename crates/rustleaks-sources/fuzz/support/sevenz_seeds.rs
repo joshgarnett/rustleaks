@@ -1,8 +1,9 @@
 //! Synthetic 7z fixtures with explicit member bytes and uncompressed headers.
 //!
 //! Container construction follows the 7z Header/PackInfo/UnpackInfo/FilesInfo
-//! layout. Compression uses the maintained miniz and LZ4 encoders, and LZMA2
-//! members use uncompressed LZMA2 chunks; expected decoded bytes are supplied
+//! layout. Compression uses the maintained miniz and LZ4 encoders, LZMA2
+//! members use uncompressed LZMA2 chunks, and Zstandard members use raw
+//! blocks of the Zstandard format; expected decoded bytes are supplied
 //! independently by each caller. No fixture bytes are copied from an upstream
 //! archive.
 
@@ -16,6 +17,9 @@ pub enum Method {
     /// LZMA2 with this dictionary-size property byte. The dictionary size
     /// sets the memory that the decoder needs.
     Lzma2(u8),
+    /// One Zstandard frame of raw blocks with a 1 KiB window, which fits
+    /// any memory limit of at least 1 KiB.
+    Zstd,
 }
 
 impl Method {
@@ -25,6 +29,7 @@ impl Method {
             Self::Deflate => &[4, 1, 8],
             Self::Lz4 => &[4, 0xf7, 0x11, 4],
             Self::Lzma2(_) => &[0x21],
+            Self::Zstd => &[4, 0xf7, 0x11, 1],
         }
     }
 
@@ -38,7 +43,7 @@ impl Method {
                 output.extend_from_slice(id);
                 output.extend_from_slice(&[1, dictionary]);
             }
-            Self::Copy | Self::Deflate | Self::Lz4 => {
+            Self::Copy | Self::Deflate | Self::Lz4 | Self::Zstd => {
                 output.push(size);
                 output.extend_from_slice(id);
             }
@@ -67,8 +72,39 @@ impl Method {
                 encoded.push(0);
                 encoded
             }
+            Self::Zstd => zstd_raw_frame(bytes),
         }
     }
+}
+
+/// Size of one raw Zstandard block, the largest that a 1 KiB window allows.
+const ZSTD_BLOCK_SIZE: usize = 1024;
+
+/// Encodes `bytes` as one Zstandard frame of raw blocks, with no content
+/// size and no checksum, following RFC 8878.
+fn zstd_raw_frame(bytes: &[u8]) -> Vec<u8> {
+    // Magic number, a frame header descriptor with only a window
+    // descriptor, and a 1 KiB window (exponent 0, mantissa 0).
+    let mut encoded = vec![0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x00];
+    let mut chunks = bytes.chunks(ZSTD_BLOCK_SIZE).peekable();
+    if chunks.peek().is_none() {
+        encoded.extend_from_slice(&zstd_raw_block_header(true, 0));
+    }
+    while let Some(chunk) = chunks.next() {
+        let last = chunks.peek().is_none();
+        encoded.extend_from_slice(&zstd_raw_block_header(last, chunk.len()));
+        encoded.extend_from_slice(chunk);
+    }
+    encoded
+}
+
+/// The header of a raw Zstandard block: the last-block flag, block type 0
+/// and the block size.
+fn zstd_raw_block_header(last: bool, size: usize) -> [u8; 3] {
+    let size = u32::try_from(size).expect("block size");
+    let value = u32::from(last) | (size << 3);
+    let bytes = value.to_le_bytes();
+    [bytes[0], bytes[1], bytes[2]]
 }
 
 pub struct Member<'a> {

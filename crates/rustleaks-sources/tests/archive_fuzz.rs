@@ -111,13 +111,17 @@ fn compressed_sevenz_seeds_regenerate_with_the_maintained_encoders() {
     for (id, method) in [
         ("7z-deflate", sevenz_seeds::Method::Deflate),
         ("7z-lz4", sevenz_seeds::Method::Lz4),
+        ("7z-zstd", sevenz_seeds::Method::Zstd),
     ] {
         let seed = seeds
             .iter()
             .find(|seed| seed.id == id)
             .expect("compressed seed");
         let member = sevenz_seeds::Member::new("value.txt", &payload, method);
-        assert!(member.packed.len() < payload.len());
+        // Zstandard raw blocks hold the payload uncompressed.
+        if !matches!(method, sevenz_seeds::Method::Zstd) {
+            assert!(member.packed.len() < payload.len());
+        }
         assert_eq!(seed.format, 2);
         assert_eq!(seed.expected.as_slice(), std::slice::from_ref(&payload));
         assert_eq!(seed.payload, sevenz_seeds::archive(&[member]));

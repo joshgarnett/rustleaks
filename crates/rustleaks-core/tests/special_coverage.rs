@@ -318,10 +318,14 @@ fn helper_selection_and_native_entropy_cannot_be_bypassed() {
             .find(|case| case.rule == rule)
             .unwrap();
         let input = STANDARD.decode(&case.input_base64).unwrap();
+        // A selected parent keeps its helper as a rule that does not report.
         let parent_only = Engine::builder(config().select_rules([rule]).unwrap())
             .build()
             .unwrap();
-        assert!(scan(&parent_only, &input, &case.path).is_empty());
+        let parent_findings = scan(&parent_only, &input, &case.path);
+        assert_records(rule, &case.expected, &parent_findings, &case.name);
+        assert!(for_rule(&parent_findings, &helper).is_empty());
+        assert_eq!(parent_only.config().ordered_rule_ids(), [rule]);
         let helper_only = Engine::builder(config().select_rules([helper.as_str()]).unwrap())
             .build()
             .unwrap();

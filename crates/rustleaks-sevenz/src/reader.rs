@@ -8,11 +8,26 @@ use std::{
 use lzma_rust2::filter::bcj2::Bcj2Reader;
 
 use crate::{
-    ByteReader, archive::*, bitset::BitSet, block::*, crc, crc::Hasher, decoder::add_decoder,
+    ByteReader,
+    archive::*,
+    bitset::BitSet,
+    block::*,
+    crc,
+    crc::Hasher,
+    decoder::{ZstdPool, add_decoder, zstd_buffers},
     error::Error,
 };
 
 const DEFAULT_MEMORY_LIMIT_KB: usize = 64 * 1024;
+
+/// Limits that apply while the archive header is parsed.
+#[derive(Clone, Copy)]
+struct HeaderLimits {
+    /// Codec working memory, and the decoded size of an encoded header, in KiB.
+    memory_kb: usize,
+    /// Entries the file table may declare.
+    entries: usize,
+}
 
 // Each packed stream is read through a 4 KiB buffer, the size of Gitleaks'
 // 7z reader buffer, so member reads in a solid block split at the same places.
@@ -167,6 +182,24 @@ impl Archive {
         reader: &mut R,
         memory_limit_kb: usize,
     ) -> Result<Archive, Error> {
+        Self::read_with_limits(reader, memory_limit_kb, usize::MAX)
+    }
+
+    /// Reads archive metadata while bounding codec working memory and the
+    /// number of entries.
+    ///
+    /// The memory limit also bounds the decoded size of an encoded header.
+    /// An archive that declares more than `max_entries` entries is rejected
+    /// with [`Error::MaxEntriesLimited`] before its file table is allocated.
+    pub fn read_with_limits<R: Read + Seek>(
+        reader: &mut R,
+        memory_limit_kb: usize,
+        max_entries: usize,
+    ) -> Result<Archive, Error> {
+        let limits = HeaderLimits {
+            memory_kb: memory_limit_kb,
+            entries: max_entries,
+        };
         if memory_limit_kb == 0 {
             return Err(Error::other("7z memory limit must be positive"));
         }
@@ -202,9 +235,9 @@ impl Archive {
         };
         if header_valid {
             let start_header = Self::read_start_header(reader, start_header_crc)?;
-            Self::init_archive(reader, start_header, true, memory_limit_kb)
+            Self::init_archive(reader, start_header, true, limits)
         } else {
-            Self::try_to_locale_end_header(reader, reader_len, memory_limit_kb)
+            Self::try_to_locale_end_header(reader, reader_len, limits)
         }
     }
 
@@ -234,6 +267,7 @@ impl Archive {
         header: &mut R,
         archive: &mut Archive,
         limit: usize,
+        max_entries: usize,
     ) -> Result<(), Error> {
         let mut nid = header.read_u8()?;
         if nid == K_ARCHIVE_PROPERTIES {
@@ -245,11 +279,11 @@ impl Archive {
             return Err(Error::other("Additional streams unsupported"));
         }
         if nid == K_MAIN_STREAMS_INFO {
-            Self::read_streams_info(header, archive, limit)?;
+            Self::read_streams_info(header, archive, limit, max_entries)?;
             nid = header.read_u8()?;
         }
         if nid == K_FILES_INFO {
-            Self::read_files_info(header, archive, limit)?;
+            Self::read_files_info(header, archive, limit, max_entries)?;
             nid = header.read_u8()?;
         }
         if nid != K_END {
@@ -274,7 +308,7 @@ impl Archive {
     fn try_to_locale_end_header<R: Read + Seek>(
         reader: &mut R,
         reader_len: u64,
-        memory_limit_kb: usize,
+        limits: HeaderLimits,
     ) -> Result<Self, Error> {
         let search_limit = 1024 * 1024;
         let prev_data_size = reader.stream_position()? + 20;
@@ -301,7 +335,7 @@ impl Archive {
                     next_header_size: reader_len - pos,
                     next_header_crc: 0,
                 };
-                let result = Self::init_archive(reader, start_header, false, memory_limit_kb)?;
+                let result = Self::init_archive(reader, start_header, false, limits)?;
 
                 if !result.files.is_empty() {
                     return Ok(result);
@@ -317,7 +351,7 @@ impl Archive {
         reader: &mut R,
         start_header: StartHeader,
         verify_crc: bool,
-        memory_limit_kb: usize,
+        limits: HeaderLimits,
     ) -> Result<Self, Error> {
         // Bound the declared next-header size against the actual file length before allocating.
         let reader_len = reader.seek(SeekFrom::End(0))?;
@@ -355,25 +389,15 @@ impl Archive {
         let mut buf_reader = buf.as_slice();
         let mut nid = buf_reader.read_u8()?;
         let mut header = if nid == K_ENCODED_HEADER {
-            let (mut out_reader, buf_size) = Self::read_encoded_header(
+            let decoded = Self::read_encoded_header(
                 &mut buf_reader,
                 reader,
                 &mut archive,
                 next_header_size_int,
-                memory_limit_kb,
+                limits.memory_kb,
+                limits.entries,
             )?;
-            // Read the decoded header lazily instead of pre-allocating `buf_size` bytes:
-            // a crafted encoded header can declare a huge unpack size, and `resize`
-            // would allocate it all up front (OOM) before any data is produced. `take`
-            // caps the read at the declared size while `read_to_end` grows the buffer to
-            // match only what is actually decoded, so the allocation tracks real input.
-            buf.clear();
-            (&mut out_reader)
-                .take(buf_size as u64)
-                .read_to_end(&mut buf)?;
-            if buf.len() != buf_size {
-                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
-            }
+            buf = decoded;
             archive = Archive::default();
             buf_reader = buf.as_slice();
             nid = buf_reader.read_u8()?;
@@ -388,7 +412,7 @@ impl Archive {
         let header_len_bound = header.len();
         let mut header = std::io::Cursor::new(&mut header);
         if nid == K_HEADER {
-            Self::read_header(&mut header, &mut archive, header_len_bound)?;
+            Self::read_header(&mut header, &mut archive, header_len_bound, limits.entries)?;
         } else {
             return Err(Error::other("Broken or unsupported archive: no Header"));
         }
@@ -401,14 +425,19 @@ impl Archive {
         Ok(archive)
     }
 
-    fn read_encoded_header<'r, R: Read, RI: 'r + Read + Seek>(
+    /// Decodes an encoded header.
+    ///
+    /// The decoded header is held in memory, so its declared size must fit
+    /// the memory limit. This is checked before any decoder is built.
+    fn read_encoded_header<R: Read, RI: Read + Seek>(
         header: &mut R,
-        reader: &'r mut RI,
+        reader: &mut RI,
         archive: &mut Archive,
         limit: usize,
         memory_limit_kb: usize,
-    ) -> Result<(Box<dyn Read + 'r>, usize), Error> {
-        Self::read_streams_info(header, archive, limit)?;
+        max_entries: usize,
+    ) -> Result<Vec<u8>, Error> {
+        Self::read_streams_info(header, archive, limit, max_entries)?;
         let block = archive
             .blocks
             .first()
@@ -420,10 +449,20 @@ impl Archive {
         if archive.pack_sizes.is_empty() {
             return Err(Error::other("no packed streams, can't read encoded header"));
         }
+        let declared_size = block.get_unpack_size();
+        let max_bytes = memory_limit_kb.saturating_mul(1024);
+        let unpack_size = usize::try_from(declared_size)
+            .ok()
+            .filter(|size| *size <= max_bytes)
+            .ok_or(Error::HeaderSizeLimited {
+                max_bytes,
+                actual_bytes: declared_size,
+            })?;
 
         reader.seek(SeekFrom::Start(block_offset))?;
+        let mut zstd = zstd_buffers(block, memory_limit_kb)?;
+        let mut zstd = zstd.iter_mut();
         let coder_len = block.coders.len();
-        let unpack_size = block.get_unpack_size() as usize;
         let pack_size = archive.pack_sizes[first_pack_stream_index] as usize;
         let input_reader = BufReader::with_capacity(
             PACKED_STREAM_BUFFER_SIZE,
@@ -442,6 +481,7 @@ impl Archive {
                     block.get_unpack_size_at_index(index) as usize,
                     coder,
                     memory_limit_kb,
+                    &mut zstd,
                 )?;
                 decoder = Box::new(next);
             }
@@ -453,13 +493,22 @@ impl Archive {
             decoder = Box::new(Crc32VerifyingReader::new(decoder, unpack_size, block.crc));
         }
 
-        Ok((decoder, unpack_size))
+        // Grow the buffer as bytes are decoded, so a header that decodes to
+        // fewer bytes than it declares fails without allocating the
+        // declared size.
+        let mut decoded = Vec::new();
+        decoder.take(unpack_size as u64).read_to_end(&mut decoded)?;
+        if decoded.len() != unpack_size {
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+        }
+        Ok(decoded)
     }
 
     fn read_streams_info<R: Read>(
         header: &mut R,
         archive: &mut Archive,
         limit: usize,
+        max_entries: usize,
     ) -> Result<(), Error> {
         let mut nid = header.read_u8()?;
         if nid == K_PACK_INFO {
@@ -468,7 +517,7 @@ impl Archive {
         }
 
         if nid == K_UNPACK_INFO {
-            Self::read_unpack_info(header, archive, limit)?;
+            Self::read_unpack_info(header, archive, limit, max_entries)?;
             nid = header.read_u8()?;
         } else {
             archive.blocks.clear();
@@ -488,8 +537,17 @@ impl Archive {
         header: &mut R,
         archive: &mut Archive,
         limit: usize,
+        max_entries: usize,
     ) -> Result<(), Error> {
         let num_files = bounded_count(read_variable_u64(header)?, limit, "num files")?;
+        // Each entry takes far more memory than the header byte it needs, so
+        // apply the entry limit before the file table is allocated.
+        if num_files > max_entries {
+            return Err(Error::MaxEntriesLimited {
+                max: max_entries,
+                actual: num_files,
+            });
+        }
         let mut files: Vec<ArchiveEntry> = try_vec_filled(
             num_files,
             Default::default(),
@@ -840,16 +898,26 @@ impl Archive {
 
         Ok(())
     }
+    /// Reads the block table. Each block decodes at least one entry, so an
+    /// archive with more blocks than `max_entries` is rejected with
+    /// [`Error::MaxEntriesLimited`] before the table is allocated.
     fn read_unpack_info<R: Read>(
         header: &mut R,
         archive: &mut Archive,
         limit: usize,
+        max_entries: usize,
     ) -> Result<(), Error> {
         let nid = header.read_u8()?;
         if nid != K_FOLDER {
             return Err(Error::other(format!("Expected kFolder, got {nid}")));
         }
         let num_blocks = bounded_count(read_variable_u64(header)?, limit, "num blocks")?;
+        if num_blocks > max_entries {
+            return Err(Error::MaxEntriesLimited {
+                max: max_entries,
+                actual: num_blocks,
+            });
+        }
 
         archive
             .blocks
@@ -1369,8 +1437,19 @@ impl<R: Read + Seek> ArchiveReader<R> {
     }
 
     /// Creates a reader with a positive codec working-memory ceiling.
-    pub fn new_with_memory_limit_kb(mut source: R, memory_limit_kb: usize) -> Result<Self, Error> {
-        let archive = Archive::read_with_memory_limit_kb(&mut source, memory_limit_kb)?;
+    pub fn new_with_memory_limit_kb(source: R, memory_limit_kb: usize) -> Result<Self, Error> {
+        Self::new_with_limits(source, memory_limit_kb, usize::MAX)
+    }
+
+    /// Creates a reader with a positive codec working-memory ceiling and a
+    /// ceiling on the entries the archive may declare. See
+    /// [`Archive::read_with_limits`].
+    pub fn new_with_limits(
+        mut source: R,
+        memory_limit_kb: usize,
+        max_entries: usize,
+    ) -> Result<Self, Error> {
+        let archive = Archive::read_with_limits(&mut source, memory_limit_kb, max_entries)?;
         Ok(Self {
             source,
             archive,
@@ -1392,10 +1471,11 @@ impl<R: Read + Seek> ArchiveReader<R> {
         archive: &Archive,
         block_index: usize,
         memory_limit_kb: usize,
+        zstd: &mut ZstdPool<'r>,
     ) -> Result<(Box<dyn Read + 'r>, usize), Error> {
         let block = &archive.blocks[block_index];
         if block.total_input_streams > block.total_output_streams {
-            return Self::build_decode_stack2(source, archive, block_index, memory_limit_kb);
+            return Self::build_decode_stack2(source, archive, block_index, memory_limit_kb, zstd);
         }
         let first_pack_stream_index = archive.stream_map.block_first_pack_stream_index[block_index];
         let block_offset = SIGNATURE_HEADER_SIZE
@@ -1444,6 +1524,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
                 block.get_unpack_size_at_index(index) as usize,
                 coder,
                 memory_limit_kb,
+                zstd,
             )?;
             decoder = Box::new(next);
         }
@@ -1463,6 +1544,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
         archive: &Archive,
         block_index: usize,
         memory_limit_kb: usize,
+        zstd: &mut ZstdPool<'r>,
     ) -> Result<(Box<dyn Read + 'r>, usize), Error> {
         const MAX_CODER_COUNT: usize = 32;
         let block = &archive.blocks[block_index];
@@ -1542,6 +1624,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
             main_coder_index,
             0,
             memory_limit_kb,
+            zstd,
         )?;
         if block.has_crc {
             decoder = Box::new(Crc32VerifyingReader::new(
@@ -1563,6 +1646,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
         in_stream_index: usize,
         depth: usize,
         memory_limit_kb: usize,
+        zstd: &mut ZstdPool<'r>,
     ) -> Result<Box<dyn Read + 'r>, Error>
     where
         R: 'r,
@@ -1594,6 +1678,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
             index,
             depth,
             memory_limit_kb,
+            zstd,
         )
     }
 
@@ -1604,6 +1689,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
         in_stream_index: usize,
         depth: usize,
         memory_limit_kb: usize,
+        zstd: &mut ZstdPool<'r>,
     ) -> Result<Box<dyn Read + 'r>, Error>
     where
         R: 'r,
@@ -1636,9 +1722,10 @@ impl<R: Read + Seek> ArchiveReader<R> {
                 start_index,
                 depth + 1,
                 memory_limit_kb,
+                zstd,
             )?;
 
-            let decoder = add_decoder(input, uncompressed_len, coder, memory_limit_kb)?;
+            let decoder = add_decoder(input, uncompressed_len, coder, memory_limit_kb, zstd)?;
             return Ok(Box::new(decoder));
         }
 
@@ -1665,6 +1752,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
                     i,
                     depth + 1,
                     memory_limit_kb,
+                    zstd,
                 )?);
             }
             return Ok(Box::new(Bcj2Reader::new(inputs, uncompressed_len as u64)));
@@ -1759,8 +1847,15 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
             archive,
             source,
         } = self;
-        let (mut block_reader, _size) =
-            ArchiveReader::build_decode_stack(source, archive, block_index, memory_limit_kb)?;
+        let mut zstd = zstd_buffers(&archive.blocks[block_index], memory_limit_kb)?;
+        let mut zstd = zstd.iter_mut();
+        let (mut block_reader, _size) = ArchiveReader::build_decode_stack(
+            source,
+            archive,
+            block_index,
+            memory_limit_kb,
+            &mut zstd,
+        )?;
         let start = archive.stream_map.block_first_file_index[block_index];
         let file_count = archive.blocks[block_index].num_unpack_sub_streams;
 
@@ -1792,7 +1887,150 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::{Archive, try_vec_filled};
+    use crate::{crc, error::Error};
+
+    /// Writes a 7z number in its full-width form.
+    fn number(output: &mut Vec<u8>, value: u64) {
+        output.push(0xff);
+        output.extend_from_slice(&value.to_le_bytes());
+    }
+
+    /// Builds an archive whose next header is `next`, after `packed`.
+    fn archive(packed: &[u8], next: &[u8]) -> Vec<u8> {
+        let mut start = Vec::new();
+        start.extend_from_slice(&(packed.len() as u64).to_le_bytes());
+        start.extend_from_slice(&(next.len() as u64).to_le_bytes());
+        start.extend_from_slice(&crc::hash(next).to_le_bytes());
+        let mut bytes = b"7z\xbc\xaf'\x1c\x00\x04".to_vec();
+        bytes.extend_from_slice(&crc::hash(&start).to_le_bytes());
+        bytes.extend_from_slice(&start);
+        bytes.extend_from_slice(packed);
+        bytes.extend_from_slice(next);
+        bytes
+    }
+
+    /// An encoded header: one Copy coder over `packed` that declares
+    /// `declared` decoded bytes.
+    fn encoded_header(packed: &[u8], declared: u64) -> Vec<u8> {
+        let mut next = vec![0x17, 6, 0, 1, 9]; // Encoded header, PackInfo, one stream.
+        number(&mut next, packed.len() as u64);
+        next.extend_from_slice(&[0, 7, 11, 1, 0, 1, 1, 0, 12]); // One folder, one Copy coder.
+        number(&mut next, declared);
+        next.extend_from_slice(&[0, 0]); // End UnpackInfo, end StreamsInfo.
+        archive(packed, &next)
+    }
+
+    #[test]
+    fn encoded_header_above_the_memory_limit_is_rejected_before_decoding() {
+        // Header, End: an empty archive in two decoded bytes.
+        let packed = [1, 0];
+        let small = encoded_header(&packed, 2);
+        let parsed = Archive::read_with_limits(&mut Cursor::new(small), 1, usize::MAX).unwrap();
+        assert!(parsed.files.is_empty());
+
+        // A 1 KiB memory limit allows a 1,024-byte header. The Copy input
+        // is shorter, so that header fails as truncated, not as too large.
+        let exact = encoded_header(&packed, 1024);
+        let result = Archive::read_with_limits(&mut Cursor::new(exact), 1, usize::MAX);
+        assert!(matches!(result, Err(Error::Io(..))), "{result:?}");
+
+        for declared in [1025, 256 << 20, u64::MAX] {
+            let large = encoded_header(&packed, declared);
+            let result = Archive::read_with_limits(&mut Cursor::new(large), 1, usize::MAX);
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::HeaderSizeLimited {
+                        max_bytes: 1024,
+                        actual_bytes,
+                    }) if actual_bytes == declared
+                ),
+                "{declared}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn file_count_above_the_entry_limit_is_rejected_before_the_file_table() {
+        // A file count and the end of the properties. The header bound is
+        // set above the count, so only the entry limit applies.
+        for (count, max_entries) in [(11, 10), (5_000_000, 1_000_000)] {
+            let mut header = Vec::new();
+            number(&mut header, count as u64);
+            header.push(0);
+            let result = Archive::read_files_info(
+                &mut Cursor::new(header),
+                &mut Archive::default(),
+                usize::MAX,
+                max_entries,
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::MaxEntriesLimited { max, actual })
+                        if max == max_entries && actual == count
+                ),
+                "{result:?}"
+            );
+        }
+        // At the limit, the table is built. These files have streams but
+        // the header has no sub-streams, which is a later error.
+        let result = Archive::read_files_info(
+            &mut Cursor::new(vec![10, 0]),
+            &mut Archive::default(),
+            usize::MAX,
+            10,
+        );
+        assert!(matches!(result, Err(Error::Other(_))), "{result:?}");
+        // A count above the header length is still a header error.
+        let result = Archive::read_files_info(
+            &mut Cursor::new(vec![11, 0]),
+            &mut Archive::default(),
+            2,
+            10,
+        );
+        assert!(matches!(result, Err(Error::Other(_))), "{result:?}");
+    }
+
+    #[test]
+    fn block_count_above_the_entry_limit_is_rejected_before_the_block_table() {
+        // kFolder, a block count, then the external flag.
+        for (count, max_entries) in [(11, 10), (5_000_000, 1_000_000)] {
+            let mut header = vec![crate::archive::K_FOLDER];
+            number(&mut header, count as u64);
+            header.push(0);
+            let mut archive = Archive::default();
+            let result = Archive::read_unpack_info(
+                &mut Cursor::new(header),
+                &mut archive,
+                usize::MAX,
+                max_entries,
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::MaxEntriesLimited { max, actual })
+                        if max == max_entries && actual == count
+                ),
+                "{result:?}"
+            );
+            assert_eq!(archive.blocks.capacity(), 0);
+        }
+        // At the limit, the blocks are read; this header ends early.
+        let result = Archive::read_unpack_info(
+            &mut Cursor::new(vec![crate::archive::K_FOLDER, 10, 0]),
+            &mut Archive::default(),
+            usize::MAX,
+            10,
+        );
+        assert!(
+            !matches!(result, Err(Error::MaxEntriesLimited { .. })),
+            "{result:?}"
+        );
+    }
 
     #[test]
     fn coder_stream_totals_reject_overflow_before_graph_construction() {

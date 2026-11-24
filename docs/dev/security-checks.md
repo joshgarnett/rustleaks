@@ -420,7 +420,10 @@ follow the [incident response](incident-response.md) procedure.
 ## Hosted schedule
 
 Hosted workflows turn these local checks into jobs without secrets and with
-the least privilege. Actions are pinned to reviewed full commit SHAs.
+the least privilege. The one exception is the `publish` job of
+`packages.yml`, which reads the packaging App key in the protected `release`
+environment and runs only Git, the GitHub CLI and the pinned token action.
+Actions are pinned to reviewed full commit SHAs.
 Untrusted pull request code never runs from `pull_request_target`,
 `workflow_run` or a privileged release context.
 

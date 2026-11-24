@@ -662,7 +662,7 @@ pub(crate) enum NativeKeyword {
 }
 
 impl NativeKeyword {
-    fn new(keyword: &str) -> Self {
+    pub(crate) fn new(keyword: &str) -> Self {
         if keyword.is_empty() {
             Self::Empty
         } else if keyword.is_ascii() {
@@ -1446,6 +1446,52 @@ edges=[{id='github-pat',relation='full-match-window',window='0'}, {id='rustleaks
                 .native_byte_matcher
                 .is_some()
         );
+    }
+
+    #[test]
+    fn an_extending_rule_adds_native_keywords_or_replaces_the_relation() {
+        const PARENT: &str = "rustleaks.azure-servicebus-key-comma";
+        const HELPER: &str = "rustleaks.azure-servicebus-key-comma-tuple";
+        let builtin = ConfigLoader::new().load_default().unwrap();
+        let original = builtin.rule(PARENT).unwrap();
+        assert!(original.native_required.is_some());
+        let mut keywords = original.native_keywords.clone().unwrap();
+
+        // Added keywords reach the native keyword check, and the relation stays.
+        let added = ConfigLoader::new()
+            .load_toml(&format!(
+                "[extend]\nuseDefault = true\n[[rules]]\nid = '{PARENT}'\n\
+                 keywords = ['MyBusKey', 'b\u{fc}s']\n"
+            ))
+            .unwrap();
+        keywords.extend([
+            NativeKeyword::Ascii("mybuskey".to_owned()),
+            NativeKeyword::UnicodeLower("b\u{fc}s".to_owned()),
+        ]);
+        let rule = added.rule(PARENT).unwrap();
+        assert_eq!(rule.native_keywords, Some(keywords));
+        assert_eq!(rule.native_required, original.native_required);
+        assert_eq!(
+            rule.keywords.len(),
+            rule.native_keywords.as_ref().unwrap().len()
+        );
+
+        // A regex makes the rule a plain rule with the merged keywords.
+        let replaced = ConfigLoader::new()
+            .load_toml(&format!(
+                "[extend]\nuseDefault = true\n[[rules]]\nid = '{PARENT}'\n\
+                 regex = '''mybuskey=([A-Za-z0-9]{{32}})'''\nsecretGroup = 1\n\
+                 keywords = ['mybuskey']\n"
+            ))
+            .unwrap();
+        let rule = replaced.rule(PARENT).unwrap();
+        assert!(rule.native_required.is_none());
+        assert!(rule.native_keywords.is_none());
+        assert!(rule.native_byte_matcher.is_none());
+        assert!(rule.keywords.contains(&"mybuskey".to_owned()));
+        assert!(rule.required.is_empty());
+        // The helper is unchanged.
+        assert_eq!(replaced.rule(HELPER), builtin.rule(HELPER));
     }
 }
 

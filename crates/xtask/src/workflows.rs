@@ -209,6 +209,9 @@ fn validate_packages_workflow(source: &str) -> Result<(), String> {
         "test \"${TRIGGER_REF}\" = refs/heads/main",
         "releases/tags/v${EXPECTED_VERSION}",
         "test \"$(jq -r '.draft' <<<\"${release_json}\")\" = false",
+        "ref_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}\")\"",
+        "test \"$(jq -r '.object.type' <<<\"${ref_json}\")\" = commit",
+        "test \"$(jq -r '.object.sha' <<<\"${ref_json}\")\" = \"${candidate}\"",
         "git merge-base --is-ancestor \"${candidate}\" HEAD",
         "gh attestation verify \"${assets}/${stem}.tar.gz\"",
         "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-dry-run.yml\"",
@@ -223,7 +226,12 @@ fn validate_packages_workflow(source: &str) -> Result<(), String> {
             ));
         }
     }
-    for job_name in ["generate", "verify-homebrew", "verify-scoop"] {
+    for job_name in [
+        "generate",
+        "check-channels",
+        "verify-homebrew",
+        "verify-scoop",
+    ] {
         let job = workflow_job(source, job_name)?;
         if job.contains("secrets.") || job.contains("environment:") || job.contains("vars.") {
             return Err(format!(
@@ -255,44 +263,22 @@ fn validate_packages_workflow(source: &str) -> Result<(), String> {
             ));
         }
     }
-    let publish = workflow_job(source, "publish")?;
+    let channels = workflow_job(source, "check-channels")?;
     for required in [
-        "    needs:\n      - generate\n      - verify-homebrew\n      - verify-scoop\n",
+        "    needs: generate\n",
         "    if: inputs.publish\n",
-        "    environment: release\n",
-        "actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0",
-        PACKAGING_SECRET,
-        "          owner: joshgarnett\n          repositories: |\n            homebrew-tap\n            scoop-bucket\n          permission-contents: write\n",
-        "cargo build --locked -p xtask",
-        "./target/debug/xtask release-artifact check-upgrade",
-        "git -C \"${checkout}\" push origin HEAD:main",
+        "    permissions:\n      contents: read\n    outputs:\n",
+        "git clone --depth 1 --branch main \"https://github.com/joshgarnett/${repository}.git\" \"${checkout}\"",
+        "cargo run --locked -p xtask -- release-artifact check-upgrade \"${current}\" \"${EXPECTED_VERSION}\"",
+        "echo \"${repository}=$(git -C \"${checkout}\" rev-parse HEAD)\" >> \"${GITHUB_OUTPUT}\"",
     ] {
-        if !publish.contains(required) {
+        if !channels.contains(required) {
             return Err(format!(
-                "package manager publish job omits required boundary {required:?}"
+                "package manager channel check omits required boundary {required:?}"
             ));
         }
     }
-    // Build scripts and the clone run before the token exists; only Git and
-    // the GitHub CLI run after it.
-    let token = publish
-        .find("actions/create-github-app-token@")
-        .ok_or("package manager publish job omits its token step")?;
-    let (before, after) = publish.split_at(token);
-    for required in [
-        "cargo build --locked -p xtask",
-        "release-artifact check-upgrade",
-        "git clone",
-    ] {
-        if !before.contains(required) {
-            return Err(format!(
-                "package manager publish job must run {required:?} before it creates the token"
-            ));
-        }
-    }
-    if after.contains("cargo") || after.contains("xtask") || after.contains("git clone") {
-        return Err("package manager publish job runs build code while the token exists".into());
-    }
+    validate_packages_publish_job(workflow_job(source, "publish")?)?;
     for (required, expected) in [
         ("environment: release", 1),
         ("secrets.", 1),
@@ -307,6 +293,71 @@ fn validate_packages_workflow(source: &str) -> Result<(), String> {
         }
     }
     validate_minimal_setup(source, "package manager workflow")
+}
+
+/// Checks that the job that sees the App key and token runs only Git and the
+/// GitHub CLI, and pushes only on top of the commits that `check-channels`
+/// checked.
+fn validate_packages_publish_job(publish: &str) -> Result<(), String> {
+    for required in [
+        "    needs:\n      - generate\n      - check-channels\n      - verify-homebrew\n      - verify-scoop\n",
+        "    if: inputs.publish\n",
+        "    environment: release\n",
+        PACKAGING_SECRET,
+        "          owner: joshgarnett\n          repositories: |\n            homebrew-tap\n            scoop-bucket\n          permission-contents: write\n",
+        "HOMEBREW_TAP_HEAD: ${{ needs.check-channels.outputs.homebrew-tap }}",
+        "SCOOP_BUCKET_HEAD: ${{ needs.check-channels.outputs.scoop-bucket }}",
+        "[[ \"${expected}\" =~ ^[0-9a-f]{40}$ ]]",
+        "test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${expected}\"",
+        "git -C \"${checkout}\" push origin HEAD:main",
+    ] {
+        if !publish.contains(required) {
+            return Err(format!(
+                "package manager publish job omits required boundary {required:?}"
+            ));
+        }
+    }
+    for forbidden in [
+        "actions/checkout@",
+        "uses: ./",
+        "cargo",
+        "xtask",
+        "--force",
+        "push origin +",
+    ] {
+        if publish.contains(forbidden) {
+            return Err(format!(
+                "package manager publish job must run only Git and the GitHub CLI, found {forbidden:?}"
+            ));
+        }
+    }
+    let actions = publish
+        .lines()
+        .filter_map(|line| line.trim().trim_start_matches("- ").strip_prefix("uses: "))
+        .collect::<Vec<_>>();
+    if actions
+        != ["actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0"]
+    {
+        return Err(format!(
+            "package manager publish job may use only the App token action, found {actions:?}"
+        ));
+    }
+    // The clones and the HEAD check run before the token exists.
+    let token = publish
+        .find("actions/create-github-app-token@")
+        .ok_or("package manager publish job omits its token step")?;
+    let (before, after) = publish.split_at(token);
+    for required in ["git clone", "rev-parse HEAD"] {
+        if !before.contains(required) {
+            return Err(format!(
+                "package manager publish job must run {required:?} before it creates the token"
+            ));
+        }
+    }
+    if after.contains("git clone") {
+        return Err("package manager publish job clones while the token exists".into());
+    }
+    Ok(())
 }
 
 fn validate_github_release_workflow(source: &str) -> Result<(), String> {
@@ -972,6 +1023,26 @@ fn validate_workflow(
             ));
         }
     }
+    // Other checks find write grants line by line, so a flow mapping such as
+    // `permissions: { contents: write }` would hide one.
+    if let Some(index) = source.lines().position(|line| {
+        line.trim_start()
+            .trim_start_matches("- ")
+            .strip_prefix("permissions:")
+            .is_some_and(|value| value.trim_start().starts_with('{'))
+    }) {
+        return Err(format!(
+            "{}:{} uses a flow-style permissions mapping",
+            path.display(),
+            index + 1
+        ));
+    }
+    if let Some(line) = checkout_without_persist_credentials_false(source) {
+        return Err(format!(
+            "{}:{line} checks out without persist-credentials: false",
+            path.display()
+        ));
+    }
     let permissions = source
         .find("permissions:\n  contents: read")
         .ok_or_else(|| format!("{} omits top-level read-only permissions", path.display()))?;
@@ -1022,6 +1093,46 @@ fn validate_workflow(
         }
     }
     Ok(())
+}
+
+/// Returns the line of the first `actions/checkout` step that does not set
+/// `persist-credentials: false`. The action keeps the token in the Git
+/// configuration when the key is left out.
+fn checkout_without_persist_credentials_false(source: &str) -> Option<usize> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let indent = |line: &str| line.len() - line.trim_start().len();
+    for (index, line) in lines.iter().enumerate() {
+        let item = line.trim_start().trim_start_matches("- ");
+        if !item.starts_with("uses: actions/checkout@") {
+            continue;
+        }
+        // The step starts at the list item that holds this `uses:` key.
+        let start = if line.trim_start().starts_with("- ") {
+            Some(index)
+        } else {
+            lines[..index]
+                .iter()
+                .rposition(|candidate| {
+                    !candidate.trim().is_empty() && indent(candidate) < indent(line)
+                })
+                .filter(|start| lines[*start].trim_start().starts_with("- "))
+        };
+        let Some(start) = start else {
+            return Some(index + 1);
+        };
+        let dash = indent(lines[start]);
+        let end = lines[start + 1..]
+            .iter()
+            .position(|candidate| !candidate.trim().is_empty() && indent(candidate) <= dash)
+            .map_or(lines.len(), |offset| start + 1 + offset);
+        if !lines[start..end]
+            .iter()
+            .any(|candidate| candidate.trim() == "persist-credentials: false")
+        {
+            return Some(index + 1);
+        }
+    }
+    None
 }
 
 fn validate_tool_setup(source: &str) -> Result<(), String> {
@@ -1219,9 +1330,71 @@ mod tests {
     #[test]
     fn accepts_local_actions_and_immutable_external_actions() {
         let source = format!(
-            "name: Test\non:\n  push:\npermissions:\n  contents: read\njobs:\n  test:\n    steps:\n      - uses: ./local\n      - uses: actions/checkout@{PIN} # v6\n"
+            "name: Test\non:\n  push:\npermissions:\n  contents: read\njobs:\n  test:\n    steps:\n      - uses: ./local\n      - uses: actions/checkout@{PIN} # v6\n        with:\n          persist-credentials: false\n"
         );
         validate_workflow(Path::new("test.yml"), &source, &mut BTreeSet::new()).unwrap();
+    }
+
+    fn checkout_workflow(job: &str) -> String {
+        format!(
+            "name: Test\non:\n  push:\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-24.04\n{job}"
+        )
+    }
+
+    #[test]
+    fn checkouts_must_turn_off_persisted_credentials() {
+        let check = |job: &str| {
+            validate_workflow(
+                Path::new("test.yml"),
+                &checkout_workflow(job),
+                &mut BTreeSet::new(),
+            )
+        };
+        check(&format!(
+            "    steps:\n      - name: Check out\n        uses: actions/checkout@{PIN} # v6\n        with:\n          fetch-depth: 0\n          persist-credentials: false\n      - run: true\n"
+        ))
+        .unwrap();
+        for job in [
+            // The key is left out, so the action keeps the token.
+            format!("    steps:\n      - uses: actions/checkout@{PIN} # v6\n      - run: true\n"),
+            format!(
+                "    steps:\n      - name: Check out\n        uses: actions/checkout@{PIN} # v6\n        with:\n          fetch-depth: 0\n      - run: true\n"
+            ),
+            // The setting belongs to another step.
+            format!(
+                "    steps:\n      - uses: actions/checkout@{PIN} # v6\n      - uses: actions/checkout@{PIN} # v6\n        with:\n          persist-credentials: false\n"
+            ),
+            format!(
+                "    steps:\n      - uses: actions/checkout@{PIN} # v6\n        with:\n          persist-credentials: true\n"
+            ),
+        ] {
+            let error = check(&job).unwrap_err();
+            assert!(error.contains("persist-credentials"), "{error}");
+        }
+    }
+
+    #[test]
+    fn rejects_flow_style_permissions() {
+        for job in [
+            "    permissions: { contents: write }\n    steps:\n      - run: true\n",
+            "    permissions: {contents: read, id-token: write}\n    steps:\n      - run: true\n",
+        ] {
+            let error = validate_workflow(
+                Path::new("test.yml"),
+                &checkout_workflow(job),
+                &mut BTreeSet::new(),
+            )
+            .unwrap_err();
+            assert!(error.contains("flow-style permissions"), "{error}");
+        }
+        validate_workflow(
+            Path::new("test.yml"),
+            &checkout_workflow(
+                "    permissions:\n      contents: read\n    steps:\n      - run: true\n",
+            ),
+            &mut BTreeSet::new(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1594,5 +1767,54 @@ mod tests {
         );
         validate_codeql_workflow(&source).unwrap();
         assert!(validate_codeql_workflow(&source.replace(CODEQL_ACTION_PIN, PIN)).is_err());
+    }
+
+    #[test]
+    fn package_publish_job_runs_only_git_and_the_github_cli() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = std::fs::read_to_string(root.join(".github/workflows/packages.yml"))
+            .expect("read package manager workflow");
+        super::validate_packages_workflow(&source).unwrap();
+        let (head, publish) = source.split_once("\n  publish:\n").unwrap();
+        let with_publish = |before: &str, after: &str| {
+            assert!(publish.contains(before), "fixture omits {before:?}");
+            let changed = format!("{head}\n  publish:\n{}", publish.replacen(before, after, 1));
+            super::validate_packages_workflow(&changed).unwrap_err()
+        };
+        let setup = "    steps:\n      - name: Check out the trigger commit\n        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n";
+        for (before, after) in [
+            ("    steps:\n", setup),
+            (
+                "          set -euo pipefail\n          work=",
+                "          set -euo pipefail\n          cargo build --locked -p xtask\n          work=",
+            ),
+            ("push origin HEAD:main", "push --force origin HEAD:main"),
+            ("      - check-channels\n", ""),
+            ("    if: inputs.publish\n", ""),
+            (
+                "            test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${expected}\"\n",
+                "",
+            ),
+        ] {
+            with_publish(before, after);
+        }
+        // The tag must point at the release commit.
+        let untagged = source.replace(
+            "          test \"$(jq -r '.object.sha' <<<\"${ref_json}\")\" = \"${candidate}\"\n",
+            "",
+        );
+        assert!(super::validate_packages_workflow(&untagged).is_err());
+        let unchecked = source.replace(
+            "cargo run --locked -p xtask -- release-artifact check-upgrade",
+            "true",
+        );
+        assert!(super::validate_packages_workflow(&unchecked).is_err());
+        let flow = source.replacen(
+            "    permissions:\n      actions: read\n      contents: read\n    # Only Git",
+            "    permissions: { actions: read, contents: write }\n    # Only Git",
+            1,
+        );
+        assert_ne!(flow, source);
+        assert!(validate_workflow(Path::new("packages.yml"), &flow, &mut BTreeSet::new()).is_err());
     }
 }

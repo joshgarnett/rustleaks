@@ -547,7 +547,8 @@ it shows them.
 
 `visit` starts one thread for each process. Each thread takes the next
 batch, writes its commit names to the standard input of
-`git log -p -U0 --diff-filter=tuxdb --no-walk=unsorted --stdin`, and passes
+`git log -p -U0 --diff-filter=tuxdb --no-walk=unsorted --stdin` (with the
+same safety options as the default history), and passes
 the output in pieces of 256 KiB. The calling thread feeds the batches in list
 order to one `PatchStream`. Before the first output of a batch, it adds the
 blank line that one process writes, when an earlier batch showed a commit.

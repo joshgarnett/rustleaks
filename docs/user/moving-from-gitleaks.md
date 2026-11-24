@@ -150,6 +150,10 @@ reasons for a difference:
   Gitleaks misses.
 - **Git folders.** `dir` skips `.git` folders by default, as Gitleaks does.
   `--scan-git-metadata` also scans their text metadata files.
+- **Required rules.** When `--enable-rule` or `disabledRules` leaves out a
+  rule that a remaining rule needs through `[[rules.required]]`, Rustleaks
+  keeps the needed rule without reporting its findings, so the remaining
+  rule still reports. Gitleaks then reports nothing for the remaining rule.
 - **Unicode.** Rustleaks uses newer Unicode tables than the Go version that
   Gitleaks used (Unicode 15). For characters added to Unicode after version
   15, case folding and Unicode character classes in rules can give different

@@ -1259,9 +1259,10 @@ impl Finding {
     /// Returns a copy with its primary secret masked using Go's byte-oriented
     /// round-to-even redaction behavior.
     ///
-    /// Values at or above 100 replace the secret with `REDACTED`. Required
-    /// findings are intentionally left unchanged, matching the upstream
-    /// reporting boundary.
+    /// Values at or above 100 replace the secret with `REDACTED`. The secret
+    /// is replaced in the match and the line. The whole line of a decoded
+    /// finding is replaced, since it holds the secret in encoded form.
+    /// Required findings are left unchanged.
     #[must_use]
     pub fn redacted(mut self, percent: usize) -> Self {
         let replacement = if percent >= 100 {
@@ -1269,7 +1270,18 @@ impl Finding {
         } else {
             mask_secret(self.secret.as_bytes(), percent)
         };
-        self.line = replace_all_bytes(self.line.as_bytes(), self.secret.as_bytes(), &replacement);
+        // The line of a decoded finding holds the secret in encoded form, so
+        // replacing the decoded bytes would leave it there. The whole line
+        // is replaced instead.
+        let decoded = self
+            .tags
+            .iter()
+            .any(|tag| tag.as_bytes().starts_with(b"decoded:"));
+        self.line = if !decoded {
+            replace_all_bytes(self.line.as_bytes(), self.secret.as_bytes(), &replacement)
+        } else {
+            replacement.clone().into()
+        };
         self.match_text = replace_all_bytes(
             self.match_text.as_bytes(),
             self.secret.as_bytes(),
@@ -2087,6 +2099,41 @@ mod shared_text_tests {
             b"prefix  suffix"
         );
         assert_eq!(backing.as_slice(), b"prefix SECRET suffix");
+    }
+
+    #[test]
+    fn redaction_replaces_a_line_that_holds_the_secret_in_another_form() {
+        let finding = Finding::builder()
+            .rule_id("r")
+            .location(Location::new(1, 1, 8, 15).unwrap())
+            .line("value U0VDUkVU end")
+            .match_text("SECRET")
+            .secret("SECRET")
+            .tags(["decoded:base64", "decode-depth:1"])
+            .build()
+            .unwrap();
+        assert_eq!(finding.clone().redacted(100).line().as_bytes(), b"REDACTED");
+        let partial = finding.redacted(50);
+        assert_eq!(partial.line(), partial.secret());
+        assert!(!partial.line().as_bytes().windows(4).any(|w| w == b"U0VD"));
+        // A line that also holds the decoded text is replaced as a whole.
+        let both = Finding::builder()
+            .rule_id("r")
+            .location(Location::new(1, 1, 8, 15).unwrap())
+            .line("SECRET U0VDUkVU")
+            .secret("SECRET")
+            .tags(["decoded:base64"])
+            .build()
+            .unwrap();
+        assert_eq!(both.redacted(100).line().as_bytes(), b"REDACTED");
+        let plain = Finding::builder()
+            .rule_id("r")
+            .location(Location::new(1, 1, 1, 4).unwrap())
+            .line("unrelated line")
+            .secret("SECRET")
+            .build()
+            .unwrap();
+        assert_eq!(plain.redacted(100).line().as_bytes(), b"unrelated line");
     }
 
     #[test]

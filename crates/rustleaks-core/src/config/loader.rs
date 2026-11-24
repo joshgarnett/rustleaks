@@ -10,7 +10,7 @@ use semver::{BuildMetadata, Version};
 use thiserror::Error;
 
 use crate::go_unicode::lowercase as go_lowercase;
-use crate::native::{BUILTIN_PACKS, NativePolicy};
+use crate::native::{BUILTIN_PACKS, NativeKeyword, NativePolicy};
 use crate::regex::{GoRegex, NativeByteRegex, PatternCheck};
 
 use super::compiled::{CompiledAllowlist, CompiledConfig, CompiledRule};
@@ -1145,8 +1145,14 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
         .iter()
         .map(String::as_str)
         .collect();
+    // A base rule kept only as a helper is not listed, at any level.
+    let listed: BTreeSet<String> = std::mem::take(&mut base.ordered_rule_ids)
+        .into_iter()
+        .collect();
+    let mut disabled_rules = BTreeMap::new();
     for (id, mut base_rule) in std::mem::take(&mut base.rules) {
         if disabled.contains(id.as_str()) {
+            disabled_rules.insert(id, base_rule);
             continue;
         }
         // A disabled rule takes its reviewed overlaps with it, even when the
@@ -1169,8 +1175,18 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
             if current_rule.regex.is_some() {
                 base_rule.regex = current_rule.regex;
                 base_rule.regex_matcher = current_rule.regex_matcher;
-                // A Gitleaks-format regex replaces a built-in `bytes-v1` regex.
+                // A Gitleaks-format regex replaces a built-in `bytes-v1` regex
+                // and makes a `buffer-v1` rule a plain rule: its helpers match
+                // the built-in regex, and its keywords are the merged ones.
                 base_rule.native_byte_matcher = None;
+                if base_rule.native_required.take().is_some() {
+                    base_rule.required.clear();
+                }
+                base_rule.native_keywords = None;
+            } else if let Some(native) = &mut base_rule.native_keywords {
+                // Added keywords reach the native keyword check too. They are
+                // already Go-lowercased.
+                native.extend(current_rule.keywords.iter().map(|k| NativeKeyword::new(k)));
             }
             if current_rule.path.is_some() {
                 base_rule.path = current_rule.path;
@@ -1182,9 +1198,28 @@ fn merge_extension(current: &mut CompiledConfig, mut base: CompiledConfig) {
             current.keywords.extend(base_rule.keywords.iter().cloned());
             current.rules.insert(id, base_rule);
         } else {
-            current.ordered_rule_ids.push(id.clone());
+            if listed.contains(&id) {
+                current.ordered_rule_ids.push(id.clone());
+            }
             current.keywords.extend(base_rule.keywords.iter().cloned());
             current.rules.insert(id, base_rule);
+        }
+    }
+    // A disabled rule that a kept, reporting rule needs stays as a helper
+    // that does not report, so the kept rule still works. Like a helper that
+    // a rule selection adds, it is not in the ordered rule IDs.
+    let needed = current
+        .rules
+        .values()
+        .filter(|rule| !rule.skip_report)
+        .flat_map(CompiledRule::helper_ids)
+        .filter(|id| !current.rules.contains_key(*id))
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    for id in needed {
+        if let Some(rule) = disabled_rules.remove(&id) {
+            current.keywords.extend(rule.keywords.iter().cloned());
+            current.rules.insert(id, rule.into_helper());
         }
     }
     current.allowlists.extend(base.allowlists);

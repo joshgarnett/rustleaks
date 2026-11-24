@@ -114,13 +114,13 @@ mod tests {
         let output = temporary.path.join("output");
         assert_eq!(
             generate_archive_fuzz_seeds(&root, &output, false).unwrap(),
-            90
+            94
         );
         generate_archive_fuzz_seeds(&root, &output, true).unwrap();
         generate_archive_fuzz_seeds(&root, &output, false).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(output.join("manifest.json")).unwrap()).unwrap();
-        assert_eq!(manifest["seed_count"], 90);
+        assert_eq!(manifest["seed_count"], 94);
         for entry in fs::read_dir(output.join("corpus")).unwrap() {
             let bytes = fs::read(entry.unwrap().path()).unwrap();
             assert!(bytes.len() <= archive_frame::MAX_INPUT_BYTES);
