@@ -274,3 +274,147 @@ fn template_is_constructed_before_scanning() {
     );
     assert!(fs::read(fixture.0.join("report.tmpl")).unwrap().is_empty());
 }
+
+/// Runs a `stdin` scan that finds one secret and writes a JSON report to
+/// `path`. Findings exit with 0, so a failure to write exits with 1.
+fn json_report_command(cwd: &Path, path: &str) -> Command {
+    let mut command = command(cwd);
+    command.args([
+        "stdin",
+        "--no-banner",
+        "-c",
+        "config.toml",
+        "--exit-code",
+        "0",
+        "-r",
+        path,
+        "-f",
+        "json",
+    ]);
+    command
+}
+
+/// The rule ID of each finding in a JSON report.
+fn report_rules(report: &[u8]) -> Vec<String> {
+    json_report_rows(report)
+        .into_iter()
+        .map(|(rule, ..)| rule)
+        .collect()
+}
+
+#[test]
+fn new_report_file_is_created_with_owner_only_mode() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    let result = output_with_stdin(
+        &mut json_report_command(&fixture.0, "report.json"),
+        b"token=AB12\n",
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let path = fixture.0.join("report.json");
+    assert_eq!(report_rules(&fs::read(&path).unwrap()), ["fixture-token"]);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "{mode:o}");
+    }
+}
+
+#[test]
+fn existing_report_file_is_replaced() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    let old = "old report contents\n".repeat(64);
+    fixture.write("report.json", &old);
+    let result = output_with_stdin(
+        &mut json_report_command(&fixture.0, "report.json"),
+        b"token=AB12\n",
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report = fs::read(fixture.0.join("report.json")).unwrap();
+    assert!(report.len() < old.len());
+    assert_eq!(report_rules(&report), ["fixture-token"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn symbolic_link_at_report_path_is_refused_before_the_scan() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    fixture.write("target.txt", b"keep this file");
+    let link = |target: &str, name: &str| {
+        std::os::unix::fs::symlink(fixture.0.join(target), fixture.0.join(name)).unwrap();
+    };
+    link("target.txt", "report.json");
+    link("missing.txt", "dangling.json");
+    for name in ["report.json", "dangling.json"] {
+        let result = output_with_stdin(&mut json_report_command(&fixture.0, name), b"token=AB12\n");
+        // The exit code of a report path that cannot be written.
+        assert_eq!(result.status.code(), Some(1), "{name}");
+        assert!(result.stdout.is_empty(), "{name}");
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains("symbolic link"), "{name}: {stderr}");
+        assert!(!stderr.contains("leaks found"), "{name}: {stderr}");
+        let metadata = fs::symlink_metadata(fixture.0.join(name)).unwrap();
+        assert!(metadata.file_type().is_symlink(), "{name}");
+    }
+    assert_eq!(
+        fs::read(fixture.0.join("target.txt")).unwrap(),
+        b"keep this file"
+    );
+    assert!(!fixture.0.join("missing.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn dev_stdout_report_path_writes_to_standard_output() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+
+    // Standard output is a pipe.
+    let piped = output_with_stdin(
+        &mut json_report_command(&fixture.0, "/dev/stdout"),
+        b"token=AB12\n",
+    );
+    assert_eq!(
+        piped.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&piped.stderr)
+    );
+    assert_eq!(report_rules(&piped.stdout), ["fixture-token"]);
+
+    // Standard output is a regular file. /dev/stdout then leads to that file.
+    let redirected = fixture.0.join("redirected.json");
+    let mut child = json_report_command(&fixture.0, "/dev/stdout")
+        .stdin(Stdio::piped())
+        .stdout(fs::File::create(&redirected).unwrap())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"token=AB12\n").unwrap();
+    drop(stdin);
+    let result = child.wait_with_output().unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        report_rules(&fs::read(&redirected).unwrap()),
+        ["fixture-token"]
+    );
+}
