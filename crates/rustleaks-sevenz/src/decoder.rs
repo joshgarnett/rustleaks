@@ -30,8 +30,10 @@ pub(crate) type ZstdPool<'b> = std::vec::IntoIter<ZstdSlot<'b>>;
 /// Blocks are decoded one after another, so each block reuses the memory of
 /// the block before it. The history is allocated and zeroed once, when the
 /// first block with a Zstandard coder needs it, and never holds more than
-/// the memory limit. Each decoder writes a history byte before it reads it,
-/// so bytes left from an earlier block are never read.
+/// the memory limit. A block with no Zstandard coder frees it, so that the
+/// history and the dictionary of another coder are not held at the same
+/// time. Each decoder writes a history byte before it reads it, so bytes
+/// left from an earlier block are never read.
 #[derive(Default)]
 pub(crate) struct ZstdBufferCache {
     history: Vec<u8>,
@@ -55,6 +57,8 @@ impl ZstdBufferCache {
             .count();
         let mut slots = Vec::new();
         if count == 0 {
+            self.history = Vec::new();
+            self.buffers = Vec::new();
             return Ok(slots.into_iter());
         }
         let overflow = || Error::other("7z decoder memory limit overflow");
@@ -344,6 +348,22 @@ mod tests {
         assert_eq!(cache.buffers.len(), 3);
         // Less than 1 KiB for each coder leaves every history empty.
         assert_eq!(history_lens(&mut cache, 2, 1), [0, 0]);
+    }
+
+    #[test]
+    fn a_block_without_zstd_frees_the_zstd_history() {
+        const LIMIT_KB: usize = 1024;
+        let mut cache = ZstdBufferCache::default();
+        assert_eq!(history_lens(&mut cache, 2, LIMIT_KB), [512 * 1024; 2]);
+        assert_eq!(cache.history.len(), 1024 * 1024);
+        assert_eq!(cache.buffers.len(), 2);
+        // A block such as LZMA2 then has the whole memory limit for itself.
+        assert!(history_lens(&mut cache, 0, LIMIT_KB).is_empty());
+        assert_eq!(cache.history.capacity(), 0);
+        assert_eq!(cache.buffers.capacity(), 0);
+        // A later Zstandard block allocates the history again.
+        assert_eq!(history_lens(&mut cache, 1, LIMIT_KB), [1024 * 1024]);
+        assert_eq!(cache.history.len(), 1024 * 1024);
     }
 
     #[test]

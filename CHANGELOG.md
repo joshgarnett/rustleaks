@@ -23,7 +23,8 @@
   no warning. Data after the last stream that is not a bzip2 stream gives a
   decode issue.
 - 7z archives with many Zstandard members no longer allocate and zero the
-  whole 7z memory limit for each block; one buffer is reused for the archive.
+  whole 7z memory limit for each block. One buffer is reused from block to
+  block, and a block without Zstandard frees it.
 - A 7z LZMA coder with fewer than 5 property bytes gives the decode issue
   `LZMA properties too short` instead of `7z decoder panicked on untrusted
   input`. Other 7z decode and limit issues show a plain message instead of
