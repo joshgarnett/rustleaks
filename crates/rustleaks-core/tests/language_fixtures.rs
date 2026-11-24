@@ -1,7 +1,7 @@
 //! One small source file per language, with synthetic tokens placed in the
 //! usual assignment forms of that language, scanned with every default rule.
 //!
-//! Each expected finding is written from the pinned rule text: the rule ID,
+//! Each expected finding is written from the default rule text: the rule ID,
 //! the exact secret, the bytes the match adds before and after the secret,
 //! and the line and columns that follow from where the token is placed. The
 //! files hold `@NAME@` markers so that no token appears in this source file.

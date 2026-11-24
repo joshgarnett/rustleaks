@@ -1,16 +1,28 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
+#![allow(clippy::float_cmp, reason = "entropy values are compared exactly")]
 #![allow(
-    clippy::float_cmp,
     clippy::format_collect,
+    reason = "the SHA-256 helper builds a short hex string"
+)]
+#![allow(
     clippy::many_single_char_names,
+    reason = "the SHA-256 helper uses the standard names a to h"
+)]
+#![allow(
     clippy::too_many_lines,
-    clippy::unreadable_literal
+    reason = "some tests check one corpus in one function"
+)]
+#![allow(
+    clippy::unreadable_literal,
+    reason = "SHA-256 constants are written as in the standard"
 )]
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use base64::Engine as _;
 use rustleaks_core::config::{
     AllowlistSpec, CompiledAllowlist, CompiledConfig, Condition, ConfigError, ConfigExtension,
     ConfigLoader, ConfigOrigin, DEFAULT_CONFIG, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_SHA256,
@@ -135,29 +147,13 @@ fn sha256_hex(input: &[u8]) -> String {
 }
 
 fn decode_base64(input: &str) -> Vec<u8> {
-    let mut output = Vec::with_capacity(input.len() * 3 / 4);
-    let mut accumulator = 0_u32;
-    let mut bits = 0_u8;
-    for byte in input.bytes() {
-        let value = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            b'=' => break,
-            _ if byte.is_ascii_whitespace() => continue,
-            _ => panic!("invalid base64 byte {byte}"),
-        };
-        accumulator = (accumulator << 6) | u32::from(value);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push(u8::try_from((accumulator >> bits) & 0xff).unwrap());
-            accumulator &= (1 << bits) - 1;
-        }
-    }
-    output
+    let compact = input
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    base64::engine::general_purpose::STANDARD
+        .decode(compact)
+        .unwrap()
 }
 
 fn canonical_allowlist(allowlist: &CompiledAllowlist) -> serde_json::Value {

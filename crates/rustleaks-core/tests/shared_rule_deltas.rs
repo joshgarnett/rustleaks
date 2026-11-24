@@ -1,4 +1,5 @@
-//! Independent raw-byte contracts for shared-prefix delimiter additions.
+//! Cases for the provider delimiter rules that share a prefix with a default
+//! rule.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 

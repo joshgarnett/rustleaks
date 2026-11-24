@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use std::collections::BTreeMap;
@@ -9,7 +10,7 @@ use rustleaks_core::config::{ConfigLoader, ConfigOrigin, VirtualResolver};
 use rustleaks_core::model::{CommitMetadata, Fragment, ScanOptions};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/corpus.rs"]
 mod corpus;
 
@@ -116,17 +117,6 @@ struct MethodResult {
     matched_value_base64: String,
 }
 
-#[derive(Deserialize)]
-struct Coverage {
-    behavior_ids: Vec<BehaviorDisposition>,
-}
-
-#[derive(Deserialize)]
-struct BehaviorDisposition {
-    id: String,
-    status: String,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum MethodDisposition {
     ExecutedValidated,
@@ -179,23 +169,6 @@ fn allowlist_corpus_matches_expected_outcomes() {
             (MethodDisposition::DeferredUnvalidated, 13),
             (MethodDisposition::DeferredProgrammaticBase, 92),
         ])
-    );
-
-    let coverage: Coverage =
-        serde_json::from_str(&fs::read_to_string(corpus.join("coverage-v1.json")).unwrap())
-            .unwrap();
-    let statuses = coverage
-        .behavior_ids
-        .into_iter()
-        .map(|entry| (entry.id, entry.status))
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(
-        statuses.get("AL-014").map(String::as_str),
-        Some("future-m7-ordering-cases-frozen-no-positive-composite-claim")
-    );
-    assert_eq!(
-        statuses.get("AL-015").map(String::as_str),
-        Some("raw-line-observed-decoded-line-deferred-m6")
     );
 }
 

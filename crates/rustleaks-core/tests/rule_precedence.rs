@@ -1,5 +1,5 @@
-//! Every reviewed positive rule case keeps its exact finding when the pinned
-//! default rules and every packaged native pack are active together.
+//! Every reviewed positive rule case keeps its exact finding when all
+//! built-in rules are active.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -306,7 +306,7 @@ fn scan(positive: &Positive) -> Vec<Finding> {
 /// rule owns the case. The second rule adds its own finding next to the
 /// owner's exact finding; it never replaces it.
 const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
-    // Pinned default rules whose patterns accept the same token shape.
+    // Default rules whose patterns accept the same token shape.
     (
         "artifactory-api-key",
         "jfrog-api-key",
@@ -389,7 +389,7 @@ const INTENDED_OVERLAPS: &[(&str, &str, &str)] = &[
 ];
 
 /// Reviewed cases where another rule's finding replaces the owner's finding.
-/// Upstream drops a finding of a rule whose ID contains `generic` when a
+/// Rustleaks drops a finding of a rule whose ID contains `generic` when a
 /// finding of a non-generic rule starts on the same line and its secret
 /// contains the generic secret.
 const INTENDED_OVERRIDES: &[(&str, &str)] = &[("generic-api-key", "clojars-api-token")];
@@ -445,10 +445,10 @@ const INTENDED_REPLACEMENTS: &[(&str, &str)] = &[
     ("jwt", "rustleaks.monday-api-token"),
 ];
 
-// Reasons a generic finding sits next to the owner's finding. Upstream drops
+// Reasons a generic finding sits next to the owner's finding. Rustleaks drops
 // a generic finding only when a specific finding starts on the same line and
 // its secret contains the generic secret.
-/// Upstream XML sample `<nameToken>`, LF, indented secret, LF, closing tag:
+/// Gitleaks XML sample `<nameToken>`, LF, indented secret, LF, closing tag:
 /// the generic match starts on the tag line, the owner's match on the next.
 const XML: &str = "XML sample: generic starts on the tag line";
 /// A curl sample: the owner's match starts on the `curl` line, the generic
@@ -558,7 +558,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
             .any(|window| window == needle)
 }
 
-/// The upstream generic suppression predicate, written from its definition.
+/// The generic suppression predicate, written from its definition.
 fn suppresses(specific: &Finding, rule: &str, secret: &[u8], start_line: usize) -> bool {
     !is_generic(specific.rule_id().as_bytes())
         && specific.rule_id().as_bytes() != rule.as_bytes()
@@ -653,7 +653,7 @@ fn check_case(
     let mut others = BTreeMap::<String, usize>::new();
     for (index, finding) in findings.iter().enumerate() {
         let rule = rule_text(finding);
-        // A generic rule reports beside specific rules unless the upstream
+        // A generic rule reports beside specific rules unless the generic
         // suppression applies, which must have removed the finding.
         if is_generic(rule.as_bytes())
             && findings.iter().any(|other| {

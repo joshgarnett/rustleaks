@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -27,17 +28,17 @@ regex = '''B'''
 }
 
 #[test]
-fn unlimited_control_preserves_the_legacy_scan_result() {
+fn unlimited_control_matches_scan_fragment() {
     let engine = two_rule_engine();
     let fragment = Fragment::new(b"A B");
-    let legacy = engine.scan_fragment(&fragment, &ScanOptions::default());
+    let uncontrolled = engine.scan_fragment(&fragment, &ScanOptions::default());
     let controlled = engine.scan_fragment_controlled(
         &fragment,
         &ScanOptions::default(),
         &ScanControl::unlimited(),
     );
 
-    assert_eq!(controlled, legacy);
+    assert_eq!(controlled, uncontrolled);
     assert!(controlled.is_complete());
     assert_eq!(controlled.termination(), None);
     assert_eq!(controlled.findings().len(), 2);
@@ -723,7 +724,7 @@ fn collected_spans_bound_dense_and_empty_matches_before_candidate_work() {
 fn bounded_enumeration_preserves_keyword_anchor_results_and_cancels_between_spans() {
     let anchored = engine("[[rules]]\nid = 'r'\nregex = 'token=[A-Z]{4}'\nkeywords = ['token']\n");
     let fragment = Fragment::new("token=ABCD token=EFGH token=IJKL");
-    let legacy = anchored.scan_fragment(&fragment, &ScanOptions::default());
+    let uncontrolled = anchored.scan_fragment(&fragment, &ScanOptions::default());
     let exact = bounded_outcome(
         &anchored,
         &fragment,
@@ -731,8 +732,11 @@ fn bounded_enumeration_preserves_keyword_anchor_results_and_cancels_between_span
         ScanBudget::unlimited().max_collected_spans(3),
     );
     assert!(exact.is_complete());
-    assert_eq!(exact.findings(), legacy.findings());
-    assert_eq!(exact.usage().work_units(), legacy.usage().work_units());
+    assert_eq!(exact.findings(), uncontrolled.findings());
+    assert_eq!(
+        exact.usage().work_units(),
+        uncontrolled.usage().work_units()
+    );
     assert_eq!(exact.usage().collected_spans(), 3);
     let partial = bounded_outcome(
         &anchored,
@@ -1140,7 +1144,7 @@ fn long_crlf_lines_keep_distinct_original_context_ranges() {
     assert!(outcome.is_complete());
     assert_eq!(outcome.findings().len(), 4);
     let findings = outcome.findings();
-    // Preserve the pinned original-line convention: CR remains, and a later
+    // Keep the original-line convention: CR remains, and a later
     // line includes the preceding LF. The cache must not trim or normalize it.
     for finding in &findings[..2] {
         assert_eq!(

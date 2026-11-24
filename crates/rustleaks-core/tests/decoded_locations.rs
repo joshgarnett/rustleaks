@@ -1,4 +1,5 @@
-//! Construction-derived locations and byte ranges for synthetic fragments.
+//! Locations and byte ranges of findings in synthetic fragments, computed from
+//! how each fragment is built.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -115,7 +116,7 @@ fn assert_decoded(
 #[test]
 fn every_three_level_encoding_chain_maps_to_its_outer_candidate() {
     let engine = engine(r"item=(TEST-[0-9]{10})");
-    // Explicit line origins retain the pinned convention that a subsequent
+    // Explicit line origins keep the convention that a subsequent
     // reported line includes its preceding LF. Columns count original bytes.
     let layouts: &[(&[u8], usize, usize)] = &[
         (b"", 0, 0),

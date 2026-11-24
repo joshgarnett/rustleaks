@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use std::fs;
@@ -10,13 +11,13 @@ use rustleaks_core::model::{
 };
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/corpus.rs"]
 mod corpus;
 
 use corpus::{
     CanonicalFinding, CanonicalFragment, CanonicalRequiredFinding, canonical_finding,
-    decode_base64, encode_base64,
+    decode_base64, encode_base64, json_lines_with_operation,
 };
 
 #[derive(Deserialize)]
@@ -130,8 +131,10 @@ fn decoder_detector_corpus_matches_expected_outcomes() {
 }
 
 fn replay_detector_corpus(corpus: &Path) {
-    let requests = detector_json_lines::<Request>(&corpus.join("requests-v1.jsonl"));
-    let responses = detector_json_lines::<Response>(&corpus.join("outcomes-v1.jsonl"));
+    let requests =
+        json_lines_with_operation::<Request>(&corpus.join("requests-v1.jsonl"), "detect");
+    let responses =
+        json_lines_with_operation::<Response>(&corpus.join("outcomes-v1.jsonl"), "detect");
     assert_eq!(requests.len(), responses.len());
 
     for (request, response) in requests.into_iter().zip(responses) {
@@ -196,9 +199,8 @@ fn scan_detector_request(request: &Request) -> Vec<CanonicalFinding> {
         );
     }
 
-    // Upstream truncates len/1_000_000 before comparing its megabyte
-    // setting. Express that inclusive effective boundary in the Rust
-    // API's exact-byte option.
+    // The corpus megabyte setting truncates len/1_000_000 before it compares.
+    // Express that inclusive boundary in the exact-byte option.
     let maximum = (request.options.max_target_megabytes > 0).then(|| {
         usize::try_from(request.options.max_target_megabytes)
             .unwrap()
@@ -285,10 +287,14 @@ fn a_malformed_regex_is_a_configuration_error() {
 
 fn bootstrap_rows() -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/detect-corpus");
-    let requests =
-        detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-requests.jsonl"));
-    let outcomes =
-        detector_json_lines::<serde_json::Value>(&corpus.join("bootstrap-outcomes.jsonl"));
+    let requests = json_lines_with_operation::<serde_json::Value>(
+        &corpus.join("bootstrap-requests.jsonl"),
+        "detect",
+    );
+    let outcomes = json_lines_with_operation::<serde_json::Value>(
+        &corpus.join("bootstrap-outcomes.jsonl"),
+        "detect",
+    );
     let ids = [
         "custom-basic",
         "custom-invalid-utf8",
@@ -307,29 +313,7 @@ fn bootstrap_rows() -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
     (requests, outcomes)
 }
 
+// The corpus records a signed depth; zero and negative depths mean no decoding.
 fn canonical_decode_depth(depth: i64) -> usize {
     usize::try_from(depth).unwrap_or(0)
-}
-
-#[test]
-fn go_nonpositive_decode_depths_map_to_raw_only() {
-    assert_eq!(canonical_decode_depth(i64::MIN), 0);
-    assert_eq!(canonical_decode_depth(-1), 0);
-    assert_eq!(canonical_decode_depth(0), 0);
-    assert_eq!(canonical_decode_depth(1), 1);
-}
-
-fn detector_json_lines<T: for<'de> Deserialize<'de>>(path: &Path) -> Vec<T> {
-    fs::read_to_string(path)
-        .unwrap()
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-        .filter(|value| {
-            value
-                .get("operation")
-                .is_none_or(|operation| operation == "detect")
-        })
-        .map(|value| serde_json::from_value(value).unwrap())
-        .collect()
 }

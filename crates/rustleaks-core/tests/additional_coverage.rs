@@ -1,4 +1,5 @@
-//! Independently authored source contracts for optional native additions.
+//! Cases for provider rules in rustleaks-providers-v1.toml, with expectations
+//! in support/additional_coverage.json.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -13,7 +14,7 @@ use rustleaks_core::native::{CONNECTION_RULES_V1, NativePolicy, PROVIDER_RULES_V
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
@@ -85,7 +86,8 @@ fn composed() -> &'static Engine {
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
 
-fn previous() -> &'static Engine {
+// The rules in `config()` without this file's primary rules.
+fn without_primary_rules() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let added: BTreeSet<_> = cases()
@@ -98,9 +100,9 @@ fn previous() -> &'static Engine {
             .keys()
             .map(String::as_str)
             .filter(|id| !added.contains(id));
-        let previous = config().select_rules(ids).unwrap();
-        assert_eq!(previous.rules().len(), 335);
-        Engine::builder(previous).build().unwrap()
+        let without = config().select_rules(ids).unwrap();
+        assert_eq!(without.rules().len(), 335);
+        Engine::builder(without).build().unwrap()
     })
 }
 
@@ -223,7 +225,7 @@ fn full_composition_distinguishes_occurrences_from_provider_attribution() {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         let secret = case.secret.as_ref().unwrap().as_bytes();
         let expected = case.secret_range.unwrap();
-        let prior = scan(previous(), &input, &case.path);
+        let prior = scan(without_primary_rules(), &input, &case.path);
         assert_eq!(
             has_occurrence(&prior, secret, expected),
             case.before_occurrence.unwrap(),

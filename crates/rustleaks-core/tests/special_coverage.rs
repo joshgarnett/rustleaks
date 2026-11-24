@@ -1,4 +1,5 @@
-//! Independently specified optional connection, YAML and credential-context contracts.
+//! Cases for the connection, YAML and credential-context rules, with
+//! expectations in support/special_coverage.json.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -12,7 +13,7 @@ use rustleaks_core::native::{CONNECTION_RULES_V1, NativePolicy, PROVIDER_RULES_V
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
@@ -113,9 +114,10 @@ fn cases() -> &'static Cases {
     })
 }
 
-/// The rules before the association batch, a frozen comparison set. Its only
-/// copy is `baseline_rule_ids` in `support/association_coverage.json`.
-fn rules_before_association_batch() -> Vec<String> {
+/// The rule IDs in `config()`, a fixed set. Its only copy is `baseline_rule_ids`
+/// in `support/association_coverage.json`; it does not follow rule file
+/// changes.
+fn config_rule_ids() -> Vec<String> {
     baseline_rule_ids(include_str!("support/association_coverage.json"))
 }
 
@@ -123,7 +125,7 @@ fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
         all_packs_config()
-            .select_rules(rules_before_association_batch().iter().map(String::as_str))
+            .select_rules(config_rule_ids().iter().map(String::as_str))
             .unwrap()
     })
 }
@@ -146,7 +148,7 @@ fn composed() -> &'static Engine {
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
 
-fn previous() -> &'static Engine {
+fn baseline() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let config = config()
@@ -353,7 +355,7 @@ fn complete_composition_preserves_prior_occurrences_and_accounts_for_new_secrets
             .filter(|case| case.before_required.is_some()),
     ) {
         let input = STANDARD.decode(&case.input_base64).unwrap();
-        let prior = scan(previous(), &input, &case.path);
+        let prior = scan(baseline(), &input, &case.path);
         let after = scan(composed(), &input, &case.path);
         assert_records(&case.rule, &case.expected, &after, &case.name);
         if let Some(exact_before) = case.before_exact {
@@ -916,7 +918,7 @@ fn kubernetes_long_context_location_is_the_whole_match_and_decoding_adds_a_findi
     // 34 of that line, and a later line adds 1 to the column.
     let mut terminated = body.clone();
     terminated.push(b'\n');
-    // Without a final LF, the match ends after the last line break. The pinned
+    // Without a final LF, the match ends after the last line break. The
     // location helper then keeps the start line as the end line and leaves
     // the end column at 0.
     for (name, input, end) in [

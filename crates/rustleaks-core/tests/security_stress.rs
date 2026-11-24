@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/fuzz_profile.rs"]
 mod fuzz_profile;
 
@@ -72,7 +72,7 @@ fn large_config_seed_places_its_rule_past_the_smoke_boundary() {
 }
 
 #[test]
-#[ignore = "optional larger-input driver, invoked by the deep-security operator"]
+#[ignore = "larger inputs; run by just security-deep"]
 fn security_stress_driver() {
     regex_tail_is_scanned();
     fragment_tail_is_scanned();

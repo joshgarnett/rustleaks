@@ -1,4 +1,4 @@
-//! Independently specified synthetic controls for the optional connection pack.
+//! Cases for the rules in rustleaks-connections-v1.toml.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -27,7 +27,10 @@ const FORMS: [(&str, &str, &str); 4] = [
     ("odbc-braced", "{", "}"),
 ];
 
-const HISTORICAL_CONNECTION_IDS: [&str; 9] = [
+// Nine rules: the four key=value password forms, the JDBC query form, the
+// database URI form and the three Git credential rules. Tests that use only
+// these rules avoid overlap with the other connection rules.
+const BASIC_CONNECTION_IDS: [&str; 9] = [
     "rustleaks.connection-string.password.double-quoted",
     "rustleaks.connection-string.password.single-quoted",
     "rustleaks.connection-string.password.odbc-braced",
@@ -39,17 +42,17 @@ const HISTORICAL_CONNECTION_IDS: [&str; 9] = [
     "rustleaks.codecommit-git-credentials",
 ];
 
-fn historical_connection_toml() -> &'static str {
+fn basic_connection_toml() -> &'static str {
     static SOURCE: OnceLock<String> = OnceLock::new();
     SOURCE.get_or_init(|| {
         let mut value: toml::Value = toml::from_str(CONNECTION_RULES_V1).unwrap();
         value["rules"]
             .as_array_mut()
             .unwrap()
-            .retain(|rule| HISTORICAL_CONNECTION_IDS.contains(&rule["id"].as_str().unwrap()));
+            .retain(|rule| BASIC_CONNECTION_IDS.contains(&rule["id"].as_str().unwrap()));
         assert_eq!(
             value["rules"].as_array().unwrap().len(),
-            HISTORICAL_CONNECTION_IDS.len()
+            BASIC_CONNECTION_IDS.len()
         );
         toml::to_string(&value).unwrap()
     })
@@ -60,7 +63,7 @@ fn isolated() -> &'static Engine {
     ENGINE.get_or_init(|| {
         Engine::builder(
             ConfigLoader::new()
-                .load_toml(historical_connection_toml())
+                .load_toml(basic_connection_toml())
                 .unwrap(),
         )
         .build()
@@ -602,7 +605,7 @@ fn custom_global_rule_and_targeted_allowlists_keep_existing_behavior() {
             "paths = ['^allowed[.]conf$']",
             "commits = ['synthetic-commit']",
         ] {
-            let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
+            let mut raw: RawConfig = toml::from_str(basic_connection_toml()).unwrap();
             let source = if global {
                 format!("[[allowlists]]\nregexTarget = 'secret'\n{condition}\n")
             } else {
@@ -633,7 +636,7 @@ fn custom_global_rule_and_targeted_allowlists_keep_existing_behavior() {
             assert!(result.findings().is_empty());
         }
     }
-    let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
+    let mut raw: RawConfig = toml::from_str(basic_connection_toml()).unwrap();
     let extra: RawConfig = toml::from_str(&format!(
         "[[allowlists]]\ntargetRules = ['{id}']\nstopwords = ['R7!q']\n"
     ))
@@ -650,7 +653,7 @@ fn custom_global_rule_and_targeted_allowlists_keep_existing_behavior() {
 }
 
 #[test]
-fn composition_is_opt_in_and_overlapping_generic_attribution_remains_explicit() {
+fn native_policy_adds_only_named_rule_files_and_specific_rules_replace_generic() {
     let base = NativePolicy::builder().build().unwrap();
     let connections = NativePolicy::builder()
         .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
@@ -668,33 +671,36 @@ fn composition_is_opt_in_and_overlapping_generic_attribution_remains_explicit() 
     // An already detected generic occurrence receives specific attribution.
     let input = ["Host=d;Password=", "Q7m2Z9v4L1c8R5s0N6b3X;"].concat();
     let input = input.as_bytes();
-    let old = scan(base.engine(), input);
+    let without_connections = scan(base.engine(), input);
     assert!(
-        old.iter()
+        without_connections
+            .iter()
             .any(|finding| finding.rule_id().as_bytes() == b"generic-api-key")
     );
-    let new = scan(connections.engine(), input);
+    let with_connections = scan(connections.engine(), input);
     assert!(
-        new.iter()
+        with_connections
+            .iter()
             .any(|finding| finding.rule_id().as_bytes() == format!("{PREFIX}unquoted").as_bytes())
     );
     assert!(
-        !new.iter()
+        !with_connections
+            .iter()
             .any(|finding| finding.rule_id().as_bytes() == b"generic-api-key")
     );
     for extra in [false, true] {
-        let old_policy = if extra {
+        let providers_policy = if extra {
             NativePolicy::builder()
                 .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
                 .unwrap()
         } else {
             NativePolicy::builder()
         };
-        let old_policy = old_policy
+        let providers_policy = providers_policy
             .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
             .unwrap();
-        let old = old_policy.clone().build().unwrap();
-        let new = old_policy
+        let without_connections = providers_policy.clone().build().unwrap();
+        let with_connections = providers_policy
             .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
             .unwrap()
             .build()
@@ -703,7 +709,10 @@ fn composition_is_opt_in_and_overlapping_generic_attribution_remains_explicit() 
             b"mongodb://synthetic:weak@db.example.invalid/".as_slice(),
             b"r8_Q7m2Z9v4L1c8R5s0N6b3XQ7m2Z9v4L1c8R5s0N;".as_slice(),
         ] {
-            assert_eq!(scan(new.engine(), input), scan(old.engine(), input));
+            assert_eq!(
+                scan(with_connections.engine(), input),
+                scan(without_connections.engine(), input)
+            );
         }
     }
     let token = format!(
@@ -763,7 +772,7 @@ fn existing_decoding_keeps_raw_spelling_and_marks_ranges_unavailable() {
 }
 
 #[test]
-fn builtin_identity_retains_old_compositions_and_binds_connection_order() {
+fn builtin_identity_names_each_rule_file_order() {
     let pack = NativePolicy::builder()
         .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
         .unwrap()
@@ -1142,7 +1151,7 @@ fn database_uri_multiple_occurrences_and_provider_overlap_keep_distinct_findings
 #[test]
 fn database_uri_allowlists_and_decoding_retain_native_contracts() {
     for target in ["secret", "match", "line"] {
-        let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
+        let mut raw: RawConfig = toml::from_str(basic_connection_toml()).unwrap();
         let extra: RawConfig = toml::from_str(&format!("[[allowlists]]\ntargetRules = ['{PREFIX}database-uri']\nregexTarget = '{target}'\nregexes = ['R7!q']\n")).unwrap();
         raw.allowlists = extra.allowlists;
         let engine = Engine::builder(ConfigLoader::new().compile(raw).unwrap())
@@ -1157,7 +1166,7 @@ fn database_uri_allowlists_and_decoding_retain_native_contracts() {
             "paths = ['^allowed[.]conf$']",
             "commits = ['synthetic-commit']",
         ] {
-            let mut raw: RawConfig = toml::from_str(historical_connection_toml()).unwrap();
+            let mut raw: RawConfig = toml::from_str(basic_connection_toml()).unwrap();
             let extra: RawConfig = toml::from_str(&format!(
                 "[[allowlists]]\nregexTarget = 'secret'\n{condition}\n"
             ))
@@ -1303,7 +1312,7 @@ fn composed_database_uri_rule_retains_the_default_global_suppression_policy() {
         .build()
         .unwrap();
     // The pack's independent predicates preserve source case. Composition
-    // additionally applies the pinned global array, whose legacy flag scope
+    // also applies the default global allowlist, whose flag scope
     // makes its formatting-placeholder expression case-insensitive.
     for secret in ["%B", "%C", "%D", "%P", "%Q", "%S", "%u", "%V"] {
         let input = format!("mysql://app:{secret}@db.invalid");
@@ -1931,8 +1940,8 @@ fn connection_matrix_has_independent_outcomes_under_all_and_default_rules() {
 fn global_allowlist_suppresses_slack_token_containing_false() {
     // The packaged global allowlist regex `(?i)^true|false|null$` anchors
     // only `true` at the start and only `null` at the end, so any secret that
-    // contains `false` is suppressed. That is the pinned upstream behavior and
-    // is intended here; this test records it and must not weaken it.
+    // contains `false` is suppressed. Rustleaks keeps this on purpose; this
+    // test records it and must not weaken it.
     let token = [
         "xoxb-",
         "284719365012",
@@ -1986,7 +1995,7 @@ fn global_allowlist_suppresses_slack_token_containing_false() {
 // Rules for password-first semicolon forms, Oracle and SQLite JDBC URLs and
 // more URI schemes. Expected ranges follow the literal parts of each input.
 
-const NEW_CONNECTION_IDS: [&str; 5] = [
+const OTHER_FORM_IDS: [&str; 5] = [
     PASSWORD_FIRST,
     JDBC_ORACLE,
     JDBC_QUERY_ORACLE_SQLITE,
@@ -2001,7 +2010,7 @@ const OTHER_DATABASE_URI: &str = "rustleaks.connection-string.password.other-dat
 const OTHER_SERVICE_URI: &str = "rustleaks.other-service-uri-password";
 
 /// Only the added rules, with the default global allowlists.
-fn new_rules_engine() -> &'static Engine {
+fn other_form_engine() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let (config, _) = NativePolicy::builder()
@@ -2009,21 +2018,21 @@ fn new_rules_engine() -> &'static Engine {
             .unwrap()
             .compile()
             .unwrap();
-        Engine::builder(config.select_rules(NEW_CONNECTION_IDS).unwrap())
+        Engine::builder(config.select_rules(OTHER_FORM_IDS).unwrap())
             .build()
             .unwrap()
     })
 }
 
-/// All three packs, with a connection pack that lacks the added rules.
-fn all_rules_without_new_rules() -> &'static Engine {
+/// All built-in rules except the rules in `OTHER_FORM_IDS`.
+fn all_rules_without_other_forms() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let mut value: toml::Value = toml::from_str(CONNECTION_RULES_V1).unwrap();
         let rules = value["rules"].as_array_mut().unwrap();
         let count = rules.len();
-        rules.retain(|rule| !NEW_CONNECTION_IDS.contains(&rule["id"].as_str().unwrap()));
-        assert_eq!(rules.len() + NEW_CONNECTION_IDS.len(), count);
+        rules.retain(|rule| !OTHER_FORM_IDS.contains(&rule["id"].as_str().unwrap()));
+        assert_eq!(rules.len() + OTHER_FORM_IDS.len(), count);
         let connections = toml::to_string(&value).unwrap();
         NativePolicy::builder()
             .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
@@ -2108,7 +2117,7 @@ impl<'a> Case<'a> {
 // Messages give only the length: the input holds a synthetic password.
 fn assert_no_new_finding(input: &str) {
     assert!(
-        scan(new_rules_engine(), input.as_bytes()).is_empty(),
+        scan(other_form_engine(), input.as_bytes()).is_empty(),
         "input of {} bytes",
         input.len()
     );
@@ -2195,7 +2204,7 @@ fn issue_lines_each_give_one_connection_finding_under_all_rules() {
         // No connection rule found these lines before the added rules.
         let input = case.input();
         assert!(
-            scan(all_rules_without_new_rules(), input.as_bytes())
+            scan(all_rules_without_other_forms(), input.as_bytes())
                 .iter()
                 .all(|finding| !finding.rule_id().as_bytes().starts_with(b"rustleaks.conn")),
             "{rule}: {}{}",
@@ -2256,11 +2265,11 @@ fn password_first_forms_keep_exact_secret_and_match_ranges() {
             matched_after: ";Server=db.corp.internal;",
         },
     ] {
-        case.assert_one(new_rules_engine(), PASSWORD_FIRST);
+        case.assert_one(other_form_engine(), PASSWORD_FIRST);
     }
     // Native locations keep the preceding-LF byte-column origin.
     let input = "p\nx=Pwd=Winter2026;Server=db.corp.internal;";
-    let findings = scan(new_rules_engine(), input.as_bytes());
+    let findings = scan(other_form_engine(), input.as_bytes());
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].secret_range(), range(8, 18));
     assert_eq!(findings[0].match_range(), range(3, input.len()));
@@ -2312,7 +2321,7 @@ fn password_first_rejects_placeholders_missing_hosts_and_out_of_bound_values() {
         let password = format!("{}7", "Q".repeat(length - 1));
         let input = format!("Pwd={password};Server=db.corp.internal;");
         assert_eq!(
-            scan(new_rules_engine(), input.as_bytes()).len(),
+            scan(other_form_engine(), input.as_bytes()).len(),
             usize::from(accepted),
             "{length}"
         );
@@ -2320,7 +2329,7 @@ fn password_first_rejects_placeholders_missing_hosts_and_out_of_bound_values() {
     for (host, accepted) in [(128, true), (129, false)] {
         let input = format!("Pwd=Winter2026;Server={};", "d".repeat(host));
         assert_eq!(
-            scan(new_rules_engine(), input.as_bytes()).len(),
+            scan(other_form_engine(), input.as_bytes()).len(),
             usize::from(accepted),
             "{host}"
         );
@@ -2331,7 +2340,7 @@ fn password_first_rejects_placeholders_missing_hosts_and_out_of_bound_values() {
             "x".repeat(middle - 2)
         );
         assert_eq!(
-            scan(new_rules_engine(), input.as_bytes()).len(),
+            scan(other_form_engine(), input.as_bytes()).len(),
             usize::from(accepted),
             "{middle}"
         );
@@ -2404,7 +2413,7 @@ fn password_first_leaves_host_first_passwords_to_the_host_first_rules() {
 }
 
 #[test]
-fn new_rules_take_over_generic_findings_for_the_same_password() {
+fn other_form_rules_take_over_generic_findings_for_the_same_password() {
     let secret = "Q7m2Z9v4L1c8R5s0N6b3X";
     for (rule, before, after) in [
         (PASSWORD_FIRST, "Password=", ";Server=db.corp.internal;"),
@@ -2478,7 +2487,7 @@ fn jdbc_oracle_user_password_forms_keep_exact_ranges() {
             matched_after: "@db.corp.internal\"",
         },
     ] {
-        case.assert_one(new_rules_engine(), JDBC_ORACLE);
+        case.assert_one(other_form_engine(), JDBC_ORACLE);
     }
 }
 
@@ -2551,7 +2560,7 @@ fn jdbc_oracle_and_sqlite_query_passwords_keep_exact_ranges() {
             matched_after: " ",
         },
     ] {
-        case.assert_one(new_rules_engine(), JDBC_QUERY_ORACLE_SQLITE);
+        case.assert_one(other_form_engine(), JDBC_QUERY_ORACLE_SQLITE);
     }
     // A user/password@ authority and a password option are two passwords.
     let before = "jdbc:oracle:thin:app/";
@@ -2567,7 +2576,7 @@ fn jdbc_oracle_and_sqlite_query_passwords_keep_exact_ranges() {
     ];
     expected.sort();
     assert_eq!(
-        outcomes(new_rules_engine(), &input, &ScanOptions::default()),
+        outcomes(other_form_engine(), &input, &ScanOptions::default()),
         expected
     );
 }
@@ -2644,7 +2653,7 @@ fn other_database_uri_schemes_keep_exact_ranges() {
             "Q7vx9Lm2Rk4p",
             "@db.corp.internal:1433/sales?encrypt=true",
         )
-        .assert_one(new_rules_engine(), OTHER_DATABASE_URI);
+        .assert_one(other_form_engine(), OTHER_DATABASE_URI);
     }
     for case in [
         Case::whole(
@@ -2671,7 +2680,7 @@ fn other_database_uri_schemes_keep_exact_ranges() {
             matched_after: "@db.corp.internal/sales\"",
         },
     ] {
-        case.assert_one(new_rules_engine(), OTHER_DATABASE_URI);
+        case.assert_one(other_form_engine(), OTHER_DATABASE_URI);
     }
 }
 
@@ -2718,10 +2727,10 @@ fn other_service_uri_schemes_keep_exact_ranges_and_exclusions() {
     for scheme in ["nats", "NATS", "mqtt", "mqtts", "memcached", "memcache"] {
         let before = format!("{scheme}://app:");
         Case::whole(&before, "Q7vx9Lm2Rk4p", "@bus.corp.internal:4222/x")
-            .assert_one(new_rules_engine(), OTHER_SERVICE_URI);
+            .assert_one(other_form_engine(), OTHER_SERVICE_URI);
     }
     Case::whole("nats://:", "Q7vx9Lm2Rk4p", "@bus.corp.internal:4222")
-        .assert_one(new_rules_engine(), OTHER_SERVICE_URI);
+        .assert_one(other_form_engine(), OTHER_SERVICE_URI);
     for input in [
         "nats://app:Q7vx9Lm2Rk4p@localhost:4222",
         "nats://app:Q7vx9Lm2Rk4p@bus.invalid:4222",
@@ -2746,18 +2755,18 @@ fn other_service_uri_schemes_keep_exact_ranges_and_exclusions() {
     let input = "nats://app:Q7vx9Lm2Rk4p@bus.corp.internal:4222";
     for path in ["tests/settings.conf", "README.md", "config.example.yaml"] {
         assert!(
-            scan_path(new_rules_engine(), input, path).is_empty(),
+            scan_path(other_form_engine(), input, path).is_empty(),
             "{path}"
         );
     }
     assert_eq!(
-        scan_path(new_rules_engine(), input, "config/settings.conf").len(),
+        scan_path(other_form_engine(), input, "config/settings.conf").len(),
         1
     );
 }
 
 #[test]
-fn new_rules_add_no_finding_for_passwords_that_existing_rules_own() {
+fn other_form_rules_add_no_finding_for_passwords_other_rules_report() {
     for (input, path) in [
         (
             "postgresql://app:Q7vx9Lm2Rk4p@db.corp.internal:5432/sales",
@@ -2794,9 +2803,9 @@ fn new_rules_add_no_finding_for_passwords_that_existing_rules_own() {
         ),
         ("host=db.corp.internal password=Winter2026 dbname=sales", ""),
     ] {
-        let old = scan_path(all_rules_without_new_rules(), input, path);
-        assert!(!old.is_empty(), "{input:?}");
-        assert_eq!(scan_path(all_rules(), input, path), old, "{input:?}");
+        let without = scan_path(all_rules_without_other_forms(), input, path);
+        assert!(!without.is_empty(), "{input:?}");
+        assert_eq!(scan_path(all_rules(), input, path), without, "{input:?}");
     }
     // A provider token in the password slot keeps both findings, as for
     // database-uri. The engine removes only overlapping generic findings.

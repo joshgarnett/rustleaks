@@ -1,4 +1,5 @@
-//! Independent synthetic contracts for buffer-local associations and Packagist roles.
+//! Cases for the association rules (a secret with a nearby helper value) and
+//! the Packagist rules.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -11,7 +12,7 @@ use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
@@ -105,9 +106,10 @@ fn fixture() -> &'static Fixture {
     })
 }
 
-/// The rules before the remaining verified batch, a frozen comparison set. Its
-/// only copy is `baseline_rule_ids` in `support/remaining_verified_rules.json`.
-fn rules_before_remaining_batch() -> Vec<String> {
+/// The rule IDs in `config()`, a fixed set. Its only copy is `baseline_rule_ids`
+/// in `support/remaining_verified_rules.json`; it does not follow rule file
+/// changes.
+fn config_rule_ids() -> Vec<String> {
     baseline_rule_ids(include_str!("support/remaining_verified_rules.json"))
 }
 
@@ -115,7 +117,7 @@ fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
         all_packs_config()
-            .select_rules(rules_before_remaining_batch().iter().map(String::as_str))
+            .select_rules(config_rule_ids().iter().map(String::as_str))
             .unwrap()
     })
 }
@@ -150,7 +152,7 @@ fn full() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
-fn previous() -> &'static Engine {
+fn baseline() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let selected = config()
@@ -451,12 +453,12 @@ fn complete_composition_preserves_baseline_findings() {
             .iter()
             .filter(|c| c.name.ends_with("/standalone")),
     ) {
-        let before = scan(previous(), case);
+        let before = scan(baseline(), case);
         let after = scan(full(), case);
         assert_case(case, &after);
         for f in &before {
             // Generic findings can be suppressed by an exact specific rule.
-            // Other historical IDs retain their exact occurrence and bytes.
+            // Other rules keep their exact occurrence and bytes.
             if f.rule_id().as_bytes() == b"generic-api-key" {
                 continue;
             }

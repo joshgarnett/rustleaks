@@ -1,4 +1,5 @@
-//! Independent controls for built-in rule contextual and residual delimiter gaps.
+//! Cases for the provider rules that add delimiter and context forms of other
+//! rules (`-delimiter`, `-context-vt` and `-vt` rules).
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -70,10 +71,13 @@ fn scan(engine: &Engine, bytes: &[u8], path: &str) -> Vec<Finding> {
 fn exact(start: usize, end: usize) -> FindingRange {
     FindingRange::Exact(ByteRange::new(start, end).unwrap())
 }
-fn build(selected: bool, extras: bool, before: bool) -> Engine {
+fn build(selected: bool, extras: bool, without_ids: bool) -> Engine {
     let mut pack: toml::Value = toml::from_str(PROVIDER_RULES_V1).unwrap();
-    if before {
-        pack["rules"].as_array_mut().unwrap().truncate(60);
+    if without_ids {
+        pack["rules"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|rule| !IDS.contains(&rule["id"].as_str().unwrap()));
         // Keep only the reviewed overlaps whose pack rules remain.
         let kept = pack["rules"]
             .as_array()
@@ -120,7 +124,8 @@ fn both() -> &'static Engine {
     static E: OnceLock<Engine> = OnceLock::new();
     E.get_or_init(|| build(false, true, false))
 }
-fn before() -> &'static Engine {
+// The provider rules without the rules in `IDS`.
+fn without_companions() -> &'static Engine {
     static E: OnceLock<Engine> = OnceLock::new();
     E.get_or_init(|| build(false, false, true))
 }
@@ -230,11 +235,11 @@ fn terminal_and_context_vt_classes_are_disjoint_with_exact_spans() {
 }
 
 #[test]
-fn mixed_ascii_assignment_whitespace_has_frozen_multiline_locations() {
+fn mixed_ascii_assignment_whitespace_has_exact_multiline_locations() {
     let secret = format!("b_{}", body(44));
     assert_eq!(secret.len(), 46);
-    // M4-LOCATION-003/006/008 freeze zero-based fragment lines, LF-only
-    // line counting and the preceding LF as the byte-column origin. The
+    // Fragment lines start at 0, only LF ends a line, and columns count from
+    // the LF before the line. The
     // trailing LF after ';' bounds the final matched line. These constants
     // come from the literal layouts below, not scanner-produced locations:
     // start=7, preceding LF=4; inner LFs are at 14, 16, or 14 and 17.
@@ -297,24 +302,24 @@ fn ordinary_occurrences_and_quoted_password_overlap_are_distinguished() {
         for end in ["", ";", "'", "\"", "`", " ", "\t", "\n", "\\n", "\\r"] {
             let text = format!("{}={}{end}", c.label, c.secret);
             assert!(scan(selected(), text.as_bytes(), c.path).is_empty());
-            let old = scan(before(), text.as_bytes(), c.path);
-            assert!(!old.is_empty(), "{}", c.source);
-            assert_eq!(scan(composed(), text.as_bytes(), c.path), old);
+            let without = scan(without_companions(), text.as_bytes(), c.path);
+            assert!(!without.is_empty(), "{}", c.source);
+            assert_eq!(scan(composed(), text.as_bytes(), c.path), without);
         }
         let text = format!("{}={}\\\"", c.label, c.secret);
-        let old = scan(before(), text.as_bytes(), c.path);
+        let without = scan(without_companions(), text.as_bytes(), c.path);
         if c.source == "hashicorp-tf-password" && c.secret.len() == 22 {
-            assert_eq!(old.len(), 1);
-            assert_eq!(old[0].rule_id().as_bytes(), b"generic-api-key");
+            assert_eq!(without.len(), 1);
+            assert_eq!(without[0].rule_id().as_bytes(), b"generic-api-key");
             assert_eq!(
-                old[0].secret().as_bytes(),
+                without[0].secret().as_bytes(),
                 &c.secret.as_bytes()[1..c.secret.len() - 1]
             );
             // This is capture/attribution coverage, not a wholly unseen body.
         } else {
             // The eight/nine-character quoted bodies fail the generic length
             // minimum; the ten-symbol body has H=log2(10), below its 3.5 gate.
-            assert!(old.is_empty(), "{} must add an occurrence", c.source);
+            assert!(without.is_empty(), "{} must add an occurrence", c.source);
         }
     }
 }
@@ -613,7 +618,7 @@ fn full_match_preambles_and_repeated_raw_occurrences_remain_explicit() {
 fn residual_vt_and_old_openai_languages_do_not_duplicate_existing_companions() {
     for (source, token) in residual_vt_tokens() {
         let text = format!("{token}\u{b}");
-        assert!(scan(before(), text.as_bytes(), "source.txt").is_empty());
+        assert!(scan(without_companions(), text.as_bytes(), "source.txt").is_empty());
         let f = scan(selected(), text.as_bytes(), "source.txt");
         assert_eq!(f.len(), 1);
         assert_eq!(
@@ -627,14 +632,14 @@ fn residual_vt_and_old_openai_languages_do_not_duplicate_existing_companions() {
             assert!(scan(selected(), text.as_bytes(), "source.txt").is_empty());
             assert_eq!(
                 scan(composed(), text.as_bytes(), "source.txt"),
-                scan(before(), text.as_bytes(), "source.txt")
+                scan(without_companions(), text.as_bytes(), "source.txt")
             );
         }
     }
     for token in legacy_openai_tokens() {
         for end in ["\\\"", "\\'", "\\`", "\u{b}"] {
             let text = format!("{token}{end}");
-            assert!(scan(before(), text.as_bytes(), "source.txt").is_empty());
+            assert!(scan(without_companions(), text.as_bytes(), "source.txt").is_empty());
             let f = scan(selected(), text.as_bytes(), "source.txt");
             assert_eq!(f.len(), 1);
             assert_eq!(
@@ -648,7 +653,7 @@ fn residual_vt_and_old_openai_languages_do_not_duplicate_existing_companions() {
         assert!(scan(selected(), ordinary.as_bytes(), "source.txt").is_empty());
         assert_eq!(
             scan(composed(), ordinary.as_bytes(), "source.txt"),
-            scan(before(), ordinary.as_bytes(), "source.txt")
+            scan(without_companions(), ordinary.as_bytes(), "source.txt")
         );
     }
     for role in ["proj", "svcacct", "admin"] {
@@ -657,7 +662,7 @@ fn residual_vt_and_old_openai_languages_do_not_duplicate_existing_companions() {
             assert!(scan(selected(), text.as_bytes(), "source.txt").is_empty());
             assert_eq!(
                 scan(composed(), text.as_bytes(), "source.txt"),
-                scan(before(), text.as_bytes(), "source.txt")
+                scan(without_companions(), text.as_bytes(), "source.txt")
             );
         }
     }
