@@ -52,19 +52,18 @@ review records.
 
 ## Rules
 
-The crate includes default rules based on the Gitleaks default rules, and
-three Rustleaks rule files that add more rules. `ConfigLoader::load_default`
-gives all of them, as the CLI does. `ConfigLoader::with_default_config`
-replaces the default, for example with `config::DEFAULT_CONFIG` for the
-default rules alone, and `native::NativePolicy` builds a custom composition.
-Rule counts include helper rules.
+The crate includes the rules below. `ConfigLoader::load_default` gives all
+of them, as the CLI does. Rule counts include helper rules. To load other
+rules, see [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
+in the library guide.
 
 | Rule set | Constant | Rules | Details |
 | --- | --- | ---: | --- |
 | Default rules, started from the Gitleaks default rules | `config::DEFAULT_CONFIG` | 222 | [Default rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md#default-rules) |
-| `rustleaks-extra-v1` | `native::EXTRA_RULES_V1` | 3 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-extra-v1.md) |
-| `rustleaks-providers-v1` | `native::PROVIDER_RULES_V1` | 303 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-providers-v1.md) |
-| `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 19 | [Pack contract](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-connections-v1.md) |
+| `rustleaks-extra-v1` | `native::EXTRA_RULES_V1` | 3 | [Rule reference](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-extra-v1.md) |
+| `rustleaks-providers-v1` | `native::PROVIDER_RULES_V1` | 303 | [Rule reference](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-providers-v1.md) |
+| `rustleaks-connections-v1` | `native::CONNECTION_RULES_V1` | 19 | [Rule reference](https://github.com/joshgarnett/rustleaks/blob/main/crates/rustleaks-core/default/rustleaks-connections-v1.md) |
 
 ## Limits
 

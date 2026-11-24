@@ -54,7 +54,7 @@ values under the names shown in their sections below.
 | `RuleID` | The ID of the rule that matched. |
 | `Description` | The rule description. |
 | `StartLine`, `EndLine` | The first and last line of the match. Lines start at 1. |
-| `StartColumn`, `EndColumn` | The byte columns of the first and last byte of the match. They have the same values as in Gitleaks reports. See [Line and column numbers](#line-and-column-numbers). |
+| `StartColumn`, `EndColumn` | The byte columns of the first and last byte of the match. See [Line and column numbers](#line-and-column-numbers). |
 | `Match` | The text that the rule matched. |
 | `Secret` | The part of the match that is the secret. |
 | `File` | The file path, as Rustleaks reports it. Empty for `stdin`. A file inside an archive has `!` between the archive path and the inner path, for example `bundle.zip!config/app.env`. |
@@ -87,8 +87,7 @@ that line count from the start of the part.
 
 On the first line of a piece, the column is the position of the byte in its
 line, counting from 1. On every later line, the column is the position plus
-1. `EndColumn` follows the same rule. Gitleaks counts columns in the same
-way.
+1. `EndColumn` follows the same rule.
 
 For example, take a configuration with one rule that matches `TOKEN`, and a
 file with these three lines:
@@ -112,7 +111,7 @@ a later line, subtract 1 from the column.
 A match that starts before the last line break of its piece and ends after
 it is an exception, for example one that includes that line break or runs to
 the end of a file without one. `EndLine` is then the same as `StartLine`, and
-`EndColumn` is 0. Gitleaks reports the same values.
+`EndColumn` is 0.
 
 The lines and columns always describe the whole match, also when the secret is
 only part of it. For a rule whose match starts before the secret, `StartLine`
@@ -120,7 +119,6 @@ can be an earlier line than the line of the secret.
 
 Rustleaks keeps this rule for these reasons:
 
-- Reports from Rustleaks and Gitleaks have the same columns.
 - A baseline entry matches a finding only when `StartColumn` and `EndColumn`
   are equal. With other columns, findings in existing baselines would come
   back as new findings. See [Baselines](configuration.md#baselines).
@@ -172,10 +170,9 @@ The `tool.driver.rules` list holds every rule in the configuration, with its
 ID and description.
 
 The tool is named `rustleaks`, with `semanticVersion` set to the Rustleaks
-version and `informationUri` set to the Rustleaks repository. Gitleaks names
-the tool `gitleaks`. GitHub code scanning tracks alerts by tool name, so after you
-switch, findings that already have alerts under `gitleaks` get new alerts
-under `rustleaks` once.
+version and `informationUri` set to the Rustleaks repository. If you move
+from Gitleaks, see [SARIF and JUnit
+reports](moving-from-gitleaks.md#sarif-and-junit-reports).
 
 ## Templates
 

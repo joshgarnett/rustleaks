@@ -22,6 +22,9 @@ output. See [NOTICE](../../NOTICE) for attribution.
 - **Reports.** JSON, CSV, JUnit, SARIF and template reports keep their
   fields. Templates cannot use Sprig or other helper functions. See
   [Reports](reports.md).
+- **Columns.** Line and column numbers are counted as in Gitleaks 8.30.0
+  (`b58d3f1`), so baselines made with that version match. See [Line and
+  column numbers](reports.md#line-and-column-numbers).
 - **Exit codes.** 0 for no findings, the `--exit-code` value for findings
   (1 by default), 1 for errors and 126 for an unknown long flag. See [Exit
   codes](cli-reference.md#exit-codes).
@@ -29,8 +32,9 @@ output. See [NOTICE](../../NOTICE) for attribution.
   for bash, zsh, fish and PowerShell work. `completion` accepts
   `--no-descriptions` and ignores it.
 
-Rustleaks owns these formats and names now. Their meaning is the Rustleaks
-meaning, which can change in a later release, with a changelog entry.
+These formats and names are part of Rustleaks and keep their meaning between
+releases. Rustleaks does not follow later changes that Gitleaks makes to
+them.
 
 Help, usage, error wording, the banner, log and summary lines, and the order
 of JSON keys and CSV columns can change between releases. Use exit codes and
@@ -94,7 +98,7 @@ See [Using Rustleaks in CI and Git hooks](ci.md) for examples.
 ## Version
 
 `rustleaks version` and `rustleaks --version` print the Rustleaks version,
-such as `0.1.0-alpha.1`, not a Gitleaks version. A configuration with a
+such as `0.2.0`, not a Gitleaks version. A configuration with a
 `minVersion` newer than 8.30.0 still loads, but Rustleaks prints a warning,
 because it may not support newer settings.
 
@@ -126,7 +130,7 @@ In a few error cases, Rustleaks stops or fails where Gitleaks does not:
   fails early does not create or empty the report file.
 - A configuration file larger than 16 MiB fails to load, and the scan exits
   with 1. This includes a `.gitleaks.toml` in the scanned folder and each
-  `[extend]` file. The largest packaged configuration is under 1 MiB.
+  `[extend]` file. The largest built-in configuration is under 1 MiB.
 
 ## Findings that can differ
 
@@ -145,8 +149,8 @@ reasons for a difference:
   To get the Gitleaks findings for these values, use the [Gitleaks default
   configuration](https://github.com/gitleaks/gitleaks/blob/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b/config/gitleaks.toml)
   as your configuration.
-- **Base64.** `--base64-mode compatible`, the default, decodes Base64 the
-  same way as Gitleaks. `--base64-mode extended` can find secrets that
+- **Base64.** `--base64-mode compatible`, the default, decodes Base64 as
+  Gitleaks 8.30.0 did. `--base64-mode extended` can find secrets that
   Gitleaks misses.
 - **Git folders.** `dir` skips `.git` folders by default, as Gitleaks does.
   `--scan-git-metadata` also scans their text metadata files.
