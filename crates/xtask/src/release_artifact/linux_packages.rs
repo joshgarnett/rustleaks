@@ -10,7 +10,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use flate2::read::GzDecoder;
+use flate2::bufread::GzDecoder;
 use sha2::{Digest, Sha256};
 
 use super::notices;
@@ -455,7 +455,12 @@ fn read_package(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read package {}: {error}", path.display()))
 }
 
+/// Decompresses one gzip stream that must fill `bytes` exactly. dpkg and
+/// rpm read concatenated streams, so a byte after the first stream could
+/// hold content that this check would not see.
 fn gunzip(bytes: &[u8], limit: u64) -> Result<Vec<u8>, String> {
+    // The `bufread` decoder reads from the slice itself, so the slice left
+    // after the stream is exactly the input that it did not use.
     let mut decoder = GzDecoder::new(bytes);
     let mut output = Vec::new();
     (&mut decoder)
@@ -470,6 +475,30 @@ fn gunzip(bytes: &[u8], limit: u64) -> Result<Vec<u8>, String> {
         return Err("package data has bytes after its gzip stream".into());
     }
     Ok(output)
+}
+
+/// Python's `tarfile`, which `rules_pkg` uses, pads an archive with zeros to
+/// a multiple of this record size after the two end blocks.
+const TAR_RECORD_SIZE: usize = 20 * 512;
+
+/// Requires that a tar archive ends with its two zero end blocks, followed
+/// only by zero record padding. `consumed` is the length that the tar reader
+/// used, up to and including the first zero block. The reader also stops
+/// without error at the end of its input, so an archive without end blocks
+/// needs this check.
+fn check_tar_end(bytes: &[u8], consumed: usize) -> Result<(), String> {
+    let tail = consumed
+        .checked_sub(512)
+        .and_then(|start| bytes.get(start..))
+        .ok_or("package tar has no end-of-archive blocks")?;
+    if tail.len() < 1024
+        || tail.len() >= 1024 + TAR_RECORD_SIZE
+        || !tail.len().is_multiple_of(512)
+        || tail.iter().any(|byte| *byte != 0)
+    {
+        return Err("package tar lacks its end-of-archive blocks or has data after them".into());
+    }
+    Ok(())
 }
 
 /// Reads a common `ar` archive, the container format of a Debian package.
@@ -554,7 +583,8 @@ fn read_tar(bytes: &[u8], observed: &mut Observed) -> Result<(), String> {
             return Err(format!("package entry {path:?} is not a file or directory"));
         }
     }
-    Ok(())
+    let rest = archive.into_inner();
+    check_tar_end(bytes, bytes.len() - rest.len())
 }
 
 fn read_tar_file(bytes: &[u8], wanted: &str) -> Result<String, String> {
@@ -792,6 +822,12 @@ fn read_cpio(bytes: &[u8]) -> Result<Observed, String> {
         let name = std::str::from_utf8(name).map_err(|_| "RPM payload path is not UTF-8")?;
         let data_start = (name_start + name_size).next_multiple_of(4);
         if name == "TRAILER!!!" {
+            // rpm stops at the trailer, so only short zero block padding
+            // may follow it.
+            let rest = bytes.get(data_start..).unwrap_or_default();
+            if rest.len() >= 512 || rest.iter().any(|byte| *byte != 0) {
+                return Err("RPM payload has data after its cpio trailer".into());
+            }
             return Ok(observed);
         }
         let size_usize = usize::try_from(size).map_err(|_| "RPM payload entry is too large")?;
@@ -896,12 +932,10 @@ pub(super) mod tests {
         output
     }
 
-    /// Builds a Debian package shaped like the `pkg_deb` output.
-    pub(in super::super) fn synthetic_deb(
-        files: &[PackageFile],
+    fn tar_entries<'a>(
+        files: &'a [PackageFile],
         directories: &[&str],
-        control: &str,
-    ) -> Vec<u8> {
+    ) -> Vec<(String, Option<&'a [u8]>, u32)> {
         let mut entries = directories
             .iter()
             .map(|directory| ((*directory).to_owned(), None, 0o755))
@@ -911,12 +945,26 @@ pub(super) mod tests {
                 .iter()
                 .map(|file| (file.path.clone(), Some(file.bytes.as_slice()), file.mode)),
         );
+        entries
+    }
+
+    /// Builds a Debian package with the given compressed data member.
+    fn deb_with_data(control: &str, data: Vec<u8>) -> Vec<u8> {
         let control_tar = tar(&[("./control".to_owned(), Some(control.as_bytes()), 0o644)]);
         ar(&[
             ("debian-binary", b"2.0\n".to_vec()),
             ("control.tar.gz", gzip(&control_tar)),
-            ("data.tar.gz", gzip(&tar(&entries))),
+            ("data.tar.gz", data),
         ])
+    }
+
+    /// Builds a Debian package shaped like the `pkg_deb` output.
+    pub(in super::super) fn synthetic_deb(
+        files: &[PackageFile],
+        directories: &[&str],
+        control: &str,
+    ) -> Vec<u8> {
+        deb_with_data(control, gzip(&tar(&tar_entries(files, directories))))
     }
 
     /// One synthetic RPM header tag: strings (type 6 or 8) or integers
@@ -1022,15 +1070,7 @@ pub(super) mod tests {
         architecture: &str,
         extra_tags: &[Tag],
     ) -> Vec<u8> {
-        let mut entries = directories
-            .iter()
-            .map(|directory| ((*directory).to_owned(), None, 0o755))
-            .collect::<Vec<_>>();
-        entries.extend(
-            files
-                .iter()
-                .map(|file| (file.path.clone(), Some(file.bytes.as_slice()), file.mode)),
-        );
+        let entries = tar_entries(files, directories);
         let owners = vec!["root".to_owned(); entries.len()];
         let mut dirnames = Vec::<String>::new();
         let mut dirindexes = Vec::new();
@@ -1381,5 +1421,78 @@ pub(super) mod tests {
             );
         }
         assert!(write_input(&output, &documents, b"binary", &identity).is_err());
+    }
+
+    #[test]
+    fn packages_must_not_hide_data_after_the_checked_content() {
+        let root = ScopedTempDir::new("linux-package-trailing").unwrap();
+        let documents = documents();
+        let binary = b"synthetic release binary".to_vec();
+        let expected = contents(&documents, &sha256_bytes(&binary), binary.len() as u64).unwrap();
+        let identity = identity("x86_64-unknown-linux-gnu", "0.2.0", "GLIBC_2.28").unwrap();
+        let control = deb_control("0.2.0", "amd64", "libc6 (>= 2.28)");
+        let files = package_files(&documents, &binary);
+        let data_tar = tar(&tar_entries(&files, DOC_DIRECTORIES));
+        let extra_file = [PackageFile {
+            path: "etc/rustleaks.toml".into(),
+            bytes: b"extra".to_vec(),
+            mode: 0o644,
+        }];
+        let extra_tar = tar(&tar_entries(&extra_file, &[]));
+        let deb = root.path.join("rustleaks.deb");
+        let check_deb = |data: Vec<u8>| {
+            std::fs::write(&deb, deb_with_data(&control, data)).unwrap();
+            verify_deb(&deb, &expected, &identity)
+        };
+
+        // Python's tarfile pads with zeros to its 10240-byte record size.
+        let mut padded = data_tar.clone();
+        padded.resize(data_tar.len().next_multiple_of(10_240), 0);
+        check_deb(gzip(&padded)).unwrap();
+
+        // dpkg decodes a second gzip stream after the first.
+        let mut streams = gzip(&data_tar);
+        streams.extend_from_slice(&gzip(&extra_tar));
+        let error = check_deb(streams).unwrap_err();
+        assert!(error.contains("after its gzip stream"), "{error}");
+        let mut garbage = gzip(&data_tar);
+        garbage.push(0);
+        assert!(check_deb(garbage).is_err());
+
+        // A tar reader stops cleanly at the end of its input, so the end
+        // blocks must be present, and only zeros may follow them.
+        for cut in [512, 1024] {
+            let short = &data_tar[..data_tar.len() - cut];
+            let error = check_deb(gzip(short)).unwrap_err();
+            assert!(error.contains("end-of-archive"), "{error}");
+        }
+        let mut appended = data_tar.clone();
+        appended.extend_from_slice(&extra_tar);
+        let error = check_deb(gzip(&appended)).unwrap_err();
+        assert!(error.contains("end-of-archive"), "{error}");
+        let mut overlong = data_tar.clone();
+        overlong.resize(data_tar.len() + 10_240, 0);
+        assert!(check_deb(gzip(&overlong)).is_err());
+
+        let rpm = root.path.join("rustleaks.rpm");
+        let package = synthetic_rpm(&files, DOC_DIRECTORIES, "0.2.0", "x86_64", &[]);
+        let payload = cpio(&tar_entries(&files, DOC_DIRECTORIES));
+        let lead = &package[..package.len() - gzip(&payload).len()];
+        let check_rpm = |payload: Vec<u8>| {
+            std::fs::write(&rpm, [lead, payload.as_slice()].concat()).unwrap();
+            verify_rpm(&rpm, &expected, &identity)
+        };
+        check_rpm(gzip(&payload)).unwrap();
+        let mut streams = gzip(&payload);
+        streams.extend_from_slice(&gzip(&cpio(&tar_entries(&extra_file, &[]))));
+        let error = check_rpm(streams).unwrap_err();
+        assert!(error.contains("after its gzip stream"), "{error}");
+        let mut padded = payload.clone();
+        padded.resize(payload.len().next_multiple_of(512), 0);
+        check_rpm(gzip(&padded)).unwrap();
+        let mut appended = payload.clone();
+        appended.extend_from_slice(b"extra");
+        let error = check_rpm(gzip(&appended)).unwrap_err();
+        assert!(error.contains("after its cpio trailer"), "{error}");
     }
 }
