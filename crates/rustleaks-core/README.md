@@ -13,7 +13,8 @@ variables, write logs, start threads or need an async runtime. Only
 `Baseline::load_go_json` and `FileSystemResolver` read files, when you call
 them. An `Engine` can be shared between threads.
 
-The crate is alpha software. Its API can change between alpha releases.
+Before 1.0, a minor release, such as 0.3.0, can change the API. A patch
+release, such as 0.2.1, does not.
 Rustleaks is an independent project and is not affiliated with or endorsed by
 Gitleaks.
 

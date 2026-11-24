@@ -17,11 +17,12 @@ cargo add rustleaks-core
 ```
 
 `rustleaks-core` needs Rust 1.95 or later. It has no optional features. The
-library is alpha software, and its API can change between alpha releases. To
+API can change in a minor release before 1.0, such as 0.3.0, and not in a
+patch release, such as 0.2.1. `cargo add` accepts later 0.2 patch releases. To
 pin the exact version, add it with `=`:
 
 ```sh
-cargo add rustleaks-core@=0.1.0-alpha.12
+cargo add rustleaks-core@=0.2.0
 ```
 
 Only `rustleaks-core` is published. The file, archive and Git readers, the

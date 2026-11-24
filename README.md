@@ -16,12 +16,14 @@ with or endorsed by Gitleaks.
 
 ## Status
 
-Rustleaks is alpha software. Commands, options and the library API can change
-between releases.
+The current release is 0.2.0. Before 1.0, a minor release, such as 0.3.0, can
+change commands, options and the library API. The
+[changelog](CHANGELOG.md) lists each change.
 
-- The `rustleaks` command is published as pre-release archives on the
-  [GitHub releases page](https://github.com/joshgarnett/rustleaks/releases).
-  It is not on crates.io.
+- The `rustleaks` command is published on the
+  [GitHub releases page](https://github.com/joshgarnett/rustleaks/releases),
+  in a Homebrew tap and a Scoop bucket, and as `.deb` and `.rpm` packages. It
+  is not on crates.io.
 - The `rustleaks-core` library is published on
   [crates.io](https://crates.io/crates/rustleaks-core).
 
@@ -33,10 +35,23 @@ Report bugs and request features in
 
 ## Install
 
-Download the archive for your platform from the releases page, check it, and
-extract it. Archives exist for Linux (glibc and musl), macOS and Windows, each
-on x86_64 and ARM64. See [Getting started](docs/user/getting-started.md) for
-the exact steps, or to build from source with Bazel.
+On macOS and Linux, with Homebrew:
+
+```sh
+brew install joshgarnett/tap/rustleaks
+```
+
+On Windows, with Scoop:
+
+```powershell
+scoop bucket add rustleaks https://github.com/joshgarnett/scoop-bucket
+scoop install rustleaks/rustleaks
+```
+
+Each release also has `.deb` and `.rpm` packages for Linux with glibc 2.28 or
+later, and archives for Linux (glibc and musl), macOS and Windows, each on
+x86_64 and ARM64. See [Getting started](docs/user/getting-started.md) for
+how to install and check them, or to build from source with Bazel.
 
 ## First scan
 
