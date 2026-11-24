@@ -23,7 +23,7 @@ mod stream;
 use spool::{MEMORY_SPOOL_BYTES, Spool, SpoolError, SpoolGuard, file_reader};
 use stream::{
     Body, Budget, DecodeErrors, Failure, FillInput, GzipReader, Inflater, LzipReader, MemberReader,
-    Metered, ReadErrors, ReadSeek, Replay, Walker, ZipCheck, ZstdBuffers, ZstdReader,
+    Metered, Prefixed, ReadErrors, ReadSeek, Replay, Walker, ZipCheck, ZstdBuffers, ZstdReader,
 };
 
 const KIB: usize = 1024;
@@ -40,6 +40,7 @@ const DEFAULT_MAX_SPOOL_BYTES: NonZeroUsize = NonZeroUsize::new(GIB).unwrap();
 pub(crate) const MEMORY_BYTES: usize = 64 * MIB;
 const COPY_BUFFER: usize = 16 * KIB;
 const BROTLI_LARGE_WINDOW_HEADER: u8 = 0x11;
+const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
 /// Checked resource ceilings applied across one archive traversal.
 ///
@@ -171,11 +172,13 @@ impl ArchiveOptions {
     fn target_excluded(&self, logical: &LogicalPath, name: &[u8]) -> bool {
         // Containers never emit a fragment under their own path. An exact
         // leaf exclusion must not suppress descendants of such a container.
-        is_leaf_name(name)
-            && self
-                .excluded_paths
-                .iter()
-                .any(|path| path == logical.normalized())
+        is_leaf_name(name) && self.leaf_excluded(logical)
+    }
+
+    fn leaf_excluded(&self, logical: &LogicalPath) -> bool {
+        self.excluded_paths
+            .iter()
+            .any(|path| path == logical.normalized())
     }
 
     /// Emits recoverable issues when configured depth limits skip archives.
@@ -383,7 +386,8 @@ impl ArchiveSource {
                 }
             };
         }
-        if self.options.limits.depth == 0 {
+        // A `.tgz` name that is not gzip is still scanned as a plain file.
+        if self.options.limits.depth == 0 && !has_tgz_suffix(&name) {
             return Ok(SourceControl::Continue);
         }
         let budget = Budget::new(self.options.limits.total_bytes.get());
@@ -539,6 +543,97 @@ impl<'a> ArchiveState<'a> {
         let Some(format) = identify(name) else {
             return self.plain(input, logical, cancellation, emit);
         };
+        if has_tgz_suffix(name) {
+            return self.tgz(input, name, logical, depth, cancellation, emit);
+        }
+        self.archive(format, input, logical, depth, cancellation, emit)
+    }
+
+    /// Reads a `.tgz` name by its first bytes and its other suffixes; see
+    /// [`tgz_format`].
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
+    fn tgz(
+        &mut self,
+        input: Input<'_>,
+        name: &[u8],
+        logical: &LogicalPath,
+        depth: usize,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        let complete = self.complete();
+        let mut head = [0_u8; GZIP_MAGIC.len()];
+        let (chunked, reader) = match input {
+            Input::Memory(bytes) => {
+                let format = tgz_format(name, bytes.starts_with(&GZIP_MAGIC), complete);
+                let input = Input::Memory(bytes);
+                return self.tgz_as(format, input, logical, depth, cancellation, emit);
+            }
+            Input::File(file) => {
+                let count = match file_head(file, &mut head) {
+                    Ok(count) => count,
+                    Err(failure) => return self.emit_failure(failure, emit),
+                };
+                let format = tgz_format(name, head[..count] == GZIP_MAGIC, complete);
+                let input = Input::File(file);
+                return self.tgz_as(format, input, logical, depth, cancellation, emit);
+            }
+            Input::Stream(reader) => (false, reader),
+            Input::Chunked(reader) => (true, reader),
+        };
+        let count = match stream::read_full(reader, &mut head) {
+            Ok(count) => count,
+            Err(failure) => return self.emit_failure(failure, emit),
+        };
+        let format = tgz_format(name, head[..count] == GZIP_MAGIC, complete);
+        let mut prefixed = Prefixed::new(&head[..count], reader);
+        let input = if chunked {
+            Input::Chunked(&mut prefixed)
+        } else {
+            Input::Stream(&mut prefixed)
+        };
+        self.tgz_as(format, input, logical, depth, cancellation, emit)
+    }
+
+    /// Reads a `.tgz` name in the format that its bytes chose.
+    fn tgz_as(
+        &mut self,
+        format: Option<Format>,
+        input: Input<'_>,
+        logical: &LogicalPath,
+        depth: usize,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        // A plain file or a compressed stream gives fragments under this
+        // path, so an exact exclusion of the path applies to it.
+        if self.complete()
+            && matches!(format, None | Some(Format::Stream(_)))
+            && self.options.leaf_excluded(logical)
+        {
+            return Ok(SourceControl::Continue);
+        }
+        match format {
+            None => self.plain(input, logical, cancellation, emit),
+            // A depth of zero skips every archive without an issue.
+            Some(_) if self.options.limits.depth == 0 => Ok(SourceControl::Continue),
+            Some(format) => self.archive(format, input, logical, depth, cancellation, emit),
+        }
+    }
+
+    /// Reads an archive or compressed stream of a known format.
+    fn archive(
+        &mut self,
+        format: Format,
+        input: Input<'_>,
+        logical: &LogicalPath,
+        depth: usize,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
         if depth >= self.options.limits.depth {
             if !self.options.emit_limit_issues {
                 return Ok(SourceControl::Continue);
@@ -1871,12 +1966,57 @@ fn is_leaf_name(name: &[u8]) -> bool {
     matches!(identify(name), None | Some(Format::Stream(_)))
 }
 
+/// Whether `name` ends in `.tgz`, in any ASCII case. Only the final suffix
+/// counts, so folder names and backups such as `x.tgz.backup` are not read
+/// as archives.
+fn has_tgz_suffix(name: &[u8]) -> bool {
+    name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case(b".tgz")
+}
+
+/// Whether the file name of `path` ends in `.tgz`, in any ASCII case.
+pub(crate) fn path_has_tgz_suffix(path: &Path) -> bool {
+    has_tgz_suffix(&native_file_name_bytes(path))
+}
+
+/// Reads the first bytes of a file into `head`; returns how many were there.
+fn file_head(file: &File, head: &mut [u8]) -> Result<usize, Failure> {
+    let mut handle = file;
+    handle
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| Failure::Read(error.to_string()))?;
+    stream::read_full(&mut ReadErrors(handle), head)
+}
+
+/// The format of a `.tgz` name, chosen by whether its bytes start with the
+/// gzip magic.
+///
+/// With the magic, the name is a gzip TAR. In a normal scan it is a gzip
+/// stream instead when an earlier suffix names gzip without TAR, such as
+/// `x.gz.tgz`. Without the magic, the name is read as its other suffixes
+/// name it, such as `x.tar.tgz` as a TAR or `x.zip.tgz` as a ZIP, and as a
+/// plain file when they name no format.
+fn tgz_format(name: &[u8], gzip: bool, complete: bool) -> Option<Format> {
+    let named = identify_suffixes(name);
+    if !gzip {
+        return named;
+    }
+    Some(match named {
+        Some(Format::Stream(Codec::Gzip)) if !complete => Format::Stream(Codec::Gzip),
+        _ => Format::CompressedTar(Codec::Gzip),
+    })
+}
+
+/// The format a name gives before its bytes are read. A `.tgz` name counts
+/// as a container here; [`tgz_format`] chooses its format when it is read.
 fn identify(name: &[u8]) -> Option<Format> {
-    // `.tgz` counts only as the final suffix, so folder names and backups
-    // such as `x.tgz.backup` are not read as archives.
-    if name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case(b".tgz") {
+    if has_tgz_suffix(name) {
         return Some(Format::CompressedTar(Codec::Gzip));
     }
+    identify_suffixes(name)
+}
+
+/// The format named by the suffixes of `name`, without the `.tgz` alias.
+fn identify_suffixes(name: &[u8]) -> Option<Format> {
     let lower = name.iter().map(u8::to_ascii_lowercase).collect::<Vec<_>>();
     let compression = if contains(&lower, b".gz") {
         Some(Codec::Gzip)
@@ -2332,6 +2472,73 @@ mod tests {
             assert!(identify(name).is_none());
             assert!(is_leaf_name(name));
         }
+    }
+
+    /// Returns at most `chunk` bytes a read, then fails once if `fail`.
+    struct Chunks<'a> {
+        bytes: &'a [u8],
+        chunk: usize,
+        fail: bool,
+    }
+
+    impl Read for Chunks<'_> {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            if self.bytes.is_empty() && std::mem::take(&mut self.fail) {
+                return Err(std::io::Error::other("read failed"));
+            }
+            let count = self.bytes.len().min(self.chunk).min(output.len());
+            output[..count].copy_from_slice(&self.bytes[..count]);
+            self.bytes = &self.bytes[count..];
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn prefixed_returns_the_head_with_one_read_of_the_rest() {
+        let mut inner = Chunks {
+            bytes: b"cdefgh",
+            chunk: 4,
+            fail: false,
+        };
+        let mut prefixed = Prefixed::new(b"ab", &mut inner);
+        let mut output = [0_u8; 16];
+        assert_eq!(prefixed.read(&mut output).unwrap(), 6);
+        assert_eq!(&output[..6], b"abcdef");
+        assert_eq!(prefixed.read(&mut output).unwrap(), 2);
+        assert_eq!(&output[..2], b"gh");
+        assert_eq!(prefixed.read(&mut output).unwrap(), 0);
+
+        // A buffer smaller than the head gets the head over several reads.
+        let mut inner = Chunks {
+            bytes: b"c",
+            chunk: 4,
+            fail: false,
+        };
+        let mut prefixed = Prefixed::new(b"ab", &mut inner);
+        let mut collected = Vec::new();
+        let mut byte = [0_u8; 1];
+        while prefixed.read(&mut byte).unwrap() == 1 {
+            collected.push(byte[0]);
+        }
+        assert_eq!(collected, b"abc");
+    }
+
+    #[test]
+    fn prefixed_keeps_the_head_when_the_next_read_fails() {
+        let mut inner = Chunks {
+            bytes: b"",
+            chunk: 4,
+            fail: true,
+        };
+        let mut prefixed = Prefixed::new(b"ab", &mut inner);
+        let mut output = [0_u8; 8];
+        assert_eq!(prefixed.read(&mut output).unwrap(), 2);
+        assert_eq!(&output[..2], b"ab");
+        assert_eq!(
+            prefixed.read(&mut output).unwrap_err().to_string(),
+            "read failed"
+        );
+        assert_eq!(prefixed.read(&mut output).unwrap(), 0);
     }
 
     #[test]
