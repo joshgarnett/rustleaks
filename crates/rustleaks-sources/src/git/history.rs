@@ -127,6 +127,7 @@ fn list_commits(
         CommandIo {
             input: None,
             stderr: &OutputBudget::new(source.limits.stderr_bytes()),
+            clear_attribute_source: false,
         },
         &source.environment,
         cancellation,
@@ -199,6 +200,7 @@ fn pretty_format_is_unset(
         CommandIo {
             input: None,
             stderr: &OutputBudget::new(source.limits.stderr_bytes()),
+            clear_attribute_source: false,
         },
         &source.environment,
         cancellation,
@@ -349,7 +351,7 @@ impl ReorderBuffer {
 struct Shared<'a> {
     executable: &'a OsStr,
     environment: &'a [(OsString, OsString)],
-    arguments: [OsString; 14],
+    arguments: [OsString; 16],
     plan: &'a HistoryPlan,
     queue: Mutex<Receiver<Job>>,
     buffer: ReorderBuffer,
@@ -357,16 +359,19 @@ struct Shared<'a> {
 }
 
 /// Reads the planned batches with up to `history_processes` Git processes
-/// and parses their output in list order.
+/// and parses their output in list order. `empty_tree` names the empty tree
+/// that the processes read attributes from.
 pub(super) fn visit(
     source: &GitSource,
     plan: &HistoryPlan,
+    empty_tree: &str,
     cancellation: &dyn Cancellation,
     emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
 ) -> Result<SourceControl, SourceError> {
     let processes = source.history_processes.get().min(plan.batches.len());
     let ended = AtomicBool::new(false);
     let (jobs, queue) = mpsc::channel::<Job>();
+    let [attribute_flag, attribute_value] = super::attribute_override(empty_tree);
     let shared = Shared {
         executable: &source.executable,
         environment: &source.environment,
@@ -375,6 +380,8 @@ pub(super) fn visit(
             source.repository.as_os_str().to_owned(),
             OsString::from(super::CONFIG_OVERRIDES[0]),
             OsString::from(super::CONFIG_OVERRIDES[1]),
+            attribute_flag,
+            attribute_value,
             OsString::from("log"),
             OsString::from("-p"),
             OsString::from("-U0"),
@@ -486,6 +493,7 @@ fn run_batches(shared: &Shared<'_>) -> Option<SourceError> {
             CommandIo {
                 input: Some(&shared.plan.commits[shared.plan.batches[job.batch].clone()]),
                 stderr: &shared.plan.stderr,
+                clear_attribute_source: true,
             },
             shared.environment,
             &shared.abort,

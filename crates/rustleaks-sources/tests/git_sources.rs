@@ -955,3 +955,137 @@ fn repository_config_cannot_run_commands_or_replace_patch_content() {
         );
     }
 }
+
+/// A file that `.gitattributes` marks as binary is read by its content in
+/// history and staged scans, in SHA-1 and SHA-256 repositories, also when
+/// `GIT_ATTR_SOURCE` names the commit's attributes. A file with a NUL byte
+/// is binary by its content even when the attributes mark it as text
+/// (`diff`). A worktree diff keeps the attributes, so the file marked
+/// binary stays binary there.
+#[test]
+fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
+    for format in ["sha1", "sha256"] {
+        let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let root = TempRepo(std::env::temp_dir().join(format!(
+            "rustleaks-git-binary-attributes-{format}-{}-{unique}",
+            std::process::id()
+        )));
+        let repository = root.path().to_path_buf();
+        fs::create_dir_all(&repository).expect("create synthetic repository");
+        let git = |arguments: &[&str]| {
+            let output = support::command()
+                .arg("-C")
+                .arg(&repository)
+                .args([
+                    "-c",
+                    "user.name=Synthetic Test",
+                    "-c",
+                    "user.email=synthetic@example.invalid",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "core.fsmonitor=",
+                ])
+                .args(arguments)
+                .output()
+                .expect("run isolated Git");
+            assert!(output.status.success(), "isolated Git {arguments:?} failed");
+        };
+        git(&["init", "--quiet", &format!("--object-format={format}")]);
+        // Git for Windows sets `core.autocrlf` in its system configuration,
+        // and the worktree diff would then warn about line endings.
+        git(&["config", "--local", "core.autocrlf", "false"]);
+        fs::write(
+            repository.join(".gitattributes"),
+            "*.env -diff\n*.lock binary\n*.dat diff\n",
+        )
+        .expect("write attributes");
+        fs::write(repository.join("first.env"), "first marked text\n").expect("write file");
+        fs::write(repository.join("real.bin"), b"binary\0content\n").expect("write file");
+        fs::write(
+            repository.join("forced.dat"),
+            b"binary\0content\nforced text\n",
+        )
+        .expect("write file");
+        git(&["add", "--", "."]);
+        git(&["commit", "--quiet", "-m", "first synthetic commit"]);
+        fs::write(repository.join("second.lock"), "second marked text\n").expect("write file");
+        git(&["add", "--", "second.lock"]);
+        git(&["commit", "--quiet", "-m", "second synthetic commit"]);
+        fs::write(repository.join("third.env"), "staged marked text\n").expect("write file");
+        git(&["add", "--", "third.env"]);
+        fs::write(repository.join("third.env"), "worktree marked text\n").expect("write file");
+
+        let contents = |label: &str, source: &mut rustleaks_sources::GitSource| {
+            let (fragments, issues) = collect(source);
+            assert!(issues.is_empty(), "{format} {label}: {issues:?}");
+            let mut contents = fragments
+                .iter()
+                .map(|fragment| {
+                    (
+                        String::from_utf8_lossy(fragment.file_path().as_bytes()).into_owned(),
+                        String::from_utf8_lossy(fragment.content().as_bytes()).into_owned(),
+                    )
+                })
+                .filter(|(path, _)| path != ".gitattributes")
+                .collect::<Vec<_>>();
+            contents.sort();
+            contents
+        };
+        let history = [
+            ("first.env".to_owned(), "first marked text\n".to_owned()),
+            ("second.lock".to_owned(), "second marked text\n".to_owned()),
+        ];
+        let one = std::num::NonZeroUsize::MIN;
+        let two = std::num::NonZeroUsize::new(2).unwrap();
+        for (label, mut source) in [
+            ("history", support::git_source(&repository)),
+            (
+                "two processes",
+                support::git_source(&repository)
+                    .history_processes(two)
+                    .history_batch_commits(one),
+            ),
+            (
+                "log arguments",
+                support::git_source(&repository).mode(GitMode::LogArguments(vec!["--all".into()])),
+            ),
+            (
+                "history with GIT_ATTR_SOURCE",
+                support::git_source(&repository)
+                    .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+            ),
+            (
+                "two processes with GIT_ATTR_SOURCE",
+                support::git_source(&repository)
+                    .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())])
+                    .history_processes(two)
+                    .history_batch_commits(one),
+            ),
+        ] {
+            assert_eq!(contents(label, &mut source), history, "{format} {label}");
+        }
+        for (label, mut staged) in [
+            (
+                "staged",
+                support::git_source(&repository).mode(GitMode::Diff { staged: true }),
+            ),
+            (
+                "staged with GIT_ATTR_SOURCE",
+                support::git_source(&repository)
+                    .mode(GitMode::Diff { staged: true })
+                    .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+            ),
+        ] {
+            assert_eq!(
+                contents(label, &mut staged),
+                [("third.env".to_owned(), "staged marked text\n".to_owned())],
+                "{format} {label}"
+            );
+        }
+        let mut worktree = support::git_source(&repository).mode(GitMode::Diff { staged: false });
+        assert_eq!(contents("worktree", &mut worktree), [], "{format}");
+    }
+}

@@ -168,6 +168,67 @@ fn staged_and_pre_commit_scan_different_sides_of_the_index() {
     }
 }
 
+/// `.gitattributes` that marks a text file as binary does not hide it from
+/// history and staged scans. A worktree diff (`--pre-commit`) keeps the
+/// attributes, so there the file stays binary and is not scanned.
+#[test]
+fn attributes_that_mark_text_as_binary_do_not_hide_history_findings() {
+    let fixture = Fixture::new();
+    git(&fixture.0, &["init", "--quiet"]);
+    git(&fixture.0, &["config", "user.name", "CLI Test"]);
+    git(&fixture.0, &["config", "user.email", "cli@example.invalid"]);
+    fixture.write("config.toml", matching_config());
+    fixture.write(".gitattributes", b"*.txt -diff\n");
+    fixture.write("secret.txt", b"token=AB12\n");
+    git(&fixture.0, &["add", ".gitattributes", "secret.txt"]);
+    git(&fixture.0, &["commit", "--quiet", "-m", "c1"]);
+    let c1 = git_stdout(&fixture.0, &["rev-parse", "HEAD"]);
+    fixture.write("secret.txt", b"token=CD34\n");
+    git(&fixture.0, &["add", "secret.txt"]);
+    fixture.write("secret.txt", b"token=EF56\n");
+
+    let row = |secret: &str, commit: &str| {
+        (
+            "fixture-token".to_owned(),
+            "secret.txt".to_owned(),
+            1,
+            secret.to_owned(),
+            commit.to_owned(),
+        )
+    };
+    for (mode, code, rows) in [
+        ("--platform=none", 1, vec![row("AB12", &c1)]),
+        ("--log-opts=--all", 1, vec![row("AB12", &c1)]),
+        ("--staged", 1, vec![row("CD34", "")]),
+        ("--pre-commit", 0, Vec::new()),
+    ] {
+        let result = output(
+            &fixture.0,
+            &[
+                "git",
+                ".",
+                mode,
+                "--no-banner",
+                "-c",
+                "config.toml",
+                "--report-path",
+                "-",
+                "--report-format",
+                "json",
+                "--log-level",
+                "fatal",
+            ],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(code),
+            "{mode}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(report_rows(&result), rows, "{mode}");
+    }
+}
+
 #[test]
 fn log_opts_range_attributes_a_finding_to_its_commit() {
     let fixture = Fixture::new();

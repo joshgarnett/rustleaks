@@ -574,7 +574,7 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
     });
     assert_eq!(
         source
-            .arguments()
+            .arguments(EMPTY_TREE_SHA1)
             .iter()
             .map(|value| value.to_string_lossy())
             .collect::<Vec<_>>(),
@@ -583,6 +583,8 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
             "repo",
             "-c",
             "core.fsmonitor=",
+            "-c",
+            "attr.tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904",
             "log",
             "-p",
             "-U0",
@@ -596,21 +598,24 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
         ]
     );
 
-    assert_eq!(GitSource::new("").arguments()[1].to_string_lossy(), ".");
+    assert_eq!(
+        GitSource::new("").arguments(EMPTY_TREE_SHA1)[1].to_string_lossy(),
+        "."
+    );
     let arguments = GitSource::new("repo space/é")
         .mode(GitMode::LogArguments(vec![
             OsString::from("-U3"),
             OsString::from("--pretty=short"),
             OsString::from("--no-patch"),
         ]))
-        .arguments();
+        .arguments(EMPTY_TREE_SHA1);
     assert_eq!(arguments[0], "-C");
     assert_eq!(
         PathBuf::from(arguments[1].as_os_str()),
         PathBuf::from("repo space/é")
     );
     assert_eq!(
-        arguments[4..]
+        arguments[6..]
             .iter()
             .map(|value| value.to_string_lossy())
             .collect::<Vec<_>>(),
@@ -634,7 +639,7 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
     ]));
     assert_eq!(
         explicit
-            .arguments()
+            .arguments(EMPTY_TREE_SHA1)
             .iter()
             .map(|value| value.to_string_lossy())
             .collect::<Vec<_>>(),
@@ -643,6 +648,8 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
             "repo",
             "-c",
             "core.fsmonitor=",
+            "-c",
+            "attr.tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904",
             "log",
             "-p",
             "-U0",
@@ -654,6 +661,64 @@ fn matrix_a_exact_argv_preserves_literal_space_splitting() {
             "path with spaces"
         ]
     );
+}
+
+#[test]
+fn history_and_staged_diffs_read_attributes_from_the_empty_tree() {
+    let words = |source: GitSource, tree: &str| {
+        source
+            .arguments(tree)
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    let sha256 = format!("attr.tree={EMPTY_TREE_SHA256}");
+    for mode in [
+        GitMode::Log { options: None },
+        GitMode::LogArguments(vec![OsString::from("--all")]),
+        GitMode::Diff { staged: true },
+    ] {
+        let arguments = words(GitSource::new("repo").mode(mode.clone()), EMPTY_TREE_SHA256);
+        assert_eq!(
+            arguments[2..6],
+            ["-c", "core.fsmonitor=", "-c", sha256.as_str()],
+            "{mode:?}"
+        );
+    }
+    let worktree = words(
+        GitSource::new("repo").mode(GitMode::Diff { staged: false }),
+        EMPTY_TREE_SHA256,
+    );
+    assert_eq!(
+        worktree,
+        [
+            "-C",
+            "repo",
+            "-c",
+            "core.fsmonitor=",
+            "diff",
+            "-U0",
+            "--no-textconv",
+            "--no-ext-diff",
+            "--no-color",
+            "."
+        ]
+    );
+}
+
+#[test]
+fn object_format_output_selects_the_empty_tree() {
+    assert_eq!(empty_tree_for_format(b"sha256\n"), EMPTY_TREE_SHA256);
+    assert_eq!(empty_tree_for_format(b"sha256\r\n"), EMPTY_TREE_SHA256);
+    for output in [
+        b"sha1\n".as_slice(),
+        b"sha1\r\n",
+        b"--show-object-format\n",
+        b"",
+        b"sha2567\n",
+    ] {
+        assert_eq!(empty_tree_for_format(output), EMPTY_TREE_SHA1, "{output:?}");
+    }
 }
 
 #[test]

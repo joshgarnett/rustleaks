@@ -26,11 +26,14 @@ fn spawn_git(
     environment: &[(OsString, OsString)],
     stage: SourceStage,
     with_input: bool,
+    clear_attribute_source: bool,
 ) -> Result<GitChild, SourceError> {
     let mut command = Command::new(program);
+    command.args(arguments).envs(environment.iter().cloned());
+    if clear_attribute_source {
+        command.env_remove("GIT_ATTR_SOURCE");
+    }
     command
-        .args(arguments)
-        .envs(environment.iter().cloned())
         .stdin(if with_input {
             Stdio::piped()
         } else {
@@ -96,6 +99,7 @@ enum StreamEnd {
 /// A reader thread fills a small bounded queue, so Git waits while the
 /// consumer is busy. Standard error keeps its own bounded reader. Every
 /// early end stops and reaps Git before the reader threads are joined.
+#[cfg(any(feature = "archives", test))]
 pub(super) fn stream_command(
     program: &OsStr,
     arguments: &[OsString],
@@ -111,6 +115,7 @@ pub(super) fn stream_command(
         CommandIo {
             input: None,
             stderr: &OutputBudget::new(stderr_limit),
+            clear_attribute_source: false,
         },
         environment,
         cancellation,
@@ -127,6 +132,9 @@ pub(super) struct CommandIo<'a> {
     pub(super) input: Option<&'a [u8]>,
     /// Can be shared with other Git processes of the same scan.
     pub(super) stderr: &'a OutputBudget,
+    /// Removes `GIT_ATTR_SOURCE` from the environment of a command that sets
+    /// `attr.tree`, since the variable takes precedence over the setting.
+    pub(super) clear_attribute_source: bool,
 }
 
 /// Runs Git like [`stream_command`], with optional standard input and a
@@ -146,7 +154,14 @@ pub(super) fn stream_command_with(
         stdin,
         stdout,
         stderr,
-    } = spawn_git(program, arguments, environment, stage, io.input.is_some())?;
+    } = spawn_git(
+        program,
+        arguments,
+        environment,
+        stage,
+        io.input.is_some(),
+        io.clear_attribute_source,
+    )?;
     let budget = io.stderr;
     thread::scope(|scope| {
         // A separate writer never blocks the stdout reader. Dropping the pipe
