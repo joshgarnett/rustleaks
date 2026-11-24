@@ -64,7 +64,7 @@ const PERF_INVARIANTS: &[PerfInvariant] = &[
     PerfInvariant {
         workload: "default-compile",
         // The byte length of the shipped default rules.
-        logical_bytes: 100_665,
+        logical_bytes: 100_568,
         result_count: 222,
         output_bytes: 0,
         outcome_fnv1a64: "bba0f636d5a02d49",
@@ -961,6 +961,39 @@ mod tests {
         bytes[0] ^= 1;
         assert_eq!(bytes.len(), length);
         assert!(verify_default_config(&bytes).is_err());
+    }
+
+    #[test]
+    fn default_compile_invariants_describe_the_shipped_default_rules() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../rustleaks-core/default/gitleaks.toml");
+        let text = fs::read_to_string(path).unwrap();
+        let invariant = PERF_INVARIANTS
+            .iter()
+            .find(|invariant| invariant.workload == "default-compile")
+            .unwrap();
+        assert_eq!(invariant.logical_bytes, text.len() as u64);
+        let mut section = "";
+        let mut hash = FNV_OFFSET;
+        let mut rules = 0_u64;
+        for line in text.lines() {
+            if line.starts_with('[') {
+                section = line;
+            } else if section == "[[rules]]"
+                && let Some(id) = line
+                    .strip_prefix("id = \"")
+                    .and_then(|rest| rest.strip_suffix('"'))
+            {
+                rules += 1;
+                for byte in id.bytes().chain([0]) {
+                    hash ^= u64::from(byte);
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+            }
+        }
+        assert_eq!(invariant.result_count, rules);
+        assert_eq!(invariant.output_bytes, 0);
+        assert_eq!(invariant.outcome_fnv1a64, format!("{hash:016x}"));
     }
 
     fn prepared() -> Prepared {
