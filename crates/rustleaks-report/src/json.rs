@@ -5,7 +5,7 @@ use rustleaks_core::model::Finding;
 use crate::go_json;
 use crate::{ReportError, Reporter};
 
-/// Upstream-compatible indented JSON report writer.
+/// Indented JSON report writer.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct JsonReporter;
 
