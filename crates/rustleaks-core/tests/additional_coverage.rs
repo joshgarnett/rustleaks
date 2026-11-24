@@ -196,10 +196,12 @@ fn authored_near_misses_filters_bounds_paths_and_byte_scopes_hold() {
     }
 }
 
-/// `rustleaks.openrouter-api-key` does not end at a comma, so its
-/// `delimiter-5` case has no finding of that rule. The shipped rule
-/// `rustleaks.openrouter-api-key-boundary` covers the comma boundary and
-/// reports the key once.
+/// `rustleaks.openrouter-api-key` requires the key to end at a quote or
+/// backtick (escaped or not), a byte from tab to carriage return, a space,
+/// `;`, a `\n` or `\r` escape, or the end of input. A comma is not in that
+/// set, so its `delimiter-5` case has no finding of that rule. The shipped
+/// rule `rustleaks.openrouter-api-key-boundary` matches the key followed by a
+/// comma and reports it once.
 #[test]
 fn shipped_boundary_rule_reports_the_openrouter_key_before_a_comma() {
     let case = cases()
@@ -208,12 +210,8 @@ fn shipped_boundary_rule_reports_the_openrouter_key_before_a_comma() {
         .find(|case| case.rule == "rustleaks.openrouter-api-key" && case.name == "delimiter-5")
         .unwrap();
     let input = STANDARD.decode(&case.input_base64).unwrap();
-    let start = input
-        .windows(9)
-        .position(|window| window == b"sk-or-v1-")
-        .unwrap();
-    let end = input.len() - 1;
-    assert_eq!(input[end], b',');
+    // The input is `xx `, the 73-byte key and `,`.
+    assert_eq!(input.len(), 77);
     let findings = scan(shipped(), &input, &case.path);
     assert!(selected_findings(&findings, &case.rule).is_empty());
     assert_eq!(findings.len(), 1);
@@ -221,8 +219,9 @@ fn shipped_boundary_rule_reports_the_openrouter_key_before_a_comma() {
         findings[0].rule_id().as_bytes(),
         b"rustleaks.openrouter-api-key-boundary"
     );
-    assert_eq!(findings[0].secret().as_bytes(), &input[start..end]);
-    assert_eq!(findings[0].secret_range(), range([start, end]));
+    assert_eq!(findings[0].secret().as_bytes(), &input[3..76]);
+    assert_eq!(findings[0].secret_range(), range([3, 76]));
+    assert_eq!(findings[0].match_range(), range([3, 77]));
 }
 
 fn has_occurrence(findings: &[Finding], secret: &[u8], expected: [usize; 2]) -> bool {

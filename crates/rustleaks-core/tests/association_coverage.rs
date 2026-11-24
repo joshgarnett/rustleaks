@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-use rustleaks_core::config::{CompiledConfig, ConfigLoader};
+use rustleaks_core::config::{CompiledConfig, ConfigLoader, ConfigOrigin};
 use rustleaks_core::model::{Finding, FindingRange, Fragment, RequiredFinding, ScanOptions};
 use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
@@ -1025,10 +1025,43 @@ fn batched_mutation_compilation_matches_isolated_compilation() {
         .map(|graph| (selected_rules(), graph_ids(graph)))
         .collect();
     for (graph, engine) in graphs.iter().zip(custom_batch(unchanged)) {
-        // The shipped configuration also records that it is the embedded
-        // default, so compare its parts and not its origin.
+        // The shipped configuration records that it is the embedded default
+        // and a custom compilation records no origin, so compare every other
+        // part.
         let batched = engine.config();
         let shipped = config().select_rules(graph_ids(graph)).unwrap();
+        assert_eq!(batched.origin(), None, "{}", graph.source_id);
+        assert_eq!(
+            shipped.origin(),
+            Some(&ConfigOrigin::EmbeddedDefault),
+            "{}",
+            graph.source_id
+        );
+        assert_eq!(batched.title(), shipped.title(), "{}", graph.source_id);
+        assert_eq!(
+            batched.description(),
+            shipped.description(),
+            "{}",
+            graph.source_id
+        );
+        assert_eq!(
+            batched.extension(),
+            shipped.extension(),
+            "{}",
+            graph.source_id
+        );
+        assert_eq!(
+            batched.min_version(),
+            shipped.min_version(),
+            "{}",
+            graph.source_id
+        );
+        assert_eq!(
+            batched.requires_newer_version(),
+            shipped.requires_newer_version(),
+            "{}",
+            graph.source_id
+        );
         assert_eq!(batched.rules(), shipped.rules(), "{}", graph.source_id);
         assert_eq!(
             batched.ordered_rule_ids(),
