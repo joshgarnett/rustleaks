@@ -6,9 +6,13 @@ what each lane means, what the harness measures, and the limits of the
 results. No result from this harness is a portable speed or quality
 guarantee.
 
-The latest recorded comparison followed
-[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md).
+The latest recorded comparison, of the 0.2.0 candidate, followed
+[benchmarks/comparison/PROTOCOL-0.2.0.md](../../benchmarks/comparison/PROTOCOL-0.2.0.md).
 Its results are in
+[benchmarks/comparison/results-0.2.0.md](../../benchmarks/comparison/results-0.2.0.md).
+The earlier 2026-11 comparison followed
+[benchmarks/comparison/PROTOCOL.md](../../benchmarks/comparison/PROTOCOL.md),
+with results in
 [benchmarks/comparison/results-2026-11.md](../../benchmarks/comparison/results-2026-11.md).
 
 ## What the harness does
