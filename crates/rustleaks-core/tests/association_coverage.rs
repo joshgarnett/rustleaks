@@ -595,7 +595,7 @@ fn primary(graph: &Graph) -> &Case {
 
 #[test]
 #[allow(clippy::too_many_lines)] // One graph loop keeps every selection control beside its case.
-fn every_graph_fails_closed_under_selection_and_accounts_for_support_multiplicity() {
+fn every_graph_keeps_its_helpers_under_selection_and_accounts_for_support_multiplicity() {
     assert!(ConfigLoader::new().load_toml(PROVIDER_RULES_V1).is_err());
     for graph in &fixture().graphs {
         assert_eq!(graph.helpers.len(), graph.windows.len());
@@ -603,25 +603,28 @@ fn every_graph_fails_closed_under_selection_and_accounts_for_support_multiplicit
         let ids: Vec<_> = std::iter::once(graph.parent.as_str())
             .chain(graph.helpers.iter().map(String::as_str))
             .collect();
+        // A selected parent keeps the helpers that are not selected, as rules
+        // that do not report.
         for omitted in &graph.helpers {
-            let engine = Engine::builder(
-                config()
-                    .select_rules(ids.iter().copied().filter(|id| *id != omitted))
-                    .unwrap(),
-            )
+            let selected = config()
+                .select_rules(ids.iter().copied().filter(|id| *id != omitted))
+                .unwrap();
+            assert!(selected.rule(omitted).unwrap().skip_report());
+            let engine = Engine::builder(selected).build().unwrap();
+            assert_case(case, &scan(&engine, case));
+        }
+        let engine = Engine::builder(config().select_rules([graph.parent.as_str()]).unwrap())
             .build()
             .unwrap();
-            assert!(scan(&engine, case).is_empty(), "{} {omitted}", case.name);
-        }
-        for selected in [
-            vec![graph.parent.as_str()],
-            graph.helpers.iter().map(String::as_str).collect(),
-        ] {
-            let engine = Engine::builder(config().select_rules(selected).unwrap())
-                .build()
-                .unwrap();
-            assert!(scan(&engine, case).is_empty(), "{}", case.name);
-        }
+        assert_case(case, &scan(&engine, case));
+        let engine = Engine::builder(
+            config()
+                .select_rules(graph.helpers.iter().map(String::as_str))
+                .unwrap(),
+        )
+        .build()
+        .unwrap();
+        assert!(scan(&engine, case).is_empty(), "{}", case.name);
         assert_case(case, &scan(&graph_engines()[&graph.source_id], case));
         let mut repeated = bytes(&case.input_base64);
         for helper in &case.expected[0].nested {

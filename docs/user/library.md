@@ -81,7 +81,7 @@ then builds the engine.
 | --- | --- |
 | `ConfigLoader::new().load_default()` | Every [built-in rule](built-in-rules.md), the same rules as the CLI: the 222 default rules plus the Rustleaks rules. |
 | `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). |
-| `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. |
+| `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. Rules they require stay without reporting. |
 
 A configuration can use `[extend] useDefault = true` to build on the
 built-in rules. A configuration with `[extend] path = "..."` needs file

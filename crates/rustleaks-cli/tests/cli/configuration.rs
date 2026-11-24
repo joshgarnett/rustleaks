@@ -280,7 +280,7 @@ fn source_local_config_and_enabled_rule_projection_are_applied_before_scan() {
 }
 
 #[test]
-fn selected_composite_logs_missing_required_rule_and_completes() {
+fn selected_composite_keeps_its_required_rule_and_reports() {
     let fixture = Fixture::new();
     fixture.write(
         "composite.toml",
@@ -301,16 +301,17 @@ fn selected_composite_logs_missing_required_rule_and_completes() {
             "report.json",
         ],
     );
+    // `username-rule` stays for `primary-rule` and reports nothing itself.
     assert_eq!(
         result.status.code(),
-        Some(0),
+        Some(1),
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    assert_eq!(fs::read(fixture.0.join("report.json")).unwrap(), b"[]\n");
-    assert!(String::from_utf8_lossy(&result.stderr).contains(
-        "error rule primary-rule requires rule username-rule, which is not in the configuration"
-    ));
+    let report = fs::read_to_string(fixture.0.join("report.json")).unwrap();
+    assert_eq!(report.matches("\"RuleID\"").count(), 1, "{report}");
+    assert!(report.contains("\"RuleID\": \"primary-rule\""), "{report}");
+    assert!(!String::from_utf8_lossy(&result.stderr).contains("requires rule"));
 }
 
 #[test]

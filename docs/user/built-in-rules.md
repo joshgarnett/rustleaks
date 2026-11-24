@@ -78,7 +78,8 @@ regex = '''my_token_[0-9a-f]{32}'''
 `disabledRules` can turn off any of them by ID. A rule in your file with the
 same ID as a built-in rule changes it, as in Gitleaks. If you set `regex` or
 `entropy` on a Rustleaks rule, your value replaces the built-in matcher or
-entropy check.
+entropy check. A `regex` also removes the rule's built-in link to its helper
+rules, so the rule then reports every match of your regex on its own.
 
 To scan with the Gitleaks-derived default rules only, pass a configuration
 that does not extend the default, such as a copy of

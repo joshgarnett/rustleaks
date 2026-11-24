@@ -241,7 +241,7 @@ archives inside it at the same time.
 | Command-line arguments | 4,096 |
 | One command-line value or path | 1 MiB |
 | Path components when Rustleaks cleans a path | 4,096 |
-| `--enable-rule` IDs | 4,096. The selected rules can hold at most 8 MiB of rule source text. |
+| `--enable-rule` IDs | 4,096. The selected rules and the rules they require can hold at most 8 MiB of rule source text. |
 | `extend` levels in a configuration | 2 |
 | One configuration file, including `.gitleaks.toml` or `.rustleaks.toml` in the scanned folder and each `[extend]` file | 16 MiB. A larger file fails to load before Rustleaks reads more than 16 MiB of it. |
 | One regular expression | 1 MiB of source, 4,096 levels of nesting, and 256 MiB for each compiled form. A repeat count can be at most 1,000, and the counts of nested repeats multiplied together can be at most 1,000. |

@@ -2625,6 +2625,89 @@ fn an_extending_rule_replaces_a_builtin_entropy_predicate() {
     assert_eq!(rule_ids_found(builtin, &original), [id]);
 }
 
+const SERVICE_BUS: &str = "rustleaks.azure-servicebus-key-comma";
+const SERVICE_BUS_HELPER: &str = "rustleaks.azure-servicebus-key-comma-tuple";
+
+/// A Service Bus connection string that the built-in comma rule reports.
+fn service_bus_line() -> String {
+    format!(
+        "Endpoint=sb://example-bus.servicebus.windows.net/;SharedAccessKeyName=Root;\
+         SharedAccessKey={}=, next\n",
+        synthetic("", 43)
+    )
+}
+
+fn extend_default(extra: &str) -> rustleaks_core::config::CompiledConfig {
+    ConfigLoader::new()
+        .load_toml(&format!("[extend]\nuseDefault = true\n{extra}"))
+        .unwrap()
+}
+
+#[test]
+fn a_regex_override_makes_a_builtin_relation_rule_a_plain_rule() {
+    // The built-in rule needs a helper that matches the built-in regex. Your
+    // regex replaces the rule, so the rule reports on its own.
+    let secret = synthetic("", 32);
+    let line = format!("mybuskey={secret}\n");
+    let config = extend_default(&format!(
+        "[[rules]]\nid = '{SERVICE_BUS}'\nregex = '''mybuskey=([A-Za-z0-9]{{32}})'''\n\
+         secretGroup = 1\nkeywords = ['mybuskey']\n"
+    ));
+    assert!(
+        config
+            .rule(SERVICE_BUS)
+            .unwrap()
+            .required_rules()
+            .is_empty()
+    );
+    let engine = Engine::builder(config).build().unwrap();
+    let outcome = engine.scan_fragment(&Fragment::new(line.as_bytes()), &ScanOptions::default());
+    let found = outcome
+        .findings()
+        .iter()
+        .map(|finding| {
+            (
+                finding.rule_id().as_str().unwrap(),
+                finding.secret().as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(found, [(SERVICE_BUS, secret.as_str())]);
+}
+
+#[test]
+fn a_disabled_helper_stays_for_its_parent_and_does_not_report() {
+    let line = service_bus_line();
+    assert_eq!(rule_ids_found(extend_default(""), &line), [SERVICE_BUS]);
+
+    let config = extend_default(&format!("disabledRules = ['{SERVICE_BUS_HELPER}']\n"));
+    assert!(config.rule(SERVICE_BUS_HELPER).unwrap().skip_report());
+    assert_eq!(rule_ids_found(config, &line), [SERVICE_BUS]);
+
+    // Without its parent, the helper is not needed and is left out.
+    let config = extend_default(&format!(
+        "disabledRules = ['{SERVICE_BUS}', '{SERVICE_BUS_HELPER}']\n"
+    ));
+    assert!(config.rule(SERVICE_BUS).is_none());
+    assert!(config.rule(SERVICE_BUS_HELPER).is_none());
+    assert!(rule_ids_found(config, &line).is_empty());
+}
+
+#[test]
+fn a_selected_parent_keeps_its_helper_without_reporting_it() {
+    let line = service_bus_line();
+    let selected = extend_default("").select_rules([SERVICE_BUS]).unwrap();
+    assert_eq!(selected.ordered_rule_ids(), [SERVICE_BUS]);
+    assert!(selected.rule(SERVICE_BUS_HELPER).unwrap().skip_report());
+    assert_eq!(rule_ids_found(selected, &line), [SERVICE_BUS]);
+
+    // A selected helper alone does not report.
+    let helper = extend_default("")
+        .select_rules([SERVICE_BUS_HELPER])
+        .unwrap();
+    assert!(rule_ids_found(helper, &line).is_empty());
+}
+
 /// Scans `inputs` with `pack` and decoding, and checks that every input
 /// reports both rule IDs, with explanations off and at small and large
 /// explanation limits.

@@ -94,7 +94,7 @@ The `[extend]` table builds your configuration on top of a base:
 | --- | --- |
 | `useDefault` | When `true`, the base is every built-in rule: the default rules and the Rustleaks rules. |
 | `path` | The path to a base configuration file. |
-| `disabledRules` | Rule IDs from the base to leave out. |
+| `disabledRules` | Rule IDs from the base to leave out. A rule that another rule needs through `[[rules.required]]` stays, but reports no findings of its own. |
 
 You cannot set both `useDefault` and `path`.
 
@@ -159,8 +159,8 @@ rustleaks dir . --enable-rule aws-access-token,github-pat
 ```
 
 An unknown rule ID stops the scan with an error. If a selected rule has
-`[[rules.required]]` entries, also select the required rules. Otherwise
-Rustleaks logs an error for each missing required rule.
+`[[rules.required]]` entries, the required rules stay in the scan even when
+you do not select them, but they report no findings of their own.
 
 ## Ignore files
 

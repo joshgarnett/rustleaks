@@ -257,6 +257,20 @@ impl CompiledRule {
     pub fn skip_report(&self) -> bool {
         self.skip_report
     }
+
+    /// IDs of the rules that this rule needs before it reports. The required
+    /// rules also list the helpers of a `buffer-v1` relation.
+    pub(crate) fn helper_ids(&self) -> impl Iterator<Item = &str> {
+        self.required.iter().map(|required| required.id.as_str())
+    }
+
+    /// Makes a rule that is kept only for another rule a helper that does
+    /// not report and keeps no overlaps.
+    pub(crate) fn into_helper(mut self) -> Self {
+        self.skip_report = true;
+        self.native_replaced_by.clear();
+        self
+    }
 }
 
 /// Immutable, shareable effective configuration.
@@ -335,8 +349,10 @@ impl CompiledConfig {
     /// Returns an immutable configuration containing only the requested
     /// effective rules, preserving request order and duplicates for reports.
     ///
-    /// Required-rule references resolve only within the selected set, matching
-    /// the upstream CLI's map replacement behavior.
+    /// The rules that a selected, reporting rule needs (required rules and
+    /// `buffer-v1` helpers) stay in the projection as rules that do not
+    /// report, even when they are not selected. They are not in
+    /// [`Self::ordered_rule_ids`].
     ///
     /// # Errors
     ///
@@ -355,7 +371,8 @@ impl CompiledConfig {
                 .map_err(|_| RuleSelectionError::allocation())?;
             selected_ids.push(try_copy_selection_string(id)?);
         }
-        self.validate_selection(&selected_ids)?;
+        let helper_ids = self.selection_helpers(&selected_ids);
+        self.validate_selection(&selected_ids, &helper_ids)?;
         let mut rules = BTreeMap::new();
         let mut keywords = BTreeSet::new();
         for id in &selected_ids {
@@ -369,6 +386,18 @@ impl CompiledConfig {
             // selected rules.
             rule.native_replaced_by
                 .retain(|keeper| selected_ids.contains(keeper));
+            for keyword in &rule.keywords {
+                if keywords.len() == Self::MAX_SELECTED_RULES
+                    && !keywords.contains(keyword.as_str())
+                {
+                    return Err(RuleSelectionError::limit(Self::MAX_SELECTED_RULES));
+                }
+                keywords.insert(try_copy_selection_string(keyword)?);
+            }
+            rules.insert(try_copy_selection_string(id)?, rule);
+        }
+        for id in helper_ids {
+            let rule = self.rules[id].clone().into_helper();
             for keyword in &rule.keywords {
                 if keywords.len() == Self::MAX_SELECTED_RULES
                     && !keywords.contains(keyword.as_str())
@@ -419,7 +448,28 @@ impl CompiledConfig {
         })
     }
 
-    fn validate_selection(&self, selected_ids: &[String]) -> Result<(), RuleSelectionError> {
+    /// IDs of the rules, not selected, that a selected reporting rule needs.
+    fn selection_helpers(&self, selected_ids: &[String]) -> Vec<&str> {
+        let selected = selected_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        selected
+            .iter()
+            .filter_map(|id| self.rules.get(*id))
+            .filter(|rule| !rule.skip_report)
+            .flat_map(CompiledRule::helper_ids)
+            .filter(|id| !selected.contains(id) && self.rules.contains_key(*id))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn validate_selection(
+        &self,
+        selected_ids: &[String],
+        helper_ids: &[&str],
+    ) -> Result<(), RuleSelectionError> {
         let mut selected_bytes = self
             .title
             .len()
@@ -449,6 +499,9 @@ impl CompiledConfig {
                 )?));
             };
             selected_bytes = add_rule_size(selected_bytes, rule)?;
+        }
+        for id in helper_ids {
+            selected_bytes = add_rule_size(selected_bytes, &self.rules[*id])?;
         }
         for (targets, allowlist) in &self.targeted_allowlists {
             if targets

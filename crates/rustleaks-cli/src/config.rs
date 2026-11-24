@@ -959,7 +959,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_composite_reports_its_missing_required_rule() {
+    fn selected_composite_keeps_its_required_rule() {
         let root = temporary_directory("selected-composite");
         std::fs::write(
             root.join("composite.toml"),
@@ -982,10 +982,9 @@ mod tests {
             &mut |_| {},
         )
         .unwrap();
-        assert_eq!(
-            assembly.errors,
-            ["rule primary requires rule secondary, which is not in the configuration"]
-        );
+        assert!(assembly.errors.is_empty());
+        assert_eq!(assembly.selected.ordered_rule_ids(), ["primary"]);
+        assert!(assembly.selected.rule("secondary").unwrap().skip_report());
         std::fs::remove_dir_all(root).unwrap();
     }
 
