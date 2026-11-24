@@ -3,12 +3,10 @@ crates/rustleaks-compat/src/evaluation/generator.rs:github-pat:3
 crates/rustleaks-compat/src/evaluation/generator.rs:aws-access-token:4
 crates/rustleaks-compat/src/evaluation/generator.rs:private-key:167
 crates/rustleaks-compat/src/evaluation/generator.rs:generic-api-key:217
-crates/rustleaks-compat/src/evaluation/native_cases.rs:github-pat:176
 crates/rustleaks-core/tests/native_policy.rs:aws-access-token:37
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:340
 
 # Reviewed generated hashes and synthetic decoder test values.
-MODULE.bazel.lock:generic-api-key:794
 MODULE.bazel.lock:generic-api-key:808
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2093
 crates/rustleaks-core/src/decoder/mod.rs:generic-api-key:2098
@@ -20,7 +18,7 @@ crates/rustleaks-core/tests/engine.rs:generic-api-key:353
 crates/rustleaks-core/tests/engine.rs:generic-api-key:363
 crates/rustleaks-core/tests/engine.rs:generic-api-key:410
 
-# Reviewed synthetic private-key compatibility fixtures.
+# Reviewed synthetic private key in the benchmark data.
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
 
 # Reviewed synthetic native rule pack test values and malformed-table markers.
