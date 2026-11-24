@@ -125,7 +125,8 @@ pub enum ExplanationReason {
     RequiredRulesMatched,
     /// At least one required auxiliary rule lacked a nearby finding.
     RequiredRulesMissing,
-    /// The compatibility per-target byte gate skipped a content rule.
+    /// The per-target byte limit, [`crate::model::ScanOptions::max_target_bytes`],
+    /// skipped a content rule.
     TargetByteLimit,
     /// The candidate passed this rule's local gates, before final filtering.
     CandidateAccepted,

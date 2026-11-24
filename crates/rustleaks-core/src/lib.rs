@@ -1,45 +1,16 @@
 #![forbid(unsafe_code)]
 #![doc = include_str!("../README.md")]
 //!
-//! ## Controlled scans
+//! ## Modules
 //!
-//! Each call owns its normalized keyword buffer, match scratch, and findings.
-//! Optional [`session`] policy and batches retain cross-fragment filtering
-//! state without creating threads, requiring an async runtime, or logging.
-//!
-//! Controlled scans remain synchronous and runtime-independent. Budgets are
-//! inclusive, and a partial outcome never contains candidates from an
-//! unfinished top-level rule. Callers must inspect the termination before
-//! treating partial findings as a complete fragment result.
-//!
-//! ```
-//! use std::sync::atomic::AtomicBool;
-//! use rustleaks_core::config::ConfigLoader;
-//! use rustleaks_core::model::{Fragment, ScanOptions};
-//! use rustleaks_core::{Engine, ScanBudget, ScanControl};
-//!
-//! let config = ConfigLoader::new().load_toml(r#"
-//!     [[rules]]
-//!     id = "example-token"
-//!     regex = '''token=([A-Z0-9]{4})'''
-//! "#)?;
-//! let engine = Engine::builder(config).build()?;
-//! let cancelled = AtomicBool::new(false);
-//! let control = ScanControl::cancellable(&cancelled).with_budget(
-//!     ScanBudget::unlimited()
-//!         .max_work_units(32)
-//!         .max_finding_records(4),
-//! );
-//! let outcome = engine.scan_fragment_controlled(
-//!     &Fragment::new(b"token=AB12"),
-//!     &ScanOptions::default(),
-//!     &control,
-//! );
-//!
-//! assert!(outcome.is_complete());
-//! assert_eq!(outcome.findings().len(), 1);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+//! - [`config`]: load and compile configurations.
+//! - [`model`]: fragments, scan options and findings.
+//! - [`session`]: fingerprints, ignore files and baselines across fragments.
+//! - [`native`]: custom compositions of rule files.
+//! - [`triage`]: review records for findings.
+//! - [`explanation`]: scan explanation records from a
+//!   [`native::NativeEngine`].
+//! - [`validation`]: offline format checks that never remove a finding.
 
 pub mod config;
 mod decoder;

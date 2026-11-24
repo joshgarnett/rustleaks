@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use base64::Engine as _;
@@ -30,7 +31,7 @@ regexes = ['''^ABCD0000$''']
 
 #[test]
 fn composition_is_explicit_and_base_outcomes_remain_equal() {
-    let legacy = Engine::builder(default_rules_alone().load_default().unwrap())
+    let plain = Engine::builder(default_rules_alone().load_default().unwrap())
         .build()
         .unwrap();
     let native = NativePolicy::builder().build().unwrap();
@@ -38,7 +39,7 @@ fn composition_is_explicit_and_base_outcomes_remain_equal() {
     for maximum in [0, 1, 10_000] {
         let control =
             ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(maximum));
-        let left = legacy.scan_fragment_controlled(&fragment, &ScanOptions::default(), &control);
+        let left = plain.scan_fragment_controlled(&fragment, &ScanOptions::default(), &control);
         for limit in [0, 1, 4_096] {
             let right = native.scan_fragment_controlled(
                 &fragment,
@@ -60,7 +61,7 @@ fn composition_is_explicit_and_base_outcomes_remain_equal() {
         .unwrap()
         .build()
         .unwrap();
-    assert!(legacy.config().rule("rustleaks.sample").is_none());
+    assert!(plain.config().rule("rustleaks.sample").is_none());
     assert!(
         composed
             .engine()
@@ -317,7 +318,7 @@ fn unsupported_or_unspecified_checksum_formats_remain_visible_and_unknown() {
     // Deliberately synthetic. No live token is created or contacted.
     let token = format!("ghp_{}", "A1b2C3d4E5f6".repeat(3));
     let fragment = Fragment::new(token.as_bytes());
-    let legacy = engine
+    let plain = engine
         .engine()
         .scan_fragment(&fragment, &ScanOptions::default());
     let outcome = engine.scan_fragment_controlled(
@@ -326,8 +327,8 @@ fn unsupported_or_unspecified_checksum_formats_remain_visible_and_unknown() {
         &ScanControl::unlimited(),
         ExplanationOptions::bounded(4_096),
     );
-    assert!(!legacy.findings().is_empty());
-    assert_eq!(outcome.scan().findings(), legacy.findings());
+    assert!(!plain.findings().is_empty());
+    assert_eq!(outcome.scan().findings(), plain.findings());
     assert!(
         outcome
             .explanations()
@@ -473,7 +474,7 @@ keywords = ["ghp_"]
         ScanControl::unlimited(),
         ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(0)),
     ] {
-        let legacy = engine
+        let plain = engine
             .engine()
             .scan_fragment_controlled(&fragment, &options, &control);
         let annotated = engine.scan_fragment_controlled(
@@ -482,8 +483,8 @@ keywords = ["ghp_"]
             &control,
             ExplanationOptions::bounded(4_096),
         );
-        assert_eq!(legacy.findings(), annotated.scan().findings());
-        assert_eq!(legacy.termination(), annotated.scan().termination());
+        assert_eq!(plain.findings(), annotated.scan().findings());
+        assert_eq!(plain.termination(), annotated.scan().termination());
         assert!(
             annotated
                 .explanations()
@@ -536,7 +537,7 @@ fn composition_and_diagnostic_limits_are_inclusive() {
 }
 
 #[test]
-fn native_unknown_fields_fail_before_the_legacy_loader_can_discard_them() {
+fn native_unknown_fields_fail_before_the_config_loader_can_discard_them() {
     const RULE: &str = "[[rules]]\nid = 'rustleaks.strict'\nregex = 'marker=([A-Z0-9]{8})'\n";
     const PRIVATE_FIELD: &str = "private_field_sentinel = 'private_value_sentinel'\n";
     let cases = [
@@ -807,7 +808,7 @@ mod byte_entropy {
                 .scan_fragment(&Fragment::new(input(&secret)), &ScanOptions::default());
             assert!(scan.is_complete());
             assert_eq!(scan.findings().len(), 1);
-            #[allow(clippy::cast_possible_truncation)]
+            #[allow(clippy::cast_possible_truncation)] // The thresholds are small exact values.
             let expected = threshold as f32;
             assert_eq!(scan.findings()[0].entropy().to_bits(), expected.to_bits());
             // This also checks the comparator cannot be bypassed through Engine.
@@ -1010,9 +1011,9 @@ mod byte_entropy {
     }
 
     #[test]
-    fn legacy_scalar_rules_and_reports_retain_exact_values() {
+    fn scalar_entropy_rules_and_reports_retain_exact_values() {
         for scalar in ["0.0", "1.0", "3.5"] {
-            let legacy = Engine::builder(ConfigLoader::new().load_toml(&pack(scalar)).unwrap())
+            let loaded = Engine::builder(ConfigLoader::new().load_toml(&pack(scalar)).unwrap())
                 .build()
                 .unwrap();
             let native = engine(scalar);
@@ -1032,7 +1033,7 @@ mod byte_entropy {
             ] {
                 let bytes = input(secret);
                 let left =
-                    legacy.scan_fragment(&Fragment::new(bytes.as_slice()), &ScanOptions::default());
+                    loaded.scan_fragment(&Fragment::new(bytes.as_slice()), &ScanOptions::default());
                 let right =
                     native.scan_fragment(&Fragment::new(bytes.as_slice()), &ScanOptions::default());
                 assert!(left.is_complete() && right.is_complete());
@@ -1040,7 +1041,7 @@ mod byte_entropy {
             }
         }
         let loader = ConfigLoader::new();
-        let legacy = loader
+        let loaded = loader
             .compile(
                 loader
                     .parse_toml(rustleaks_core::config::DEFAULT_CONFIG, None)
@@ -1048,7 +1049,7 @@ mod byte_entropy {
             )
             .unwrap();
         let native = NativePolicy::builder().compile().unwrap().0;
-        assert_eq!(legacy, native);
+        assert_eq!(loaded, native);
     }
 }
 
@@ -1504,12 +1505,12 @@ skipReport = true
     }
 
     #[test]
-    fn legacy_required_arrays_and_native_composition_keep_equal_results_and_usage() {
-        let legacy = TUPLES.replace("[rules.required]\ncontract = \"buffer-v1\"\nedges = [{ id = \"rustleaks.helper\", relation = \"same-candidate\" }]", "[[rules.required]]\nid = \"rustleaks.helper\"\nwithinLines = 0\nwithinColumns = 0");
-        let direct = Engine::builder(ConfigLoader::new().load_toml(&legacy).unwrap())
+    fn required_arrays_and_native_composition_keep_equal_results_and_usage() {
+        let arrays = TUPLES.replace("[rules.required]\ncontract = \"buffer-v1\"\nedges = [{ id = \"rustleaks.helper\", relation = \"same-candidate\" }]", "[[rules.required]]\nid = \"rustleaks.helper\"\nwithinLines = 0\nwithinColumns = 0");
+        let direct = Engine::builder(ConfigLoader::new().load_toml(&arrays).unwrap())
             .build()
             .unwrap();
-        let native = selected(&legacy);
+        let native = selected(&arrays);
         for depth in 0..=2 {
             let fragment = Fragment::new(encoded(b"pair=BAD:WXYZ pair=GOOD:ABCD", depth));
             let options = ScanOptions::builder().max_decode_depth(depth).build();
@@ -2161,7 +2162,7 @@ mod native_bytes {
     }
 
     #[test]
-    fn native_helper_keywords_use_original_classification_for_legacy_string_helpers() {
+    fn native_helper_keywords_use_original_classification_for_string_pattern_helpers() {
         let source = format!(
             "{}[rules.required]\ncontract='buffer-v1'\nedges=[{{id='rustleaks.helper',relation='same-candidate'}}]\n[[rules]]\nid='rustleaks.helper'\nregex='marker=(ABCD)'\nkeywords=['accesskey']\nskipReport=true\n",
             pack("marker=(ABCD)", &[])

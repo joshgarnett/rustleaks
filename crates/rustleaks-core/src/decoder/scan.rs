@@ -157,7 +157,8 @@ fn next_match(data: &[u8], from: usize) -> Option<(usize, usize)> {
     }
 }
 
-fn is_go_space(byte: u8) -> bool {
+// The bytes of Go regexp `\s`: tab, LF, FF, CR and space.
+fn is_go_regex_space(byte: u8) -> bool {
     matches!(byte, b'\t' | b'\n' | 0x0c | b'\r' | b' ')
 }
 
@@ -203,7 +204,7 @@ fn plus_unicode_at(data: &[u8], start: usize) -> Option<usize> {
             end = after;
             break;
         }
-        if !is_go_space(data[after]) {
+        if !is_go_regex_space(data[after]) {
             break;
         }
         end = after + 1;

@@ -25,7 +25,8 @@ pub fn token(prefix: &str, length: usize) -> String {
 
 // These companion expectations are independently specified from the pinned
 // source grammars. Physical source coordinates are not Finding::location:
-// Fragment::new starts at line 0, and the frozen column origin includes LF.
+// Fragment::new starts at line 0, and columns count from the LF before the
+// line.
 pub const ESCAPED_CASES: [(&str, &str, &str, usize, &str); 3] = [
     (
         "rustleaks.anthropic-api-key-escaped",

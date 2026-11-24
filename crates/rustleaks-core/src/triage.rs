@@ -12,6 +12,14 @@
 //! Diagnostic tuples below omit every source-derived string. A partial scan
 //! always carries its completion state even when no finding was returned.
 //!
+//! Both examples use
+//! [`NativePolicy::builder`](crate::native::NativePolicy::builder) alone, so
+//! they review findings from the rules in
+//! [`DEFAULT_CONFIG`](crate::config::DEFAULT_CONFIG) only. They do not use
+//! the built-in rule files that
+//! [`ConfigLoader::load_default`](crate::config::ConfigLoader::load_default)
+//! and the CLI add.
+//!
 //! ```
 //! use rustleaks_core::explanation::ExplanationOptions;
 //! use rustleaks_core::model::{Fragment, ScanOptions};

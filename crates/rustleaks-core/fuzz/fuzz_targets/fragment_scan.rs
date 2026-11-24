@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each target uses part of the shared module.
 #[path = "../../tests/support/fuzz_profile.rs"]
 mod fuzz_profile;
 

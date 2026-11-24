@@ -1,4 +1,4 @@
-//! Independent synthetic controls for the `rustleaks-providers-v1` rules.
+//! Cases for the rules in rustleaks-providers-v1.toml.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -71,8 +71,8 @@ fn synthetic_positives_have_independent_exact_spans_and_locations() {
         );
         assert_eq!(finding.secret_range(), range(7, 7 + secret.len()));
         assert_eq!(finding.match_range(), range(7, 8 + secret.len()));
-        // Fragment::new has start_line=0. Frozen M4-LOCATION-003 includes
-        // the preceding LF in the byte-column origin.
+        // Fragment::new starts at line 0, and columns count from the LF
+        // before the line.
         assert_eq!(
             finding.location(),
             Location::new(1, 1, 4, 4 + secret.len()).unwrap()
@@ -162,8 +162,8 @@ fn invalid_bytes_repeats_and_newlines_preserve_source_geometry() {
             findings[1].secret_range(),
             range(second, second + secret.len())
         );
-        // Frozen M4-TRIM-003 trims LF only, retaining the consumed CR. The
-        // following LF is not part of the single-delimiter expression.
+        // Line trimming removes the LF only and keeps the CR. The next LF is
+        // not part of the match.
         assert_eq!(
             findings[1].match_range(),
             range(second, second + secret.len() + 1)
@@ -463,14 +463,14 @@ fn assert_companion_geometry(finding: &Finding, id: &str, secret: &str, suffix: 
 }
 
 #[test]
-fn escaped_companions_add_only_three_delimiters_and_preserve_old_findings() {
-    for (id, old_id, prefix, length, tail) in ESCAPED_CASES {
+fn escaped_companions_add_only_three_delimiters_and_keep_default_rule_findings() {
+    for (id, base_id, prefix, length, tail) in ESCAPED_CASES {
         let secret = format!("{prefix}{}{tail}", companion_body(prefix, length));
         for suffix in ["\\\"", "\\'", "\\`"] {
             let input = format!("lead\nx {secret}{suffix}");
             assert!(
                 scan(base().engine(), input.as_bytes()).is_empty(),
-                "{old_id}"
+                "{base_id}"
             );
             for engine in [isolated(), composed().engine(), both_packs().engine()] {
                 let findings = scan(engine, input.as_bytes());
@@ -481,11 +481,11 @@ fn escaped_companions_add_only_three_delimiters_and_preserve_old_findings() {
         for suffix in ["", "\"", "'", "`", ";", " ", "\t", "\u{c}", "\\n", "\\r"] {
             let input = format!("lead\nx {secret}{suffix}");
             assert!(scan(isolated(), input.as_bytes()).is_empty(), "{id}");
-            let previous = scan(base().engine(), input.as_bytes());
-            assert_eq!(previous.len(), 1, "{old_id}, {suffix:?}");
-            assert_companion_geometry(&previous[0], old_id, &secret, suffix);
-            assert_eq!(scan(composed().engine(), input.as_bytes()), previous);
-            assert_eq!(scan(both_packs().engine(), input.as_bytes()), previous);
+            let base_findings = scan(base().engine(), input.as_bytes());
+            assert_eq!(base_findings.len(), 1, "{base_id}, {suffix:?}");
+            assert_companion_geometry(&base_findings[0], base_id, &secret, suffix);
+            assert_eq!(scan(composed().engine(), input.as_bytes()), base_findings);
+            assert_eq!(scan(both_packs().engine(), input.as_bytes()), base_findings);
         }
         // The existing escaped-only rule remains unchanged; a separate
         // explicitly selected companion owns the missing VT occurrence.
@@ -497,7 +497,7 @@ fn escaped_companions_add_only_three_delimiters_and_preserve_old_findings() {
             assert_eq!(findings.len(), 1);
             assert_companion_geometry(
                 &findings[0],
-                &format!("rustleaks.{old_id}-vt"),
+                &format!("rustleaks.{base_id}-vt"),
                 &secret,
                 "\u{b}",
             );
@@ -533,8 +533,8 @@ fn openai_simple_new_and_existing_tokens_select_their_respective_rules() {
                 let new_pair = left == 20 || right == 20;
                 for suffix in [";", "", "\"", "'", "`", "\\n", "\\r"] {
                     let input = format!("lead\nx {secret}{suffix}");
-                    let old = scan(base().engine(), input.as_bytes());
-                    assert_eq!(old.len(), usize::from(!new_pair));
+                    let base_findings = scan(base().engine(), input.as_bytes());
+                    assert_eq!(base_findings.len(), usize::from(!new_pair));
                     assert_eq!(
                         scan(isolated(), input.as_bytes()).len(),
                         usize::from(new_pair)
@@ -549,7 +549,7 @@ fn openai_simple_new_and_existing_tokens_select_their_respective_rules() {
                             suffix,
                         );
                         if !new_pair {
-                            assert_eq!(findings, old);
+                            assert_eq!(findings, base_findings);
                         }
                     }
                 }
@@ -589,10 +589,10 @@ fn openai_simple_new_and_existing_tokens_select_their_respective_rules() {
         }
     }
     let legacy = format!("sk-{}T3BlbkFJ{};", body(20), body(20));
-    let old = scan(base().engine(), legacy.as_bytes());
-    assert_eq!(old.len(), 1);
+    let base_findings = scan(base().engine(), legacy.as_bytes());
+    assert_eq!(base_findings.len(), 1);
     assert!(scan(isolated(), legacy.as_bytes()).is_empty());
-    assert_eq!(scan(composed().engine(), legacy.as_bytes()), old);
+    assert_eq!(scan(composed().engine(), legacy.as_bytes()), base_findings);
     for secret in [
         openai("user", 20, 20),
         openai("proj", 20, 20).replace("T3BlbkFJ", "T3BLBKFJ"),
@@ -837,7 +837,7 @@ fn companion_source_filters_and_multiline_capture_are_preserved() {
             assert!(scan(isolated(), format!("{secret}{suffix}").as_bytes()).is_empty());
         }
     }
-    // Final LF supplies the ending line to the frozen location helper; the
+    // The final LF gives the location helper the ending line; the
     // inner LF is part of capture 1 and must not be normalized to a space.
     let secret = format!("FlyV1\n{}", body(100));
     let input = format!("lead\nx {secret};\n");

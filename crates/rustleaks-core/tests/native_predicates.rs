@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -369,7 +370,7 @@ fn rejected_predicates_do_not_consume_finding_admission_budgets() {
 
 #[test]
 fn predicate_explanations_are_bounded_source_omitting_and_follow_entropy() {
-    // A custom prefix isolates this mechanism test from pinned default rules.
+    // A custom prefix isolates this mechanism test from the default rules.
     let pack = MAPBOX.replace("(pk\\.", "(zz\\.");
     let native = NativePolicy::builder()
         .with_pack("explanation-v1", &pack)

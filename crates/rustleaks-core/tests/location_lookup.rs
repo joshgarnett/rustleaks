@@ -1,4 +1,4 @@
-//! Public scan contracts for the pinned byte-location lookup semantics.
+//! Line and column locations of findings in scanned bytes.
 #![forbid(unsafe_code)]
 
 use std::ops::Range;

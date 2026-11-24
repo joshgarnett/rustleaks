@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use rustleaks_core::explanation::ExplanationOptions;

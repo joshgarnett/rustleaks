@@ -1,4 +1,5 @@
 //! Golden tests for byte-preserving core models.
+#![forbid(unsafe_code)]
 
 use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
@@ -648,7 +649,7 @@ fn finding_redaction_uses_go_bytes_round_to_even_and_keeps_auxiliaries() {
 }
 
 #[test]
-fn scan_options_preserve_upstream_domain_and_models_are_send_sync() {
+fn scan_options_keep_their_values_and_models_are_send_sync() {
     let defaults = ScanOptions::default();
     assert_eq!(defaults.max_decode_depth(), 0);
     assert_eq!(defaults.max_target_bytes(), None);

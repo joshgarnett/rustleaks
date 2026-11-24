@@ -1,4 +1,5 @@
-//! Independent synthetic contracts for optional credential format supplements.
+//! Cases for the credential format rules, with expectations in
+//! support/format_coverage.json.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -12,7 +13,7 @@ use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
@@ -98,9 +99,10 @@ fn cases() -> &'static Cases {
         .get_or_init(|| serde_json::from_str(include_str!("support/format_coverage.json")).unwrap())
 }
 
-/// The rules before the association batch, a frozen comparison set. Its only
-/// copy is `baseline_rule_ids` in `support/association_coverage.json`.
-fn rules_before_association_batch() -> Vec<String> {
+/// The rule IDs in `config()`, a fixed set. Its only copy is `baseline_rule_ids`
+/// in `support/association_coverage.json`; it does not follow rule file
+/// changes.
+fn config_rule_ids() -> Vec<String> {
     baseline_rule_ids(include_str!("support/association_coverage.json"))
 }
 
@@ -108,7 +110,7 @@ fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
         all_packs_config()
-            .select_rules(rules_before_association_batch().iter().map(String::as_str))
+            .select_rules(config_rule_ids().iter().map(String::as_str))
             .unwrap()
     })
 }
@@ -131,7 +133,7 @@ fn composed() -> &'static Engine {
     ENGINE.get_or_init(|| Engine::builder(config().clone()).build().unwrap())
 }
 
-fn previous() -> &'static Engine {
+fn baseline() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let config = config()
@@ -265,7 +267,7 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
     );
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
-        let prior = scan(previous(), &input, &case.path);
+        let prior = scan(baseline(), &input, &case.path);
         let [start, end] = case.secret_range.unwrap();
         let overlap = prior.iter().any(|finding| match finding.secret_range() {
             FindingRange::Exact(span) => span.start() < end && start < span.end(),
@@ -293,7 +295,7 @@ fn full_composition_separates_new_occurrences_from_extraction_and_attribution() 
         let input = STANDARD.decode(&case.input_base64).unwrap();
         assert_required(
             case.before_required.as_ref().unwrap(),
-            &scan(previous(), &input, &case.path),
+            &scan(baseline(), &input, &case.path),
         );
         let after = scan(composed(), &input, &case.path);
         assert_required_after(case.before_required.as_ref().unwrap(), &case.rule, &after);
@@ -916,7 +918,7 @@ fn ordinary_grafana_keys_keep_one_default_rule_finding() {
     let secret = format!("eyJrIjoi{}", repeated(80));
     let input = format!("xx {secret};");
     let expected = [3, 3 + secret.len()];
-    for engine in [previous(), composed()] {
+    for engine in [baseline(), composed()] {
         let all = scan(engine, input.as_bytes(), "credentials.txt");
         let prior = for_rule(&all, "grafana-api-key");
         assert_eq!(prior.len(), 1);

@@ -1,4 +1,4 @@
-//! Deterministic budget, publication, and ownership contracts for small scans.
+//! Budgets, finding output and ownership of results for small scans.
 #![forbid(unsafe_code)]
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

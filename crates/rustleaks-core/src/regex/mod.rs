@@ -5,9 +5,6 @@
 //! configurations use and keeps byte offsets for arbitrary source content.
 
 #![forbid(unsafe_code)]
-// The `go_regex` fuzz target compiles this module on its own and calls helpers
-// that the library does not, so dead-code warnings are off outside tests.
-#![cfg_attr(not(test), allow(dead_code))]
 
 #[cfg(test)]
 mod differential;
@@ -55,15 +52,6 @@ const GO_CAPTURE_NEST_LIMIT: usize = 999;
 const MAX_REPEAT: u32 = 1_000;
 const DEEP_COMPILE_THRESHOLD: usize = 200;
 const DEEP_COMPILE_STACK_SIZE: usize = 32 << 20;
-const BACKEND_VERSION: &str = "regex-automata-meta/^0.4.12;regex-syntax/^0.8.5";
-
-/// The `regex-automata` and `regex-syntax` requirements in `Cargo.toml`. The
-/// traceability inventory maps Go's `regexp` version to this function, and a
-/// unit test keeps it equal to the manifest.
-pub(crate) const fn backend_version() -> &'static str {
-    BACKEND_VERSION
-}
-
 // Operational script names from Go 1.26's Unicode 15.0 regexp parser. Go
 // canonicalizes an input name before looking it up in `unicode.Scripts`, whose
 // multiword keys retain underscores; those keys are consequently unresolvable
@@ -213,10 +201,12 @@ pub(crate) struct CaptureSpans {
 }
 
 impl CaptureSpans {
+    #[cfg(test)]
     pub(crate) fn spans(&self) -> &[Option<ByteSpan>] {
         &self.spans
     }
 
+    #[cfg(test)]
     pub(crate) fn whole(&self) -> ByteSpan {
         self.spans[0].expect("a captures result always contains its whole match")
     }
@@ -397,7 +387,7 @@ pub(crate) enum PatternCheck {
 
 #[derive(Clone)]
 /// Explicit native byte dialect. Its executable matcher never normalizes input
-/// or passes through the compatibility translator. Like [`GoRegex`], it
+/// or passes through the Go syntax translator. Like [`GoRegex`], it
 /// builds its matcher on first use, except for a deeply nested expression.
 pub(crate) struct NativeByteRegex {
     source: Box<str>,
@@ -554,6 +544,10 @@ impl NativeByteRegex {
 
 impl GoRegex {
     /// Compiles an untrusted Go regexp without panicking.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn compile(source: &str) -> Result<Self, GoRegexError> {
         Self::compile_mode(source, false, PatternCheck::Full)
     }
@@ -748,8 +742,8 @@ impl GoRegex {
         nfa_size_limit: usize,
         utf8: bool,
     ) -> Result<(), GoRegexError> {
-        // Meta does not expose its forward NFA. Preserve the existing exact
-        // fallback working-set rejection before allocating any search cache.
+        // Meta does not expose its forward NFA. Reject a fallback working set
+        // above the limit before any search cache is allocated.
         // Parse only once and drop this temporary NFA before meta compilation.
         let nfa = thompson::NFA::compiler()
             .configure(
@@ -814,6 +808,10 @@ impl GoRegex {
         })
     }
 
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn source(&self) -> &str {
         &self.source
     }
@@ -840,6 +838,10 @@ impl GoRegex {
     }
 
     /// Eagerly returns whole-match spans without computing capture groups.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn find_all(&self, haystack: &[u8]) -> Vec<ByteSpan> {
         self.find_all_normalized(&NormalizedHaystack::new(haystack))
     }
@@ -907,6 +909,10 @@ impl GoRegex {
     }
 
     /// Finds only the first match, treating this slice as its own haystack.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn captures(&self, haystack: &[u8]) -> Option<CaptureSpans> {
         let mut scratch = self.capture_scratch();
         self.captures_into(haystack, &mut scratch)?;
@@ -925,7 +931,12 @@ impl GoRegex {
 
     /// Finds only the first match, like [`Self::captures`], using `scratch`.
     ///
-    /// The returned slice is aligned like [`CaptureSpans::spans`].
+    /// Element zero of the returned slice is the whole match, as in
+    /// [`CaptureSpans`].
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn captures_into<'s>(
         &self,
         haystack: &[u8],
@@ -986,6 +997,10 @@ impl GoRegex {
     }
 
     /// Returns every non-overlapping match and all of its capture spans.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by tests and the go_regex fuzz target")
+    )]
     pub(crate) fn captures_all(&self, haystack: &[u8]) -> Vec<CaptureSpans> {
         let normalized = NormalizedHaystack::new(haystack);
         let bytes = normalized.bytes();
@@ -2141,7 +2156,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fmt::Write as _;
 
-    use super::{ByteSpan, GoRegex, GoRegexError, NormalizedHaystack, Translator, backend_version};
+    use super::{ByteSpan, GoRegex, GoRegexError, NormalizedHaystack, Translator};
 
     fn spans(ranges: &[(usize, usize)]) -> Vec<ByteSpan> {
         ranges
@@ -2158,11 +2173,11 @@ mod tests {
                 b'0'..=b'9' => byte - b'0' + 52,
                 b'+' => 62,
                 b'/' => 63,
-                _ => panic!("invalid frozen base64 digit"),
+                _ => panic!("invalid test base64 digit"),
             }
         }
 
-        assert_eq!(encoded.len() % 4, 0, "frozen base64 must be padded");
+        assert_eq!(encoded.len() % 4, 0, "test base64 must be padded");
         let mut decoded = Vec::with_capacity(encoded.len() / 4 * 3);
         for chunk in encoded.as_bytes().chunks_exact(4) {
             let first = digit(chunk[0]);
@@ -2403,25 +2418,6 @@ mod tests {
                 .map(|name| name.as_deref())
                 .collect::<Vec<_>>(),
             vec![None, Some("word"), Some("1"), None]
-        );
-    }
-
-    #[test]
-    fn backend_version_matches_the_manifest_requirements() {
-        let manifest: toml::Table = toml::from_str(include_str!("../../Cargo.toml")).unwrap();
-        let dependencies = manifest["dependencies"].as_table().unwrap();
-        let requirement = |name: &str| match &dependencies[name] {
-            toml::Value::String(version) => version.clone(),
-            toml::Value::Table(table) => table["version"].as_str().unwrap().to_owned(),
-            other => panic!("unexpected requirement for {name}: {other:?}"),
-        };
-        assert_eq!(
-            backend_version(),
-            format!(
-                "regex-automata-meta/^{};regex-syntax/^{}",
-                requirement("regex-automata"),
-                requirement("regex-syntax"),
-            )
         );
     }
 
@@ -3323,8 +3319,8 @@ mod tests {
         }
     }
 
-    // Frozen allocation-per-call search, retained only as differential evidence.
-    fn frozen_captures(regex: &GoRegex, haystack: &[u8]) -> Option<Vec<Option<ByteSpan>>> {
+    // Simple allocation-per-call search that the scratch search is compared with.
+    fn reference_captures(regex: &GoRegex, haystack: &[u8]) -> Option<Vec<Option<ByteSpan>>> {
         let normalized = NormalizedHaystack::new(haystack);
         let mut captures = regex.backend.get().create_captures();
         regex.backend.get().search_captures(
@@ -3369,7 +3365,7 @@ mod tests {
                 Some(vec![span(0, length), span(0, 1), span(1, length), None]),
             ),
         ] {
-            assert_eq!(frozen_captures(&regex, haystack), expected);
+            assert_eq!(reference_captures(&regex, haystack), expected);
             assert_eq!(
                 regex
                     .captures_into(haystack, &mut scratch)
@@ -3380,7 +3376,7 @@ mod tests {
     }
 
     #[test]
-    fn reused_capture_scratch_matches_the_frozen_fresh_search() {
+    fn reused_capture_scratch_matches_the_reference_fresh_search() {
         let haystacks: &[&[u8]] = &[
             b"a",
             b"b",
@@ -3412,7 +3408,7 @@ mod tests {
                 .chain(haystacks.iter().rev())
                 .chain(haystacks.iter())
             {
-                let expected = frozen_captures(&regex, haystack);
+                let expected = reference_captures(&regex, haystack);
                 assert_eq!(
                     regex
                         .captures_into(haystack, &mut scratch)

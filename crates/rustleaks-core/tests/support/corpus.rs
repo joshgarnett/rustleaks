@@ -7,6 +7,8 @@
 use std::fs;
 use std::path::Path;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use rustleaks_core::model::{Finding, RequiredFinding};
 use serde::{Deserialize, Serialize};
 
@@ -136,50 +138,29 @@ pub fn json_lines<T: for<'de> Deserialize<'de>>(path: &Path) -> Vec<T> {
         .collect()
 }
 
-/// Decodes standard base64. Decoding stops at the first `=`.
+/// Reads one JSON value per non-blank line, keeping only the values with no
+/// `operation` field or with `operation` equal to `operation`.
+pub fn json_lines_with_operation<T: for<'de> Deserialize<'de>>(
+    path: &Path,
+    operation: &str,
+) -> Vec<T> {
+    json_lines::<serde_json::Value>(path)
+        .into_iter()
+        .filter(|value| {
+            value
+                .get("operation")
+                .is_none_or(|value| value == operation)
+        })
+        .map(|value| serde_json::from_value(value).unwrap())
+        .collect()
+}
+
+/// Decodes standard base64 with padding.
 pub fn decode_base64(encoded: &str) -> Vec<u8> {
-    let mut output = Vec::with_capacity(encoded.len() / 4 * 3);
-    let mut accumulator = 0_u32;
-    let mut bits = 0_u8;
-    for byte in encoded.bytes().take_while(|byte| *byte != b'=') {
-        let value = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => panic!("invalid base64 fixture"),
-        };
-        accumulator = (accumulator << 6) | u32::from(value);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push(((accumulator >> bits) & 0xff) as u8);
-        }
-    }
-    output
+    STANDARD.decode(encoded).unwrap()
 }
 
 /// Encodes standard base64 with padding.
 pub fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let value = (u32::from(chunk[0]) << 16)
-            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
-            | u32::from(*chunk.get(2).unwrap_or(&0));
-        output.push(char::from(TABLE[((value >> 18) & 63) as usize]));
-        output.push(char::from(TABLE[((value >> 12) & 63) as usize]));
-        output.push(if chunk.len() > 1 {
-            char::from(TABLE[((value >> 6) & 63) as usize])
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            char::from(TABLE[(value & 63) as usize])
-        } else {
-            '='
-        });
-    }
-    output
+    STANDARD.encode(bytes)
 }

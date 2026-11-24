@@ -786,9 +786,9 @@ impl ConfigLoader {
 ///
 /// Rule packs repeat the same allowlist patterns across many rules. A pattern
 /// that already validated, and a joined pattern or stopword set that already
-/// compiled, are reused instead of being built again. Compilation still runs
-/// in configuration order, so an invalid pattern fails at its first
-/// occurrence with that occurrence's scope, as before.
+/// compiled, are reused instead of being built again. Compilation runs in
+/// configuration order, so an invalid pattern fails at its first occurrence
+/// with that occurrence's scope.
 #[derive(Default)]
 struct AllowlistCache {
     validated: BTreeSet<String>,
@@ -840,26 +840,14 @@ fn compile_rule(
 
     let (path, path_matcher) = nonempty_pattern(rule.path, &rule.id, "path", check)?;
     let (regex, regex_matcher, native_byte_matcher) = if bytes {
-        let compiled = NativeByteRegex::compile_checked(&rule.regex, check).map_err(|error| {
-            ConfigError::InvalidPattern {
-                scope: rule.id.clone(),
-                field: "regex",
-                pattern: rule.regex.clone(),
-                message: error.to_string(),
-            }
-        })?;
+        let compiled = NativeByteRegex::compile_checked(&rule.regex, check)
+            .map_err(|error| invalid_pattern(&rule.id, "regex", &rule.regex, error))?;
         (Some(rule.regex), None, Some(compiled))
     } else if rule.regex.is_empty() {
         (None, None, None)
     } else {
-        let compiled = GoRegex::compile_checked(&rule.regex, check).map_err(|error| {
-            ConfigError::InvalidPattern {
-                scope: rule.id.clone(),
-                field: "regex",
-                pattern: rule.regex.clone(),
-                message: error.to_string(),
-            }
-        })?;
+        let compiled = GoRegex::compile_checked(&rule.regex, check)
+            .map_err(|error| invalid_pattern(&rule.id, "regex", &rule.regex, error))?;
         (Some(rule.regex), Some(compiled), None)
     };
 
@@ -886,7 +874,6 @@ fn compile_rule(
         allowlists,
         required: rule.required,
         skip_report: rule.skip_report,
-        native_pack: false,
         native_replaced_by: Vec::new(),
     })
 }
@@ -952,12 +939,8 @@ fn compile_allowlist(
             if cache.validated.contains(pattern) {
                 continue;
             }
-            GoRegex::validate(pattern).map_err(|error| ConfigError::InvalidPattern {
-                scope: scope.to_owned(),
-                field,
-                pattern: pattern.clone(),
-                message: error.to_string(),
-            })?;
+            GoRegex::validate(pattern)
+                .map_err(|error| invalid_pattern(scope, field, pattern, error))?;
             cache.validated.insert(pattern.clone());
         }
     }
@@ -987,11 +970,8 @@ fn compile_allowlist(
             let matcher = AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
                 .build(nonempty_stop_words)
-                .map_err(|error| ConfigError::InvalidPattern {
-                    scope: scope.to_owned(),
-                    field: "stopword",
-                    pattern: "<normalized stopwords>".to_owned(),
-                    message: error.to_string(),
+                .map_err(|error| {
+                    invalid_pattern(scope, "stopword", "<normalized stopwords>", error)
                 })?;
             cache.stop_words.insert(key, matcher.clone());
             Some(matcher)
@@ -1036,13 +1016,8 @@ fn compile_joined_allowlist_patterns(
     if let Some(regex) = cache.joined.get(&joined) {
         return Ok(Some(regex.clone()));
     }
-    let regex =
-        GoRegex::compile_checked(&joined, check).map_err(|error| ConfigError::InvalidPattern {
-            scope: scope.to_owned(),
-            field,
-            pattern: joined.clone(),
-            message: error.to_string(),
-        })?;
+    let regex = GoRegex::compile_checked(&joined, check)
+        .map_err(|error| invalid_pattern(scope, field, &joined, error))?;
     cache.joined.insert(joined, regex.clone());
     Ok(Some(regex))
 }
@@ -1056,14 +1031,23 @@ fn nonempty_pattern(
     if pattern.is_empty() {
         return Ok((None, None));
     }
-    let compiled =
-        GoRegex::compile_checked(&pattern, check).map_err(|error| ConfigError::InvalidPattern {
-            scope: scope.to_owned(),
-            field,
-            pattern: pattern.clone(),
-            message: error.to_string(),
-        })?;
+    let compiled = GoRegex::compile_checked(&pattern, check)
+        .map_err(|error| invalid_pattern(scope, field, &pattern, error))?;
     Ok((Some(pattern), Some(compiled)))
+}
+
+fn invalid_pattern(
+    scope: &str,
+    field: &'static str,
+    pattern: &str,
+    error: impl fmt::Display,
+) -> ConfigError {
+    ConfigError::InvalidPattern {
+        scope: scope.to_owned(),
+        field,
+        pattern: pattern.to_owned(),
+        message: error.to_string(),
+    }
 }
 
 fn validate_effective_rules(rules: &BTreeMap<String, CompiledRule>) -> Result<(), ConfigError> {
