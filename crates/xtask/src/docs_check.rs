@@ -1187,6 +1187,10 @@ fn xtask_problems(prefix: &str, arguments: &[&str]) -> Vec<String> {
         "generate" => crate::tooling::GENERATE_TARGETS,
         "perf" => crate::PERF_SUBCOMMANDS,
         "compare" => crate::comparison::COMPARE_SUBCOMMANDS,
+        "compare-quality" => crate::comparison_quality::SUBCOMMANDS,
+        "compare-workloads" => crate::comparison_workloads::SUBCOMMANDS,
+        "fuzz" => crate::fuzzing::FUZZ_SUBCOMMANDS,
+        "release-artifact" => crate::release_artifact::RELEASE_ARTIFACT_SUBCOMMANDS,
         _ => return Vec::new(),
     };
     if accepted.contains(&argument) {

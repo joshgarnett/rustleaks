@@ -169,6 +169,11 @@ pub(crate) fn run_bounded(
     bundle.finish(result)
 }
 
+/// Operations accepted after `fuzz`. The documentation command check reads
+/// this list, and a unit test keeps it in step with [`Request::parse`].
+pub(crate) const FUZZ_SUBCOMMANDS: &[&str] =
+    &["run", "replay", "minimize", "promote", "reproduce", "tmin"];
+
 struct Request {
     operation: String,
     source: Option<PathBuf>,
