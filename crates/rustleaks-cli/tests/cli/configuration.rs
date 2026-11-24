@@ -59,6 +59,67 @@ fn explicit_config_wins_and_inline_errors_do_not_disclose_contents() {
 }
 
 #[test]
+fn config_file_errors_show_position_but_not_file_text() {
+    let marker = "SECRET_MARKER_DO_NOT_PRINT";
+    let fixture = Fixture::new();
+    fixture.write("broken.toml", format!("title = 'x'\ninvalid=[{marker}\n"));
+    fixture.write("other.txt", format!("first line\n{marker}=value here\n"));
+    fixture.write("extends.toml", "[extend]\npath = 'other.txt'\n");
+    fixture.write("nested.toml", "[extend]\npath = 'extends.toml'\n");
+    fixture.write("decode.toml", format!("title = ['{marker}']\n"));
+
+    let cases = [
+        ("broken.toml", "parse error at ", "at line 2, column"),
+        (
+            "extends.toml",
+            "extended config error: parse error at ",
+            "at line 1, column",
+        ),
+        (
+            "nested.toml",
+            "extended config error: extended config error: parse error at ",
+            "at line 1, column",
+        ),
+        ("decode.toml", "decode error", ""),
+    ];
+    for (config, kind, position) in cases {
+        let result = output(
+            &fixture.0,
+            &["stdin", "--no-banner", "--redact", "--config", config],
+        );
+        assert_eq!(result.status.code(), Some(1), "{config}");
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(!stderr.contains(marker), "{config}: {stderr}");
+        assert!(!stderr.contains("value here"), "{config}: {stderr}");
+        assert!(
+            stderr.contains("could not compile config"),
+            "{config}: {stderr}"
+        );
+        assert!(stderr.contains(kind), "{config}: {stderr}");
+        assert!(stderr.contains(position), "{config}: {stderr}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_linked_source_local_config_does_not_print_the_linked_file() {
+    let marker = "SECRET_MARKER_DO_NOT_PRINT";
+    let fixture = Fixture::new();
+    fixture.write("outside/private.txt", format!("{marker}=value here\n"));
+    fixture.write("scan/readme.txt", "nothing here\n");
+    std::os::unix::fs::symlink(
+        fixture.0.join("outside/private.txt"),
+        fixture.0.join("scan/.rustleaks.toml"),
+    )
+    .unwrap();
+    let result = output(&fixture.0, &["dir", "scan", "--no-banner", "--redact"]);
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(!stderr.contains(marker), "{stderr}");
+    assert!(stderr.contains("parse error at "), "{stderr}");
+}
+
+#[test]
 fn native_config_names_precede_backward_compatible_aliases() {
     let fixture = Fixture::new();
     fixture.write("native.toml", no_match_config());

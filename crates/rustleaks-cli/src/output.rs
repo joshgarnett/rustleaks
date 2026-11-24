@@ -385,7 +385,7 @@ fn escape_terminal_text(output: &mut String, value: &str) {
                 // Writing to a String cannot fail.
                 let _ = write!(output, "\\x{:02x}", u32::from(character));
             }
-            character if character.is_control() => {
+            character if character.is_control() || is_bidi_control(character) => {
                 // Writing to a String cannot fail.
                 let _ = write!(output, "\\u{{{:x}}}", u32::from(character));
             }
@@ -393,6 +393,16 @@ fn escape_terminal_text(output: &mut String, value: &str) {
         }
     }
 }
+
+/// Reports the Unicode characters that change the order in which a terminal
+/// shows text: the bidirectional marks, embeddings, overrides and isolates.
+fn is_bidi_control(character: char) -> bool {
+    matches!(
+        character,
+        '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
 /// Trims Unicode white space from UTF-8 text. Other bytes stay as they are.
 fn trim_raw(bytes: &[u8]) -> &[u8] {
     std::str::from_utf8(bytes).map_or(bytes, |value| value.trim().as_bytes())
@@ -549,6 +559,16 @@ mod tests {
         error(&mut output, "path\u{1b}[2J\nforged").unwrap();
         assert_eq!(output, b"error path\\x1b[2J\\nforged\n");
         assert!(!output.contains(&0x1b));
+    }
+
+    #[test]
+    fn diagnostics_escape_bidirectional_controls() {
+        let mut output = Vec::new();
+        error(&mut output, "a\u{202e}txt.exe b\u{2066}c\u{200f}").unwrap();
+        assert_eq!(output, b"error a\\u{202e}txt.exe b\\u{2066}c\\u{200f}\n");
+        let mut kept = String::new();
+        escape_terminal_text(&mut kept, "caf\u{e9} \u{200b} \u{5d0}");
+        assert_eq!(kept, "caf\u{e9} \u{200b} \u{5d0}");
     }
 
     #[test]

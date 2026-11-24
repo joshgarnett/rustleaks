@@ -333,10 +333,47 @@ fn load_path(
         .map(|config| (config, physical.display().to_string()))
         .map_err(|error| {
             format!(
-                "could not compile config {} from {source}: {error}",
-                path.display()
+                "could not compile config {} from {source}: {}",
+                path.display(),
+                config_error_summary(&error)
             )
         })
+}
+
+/// Describes a configuration error without the text of the file.
+///
+/// A parse or decode error message can quote the file, and a configuration
+/// found in the scanned folder can name any readable file in `[extend]` or
+/// through a symbolic link. These errors show only their kind and position.
+/// Other errors are reported after the file decoded as a configuration and
+/// keep their full message.
+fn config_error_summary(error: &ConfigError) -> String {
+    match error {
+        ConfigError::Parse { at, source } | ConfigError::Decode { at, source } => {
+            let position = toml_position(&source.to_string())
+                .map(|position| format!(" at {position}"))
+                .unwrap_or_default();
+            format!("{}{at}{position}", config_error_category(error))
+        }
+        ConfigError::Extended(inner) => format!(
+            "{}: {}",
+            config_error_category(error),
+            config_error_summary(inner)
+        ),
+        _ => error.to_string(),
+    }
+}
+
+/// Returns `line L, column C` from the first line of a TOML error, which is
+/// `TOML parse error at line L, column C` when the error has a position.
+fn toml_position(message: &str) -> Option<String> {
+    let rest = message
+        .lines()
+        .next()?
+        .strip_prefix("TOML parse error at line ")?;
+    let (line, column) = rest.split_once(", column ")?;
+    let digits = |value: &str| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit());
+    (digits(line) && digits(column)).then(|| format!("line {line}, column {column}"))
 }
 
 /// Loads ignore files and reports each physical file at most once.
