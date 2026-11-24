@@ -17,8 +17,8 @@ reviewed upstream fixture.
 
 The security goals are to:
 
-- never lose a secret that the default rules find, and document every
-  finding difference from Gitleaks;
+- never lose a secret that the default rules find without maintainer
+  approval, and record every finding change in the changelog;
 - return a structured error or a bounded partial result for hostile input;
 - keep first-party code free of unsafe Rust;
 - avoid hidden network or process-wide activity in the engine; and
@@ -39,7 +39,7 @@ and fail when that boundary changes.
 | Decoders and locations | `rustleaks-core/src/decoder/`, `model.rs` | Caller decode depth, decoded bytes and work in budgets, checked offsets | Decoder, arbitrary bytes, locations, decoder corpus, `fragment_scan` fuzz |
 | Files and directories | `rustleaks-sources/src/file.rs`, `directory.rs`, `path.rs`, `runner.rs`, `runner/budget.rs` | Bounded chunks and queue, optional complete targets, symlink hop limit 64, path normalization, optional budgets, workers joined | File, directory, path, symlink escape, chunking, complete-target, cancellation, budget and panic cleanup tests |
 | Archives | `rustleaks-sources/src/archive.rs`, `archive/`, `rar.rs`, codec forks, selected decoders | Streamed members, no member extraction to disk, no link following, checked coder graphs, depth 8, 1,000,000 entries, 4 GiB member, 16 GiB total, 1 GiB spool, 64 MiB parts in memory, anonymous owner-only temporary spool files | Format fixtures, traversal, link, bomb, nesting, streaming equivalence and spool cleanup tests, panic policy example, `archive` fuzz |
-| Git and links | `rustleaks-sources/src/git.rs`, `scm.rs` | No shell, option terminators, isolated Git config, hooks and prompts off, no credential helper, streamed output with limits for each commit, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
+| Git and links | `rustleaks-sources/src/git.rs`, `git/`, `scm.rs` | No shell, commit names checked before `--stdin`, no network commands, repository textconv, external diff, fsmonitor and signature programs turned off, streamed output with limits for each commit, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
 | Reports and CLI | `rustleaks-report/src/`, `rustleaks-cli/src/args.rs`, `output.rs`, `run.rs` | JSON and XML escaping, bounded templates, `--redact` before output, escaped terminal control characters, counts instead of values in diagnostics | Report and CLI corpora, invalid byte, terminal control and redaction tests, template properties and fuzz |
 | Dependencies | `Cargo.lock`, `deny.toml`, `supply-chain/`, `supply-chain-exceptions.toml` | Locked versions and sources, vet inventory, license, advisory, ban, build script, native code and unsafe policy | `just security`, cargo-deny, RustSec, cargo-vet, cargo-geiger, Miri |
 | Bazel and local tools | `MODULE.bazel`, lockfiles, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned toolchains and lockfiles, declared inputs, exact tool versions, private bounded output, verified process cleanup | `just ci`, build system checks, package consumers, target compile matrix |
@@ -79,6 +79,13 @@ meta engine, its caches and the reverse NFA fallback.
 - The caller owns reading configuration files. `FileSystemResolver` and the
   CLI read at most 16 MiB of each file. Other callers own the size of the
   text they pass.
+- A configuration found in the scanned folder is input from that folder. It
+  can turn off rules, allow findings, and read any file the user can read
+  through `[extend]` or a symbolic link. The CLI shows only the kind and
+  position of a parse or decode error, never the file text. Pass `--config`
+  to keep a scanned folder from choosing its own configuration.
+- The `Display` text of a parse or decode `ConfigError` quotes the file.
+  Library callers that show it own that disclosure.
 - Configuration is untrusted, so literal-anchor analysis is capped by choice
   and step counts, and the full keyword DFA is used only within the keyword
   size and depth limits.
@@ -161,6 +168,13 @@ See [Using rustleaks-core](../user/library.md#review-records).
 
 - Git is an external program. Behavior depends on the installed Git and the
   host file system.
+- The scanned repository's Git configuration and attributes still apply,
+  apart from the textconv, external diff, fsmonitor and signature programs
+  that the source turns off. These are the settings known to start a
+  program during `log` and `diff`. `--log-opts` can turn them back on.
+- A repository's `.gitattributes` can mark a file as binary (`-diff` or
+  `binary`). Git then shows no patch for it, and the history scan reads it
+  only when it is an archive, with no issue.
 - Fuzzing covers the patch parser in process. It does not run Git. Each
   input is also parsed in one-byte and varied chunks, which must give the
   same result as the whole input.
@@ -188,6 +202,12 @@ See [Using rustleaks-core](../user/library.md#review-records).
 - Reports keep finding values when the user asks for them.
 - CSV does not neutralize spreadsheet formulas. Do not open an unreviewed CSV
   in a spreadsheet.
+- CSV and template reports keep control characters from paths, rule IDs and
+  other fields. JUnit replaces C0 controls but keeps C1 controls. Print
+  these reports to a terminal only when the input is trusted.
+- Report files are created with the default mode from the umask, and a
+  symbolic link at the report path is followed.
+- Baseline files are read without a size limit. The user chooses the path.
 - `--verbose` output and report files are an explicit disclosure.
 
 ### Dependencies
@@ -220,8 +240,9 @@ must treat findings, baselines, fragments and reports as sensitive.
 - `Debug` output of these types shows structure, lengths, locations and
   counts, but not the bytes. Callers still decide whether that metadata may
   go to a given log or service.
-- `Finding::redacted` keeps the upstream report behavior and does not redact
-  required findings. It is not safe for disclosure.
+- `Finding::redacted` masks the primary secret in the secret, match and
+  line fields, and replaces the whole line of a decoded finding. It does
+  not redact required findings and is not safe for disclosure.
 - `Finding::without_detected_secrets` removes detected secret bytes
   recursively and drops a kept fragment. Other metadata can still hold
   sensitive content. Give a trust boundary a narrow projection that the

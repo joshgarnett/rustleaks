@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+- Git history and diff scans no longer run commands that the scanned
+  repository's configuration names. Every `git log` and `git diff` passes
+  `--no-textconv`, `--no-ext-diff`, `--no-color` and `-c core.fsmonitor=`,
+  and `git log` also passes `--no-show-signature`. A repository's
+  `.gitattributes` and `.git/config` could set a textconv filter, which Git
+  ran during the scan and whose output replaced the file content, so a
+  secret could be hidden. Scans now see the raw content. A file that a
+  textconv filter used to turn into text, such as a document converted by a
+  driver you set up, is now shown as binary and scanned only when it is an
+  archive. `--log-opts` values come after these options and can turn them
+  back on. `color.ui=always` in a Git configuration no longer makes history
+  scans fail.
+- A configuration file that fails to parse or decode no longer prints its
+  text. The error names the kind of error, the file and the line and
+  column. A configuration in the scanned folder can name any readable file
+  in `[extend]` or through a symbolic link, so the old message could print
+  lines of a file outside the scan, even with `--redact`. Inline
+  configuration errors already showed only the kind of error.
+- With `--redact`, a finding of a decoded secret now has its whole `Line`
+  replaced by the redacted secret. The line held the secret in encoded form,
+  so replacing the decoded bytes left it unchanged, and a report template
+  that prints `{{.Line}}` showed the encoded secret. `Finding::redacted`
+  does the same in the library. Other findings and the JSON, CSV, JUnit and
+  SARIF reports do not change.
+- Diagnostics and verbose output escape the Unicode bidirectional controls
+  (U+061C, U+200E, U+200F, U+202A to U+202E and U+2066 to U+2069) as they
+  already escape control characters, so a path cannot change the order in
+  which a terminal shows the line.
 - Regex updates: `regex-syntax` 0.8.12 and `regex-automata` 0.4.19. An
   alternation whose branches share a repetition prefix, such as `ab*b|ab*c`,
   now reports the leftmost-first match, as Go does. A regex search no longer
@@ -201,6 +229,10 @@
 - The documentation separates user guides from developer guides, describes
   the current compatibility policy and lists the developer docs in
   `docs/dev/README.md`.
+- `rustleaks-sources` removes the unused `SourceStage::ArchiveIdentify`,
+  `SourceStage::Spool` and `SourceStage::Callback` stages and the unused
+  `SourceIssueKind::GitParse` and `SourceIssueKind::GitCommand` issue kinds.
+  No source produced them. Code that names them no longer compiles.
 
 ## [0.1.0-alpha.11] - 2026-11-20
 
