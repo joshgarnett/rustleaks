@@ -269,7 +269,7 @@ fn validate_packages_workflow(source: &str) -> Result<(), String> {
         "    if: inputs.publish\n",
         "    permissions:\n      contents: read\n    outputs:\n",
         "git clone --depth 1 --branch main \"https://github.com/joshgarnett/${repository}.git\" \"${checkout}\"",
-        "cargo xtask release-artifact check-upgrade \"${current}\" \"${EXPECTED_VERSION}\"",
+        "cargo run --locked -p xtask -- release-artifact check-upgrade \"${current}\" \"${EXPECTED_VERSION}\"",
         "echo \"${repository}=$(git -C \"${checkout}\" rev-parse HEAD)\" >> \"${GITHUB_OUTPUT}\"",
     ] {
         if !channels.contains(required) {
@@ -1804,7 +1804,10 @@ mod tests {
             "",
         );
         assert!(super::validate_packages_workflow(&untagged).is_err());
-        let unchecked = source.replace("cargo xtask release-artifact check-upgrade", "true");
+        let unchecked = source.replace(
+            "cargo run --locked -p xtask -- release-artifact check-upgrade",
+            "true",
+        );
         assert!(super::validate_packages_workflow(&unchecked).is_err());
         let flow = source.replacen(
             "    permissions:\n      actions: read\n      contents: read\n    # Only Git",

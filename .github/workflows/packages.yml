@@ -270,7 +270,7 @@ jobs:
               else
                 current="$(sed -n 's#.*/releases/download/v\([^/]*\)/.*#\1#p' "${checkout}/${file}" | sort -u)"
               fi
-              cargo xtask release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
+              cargo run --locked -p xtask -- release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
             fi
             # The publish job pushes only on top of the commit checked here.
             echo "${repository}=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
@@ -290,9 +290,9 @@ jobs:
     permissions:
       actions: read
       contents: read
-    # Only Git and the GitHub CLI run in this job. It checks out no
-    # Rustleaks code and runs no setup action or Cargo, so no build code
-    # shares the runner with the App key or token.
+    # Only Git, the GitHub CLI and the pinned token action run in this job.
+    # It checks out no Rustleaks code and runs no setup action or Cargo, so
+    # no build code shares the runner with the App key or token.
     steps:
       - name: Download the checked formula and manifest
         env:
