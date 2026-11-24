@@ -564,10 +564,11 @@ impl<'a> ArchiveState<'a> {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
+        let complete = self.complete();
         let mut head = [0_u8; GZIP_MAGIC.len()];
         let (chunked, reader) = match input {
             Input::Memory(bytes) => {
-                let format = tgz_format(name, bytes.starts_with(&GZIP_MAGIC));
+                let format = tgz_format(name, bytes.starts_with(&GZIP_MAGIC), complete);
                 let input = Input::Memory(bytes);
                 return self.tgz_as(format, input, logical, depth, cancellation, emit);
             }
@@ -576,7 +577,7 @@ impl<'a> ArchiveState<'a> {
                     Ok(count) => count,
                     Err(failure) => return self.emit_failure(failure, emit),
                 };
-                let format = tgz_format(name, head[..count] == GZIP_MAGIC);
+                let format = tgz_format(name, head[..count] == GZIP_MAGIC, complete);
                 let input = Input::File(file);
                 return self.tgz_as(format, input, logical, depth, cancellation, emit);
             }
@@ -587,7 +588,7 @@ impl<'a> ArchiveState<'a> {
             Ok(count) => count,
             Err(failure) => return self.emit_failure(failure, emit),
         };
-        let format = tgz_format(name, head[..count] == GZIP_MAGIC);
+        let format = tgz_format(name, head[..count] == GZIP_MAGIC, complete);
         let mut prefixed = Prefixed::new(&head[..count], reader);
         let input = if chunked {
             Input::Chunked(&mut prefixed)
@@ -1989,17 +1990,18 @@ fn file_head(file: &File, head: &mut [u8]) -> Result<usize, Failure> {
 /// The format of a `.tgz` name, chosen by whether its bytes start with the
 /// gzip magic.
 ///
-/// With the magic, the name is a gzip TAR, or a gzip stream when an earlier
-/// suffix names gzip without TAR, such as `x.gz.tgz`. Without it, the name
-/// is read as its other suffixes name it, such as `x.tar.tgz` as a TAR or
-/// `x.zip.tgz` as a ZIP, and as a plain file when they name no format.
-fn tgz_format(name: &[u8], gzip: bool) -> Option<Format> {
+/// With the magic, the name is a gzip TAR. In a normal scan it is a gzip
+/// stream instead when an earlier suffix names gzip without TAR, such as
+/// `x.gz.tgz`. Without the magic, the name is read as its other suffixes
+/// name it, such as `x.tar.tgz` as a TAR or `x.zip.tgz` as a ZIP, and as a
+/// plain file when they name no format.
+fn tgz_format(name: &[u8], gzip: bool, complete: bool) -> Option<Format> {
     let named = identify_suffixes(name);
     if !gzip {
         return named;
     }
     Some(match named {
-        Some(Format::Stream(Codec::Gzip)) => Format::Stream(Codec::Gzip),
+        Some(Format::Stream(Codec::Gzip)) if !complete => Format::Stream(Codec::Gzip),
         _ => Format::CompressedTar(Codec::Gzip),
     })
 }

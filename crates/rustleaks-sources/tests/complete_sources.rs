@@ -1723,17 +1723,22 @@ mod tgz_targets {
             assert_one_token(&scan(tar.clone(), "x.tar.tgz"), b"x.tar.tgz!leaf.txt");
             assert_one_token(&scan(zip.clone(), "x.zip.tgz"), b"x.zip.tgz!leaf.txt");
             assert_one_token(&scan(sevenz.clone(), "x.7z.tgz"), b"x.7z.tgz!leaf.txt");
-            // With it, `x.gz.tgz` is a gzip stream of one file and other
-            // names are a gzip TAR.
-            assert_one_token(
-                &scan(archive_seeds::gzip_stored(leaf), "x.gz.tgz"),
-                b"x.gz.tgz",
-            );
+            // With it, the name is a gzip TAR.
             assert_one_token(
                 &scan(tar_gzip(&[("leaf.txt", leaf)]), "x.tar.tgz"),
                 b"x.tar.tgz!leaf.txt",
             );
         }
+        // A normal scan reads a gzip `x.gz.tgz` as a gzip stream of one
+        // file, and a complete scan reads it as a gzip TAR.
+        assert_one_token(
+            &normal(archive_seeds::gzip_stored(leaf), "x.gz.tgz"),
+            b"x.gz.tgz",
+        );
+        assert_one_token(
+            &complete(tar_gzip(&[("leaf.txt", leaf)]), "x.gz.tgz"),
+            b"x.gz.tgz!leaf.txt",
+        );
     }
 
     #[test]
@@ -1761,11 +1766,7 @@ mod tgz_targets {
     fn complete_directory_exact_exclusions_apply_to_tgz_leaves() {
         let tree = Tree::new();
         fs::write(tree.0.join("notes.tgz"), b"token=A001").unwrap();
-        fs::write(
-            tree.0.join("x.gz.tgz"),
-            archive_seeds::gzip_stored(b"token=A001"),
-        )
-        .unwrap();
+        fs::write(tree.0.join("other.tgz"), b"token=A001").unwrap();
         let scan = |excluded: &str| {
             let directory_options = DirectoryOptions::default()
                 .file_options(FileOptions::complete(64).unwrap())
@@ -1782,8 +1783,8 @@ mod tgz_targets {
                 .map(|finding| finding.file().as_bytes().to_vec())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(scan("root/notes.tgz"), [b"root/x.gz.tgz".to_vec()]);
-        assert_eq!(scan("root/x.gz.tgz"), [b"root/notes.tgz".to_vec()]);
+        assert_eq!(scan("root/notes.tgz"), [b"root/other.tgz".to_vec()]);
+        assert_eq!(scan("root/other.tgz"), [b"root/notes.tgz".to_vec()]);
     }
 
     #[test]
