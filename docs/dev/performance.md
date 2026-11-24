@@ -88,8 +88,8 @@ workloads count input bytes. Do not combine the two into one bytes per second
 series.
 
 The workloads named `default-*` use every built-in rule, as a scan does by
-default: the 547 rules in `gitleaks.toml` and the three Rustleaks rule files.
-`gitleaks-compile` compiles the 222 rules in `gitleaks.toml` alone. The
+default: 547 rules, 222 in `gitleaks.toml` and 325 in the three Rustleaks rule
+files. `gitleaks-compile` compiles the 222 rules in `gitleaks.toml` alone. The
 `bm-*` workloads are the Gitleaks allowlist benchmarks and use the
 `gitleaks.toml` allowlists.
 

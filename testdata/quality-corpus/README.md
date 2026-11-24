@@ -149,7 +149,7 @@ safe to publish.
 
 Reports record the SHA-256 of `gitleaks.toml` (`DEFAULT_CONFIG_SHA256`), the
 fingerprint of each built-in rule file, the rule profile (`default-rules`),
-the generator and evaluator source fingerprints and the corpus fingerprint. These fingerprints use FNV-1a, which detects accidental changes
-but does not prove authenticity. Saved run evidence must also record the
-source revision and build identity. The report fingerprints do not identify a
-release binary.
+the generator and evaluator source fingerprints and the corpus fingerprint.
+These fingerprints use FNV-1a, which detects accidental changes but does not
+prove authenticity. Saved run evidence must also record the source revision
+and build identity. The report fingerprints do not identify a release binary.
