@@ -430,7 +430,7 @@ fn run_git_remote(
     cancellation: &dyn Cancellation,
 ) -> Result<ChildOutput, ScmError> {
     let mut command = Command::new(executable);
-    command
+    crate::process::untranslated_git_messages(&mut command)
         .args(["ls-remote", "--quiet", "--get-url"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

@@ -543,6 +543,39 @@ fn absent_and_invalid_remotes_are_safe_recoverable_outcomes() {
     }
 }
 
+/// A repository without a remote gives no platform also when the caller's
+/// locale would translate Git's messages. The stand-in for Git prints the
+/// English "no remote" message only when messages are untranslated.
+#[cfg(unix)]
+#[test]
+fn absent_remote_is_recognized_in_a_translated_locale() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let directory = TestRepository::new(&[]);
+    let git = directory.path().join("locale-git");
+    fs::write(
+        &git,
+        "#!/bin/sh\n\
+         if [ \"${LC_ALL-}\" = C ] && [ -z \"${LANGUAGE+set}\" ]; then\n\
+         echo 'No remote configured to list refs from.' >&2\n\
+         else\n\
+         echo 'Kein Remote-Repository konfiguriert.' >&2\n\
+         fi\n\
+         exit 1\n",
+    )
+    .expect("write Git stand-in");
+    fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).expect("make script executable");
+    let remote = RemoteMetadata::discover_with_executable(
+        ScmPlatform::Unknown,
+        directory.path(),
+        &git,
+        &CancellationToken::new(),
+    )
+    .expect("absent remote is not exceptional");
+    assert_eq!(remote.platform(), ScmPlatform::NoPlatform);
+    assert!(remote.url().is_empty());
+}
+
 struct TestRepository {
     path: PathBuf,
 }

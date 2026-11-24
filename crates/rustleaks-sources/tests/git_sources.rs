@@ -863,6 +863,68 @@ fn recording_script(directory: &Path, name: &str) -> PathBuf {
     path
 }
 
+/// Writes a stand-in for Git that prints the rename-limit warning on
+/// standard error, in English only when Git messages are untranslated
+/// (`LC_ALL=C` and no `LANGUAGE`), as a translated Git would.
+#[cfg(unix)]
+fn locale_warning_git(directory: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let path = directory.join("git");
+    fs::write(
+        &path,
+        "#!/bin/sh\n\
+         if [ \"${LC_ALL-}\" = C ] && [ -z \"${LANGUAGE+set}\" ]; then\n\
+         echo 'warning: exhaustive rename detection was skipped due to too many files.' >&2\n\
+         echo 'warning: you may want to set your diff.renameLimit variable to at least 9 and retry the command.' >&2\n\
+         else\n\
+         echo 'Warnung: Die Erkennung von Umbenennungen wurde uebersprungen.' >&2\n\
+         fi\n",
+    )
+    .expect("write Git stand-in");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make script executable");
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn translated_locale_does_not_turn_the_rename_limit_warning_into_an_issue() {
+    let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let root = TempRepo(std::env::temp_dir().join(format!(
+        "rustleaks-git-locale-{}-{unique}",
+        std::process::id()
+    )));
+    fs::create_dir_all(root.path()).expect("create script directory");
+    let git = locale_warning_git(root.path());
+    let translated = [
+        ("LANG", "de_DE.UTF-8"),
+        ("LC_MESSAGES", "de_DE.UTF-8"),
+    ]
+    .map(|(key, value)| (key.into(), value.into()));
+    for mode in [
+        GitMode::Log { options: None },
+        GitMode::LogArguments(vec!["--all".into()]),
+        GitMode::Diff { staged: true },
+    ] {
+        let mut source = rustleaks_sources::GitSource::new(root.path())
+            .executable(&git)
+            .mode(mode.clone())
+            .command_environment(translated.clone());
+        let (fragments, issues) = collect(&mut source);
+        assert!(fragments.is_empty(), "{mode:?}");
+        assert!(issues.is_empty(), "{mode:?}: {issues:?}");
+    }
+
+    // A locale that the caller sets for Git is kept, so its translated
+    // warning is reported.
+    let mut source = rustleaks_sources::GitSource::new(root.path())
+        .executable(&git)
+        .mode(GitMode::LogArguments(vec!["--all".into()]))
+        .command_environment([("LC_ALL".into(), "de_DE.UTF-8".into())]);
+    let (_, issues) = collect(&mut source);
+    assert_eq!(issues, [SourceIssueKind::GitStderr]);
+}
+
 #[cfg(unix)]
 #[test]
 fn repository_config_cannot_run_commands_or_replace_patch_content() {

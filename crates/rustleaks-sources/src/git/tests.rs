@@ -721,8 +721,42 @@ fn object_format_output_selects_the_empty_tree() {
     }
 }
 
+/// Returns the value that `command` sets for `key`: `Some(None)` when it
+/// removes the variable, and `None` when it leaves the inherited value.
+fn command_env(command: &std::process::Command, key: &str) -> Option<Option<OsString>> {
+    command
+        .get_envs()
+        .find(|(name, _)| *name == OsStr::new(key))
+        .map(|(_, value)| value.map(OsStr::to_owned))
+}
+
 #[test]
-fn classifies_only_pinned_stderr_warnings_as_ignorable() {
+fn git_children_print_untranslated_messages_unless_the_caller_sets_a_locale() {
+    let arguments = [OsString::from("log")];
+    let translated = [(OsString::from("LANG"), OsString::from("de_DE.UTF-8"))];
+    let command = git_command(OsStr::new("git"), &arguments, &translated, false);
+    assert_eq!(command_env(&command, "LC_ALL"), Some(Some("C".into())));
+    assert_eq!(command_env(&command, "LANGUAGE"), Some(None));
+    assert_eq!(
+        command_env(&command, "LANG"),
+        Some(Some("de_DE.UTF-8".into()))
+    );
+
+    let explicit = [
+        (OsString::from("LC_ALL"), OsString::from("de_DE.UTF-8")),
+        (OsString::from("LANGUAGE"), OsString::from("de")),
+    ];
+    let command = git_command(OsStr::new("git"), &arguments, &explicit, true);
+    assert_eq!(
+        command_env(&command, "LC_ALL"),
+        Some(Some("de_DE.UTF-8".into()))
+    );
+    assert_eq!(command_env(&command, "LANGUAGE"), Some(Some("de".into())));
+    assert_eq!(command_env(&command, "GIT_ATTR_SOURCE"), Some(None));
+}
+
+#[test]
+fn classifies_only_known_stderr_warnings_as_ignorable() {
     assert!(first_non_ignored_stderr(b"Auto packing the repository in background for optimum performance.\nSee \"git help gc\" for manual housekeeping.\n").is_none());
     assert_eq!(
         first_non_ignored_stderr(b"warning\nfatal: broken\n"),
