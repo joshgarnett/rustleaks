@@ -68,7 +68,9 @@ pub(super) fn write(assets: &Path, version: &str, output: &Path) -> Result<(), S
     Ok(())
 }
 
-/// Fails when `next` is older than `current`, so a channel never moves back.
+/// Fails when `next` is older than `current`, so a channel never moves back,
+/// and when `next` is a pre-release while `current` is a stable release, so
+/// a channel that holds a stable release never moves users to a pre-release.
 pub(super) fn check_upgrade(current: &str, next: &str) -> Result<(), String> {
     let current = Version::parse(current)
         .map_err(|error| format!("published version {current:?} is not semver: {error}"))?;
@@ -77,6 +79,11 @@ pub(super) fn check_upgrade(current: &str, next: &str) -> Result<(), String> {
     if next < current {
         return Err(format!(
             "{next} is older than the published {current}; the channel would move back"
+        ));
+    }
+    if current.pre.is_empty() && !next.pre.is_empty() {
+        return Err(format!(
+            "{next} is a pre-release and the channel holds the stable {current}"
         ));
     }
     println!("{next} is not older than the published {current}");
@@ -348,9 +355,25 @@ end
         check_upgrade("0.1.0-alpha.12", "0.2.0").unwrap();
         check_upgrade("0.2.0-rc.1", "0.2.0").unwrap();
         check_upgrade("0.2.0", "0.2.0").unwrap();
-        check_upgrade("0.2.0", "0.3.0-alpha.1").unwrap();
+        check_upgrade("0.2.0", "0.2.1").unwrap();
+        check_upgrade("0.2.0-alpha.1", "0.2.0-alpha.1").unwrap();
+        check_upgrade("0.2.0-alpha.1", "0.2.0-alpha.2").unwrap();
+        check_upgrade("0.2.0-rc.1", "0.3.0-alpha.1").unwrap();
+        assert!(check_upgrade("0.2.0-alpha.2", "0.2.0-alpha.1").is_err());
         assert!(check_upgrade("0.2.0", "0.2.0-rc.1").is_err());
         assert!(check_upgrade("0.2.0", "0.1.9").is_err());
         assert!(check_upgrade("latest", "0.2.0").is_err());
+    }
+
+    #[test]
+    fn stable_channels_never_move_to_a_prerelease() {
+        for (current, next) in [
+            ("0.2.0", "0.3.0-alpha.1"),
+            ("0.2.0", "0.2.1-rc.1"),
+            ("0.2.0", "1.0.0-beta.1"),
+        ] {
+            let error = check_upgrade(current, next).unwrap_err();
+            assert!(error.contains("pre-release"), "{error}");
+        }
     }
 }
