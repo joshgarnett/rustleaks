@@ -1,4 +1,6 @@
-//! Default-rule scan workloads specified from generator plants.
+//! Scan workloads for the rules in `gitleaks.toml` alone, specified from
+//! generator plants. The work model below counts the one keywordless rule
+//! in that file, so these workloads do not use the Rustleaks rule files.
 //!
 //! Expected findings, exact spans and work counts come from each generator's
 //! plant list and from literal keyword counts over the configuration. No
@@ -6,7 +8,7 @@
 //! are restated here (keyword lowercasing, `location()`, Shannon entropy) so a
 //! behavior change surfaces as a fixture failure instead of a changed baseline.
 //!
-//! Default-config work is `1 + K + A + C`: one scan pass, one checkpoint per
+//! `gitleaks.toml` work is `1 + K + A + C`: one scan pass, one checkpoint per
 //! overlapping keyword occurrence `K`, one per admitted rule `A`, and one per
 //! regex candidate `C`.
 
@@ -165,7 +167,7 @@ const VALUE_LETTERS: &[u8] = b"bcdfghjlmnpqrtvwxzBCDFGHJLMNPQRTVWXZ";
 const BLOB_ALPHABET: &[u8] = b"0123456789GHJMNPQRTUVWXZ+/";
 const TOKEN_ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-/// The random stream of the default-rule workloads. It differs from
+/// The random stream of the gitleaks.toml workloads. It differs from
 /// `suite_support::Lcg`. The expected values of these workloads depend on its
 /// exact output, so the two generators cannot be merged.
 struct DefaultRuleRng(u64);
@@ -577,11 +579,9 @@ impl PreparedProfile {
     pub(super) fn new(id: &str) -> Fallible<Self> {
         ensure(
             id == PROFILE_WORKLOAD,
-            "unsupported default-rule profile workload",
+            "unsupported gitleaks.toml profile workload",
         )?;
-        let config = ConfigLoader::new()
-            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-            .load_default()?;
+        let config = crate::gitleaks_config()?;
         ensure_default_rules(&config)?;
         let plan = build(id, &config)?;
         ensure(
@@ -604,7 +604,7 @@ impl PreparedProfile {
             "config_fnv1a64": fingerprint(DEFAULT_CONFIG_BYTES),
             // Preserve the representative operation's hash of its joined scan hashes.
             "outcome_fnv1a64": fingerprint(outcome_signature(&warm).as_bytes()),
-            "rules": crate::DEFAULT_RULES, "keywords": keywords,
+            "rules": crate::GITLEAKS_RULES, "keywords": keywords,
             "findings": scan.expected.findings.len(), "decoded_bytes": usage.decoded_bytes(),
             "work_units": usage.work_units(), "finding_records": usage.finding_records(),
             "finding_payload_bytes": usage.finding_payload_bytes(),
@@ -668,9 +668,9 @@ fn input_fingerprint(scans: &[Scan]) -> String {
 
 fn ensure_default_rules(config: &CompiledConfig) -> Fallible<()> {
     ensure(
-        config.rules().len() == crate::DEFAULT_RULES
-            && crate::config_metric(config).fingerprint == crate::DEFAULT_CONFIG_FINGERPRINT,
-        "default configuration differs from the shipped default rules",
+        config.rules().len() == crate::GITLEAKS_RULES
+            && crate::rule_fingerprint(config) == crate::GITLEAKS_CONFIG_FINGERPRINT,
+        "default configuration differs from the gitleaks.toml rules",
     )
 }
 
@@ -689,7 +689,7 @@ fn operation_totals(plan: &Plan) -> (Value, usize) {
 #[allow(clippy::too_many_lines)] // Keep first and steady operation timers auditable together.
 pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
     if !WORKLOADS.contains(&id) {
-        return Err(format!("unknown default-rule workload {id}").into());
+        return Err(format!("unknown gitleaks.toml workload {id}").into());
     }
     if id.starts_with("core-contention-") {
         return contention::run(id, iterations);
@@ -698,9 +698,7 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
     let start = Instant::now();
     let config = match toml.as_deref() {
         Some(text) => ConfigLoader::new().load_toml(text)?,
-        None => ConfigLoader::new()
-            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-            .load_default()?,
+        None => crate::gitleaks_config()?,
     };
     let compile_ns = elapsed(start)?;
     let config_bytes = toml.as_deref().map_or(DEFAULT_CONFIG_BYTES, str::as_bytes);
@@ -886,7 +884,7 @@ fn build(id: &str, config: &CompiledConfig) -> Fallible<Plan> {
         "core-minified-findings-1024-on-1-mib" => minified_one_line(&mut ctx, 1_024, MIB)?,
         "core-minified-findings-tail-256-kib" => minified_tail(&mut ctx, 1_024, 256 * KIB)?,
         "core-minified-findings-huge-secret-64-kib" => huge_secret(&mut ctx, 64 * KIB)?,
-        _ => return Err(format!("unbuilt default-rule workload {id}").into()),
+        _ => return Err(format!("unbuilt gitleaks.toml workload {id}").into()),
     };
     Ok(single(ctx, scan, counts))
 }

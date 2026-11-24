@@ -18,7 +18,7 @@ that enforce this policy are in [Security checks](security-checks.md).
   Git, async runtimes or parallel runtimes. Its public API must not expose a
   regex type.
 - `rustleaks-sources` and `rustleaks-report` depend only on the core. The CLI
-  may use all three. `rustleaks-compat` and `xtask` are unpublished leaves.
+  may use all three. `rustleaks-eval` and `xtask` are unpublished leaves.
 - Owned crates forbid unsafe code. A dependency with necessary unsafe code
   needs isolation, a written reason, license review and adversarial tests.
 - License and advisory checks must pass before a release. An advisory may be

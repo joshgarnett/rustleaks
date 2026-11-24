@@ -511,17 +511,17 @@ fn check_profiles(root: &Path) -> Result<(), String> {
         "//crates/rustleaks-sources:rustleaks_sources_archives",
         "rustleaks-cli archives feature",
     )?;
-    let compatibility = fs::read_to_string(root.join("crates/rustleaks-compat/BUILD.bazel"))
-        .map_err(|error| format!("cannot read rustleaks-compat BUILD file: {error}"))?;
+    let evaluation = fs::read_to_string(root.join("crates/rustleaks-eval/BUILD.bazel"))
+        .map_err(|error| format!("cannot read rustleaks-eval BUILD file: {error}"))?;
     require_contains(
-        &compatibility,
+        &evaluation,
         "//crates/rustleaks-sources:rustleaks_sources",
-        "rustleaks-compat default source feature",
+        "rustleaks-eval default source feature",
     )?;
     require_not_contains(
-        &compatibility,
+        &evaluation,
         "rustleaks_sources_archives",
-        "rustleaks-compat default source feature",
+        "rustleaks-eval default source feature",
     )?;
     Ok(())
 }
@@ -752,7 +752,7 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         ),
         (
             "quality-eval",
-            "bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate",
+            "bazelisk run //crates/rustleaks-eval:rustleaks_quality -- evaluate",
         ),
         ("perf-run", "bazelisk run //crates/xtask:xtask -- perf run"),
         (

@@ -303,17 +303,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustleaks-compat"
-version = "0.1.0-alpha.12"
-dependencies = [
- "rustleaks-core",
- "rustleaks-report",
- "rustleaks-sources",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "rustleaks-core"
 version = "0.1.0-alpha.12"
 dependencies = [
@@ -326,6 +315,17 @@ dependencies = [
  "serde_json",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "rustleaks-eval"
+version = "0.1.0-alpha.12"
+dependencies = [
+ "rustleaks-core",
+ "rustleaks-report",
+ "rustleaks-sources",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

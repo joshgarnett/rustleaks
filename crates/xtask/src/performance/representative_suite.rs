@@ -35,8 +35,9 @@ const DECODE_REPORT_WORKLOADS: &[&str] = &[
     "config-compile-extend-default",
     "config-compile-allowlist-heavy",
 ];
-/// The `default-rules` group selector: synthetic default-config scan workloads.
-const DEFAULT_RULE_PREFIXES: &[&str] = &[
+/// The `gitleaks-rules` group selector: synthetic scan workloads for the
+/// rules in `gitleaks.toml` alone.
+const GITLEAKS_RULE_PREFIXES: &[&str] = &[
     "core-admission-",
     "core-prose-",
     "core-near-miss-",
@@ -347,10 +348,10 @@ pub(crate) fn run(arguments: &[String]) -> Result<(), String> {
             .collect(),
         Some(ref id) if id == source_scale::GROUP => source_scale::workloads(&available)?,
         Some(_) if grouped.is_some() => grouped.unwrap_or_default(),
-        Some(ref id) if id == "default-rules" => available
+        Some(ref id) if id == "gitleaks-rules" => available
             .into_iter()
             .filter(|id| {
-                DEFAULT_RULE_PREFIXES
+                GITLEAKS_RULE_PREFIXES
                     .iter()
                     .any(|prefix| id.starts_with(prefix))
             })
@@ -787,7 +788,7 @@ mod tests {
             );
         }
 
-        let workload = "core-workers-default-cloned-4";
+        let workload = "core-workers-gitleaks-cloned-4";
         let mut worker_records = records.clone();
         for record in &mut worker_records {
             record["workload"] = json!(workload);

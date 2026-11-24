@@ -774,8 +774,8 @@ mod tests {
         let roots = owned_crate_roots(&crate::workspace_root().unwrap()).unwrap();
         for expected in [
             "crates/rustleaks-cli/src/main.rs",
-            "crates/rustleaks-compat/src/bin/rustleaks-cli-fixture.rs",
-            "crates/rustleaks-compat/src/bin/rustleaks-perf.rs",
+            "crates/rustleaks-eval/src/bin/rustleaks-cli-fixture.rs",
+            "crates/rustleaks-eval/src/bin/rustleaks-perf.rs",
             "crates/rustleaks-core/src/lib.rs",
             "crates/rustleaks-sources/examples/panic_abort_policy.rs",
             "crates/rustleaks-sources/fuzz/fuzz_targets/archive.rs",

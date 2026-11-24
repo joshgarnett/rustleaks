@@ -1,4 +1,9 @@
 # Reviewed synthetic values in the independent accuracy corpus generator.
+crates/rustleaks-eval/src/evaluation/generator.rs:github-pat:3
+crates/rustleaks-eval/src/evaluation/generator.rs:aws-access-token:4
+crates/rustleaks-eval/src/evaluation/generator.rs:private-key:167
+crates/rustleaks-eval/src/evaluation/generator.rs:generic-api-key:217
+# The same values at the earlier crate path, which history scans report.
 crates/rustleaks-compat/src/evaluation/generator.rs:github-pat:3
 crates/rustleaks-compat/src/evaluation/generator.rs:aws-access-token:4
 crates/rustleaks-compat/src/evaluation/generator.rs:private-key:167
@@ -27,6 +32,7 @@ crates/rustleaks-core/tests/engine.rs:generic-api-key:410
 crates/rustleaks-core/tests/engine.rs:generic-api-key:411
 
 # Reviewed synthetic private key in the benchmark data.
+crates/rustleaks-eval/src/perf/benchmark_data.rs:private-key:276
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:276
 

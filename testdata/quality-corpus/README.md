@@ -7,7 +7,7 @@ intended input, not from detector output. Unlike the other corpora in
 precision on real repositories, check that a value is a valid provider
 format, or check whether a credential works.
 
-`crates/rustleaks-compat/src/evaluation/generator.rs` generates
+`crates/rustleaks-eval/src/evaluation/generator.rs` generates
 `cases-v1.json`, using the separate case catalog in `native_cases.rs`. The evaluator
 writes `baseline-v1.json`. Both files are generated; do not edit them by
 hand. All material in this corpus is covered by the repository's MIT license.
@@ -18,14 +18,14 @@ It contains no live credentials and no external data.
 Format the generator and evaluator, then run from the repository root:
 
 ```sh
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- generate
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- check
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- check-baseline
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- generate
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- check
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- check-baseline
 ```
 
 `just quality-eval` checks the corpus and prints the current report. The
-`rustleaks-compat` unit tests check that the corpus regenerates exactly, that
+`rustleaks-eval` unit tests check that the corpus regenerates exactly, that
 the baseline replays, and that the metrics match hand-calculated controls.
 Regeneration can change source fingerprints without changing counts. Review
 counts and labels on their own. Never change a label to improve a detector's
@@ -46,7 +46,7 @@ mean that the engine can map the decoded value back to an exact range.
 
 ## Cases
 
-The corpus has 72 cases: 19 base cases and 53 cases for the
+The corpus has 74 cases: 21 base cases and 53 cases for the
 `rustleaks-extra-v1` pack (from `native_cases.rs`).
 
 The base cases cover provider patterns, generic assignments, provider and
@@ -55,6 +55,13 @@ UTF-8, percent encoding, multiline private-key-shaped text, documentation and
 vendor paths, harmless identifiers, near misses, placeholders and unknown
 labels. One case has an `api_key` field with a harmless generated identifier,
 to test false alerts. The key-shaped block is not a usable key.
+
+Two cases are JSON build records of the same shape. In the first, the
+`compile_action_key` field holds a Bazel compile action key: a SHA-256 digest
+that `bazel aquery` prints and that Rustleaks writes in its performance
+records. It is a reviewed negative. In the second, an `api_key` field holds a
+64-digit hexadecimal API key, which is a positive. A change that stops the
+alert on the action key must still report the API key.
 
 The pack cases cover the pack's three families: Azure Service Bus keys, Azure
 App Configuration keys (both with connection string fields in different
@@ -75,11 +82,18 @@ is small and is not a sample of real repositories.
 
 ## Assessments
 
-The full default assessment and the full native assessment score every
-positive on the same inputs. The native assessment adds the
-`rustleaks-extra-v1` pack. Neither assessment changes the default rules.
+Two assessments score every positive on the same inputs:
 
-A single-rule assessment scores only the positives that expect that rule.
+- `all-default-rules` uses every built-in rule, as a scan does by default:
+  `gitleaks.toml` and the `rustleaks-extra-v1`, `rustleaks-providers-v1` and
+  `rustleaks-connections-v1` rule files.
+- `gitleaks-toml-rules` uses the rules in `gitleaks.toml` alone. It shows
+  what the Rustleaks rule files add.
+
+Neither assessment changes a rule.
+
+A single-rule assessment selects one rule from the built-in rules and
+scores only the positives that expect that rule.
 Other positives become unknown regions for that assessment, so a provider
 rule is not penalized for other providers' secrets.
 `scored_positive_indices` refers to the positions of the positives in the
@@ -133,12 +147,9 @@ rule selections and counts; the case IDs are synthetic names. JSON parse
 errors do not repeat the input. This does not make user-supplied metadata
 safe to publish.
 
-The loaded default rules must equal the shipped default rules
-(`rustleaks_core::config::DEFAULT_CONFIG_BYTES`), which record their own
-SHA-256 in `DEFAULT_CONFIG_SHA256`. Reports also record the fingerprint of
-the loaded bytes, the rule profile (`default-rules`), the native pack
-identity and bytes, the generator and evaluator source fingerprints and the
-corpus fingerprint. These fingerprints use FNV-1a, which detects accidental changes
-but does not prove authenticity. Saved run evidence must also record the
-source revision and build identity. The report fingerprints do not identify a
-release binary.
+Reports record the SHA-256 of `gitleaks.toml` (`DEFAULT_CONFIG_SHA256`), the
+fingerprint of each built-in rule file, the rule profile (`default-rules`),
+the generator and evaluator source fingerprints and the corpus fingerprint.
+These fingerprints use FNV-1a, which detects accidental changes but does not
+prove authenticity. Saved run evidence must also record the source revision
+and build identity. The report fingerprints do not identify a release binary.

@@ -1,4 +1,4 @@
-//! Small controls for the default-rule workloads. They exercise the same
+//! Small controls for the `gitleaks.toml` workloads. They exercise the same
 //! generators as the full workloads at sizes suitable for ordinary test runs.
 
 use rustleaks_core::config::ConfigLoader;
@@ -8,10 +8,7 @@ use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use super::*;
 
 fn default_config() -> CompiledConfig {
-    ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()
-        .unwrap()
+    crate::gitleaks_config().unwrap()
 }
 
 fn engine(config: &CompiledConfig) -> Engine {

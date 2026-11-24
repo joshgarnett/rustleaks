@@ -10,10 +10,10 @@ use std::sync::OnceLock;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use rustleaks_core::Engine;
+use rustleaks_core::config::ConfigLoader;
 use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, ScanOptions};
-use rustleaks_core::native::{
-    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativeEngine, NativePolicy, PROVIDER_RULES_V1,
-};
+use rustleaks_core::native::PROVIDER_RULES_V1;
 use serde_json::Value;
 
 // The hand-written pack tests share their authored cases through these
@@ -50,16 +50,11 @@ struct Positive {
     expected: Vec<Expected>,
 }
 
-fn all_rules() -> &'static NativeEngine {
-    static ENGINE: OnceLock<NativeEngine> = OnceLock::new();
+/// The rules Rustleaks ships, in the order it loads them.
+fn all_rules() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        NativePolicy::builder()
-            .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
-            .unwrap()
-            .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
-            .unwrap()
-            .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-            .unwrap()
+        Engine::builder(ConfigLoader::new().load_default().unwrap())
             .build()
             .unwrap()
     })
@@ -292,7 +287,7 @@ fn scan(positive: &Positive) -> Vec<Finding> {
     if let Some(path) = &positive.path {
         fragment = fragment.file_path(path.clone());
     }
-    let outcome = all_rules().engine().scan_fragment(
+    let outcome = all_rules().scan_fragment(
         &fragment.build(),
         &ScanOptions::builder()
             .max_decode_depth(positive.decode_depth)
@@ -596,7 +591,7 @@ fn provider_overlaps() -> BTreeSet<(&'static str, &'static str)> {
 /// The rule IDs of every packaged pack rule that reports findings. Rules
 /// with `skipReport` only feed composite rules and never report alone.
 fn reporting_pack_rules() -> BTreeSet<String> {
-    let config = all_rules().engine().config();
+    let config = all_rules().config();
     config
         .rules()
         .iter()
@@ -706,10 +701,7 @@ fn every_positive_case_keeps_its_exact_finding_with_all_rules_active() {
     let authored = authored_pack_positives();
     assert_eq!(defaults.len(), 6_396);
     assert_eq!(packs.len(), 179 + 54);
-    assert_eq!(
-        all_rules().engine().config().rules().len(),
-        222 + 303 + 19 + 3
-    );
+    assert_eq!(all_rules().config().rules().len(), 222 + 303 + 19 + 3);
     assert_eq!(
         INTENDED_OVERLAPS
             .iter()

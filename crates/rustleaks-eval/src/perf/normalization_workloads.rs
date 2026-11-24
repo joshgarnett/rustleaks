@@ -128,6 +128,7 @@ fn build(size: usize, shape: Shape, depth: usize) -> Fixture {
         decoded_bytes,
         keyword_count: 0,
         expected_work: Some(expected_work),
+        builtin_default: false,
     }
 }
 

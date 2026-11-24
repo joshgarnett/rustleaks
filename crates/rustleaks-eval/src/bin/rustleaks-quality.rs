@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 
-use rustleaks_compat::evaluation::{check_generated_corpus, evaluate_corpus, generated_corpus};
+use rustleaks_eval::evaluation::{check_generated_corpus, evaluate_corpus, generated_corpus};
 
 fn maintained_path(name: &str) -> PathBuf {
     env::var_os("BUILD_WORKSPACE_DIRECTORY")

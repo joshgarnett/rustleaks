@@ -1,10 +1,11 @@
-//! Default-rule throughput fixtures with independently counted work checkpoints.
+//! `gitleaks.toml` throughput fixtures with independently counted work
+//! checkpoints. The work model counts the rules in that file alone.
 
 use std::error::Error;
 use std::hint::black_box;
 use std::time::Instant;
 
-use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG_BYTES};
+use rustleaks_core::config::{CompiledConfig, DEFAULT_CONFIG_BYTES};
 use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
 use serde_json::json;
@@ -237,14 +238,12 @@ fn sample_entropy(sample: &[u8]) -> f32 {
 #[allow(clippy::too_many_lines)] // Keep first and steady operation timers auditable together.
 pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
     let start = Instant::now();
-    let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()?;
+    let config = crate::gitleaks_config()?;
     let compile_ns = elapsed(start)?;
-    if config.rules().len() != crate::DEFAULT_RULES
-        || crate::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
+    if config.rules().len() != crate::GITLEAKS_RULES
+        || crate::rule_fingerprint(&config) != crate::GITLEAKS_CONFIG_FINGERPRINT
     {
-        return Err("fragment default configuration differs from the shipped default rules".into());
+        return Err("fragment default configuration differs from the gitleaks.toml rules".into());
     }
     let fixture = Fixture::new(id, &config)?;
     let rule_ids = config.ordered_rule_ids().join("\0");
@@ -258,14 +257,14 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
         DEFAULT_CONFIG_BYTES,
     );
     compile.outcome_fnv1a64 = fingerprint(rule_ids.as_bytes());
-    compile.counts["rules"] = json!(crate::DEFAULT_RULES);
+    compile.counts["rules"] = json!(crate::GITLEAKS_RULES);
     let start = Instant::now();
     let detector = Engine::builder(config).build()?;
     let mut build = phase(
         "engine-construction",
         1,
         elapsed(start)?,
-        crate::DEFAULT_RULES as u64,
+        crate::GITLEAKS_RULES as u64,
         "compiled-rules",
         DEFAULT_CONFIG_BYTES,
         DEFAULT_CONFIG_BYTES,
@@ -330,10 +329,7 @@ mod tests {
 
     #[test]
     fn fragment_shapes_and_independent_counts_cover_the_matrix() {
-        let config = ConfigLoader::new()
-            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-            .load_default()
-            .unwrap();
+        let config = crate::gitleaks_config().unwrap();
         for id in WORKLOADS {
             let fixture = Fixture::new(id, &config).unwrap();
             assert_eq!(
@@ -354,10 +350,7 @@ mod tests {
 
     #[test]
     fn fragment_invariants_reject_skipped_and_budget_terminated_scans() {
-        let config = ConfigLoader::new()
-            .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-            .load_default()
-            .unwrap();
+        let config = crate::gitleaks_config().unwrap();
         let fixture = Fixture::new("core-fragments-json-16-kib", &config).unwrap();
         let detector = Engine::builder(config).build().unwrap();
         let options = ScanOptions::default();
