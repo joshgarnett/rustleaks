@@ -5,7 +5,9 @@
 - A normal scan now reads a file whose name ends in `.tgz` as a
   gzip-compressed TAR archive, as a complete scan already did. Before, a
   normal scan skipped such a file as binary, so secrets inside it were
-  missed.
+  missed. A `.tgz` file that does not start with the gzip magic bytes is
+  scanned as a plain file in both scans. Before, a complete scan reported
+  it as a decode issue.
 - Git runs with `LC_ALL=C` and without `LANGUAGE` during scans and remote
   discovery, unless the caller's command environment sets them. With a
   translated Git, harmless rename-limit and auto-gc warnings were reported

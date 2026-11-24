@@ -1615,6 +1615,115 @@ mod tgz_targets {
         assert!(fragments(&mut backup).unwrap().is_empty());
     }
 
+    fn assert_one_token(outcome: &SourceOutcome, file: &[u8]) {
+        assert_eq!(outcome.termination(), &SourceTermination::Completed);
+        assert!(outcome.issues().is_empty(), "{:?}", outcome.issues());
+        assert_eq!(outcome.findings().len(), 1);
+        assert_eq!(outcome.findings()[0].file().as_bytes(), file);
+        assert_eq!(outcome.findings()[0].secret().as_bytes(), b"A001");
+        assert_eq!(
+            outcome.findings()[0]
+                .secret_range()
+                .exact()
+                .unwrap()
+                .as_range(),
+            6..10
+        );
+    }
+
+    #[test]
+    fn tgz_name_without_the_gzip_magic_is_scanned_as_plain_bytes() {
+        use sevenz_seeds::{Member, Method, archive};
+
+        let text = b"token=A001";
+        let normal = |bytes: Vec<u8>, name: &str, depth: usize| {
+            run(
+                &mut ArchiveSource::with_options(
+                    Cursor::new(bytes),
+                    name,
+                    FileOptions::default(),
+                    options(depth, 4096, 4096),
+                ),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        let complete = |bytes: Vec<u8>, name: &str, depth: usize| {
+            run(
+                &mut source(bytes, name, options(depth, 4096, 4096)),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        type Scan = fn(Vec<u8>, &str, usize) -> SourceOutcome;
+        let scans: [Scan; 2] = [normal, complete];
+        for scan in scans {
+            for name in ["notes.tgz", "notes.TGZ"] {
+                assert_one_token(&scan(text.to_vec(), name, 1), name.as_bytes());
+            }
+            // One byte, which cannot hold the two-byte magic.
+            let short = scan(b"t".to_vec(), "notes.tgz", 1);
+            assert_eq!(short.termination(), &SourceTermination::Completed);
+            assert!(short.issues().is_empty());
+            assert!(short.findings().is_empty());
+            // A TAR member, also at the depth limit, and a 7z member.
+            let tar = archive_seeds::synthetic_tar(&[("notes.tgz", text)]);
+            for depth in [1, 2] {
+                assert_one_token(
+                    &scan(tar.clone(), "outer.tar", depth),
+                    b"outer.tar!notes.tgz",
+                );
+            }
+            for method in [Method::Copy, Method::Deflate] {
+                let sevenz = archive(&[Member::new("notes.tgz", text, method)]);
+                assert_one_token(&scan(sevenz, "outer.7z", 2), b"outer.7z!notes.tgz");
+            }
+        }
+        // A gzip `.tgz` member is still read as gzip TAR.
+        let inner = tar_gzip(&[("leaf.txt", text)]);
+        let tar = archive_seeds::synthetic_tar(&[("inner.tgz", &inner)]);
+        for scan in scans {
+            assert_one_token(
+                &scan(tar.clone(), "outer.tar", 2),
+                b"outer.tar!inner.tgz!leaf.txt",
+            );
+        }
+    }
+
+    #[test]
+    fn directory_tgz_files_are_read_by_their_bytes() {
+        let tree = Tree::new();
+        fs::write(tree.0.join("notes.tgz"), b"token=A001\n").unwrap();
+        fs::write(
+            tree.0.join("outer.tgz"),
+            tar_gzip(&[("leaf.txt", b"token=A001")]),
+        )
+        .unwrap();
+        for file_options in [FileOptions::default(), FileOptions::complete(64).unwrap()] {
+            let directory_options = DirectoryOptions::default()
+                .file_options(file_options)
+                .logical_root("root")
+                .archives(options(1, 4096, 4096));
+            let mut source = DirectorySource::with_options(&tree.0, directory_options);
+            let outcome = run(&mut source, &token_detector(), ScanOptions::default());
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert!(outcome.issues().is_empty(), "{:?}", outcome.issues());
+            let mut files = outcome
+                .findings()
+                .iter()
+                .map(|finding| finding.file().as_bytes().to_vec())
+                .collect::<Vec<_>>();
+            files.sort();
+            assert_eq!(
+                files,
+                [
+                    b"root/notes.tgz".to_vec(),
+                    b"root/outer.tgz!leaf.txt".to_vec()
+                ]
+            );
+        }
+    }
+
     #[test]
     fn nested_tgz_containers_are_not_leaf_exclusions() {
         let inner = tar_gzip(&[("leaf.txt", b"token=A001")]);

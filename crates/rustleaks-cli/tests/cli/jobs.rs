@@ -243,6 +243,9 @@ fn directory_findings_reports_and_warnings_do_not_depend_on_jobs() {
         stored_gzip(&tar(&[(b"f.txt", b"token=TGZ00002\n")])),
     );
     expected.push(token("input/bundle.tgz!f.txt", 1, "TGZ00002", ""));
+    // A `.tgz` file that is not gzip is scanned as a plain file.
+    fixture.write("input/notes.tgz", "x\ntoken=TGZ00003\n");
+    expected.push(token("input/notes.tgz", 2, "TGZ00003", ""));
     fixture.write(
         "input/nested.tar",
         tar(&[(
