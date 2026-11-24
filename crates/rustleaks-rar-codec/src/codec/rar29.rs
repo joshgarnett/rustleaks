@@ -9,6 +9,7 @@ use super::ppmd::{PpmdByteReader, PpmdDecoder};
 use super::rarvm;
 use super::{try_copy_bytes, validate_huffman_counts, Error, Result};
 use crate::crc32::crc32;
+#[cfg(test)]
 use std::io::{Read, Write};
 
 const MAIN_COUNT: usize = 299;
@@ -18,6 +19,7 @@ const LENGTH_COUNT: usize = 28;
 const LEVEL_COUNT: usize = 20;
 const TABLE_COUNT: usize = MAIN_COUNT + OFFSET_COUNT + LOW_OFFSET_COUNT + LENGTH_COUNT;
 const MAX_HISTORY: usize = 4 * 1024 * 1024;
+#[cfg(test)]
 const STREAM_CHUNK: usize = 1024 * 1024;
 #[cfg(test)]
 const MAX_VM_FILTER_BLOCK_SIZE: usize = 128 * 1024;
@@ -2421,11 +2423,16 @@ impl Unpack29 {
         }
     }
 
-    pub fn reset_non_solid(&mut self) {
+    fn reset_non_solid(&mut self) {
         *self = Self::new();
     }
 
-    pub fn decode_non_solid_member(&mut self, input: &[u8], output_size: usize) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    pub(crate) fn decode_non_solid_member(
+        &mut self,
+        input: &[u8],
+        output_size: usize,
+    ) -> Result<Vec<u8>> {
         self.decode_non_solid_member_with_cancel(input, output_size, &mut || false)
     }
 
@@ -2440,27 +2447,8 @@ impl Unpack29 {
         self.decode_member_with_cancel(input, output_size, cancelled)
     }
 
-    pub fn decode_non_solid_member_to(
-        &mut self,
-        input: &[u8],
-        output_size: usize,
-        out: &mut impl Write,
-    ) -> Result<()> {
-        self.reset_non_solid();
-        self.decode_member_to(input, output_size, out)
-    }
-
-    pub fn decode_non_solid_member_from_reader(
-        &mut self,
-        input: &mut impl Read,
-        output_size: usize,
-        out: &mut impl Write,
-    ) -> Result<()> {
-        self.reset_non_solid();
-        self.decode_member_from_reader(input, output_size, out)
-    }
-
-    pub fn decode_member(&mut self, input: &[u8], output_size: usize) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    pub(crate) fn decode_member(&mut self, input: &[u8], output_size: usize) -> Result<Vec<u8>> {
         self.decode_member_with_cancel(input, output_size, &mut || false)
     }
 
@@ -2499,54 +2487,8 @@ impl Unpack29 {
         Ok(out)
     }
 
-    pub fn decode_member_to(
-        &mut self,
-        input: &[u8],
-        output_size: usize,
-        out: &mut impl Write,
-    ) -> Result<()> {
-        let start = self.current_pos();
-        let final_target = start
-            .checked_add(output_size)
-            .ok_or(Error::InvalidData("RAR 2.9 output size overflows"))?;
-        if !input.is_empty() {
-            self.bits = BitReader::new();
-        }
-        self.bits.append(input)?;
-
-        let mut flushed = start;
-        let mut target = start.saturating_add(STREAM_CHUNK).min(final_target);
-        while flushed < final_target {
-            self.decode_until(target)?;
-            let safe_end = self.safe_flush_end(flushed, target, final_target)?;
-            if safe_end <= flushed {
-                if target == final_target {
-                    return Err(Error::InvalidData(
-                        "RAR 2.9 VM filter extends beyond output",
-                    ));
-                }
-                target = self
-                    .current_pos()
-                    .saturating_add(STREAM_CHUNK)
-                    .min(final_target);
-                continue;
-            }
-
-            let decoded = self.filtered_range(flushed, safe_end, start)?;
-            out.write_all(&decoded)
-                .map_err(|_| Error::InvalidData("RAR 2.9 output write failed"))?;
-            flushed = safe_end;
-            self.trim_history(flushed, self.current_pos());
-            target = self
-                .current_pos()
-                .saturating_add(STREAM_CHUNK)
-                .min(final_target);
-        }
-        self.finish_member()?;
-        Ok(())
-    }
-
-    pub fn decode_member_from_reader(
+    #[cfg(test)]
+    pub(crate) fn decode_member_from_reader(
         &mut self,
         input: &mut impl Read,
         output_size: usize,
@@ -2614,6 +2556,7 @@ impl Unpack29 {
         Ok(())
     }
 
+    #[cfg(test)]
     fn decode_until(&mut self, target: usize) -> Result<()> {
         self.decode_until_with_cancel(target, &mut || false)
     }
@@ -3149,6 +3092,7 @@ impl Unpack29 {
         Ok(())
     }
 
+    #[cfg(test)]
     fn filtered_range(&mut self, start: usize, end: usize, member_start: usize) -> Result<Vec<u8>> {
         self.filtered_range_with_cancel(start, end, member_start, &mut || false)
     }
@@ -3252,6 +3196,7 @@ impl Unpack29 {
         Ok(out)
     }
 
+    #[cfg(test)]
     fn safe_flush_end(&self, start: usize, end: usize, final_target: usize) -> Result<usize> {
         let current = self.current_pos();
         let mut safe_end = end;

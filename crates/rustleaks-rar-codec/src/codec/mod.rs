@@ -9,7 +9,7 @@ mod match_finder;
 mod ppmd;
 pub mod rar29;
 pub mod rar50;
-pub mod rarvm;
+pub(crate) mod rarvm;
 
 /// Copies `input` into a new vector. A failed allocation returns
 /// `InvalidData(message)`.
