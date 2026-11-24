@@ -2682,6 +2682,14 @@ fn a_disabled_helper_stays_for_its_parent_and_does_not_report() {
 
     let config = extend_default(&format!("disabledRules = ['{SERVICE_BUS_HELPER}']\n"));
     assert!(config.rule(SERVICE_BUS_HELPER).unwrap().skip_report());
+    // The disabled helper is not listed, so selecting it is an unknown rule.
+    assert!(
+        !config
+            .ordered_rule_ids()
+            .iter()
+            .any(|id| id == SERVICE_BUS_HELPER)
+    );
+    assert!(config.select_rules([SERVICE_BUS_HELPER]).is_err());
     assert_eq!(rule_ids_found(config, &line), [SERVICE_BUS]);
 
     // Without its parent, the helper is not needed and is left out.

@@ -493,7 +493,11 @@ impl CompiledConfig {
             selected_bytes = add_allowlist_size(selected_bytes, allowlist)?;
         }
         for id in selected_ids {
-            let Some(rule) = self.rules.get(id) else {
+            // A rule that `disabledRules` turned off but another rule still
+            // needs is compiled without being listed. Selecting it by ID is
+            // an unknown rule, as it was before it was kept.
+            let listed = self.ordered_rule_ids.iter().any(|listed| listed == id);
+            let Some(rule) = self.rules.get(id).filter(|_| listed) else {
                 return Err(RuleSelectionError::not_found(try_copy_selection_string(
                     id,
                 )?));
