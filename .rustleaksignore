@@ -24,7 +24,7 @@ crates/rustleaks-core/tests/engine.rs:generic-api-key:363
 crates/rustleaks-core/tests/engine.rs:generic-api-key:410
 
 # Reviewed synthetic private key in the benchmark data.
-crates/rustleaks-eval/src/perf/benchmark_data.rs:private-key:270
+crates/rustleaks-eval/src/perf/benchmark_data.rs:private-key:276
 crates/rustleaks-compat/src/perf/benchmark_data.rs:private-key:270
 
 # Reviewed synthetic native rule pack test values and malformed-table markers.
