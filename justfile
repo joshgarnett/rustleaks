@@ -2,15 +2,6 @@ set default-list
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 # Report required tools without changing the workspace.
-[unix]
-doctor:
-    just --version
-    bazelisk version
-    cargo --version
-    rustc --version
-
-# Report required tools without changing the workspace.
-[windows]
 doctor:
     just --version
     bazelisk version
