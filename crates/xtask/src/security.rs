@@ -588,6 +588,61 @@ fn dependency_safety_check() -> Result<(), String> {
     Ok(())
 }
 
+/// Lists every owned crate root: `src/lib.rs`, `src/main.rs`, `src/bin/*.rs`,
+/// `examples/*.rs` and `fuzz/fuzz_targets/*.rs` of each directory under
+/// `crates/`. Scanning means a new binary, example or fuzz target is checked
+/// without a list to update.
+fn owned_crate_roots(root: &Path) -> Result<Vec<String>, String> {
+    let rust_files = |directory: &Path| -> Result<Vec<String>, String> {
+        let entries = match std::fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(format!("cannot list {}: {error}", directory.display())),
+        };
+        let mut names = Vec::new();
+        for entry in entries {
+            let path = entry.map_err(|error| error.to_string())?.path();
+            if path.extension().is_some_and(|extension| extension == "rs") {
+                let name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or_else(|| format!("non-UTF-8 file name in {}", directory.display()))?;
+                names.push(name.to_owned());
+            }
+        }
+        Ok(names)
+    };
+    let mut roots = Vec::new();
+    for entry in std::fs::read_dir(root.join("crates"))
+        .map_err(|error| format!("cannot list crates: {error}"))?
+    {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if !path.join("Cargo.toml").is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("non-UTF-8 crate directory name")?
+            .to_owned();
+        for file in ["src/lib.rs", "src/main.rs"] {
+            if path.join(file).is_file() {
+                roots.push(format!("crates/{name}/{file}"));
+            }
+        }
+        for directory in ["src/bin", "examples", "fuzz/fuzz_targets"] {
+            for file in rust_files(&path.join(directory))? {
+                roots.push(format!("crates/{name}/{directory}/{file}"));
+            }
+        }
+    }
+    roots.sort();
+    if roots.is_empty() {
+        return Err("no owned crate roots found under crates/".into());
+    }
+    Ok(roots)
+}
+
 fn owned_safety_check() -> Result<(), String> {
     let root = workspace_root()?;
     let workspace = std::fs::read_to_string(root.join("Cargo.toml"))
@@ -595,30 +650,8 @@ fn owned_safety_check() -> Result<(), String> {
     if !workspace.contains("[workspace.lints.rust]\nunsafe_code = \"forbid\"") {
         return Err("workspace must forbid unsafe code for inheriting owned crates".into());
     }
-    let crate_roots = [
-        "crates/rustleaks-bzip2/src/lib.rs",
-        "crates/rustleaks-cli/src/lib.rs",
-        "crates/rustleaks-cli/src/main.rs",
-        "crates/rustleaks-compat/src/lib.rs",
-        "crates/rustleaks-compat/src/bin/rustleaks-perf.rs",
-        "crates/rustleaks-compat/src/bin/rustleaks-quality.rs",
-        "crates/rustleaks-core/src/lib.rs",
-        "crates/rustleaks-rar-codec/src/lib.rs",
-        "crates/rustleaks-report/src/lib.rs",
-        "crates/rustleaks-sevenz/src/lib.rs",
-        "crates/rustleaks-sources/src/lib.rs",
-        "crates/rustleaks-sources/examples/panic_abort_policy.rs",
-        "crates/xtask/src/main.rs",
-        "crates/rustleaks-core/fuzz/fuzz_targets/config.rs",
-        "crates/rustleaks-core/fuzz/fuzz_targets/fragment_scan.rs",
-        "crates/rustleaks-core/fuzz/fuzz_targets/go_regex.rs",
-        "crates/rustleaks-core/fuzz/fuzz_targets/session.rs",
-        "crates/rustleaks-report/fuzz/fuzz_targets/template.rs",
-        "crates/rustleaks-sources/fuzz/fuzz_targets/archive.rs",
-        "crates/rustleaks-sources/fuzz/fuzz_targets/git_patch.rs",
-        "crates/rustleaks-sources/fuzz/fuzz_targets/reader_schedule.rs",
-    ];
-    for relative in crate_roots {
+    let crate_roots = owned_crate_roots(&root)?;
+    for relative in &crate_roots {
         let source = std::fs::read_to_string(root.join(relative))
             .map_err(|error| format!("cannot read owned crate root {relative}: {error}"))?;
         if !source
@@ -730,11 +763,32 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, parse_civil_day,
+        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, owned_crate_roots, parse_civil_day,
         reviewed_unsafe_packages, validate_compcol_exemption_scope, validate_dependency_boundaries,
         validate_owned_unsafe_package, validate_supply_chain_exceptions,
         validate_unsafe_package_set, validate_vet_exemption,
     };
+
+    #[test]
+    fn owned_crate_roots_include_every_binary_example_and_fuzz_target() {
+        let roots = owned_crate_roots(&crate::workspace_root().unwrap()).unwrap();
+        for expected in [
+            "crates/rustleaks-cli/src/main.rs",
+            "crates/rustleaks-compat/src/bin/rustleaks-cli-fixture.rs",
+            "crates/rustleaks-compat/src/bin/rustleaks-perf.rs",
+            "crates/rustleaks-core/src/lib.rs",
+            "crates/rustleaks-sources/examples/panic_abort_policy.rs",
+            "crates/rustleaks-sources/fuzz/fuzz_targets/archive.rs",
+            "crates/xtask/src/main.rs",
+        ] {
+            assert!(roots.iter().any(|root| root == expected), "{expected}");
+        }
+        let fuzz_roots = roots
+            .iter()
+            .filter(|root| root.contains("/fuzz/fuzz_targets/"))
+            .count();
+        assert_eq!(fuzz_roots, crate::fuzzing::TARGETS.len());
+    }
 
     #[test]
     fn unsafe_inventory_accepts_only_reviewed_target_variance() {
