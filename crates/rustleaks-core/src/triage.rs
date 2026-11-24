@@ -177,7 +177,7 @@ impl ReviewPolicy {
         identity: &NativePolicyIdentity,
         reference: &str,
     ) -> Result<Self, ReviewError> {
-        validate_reference(reference, MAX_POLICY_REFERENCE_BYTES)?;
+        validate_policy_reference(reference)?;
         Ok(Self {
             identity: identity.clone(),
             reference: reference.to_owned(),
@@ -405,7 +405,7 @@ impl ReviewRecord {
         reason: ReviewReason,
         expires_at: u64,
     ) -> Result<Self, ReviewError> {
-        validate_reference(policy_reference, MAX_POLICY_REFERENCE_BYTES)?;
+        validate_policy_reference(policy_reference)?;
         Ok(Self {
             policy_reference: policy_reference.to_owned(),
             options,
@@ -637,11 +637,21 @@ fn check_findings(count: usize) -> Result<(), ReviewError> {
 }
 
 fn validate_reference(reference: &str, max_bytes: usize) -> Result<(), ReviewError> {
+    validate_identifier(reference, max_bytes, b"._-:/+=;|")
+}
+
+/// Policy references also allow `,`, which built-in references use to list
+/// the order of the rule files.
+fn validate_policy_reference(reference: &str) -> Result<(), ReviewError> {
+    validate_identifier(reference, MAX_POLICY_REFERENCE_BYTES, b"._-:/+=;|,")
+}
+
+fn validate_identifier(reference: &str, max_bytes: usize, allowed: &[u8]) -> Result<(), ReviewError> {
     if reference.is_empty()
         || reference.len() > max_bytes
         || !reference
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._-:/+=;|".contains(&byte))
+            .all(|byte| byte.is_ascii_alphanumeric() || allowed.contains(&byte))
     {
         Err(ReviewError::InvalidReference)
     } else {
