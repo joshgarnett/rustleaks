@@ -233,6 +233,3 @@ secret format was found.
   time the scan takes. A long line with many findings can use a lot of
   memory, and it can reach the finding payload limit even when the input is
   small.
-
-A complete scan also opens one archive name that a normal scan does not. See
-[Archives](configuration.md#archives).

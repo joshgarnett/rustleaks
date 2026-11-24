@@ -20,6 +20,9 @@ Each install method below gets the same program from a
 archive's SHA-256 checksum. The Linux packages hold the release archive's
 program and documents without changes.
 
+Homebrew, Scoop and the `.deb` and `.rpm` packages are available from
+version 0.2.0. Earlier releases have only the release archives.
+
 ### With Homebrew
 
 On macOS and Linux:

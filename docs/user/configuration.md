@@ -140,11 +140,22 @@ Empty values are skipped. Steps 6 and 7 apply when the scan target is a
 folder: the folder for `dir`, the repository for `git`, and the current folder
 for `stdin`.
 
-A scan skips the selected configuration file and the baseline file, so their
-contents are not reported as findings. Rustleaks compares the path as you
-wrote it with the path it reports. For example, `rustleaks dir . -c my.toml`
-skips `my.toml`, but `rustleaks dir . -c ./my.toml` scans it, because the
-report path is `my.toml`.
+A scan skips some configuration files and the baseline file, so their
+contents are not reported as findings:
+
+- With `--config`, the scan skips that file.
+- Without `--config`, the scan skips both `.rustleaks.toml` and
+  `.gitleaks.toml` in the folder you scan, even when it used another
+  configuration. A file named by `RUSTLEAKS_CONFIG` or `GITLEAKS_CONFIG` is
+  scanned.
+- With `--baseline-path`, the scan skips the baseline file.
+
+Rustleaks compares the path as you wrote it with the path it reports. For
+example, `rustleaks dir . -c my.toml` skips `my.toml`, but
+`rustleaks dir . -c ./my.toml` scans it, because the report path is
+`my.toml`. A `git` scan reports paths relative to the repository, so it skips
+`.rustleaks.toml` and `.gitleaks.toml` only when you scan the current folder,
+as in `rustleaks git .`. `rustleaks git repo` scans them.
 
 To see which configuration a scan used, run it with `--log-level debug`.
 Rustleaks then logs a line such as `using config <embedded-default>`.
@@ -214,13 +225,14 @@ A finding matches a baseline entry when these fields are equal: rule ID,
 description, start and end line, start and end column, file, commit, author,
 email, date, commit message and entropy. The match and secret must also be
 equal, unless the scan uses `--redact`. Because columns are compared exactly,
-make baselines with Rustleaks, or with Gitleaks 8.30.0 at commit
-`b58d3f1`, which counts columns the same way. See [Line
-and column numbers](reports.md#line-and-column-numbers) for how columns are
-counted.
+make baselines with Rustleaks. Baselines from Gitleaks 8.30.0 also work; see
+[Moving from Gitleaks](moving-from-gitleaks.md#what-keeps-working). See
+[Line and column numbers](reports.md#line-and-column-numbers) for how
+columns are counted.
 
 If Rustleaks cannot read or parse the baseline file, it logs an error and
-scans without a baseline. The exit code does not show this, so check the log.
+scans without a baseline, so every earlier finding is reported again. The
+exit code does not show this, so check the log.
 
 ## Allow comments
 
@@ -275,8 +287,7 @@ content. A name that contains `.tar`, `.zip`, `.7z` or `.rar` is an archive.
 A name that contains `.gz`, `.xz`, `.zst`, `.zz`, `.br`, `.bz2`, `.lz4`, `.sz`
 or `.s2`, or that ends in `.lz` or `.mz`, is a compressed file. For example,
 `data.tar.gz` is a compressed TAR archive, and `backup.zip.old` is also read
-as a ZIP archive. A [complete scan](complete-scanning.md) also reads names that
-end in `.tgz` as compressed TAR archives.
+as a ZIP archive. A name that ends in `.tgz` is a compressed TAR archive too.
 
 A file inside an archive is reported with `!` between the archive path and the
 path inside it, for example `bundle.zip!config/app.env`.

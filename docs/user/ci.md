@@ -10,9 +10,8 @@ tell them apart, choose another value for findings, for example
 `--exit-code 3`. Do not use 2 or 126. See [Exit
 codes](cli-reference.md#exit-codes) for every code.
 
-A missing or unreadable baseline file does not fail the scan, and every
-earlier finding is reported again. See [Baselines](configuration.md#baselines).
-Check the log if a baseline scan reports more than you expect.
+A missing or unreadable baseline file does not fail the scan. See
+[Baselines](configuration.md#baselines).
 
 ## GitHub Actions
 
@@ -67,9 +66,7 @@ Notes:
 - `fetch-depth: 0` fetches the full history. The default checkout has only the
   last commit.
 - `--redact` keeps secret values out of the uploaded SARIF file.
-- The SARIF file names the tool `rustleaks`. If the repository has code
-  scanning alerts from Gitleaks, the first upload opens new alerts under
-  `rustleaks`. See [SARIF](reports.md#sarif).
+- The SARIF tool name is `rustleaks`. See [SARIF](reports.md#sarif).
 - The upload step runs even when the scan step fails, for example because it
   found secrets.
 - For stronger supply-chain safety, pin each action to a full commit SHA.
