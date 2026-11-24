@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn exclusions_match_the_upstream_normalized_file_path_only() {
+    fn exclusions_match_the_normalized_file_path_only() {
         let fragment = Fragment::builder(Vec::<u8>::new())
             .file_path(ByteText::from("other/baseline.json"))
             .windows_file_path(ByteText::from(r"other\baseline.json"))

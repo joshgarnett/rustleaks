@@ -8,9 +8,10 @@
 //! affects every size alike. No upstream code or bytes are copied. Expected
 //! findings come from the plants and their byte offsets.
 //!
-//! Shapes built from provider pack support rules (`skipReport = true`) produce
-//! many candidates and no reported finding. Each ends with one GitHub token
-//! line as the control finding, so a scan that skips the input cannot pass.
+//! Shapes built from the support rules of the provider rule file
+//! (`skipReport = true`) produce many candidates and no reported finding. Each
+//! ends with one GitHub token line as the control finding, so a scan that skips
+//! the input cannot pass.
 
 use std::fmt;
 use std::fs::File;
@@ -28,7 +29,8 @@ use serde_json::json;
 
 use super::source_scale_workloads::{FindingKey, GITHUB_RULE, Scratch, key, verify_findings};
 use super::suite_support::{
-    DATABASE_URI_RULE, Lcg, Result, checked_github_token, go_entropy, keyword_census, pack_config,
+    DATABASE_URI_RULE, Lcg, Result, checked_github_token, go_entropy, keyword_census,
+    rule_file_config,
 };
 use super::{Phase, elapsed, fingerprint, outcome_signature, phase};
 
@@ -85,11 +87,11 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
             series(id, iterations, config, b"default".to_vec(), 0)
         }
         "dense-base64-uris" => {
-            let (config, _, identity) = pack_config(&["rustleaks-connections-v1"])?;
+            let (config, _, identity) = rule_file_config(&["rustleaks-connections-v1"])?;
             series(id, iterations, config, identity, 1)
         }
         _ if HELPER_SHAPES.contains(&id) || id == "dense-planetscale-pairs" => {
-            let (config, _, identity) = pack_config(&["rustleaks-providers-v1"])?;
+            let (config, _, identity) = rule_file_config(&["rustleaks-providers-v1"])?;
             series(id, iterations, config, identity, 0)
         }
         "memory-many-findings-scan" | "memory-many-findings-json" => many_findings(id, iterations),
@@ -97,7 +99,7 @@ pub(super) fn run(id: &str, iterations: usize) -> Result<Vec<Phase>> {
     }
 }
 
-/// Shapes that match only provider pack support rules.
+/// Shapes that match only provider rule file support rules.
 const HELPER_SHAPES: &[&str] = &[
     "dense-planetscale-ids",
     "dense-planetscale-loose-ids",
@@ -178,7 +180,7 @@ fn filter_one_line(size: usize) -> Shape {
 
 /// `mysql://user:<24 alphanumerics>@db.invalid/test ` repeated to three
 /// quarters of the size, then encoded as one Base64 string (`base64-uris`).
-/// Each password is a finding of the connections pack database URI rule in
+/// Each password is a finding of the connection rule file database URI rule in
 /// decoded text. Decoded findings report the columns of the encoded text, so
 /// every one starts at line 1, column 1.
 fn base64_uris(size: usize) -> Shape {
@@ -302,7 +304,8 @@ fn control_line(bytes: &mut Vec<u8>, expected: &mut Vec<FindingKey>) -> Result<(
     Ok(())
 }
 
-/// Lines that only provider pack support rules match, then the control line.
+/// Lines that only support rules of the provider rule file match, then the
+/// control line.
 fn helper_shape(id: &str, size: usize) -> Result<Shape> {
     let mut rng = Lcg::new(0x6b32_0000 ^ size as u64);
     let mut bytes = Vec::with_capacity(size + 64);
@@ -324,10 +327,10 @@ fn helper_shape(id: &str, size: usize) -> Result<Shape> {
 }
 
 /// `components`: a `PlanetScale` ID line, then a `pscale_tkn_` token line. The
-/// default `planetscale-api-token` rule reports each token. The provider pack
-/// rule `rustleaks.association.planetscale-api-token` also matches each token,
-/// because it needs a `PlanetScale` ID support match anywhere in the same
-/// buffer (window `0`), and every ID line is one. A reviewed overlap then
+/// default `planetscale-api-token` rule reports each token. The provider rule
+/// file rule `rustleaks.association.planetscale-api-token` also matches each
+/// token, because it needs a `PlanetScale` ID support match anywhere in the
+/// same buffer (window `0`), and every ID line is one. A reviewed overlap then
 /// drops its finding, since the default rule reports the same secret.
 fn planetscale_pairs(size: usize) -> Result<Shape> {
     const TOKEN_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz0123456789";

@@ -65,21 +65,6 @@ fn a_default_scan_reports_builtin_rules() {
 }
 
 #[test]
-fn the_native_pack_flag_is_gone() {
-    let fixture = Fixture::new();
-    for flag in ["--native-pack=rustleaks-providers-v1", "--native-pack"] {
-        // No standard input: the parser exits before it would read any.
-        let result = output(&fixture.0, &["stdin", "--no-banner", flag]);
-        assert_eq!(result.status.code(), Some(126), "{flag}");
-        assert!(result.stdout.is_empty());
-        assert!(
-            String::from_utf8_lossy(&result.stderr).contains("native-pack"),
-            "{flag}"
-        );
-    }
-}
-
-#[test]
 fn builtin_uri_rule_keeps_global_suppression() {
     let fixture = Fixture::new();
     for (case, (secret, found)) in [

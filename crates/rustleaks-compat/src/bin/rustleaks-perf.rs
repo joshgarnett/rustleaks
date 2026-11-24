@@ -1,4 +1,4 @@
-//! Deterministic, unpublished performance and compatibility workload runner.
+//! Deterministic, unpublished performance workload runner.
 #![forbid(unsafe_code)]
 
 #[path = "../perf/benchmark_data.rs"]
@@ -35,9 +35,10 @@ use serde::Serialize;
 
 const SCHEMA_VERSION: u32 = 2;
 const MEASUREMENT_SCOPE: &str = "legacy-v1-includes-verification";
-/// Rules in the shipped default configuration.
+/// Rules in `gitleaks.toml`, the default rule file without the Rustleaks rule
+/// files. A `rustleaks` scan uses both by default.
 const DEFAULT_RULES: usize = 222;
-/// `config_metric` fingerprint of the shipped default configuration.
+/// `config_metric` fingerprint of the rules in `gitleaks.toml`.
 const DEFAULT_CONFIG_FINGERPRINT: u64 = 0xbba0_f636_d5a0_2d49;
 const DEFAULT_INPUT_BYTES: usize = 1_048_576;
 const HOSTILE_INPUT_BYTES: usize = 262_144;
@@ -1279,7 +1280,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_upstream_benchmark_inputs_and_outcomes_run() {
+    fn gitleaks_benchmark_inputs_and_outcomes_run() {
         for id in (1..=8).map(|value| format!("bm-{value:04}")) {
             let (_, metric) = run_workload(&id, 1).expect("benchmark workload");
             validate_metric(&id, &metric, expected(&id)).expect("benchmark invariant");

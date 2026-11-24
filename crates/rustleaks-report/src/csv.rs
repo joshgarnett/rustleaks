@@ -23,7 +23,7 @@ const HEADER: &[&[u8]] = &[
     b"Tags",
 ];
 
-/// Upstream-compatible RFC 4180-style CSV report writer.
+/// CSV report writer with RFC 4180-style quoting.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CsvReporter;
 

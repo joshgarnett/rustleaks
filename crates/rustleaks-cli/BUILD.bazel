@@ -54,7 +54,10 @@ rustleaks_integration_test(
     src = "tests/cli.rs",
     srcs = glob(["tests/cli/*.rs"]),
     data = [":rustleaks"] + _GIT_TEST_DATA,
-    deps = _DEPS + [":rustleaks_cli"],
+    deps = [
+        "//crates/rustleaks-core:rustleaks_core",
+        ":rustleaks_cli",
+    ],
     env = _GIT_TEST_ENV,
 )
 

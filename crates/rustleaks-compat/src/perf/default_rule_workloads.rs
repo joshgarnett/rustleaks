@@ -201,7 +201,7 @@ impl DefaultRuleRng {
 
 /// Keyword-view of the input under Go's `strings.ToLower`, for literal counting.
 ///
-/// Per the pinned Unicode table only U+0130 and U+212A lowercase into ASCII, so
+/// In the Unicode case tables only U+0130 and U+212A lowercase into ASCII, so
 /// all other non-ASCII bytes can stay as they are: they can never complete an
 /// ASCII keyword. Neither lead byte can be a UTF-8 continuation byte, so these
 /// byte sequences always decode as those two code points.
@@ -289,8 +289,9 @@ struct GoLocation {
     end_index: usize,
 }
 
-/// Restates the pinned upstream `location()` helper. Its per-newline loop is
-/// replaced by binary search only because fixtures hold up to 65,536 plants.
+/// Computes line, column and line bounds with the engine's location rules,
+/// written apart from the engine. It uses a binary search over newlines in
+/// place of a per-newline loop because fixtures hold up to 65,536 plants.
 fn go_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> GoLocation {
     let mut location = GoLocation::default();
     let mut line_set = false;
@@ -312,7 +313,7 @@ fn go_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> GoLo
         location.end_index = newlines[end_line];
     }
     if !line_set {
-        // Upstream's "no line matched" path: the line starts at zero and ends
+        // The "no line matched" path: the line starts at zero and ends
         // at the first CR or LF after the match, or at the end of the raw text.
         let previous = newlines[newlines.len() - 1];
         location.start_line = newlines.len();
@@ -335,7 +336,7 @@ fn newline_positions(raw: &[u8]) -> Vec<usize> {
         .filter_map(|(index, byte)| (*byte == b'\n').then_some(index))
         .collect::<Vec<_>>();
     if positions.is_empty() {
-        // Upstream inserts one virtual newline for a fragment without any.
+        // A fragment without a newline gets one virtual newline at its end.
         vec![raw.len()]
     } else {
         positions
@@ -1597,7 +1598,7 @@ fn minified_one_line(ctx: &mut Context<'_>, tokens: usize, size: usize) -> Falli
     Ok((scan, json!({"findings_on_one_line": tokens})))
 }
 
-/// Findings after the last newline take upstream's no-line-matched location
+/// Findings after the last newline take the no-line-matched location
 /// path, in which each finding's line begins at offset zero.
 fn minified_tail(ctx: &mut Context<'_>, tokens: usize, size: usize) -> Fallible<(Scan, Value)> {
     let mut raw = filler(60);

@@ -39,7 +39,7 @@ fn render(template: &TemplateReporter, findings: &[Finding]) -> Vec<u8> {
 }
 
 #[test]
-fn fixture_templates_match_the_pinned_go_oracle_byte_for_byte() {
+fn fixture_templates_match_the_recorded_gitleaks_output_byte_for_byte() {
     let json = reporter(include_bytes!(
         "../../../testdata/fixtures/upstream/testdata/report/jsonextra.tmpl"
     ));
@@ -89,7 +89,7 @@ fn fixture_templates_define_exact_empty_order_and_duplicate_behavior() {
         .build()
         .unwrap();
     // The inner range changes dot, so the last-tag expression must be assigned
-    // before entering it, exactly as in the compatibility fixture.
+    // before entering it, exactly as in the `jsonextra.tmpl` fixture.
     let order = reporter(
         b"{{ range $i, $f := . }}{{ $last := sub (len .Tags) 1 }}{{ $i }}={{ .RuleID }}:[{{ range $j, $tag := .Tags }}{{ quote . }}{{ if ne $j $last }},{{ end }}{{ end }}];{{ end }}",
     );
@@ -578,31 +578,10 @@ fn public_profile_and_defaults_are_versioned_and_checked() {
 }
 
 #[test]
-fn every_template_oracle_case_has_an_exact_replay_or_named_safe_profile_disposition() {
-    // These are all 15 template-format requests in report-corpus v1. Keeping
-    // the complete ID list here makes additions review-visible instead of
-    // silently treating them as covered by two happy-path fixtures.
-    let cases = [
-        "template-markdown",
-        "template-jsonextra",
-        "template-empty",
-        "template-safe-helpers",
-        "template-raw-bytes",
-        "template-block-env",
-        "template-block-expandenv",
-        "template-block-host",
-        "template-allow-now-parse",
-        "template-allow-random-parse",
-        "template-parse-error",
-        "template-execute-error",
-        "template-empty-path",
-        "template-missing-path",
-        "template-writer-error",
-    ];
-    assert_eq!(cases.len(), 15);
-
-    // Exact declared-domain replays. Markdown/JSON-extra are compared against
-    // their golden bytes above; empty and now/date are exercised here too.
+fn corpus_template_cases_parse_or_fail_as_unsupported() {
+    // `report_corpus.rs` lists the 15 template cases of the report corpus.
+    // Markdown and JSON-extra are compared against their recorded bytes above;
+    // empty and now/date are checked here.
     assert!(render(&reporter(b""), &[]).is_empty());
     assert!(
         TemplateReporter::from_bytes(
@@ -612,7 +591,7 @@ fn every_template_oracle_case_has_an_exact_replay_or_named_safe_profile_disposit
         .is_ok()
     );
 
-    // The upstream oracle intentionally demonstrates helpers outside safe-v1.
+    // The recorded Gitleaks cases use helpers outside safe-v1 on purpose.
     // Direct raw-byte rendering is retained through range/current-dot (proved
     // above); index, upper, hashing, default, random, and out-of-range index
     // execution are explicit construction-time profile boundaries.
@@ -659,10 +638,4 @@ fn every_template_oracle_case_has_an_exact_replay_or_named_safe_profile_disposit
         ),
         Err(TemplateError::Read { .. })
     ));
-
-    // The exact writer-failure prefix is asserted in the dedicated writer
-    // test. Touch the edge IDs so the complete frozen list remains explicit.
-    assert_eq!(cases[0], "template-markdown");
-    assert_eq!(cases[1], "template-jsonextra");
-    assert_eq!(cases[14], "template-writer-error");
 }

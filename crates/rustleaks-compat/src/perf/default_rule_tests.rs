@@ -36,7 +36,7 @@ fn workload_ids_are_unique_and_every_selector_family_is_declared() {
 }
 
 #[test]
-fn entropy_and_location_restate_upstream_helpers() {
+fn entropy_and_location_helpers_follow_the_engine_rules() {
     // Eleven symbols over 22 bytes, each twice: exactly log2(11).
     let even = b"0123456789a0123456789a";
     assert!((go_entropy(even).unwrap() - 11_f64.log2()).abs() < 1e-12);
@@ -45,8 +45,8 @@ fn entropy_and_location_restate_upstream_helpers() {
 
     let raw = b"first\nsecond\nthird";
     let newlines = newline_positions(raw);
-    // Newlines sit at bytes 5 and 12. Upstream measures from the newline's own
-    // index, so the first byte after a newline is column (6 - 5) + 1 = 2.
+    // Newlines sit at bytes 5 and 12. Columns are measured from the newline's
+    // own index, so the first byte after a newline is column (6 - 5) + 1 = 2.
     let second = go_location(&newlines, raw, 6, 12);
     assert_eq!(
         (
@@ -59,14 +59,14 @@ fn entropy_and_location_restate_upstream_helpers() {
     );
     assert_eq!((second.start_index, second.end_index), (5, 12));
 
-    // After the last newline: upstream's zero-start, no-line-matched path.
+    // After the last newline: the zero-start, no-line-matched path.
     // Columns are (13 - 12) + 1 = 2 and 18 - 12 = 6.
     let tail = go_location(&newlines, raw, 13, 18);
     assert_eq!((tail.start_line, tail.end_line), (2, 2));
     assert_eq!((tail.start_column, tail.end_column), (2, 6));
     assert_eq!((tail.start_index, tail.end_index), (0, raw.len()));
 
-    // No newline at all: upstream's one virtual newline at the end.
+    // No newline at all: one virtual newline at the end.
     let flat = b"abcdef";
     let virtual_newline = newline_positions(flat);
     assert_eq!(virtual_newline, vec![flat.len()]);

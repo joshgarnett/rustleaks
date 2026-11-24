@@ -476,8 +476,8 @@ impl IgnoreLoader<'_> {
 
 /// Reads a baseline report and parses it with the file-free core parser.
 ///
-/// The errors are those of `Baseline::load_go_json`, so messages do not
-/// change.
+/// The CLI reads the file itself so that the core engine reads no files.
+/// The errors are the same as those of `Baseline::load_go_json`.
 fn load_baseline(path: &Path) -> Result<Baseline, BaselineLoadError> {
     let bytes = fs::read(path).map_err(|source| BaselineLoadError::Io {
         path: path.to_path_buf(),
@@ -989,7 +989,7 @@ mod tests {
     }
 
     #[test]
-    fn config_exclusion_covers_native_and_backward_compatible_spellings() {
+    fn config_exclusion_covers_rustleaks_and_legacy_names() {
         let explicit = Invocation {
             command: CommandKind::Directory,
             source: PathBuf::from("repo"),
@@ -1131,7 +1131,7 @@ mod tests {
     }
 
     #[test]
-    fn config_source_selection_preserves_native_and_legacy_precedence() {
+    fn config_source_selection_keeps_rustleaks_then_legacy_order() {
         let mut invocation = Invocation {
             command: CommandKind::Stdin,
             source: PathBuf::from("."),
