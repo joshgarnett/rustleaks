@@ -138,18 +138,32 @@ pub(crate) fn is_stream_name(_path: &Path) -> bool {
     false
 }
 
-/// Reports a DOS device name, such as `NUL`, `con` or `COM1.txt`. Windows
-/// opens the device for these names in any folder, with any letter case and
-/// with any extension.
+/// Reports a DOS device name, such as `NUL`, `con`, `COM1.txt` or `nul:`.
+/// Windows opens the device for these names in any folder, with any letter
+/// case, with any extension or text after a colon, and with spaces or dots
+/// before them.
 #[cfg(any(windows, test))]
 fn is_dos_device_name(name: &str) -> bool {
-    let stem = name.split_once('.').map_or(name, |(stem, _)| stem);
-    let stem = stem.to_ascii_uppercase();
+    let stem = name.split(['.', ':']).next().unwrap_or(name);
+    let stem = stem.trim_end_matches([' ', '.']).to_ascii_uppercase();
     match stem.as_str() {
         "NUL" | "CON" | "AUX" | "PRN" | "CONIN$" | "CONOUT$" => true,
         _ => ["COM", "LPT"].iter().any(|prefix| {
             stem.strip_prefix(prefix).is_some_and(|number| {
-                matches!(number, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+                matches!(
+                    number,
+                    "1" | "2"
+                        | "3"
+                        | "4"
+                        | "5"
+                        | "6"
+                        | "7"
+                        | "8"
+                        | "9"
+                        | "\u{b9}"
+                        | "\u{b2}"
+                        | "\u{b3}"
+                )
             })
         }),
     }
@@ -258,8 +272,33 @@ mod tests {
     #[test]
     fn dos_device_names_match_any_case_and_extension() {
         for name in [
-            "NUL", "nul", "Nul.txt", "CON", "con.json", "AUX", "PRN", "COM1", "com9.log", "LPT1",
-            "lpt9", "CONIN$", "conout$",
+            "NUL",
+            "nul",
+            "Nul.txt",
+            "CON",
+            "con.json",
+            "AUX",
+            "PRN",
+            "COM1",
+            "com9.log",
+            "LPT1",
+            "lpt9",
+            "CONIN$",
+            "conout$",
+            "nul:",
+            "NUL:",
+            "con:x",
+            "NUL ",
+            "nul  ",
+            "nul .txt",
+            "nul.",
+            "NUL..",
+            "nul . txt",
+            "aux :",
+            "COM1 ",
+            "lpt2:",
+            "COM\u{b9}",
+            "lpt\u{b3}.txt",
         ] {
             assert!(is_dos_device_name(name), "{name}");
         }
@@ -273,6 +312,11 @@ mod tests {
             "LPTX",
             "report.json",
             "xNUL",
+            " NUL",
+            "NU L",
+            "COM 1",
+            "COM\u{b4}",
+            ":",
             "",
         ] {
             assert!(!is_dos_device_name(name), "{name}");
