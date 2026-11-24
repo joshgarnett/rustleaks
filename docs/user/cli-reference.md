@@ -58,11 +58,13 @@ your `PATH`, so Git must be installed.
 
 By default Rustleaks runs `git log -p -U0 --full-history --all
 --diff-filter=tuxdb`, which covers every commit reachable from any branch or
-tag. Only the lines that each commit adds are scanned. Every Git command
-also passes `-c core.fsmonitor=`, and every `git log` and `git diff` passes
-`--no-textconv --no-ext-diff --no-color`, so the scanned repository's
-configuration cannot start a program or replace the content Rustleaks
-reads. `git log` also passes `--no-show-signature`.
+tag. Only the lines that each commit adds are scanned. Every `git log` and
+`git diff` also passes `-c core.fsmonitor=` and `--no-textconv --no-ext-diff
+--no-color`, and `git log` passes `--no-show-signature`, so the scanned
+repository's configuration cannot start these programs or replace the
+content Rustleaks reads with their output. `--pre-commit` runs `git diff` on
+the worktree, which still applies the repository's clean filters, as
+`git add` does.
 
 | Flag | Value | Effect |
 | --- | --- | --- |

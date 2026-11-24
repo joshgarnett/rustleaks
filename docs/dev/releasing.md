@@ -408,22 +408,24 @@ changing anything; set it, after approval, to push. The workflow:
    and runs a redacted scan. Homebrew on Linux ARM64 is not checked here;
 4. only when `publish` is set, runs `check-channels` without a credential.
    It clones `main` of both repositories and runs
-   `cargo xtask release-artifact check-upgrade`, which refuses a version
+   `release-artifact check-upgrade` from xtask, which refuses a version
    older than the one in either repository, and a pre-release when the
    repository holds a stable release. It records the commit it checked in
    each repository; and
 5. only when `publish` is set and every job above passed, runs the
    `publish` job in the protected `release` environment. This job runs only
-   Git and the GitHub CLI: it checks out no Rustleaks code and runs no setup
-   action or Cargo. It clones both repositories again and stops unless
+   Git, the GitHub CLI and the pinned token action: it checks out no
+   Rustleaks code and runs no setup action or Cargo. It clones both repositories again and stops unless
    `main` is still the commit that `check-channels` checked. Then it creates
    a one-hour token with `actions/create-github-app-token` from the
    `PACKAGING_APP_ID` variable and `PACKAGING_APP_PRIVATE_KEY` secret,
    limited to contents write on the two repositories, and commits and
    pushes the changed file to `main` of each. The push is not forced, so it
    fails if `main` moved. The two pushes are separate: if the second fails,
-   rerun the workflow with the same version, which skips the repository
-   that is already up to date.
+   start a new run of the workflow with the same version, which skips the
+   repository that is already up to date. Do not use "Re-run failed jobs":
+   it reuses the commits that the old `check-channels` recorded, so the
+   repository that was already pushed fails the check.
 
 A pre-release pushed to the tap or bucket becomes what `brew install` and
 `scoop install` give everyone. Once a repository holds a stable release,

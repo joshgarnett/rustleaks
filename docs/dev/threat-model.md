@@ -45,7 +45,7 @@ and fail when that boundary changes.
 | Bazel and local tools | `MODULE.bazel`, lockfiles, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned toolchains and lockfiles, declared inputs, exact tool versions, private bounded output, verified process cleanup | `just ci`, build system checks, package consumers, target compile matrix |
 | Hosted CI | `.github/workflows/`, `.github/actions/setup/` | Read-only default permissions, minimal job grants, actions pinned by full SHA, no secrets in pull request and dry-run jobs | Pull request, nightly, weekly, CodeQL, native and dry-run workflows |
 | Releases | Package metadata, release Bazel configs, `//release/linux-packages`, `release-dry-run.yml`, `publish.yml`, `release.yml`, `release` environment | Exact-main qualification, repeat builds with byte comparison, Linux packages checked against the archive, checksums, SBOMs, signed provenance, protected publication | `just release-dry-run`, hosted qualification, native smoke tests, package installs on glibc 2.28, attestation and bundle checks |
-| Package managers | `packages.yml`, `joshgarnett/homebrew-tap`, `joshgarnett/scoop-bucket`, packaging GitHub App, `release` environment | Formula and manifest written from attested archives and checksums, release tag matched to the release commit, installs and channel versions checked before any push and without a credential, one-hour App token for contents write on the two repositories only, in a protected publish job that runs only Git and the GitHub CLI, no version moves back and no stable channel moves to a pre-release | Workflow policy check, `release-artifact package-managers` and `check-upgrade` tests, Homebrew and Scoop install jobs |
+| Package managers | `packages.yml`, `joshgarnett/homebrew-tap`, `joshgarnett/scoop-bucket`, packaging GitHub App, `release` environment | Formula and manifest written from attested archives and checksums, release tag matched to the release commit, installs and channel versions checked before any push and without a credential, one-hour App token for contents write on the two repositories only, in a protected publish job that runs only Git, the GitHub CLI and the pinned token action, no version moves back and no stable channel moves to a pre-release | Workflow policy check, `release-artifact package-managers` and `check-upgrade` tests, Homebrew and Scoop install jobs |
 
 Exact limits are in [Engine internals](engine-internals.md) and
 [Resource limits](../user/resource-limits.md). Dependency reasoning is in
@@ -173,8 +173,10 @@ See [Using rustleaks-core](../user/library.md#review-records).
   host file system.
 - The scanned repository's Git configuration and attributes still apply,
   apart from the textconv, external diff, fsmonitor and signature programs
-  that the source turns off. These are the settings known to start a
-  program during `log` and `diff`. `--log-opts` can turn them back on.
+  that the source turns off. `--log-opts` can turn them back on. A worktree
+  `git diff` (`--pre-commit`) still runs the repository's clean filters
+  (`filter.<driver>.clean` and `.process`), whose output replaces the
+  content that is scanned, as it does for `git add`.
 - A repository's `.gitattributes` can mark a file as binary (`-diff` or
   `binary`). Git then shows no patch for it, and the history scan reads it
   only when it is an archive, with no issue.

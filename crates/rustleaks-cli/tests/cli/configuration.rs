@@ -80,7 +80,7 @@ fn config_file_errors_show_position_but_not_file_text() {
             "extended config error: extended config error: parse error at ",
             "at line 1, column",
         ),
-        ("decode.toml", "decode error", ""),
+        ("decode.toml", "decode error at ", "decode.toml"),
     ];
     for (config, kind, position) in cases {
         let result = output(
