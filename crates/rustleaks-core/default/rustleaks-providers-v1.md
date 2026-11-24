@@ -31,8 +31,8 @@ scanner.
 
 See [Using
 rustleaks-core](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
-for the library and [Rule pack
-authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
+for the library and [Rule
+authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md)
 for contributors, including the meaning of the native tables.
 
 ## Rules
@@ -636,8 +636,8 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
 - All edges use the `full-match-window` relation. The source contract is
   pinned Kingfisher `scan_blob_with_context` without `DetectionOptions`. The
   window and buffer rules are in
-  [Rule pack
-  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md).
+  [Rule
+  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md).
   Raw, decoded, sibling and nested buffers cannot supply each other's
   helpers.
   Native depth-two isolation does not claim that the source API decodes
@@ -725,8 +725,8 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   2.5 and is rejected. The predicate covers the full source alphabet and
   case range. It uses no dictionary or approximation.
 - Predicate details and costs are in
-  [Rule pack
-  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md).
+  [Rule
+  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md).
   The tokenizer data is described in the [tokenizer data
   README](../data/README.md).
 

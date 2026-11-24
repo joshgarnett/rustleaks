@@ -12,8 +12,8 @@ pub(crate) const GENERATE_TARGETS: &[&str] = &[
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
-        [target] if target == "native-pack-identity" => super::generate_native_pack_identity(root, false),
-        [target, flag] if target == "native-pack-identity" && flag == "--check" => super::generate_native_pack_identity(root, true),
+        [target] if target == "native-pack-identity" => super::generate_rule_file_identity(root, false),
+        [target, flag] if target == "native-pack-identity" && flag == "--check" => super::generate_rule_file_identity(root, true),
         [target, output] if target == "archive-fuzz-seeds" => super::generate_archive_fuzz_seeds(root, Path::new(output), false).map(|_| ()),
         [target, output, flag] if target == "archive-fuzz-seeds" && flag == "--check" => super::generate_archive_fuzz_seeds(root, Path::new(output), true).map(|_| ()),
         [target, requests, output] if target == "regex-fuzz-seeds" => super::generate_regex_fuzz_seeds(Path::new(requests), Path::new(output)).map(|_| ()),

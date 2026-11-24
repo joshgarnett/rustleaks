@@ -244,7 +244,7 @@ jobs:
           fi
           assets="${RUNNER_TEMP}/release-assets"
           test "$(find "${assets}" -maxdepth 1 -type f | wc -l | tr -d ' ')" = 67
-          # GitHub marks a release without --prerelease as the latest one.
+          # Without --prerelease, GitHub decides from version and date which release is the latest.
           if [[ "${EXPECTED_VERSION}" = *-* ]]; then
             kind=(--prerelease)
             prerelease=true

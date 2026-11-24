@@ -21,8 +21,8 @@ connection. They do not check whether a credential is active.
 
 See [Using
 rustleaks-core](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
-for the library and [Rule pack
-authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
+for the library and [Rule
+authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md)
 for contributors.
 
 ## Rules

@@ -5,7 +5,7 @@ description: Maintain Rustleaks default-rule, custom-rule or Rustleaks rule file
 
 # Rustleaks rule maintenance
 
-Read `docs/dev/rule-pack-authoring.md`, `docs/dev/testing.md`, the
+Read `docs/dev/rule-authoring.md`, `docs/dev/testing.md`, the
 [repository contract](../../../AGENTS.md#repository-contract) and the
 applicable config and detection corpus READMEs under `testdata/`. Decide
 whether the request changes the shipped default rules, supported TOML
@@ -14,8 +14,8 @@ semantics, a Rustleaks rule file, or only Rustleaks test coverage.
 ## Default rules and Rustleaks rule files
 
 Follow [Changing the default
-rules](../../../docs/dev/rule-pack-authoring.md#changing-the-default-rules)
-or [Changing a pack](../../../docs/dev/rule-pack-authoring.md#changing-a-pack).
+rules](../../../docs/dev/rule-authoring.md#changing-the-default-rules)
+or [Changing a pack](../../../docs/dev/rule-authoring.md#changing-a-pack).
 The `NativePolicy` API calls a Rustleaks rule file a pack. Never edit rules
 above the generated marker line, a `.sha256` file or a `.provenance.json`
 file by hand. A change that makes Rustleaks miss secrets it found before

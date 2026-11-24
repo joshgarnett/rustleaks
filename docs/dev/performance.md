@@ -243,7 +243,7 @@ commands. Select them by ID, for example `core-mixed-16-kib`.
 | `source-scale` | 26 workloads for traversal, chunking, Git history shape, archive limits and CLI behavior |
 | `default-rules` | Default rules at decode depth 0 on keyword, near-miss, Unicode, minified, realistic and contention inputs |
 | `fragments` | JSON, log and invalid UTF-8 records in fragments from 16 KiB to 12 MiB |
-| `packs` | Native rule packs at library level: startup, keyword admission, mixed input and workers |
+| `packs` | Rustleaks rule files at library level: startup, keyword admission, mixed input and workers |
 | `cli-matrix` | Fresh CLI processes in `dir` and `git` modes on one generated repository |
 | `dense` | Dense findings from 25,000 to 400,000 bytes, long lines and many findings |
 | `git-shapes` | Git reader shapes: one huge hunk, many files, many branches, merges and renames |
@@ -274,7 +274,7 @@ Notes for some groups:
 These five groups are timed only by hand. Unit tests run every one of
 them at a smaller size and check the exact outcome, so `just test` covers
 them; timing stays manual. Planted values are synthetic GitHub tokens,
-database URIs for the connections pack and fixed literals for custom rules.
+database URIs for the connections rule file and fixed literals for custom rules.
 Before a run, a check fails if the filler text holds any keyword of the
 selected configuration, so only plants can produce findings.
 

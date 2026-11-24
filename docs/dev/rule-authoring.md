@@ -1,4 +1,4 @@
-# Rule pack authoring
+# Rule authoring
 
 This page is for contributors who add or change built-in rules: the default
 rules and the Rustleaks rule files. The `NativePolicy` API and this page call

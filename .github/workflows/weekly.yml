@@ -1,4 +1,4 @@
-name: Weekly Security
+name: Weekly fuzzing and coverage
 
 on:
   schedule:

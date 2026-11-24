@@ -384,9 +384,9 @@ with the same candidate, version and dry run ID. Its protected `release` job
 downloads all nine kept artifacts, checks package and native checksums,
 manifests, SBOMs, provenance and attestations again, then creates the
 release. A version with a pre-release suffix, such as `0.2.0-rc.1`, becomes
-a GitHub pre-release. Any other version becomes the latest release, even
-when a higher version exists. Publish a fix for an older release line only
-after deciding which release should be the latest. It
+a GitHub pre-release. For any other version, GitHub decides from the
+version and date whether it becomes the latest release, so a fix for an
+older release line may not become the latest. It
 attaches the source package evidence and the evidence for all eight targets.
 It does not rebuild anything.
 

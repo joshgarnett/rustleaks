@@ -132,9 +132,9 @@ identify the product.
 ### A detection rule
 
 - A change to the default rules follows [Changing the default
-  rules](rule-pack-authoring.md#changing-the-default-rules).
+  rules](rule-authoring.md#changing-the-default-rules).
 - Add a new rule to a Rustleaks rule file. See [Changing a
-  pack](rule-pack-authoring.md#changing-a-pack).
+  pack](rule-authoring.md#changing-a-pack).
 - Engine behavior that rules depend on, such as a new predicate, belongs in
   `rustleaks-core` with tests in `crates/rustleaks-core/tests/`.
 

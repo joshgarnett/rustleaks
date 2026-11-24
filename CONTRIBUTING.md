@@ -126,7 +126,7 @@ Follow [Rules for tests](docs/dev/testing.md#rules-for-tests) and
 [Test data](docs/dev/testing.md#test-data). In addition:
 
 - A change to the default rules or a rule file follows
-  [Rule pack authoring](docs/dev/rule-pack-authoring.md) and has a changelog
+  [Rule authoring](docs/dev/rule-authoring.md) and has a changelog
   entry.
 - Regenerate the public API snapshot as described in
   `testdata/public-api/README.md` when the `rustleaks-core` API changes.

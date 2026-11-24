@@ -10,7 +10,7 @@ These pages are for contributors and maintainers. User documentation is in
 | --- | --- |
 | [Architecture](architecture.md) | Learn the crates, how data moves between them, and where to add a rule, source, report format or flag |
 | [Engine internals](engine-internals.md) | Change scan budgets, cancellation, caches, threads, Git processes or complete-target scanning |
-| [Rule pack authoring](rule-pack-authoring.md) | Add or change a default rule or a Rustleaks rule file |
+| [Rule authoring](rule-authoring.md) | Add or change a default rule or a Rustleaks rule file |
 | [Testing](testing.md) | Run tests, add a test, and change the test data under `testdata/` |
 | [Performance](performance.md) | Run the in-repository performance tools and keep their results |
 

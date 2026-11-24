@@ -57,7 +57,7 @@ with a non-generic finding on the same line and commit. It compares a generic
 finding only with non-generic findings on the same line and commit.
 
 The same filter removes findings named by reviewed rule overlaps (see
-[Rule pack authoring](rule-pack-authoring.md#same-secret-from-two-rules)). It
+[Rule authoring](rule-authoring.md#same-secret-from-two-rules)). It
 charges no work units. When some finding's rule has an overlap, it indexes the
 findings of kept rules by file, commit, secret and exact secret range, and
 polls cancellation once for each finding it indexes and once for each finding

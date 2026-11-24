@@ -107,7 +107,7 @@ meta engine, its caches and the reverse NFA fallback.
   the source hash, size, licenses and every derived byte; runtime input
   cannot supply a vocabulary.
 
-See [Rule pack authoring](rule-pack-authoring.md).
+See [Rule authoring](rule-authoring.md).
 
 ### Review records
 

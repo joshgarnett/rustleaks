@@ -9,7 +9,7 @@ use toml::Value;
 use crate::REQUIRED_TARGETS;
 
 pub(crate) fn check(root: &Path) -> Result<(), String> {
-    crate::tooling::generate_native_pack_identity(root, true)?;
+    crate::tooling::generate_rule_file_identity(root, true)?;
     let bazel_ignore = fs::read_to_string(root.join(".bazelignore"))
         .map_err(|error| format!("cannot read .bazelignore: {error}"))?;
     check_bazel_ignore(&bazel_ignore)?;
@@ -401,18 +401,18 @@ fn check_compile_assets(crate_root: &Path, build: &str) -> Result<(), String> {
     collect_rs_files(&crate_root.join("src"), &mut sources)?;
     collect_rs_files(&crate_root.join("tests"), &mut sources)?;
     collect_rs_files(&crate_root.join("examples"), &mut sources)?;
-    let mut needs_compat = false;
+    let mut needs_testdata = false;
     let mut needs_default = false;
     for source in sources {
         let text = fs::read_to_string(&source)
             .map_err(|error| format!("cannot read {}: {error}", source.display()))?;
-        needs_compat |= text.contains("testdata/") || text.contains("../testdata");
+        needs_testdata |= text.contains("testdata/") || text.contains("../testdata");
         needs_default |= text.contains("default/gitleaks.toml");
     }
-    if needs_compat && !build.contains("//testdata:") && !build.contains("//:build_contract_files")
+    if needs_testdata && !build.contains("//testdata:") && !build.contains("//:build_contract_files")
     {
         return Err(format!(
-            "{} compatibility assets are not declared",
+            "{} reads testdata/ but declares no //testdata: data",
             crate_root.display()
         ));
     }
