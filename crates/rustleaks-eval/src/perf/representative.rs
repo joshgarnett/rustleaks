@@ -5,7 +5,7 @@ use std::fmt::Write;
 use std::hint::black_box;
 use std::time::Instant;
 
-use rustleaks_core::config::{CompiledConfig, ConfigLoader, DEFAULT_CONFIG_BYTES};
+use rustleaks_core::config::{CompiledConfig, ConfigLoader};
 use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
 use rustleaks_core::session::{ScanSession, SessionPolicy};
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanOutcome};
@@ -217,6 +217,9 @@ struct Fixture {
     decoded_bytes: usize,
     keyword_count: usize,
     expected_work: Option<usize>,
+    /// Compile every built-in rule with `ConfigLoader::load_default`. Then
+    /// `config` holds the text of the built-in rule files as its identity.
+    builtin_default: bool,
 }
 
 impl Fixture {
@@ -254,6 +257,7 @@ impl Fixture {
                 decoded_bytes: if depth == 0 { 0 } else { decoded_bytes },
                 keyword_count: 0,
                 expected_work: None,
+                builtin_default: false,
             });
         }
         let size = match id {
@@ -328,6 +332,7 @@ impl Fixture {
             decoded_bytes: 0,
             keyword_count: 0,
             expected_work: None,
+            builtin_default: false,
         })
     }
 
@@ -341,7 +346,7 @@ impl Fixture {
         let positive = id == "core-default-positive";
         Ok(Self {
             input,
-            config: String::from_utf8(DEFAULT_CONFIG_BYTES.to_vec())?,
+            config: String::from_utf8(crate::default_rule_text().to_vec())?,
             expected: Vec::new(),
             control_fingerprint: positive.then_some(0x58e4_f5aa_b1da_7b3f),
             expected_rules: if positive { 1 } else { crate::DEFAULT_RULES },
@@ -353,11 +358,16 @@ impl Fixture {
                 _ => 0,
             },
             expected_work: None,
+            builtin_default: true,
         })
     }
 
     fn compile(&self) -> Result<CompiledConfig, Box<dyn Error>> {
-        let config = ConfigLoader::new().load_toml(&self.config)?;
+        let config = if self.builtin_default {
+            ConfigLoader::new().load_default()?
+        } else {
+            ConfigLoader::new().load_toml(&self.config)?
+        };
         if self.control_fingerprint.is_some() {
             Ok(config.select_rules(["private-key"])?)
         } else {
@@ -496,11 +506,9 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
         return Err("representative compiled-rule count differs".into());
     }
     if fixture.expected_rules == crate::DEFAULT_RULES
-        && super::config_metric(&config).fingerprint != crate::DEFAULT_CONFIG_FINGERPRINT
+        && super::rule_fingerprint(&config) != crate::DEFAULT_CONFIG_FINGERPRINT
     {
-        return Err(
-            "representative default compiled rules differ from the shipped default rules".into(),
-        );
+        return Err("representative default compiled rules differ from the built-in rules".into());
     }
     if fixture.keyword_count > 0 {
         fixture.input = super::keyword_input(&config, fixture.keyword_count, 16 * 1_024)?;

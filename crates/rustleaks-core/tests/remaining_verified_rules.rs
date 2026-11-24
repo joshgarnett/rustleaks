@@ -17,13 +17,12 @@ use serde::Deserialize;
 mod native_harness;
 
 use native_harness::{
-    all_packs_config, base64_bytes as bytes, byte_entropy, coordinates, optional_range as range,
-    scan_with_depth,
+    base64_bytes as bytes, byte_entropy, coordinates, optional_range as range, scan_with_depth,
+    shipped_config, without_rules,
 };
 
 #[derive(Deserialize)]
 struct Fixture {
-    baseline_rule_ids: Vec<String>,
     selected_rule_ids: Vec<String>,
     primary_names: Vec<String>,
     cases: Vec<Case>,
@@ -87,7 +86,7 @@ fn fixture() -> &'static Fixture {
 }
 fn config() -> &'static CompiledConfig {
     static CONFIG: OnceLock<CompiledConfig> = OnceLock::new();
-    CONFIG.get_or_init(all_packs_config)
+    CONFIG.get_or_init(shipped_config)
 }
 fn scan(engine: &Engine, case: &Case) -> Vec<Finding> {
     scan_with_depth(
@@ -231,23 +230,17 @@ fn every_source_case_preserves_exact_report_secret_and_original_byte_geometry() 
 }
 
 #[test]
-fn full_composition_adds_one_occurrence_per_case_and_keeps_baseline_rules() {
-    let full = Engine::builder(config().clone()).build().unwrap();
-    let baseline_config = config()
-        .select_rules(fixture().baseline_rule_ids.iter().map(String::as_str))
+fn each_primary_case_is_reported_only_by_its_own_rule() {
+    let shipped = Engine::builder(config().clone()).build().unwrap();
+    let selected = fixture().selected_rule_ids.iter().map(String::as_str);
+    let others = Engine::builder(without_rules(config(), selected))
+        .build()
         .unwrap();
-    assert_eq!(baseline_config.rules().len(), 534);
-    let baseline = Engine::builder(baseline_config).build().unwrap();
     for case in primary() {
-        assert!(scan(&baseline, case).is_empty(), "{}", case.name);
-        let findings = scan(&full, case);
+        assert!(scan(&others, case).is_empty(), "{}", case.name);
+        let findings = scan(&shipped, case);
         assert_case(case, &findings);
         assert_eq!(findings.len(), 1, "{}", case.name);
-    }
-    // Selecting the baseline IDs from the composed policy keeps each of
-    // those rules.
-    for id in &fixture().baseline_rule_ids {
-        assert!(config().rule(id).is_some());
     }
 }
 

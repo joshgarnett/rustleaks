@@ -47,6 +47,19 @@ independently of detector output. Never change a label to improve a result.
 See `testdata/quality-corpus/README.md` for how to regenerate it, and run
 `just quality-eval` to print the report.
 
+Any edit to a rule file, including the provider and connection files,
+changes two sets of generated or pinned values:
+
+- the quality baseline, which records a fingerprint of each rule file.
+  Regenerate it with
+  `bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline`.
+- the `default-compile` performance values in
+  `crates/rustleaks-eval/src/bin/rustleaks-perf.rs` and
+  `crates/xtask/src/performance/mod.rs`, and the `gitleaks-compile` values
+  for a `gitleaks.toml` change. Work them out from the rule files, never
+  from runner output. See [Performance
+  values](../../../docs/dev/rule-authoring.md#performance-values).
+
 ## Validate
 
 Run the narrow targets that the procedure lists first. Then run the commands

@@ -13,9 +13,11 @@ mod tests;
 
 use std::collections::BTreeMap;
 
-use rustleaks_core::config::{ConfigLoader, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_SHA256};
+use rustleaks_core::config::{
+    ConfigLoader, DEFAULT_CONFIG, DEFAULT_CONFIG_BYTES, DEFAULT_CONFIG_SHA256,
+};
 use rustleaks_core::model::{Fragment, ScanOptions};
-use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
+use rustleaks_core::native::{CONNECTION_RULES_V1, EXTRA_RULES_V1, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde::Serialize;
 
@@ -55,15 +57,19 @@ struct Assessment {
 }
 
 #[derive(Serialize)]
+struct RuleFile {
+    name: &'static str,
+    fnv1a64: String,
+}
+
+#[derive(Serialize)]
 struct Report {
     schema_version: u32,
     scope: &'static str,
     profile: &'static str,
     package_version: &'static str,
     default_config_sha256: &'static str,
-    loaded_config_fnv1a64: String,
-    native_pack: &'static str,
-    native_pack_fnv1a64: String,
+    rule_files: Vec<RuleFile>,
     corpus_fnv1a64: String,
     evaluator_source_fnv1a64: String,
     generator_source_fnv1a64: String,
@@ -94,7 +100,8 @@ pub fn check_generated_corpus(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Compares the default rules, native rule profiles and selected individual rules.
+/// Scores every built-in rule, the rules in `gitleaks.toml` alone and selected
+/// individual rules.
 ///
 /// The report exposes exact-location scores separately from distinct-value
 /// recognition. Unmapped decoded findings are never assigned an invented range.
@@ -105,8 +112,8 @@ pub fn check_generated_corpus(bytes: &[u8]) -> Result<(), String> {
 pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
     verify_config_bytes(DEFAULT_CONFIG_BYTES)?;
     let corpus = model::parse(bytes)?;
+    // Every built-in rule, as a `rustleaks` scan uses by default.
     let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
         .load_default()
         .map_err(|_| "cannot compile default quality-evaluation configuration")?;
     let engine = Engine::builder(config.clone())
@@ -118,14 +125,16 @@ pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
         corpus.cases.iter(),
         None,
     )];
-    let native = NativePolicy::builder()
-        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-        .map_err(|_| "cannot load native quality-evaluation pack")?
+    let gitleaks = ConfigLoader::new()
+        .with_default_config(DEFAULT_CONFIG)
+        .load_default()
+        .map_err(|_| "cannot compile gitleaks.toml quality-evaluation configuration")?;
+    let gitleaks = Engine::builder(gitleaks)
         .build()
-        .map_err(|_| "cannot build native quality-evaluation engine")?;
+        .map_err(|_| "cannot build gitleaks.toml quality-evaluation engine")?;
     assessments.push(assess(
-        "all-native-rules",
-        native.engine(),
+        "gitleaks-toml-rules",
+        &gitleaks,
         corpus.cases.iter(),
         None,
     ));
@@ -136,12 +145,7 @@ pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
     for (rule, cases) in selections {
-        let selected_config = if rule.starts_with("rustleaks.") {
-            native.engine().config()
-        } else {
-            &config
-        };
-        let selected = selected_config
+        let selected = config
             .select_rules([rule])
             .map_err(|_| "quality corpus selects an unknown rule")?;
         let engine = Engine::builder(selected)
@@ -156,14 +160,23 @@ pub fn evaluate_corpus(bytes: &[u8]) -> Result<Vec<u8>, String> {
     ]
     .concat();
     json(&Report {
-        schema_version: 1,
+        schema_version: 2,
         scope: "Synthetic intent labels; no deployment accuracy or live validity claim. Exact-span and case-distinct-value recall are separate metrics.",
         profile: PROFILE,
         package_version: env!("CARGO_PKG_VERSION"),
         default_config_sha256: DEFAULT_CONFIG_SHA256,
-        loaded_config_fnv1a64: fingerprint(DEFAULT_CONFIG_BYTES),
-        native_pack: "rustleaks-extra-v1",
-        native_pack_fnv1a64: fingerprint(EXTRA_RULES_V1.as_bytes()),
+        rule_files: [
+            ("gitleaks.toml", DEFAULT_CONFIG),
+            ("rustleaks-extra-v1.toml", EXTRA_RULES_V1),
+            ("rustleaks-providers-v1.toml", PROVIDER_RULES_V1),
+            ("rustleaks-connections-v1.toml", CONNECTION_RULES_V1),
+        ]
+        .into_iter()
+        .map(|(name, text)| RuleFile {
+            name,
+            fnv1a64: fingerprint(text.as_bytes()),
+        })
+        .collect(),
         corpus_fnv1a64: fingerprint(bytes),
         evaluator_source_fnv1a64: fingerprint(&source),
         generator_source_fnv1a64: corpus.generator_source_fnv1a64,

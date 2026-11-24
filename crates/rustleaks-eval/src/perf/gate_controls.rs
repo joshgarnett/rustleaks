@@ -91,6 +91,7 @@ fn build(size: usize, shape: Shape) -> Fixture {
         // One pass, nine admitted rules, and at most one keyword occurrence.
         // No expression can match these bytes, so there are no candidates.
         expected_work: Some(1 + RULES + usize::from(anchored)),
+        builtin_default: false,
     }
 }
 

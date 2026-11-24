@@ -210,6 +210,7 @@ fn committed_corpus_and_baseline_replay_exactly() {
     );
     let report: serde_json::Value = serde_json::from_slice(&baseline).unwrap();
     assert_eq!(report["assessments"][0]["selection"], "all-default-rules");
+    assert_eq!(report["assessments"][1]["selection"], "gitleaks-toml-rules");
     assert!(report["assessments"].as_array().unwrap().len() > 1);
     let rendered = String::from_utf8(baseline).unwrap();
     for case in model::parse(&corpus).unwrap().cases {
@@ -243,11 +244,10 @@ fn changed_loaded_default_bytes_fail_identity_check() {
 }
 
 #[test]
-fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
-    use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
+fn built_in_rules_keep_gitleaks_coverage_and_reviewed_negative_alerts() {
     let corpus = generator::corpus();
     model::validate(&corpus).unwrap();
-    let default = Engine::builder(
+    let gitleaks = Engine::builder(
         ConfigLoader::new()
             .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
             .load_default()
@@ -255,13 +255,11 @@ fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
     )
     .build()
     .unwrap();
-    let native = NativePolicy::builder()
-        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-        .unwrap()
+    let default = Engine::builder(ConfigLoader::new().load_default().unwrap())
         .build()
         .unwrap();
-    let baseline = assess("default", &default, corpus.cases.iter(), None);
-    let candidate = assess("native", native.engine(), corpus.cases.iter(), None);
+    let baseline = assess("gitleaks", &gitleaks, corpus.cases.iter(), None);
+    let candidate = assess("default", &default, corpus.cases.iter(), None);
     assert_eq!(baseline.status, "measured");
     assert_eq!(candidate.status, "measured");
     for (before, after) in baseline.cases.iter().zip(&candidate.cases) {
@@ -329,4 +327,47 @@ fn native_cases_preserve_held_out_coverage_and_reviewed_negative_alerts() {
             assert!(actual.counts.unlocated_alerts > 0);
         }
     }
+}
+
+#[test]
+fn bazel_action_key_is_benign_and_the_same_record_shape_holds_an_api_key() {
+    let corpus = generator::corpus();
+    let find = |id: &str| corpus.cases.iter().find(|case| case.id == id).unwrap();
+    // The value of a JSON field, which must be 64 lowercase hexadecimal digits.
+    let hex_value = |input: &[u8], field: &str| {
+        let text = std::str::from_utf8(input).unwrap();
+        let value = text
+            .split(&format!("\"{field}\":\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        assert_eq!(value.len(), 64);
+        assert!(
+            value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        );
+        value.as_bytes().to_vec()
+    };
+
+    let action = find("negative-bazel-action-key");
+    hex_value(&action.input, "compile_action_key");
+    assert!(action.positives.is_empty());
+    assert!(action.unknown_regions.is_empty());
+    assert_eq!(action.selected_rules, ["generic-api-key"]);
+
+    let credential = find("generic-hex-api-key-build-record");
+    let secret = hex_value(&credential.input, "api_key");
+    assert_eq!(credential.positives.len(), 1);
+    let positive = &credential.positives[0];
+    assert_eq!(positive.expected_secret, secret);
+    assert_eq!(
+        &credential.input[positive.span.start..positive.span.end],
+        secret.as_slice()
+    );
+    assert_eq!(positive.rule_ids, ["generic-api-key"]);
+    assert_eq!(action.leakage_group, credential.leakage_group);
+    assert_eq!(action.split, credential.split);
 }

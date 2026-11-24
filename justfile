@@ -34,7 +34,7 @@ docs-check:
 
 # Evaluate the synthetic detection-quality corpus.
 quality-eval:
-    bazelisk run //crates/rustleaks-compat:rustleaks_quality -- evaluate
+    bazelisk run //crates/rustleaks-eval:rustleaks_quality -- evaluate
 
 # Run optimized benchmark workloads with their Bazel build identity.
 perf-run:

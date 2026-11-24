@@ -44,7 +44,7 @@ paths = [
   '''^crates/rustleaks-core/tests/(connection_rules|native_rules|native_predicates)\.rs$''',
   '''^crates/rustleaks-core/tests/support/(connection|extra_rule)_cases\.rs$''',
   '''^crates/rustleaks-core/src/native/predicate/vercel/tests\.rs$''',
-  '''^crates/rustleaks-compat/src/evaluation/native_cases\.rs$''',
+  '''^crates/rustleaks-(?:compat|eval)/src/evaluation/native_cases\.rs$''',
   '''^crates/xtask/src/package\.rs$''',
   '''^crates/rustleaks-core/default/rustleaks-connections-v1\.md$''',
   '''^docs/dev/comparison-workloads\.md$''',

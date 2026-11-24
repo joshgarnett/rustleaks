@@ -1,41 +1,38 @@
 //! Shared helpers for the rule coverage tests.
 
+use std::collections::BTreeSet;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use rustleaks_core::Engine;
-use rustleaks_core::config::CompiledConfig;
+use rustleaks_core::config::{CompiledConfig, ConfigLoader};
 use rustleaks_core::model::{ByteRange, Finding, FindingRange, Fragment, Location, ScanOptions};
-use rustleaks_core::native::{
-    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativePolicy, PROVIDER_RULES_V1,
-};
-use serde::Deserialize;
 
-/// The default rules followed by the providers, connections and extra packs.
-pub fn all_packs_config() -> CompiledConfig {
-    NativePolicy::builder()
-        .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
-        .unwrap()
-        .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
-        .unwrap()
-        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
-        .unwrap()
-        .compile()
-        .unwrap()
-        .0
+/// The rules Rustleaks ships, in the order it loads them: the default rules,
+/// then the extra, providers and connections rule files.
+pub fn shipped_config() -> CompiledConfig {
+    ConfigLoader::new().load_default().unwrap()
 }
 
-/// Returns `baseline_rule_ids` from a coverage data file in `tests/support/`.
-///
-/// Each list is a fixed comparison set of rule IDs. It does not follow rule
-/// file changes.
-pub fn baseline_rule_ids(json: &str) -> Vec<String> {
-    #[derive(Deserialize)]
-    struct Baseline {
-        baseline_rule_ids: Vec<String>,
+/// `config` without the rules in `removed`, in report order. Every removed
+/// ID must be a rule of `config`.
+pub fn without_rules<'a>(
+    config: &CompiledConfig,
+    removed: impl IntoIterator<Item = &'a str>,
+) -> CompiledConfig {
+    let removed: BTreeSet<&str> = removed.into_iter().collect();
+    for id in &removed {
+        assert!(config.rule(id).is_some(), "{id} is not a rule");
     }
-    serde_json::from_str::<Baseline>(json)
+    config
+        .select_rules(
+            config
+                .ordered_rule_ids()
+                .iter()
+                .map(String::as_str)
+                .filter(|id| !removed.contains(id)),
+        )
         .unwrap()
-        .baseline_rule_ids
 }
 
 /// Scans with default options and requires a complete outcome.

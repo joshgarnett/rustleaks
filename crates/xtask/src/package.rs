@@ -222,7 +222,7 @@ fn validate_publish_policy(metadata: &str) -> Result<(), String> {
                 | "rustleaks-sources"
                 | "rustleaks-report"
                 | "rustleaks-cli"
-                | "rustleaks-compat"
+                | "rustleaks-eval"
                 | "xtask"
         );
         if alpha_package && version != RELEASE_VERSION {

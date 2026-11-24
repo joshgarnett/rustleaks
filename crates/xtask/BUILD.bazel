@@ -59,12 +59,12 @@ _CLI_GIT_DATA = select({
 _CLI_REGRESSION_ENV = select({
     "@platforms//os:windows": {
         "RUSTLEAKS_CLI_RUNFILE": "$(rlocationpath //crates/rustleaks-cli:rustleaks)",
-        "RUSTLEAKS_CLI_FIXTURE_RUNFILE": "$(rlocationpath //crates/rustleaks-compat:rustleaks_cli_fixture)",
+        "RUSTLEAKS_CLI_FIXTURE_RUNFILE": "$(rlocationpath //crates/rustleaks-eval:rustleaks_cli_fixture)",
         "RUSTLEAKS_CLI_GIT_RUNFILE": "git",
     },
     "//conditions:default": {
         "RUSTLEAKS_CLI_RUNFILE": "$(rlocationpath //crates/rustleaks-cli:rustleaks)",
-        "RUSTLEAKS_CLI_FIXTURE_RUNFILE": "$(rlocationpath //crates/rustleaks-compat:rustleaks_cli_fixture)",
+        "RUSTLEAKS_CLI_FIXTURE_RUNFILE": "$(rlocationpath //crates/rustleaks-eval:rustleaks_cli_fixture)",
         "RUSTLEAKS_CLI_GIT_RUNFILE": "$(rlocationpath //bazel:git)",
     },
 })
@@ -84,7 +84,7 @@ rust_test(
         "//:workspace_files",
         "//testdata:all",
         "//crates/rustleaks-cli:rustleaks",
-        "//crates/rustleaks-compat:rustleaks_cli_fixture",
+        "//crates/rustleaks-eval:rustleaks_cli_fixture",
     ] + _CLI_GIT_DATA,
     deps = all_crate_deps(normal = True, normal_dev = True),
     env = _CLI_REGRESSION_ENV,

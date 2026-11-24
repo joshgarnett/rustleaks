@@ -19,7 +19,7 @@ run is not approval.
 - [ ] The maintainer approved the version.
 - [ ] These files name that version: `[workspace.package]` in the root
       `Cargo.toml`; the `=VERSION` path dependency pins in
-      `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-compat/Cargo.toml`,
+      `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-eval/Cargo.toml`,
       `crates/rustleaks-report/Cargo.toml` and
       `crates/rustleaks-sources/Cargo.toml`; the `module()` version in
       `MODULE.bazel`; `RUSTLEAKS_VERSION` in `bazel/rust_crate.bzl`;
@@ -32,7 +32,7 @@ run is not approval.
       `just deps-repin` (`Cargo.lock` and `cargo-bazel-lock.json`),
       `cargo xtask generate vet-inventory`,
       `cargo xtask release-artifact notices` and
-      `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline`
+      `bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline`
       (`testdata/quality-corpus/baseline-v1.json`).
 - [ ] The status wording matches the version (alpha, pre-release or
       stable) in `README.md` (status and install sections),

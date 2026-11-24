@@ -5,7 +5,7 @@
 
 use std::time::Instant;
 
-use rustleaks_core::config::{ConfigLoader, DEFAULT_CONFIG_BYTES};
+use rustleaks_core::config::DEFAULT_CONFIG_BYTES;
 use rustleaks_core::model::Fragment;
 use rustleaks_core::{Engine, ScanBudget, ScanControl};
 use serde_json::json;
@@ -83,9 +83,7 @@ fn dense_case(mut ctx: Context<'_>, workers: usize) -> Fallible<Case> {
 #[allow(clippy::too_many_lines)] // Keep construction and persistent-worker phase boundaries together.
 pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
     let start = Instant::now();
-    let config = ConfigLoader::new()
-        .with_default_config(rustleaks_core::config::DEFAULT_CONFIG)
-        .load_default()?;
+    let config = crate::gitleaks_config()?;
     let compile_ns = elapsed(start)?;
     ensure_default_rules(&config)?;
     let ctx = Context::new(&config);
@@ -106,14 +104,14 @@ pub(super) fn run(id: &str, iterations: usize) -> Fallible<Vec<Phase>> {
         DEFAULT_CONFIG_BYTES,
     );
     compile.outcome_fnv1a64.clone_from(&rule_ids);
-    compile.counts["rules"] = json!(crate::DEFAULT_RULES);
+    compile.counts["rules"] = json!(crate::GITLEAKS_RULES);
     let start = Instant::now();
     let detector = Engine::builder(config).build()?;
     let mut construction = phase(
         "engine-construction",
         1,
         elapsed(start)?,
-        crate::DEFAULT_RULES as u64,
+        crate::GITLEAKS_RULES as u64,
         "compiled-rules",
         DEFAULT_CONFIG_BYTES,
         DEFAULT_CONFIG_BYTES,
