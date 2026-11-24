@@ -9,7 +9,7 @@ use crate::{require_exact_tool_version, workspace_root};
 
 const CARGO_PUBLIC_API_VERSION: &str = "cargo-public-api 0.52.0";
 const PUBLIC_API_TOOLCHAIN: &str = "nightly-2026-08-21";
-const PUBLIC_API_SNAPSHOT: &str = "testdata/public-api/rustleaks-core-0.1.0-alpha.1.txt";
+const PUBLIC_API_SNAPSHOT: &str = "testdata/public-api/rustleaks-core.txt";
 
 fn composite_test_executable_from_messages(messages: &str) -> Result<PathBuf, String> {
     let mut executables = Vec::new();
@@ -112,7 +112,7 @@ pub(crate) fn public_api_check() -> Result<(), String> {
             "rustleaks-core public API differs from {PUBLIC_API_SNAPSHOT}"
         ));
     }
-    println!("rustleaks-core public API matches the supported alpha snapshot");
+    println!("rustleaks-core public API matches {PUBLIC_API_SNAPSHOT}");
     Ok(())
 }
 

@@ -1,9 +1,8 @@
 # Supported Rust API snapshot
 
-`rustleaks-core-0.1.0-alpha.1.txt` is the supported public API snapshot of
-`rustleaks-core`. The file name is fixed; the content is the current API. It
-is generated with `cargo-public-api` 0.52.0 on the `nightly-2026-08-21`
-toolchain:
+`rustleaks-core.txt` is the supported public API snapshot of
+`rustleaks-core`. It holds the current API. It is generated with
+`cargo-public-api` 0.52.0 on the `nightly-2026-08-21` toolchain:
 
 ```sh
 cargo +nightly-2026-08-21 public-api -p rustleaks-core -sss --color never
