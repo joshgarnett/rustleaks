@@ -100,8 +100,8 @@ impl Iterator for BitReader<'_> {
     }
 }
 
-/// A bitreader which can read at most 57 bits, but is faster on systems
-/// with 64 bit registers.
+/// A bitreader that caches 64 bits and can read at most 57 of them before
+/// it needs a refresh.
 /// NOTE: a few points are assumed by this bitreader
 ///
 /// * `<CachedBitReader as Iterator>::next` will never yield `None`, even after
@@ -112,13 +112,11 @@ impl Iterator for BitReader<'_> {
 ///   `CachedBitReader::restore` must be called in order to update the `BitReader::position`
 /// * `CachedBitReader::restore` must be called before calling `CachedBitReader::refresh`,
 ///   unless `CachedBitReader::read() == 0`
-#[cfg(target_pointer_width = "64")]
 pub struct CachedBitReader {
     cache: u64,
     read: usize,
 }
 
-#[cfg(target_pointer_width = "64")]
 impl CachedBitReader {
     pub fn new(reader: &BitReader<'_>) -> Option<Self> {
         let mut this = Self { cache: 0, read: 0 };
@@ -149,7 +147,6 @@ impl CachedBitReader {
     }
 }
 
-#[cfg(target_pointer_width = "64")]
 impl Iterator for CachedBitReader {
     type Item = bool;
 

@@ -26,6 +26,8 @@ impl Display for BlockError {
 
 impl StdError for BlockError {}
 
+// Block errors keep `ErrorKind::Other` and header errors use `InvalidData`.
+// Callers treat both as decode errors and do not check the kind.
 impl From<BlockError> for io::Error {
     fn from(err: BlockError) -> io::Error {
         io::Error::other(err)

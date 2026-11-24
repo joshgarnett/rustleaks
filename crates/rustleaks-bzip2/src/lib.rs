@@ -30,7 +30,6 @@
 )]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![forbid(unsafe_code)]
-#![allow(clippy::manual_range_contains)]
 
 pub use self::decoder::DecoderReader;
 
