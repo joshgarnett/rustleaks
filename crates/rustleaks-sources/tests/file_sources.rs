@@ -1,4 +1,4 @@
-//! Native reader, directory, symlink, cancellation, and runner coverage.
+//! Reader, directory, symlink, cancellation, and runner coverage.
 #![forbid(unsafe_code)]
 
 mod support;

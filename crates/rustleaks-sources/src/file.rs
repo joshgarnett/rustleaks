@@ -53,7 +53,8 @@ impl ReadStatus {
     }
 }
 
-/// One source-reader operation, including Go-observable data-plus-error states.
+/// One source-reader operation, including a read that returns bytes and an
+/// error together.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadOutcome {
     count: usize,
@@ -82,8 +83,9 @@ impl ReadOutcome {
 
 /// Read protocol capable of representing bytes and an error simultaneously.
 ///
-/// Standard Rust readers can use [`FileSource::new`]. This lower-level seam is
-/// useful for compatibility adapters and deterministic fault injection.
+/// Standard Rust readers can use [`FileSource::new`]. This lower-level
+/// interface lets a caller report bytes and an error from one read, and lets
+/// tests inject read faults.
 pub trait SourceReader: Send {
     /// Fills at most `buffer.len()` bytes and reports their status.
     fn read_source(&mut self, buffer: &mut [u8]) -> ReadOutcome;
@@ -459,7 +461,7 @@ impl FileSource {
         Self::from_source_reader(Box::new(StandardReader(reader)), path, options)
     }
 
-    /// Creates a source from the compatibility read protocol.
+    /// Creates a source from a [`SourceReader`].
     #[must_use]
     pub fn from_source_reader(
         reader: Box<dyn SourceReader>,
@@ -927,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn boundary_cases_match_upstream_bytes() {
+    fn boundary_cases_match_expected_bytes() {
         let cases = [
             (
                 b"abc\n\ndefghijklmnop\n\nqrstuvwxyz".as_slice(),
@@ -1307,8 +1309,8 @@ mod tests {
         }
     }
 
-    /// The previous byte-at-a-time reader and boundary search, retained as the
-    /// specification for fragment boundaries, statuses and cancellation.
+    /// A byte-at-a-time reference reader and boundary search that the tests
+    /// compare with, for fragment boundaries, statuses and cancellation.
     mod reference {
         use std::collections::VecDeque;
 

@@ -20,6 +20,23 @@ struct GitChild {
     stderr: ChildStderr,
 }
 
+/// Builds a Git command. Git prints its messages in English, unless
+/// `environment`, the caller's command environment, sets the locale itself.
+pub(super) fn git_command(
+    program: &OsStr,
+    arguments: &[OsString],
+    environment: &[(OsString, OsString)],
+    clear_attribute_source: bool,
+) -> Command {
+    let mut command = Command::new(program);
+    crate::process::untranslated_git_messages(&mut command);
+    command.args(arguments).envs(environment.iter().cloned());
+    if clear_attribute_source {
+        command.env_remove("GIT_ATTR_SOURCE");
+    }
+    command
+}
+
 fn spawn_git(
     program: &OsStr,
     arguments: &[OsString],
@@ -28,11 +45,7 @@ fn spawn_git(
     with_input: bool,
     clear_attribute_source: bool,
 ) -> Result<GitChild, SourceError> {
-    let mut command = Command::new(program);
-    command.args(arguments).envs(environment.iter().cloned());
-    if clear_attribute_source {
-        command.env_remove("GIT_ATTR_SOURCE");
-    }
+    let mut command = git_command(program, arguments, environment, clear_attribute_source);
     command
         .stdin(if with_input {
             Stdio::piped()

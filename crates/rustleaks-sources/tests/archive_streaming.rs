@@ -10,13 +10,13 @@
 #![forbid(unsafe_code)]
 
 #[path = "../fuzz/support/archive_frame.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_frame;
 #[path = "../fuzz/support/archive_seeds.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_seeds;
 #[path = "../fuzz/support/sevenz_seeds.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod sevenz_seeds;
 
 use std::fs;
@@ -123,7 +123,7 @@ fn cursor_reference(member: &[u8], path: &str) -> Vec<(String, usize, Vec<u8>)> 
     )
 }
 
-/// Replays recorded read sizes, as the 7z path did before streaming.
+/// Replays a member with the read sizes that the 7z decoder returned for it.
 struct Chunked {
     data: Vec<u8>,
     chunks: Vec<usize>,

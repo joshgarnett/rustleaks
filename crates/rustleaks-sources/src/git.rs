@@ -60,6 +60,9 @@ pub enum GitMode {
         options: Option<String>,
     },
     /// Scan history with explicit shell-free arguments after the default prefix.
+    ///
+    /// The CLI uses [`GitMode::Log`]. Tests and maintenance tools use this
+    /// mode to pass arguments without splitting them on spaces.
     LogArguments(Vec<OsString>),
     /// Scan a worktree or staged-index diff.
     Diff {
@@ -362,9 +365,10 @@ impl GitSource {
 
     /// Adds child-process environment overrides without mutating global state.
     ///
-    /// Production callers normally inherit the environment unchanged. Test
-    /// harnesses can use this to isolate Git's global/system configuration and
-    /// locale while retaining the exact compatibility argv.
+    /// Production callers normally inherit the environment. Test harnesses
+    /// can use this to isolate Git's global and system configuration and
+    /// locale without changing the arguments. Git children run with
+    /// `LC_ALL=C` and without `LANGUAGE` unless these values set them.
     #[must_use]
     pub fn command_environment(
         mut self,
@@ -605,10 +609,7 @@ impl GitSource {
         if file.binary {
             #[cfg(feature = "archives")]
             if let Some(options) = self.archives.clone()
-                && crate::archive::name_is_archive(
-                    &file.path,
-                    self.archive_file_options.complete_target_bytes().is_some(),
-                )
+                && crate::archive::name_is_archive(&file.path)
             {
                 return self.visit_archive_blob(&file, options, cancellation, emit);
             }

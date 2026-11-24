@@ -194,7 +194,7 @@ pub(super) fn trim_unicode_space(mut value: &[u8]) -> &[u8] {
 
 pub(super) fn trim_unicode_space_start(mut value: &[u8]) -> &[u8] {
     while let Some((character, width)) = utf8_prefix(value) {
-        if !is_go_space(character) {
+        if !character.is_whitespace() {
             break;
         }
         value = &value[width..];
@@ -204,7 +204,7 @@ pub(super) fn trim_unicode_space_start(mut value: &[u8]) -> &[u8] {
 
 pub(super) fn trim_unicode_space_end(mut value: &[u8]) -> &[u8] {
     while let Some((character, start)) = utf8_suffix(value) {
-        if !is_go_space(character) {
+        if !character.is_whitespace() {
             break;
         }
         value = &value[..start];
@@ -232,21 +232,4 @@ fn utf8_suffix(value: &[u8]) -> Option<(char, usize)> {
     }
     let text = std::str::from_utf8(&value[start..]).ok()?;
     Some((text.chars().next()?, start))
-}
-
-fn is_go_space(character: char) -> bool {
-    matches!(
-        character,
-        '\t'..='\r'
-            | ' '
-            | '\u{0085}'
-            | '\u{00a0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-    )
 }

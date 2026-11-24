@@ -26,19 +26,8 @@ rustleaks_library(
     compile_data = ["//testdata:fixtures"],
     crate_features = _ARCHIVE_FEATURES,
     crate_name = "rustleaks_sources",
-    data = ["//testdata:all"],
     deps = _ARCHIVE_DEPS,
     edition = "2024",
-)
-
-rustleaks_library(
-    name = "profile_minimal",
-    crate_name = "rustleaks_sources",
-    deps = ["//crates/rustleaks-core:rustleaks_core"],
-    docs = False,
-    edition = "2024",
-    unit_test = False,
-    visibility = ["//visibility:public"],
 )
 
 rustleaks_library(
@@ -56,7 +45,6 @@ filegroup(
     name = "feature_profiles",
     srcs = [
         ":profile_fuzzing",
-        ":profile_minimal",
         ":rustleaks_sources",
         ":rustleaks_sources_archives",
     ],
@@ -200,11 +188,11 @@ rustleaks_integration_test(
     )
     for test in [
         "archive_sources",
+        "file_sources",
         "git_corpus",
         "git_history",
         "git_scm",
         "git_sources",
-        "native_sources",
         "source_corpus",
     ]
 ]
@@ -220,11 +208,11 @@ test_suite(
         ":chunk_boundaries_test",
         ":directory_readers_test",
         ":complete_sources_test",
+        ":file_sources_test",
         ":git_corpus_test",
         ":git_history_test",
         ":git_scm_test",
         ":git_sources_test",
-        ":native_sources_test",
         ":perf_archives_test",
         ":rustleaks_sources_doc_test",
         ":rustleaks_sources_unit_test",

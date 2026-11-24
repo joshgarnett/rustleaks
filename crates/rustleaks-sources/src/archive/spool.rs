@@ -128,6 +128,11 @@ fn finish_create(file: File, _path: &Path) -> io::Result<TempFile> {
     Ok(TempFile { file })
 }
 
+// No supported target compiles this branch or the `finish_create` below:
+// every supported target is Unix or Windows. They stay so the crate still
+// builds on other targets. This file has a name until `finish_create`
+// removes it, so it does not keep the no-name rule of the Unix and Windows
+// versions, and no test covers it.
 #[cfg(not(any(unix, windows)))]
 fn open_new(path: &Path) -> io::Result<File> {
     OpenOptions::new()

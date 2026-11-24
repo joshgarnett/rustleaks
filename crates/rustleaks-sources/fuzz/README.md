@@ -64,8 +64,8 @@ Notes on the seeds:
   byte. The target does not run an input without the header.
 - `support/sevenz_seeds.rs` builds the three coded 7z seeds. Each holds one
   `value.txt` member with `CODEC_PAYLOAD` repeated eight times. Deflate uses
-  `miniz_oxide 0.9.1` raw compression at level 6. LZ4 uses `lz4_flex 0.14.0`
-  with the default frame encoder. Zstandard uses one frame of raw blocks
+  the pinned `miniz_oxide` raw compression at level 6. LZ4 uses the pinned
+  `lz4_flex` default frame encoder. Zstandard uses one frame of raw blocks
   with a 1 KiB window, written by the builder itself.
 - The XZ seed holds the shared two-member USTAR fixture, compressed with
   Python `lzma` (`FORMAT_XZ`, `CHECK_CRC32`, LZMA2, 4 KiB dictionary). The

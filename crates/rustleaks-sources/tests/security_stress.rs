@@ -1,21 +1,24 @@
 //! In-memory larger archive and reader cases run by `just security-deep`.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
-#![allow(missing_docs)]
+#![allow(
+    missing_docs,
+    reason = "the included support modules have undocumented public items"
+)]
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_harness.rs"]
 mod archive_harness;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
 mod fuzz_profile;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/reader_harness.rs"]
 mod reader_harness;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/source_frame.rs"]
 mod source_frame;
 

@@ -569,7 +569,7 @@ fn linear_coder_graphs_preserve_single_solid_and_multiple_folder_bytes() {
 }
 
 #[test]
-fn declared_early_eof_is_compatible_by_default_and_rejected_only_when_requested() {
+fn declared_early_eof_is_accepted_by_default_and_rejected_only_when_requested() {
     let first = payload(513);
     let second = b"independent tail\n";
     for method in METHODS {

@@ -9,17 +9,7 @@
 //! a blank line gives parts of 125,000 bytes and then 28,672 bytes. Parts are
 //! scanned on their own. The first line of a part counts columns from 1; later
 //! lines count from the preceding LF, so their columns are one higher.
-//!
-//! Upstream source of the rule, at the pinned Gitleaks revision: the chunked
-//! file read in `sources/file.go` reads each part through a Go
-//! `bufio.Reader`, and `readUntilSafeBoundary` in `sources/common.go` extends
-//! a part byte by byte with `ReadByte`. A `bufio.Reader` has a 4,096-byte
-//! buffer by default. `ReadByte` refills it 4,096 bytes at a time, and `Read`
-//! returns only the buffered bytes while the buffer is not empty. That is
-//! why the part after a read-ahead is the 3,672 leftover bytes plus a new
-//! read-ahead. `Test_readUntilSafeBoundary` in `sources/common_test.go`
-//! covers the boundary search; the 28,672-byte figure is not in an upstream
-//! test.
+
 #![forbid(unsafe_code)]
 
 use std::io::Cursor;

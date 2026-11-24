@@ -8,10 +8,10 @@
 #![forbid(unsafe_code)]
 
 #[path = "../fuzz/support/archive_frame.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_frame;
 #[path = "../fuzz/support/archive_seeds.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_seeds;
 mod support;
 
@@ -574,8 +574,8 @@ fn batches_match_one_process_on_a_rich_history() {
     ] {
         assert!(paths.contains(&expected), "{expected:?}");
     }
-    // As in Gitleaks, the default options show no diff for a merge commit,
-    // so a change made only in a merge is not scanned.
+    // The default options show no diff for a merge commit, so a change made
+    // only in a merge is not scanned.
     assert!(!paths.contains(&b"merge-only.txt".as_slice()));
 }
 

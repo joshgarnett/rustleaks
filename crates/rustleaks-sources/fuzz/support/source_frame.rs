@@ -143,7 +143,7 @@ fn bounded<'a>(data: &'a [u8], profile: Profile, target: &str) -> &'a [u8] {
     &data[..data.len().min(maximum)]
 }
 
-/// Synthetic v1 seeds for ordinary campaign initialization and proof tests.
+/// Synthetic v1 seeds for the first fuzz run and for the tests.
 /// The committed and deep seeds are unframed and are replayed as they are.
 pub fn seeds(target: &str) -> Vec<(&'static str, Vec<u8>)> {
     match target {

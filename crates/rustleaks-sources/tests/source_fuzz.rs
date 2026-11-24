@@ -1,18 +1,21 @@
-//! Ordinary deterministic proofs for the framed reader and Git fuzz targets.
+//! Tests for the framed reader and Git fuzz inputs.
 #![cfg(feature = "fuzzing")]
 #![forbid(unsafe_code)]
-#![allow(missing_docs)]
+#![allow(
+    missing_docs,
+    reason = "the included support modules have undocumented public items"
+)]
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
 mod fuzz_profile;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/git_harness.rs"]
 mod git_harness;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/reader_harness.rs"]
 mod reader_harness;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/source_frame.rs"]
 mod source_frame;
 

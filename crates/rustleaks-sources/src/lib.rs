@@ -36,7 +36,7 @@ pub use runner::{
     SourceBudget, SourceBudgetError, SourceBudgetExceeded, SourceBudgetKind, SourceBudgetScope,
     SourceOutcome, SourceRunner, SourceTermination, SourceUsage,
 };
-pub use scm::{RemoteMetadata, ScmError, ScmErrorKind, ScmPlatform, scm_link};
+pub use scm::{RemoteMetadata, ScmError, ScmErrorKind, ScmPlatform};
 pub use source::{
     CallbackError, Source, SourceConfigError, SourceControl, SourceError, SourceEvent, SourceIssue,
     SourceIssueDisposition, SourceIssueKind, SourceStage,

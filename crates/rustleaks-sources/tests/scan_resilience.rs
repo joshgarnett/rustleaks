@@ -5,16 +5,16 @@
 #![forbid(unsafe_code)]
 
 // The shared fuzz support also serves the fuzz targets; this file uses part of it.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_harness.rs"]
 mod archive_harness;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
 mod fuzz_profile;
 

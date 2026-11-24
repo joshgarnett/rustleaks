@@ -34,6 +34,7 @@ miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-
 rawzip = { version = "=0.5.2", default-features = false, features = ["std"], optional = true }
 rustleaks-bzip2 = { path = "../rustleaks-bzip2", version = "=0.1.2-rustleaks.1", optional = true }
 rustleaks-sevenz = { path = "../rustleaks-sevenz", version = "=0.20.2-rustleaks.1", optional = true }
+# Not used directly. Pins the SHA-256 crate that lzma-rust2 uses for XZ checks.
 sha2 = { version = "=0.11.1", default-features = false, optional = true }
 zstd-zero = { version = "=0.2.1", default-features = false, optional = true }
 

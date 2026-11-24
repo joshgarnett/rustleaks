@@ -62,7 +62,7 @@ impl Scale {
 
     pub fn small() -> Result<Self> {
         Ok(Self {
-            // Depth stays at the pinned default so nesting boundaries match.
+            // Depth stays at the default of 8, so nesting limits match a scan.
             limits: ArchiveLimits::new(8, 16, 256 * KIB, 8 * MIB, MIB)?,
             zstd_files: 8,
             git_commits: 12,

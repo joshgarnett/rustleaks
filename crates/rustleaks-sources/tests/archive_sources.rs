@@ -1,12 +1,12 @@
-//! Optional archive decorator coverage against committed upstream fixtures.
+//! Archive source tests with the committed archive fixtures.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 
 #[path = "../fuzz/support/archive_frame.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_frame;
 #[path = "../fuzz/support/archive_seeds.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_seeds;
 
 use std::fs;

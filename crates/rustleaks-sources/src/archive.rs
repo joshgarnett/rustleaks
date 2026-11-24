@@ -126,7 +126,7 @@ fn positive(value: usize, field: &'static str) -> Result<NonZeroUsize, SourceCon
     NonZeroUsize::new(value).ok_or_else(|| SourceConfigError::positive(field))
 }
 
-/// Options for the optional safe native archive decorator.
+/// Options for [`ArchiveSource`].
 #[derive(Clone, Debug, Default)]
 pub struct ArchiveOptions {
     limits: ArchiveLimits,
@@ -171,7 +171,7 @@ impl ArchiveOptions {
     fn target_excluded(&self, logical: &LogicalPath, name: &[u8]) -> bool {
         // Containers never emit a fragment under their own path. An exact
         // leaf exclusion must not suppress descendants of such a container.
-        is_leaf_name(name, true)
+        is_leaf_name(name)
             && self
                 .excluded_paths
                 .iter()
@@ -190,15 +190,16 @@ impl ArchiveOptions {
 
     /// Requires each 7z member stream to produce its declared uncompressed size.
     ///
-    /// Disabled by default to preserve the pinned archive backend's acceptance
-    /// of early EOF. When enabled, a size mismatch produces a recoverable decode
+    /// Disabled by default: a 7z member that ends early is scanned and gives
+    /// no issue. When enabled, a size mismatch produces a recoverable decode
     /// issue at the end of that member and stops that 7z archive. Members are
     /// scanned while they are read, so earlier members and the bytes of the
     /// short member are already published. Existing member and aggregate
     /// ceilings still apply. Complete-target file options always require this
     /// check, and a complete target never publishes the short member. This
     /// does not prove archive authenticity or add CRC validation beyond the
-    /// decoder's checks.
+    /// decoder's checks. The CLI does not set this option. Tests use it to
+    /// cover the length check outside complete mode.
     #[must_use]
     pub const fn strict_7z_member_lengths(mut self, enabled: bool) -> Self {
         self.strict_7z_member_lengths = enabled;
@@ -212,7 +213,8 @@ impl ArchiveOptions {
     }
 }
 
-/// Name-driven, synchronous archive decorator around a reader-backed file source.
+/// Reads archives and compressed files, chosen by file name, and scans their
+/// members.
 ///
 /// Unrecognized names are scanned as ordinary bytes. Recognized names consume
 /// one depth before any decoding, including externally compressed TAR files.
@@ -364,7 +366,7 @@ impl ArchiveSource {
         if complete && self.options.target_excluded(&self.logical_path, &name) {
             return Ok(SourceControl::Continue);
         }
-        if identify_for_mode(&name, complete).is_none() {
+        if identify(&name).is_none() {
             let target = FileTarget::member(
                 &self.physical_path,
                 &self.logical_path,
@@ -534,7 +536,7 @@ impl<'a> ArchiveState<'a> {
         if self.complete() && self.options.target_excluded(logical, name) {
             return Ok(SourceControl::Continue);
         }
-        let Some(format) = identify_for_mode(name, self.complete()) else {
+        let Some(format) = identify(name) else {
             return self.plain(input, logical, cancellation, emit);
         };
         if depth >= self.options.limits.depth {
@@ -706,7 +708,10 @@ impl<'a> ArchiveState<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
     fn member(
         &mut self,
         input: Input<'_>,
@@ -791,7 +796,10 @@ impl<'a> ArchiveState<'a> {
     }
 
     /// Decompresses a stream, then scans it as a TAR or as one member.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
     fn decode(
         &mut self,
         codec: Codec,
@@ -822,7 +830,10 @@ impl<'a> ArchiveState<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the archive walk passes its position, limits and callbacks explicitly"
+    )]
     fn decode_input(
         &mut self,
         codec: Codec,
@@ -1222,7 +1233,10 @@ impl<'a> ArchiveState<'a> {
         }
     }
 
-    #[allow(clippy::too_many_lines)] // Keep the complete dependency containment boundary adjacent.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the 7z decoder calls and their error mapping stay in one function"
+    )]
     fn extract_7z(
         &mut self,
         source: &mut dyn ReadSeek,
@@ -1847,27 +1861,22 @@ enum Format {
     Stream(Codec),
 }
 
-pub(crate) fn complete_path_is_leaf(path: &Path) -> bool {
-    is_leaf_name(&native_file_name_bytes(path), true)
+/// Whether the file at `path` gives fragments under its own path: a plain
+/// file or a compressed stream, not a container.
+pub(crate) fn path_is_leaf(path: &Path) -> bool {
+    is_leaf_name(&native_file_name_bytes(path))
 }
 
-fn is_leaf_name(name: &[u8], complete: bool) -> bool {
-    matches!(
-        identify_for_mode(name, complete),
-        None | Some(Format::Stream(_))
-    )
-}
-
-fn identify_for_mode(name: &[u8], complete: bool) -> Option<Format> {
-    // Complete targets extend the pinned name-only profile with this alias.
-    // Require a final suffix so directory names and backups do not opt in.
-    if complete && name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case(b".tgz") {
-        return Some(Format::CompressedTar(Codec::Gzip));
-    }
-    identify(name)
+fn is_leaf_name(name: &[u8]) -> bool {
+    matches!(identify(name), None | Some(Format::Stream(_)))
 }
 
 fn identify(name: &[u8]) -> Option<Format> {
+    // `.tgz` counts only as the final suffix, so folder names and backups
+    // such as `x.tgz.backup` are not read as archives.
+    if name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case(b".tgz") {
+        return Some(Format::CompressedTar(Codec::Gzip));
+    }
     let lower = name.iter().map(u8::to_ascii_lowercase).collect::<Vec<_>>();
     let compression = if contains(&lower, b".gz") {
         Some(Codec::Gzip)
@@ -1910,14 +1919,14 @@ fn identify(name: &[u8]) -> Option<Format> {
     None
 }
 
-pub(crate) fn name_is_archive(name: &[u8], complete: bool) -> bool {
-    identify_for_mode(name, complete).is_some()
+pub(crate) fn name_is_archive(name: &[u8]) -> bool {
+    identify(name).is_some()
 }
 
 /// Whether [`ArchiveSource`] reads the file at `path` as an archive or a
 /// compressed stream, judged by its file name as when it is visited.
-pub(crate) fn path_is_archive(path: &Path, complete: bool) -> bool {
-    name_is_archive(&native_file_name_bytes(path), complete)
+pub(crate) fn path_is_archive(path: &Path) -> bool {
+    name_is_archive(&native_file_name_bytes(path))
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -2311,23 +2320,22 @@ mod tests {
     }
 
     #[test]
-    fn tgz_alias_is_a_complete_only_container_with_a_final_suffix() {
+    fn tgz_is_a_gzip_tar_container_only_as_the_final_suffix() {
         for name in [b"x.tgz".as_slice(), b"x.TGZ", b"dir/x.tGz"] {
             assert!(matches!(
-                identify_for_mode(name, true),
+                identify(name),
                 Some(Format::CompressedTar(Codec::Gzip))
             ));
-            assert!(identify_for_mode(name, false).is_none());
-            assert!(!is_leaf_name(name, true));
-            assert!(is_leaf_name(name, false));
+            assert!(!is_leaf_name(name));
         }
         for name in [b"x.tgz.backup".as_slice(), b"x.tgz/file", b"x.tgz\\file"] {
-            assert!(identify_for_mode(name, true).is_none());
+            assert!(identify(name).is_none());
+            assert!(is_leaf_name(name));
         }
     }
 
     #[test]
-    fn recognizes_complete_pinned_name_profile() {
+    fn recognizes_archive_and_compressed_names() {
         for name in [
             "x.7Z",
             "x.br",
