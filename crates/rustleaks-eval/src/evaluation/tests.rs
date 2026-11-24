@@ -328,3 +328,46 @@ fn built_in_rules_keep_gitleaks_coverage_and_reviewed_negative_alerts() {
         }
     }
 }
+
+#[test]
+fn bazel_action_key_is_benign_and_the_same_record_shape_holds_an_api_key() {
+    let corpus = generator::corpus();
+    let find = |id: &str| corpus.cases.iter().find(|case| case.id == id).unwrap();
+    // The value of a JSON field, which must be 64 lowercase hexadecimal digits.
+    let hex_value = |input: &[u8], field: &str| {
+        let text = std::str::from_utf8(input).unwrap();
+        let value = text
+            .split(&format!("\"{field}\":\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        assert_eq!(value.len(), 64);
+        assert!(
+            value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        );
+        value.as_bytes().to_vec()
+    };
+
+    let action = find("negative-bazel-action-key");
+    hex_value(&action.input, "compile_action_key");
+    assert!(action.positives.is_empty());
+    assert!(action.unknown_regions.is_empty());
+    assert_eq!(action.selected_rules, ["generic-api-key"]);
+
+    let credential = find("generic-hex-api-key-build-record");
+    let secret = hex_value(&credential.input, "api_key");
+    assert_eq!(credential.positives.len(), 1);
+    let positive = &credential.positives[0];
+    assert_eq!(positive.expected_secret, secret);
+    assert_eq!(
+        &credential.input[positive.span.start..positive.span.end],
+        secret.as_slice()
+    );
+    assert_eq!(positive.rule_ids, ["generic-api-key"]);
+    assert_eq!(action.leakage_group, credential.leakage_group);
+    assert_eq!(action.split, credential.split);
+}

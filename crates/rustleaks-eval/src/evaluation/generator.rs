@@ -243,6 +243,7 @@ pub(super) fn corpus() -> Corpus {
         end: 7 + UNKNOWN.len(),
     }];
     cases.push(unknown);
+    cases.extend(build_record_cases());
     cases.extend(super::native_cases::cases());
     for value in &mut cases {
         negatives(value);
@@ -257,6 +258,69 @@ pub(super) fn corpus() -> Corpus {
         profile: PROFILE.into(),
         cases,
     }
+}
+
+/// 64 lowercase hexadecimal digits from a fixed seed, the shape of a SHA-256
+/// digest. The value is built at run time, so this file holds no hash-shaped
+/// literal.
+fn hex64(seed: u64) -> Vec<u8> {
+    let mut state = seed;
+    (0..64)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            b"0123456789abcdef"[usize::try_from(state >> 60).expect("four bits fit usize")]
+        })
+        .collect()
+}
+
+/// A Bazel build record and a record of the same shape that holds an API key.
+///
+/// Bazel prints a compile action key, a SHA-256 digest, in `bazel aquery`
+/// output, and Rustleaks writes one as `compile_action_key` in its
+/// performance records. The key is not a secret. The second record has a
+/// 64-digit hexadecimal value in an `api_key` field, which is a credential
+/// shape, so a change that stops the first alert must keep the second.
+fn build_record_cases() -> Vec<Case> {
+    let record = |field: &[u8], value: &[u8]| {
+        [
+            b"{\"build\":{\"target\":\"aarch64-apple-darwin\",\"".as_slice(),
+            field,
+            b"\":\"",
+            value,
+            b"\"}}\n",
+        ]
+        .concat()
+    };
+    let mut action_key = case(
+        "negative-bazel-action-key",
+        "tune",
+        "reviewed-benign",
+        record(b"compile_action_key", &hex64(0x6261_7a65_6c00_0001)),
+        &["generic-api-key"],
+    );
+    action_key.path = "exec.json".into();
+    action_key.leakage_group = "bazel-build-record".into();
+    action_key.rationale = "Synthetic Bazel compile action key: a SHA-256 digest of build inputs, not a credential; a match is a false alert in this corpus.".into();
+
+    let api_key = hex64(0x6261_7a65_6c00_0002);
+    let mut credential = case(
+        "generic-hex-api-key-build-record",
+        "tune",
+        "generic-credential",
+        record(b"api_key", &api_key),
+        &["generic-api-key"],
+    );
+    credential.path = "exec.json".into();
+    credential.leakage_group = "bazel-build-record".into();
+    label(
+        &mut credential,
+        &api_key,
+        "generic-secret",
+        "generic-api-key",
+    );
+    vec![action_key, credential]
 }
 
 pub(super) fn source_fingerprint() -> String {

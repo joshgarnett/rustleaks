@@ -22,39 +22,39 @@
       "fnv1a64": "61d3cd592e6e06b3"
     }
   ],
-  "corpus_fnv1a64": "dc751b531b77ab39",
+  "corpus_fnv1a64": "6620ac36b3ff8de9",
   "evaluator_source_fnv1a64": "d41adb4a71d834a1",
-  "generator_source_fnv1a64": "ac297eed127af062",
+  "generator_source_fnv1a64": "f24917eebfd42b8d",
   "fingerprint_purpose": "FNV-1a fingerprints detect accidental drift; they are not authenticity or collision-resistance guarantees. Source and build revision must accompany release evidence.",
   "assessments": [
     {
       "selection": "all-default-rules",
       "status": "measured",
-      "total_cases": 72,
-      "completed_cases": 72,
+      "total_cases": 74,
+      "completed_cases": 74,
       "completion_rate": 1.0,
       "counts": {
-        "true_positives": 44,
-        "false_positives": 1,
+        "true_positives": 45,
+        "false_positives": 2,
         "false_negatives": 5,
         "duplicate_alerts": 1,
         "attribution_mismatches": 2,
         "location_mismatches": 0,
         "unknown_alerts": 1,
         "unlocated_alerts": 4,
-        "negative_false_alerts": 1,
-        "reviewed_negative_bytes": 5096,
+        "negative_false_alerts": 2,
+        "reviewed_negative_bytes": 5285,
         "unknown_bytes": 32,
-        "observed_alerts": 51,
-        "expected_case_distinct_values": 45,
-        "recognized_case_distinct_values": 44
+        "observed_alerts": 53,
+        "expected_case_distinct_values": 46,
+        "recognized_case_distinct_values": 45
       },
       "rates": {
-        "exact_span_precision": 0.9777777777777777,
-        "exact_span_recall": 0.8979591836734694,
-        "case_distinct_value_recall": 0.9777777777777777,
-        "negative_false_alerts_per_mib": 205.76452119309263,
-        "unknown_alert_fraction": 0.1
+        "exact_span_precision": 0.9574468085106383,
+        "exact_span_recall": 0.9,
+        "case_distinct_value_recall": 0.9782608695652174,
+        "negative_false_alerts_per_mib": 396.8121097445601,
+        "unknown_alert_fraction": 0.09615384615384616
       },
       "per_family": {
         "aws-access-id": {
@@ -70,7 +70,7 @@
           "exact_span_false_negatives": 1
         },
         "generic-secret": {
-          "exact_span_true_positives": 2,
+          "exact_span_true_positives": 3,
           "exact_span_false_negatives": 0
         },
         "github-pat": {
@@ -719,6 +719,72 @@
             "case_distinct_value_recall": null,
             "negative_false_alerts_per_mib": 0.0,
             "unknown_alert_fraction": 1.0
+          }
+        },
+        {
+          "case_id": "negative-bazel-action-key",
+          "split": "tune",
+          "stratum": "reviewed-benign",
+          "scan_complete": true,
+          "termination": null,
+          "scored_positive_indices": [],
+          "missing_positive_indices": [],
+          "counts": {
+            "true_positives": 0,
+            "false_positives": 1,
+            "false_negatives": 0,
+            "duplicate_alerts": 0,
+            "attribution_mismatches": 0,
+            "location_mismatches": 0,
+            "unknown_alerts": 0,
+            "unlocated_alerts": 0,
+            "negative_false_alerts": 1,
+            "reviewed_negative_bytes": 132,
+            "unknown_bytes": 0,
+            "observed_alerts": 1,
+            "expected_case_distinct_values": 0,
+            "recognized_case_distinct_values": 0
+          },
+          "rates": {
+            "exact_span_precision": 0.0,
+            "exact_span_recall": null,
+            "case_distinct_value_recall": null,
+            "negative_false_alerts_per_mib": 7943.757575757576,
+            "unknown_alert_fraction": 0.0
+          }
+        },
+        {
+          "case_id": "generic-hex-api-key-build-record",
+          "split": "tune",
+          "stratum": "generic-credential",
+          "scan_complete": true,
+          "termination": null,
+          "scored_positive_indices": [
+            0
+          ],
+          "missing_positive_indices": [],
+          "counts": {
+            "true_positives": 1,
+            "false_positives": 0,
+            "false_negatives": 0,
+            "duplicate_alerts": 0,
+            "attribution_mismatches": 0,
+            "location_mismatches": 0,
+            "unknown_alerts": 0,
+            "unlocated_alerts": 0,
+            "negative_false_alerts": 0,
+            "reviewed_negative_bytes": 57,
+            "unknown_bytes": 0,
+            "observed_alerts": 1,
+            "expected_case_distinct_values": 1,
+            "recognized_case_distinct_values": 1
+          },
+          "rates": {
+            "exact_span_precision": 1.0,
+            "exact_span_recall": 1.0,
+            "case_distinct_value_recall": 1.0,
+            "negative_false_alerts_per_mib": 0.0,
+            "unknown_alert_fraction": 0.0
           }
         },
         {
@@ -2499,31 +2565,31 @@
     {
       "selection": "gitleaks-toml-rules",
       "status": "measured",
-      "total_cases": 72,
-      "completed_cases": 72,
+      "total_cases": 74,
+      "completed_cases": 74,
       "completion_rate": 1.0,
       "counts": {
-        "true_positives": 36,
-        "false_positives": 1,
+        "true_positives": 37,
+        "false_positives": 2,
         "false_negatives": 13,
         "duplicate_alerts": 0,
         "attribution_mismatches": 23,
         "location_mismatches": 0,
         "unknown_alerts": 1,
         "unlocated_alerts": 3,
-        "negative_false_alerts": 1,
-        "reviewed_negative_bytes": 5096,
+        "negative_false_alerts": 2,
+        "reviewed_negative_bytes": 5285,
         "unknown_bytes": 32,
-        "observed_alerts": 41,
-        "expected_case_distinct_values": 45,
-        "recognized_case_distinct_values": 36
+        "observed_alerts": 43,
+        "expected_case_distinct_values": 46,
+        "recognized_case_distinct_values": 37
       },
       "rates": {
-        "exact_span_precision": 0.972972972972973,
-        "exact_span_recall": 0.7346938775510204,
-        "case_distinct_value_recall": 0.8,
-        "negative_false_alerts_per_mib": 205.76452119309263,
-        "unknown_alert_fraction": 0.0975609756097561
+        "exact_span_precision": 0.9487179487179487,
+        "exact_span_recall": 0.74,
+        "case_distinct_value_recall": 0.8043478260869565,
+        "negative_false_alerts_per_mib": 396.8121097445601,
+        "unknown_alert_fraction": 0.09302325581395349
       },
       "per_family": {
         "aws-access-id": {
@@ -2539,7 +2605,7 @@
           "exact_span_false_negatives": 1
         },
         "generic-secret": {
-          "exact_span_true_positives": 2,
+          "exact_span_true_positives": 3,
           "exact_span_false_negatives": 0
         },
         "github-pat": {
@@ -3188,6 +3254,72 @@
             "case_distinct_value_recall": null,
             "negative_false_alerts_per_mib": 0.0,
             "unknown_alert_fraction": 1.0
+          }
+        },
+        {
+          "case_id": "negative-bazel-action-key",
+          "split": "tune",
+          "stratum": "reviewed-benign",
+          "scan_complete": true,
+          "termination": null,
+          "scored_positive_indices": [],
+          "missing_positive_indices": [],
+          "counts": {
+            "true_positives": 0,
+            "false_positives": 1,
+            "false_negatives": 0,
+            "duplicate_alerts": 0,
+            "attribution_mismatches": 0,
+            "location_mismatches": 0,
+            "unknown_alerts": 0,
+            "unlocated_alerts": 0,
+            "negative_false_alerts": 1,
+            "reviewed_negative_bytes": 132,
+            "unknown_bytes": 0,
+            "observed_alerts": 1,
+            "expected_case_distinct_values": 0,
+            "recognized_case_distinct_values": 0
+          },
+          "rates": {
+            "exact_span_precision": 0.0,
+            "exact_span_recall": null,
+            "case_distinct_value_recall": null,
+            "negative_false_alerts_per_mib": 7943.757575757576,
+            "unknown_alert_fraction": 0.0
+          }
+        },
+        {
+          "case_id": "generic-hex-api-key-build-record",
+          "split": "tune",
+          "stratum": "generic-credential",
+          "scan_complete": true,
+          "termination": null,
+          "scored_positive_indices": [
+            0
+          ],
+          "missing_positive_indices": [],
+          "counts": {
+            "true_positives": 1,
+            "false_positives": 0,
+            "false_negatives": 0,
+            "duplicate_alerts": 0,
+            "attribution_mismatches": 0,
+            "location_mismatches": 0,
+            "unknown_alerts": 0,
+            "unlocated_alerts": 0,
+            "negative_false_alerts": 0,
+            "reviewed_negative_bytes": 57,
+            "unknown_bytes": 0,
+            "observed_alerts": 1,
+            "expected_case_distinct_values": 1,
+            "recognized_case_distinct_values": 1
+          },
+          "rates": {
+            "exact_span_precision": 1.0,
+            "exact_span_recall": 1.0,
+            "case_distinct_value_recall": 1.0,
+            "negative_false_alerts_per_mib": 0.0,
+            "unknown_alert_fraction": 0.0
           }
         },
         {
@@ -5055,35 +5187,35 @@
     {
       "selection": "generic-api-key",
       "status": "measured",
-      "total_cases": 63,
-      "completed_cases": 63,
+      "total_cases": 65,
+      "completed_cases": 65,
       "completion_rate": 1.0,
       "counts": {
-        "true_positives": 2,
-        "false_positives": 1,
+        "true_positives": 3,
+        "false_positives": 2,
         "false_negatives": 0,
         "duplicate_alerts": 0,
         "attribution_mismatches": 0,
         "location_mismatches": 0,
         "unknown_alerts": 25,
         "unlocated_alerts": 2,
-        "negative_false_alerts": 1,
-        "reviewed_negative_bytes": 5027,
+        "negative_false_alerts": 2,
+        "reviewed_negative_bytes": 5216,
         "unknown_bytes": 1525,
-        "observed_alerts": 30,
-        "expected_case_distinct_values": 2,
-        "recognized_case_distinct_values": 2
+        "observed_alerts": 32,
+        "expected_case_distinct_values": 3,
+        "recognized_case_distinct_values": 3
       },
       "rates": {
-        "exact_span_precision": 0.6666666666666666,
+        "exact_span_precision": 0.6,
         "exact_span_recall": 1.0,
         "case_distinct_value_recall": 1.0,
-        "negative_false_alerts_per_mib": 208.588820370002,
-        "unknown_alert_fraction": 0.9
+        "negative_false_alerts_per_mib": 402.06134969325154,
+        "unknown_alert_fraction": 0.84375
       },
       "per_family": {
         "generic-secret": {
-          "exact_span_true_positives": 2,
+          "exact_span_true_positives": 3,
           "exact_span_false_negatives": 0
         }
       },
@@ -5410,6 +5542,72 @@
             "case_distinct_value_recall": null,
             "negative_false_alerts_per_mib": 0.0,
             "unknown_alert_fraction": 1.0
+          }
+        },
+        {
+          "case_id": "negative-bazel-action-key",
+          "split": "tune",
+          "stratum": "reviewed-benign",
+          "scan_complete": true,
+          "termination": null,
+          "scored_positive_indices": [],
+          "missing_positive_indices": [],
+          "counts": {
+            "true_positives": 0,
+            "false_positives": 1,
+            "false_negatives": 0,
+            "duplicate_alerts": 0,
+            "attribution_mismatches": 0,
+            "location_mismatches": 0,
+            "unknown_alerts": 0,
+            "unlocated_alerts": 0,
+            "negative_false_alerts": 1,
+            "reviewed_negative_bytes": 132,
+            "unknown_bytes": 0,
+            "observed_alerts": 1,
+            "expected_case_distinct_values": 0,
+            "recognized_case_distinct_values": 0
+          },
+          "rates": {
+            "exact_span_precision": 0.0,
+            "exact_span_recall": null,
+            "case_distinct_value_recall": null,
+            "negative_false_alerts_per_mib": 7943.757575757576,
+            "unknown_alert_fraction": 0.0
+          }
+        },
+        {
+          "case_id": "generic-hex-api-key-build-record",
+          "split": "tune",
+          "stratum": "generic-credential",
+          "scan_complete": true,
+          "termination": null,
+          "scored_positive_indices": [
+            0
+          ],
+          "missing_positive_indices": [],
+          "counts": {
+            "true_positives": 1,
+            "false_positives": 0,
+            "false_negatives": 0,
+            "duplicate_alerts": 0,
+            "attribution_mismatches": 0,
+            "location_mismatches": 0,
+            "unknown_alerts": 0,
+            "unlocated_alerts": 0,
+            "negative_false_alerts": 0,
+            "reviewed_negative_bytes": 57,
+            "unknown_bytes": 0,
+            "observed_alerts": 1,
+            "expected_case_distinct_values": 1,
+            "recognized_case_distinct_values": 1
+          },
+          "rates": {
+            "exact_span_precision": 1.0,
+            "exact_span_recall": 1.0,
+            "case_distinct_value_recall": 1.0,
+            "negative_false_alerts_per_mib": 0.0,
+            "unknown_alert_fraction": 0.0
           }
         },
         {

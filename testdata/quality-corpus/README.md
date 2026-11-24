@@ -46,7 +46,7 @@ mean that the engine can map the decoded value back to an exact range.
 
 ## Cases
 
-The corpus has 72 cases: 19 base cases and 53 cases for the
+The corpus has 74 cases: 21 base cases and 53 cases for the
 `rustleaks-extra-v1` pack (from `native_cases.rs`).
 
 The base cases cover provider patterns, generic assignments, provider and
@@ -55,6 +55,13 @@ UTF-8, percent encoding, multiline private-key-shaped text, documentation and
 vendor paths, harmless identifiers, near misses, placeholders and unknown
 labels. One case has an `api_key` field with a harmless generated identifier,
 to test false alerts. The key-shaped block is not a usable key.
+
+Two cases are JSON build records of the same shape. In the first, the
+`compile_action_key` field holds a Bazel compile action key: a SHA-256 digest
+that `bazel aquery` prints and that Rustleaks writes in its performance
+records. It is a reviewed negative. In the second, an `api_key` field holds a
+64-digit hexadecimal API key, which is a positive. A change that stops the
+alert on the action key must still report the API key.
 
 The pack cases cover the pack's three families: Azure Service Bus keys, Azure
 App Configuration keys (both with connection string fields in different
