@@ -1,6 +1,7 @@
 # Test support files
 
-The integration tests in `crates/rustleaks-core/tests/` include these files.
+This page is for contributors who change the core tests. The integration
+tests in `crates/rustleaks-core/tests/` include these files.
 `BUILD.bazel` lists which test gets which file.
 
 ## Shared Rust modules

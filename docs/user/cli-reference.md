@@ -57,25 +57,25 @@ Scans the history of a Git repository. Rustleaks runs the `git` program from
 your `PATH`, so Git must be installed.
 
 By default Rustleaks runs `git log -p -U0 --full-history --all
---diff-filter=tuxdb`, which covers every commit reachable from any branch or
-tag. Only the lines that each commit adds are scanned. Every `git log` and
-`git diff` also passes `-c core.fsmonitor=` and `--no-textconv --no-ext-diff
---no-color`, and `git log` passes `--no-show-signature`, so the scanned
-repository's configuration cannot start these programs or replace the
-content Rustleaks reads with their output. `git log` and `git diff --staged`
-also read Git attributes from an empty tree (`-c attr.tree=` set to the ID of
-the empty tree), so a text file that the repository's `.gitattributes` marks
-as binary (`-diff` or `binary`) is still scanned. Git then decides from the
-content alone: a file with a NUL byte near its start is skipped as binary,
-even when `.gitattributes` marks it as text (`diff`). This needs Git 2.43 or
-later; earlier versions ignore the setting and follow `.gitattributes`. `--pre-commit` runs `git diff` on the
-worktree, which keeps the attributes: it still applies the repository's
-clean filters, as `git add` does, and skips a file that `.gitattributes`
-marks as binary.
+--diff-filter=tuxdb`, which covers every commit reachable from any ref. Only
+the lines that each commit adds are scanned.
+
+Files that the repository's `.gitattributes` marks as binary, such as with
+`*.env -diff`, are still scanned in history and `--staged` scans. This needs
+Git 2.43 or later. A file with a NUL byte near its start is skipped as binary.
+`--pre-commit` follows `.gitattributes`: it applies the repository's clean
+filters, as `git add` does, and skips files marked as binary.
+
+Every `git log` and `git diff` that Rustleaks runs passes `--no-textconv`,
+`--no-ext-diff`, `--no-color` and `-c core.fsmonitor=`, and `git log` also
+passes `--no-show-signature`. These keep the scanned repository's
+configuration from starting its own programs during a scan. Options in
+`--log-opts` come after them and can turn them back on. The clean filters
+that `--pre-commit` runs are the exception.
 
 | Flag | Value | Effect |
 | --- | --- | --- |
-| `--log-opts` | Text | Replaces the options after `git log -p -U0 --no-textconv --no-ext-diff --no-color --no-show-signature`. Rustleaks splits the value at each space and does not use shell quoting, so do not put quotes inside the value. Rustleaks warns about a word that starts and ends with a quote. Example: `--log-opts="main..HEAD"`. |
+| `--log-opts` | Text | Replaces the default options `--full-history --all --diff-filter=tuxdb`. Rustleaks splits the value at each space and does not use shell quoting, so do not put quotes inside the value. Rustleaks warns about a word that starts and ends with a quote. Example: `--log-opts="main..HEAD"`. |
 | `--staged` | None | Scan changes that are staged but not committed yet (`git diff --staged`). |
 | `--pre-commit` | None | Scan changes in the working tree that are not staged yet (`git diff`). |
 | `--platform` | `github`, `gitlab`, `azuredevops`, `gitea`, `bitbucket` or `none` | Build links to findings for this platform. `none` turns links off. Without this flag, or with an empty value or `unknown`, Rustleaks finds the platform from the remote URL. Case does not matter. |
@@ -269,15 +269,15 @@ See [Reports](reports.md) for the formats and fields.
 
 ### Limits and decoding
 
-| Flag | Value | Default | Effect |
-| --- | --- | --- | --- |
-| `--max-target-megabytes` | Whole number | `0` | Skip files larger than this many megabytes (1,000,000 bytes each). `0` or less means no limit. |
-| `--max-decode-depth` | Whole number | `5` | Decode encoded text up to this many levels deep. `0` or less turns decoding off. |
-| `--base64-mode` | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also decodes padded URL-safe and unpadded standard Base64, and keeps binary output. See [Decoding](configuration.md#decoding). |
-| `--max-archive-depth` | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
-| `--timeout` | Seconds | `0` | Stop the scan after this many seconds and exit with 1, or with 2 under `--complete-profile`. `0` or less means no time limit. |
-| `--jobs`, `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. See [Detection threads](resource-limits.md#detection-threads) for its effect on speed and memory. |
-| `--complete-profile` | Path | None | Scan with the limits in this profile file and report whether the scan was complete. See [Complete scanning](complete-scanning.md). |
+| Flag | Short | Value | Default | Effect |
+| --- | --- | --- | --- | --- |
+| `--max-target-megabytes` | | Whole number | `0` | Skip files larger than this many megabytes (1,000,000 bytes each). `0` or less means no limit. |
+| `--max-decode-depth` | | Whole number | `5` | Decode encoded text up to this many levels deep. `0` or less turns decoding off. |
+| `--base64-mode` | | `compatible` or `extended` | `compatible` | How to find Base64 text. `extended` also decodes padded URL-safe and unpadded standard Base64, and keeps binary output. See [Decoding](configuration.md#decoding). |
+| `--max-archive-depth` | | Whole number | `0` | Scan inside archives nested up to this many levels deep. `0` or less does not open archives. See [Archives](configuration.md#archives). |
+| `--timeout` | | Seconds | `0` | Stop the scan after this many seconds and exit with 1, or with 2 under `--complete-profile`. `0` or less means no time limit. |
+| `--jobs` | `-j` | Whole number of 1 or more | The number of CPUs that Rustleaks may use, up to 12 | Scan with this many detection threads. Findings, reports, warnings and exit codes do not depend on this number. It replaces `workers` in a `--complete-profile` file. See [Detection threads](resource-limits.md#detection-threads) for its effect on speed and memory. |
+| `--complete-profile` | | Path | None | Scan with the limits in this profile file and report whether the scan was complete. See [Complete scanning](complete-scanning.md). |
 
 ### Logging
 
@@ -321,7 +321,7 @@ itself. The `git` program that it runs reads its own variables, such as
 
 Rustleaks uses the first configuration that it finds: `--config`, then the
 environment variables above, then a `.rustleaks.toml` or `.gitleaks.toml` file
-in the scanned folder, then the built-in default rules. See [Where Rustleaks
+in the scanned folder, then all built-in rules. See [Where Rustleaks
 finds the configuration](configuration.md#where-rustleaks-finds-the-configuration)
 for the full order.
 
@@ -329,16 +329,20 @@ for the full order.
 
 | File | When |
 | --- | --- |
+| Configuration file | With `--config`, `RUSTLEAKS_CONFIG` or `GITLEAKS_CONFIG`. |
 | `.rustleaks.toml`, `.gitleaks.toml` | In the scanned folder, when no configuration flag or variable is set. |
+| Base configuration | Named by `[extend] path`, read from the current folder. |
 | `.rustleaksignore`, `.gitleaksignore` | In the scanned folder, and in the folder or file given with `--rustleaks-ignore-path`. |
 | Baseline file | With `--baseline-path`. |
 | Template file | With `--report-template`. |
 | Profile file | With `--complete-profile`. |
 
-A scan skips the `--config` file, or without `--config` the
-`.rustleaks.toml` and `.gitleaks.toml` files in the scanned folder, and the
-baseline file. See [Where Rustleaks finds the
-configuration](configuration.md#where-rustleaks-finds-the-configuration).
+A scan skips the baseline file and some configuration files: the
+`--config` file, and the `.rustleaks.toml` and `.gitleaks.toml` files in the
+scanned folder. A file named by `RUSTLEAKS_CONFIG` or `GITLEAKS_CONFIG` is
+scanned. See [Where Rustleaks finds the
+configuration](configuration.md#where-rustleaks-finds-the-configuration) for
+the exact rules.
 
 ## Output streams
 
@@ -366,7 +370,9 @@ line errors exit with 1 or 126 even with `--complete-profile`, because they
 happen before the scan starts.
 
 With the defaults, findings and errors both exit with 1. To tell them apart,
-set `--exit-code` to another value, such as 3. Do not use 2 or 126.
+set `--exit-code` to another value, such as 3. Do not use 2 or 126. With
+`--exit-code 0`, a scan that finds secrets still writes its report and exits
+with 0.
 
 `--exit-code` accepts a whole number from -2147483648 to 2147483647. On Linux
 and macOS, the operating system keeps only the lowest 8 bits of an exit code,

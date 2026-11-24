@@ -1,5 +1,7 @@
 # rustleaks-bzip2
 
+This page is for contributors.
+
 A safe BZip2 decoder for the Rustleaks archive sources. Invalid input fails
 with a structured error instead of a panic.
 

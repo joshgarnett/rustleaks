@@ -1,5 +1,7 @@
 # rustleaks-sevenz
 
+This page is for contributors.
+
 A safe, bounded 7z decoder for the Rustleaks archive sources. It reads 7z
 archives and decodes members. It has no encoder and no AES support, so
 encrypted members fail as an unsupported method.

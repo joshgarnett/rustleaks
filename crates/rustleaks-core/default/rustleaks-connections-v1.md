@@ -6,16 +6,17 @@ rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rul
 
 This rule file adds 19 namespaced rules for passwords in connection strings
 and credential URLs: 15 password rules, 3 Git credential URL rules and 1
-hidden helper rule. Every default scan uses these rules. They run locally.
+hidden helper rule. Every scan uses these rules unless a configuration
+replaces the built-in rules. They run locally.
 They add no parser, dependency, expression interpreter, validator or client
 connection. They do not check whether a credential is active.
 
-## Selection
+## Loading the rule file
 
 - The rule file uses native byte entropy and `buffer-v1` association tables.
   The normal configuration loader (`ConfigLoader`, `--config`, inline
   configuration or joined TOML files) rejects these tables.
-- In a custom composition, add it with
+- To add it to a `NativePolicy` yourself, use
   `NativePolicy::builder().with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)`.
   `CONNECTION_RULES_V1` is in `rustleaks_core::native`.
 
@@ -187,11 +188,11 @@ check that a client would accept them.
   accepts a vertical tab there; CodeCatalyst and CodeCommit do not, to keep
   the source URL parser rule. The engine trims a consumed LF, so two commands
   on separate lines give two exact findings.
-- A direct core scan of `repo/.git/config` can match. The default global path
-  allowlist matches a path ending in `.git`, not files under it. A directory
-  source can still skip the `.git` folder. Source traversal rules and core
-  fragment detection are separate. The CLI `dir` command skips `.git` folders
-  unless `--scan-git-metadata` is given.
+- A direct core scan of `repo/.git/config` can match. The global path
+  allowlist of `gitleaks.toml` matches a path ending in `.git`, not files
+  under it. A directory source can still skip the `.git` folder. Source
+  traversal rules and core fragment detection are separate. The CLI `dir`
+  command skips `.git` folders unless `--scan-git-metadata` is given.
 
 ### Added connection forms (5 rules)
 
@@ -295,16 +296,18 @@ Exclusions:
   keep the same 27 markers and 16 more for environment, configuration and
   function markers. A quoted literal that looks like code, such as
   `"process.env.DB_PASSWORD"`, can still be reported.
-- The `database-uri` rule keeps 13 source global and 18 URI-local secret
-  regex exclusions and the 2 source global case-insensitive substring
-  markers. It also keeps 2 full-match exclusions: one for synthetic tuples on
-  example hosts and one for lists of ignored example hosts. Each predicate is scoped before the native
-  regex array joins them, so each keeps its own flags and precedence.
+- The `database-uri` rule keeps 13 source global and 18 URI-local secret regex
+  exclusions and the 2 source global case-insensitive substring markers. It
+  also keeps 2 full-match exclusions: one for synthetic tuples on example
+  hosts and one for lists of ignored example hosts. Each predicate is scoped
+  before the native regex array joins them, so each keeps its own flags and
+  precedence.
 - Example: these rules alone keep `%B`, `%D` and `%S` but reject `%b`, `%d`
-  and `%s` as source formatting placeholders. The CLI and native composition
-  also apply the default global allowlist, whose regex flags also reject the
-  uppercase forms. `%Z` and `%B0` stay reportable in both cases. These are
-  raw detector examples, not claims that a client accepts the URI.
+  and `%s` as source formatting placeholders. A normal scan, with every
+  built-in rule, also applies the global allowlist of `gitleaks.toml`, whose
+  regex flags also reject the uppercase forms. `%Z` and `%B0` stay reportable
+  in both cases. These are raw detector examples, not claims that a client
+  accepts the URI.
 - Repeated letters and listed placeholders can be suppressed. Weak numeric
   and common default passwords are not. Source examples that only lower
   confidence, low-confidence hosts such as `localhost`, and test or
@@ -315,8 +318,8 @@ Exclusions:
   markers and percent-encoded forms can still be reported. There is no switch
   to turn off only these exclusions. Changed TOML creates a different policy
   identity.
-- Composition keeps the global allowlists, path rules, inline allow
-  comments, decoding and resource controls.
+- With the other built-in rules loaded, the global allowlists, path rules,
+  inline allow comments, decoding and resource controls still apply.
 
 Findings and overlap:
 

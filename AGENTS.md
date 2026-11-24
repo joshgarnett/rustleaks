@@ -28,8 +28,9 @@ explicit file helpers named in the architecture. Source adapters belong in
 details and must not enter the default core graph or public API. See
 [the architecture](docs/dev/architecture.md).
 
-The default rules are in `crates/rustleaks-core/default/gitleaks.toml` and
-the Rustleaks rule files beside it. Rustleaks changes them in place. Test
+The built-in rules are the Gitleaks-based rules in
+`crates/rustleaks-core/default/gitleaks.toml` and the Rustleaks rule files
+beside it. Rustleaks changes them in place. Test
 data, including cases recorded from Gitleaks and copied fixtures, is under
 `testdata/`; see [its README](testdata/README.md).
 
@@ -46,10 +47,10 @@ compilation.
 | Check formatting | `just format` |
 | Lint, prose, docs, build and target checks | `just check` |
 | Run before opening a pull request | `just ci` and `just security` |
-| Release candidate checks (public API, MSRV), from a clean committed tree | `cargo xtask qualify` |
 
-[Local workflow](CONTRIBUTING.md#local-workflow) lists the command for each
-kind of change.
+[Local workflow](CONTRIBUTING.md#local-workflow) owns the full list: the
+command for each kind of change, the clean-clone checks and the release
+candidate checks.
 
 Use Cargo only for what [Local workflow](CONTRIBUTING.md#local-workflow)
 lists, and never to bypass a failed Bazel action.
@@ -60,12 +61,8 @@ compilation.
 
 ## Invariants
 
-- Do not change configuration meaning, exit codes, report fields or error
-  classes (including `rustleaks-core` error kinds such as `ConfigError`
-  kinds), and do not make Rustleaks miss a secret it found before, without
-  maintainer approval. See [Approval boundaries](#approval-boundaries).
-- Any change to findings, spans or fingerprints needs a changelog entry and a
-  Rust test.
+- Any change to findings, spans or fingerprints needs a Rust test and a
+  [changelog entry](CONTRIBUTING.md#changelog).
 - Write expected values from the intended behavior, never from current
   output, and never hide a functional difference with normalization. A
   presentation change updates its test expectation and needs no maintainer
@@ -111,15 +108,18 @@ Stop for maintainer approval before:
 - changing GitHub settings or ownership;
 - enabling paid services;
 - accepting a security exception;
-- removing a supported command, flag, environment variable or file name
-  (including a legacy Gitleaks name), changing the meaning of a
-  configuration, report field, error class or exit code, or making Rustleaks
-  miss secrets that it found before;
+- removing a supported command, flag, environment variable or file name,
+  including a legacy Gitleaks name;
+- changing the meaning of a configuration, report field, error class or exit
+  code. Error classes include `rustleaks-core` error kinds, such as the
+  `ConfigError` kinds;
+- making Rustleaks miss secrets that it found before;
 - selecting a release version;
 - creating or publishing a release or crate, or pushing to the Homebrew tap
   or Scoop bucket; or
 - using a credential.
 
-A local dry run does not authorize publication. A change to the shipped
-default rules needs normal review, tests and a changelog entry, and
-maintainer approval only when it makes Rustleaks miss a secret.
+A local dry run does not authorize publication. A change to the built-in
+rules needs normal review, tests and a
+[changelog entry](CONTRIBUTING.md#changelog). It needs maintainer approval
+only when it makes Rustleaks miss a secret.

@@ -1,8 +1,9 @@
 # Comparison quality inputs
 
-The cross-scanner comparison measures precision and recall on labeled
-inputs. This page describes the two labeled sources and the command that
-prepares them:
+This page is for contributors who run the [scanner
+comparison](comparison.md). The comparison measures precision and recall on
+labeled inputs. This page describes the two labeled sources and the command
+that prepares them:
 
 - a constructed corpus that Rustleaks generates from a fixed seed, and
 - Samsung CredData, a public third-party dataset, converted at run time.
@@ -17,11 +18,11 @@ generator, the adapter, the workload manifest and the expected digests.
 ## Commands
 
 ```sh
-cargo xtask compare-quality generate --out CACHE
-cargo xtask compare-quality verify
-cargo xtask compare-quality verify --out CACHE
-cargo xtask compare-quality credata --cache CACHE
-cargo xtask compare-quality self-test
+just compare-quality generate --out CACHE
+just compare-quality verify
+just compare-quality verify --out CACHE
+just compare-quality credata --cache CACHE
+just compare-quality self-test
 ```
 
 - `generate` writes the constructed corpus to `CACHE/quality/constructed-v1/`.
@@ -285,7 +286,7 @@ python3 -m venv .venv
 Then convert, from the Rustleaks checkout:
 
 ```sh
-cargo xtask compare-quality credata --cache CACHE
+just compare-quality credata --cache CACHE
 ```
 
 The command writes `CACHE/credata/labels.jsonl`, `CACHE/credata/workload.json`

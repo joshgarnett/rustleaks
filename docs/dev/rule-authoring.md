@@ -1,64 +1,67 @@
 # Rule authoring
 
-This page is for contributors who add or change built-in rules: the default
-rules and the Rustleaks rule files. The `NativePolicy` API and this page call
-a Rustleaks rule file a pack. Every scan without a configuration, and every
-configuration with `[extend] useDefault = true`, uses all of them. The page
-covers the pack files, the rules the native loader enforces, the native-only
-rule features, and the steps for a change. For what users see, see
+This page is for contributors who add or change built-in rules: the
+Gitleaks-based rules in `gitleaks.toml` and the Rustleaks rule files. The
+`NativePolicy` API calls a Rustleaks rule file a pack, as in `with_pack`.
+Every scan without a configuration, and every configuration with
+`[extend] useDefault = true`, uses all of them. The page covers the rule
+files, the rules the native loader enforces, the native-only rule features,
+and the steps for a change. For what users see, see
 [Built-in rules](../user/built-in-rules.md).
 
-## Packs and their files
+## Rule files
 
-The packs live in `crates/rustleaks-core/default/` and are built into
+The Rustleaks rule files live in `crates/rustleaks-core/default/` and are built into
 `rustleaks-core` as constants in `native.rs`.
 
-| Pack | Rules | Files |
+| Rule file | Rules | Files |
 | --- | ---: | --- |
 | `rustleaks-extra-v1` | 3 | `.toml`, `.md`, `.sha256` |
 | `rustleaks-providers-v1` | 303 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
 | `rustleaks-connections-v1` | 19 | `.toml`, `.md`, `.sha256`, `.provenance.json` |
 
-- `<pack>.toml` holds the rules.
-- `<pack>.md` describes the pack for users: selection, rules, shared
+- `<id>.toml` holds the rules.
+- `<id>.md` is the reference for maintainers: loading, rules, shared
   boundaries, provenance and license. It ships in the crate package, so a
   link that leaves the crate uses an absolute
   `https://github.com/joshgarnett/rustleaks/blob/main/...` URL. Maintenance
-  notes for each pack are in [Notes for each pack](#notes-for-each-pack).
-- `<pack>.sha256` is the SHA-256 of the TOML file. It is generated. Never
+  notes for each rule file are in
+  [Notes for each rule file](#notes-for-each-rule-file).
+- `<id>.sha256` is the SHA-256 of the TOML file. It is generated. Never
   edit it by hand.
-- `<pack>.provenance.json` records, for each imported rule, the source,
+- `<id>.provenance.json` records, for each imported rule, the source,
   revision, file hash, original pattern and the changes made.
 - `LICENSE.betterleaks`, `LICENSE.kingfisher`, `LICENSE.veles` and `NOTICE`
   keep the license and attribution of imported rules.
 
 Rule counts include hidden helper rules that other rules depend on.
 
-`ConfigLoader` adds every pack to the default rules in `gitleaks.toml`. The
-packs do not change that file.
+`ConfigLoader` adds every Rustleaks rule file to the Gitleaks-based rules in
+`gitleaks.toml`. The Rustleaks rule files do not change that file.
 
 ## What the native loader enforces
 
-`native::NativePolicy::builder()` starts from the packaged default rules.
-`with_pack(id, toml)` adds one pack, and `build()` creates an immutable
+`native::NativePolicy::builder()` starts from the Gitleaks-based rules only.
+`with_pack(id, toml)` adds one rule file, and `build()` creates an immutable
 `NativeEngine`. The native loader adds these checks before the normal
 configuration loader runs:
 
-- Every rule ID starts with `rustleaks.`. Pack IDs and rule IDs use a
+- Every rule ID starts with `rustleaks.`. Rule file IDs and rule IDs use a
   bounded ASCII grammar.
 - Unknown TOML fields are rejected at every table level. Two spellings of one
   field that differ only in case are rejected. Known case-insensitive aliases
   and named-table shorthand still work. Positional table sequences are
   rejected. Error messages do not repeat unknown field names or values.
-- A repeated pack ID or any rule ID collision fails with a structured error.
-  There is no override: a pack cannot replace or turn off an existing rule.
+- A repeated rule file ID or any rule ID collision fails with a structured
+  error. There is no override: a rule file cannot replace or turn off an existing rule.
   A reviewed overlap (see [Same secret from two rules](#same-secret-from-two-rules))
   drops one finding only where another rule reports the same secret.
-- `extend`, global allowlists and `minVersion` are rejected inside a pack.
+- `extend`, global allowlists and `minVersion` are rejected inside a rule file.
   Rule allowlists and required rules use the normal loader rules.
-- A composition holds at most 32 packs, 1 MiB of pack TOML and 1,024 pack
-  rules. These limits add to the per-expression compile limits. They are not
-  a limit on total compile memory.
+- A policy holds at most 32 rule files, 1 MiB of rule file TOML and 1,024
+  rules from them (`MAX_PACKS`, `MAX_PACK_BYTES`, `MAX_NATIVE_RULES`). These
+  limits add to the per-expression compile limits. They are not a limit on
+  total compile memory.
 
 The normal loader (`ConfigLoader`, `--config`, configuration variables and
 `extend`) rejects the native-only tables described below. It ignores a
@@ -69,22 +72,22 @@ ordinary configuration file is not supported.
 ## Identity
 
 `NativePolicyIdentity` compares exact, length-framed bytes of the native
-policy version, crate version, default rules identity,
-enabled annotation extensions, and the ordered pack IDs and TOML sources.
+policy version, crate version, Gitleaks-based rules identity,
+enabled annotation extensions, and the ordered rule file IDs and TOML
+sources.
 Any byte change, including whitespace or a comment, changes the identity. The
 framing is an equality check, not a digest and not authentication.
 
-- A rule file changes in place: edit it, keep its ID and add a changelog
-  entry. A change that makes Rustleaks miss a secret it found before needs
-  maintainer approval.
+- A rule file changes in place: edit it, keep its ID and add a
+  [changelog entry](../../CONTRIBUTING.md#changelog).
 - `builtin_review_reference()` returns a reference without the TOML source
-  for the default rules alone or for the packaged packs under their fixed IDs.
-  It holds versions, the ordered pack IDs and checked content hashes. A
-  custom composition returns no builtin reference; the caller must bind its
+  for the Gitleaks-based rules alone or for the built-in rule files under
+  their fixed IDs. It holds versions, the ordered rule file IDs and checked content hashes. A
+  custom policy returns no built-in reference; the caller must bind its
   own fingerprint to the exact identity.
 - `Debug` output of the identity leaves out the configuration.
-  `sensitive_exact_bytes()` returns the full pack sources for storage or
-  hashing by the caller. Pack sources can contain sensitive literals, so do
+  `sensitive_exact_bytes()` returns the full rule file sources for storage
+  or hashing by the caller. These sources can contain sensitive literals, so do
   not show these bytes as a public identifier. The type has no automatic
   serialization.
 - Source bytes, scan options, budgets, fragment metadata and review decisions
@@ -93,7 +96,7 @@ framing is an equality check, not a digest and not authentication.
 
 ## Native-only rule features
 
-These features work only in packs loaded through `NativePolicy`. Rules that
+These features work only in rule files loaded through `NativePolicy`. Rules that
 do not use them keep the standard rule behavior.
 
 ### Byte regex dialect
@@ -247,7 +250,7 @@ data, its sources, licenses and generator are described in the
 
 ### Same secret from two rules
 
-A pack can list rule pairs that report the same secret:
+A rule file can list rule pairs that report the same secret:
 
 ```toml
 [[overlaps]]
@@ -266,10 +269,10 @@ such as one from decoded text, is never removed.
   are rejected. A rule with `generic` in its ID (ASCII case-insensitive)
   cannot be in an overlap, because the generic filter could remove the kept
   finding.
-- At least one of the two rules is in the same pack. The other can be a
-  default rule or a rule of another pack.
+- At least one of the two rules is in the same rule file. The other can be a
+  Gitleaks-based rule or a rule of another rule file.
 - At build time both rules must exist and report findings (no
-  `skipReport`). A pair is listed once in a composition, and no rule is both
+  `skipReport`). A pair is listed once in a policy, and no rule is both
   a `keep` and a `drop`, so every removed finding has a reported finding with
   the same secret.
 - A rule selection keeps an overlap only when both rules are selected.
@@ -280,17 +283,17 @@ such as one from decoded text, is never removed.
 
 Add a pair only when both rules can report the same credential and one of
 them names it better, or both name the same provider. When both name the same
-provider, keep the default rule, so its ID and fingerprints stay. Do not add
+provider, keep the Gitleaks-based rule, so its ID and fingerprints stay. Do not add
 a pair when the secrets differ, such as a prefix of a longer token. Keep
 `INTENDED_REPLACEMENTS` in `tests/rule_precedence.rs` and the table in
 [Built-in rules](../user/built-in-rules.md#findings-from-two-rules) equal to
-the pack entries, and add a case to `tests/rule_overlaps.rs`.
+the rule file entries, and add a case to `tests/rule_overlaps.rs`.
 
 ## Ordering and partial results
 
-A composition keeps the engine's rule order (sorted by rule ID), match order,
+A `NativePolicy` engine keeps the engine's rule order (sorted by rule ID), match order,
 generic and overlap filtering, redaction, exact raw spans and decoded-source
-mapping. Pack IDs cannot collide, but two rules can report the same
+mapping. Rule file IDs cannot collide, but two rules can report the same
 occurrence. Only the generic filter and the reviewed overlaps above remove
 such findings.
 
@@ -329,14 +332,14 @@ Rustleaks does not check whether a credential is live, does not revoke
 credentials, loads no runtime plugins and uses no learned filters. Adding
 any of these needs a concrete user need and a reviewed safety design.
 
-## Changing the default rules
+## Changing the Gitleaks-based rules
 
-The shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`,
+The Gitleaks-based rules, `crates/rustleaks-core/default/gitleaks.toml`,
 started from the Gitleaks default configuration and are maintained in place.
 Do not edit `testdata/config-corpus/default-gitleaks.toml`: it is test input
 for the configuration cases, not a copy of the shipped rules.
 
-A change to the default rules needs normal review, and:
+A change to the Gitleaks-based rules needs normal review, and:
 
 - tests with expectations from the change's definition, including near
   misses that must stay findings;
@@ -348,12 +351,14 @@ A change to the default rules needs normal review, and:
   [Quality corpus](#quality-corpus)), and updated `default-compile` and
   `gitleaks-compile` performance values (see [Performance
   values](#performance-values));
-- an update to [Default rules](../user/built-in-rules.md#default-rules) when
-  users see the change, and a changelog entry; and
+- an update to
+  [Gitleaks-based rules](../user/built-in-rules.md#gitleaks-based-rules)
+  when users see the change, and a
+  [changelog entry](../../CONTRIBUTING.md#changelog); and
 - a measurement on a held-out set that was not used to design the change.
 
-A change that makes Rustleaks miss secrets it found before needs maintainer
-approval. Run these targets first:
+See [Approval boundaries](../../AGENTS.md#approval-boundaries) for a change
+that makes Rustleaks miss a secret. Run these targets first:
 
 ```sh
 bazelisk test //crates/rustleaks-core:default_rule_corpus_test
@@ -361,7 +366,7 @@ bazelisk test //crates/rustleaks-core:detect_corpus_test
 bazelisk test //crates/rustleaks-core:allowlist_test
 ```
 
-## Changing a pack
+## Changing a rule file
 
 ### Choose where the rule goes
 
@@ -375,13 +380,13 @@ Rules adapted from another scanner must:
 
 - pin the source revision and the SHA-256 of the source file;
 - record the license and attribution for each file, and keep the license text
-  next to the pack;
+  next to the rule file;
 - record the original pattern, the source tests, every change made, and any
   source behavior that the rule does not support; and
 - be rejected when Rustleaks cannot express the relevant behavior without
   leaving something out.
 
-### Generated parts of the provider and connection packs
+### Generated parts of the provider and connection rule files
 
 The provider and connection TOML files have two parts:
 
@@ -398,7 +403,7 @@ To add or change a rule in the generated part:
 1. Edit the rule in `native_coverage/providers.toml` or `connections.toml`.
 2. Add or update its record in `native_coverage/reviewed.json`. The `native`
    object must equal the TOML rule, and `origin` holds the source details.
-3. Regenerate the pack, its provenance and the identity:
+3. Regenerate the rule file, its provenance and the identity:
 
    ```sh
    cargo xtask generate native-pack-identity
@@ -421,7 +426,7 @@ to update `rustleaks-extra-v1.sha256`.
 
 Write synthetic positive cases, near misses, entropy boundaries, exact
 locations, ASCII and Unicode differences, invalid bytes, allowlist cases and
-overlap with the default rules. Write the expected findings by hand. A rule
+overlap with the Gitleaks-based rules. Write the expected findings by hand. A rule
 that reports the same secret as another built-in rule needs an `[[overlaps]]`
 entry and a case in `tests/rule_overlaps.rs`; see
 [Same secret from two rules](#same-secret-from-two-rules).
@@ -432,7 +437,7 @@ entry and a case in `tests/rule_overlaps.rs`; see
 | `provider_rules.rs` | `rustleaks-providers-v1` |
 | `connection_rules.rs` | `rustleaks-connections-v1` |
 | `additional_coverage.rs`, `format_coverage.rs`, `special_coverage.rs`, `association_coverage.rs`, `remaining_verified_rules.rs` | The generated provider and connection additions, with expectations in `tests/support/*.json` |
-| `shared_rule_deltas.rs`, `contextual_rule_deltas.rs` | Delimiter companion rules in the provider pack |
+| `shared_rule_deltas.rs`, `contextual_rule_deltas.rs` | Delimiter companion rules in the provider rule file |
 | `native_policy.rs`, `native_predicates.rs` | The native loader, identity, entropy and predicates |
 | `rule_overlaps.rs` | `[[overlaps]]` checks, the overlap filter and each reviewed pair |
 
@@ -486,7 +491,7 @@ A change to `gitleaks.toml` also changes `GITLEAKS_RULES`,
 `GITLEAKS_CONFIG_FINGERPRINT` and the `gitleaks-compile` entry, which the
 same test checks.
 
-### Notes for each pack
+### Notes for each rule file
 
 These notes add to the steps above.
 
@@ -506,15 +511,14 @@ These notes add to the steps above.
   MongoDB percent-encoded user information, short passwords, templates and
   near misses. Sovereign Azure endpoints and MongoDB IPv6 inputs are
   positive gap cases, not negative examples.
-- The pack is accepted only when the comparison shows no lost held-out
-  positives, no new alerts on reviewed negatives and no unreviewed duplicate
-  alerts. The one reviewed duplicate is the `mongodb-provider-overlap` case,
-  where a synthetic MongoDB password has the shape of a GitHub token. These
-  cases are small structural controls, not a measure of accuracy on real
-  data.
-- Run `just quality-eval` for the current counts. A change must cite that
-  report and its source and configuration identity. A report that runs
-  successfully is not by itself an acceptance decision.
+- A change must show, in `just quality-eval`, no lost positives, no new
+  alerts on reviewed negatives and no unreviewed duplicate alerts. The
+  `mongodb-provider-overlap` case is a reviewed duplicate: a synthetic
+  MongoDB password has the shape of a GitHub token. These cases are small
+  structural controls, not a measure of accuracy on real data.
+- Cite the `just quality-eval` report and its source and configuration
+  identity in the pull request. A report that runs is not by itself an
+  approval of the change.
 
 #### rustleaks-providers-v1
 
@@ -528,9 +532,9 @@ These notes add to the steps above.
   specific findings stay. Fixtures are written by hand and never sent to a
   provider. The tests are a regression contract, not a measure of accuracy
   on real data.
-- All 3 packs with the default rules give 547 rules, including 32 hidden
-  helpers.
-- The build checks both pack digests and that the provider provenance is
+- The 3 Rustleaks rule files and the Gitleaks-based rules give 547 rules,
+  including 32 hidden helpers.
+- The build checks both rule file digests and that the provider provenance is
   consistent. Nothing is downloaded at build or run time.
 - A refresh needs a review of source changes, exact provenance and license
   bytes, and an evaluation of changed predicates and overlaps.
@@ -550,17 +554,17 @@ These notes add to the steps above.
   writes the hash. Check mode rejects changed patterns, missing predicates,
   added rule fields, changed identities and license changes.
 - A change needs a source review, new independent expected results and a
-  changelog entry.
+  [changelog entry](../../CONTRIBUTING.md#changelog).
 
 ### Documentation and review
 
 - When a rule is added or removed, update the rule counts by hand. They are
-  in the pack's `.md` file, in the table under
-  [Packs and their files](#packs-and-their-files), in the total under
+  in the rule file's `.md` file, in the table under
+  [Rule files](#rule-files), in the total under
   [rustleaks-providers-v1](#rustleaks-providers-v1), and in the count
   assertions in `provider_rules.rs`, `config.rs`, `rule_precedence.rs` and
   `remaining_verified_rules.rs`.
-- Update the pack's `.md` file and the user
+- Update the rule file's `.md` file and the user
   [built-in rules guide](../user/built-in-rules.md) when its description
   changes.
 - Run `just ci`. Run `just fuzz-smoke` when you change regex, decoder or

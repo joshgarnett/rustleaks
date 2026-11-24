@@ -17,8 +17,9 @@ reviewed upstream fixture.
 
 The security goals are to:
 
-- never lose a secret that the default rules find without maintainer
-  approval, and record every finding change in the changelog;
+- never miss a secret that Rustleaks found before without maintainer
+  approval (see [Approval boundaries](../../AGENTS.md#approval-boundaries)),
+  and record every finding change in the changelog;
 - return a structured error or a bounded partial result for hostile input;
 - keep first-party code free of unsafe Rust;
 - avoid hidden network or process-wide activity in the engine; and
@@ -34,7 +35,7 @@ and fail when that boundary changes.
 | --- | --- | --- | --- |
 | Engine and findings | `rustleaks-core/src/engine.rs`, `model.rs` | Byte input, checked locations, scan budgets, cooperative cancellation, `Debug` without content | Engine, model, controlled-scan, disclosure, property, detection corpus, `fragment_scan` fuzz |
 | Configuration and rules | `rustleaks-core/src/config/`, `regex/` | Per-expression regex limits, extension depth 2, 4,096 selected rules, 8 MiB selected rule source, structured errors | Configuration, extension, regex corpus, property, `config` and `go_regex` fuzz |
-| Native packs and diagnostics | `rustleaks-core/src/native.rs`, `explanation.rs`, `validation.rs` | Fixed built-in composition or caller-chosen packs, exact identity, strict fields, no rule collisions, 32 packs, 1 MiB TOML, 1,024 rules, 65,536 explanation records | Native policy, native rules, disclosure, offline layout |
+| Rustleaks rule files and diagnostics | `rustleaks-core/src/native.rs`, `explanation.rs`, `validation.rs` | Built-in rule files or rule files the caller adds, exact identity, strict fields, no rule collisions, 32 rule files, 1 MiB TOML, 1,024 rules, 65,536 explanation records | Native policy, native rules, disclosure, offline layout |
 | Review records | `rustleaks-core/src/triage.rs` | Policy, options and completion binding; finite reasons and expiry; 4,096 records, 100,000 findings, 8 MiB JSON | Core triage tests, examples |
 | Decoders and locations | `rustleaks-core/src/decoder/`, `model.rs` | Caller decode depth, decoded bytes and work in budgets, checked offsets | Decoder, arbitrary bytes, locations, decoder corpus, `fragment_scan` fuzz |
 | Files and directories | `rustleaks-sources/src/file.rs`, `directory.rs`, `path.rs`, `runner.rs`, `runner/budget.rs` | Bounded chunks and queue, optional complete targets, symlink hop limit 64, path normalization, optional budgets, workers joined | File, directory, path, symlink escape, chunking, complete-target, cancellation, budget and panic cleanup tests |
@@ -90,13 +91,14 @@ meta engine, its caches and the reverse NFA fallback.
   and step counts, and the full keyword DFA is used only within the keyword
   size and depth limits.
 
-### Native packs and diagnostics
+### Rustleaks rule files and diagnostics
 
-- Exact identity bytes contain pack sources and need a deliberate export.
+- Exact identity bytes contain rule file sources and need a deliberate
+  export.
 - Parse errors can contain input details.
 - Explanation counts reveal scan activity.
 - Checksums and unsupported formats stay `Unknown`.
-- Pack limits do not bound total compile memory.
+- Rule file limits do not bound total compile memory.
 - `buffer-v1` relations search each decoded segment as its own buffer, so one
   carrier cannot satisfy another's required predicate. Unfinished native
   rules publish no partial results.
@@ -169,12 +171,11 @@ See [Using rustleaks-core](../user/library.md#review-records).
   by 12, and the suballocator bounds the state arrays and text. Memory is
   therefore at most a fixed multiple of the model size. The worst case
   measured so far took about 7 to 8 times the model size, about 450 MiB for
-  a 64 MiB model. That is a measurement, not a limit. An estimate from the
-  structure sizes gives the bound: at most one context (56 bytes) for each
-  12-byte unit and two states (24 bytes each) for each unit, with `Vec`
-  growth that can double each array, the minimum capacity of 4 for a
-  state array, allocator overhead and the temporary maps of the free-block
-  merge pass. That is at most about 34 bytes for each model byte, about
+  a 64 MiB model. That is a measurement, not a limit. The structure sizes
+  give the bound. Each 12-byte unit holds at most one context (56 bytes) and
+  two states (24 bytes each). `Vec` growth can double each array, a state
+  array has a minimum capacity of 4, and the allocator and the temporary maps
+  of the free-block merge pass add more. That is at most about 34 bytes for each model byte, about
   2.1 GiB for a 64 MiB model. A RAR archive inside a RAR archive keeps the
   outer decoder and its model while the inner member is read. With
   `--max-archive-depth N`, nested RAR archives can hold up to N models at

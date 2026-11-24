@@ -59,15 +59,12 @@ just ci
 just security
 ```
 
-The final `just ci` result covers `just check` and every test, including the
-corpus tests and the CLI corpus replay. Run `cargo xtask qualify` against a clean,
-committed candidate tree when the public API or the MSRV build can change. Run
-`just package-check` for other packaged-asset or consumer changes. Run
-`just release-dry-run` instead when publish metadata or package contents change
-because the release dry run includes the package and consumer checks. A
-clean-clone pass is required when hermeticity, lockfiles, build rules, assets,
-features, toolchains, repository configuration, or clean-test machinery can
-change.
+Add the commands that the [local
+workflow](../../../CONTRIBUTING.md#local-workflow) table names for the change,
+such as `just package-check` or `cargo xtask qualify`. Run the [clean-clone
+checks](../../../CONTRIBUTING.md#clean-clone-checks) when self-contained
+builds, lockfiles, build rules, assets, features, toolchains, repository
+configuration or clean-test tools can change.
 
 Report versions before and after, approval, changed graph edges and files,
 lock regeneration, package contents and consumers, eight-target compile

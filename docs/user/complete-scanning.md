@@ -1,7 +1,7 @@
 # Complete scanning
 
-This guide is for people who need proof that a scan covered all of its input,
-for example in an audit or a release gate. It explains the
+This guide is for people who need to know that a scan covered all of its
+input, for example in an audit or a release gate. It explains the
 `--complete-profile` option, the profile file, and the status line that a
 complete scan prints.
 
@@ -110,8 +110,8 @@ Format rules:
 ### Profile keys
 
 In this table, a piece is the unit that Rustleaks scans in one step: one file,
-one archive member, one Git diff hunk, or standard input. The whole scan is
-called the operation.
+one archive member, one Git diff hunk, or standard input. Profile keys call a
+piece a fragment. The whole scan is called the operation.
 
 | Key | Meaning | Must be above 0 |
 | --- | --- | --- |
@@ -177,13 +177,12 @@ profile values.
 | `issues` | Number of source warnings. |
 | `scm_link_bytes` | Total length of finding links. |
 
-The `resource` fields are filled only in two cases. The first is when a
-whole-scan or per-piece limit from the profile stops the scan, such as
-`operation_work_units`. The second is when a finding link is too long. When a
-size limit on one input stops the scan, such
-as `target_bytes` or an archive or Git limit, the status line has
-`reason=resource_exhaustion` and `resource=none`. The log line before it
-names the input.
+The `resource` fields name the limit only when a per-piece or whole-scan
+profile limit stops the scan, such as `operation_work_units`, or when a
+finding link is too long. When a limit on one input stops the scan, such as
+`target_bytes` or an archive or Git limit, the status line has
+`reason=resource_exhaustion` and `resource=none`. The log line before the
+status line names the input.
 
 ### Reasons
 
@@ -198,7 +197,8 @@ names the input.
 | `worker_failure` | A detection worker failed. |
 | `metadata_failure` | Rustleaks could not find the Git remote or build a finding link within its limits. |
 | `report_failure` | The report could not be written. |
-| `stopped`, `unknown_termination` | The scan ended in another way that is not a complete scan. |
+| `stopped` | The scan ended early without an error, a limit or a timeout. |
+| `unknown_termination` | The scan ended in another way that is not a complete scan. |
 
 ## Exit codes
 
@@ -227,7 +227,7 @@ secret format was found.
   on purpose. They do not make the scan incomplete.
 - A `git` scan still covers only the lines added in each commit, not whole
   files. Archive files found in Git history are read in full.
-- Standard input is not checked for archives by content.
+- Standard input is never opened as an archive.
 - The profile limits count input bytes, decoded bytes, copied bytes and
   detection steps. They do not limit the total memory of the process or the
   time the scan takes. A long line with many findings can use a lot of

@@ -13,13 +13,13 @@ body:
     id: proposal
     attributes:
       label: Proposed outcome
-      description: Describe observable behavior and the package or maintenance boundary that should own it.
+      description: Describe what Rustleaks should do, and which part of Rustleaks should do it.
     validations:
       required: true
   - type: dropdown
     id: boundary
     attributes:
-      label: Primary boundary
+      label: Main area
       options:
         - Core engine
         - Source adapter

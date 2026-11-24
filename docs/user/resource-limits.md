@@ -15,35 +15,36 @@ with `--complete-profile` turns every coverage gap into a failure. See
 
 ## Limits in normal CLI scans
 
-| What | Default | How to change it | When reached |
-| --- | --- | --- | --- |
-| Decode depth | 5 levels | `--max-decode-depth N`; `0` turns decoding off | Deeper encoded text is not decoded. |
-| Archive depth | 0, archives are not opened | `--max-archive-depth N` | Deeper archives are not opened. |
-| Entries in one archive | 1,000,000 | Profile key `archive_entries` | Warning; the rest of the archive, or for 7z the whole archive, is skipped. |
-| One archive member, decompressed | 4 GiB | Profile key `archive_member_bytes` | Warning. See [Archives](#archives). |
-| One archive, decompressed in total | 16 GiB | Profile key `archive_total_bytes` | Warning; the rest of the archive is skipped. |
-| Temporary storage for one archive | 1 GiB | Profile key `archive_spool_bytes` | Warning; the ZIP, 7z, Zstandard or LZ4 archive that needs it is skipped. |
-| Archive parts kept in memory | 64 MiB, or the member limit if it is lower | Fixed | Warning; the member or archive is skipped. See [Archives](#archives). |
-| PPMd model size that a RAR3 member sets | 64 MiB | Fixed | Warning; the member and the rest of the RAR archive are skipped. See [Archives](#archives). |
-| File size | No limit | `--max-target-megabytes N` (N times 1,000,000 bytes) | Warning; the file is skipped. |
-| Size of one scanned piece of a file | About 100,000 bytes | Profile key `target_bytes`, which makes each file one piece | Larger files are scanned in several pieces. |
-| Symbolic link hops | 64 | Fixed | Warning; the link is skipped. |
-| `git log` or `git diff` output for one commit | 1 GiB and 16,000,000 lines | Profile keys `git_patch_bytes` and `git_patch_lines` | The scan stops with exit code 1. |
-| Git error output kept | 1 MiB, for all `git log` processes of a scan together | Profile key `git_stderr_bytes` | The scan stops with exit code 1. |
-| One archive file read from Git | 1 GiB, and at most the archive temporary storage | Profile keys `git_blob_bytes` and `archive_spool_bytes` | Warning; the archive is skipped. |
-| Metadata of one commit | 16 MiB | Profile key `git_metadata_bytes` | The scan stops with exit code 1. |
-| One path in Git output | 1 MiB | Profile key `git_path_bytes` | The scan stops with exit code 1. |
-| Changed files and diff hunks in one commit | 1,000,000 files, 2,000,000 hunks | Profile keys `git_files` and `git_hunks` | The scan stops with exit code 1. |
-| Distinct commits counted | 100,000,000 | Fixed | The scan stops with exit code 1. |
-| Source warnings and errors kept, such as unreadable or skipped files | 10,000 | Profile key `operation_issues` | Later ones are counted, not kept, and one log line gives their number. The scan goes on, and the exit code and report do not change. |
-| Time | No limit | `--timeout N` seconds | The scan stops with exit code 1 and reports what it found so far. |
-| Detection threads | One for each CPU that Rustleaks may use, up to 12 | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Detection threads](#detection-threads). |
-| `git log` processes that read history at the same time | One for each detection thread, up to 6 | `--jobs N`, or profile key `workers` | Not a coverage limit. Findings do not depend on it. See [Git history](#git-history). |
-| Detection work and finding memory | No limit | Profile keys that start with `fragment_` and `operation_` | The scan stops and is incomplete (exit 2). |
+| What | Default | Flag | Profile key (complete scans only) | When reached |
+| --- | --- | --- | --- | --- |
+| Decode depth | 5 levels | `--max-decode-depth N`; `0` turns decoding off | - | Deeper encoded text is not decoded. |
+| Archive depth | 0, archives are not opened | `--max-archive-depth N` | - | Deeper archives are not opened. |
+| Entries in one archive | 1,000,000 | - | `archive_entries` | Warning; the rest of the archive, or for 7z the whole archive, is skipped. |
+| One archive member, decompressed | 4 GiB | - | `archive_member_bytes` | Warning. See [Archives](#archives). |
+| One archive, decompressed in total | 16 GiB | - | `archive_total_bytes` | Warning; the rest of the archive is skipped. |
+| Temporary storage for one archive | 1 GiB | - | `archive_spool_bytes` | Warning; the ZIP, 7z, Zstandard or LZ4 archive that needs it is skipped. |
+| Archive parts kept in memory | 64 MiB, or the member limit if it is lower | Fixed | Fixed | Warning; the member or archive is skipped. See [Archives](#archives). |
+| PPMd model size that a RAR3 member sets | 64 MiB | Fixed | Fixed | Warning; the member and the rest of the RAR archive are skipped. See [Archives](#archives). |
+| File size | No limit | `--max-target-megabytes N` (N times 1,000,000 bytes) | - | Warning; the file is skipped. |
+| Size of one scanned piece of a file | About 100,000 bytes | - | `target_bytes`, which makes each file one piece | Larger files are scanned in several pieces. |
+| Symbolic link hops | 64 | Fixed | Fixed | Warning; the link is skipped. |
+| `git log` or `git diff` output for one commit | 1 GiB and 16,000,000 lines | - | `git_patch_bytes` and `git_patch_lines` | The scan stops with exit code 1. |
+| Git error output kept | 1 MiB, for all `git log` processes of a scan together | - | `git_stderr_bytes` | The scan stops with exit code 1. |
+| One archive file read from Git | 1 GiB, and at most the archive temporary storage | - | `git_blob_bytes` and `archive_spool_bytes` | Warning; the archive is skipped. |
+| Metadata of one commit | 16 MiB | - | `git_metadata_bytes` | The scan stops with exit code 1. |
+| One path in Git output | 1 MiB | - | `git_path_bytes` | The scan stops with exit code 1. |
+| Changed files and diff hunks in one commit | 1,000,000 files, 2,000,000 hunks | - | `git_files` and `git_hunks` | The scan stops with exit code 1. |
+| Distinct commits counted | 100,000,000 | Fixed | Fixed | The scan stops with exit code 1. |
+| Source warnings and errors kept, such as unreadable or skipped files | 10,000 | - | `operation_issues` | Later ones are counted, not kept, and one log line gives their number. The scan goes on, and the exit code and report do not change. |
+| Time | No limit | `--timeout N` seconds | - | The scan stops with exit code 1 and reports what it found so far. |
+| Detection threads | One for each CPU that Rustleaks may use, up to 12 | `--jobs N` | `workers` | Not a coverage limit. Findings do not depend on it. See [Detection threads](#detection-threads). |
+| `git log` processes that read history at the same time | One for each detection thread, up to 6 | `--jobs N` | `workers` | Not a coverage limit. Findings do not depend on it. See [Git history](#git-history). |
 
 The profile keys belong to a `--complete-profile` file, so you can change
-these limits only in a complete scan. In a complete scan, reaching any limit
-makes the scan incomplete, and it exits with 2. See [Complete
+those limits only in a complete scan. A complete scan also limits detection
+work and finding memory, with the profile keys that start with `fragment_`
+and `operation_`. In a complete scan, reaching any limit makes the scan
+incomplete, and it exits with 2. See [Complete
 scanning](complete-scanning.md#profile-keys).
 
 Detection work grows with the input size, the number of rules and the decode
@@ -166,9 +167,9 @@ To use less memory, set a lower value.
 
 ### Archives
 
-Rustleaks reads archives as streams. It decompresses and scans each member
-while it reads it, so memory does not grow with the size of a member or of
-the archive. A member is split into pieces in the same way as a file.
+Rustleaks reads most archives as streams. It decompresses and scans each
+member while it reads it, and splits a member into pieces in the same way as
+a file. Some parts are kept in memory; see the list below.
 
 ZIP and 7z archives need random access. An archive file found by `dir` is
 read in place. Any other ZIP or 7z input, such as one inside another archive
@@ -213,21 +214,11 @@ The limits work as follows:
   limited to 64 MiB, or to the member limit if it is lower. A RAR member over
   the limit skips the rest of the RAR archive. A larger dictionary or 7z
   header skips the stream or archive.
-- **RAR3 PPMd model.** A RAR3 member compressed with PPMd sets the size of
-  its PPMd model, up to 256 MiB. Rustleaks reads a model of up to 64 MiB.
-  The member limit does not lower this limit. A member that sets a larger
-  model is not decoded: Rustleaks reports a warning and skips that member
-  and the rest of the RAR archive. The RAR3 test archives in Rustleaks, made
-  with RAR at its best compression (`-m5`), set 25 MiB. Rustleaks keeps the
-  model in larger structures than RAR does. The worst case measured so far
-  took about 200 MiB of memory when set to 25 MiB, and about 450 MiB when
-  set to 64 MiB. These are measurements, not limits. From the sizes of its
-  structures, the model can take at most about 34 times the size it sets,
-  about 2.1 GiB at 64 MiB. The model grows with the decoded data, so it
-  reaches its size only when a member fills it. A RAR archive inside a RAR
-  archive keeps the outer model while it reads the inner one. With
-  `--max-archive-depth N`, nested RAR archives can hold up to N models at
-  once, so up to N times these amounts.
+- **RAR3 PPMd model.** A RAR3 member compressed with PPMd sets a model size
+  of up to 256 MiB. Rustleaks reads models of up to 64 MiB. A larger model
+  gives a warning, and Rustleaks skips that member and the rest of the RAR
+  archive. One 64 MiB model can use up to about 2.1 GiB of memory. Nested
+  RAR archives can hold one model for each level.
 - **Git.** An archive file from Git history is copied to temporary storage
   before it is read. A file larger than `git_blob_bytes` or the temporary
   storage limit is skipped with a warning, and the history scan continues.
@@ -239,12 +230,12 @@ when the warning appears. In a complete scan, a member is published only
 after it has been read without a failure, but members before the failure
 stay in the report, and the scan is incomplete.
 
-The defaults are high because memory does not depend on them. The member and
-total limits bound the work that one archive, such as a decompression bomb,
-can cause. The temporary storage limit bounds the disk space of nested ZIP and
-7z archives and of archives from Git. A scan reads one archive at a time. An
-archive from Git can hold its own copy and the temporary storage of the
-archives inside it at the same time.
+The defaults are high because they mostly bound work and disk use, not memory.
+The member and total limits bound the work that one archive, such as a
+decompression bomb, can cause. The temporary storage limit bounds the disk
+space of nested ZIP and 7z archives and of archives from Git. A scan reads one
+archive at a time. An archive from Git can hold its own copy and the temporary
+storage of the archives inside it at the same time.
 
 ### Limits on input you give Rustleaks
 
@@ -258,7 +249,6 @@ archives inside it at the same time.
 | One configuration file, including `.gitleaks.toml` or `.rustleaks.toml` in the scanned folder and each `[extend]` file | 16 MiB. A larger file fails to load before Rustleaks reads more than 16 MiB of it. |
 | `--baseline-path` file | 256 MiB. Rustleaks reads no more than 256 MiB of a larger file. It logs an error and scans without the baseline, as for a baseline it cannot read. See [Baselines](configuration.md#baselines). |
 | One regular expression | 1 MiB of source, 4,096 levels of nesting, and 256 MiB for each compiled form. A repeat count can be at most 1,000, and the counts of nested repeats multiplied together can be at most 1,000. |
-| Native rule files in one `NativePolicy` (library) | 32 files, 1 MiB of TOML, 1,024 rules |
 | One line of an ignore file | 64 KiB. Parsing of that file stops at a longer line. Rustleaks reads an ignore file one line at a time, so it never holds more than one line of the file in memory, plus the entries it keeps. |
 | Report template | 1 MiB of source, 1,000,000 actions plus 1,000 actions for each finding, 128 levels of nesting. The report size has no limit, because Rustleaks writes the report while it renders. |
 | Complete-scan profile file | 16 KiB |
@@ -272,8 +262,7 @@ Under the [example profile](complete-scanning.md#the-profile-file), they can
 stop a complete scan:
 
 - Many encoded values, such as one Base64 value on each line, can reach
-  `fragment_work_units` or `operation_work_units`. The Rustleaks rules add
-  more work for each value.
+  `fragment_work_units` or `operation_work_units`.
 - Many findings on one long line can reach `fragment_finding_payload_bytes`,
   because each finding keeps a copy of the whole line.
 
@@ -289,7 +278,7 @@ are not memory limits. Some cases use much more memory than the input size:
 
 - Each finding keeps a copy of its source line. Many findings on one long line
   can use a lot of memory, even for a small file.
-- Some Rustleaks association rules, such as
+- Some association rules in the Rustleaks provider rule file, such as
   `rustleaks.association.ramp-client-secret`, attach every helper in a
   piece of the input to every finding of the rule in that piece. Rustleaks
   stores that list once, and the `--complete-profile` limits count it once.
@@ -312,3 +301,6 @@ use `--complete-profile` to limit finding records and finding bytes.
 The `rustleaks-core` engine sets no limits by default. See [Budgets and
 cancellation](library.md#budgets-and-cancellation) for the budgets and for
 what your program must do.
+
+A `NativePolicy` can hold at most 32 rule files, 1 MiB of rule file TOML and
+1,024 rules in those files.

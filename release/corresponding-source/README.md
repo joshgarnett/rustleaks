@@ -1,5 +1,8 @@
 # GNU corresponding source and relinking
 
+This page is for people who rebuild or relink the GNU Linux executables. The
+last section, Maintainer generation and proof, is for Rustleaks maintainers.
+
 The `rustleaks-VERSION-corresponding-source.tar.gz` release asset is the
 source archive for the two GNU Linux executables. It holds the application
 source, and the glibc source and build inputs that the executables use.
@@ -52,7 +55,8 @@ does not need to contain its own digest.
 ## Reconstruct and substitute glibc startup source
 
 Use a native Linux x86_64 or AArch64 host with the tools named in the
-application's `.bazelversion`, `rust-toolchain.toml` and setup documentation.
+application's `.bazelversion`, `rust-toolchain.toml` and the setup steps in
+its `CONTRIBUTING.md`.
 These steps change no toolchain or dependency version. Bazel downloads the
 other dependencies and build tools from the supplied lockfiles. This archive
 is not an offline copy of every dependency or operating system component.
@@ -107,7 +111,9 @@ module's support source with the same overrides.
 ## Maintainer generation and proof
 
 `cargo xtask release-artifact fetch-source REPOSITORY_CACHE` downloads the
-five fixed inputs and checks their SHA-256 digests.
+five fixed inputs and checks their SHA-256 digests. They are the materials in
+the table above, with the generated headers as two archives, one for x86_64
+and one for AArch64.
 `prepare-source REPOSITORY_CACHE COMMIT OUTPUT` reads only those cached
 inputs and the Git blobs of the candidate. It fails when an input is missing
 or changed, and it never downloads. Both GNU native jobs build the same

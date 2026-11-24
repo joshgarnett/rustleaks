@@ -7,14 +7,11 @@ finds it, and the ways to hide findings you have already reviewed.
 ## The configuration file
 
 Rustleaks uses the Gitleaks TOML configuration format. A Gitleaks
-configuration file works without changes. Rustleaks ships 222 default
-rules and its own Rustleaks rules, and uses all of them unless you pass a
-configuration. The default rules are based on the Gitleaks default rules and
-add allowlists that hide some values that are clearly not secrets, such as
-hex digests under hash names and published documentation examples. See
-[Default rules](built-in-rules.md#default-rules).
+configuration file works without changes. Without a configuration, Rustleaks
+scans with all of its [built-in rules](built-in-rules.md).
 
-A small configuration that adds one rule to the default rules looks like this:
+A small configuration that adds one rule to the built-in rules looks like
+this:
 
 ```toml
 title = "Example config"
@@ -92,7 +89,7 @@ The `[extend]` table builds your configuration on top of a base:
 
 | Field | Meaning |
 | --- | --- |
-| `useDefault` | When `true`, the base is every built-in rule: the default rules and the Rustleaks rules. |
+| `useDefault` | When `true`, the base is every built-in rule. |
 | `path` | The path to a base configuration file. |
 | `disabledRules` | Rule IDs from the base to leave out. A rule that another rule needs through `[[rules.required]]` stays, but reports no findings of its own. |
 
@@ -117,7 +114,7 @@ for. Rustleaks supports the configuration settings of Gitleaks 8.30.0. When
 `minVersion` is newer, Rustleaks prints a warning, because the configuration
 may use settings that it does not support, and still runs the scan. A `minVersion`
 that is not a valid version, such as `minVersion = "latest"`, is an error.
-The default rules ask for `v8.25.0`, so they do not cause a warning.
+The built-in rules ask for `v8.25.0`, so they do not cause a warning.
 
 ## Where Rustleaks finds the configuration
 
@@ -134,11 +131,12 @@ Rustleaks uses the first source in this list that is set:
 6. A `.rustleaks.toml` file in the folder you scan.
 7. A `.gitleaks.toml` file in the folder you scan, the legacy name for
    `.rustleaks.toml`.
-8. The default rules built into Rustleaks.
+8. All built-in rules, when none of the above is set.
 
 Empty values are skipped. Steps 6 and 7 apply when the scan target is a
 folder: the folder for `dir`, the repository for `git`, and the current folder
-for `stdin`.
+for `stdin`. When `dir` scans a single file, Rustleaks does not look for these
+files.
 
 A scan skips some configuration files and the baseline file, so their
 contents are not reported as findings:
@@ -225,13 +223,15 @@ A finding matches a baseline entry when these fields are equal: rule ID,
 description, start and end line, start and end column, file, commit, author,
 email, date, commit message and entropy. The match and secret must also be
 equal, unless the scan uses `--redact`. Because columns are compared exactly,
-make baselines with Rustleaks. Baselines from Gitleaks 8.30.0 also work; see
+make baselines with Rustleaks. A baseline from Gitleaks 8.30.0 also matches,
+but it does not cover findings from rules that Gitleaks does not have. See
 [Moving from Gitleaks](moving-from-gitleaks.md#what-keeps-working). See
 [Line and column numbers](reports.md#line-and-column-numbers) for how
 columns are counted.
 
-If Rustleaks cannot read or parse the baseline file, it logs an error and
-scans without a baseline, so every earlier finding is reported again. The
+If Rustleaks cannot read or parse the baseline file, or the file is larger
+than 256 MiB, it logs an error and scans without a baseline. Every earlier
+finding is then reported again. The
 exit code does not show this, so check the log.
 
 ## Allow comments
@@ -275,34 +275,29 @@ Limits of the Base64 modes:
 
 ## Archives
 
+By default Rustleaks does not open archives. `--max-archive-depth` is 0.
+Files whose content starts like a known archive format, such as ZIP, gzip or
+TAR, are skipped as binary, without a warning. Other files are read as plain
+text, whatever their name. See [Files that are skipped](cli-reference.md#files-that-are-skipped).
+
 With `--max-archive-depth N` above 0, Rustleaks opens archives and scans the
-files inside them, up to N levels of archives inside archives. The default is
-0, which does not open archives: a file is read as plain text, whatever its
-name. Files whose content starts like a binary format, such as a ZIP or PDF
-file, are skipped. See [Files that are
-skipped](cli-reference.md#files-that-are-skipped).
+files inside them, up to N levels of archives inside archives.
 
 Rustleaks decides whether a file is an archive by its name only, not by its
-content. A name that contains `.tar`, `.zip`, `.7z` or `.rar` is an archive.
-A name that contains `.gz`, `.xz`, `.zst`, `.zz`, `.br`, `.bz2`, `.lz4`, `.sz`
-or `.s2`, or that ends in `.lz` or `.mz`, is a compressed file. For example,
-`data.tar.gz` is a compressed TAR archive, and `backup.zip.old` is also read
-as a ZIP archive. A name that ends in `.tgz` is a compressed TAR archive too.
+content. A name that contains `.tar`, `.zip`, `.7z` or `.rar`, or that ends in
+`.tgz`, is an archive. A name that contains `.gz`, `.xz`, `.zst`, `.zz`,
+`.br`, `.bz2`, `.lz4`, `.sz` or `.s2`, or that ends in `.lz` or `.mz`, is a
+compressed file. For example, `data.tar.gz` is a compressed TAR archive, and
+`backup.zip.old` is also read as a ZIP archive.
 
 A file inside an archive is reported with `!` between the archive path and the
 path inside it, for example `bundle.zip!config/app.env`.
 
-Archives are read as streams, so large archives scan with bounded memory.
+Rustleaks reads most archives as streams. Some formats keep parts in memory.
 Archive size, entry and temporary storage limits apply. See
 [Archives](resource-limits.md#archives).
 
 ## Other scan options
 
-| Flag | Effect |
-| --- | --- |
-| `--max-target-megabytes N` | Skip files larger than N megabytes (N times 1,000,000 bytes). `0`, the default, means no limit. |
-| `--follow-symlinks` | `dir` only. Scan files that symbolic links point to. |
-| `--scan-git-metadata` | `dir` only. Also scan the text metadata files in `.git` folders, such as `config`, `hooks` and `logs`. See [Git metadata](cli-reference.md#git-metadata). |
-| `--timeout N` | Stop the scan after N seconds. The scan then fails with exit code 1, or with 2 under `--complete-profile`. `0`, the default, means no timeout. |
-
-See the [command reference](cli-reference.md) for every flag.
+See the [command reference](cli-reference.md) for every other flag, such as
+`--max-target-megabytes`, `--follow-symlinks` and `--timeout`.

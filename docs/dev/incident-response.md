@@ -18,8 +18,8 @@ Never send vulnerability details to a public issue.
 - Keep the smallest necessary evidence in storage with access control. Hash
   artifacts before analysis and work on copies. Do not collect unrelated user
   or repository data.
-- Acknowledge a private report within three business days. Give a first
-  assessment within seven business days.
+- Answer within the response times in the [security
+  policy](../../SECURITY.md#reporting).
 
 ## 2. Triage and contain
 
@@ -56,8 +56,7 @@ Never send vulnerability details to a public issue.
   change must be explicit and reviewed.
 - In a clean checkout, run the affected tests, `just security`,
   `just fuzz-smoke`, `just ci`, the package checks and the native target
-  checks. `just ci` includes the corpus tests and the CLI corpus replay.
-  Get a technical review from someone other than the author of the fix.
+  checks. Get a technical review from someone other than the author of the fix.
 - Rebuild release artifacts from trusted inputs. Reconcile the source,
   lockfiles, Bazel graph, SBOM, checksums and attestations before publication
   starts again.

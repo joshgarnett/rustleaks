@@ -1,5 +1,7 @@
 # rustleaks-rar-codec
 
+This page is for contributors.
+
 Safe RAR3 and RAR5 decoders and the RAR CRC-32 for the Rustleaks archive
 sources. The crate has no dependencies. The caller parses the container,
 checks CRCs, sets resource limits, handles cancellation and classifies

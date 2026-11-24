@@ -85,11 +85,6 @@ Redaction replaces the `Secret` field and every copy of the secret inside
 it is redacted too. Use redaction whenever a report leaves the machine that
 ran the scan, for example when you upload SARIF to GitHub.
 
-## Exit codes
-
-With `--exit-code 0`, a scan that finds secrets still writes its report and
-exits with 0. See [Exit codes](cli-reference.md#exit-codes) for every code.
-
 ## Finding fields
 
 JSON reports and templates use these field names. Other formats use the same
@@ -173,11 +168,8 @@ Rustleaks keeps this rule for these reasons:
 Ignore files do not use columns. A fingerprint holds only the file, rule ID,
 start line and, for Git history, the commit.
 
-If you use the Rust library and need exact positions, use
-`Finding::match_range()` and `Finding::secret_range()`. They give
-`FindingRange::Exact` byte offsets into the fragment you scanned, or
-`FindingRange::Unavailable` when there is no exact range, for example for
-decoded text. See [Reading findings](library.md#reading-findings).
+Library users: see [Reading findings](library.md#reading-findings) for exact
+byte offsets.
 
 ## JSON
 
@@ -249,10 +241,9 @@ The template language supports:
 - `{{-` and `-}}` to remove spaces around an action; and
 - the functions `len`, `eq`, `ne`, `quote` and `sub`.
 
-It does not support `else`, `define`, `template`, `block`, comments or other
-functions, such as `printf`. An unsupported feature fails with an error that
-names the `rustleaks-safe-template-v1` profile. The `now` and `date` functions
-fail in the CLI, because Rustleaks gives templates no clock.
+It does not support `else`, `define`, `template`, `block`, comments, or any
+other function, such as `printf`, `now` or `date`. A template that uses one
+fails with an error.
 
 This example prints one line for each finding, with its index and the quoted
 rule ID, and then the number of findings:

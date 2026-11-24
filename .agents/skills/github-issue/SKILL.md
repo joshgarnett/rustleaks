@@ -27,10 +27,8 @@ number.
 ## Draft
 
 Use the matching form under `.github/ISSUE_TEMPLATE/` and keep its required
-fields and title prefix (`bug: ` or `feat: `). A difference from Gitleaks is
-not a defect by itself; [Moving from
-Gitleaks](../../../docs/user/moving-from-gitleaks.md) lists the known ones.
-Use only synthetic or reviewed public data.
+fields and title prefix (`bug: ` or `feat: `). Use only synthetic or
+reviewed public data.
 
 State the problem, the wanted outcome, when it is done, the exact revision
 and environment, and checks already run. In a pull request, use

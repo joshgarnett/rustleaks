@@ -35,16 +35,16 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include the operating system, architecture, Rust target, tool versions, features, and relevant configuration source.
+      description: Include the operating system and architecture, how you installed Rustleaks, and where the configuration comes from. Library users can add the Rust version and target.
     validations:
       required: true
   - type: textarea
     id: validation
     attributes:
-      label: Validation already run
-      description: List exact commands and results, or state that none were run.
+      label: Checks already run
+      description: Optional. List any commands you ran to narrow down the problem, with their results.
     validations:
-      required: true
+      required: false
   - type: checkboxes
     id: safety
     attributes:
