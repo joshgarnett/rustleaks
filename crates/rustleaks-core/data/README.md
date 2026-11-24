@@ -29,8 +29,8 @@ runtime dependency, thread-local machinery or unsafe code is imported.
 | `cl100k-vercel60-v1.bin` | 470,103 | `ad1a8cb135ace0e3dd9507246248658d2d99761353d96e31b1f33626d677ab28` |
 
 `xtask generate native-pack-identity` regenerates the derived table;
-`xtask generate native-pack-identity --check` verifies it. The build-contract
-gate also runs this verification. The maintained generator verifies original
+`xtask generate native-pack-identity --check` verifies it.
+`cargo xtask build-system-check` also runs this verification. The maintained generator verifies original
 source size and hash, both license hashes, 100,256 unique tokens and ranks,
 all 256 singleton tokens, and every one-to-three-digit token. It derives all
 records and compares every output byte, not just an output digest.

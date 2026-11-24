@@ -129,8 +129,8 @@ At the 16 KiB limit, the DFA table is about 17 MiB, at most one kilobyte per
 state. Building a state's row follows a failure chain for each byte class
 without a transition, and the chain is no longer than the state's depth. Every
 state is a keyword prefix, so the prefix limit bounds the sum of depths; a
-long keyword counts quadratically. The default keywords total 1,755 bytes,
-their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
+long keyword counts quadratically. The keywords of `gitleaks.toml` total
+1,755 bytes, their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
 kind never changes which keyword hits are reported. With every built-in rule
 the automaton has 940 patterns and its DFA uses about 2.3 MiB; with the
 default rules alone it has 510 patterns and uses about 0.6 MiB.

@@ -21,8 +21,7 @@ configurations.
   validation result, `normalized` is the allowlist after validation,
   `method_result` is the result of the check, and `findings` lists the
   expected findings of a `detect` case.
-- `coverage-v1.json`: behavior notes. The test reads the status of `AL-014`
-  and `AL-015` from it.
+- `coverage-v1.json`: behavior notes. No test reads it.
 - `request-metadata-v1.jsonl` and `manifest-v1.json`: counts and hashes from
   when the cases were recorded. No test reads them.
 
