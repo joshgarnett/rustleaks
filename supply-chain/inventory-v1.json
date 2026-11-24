@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "1c4efde63b1ab3c095cdb5063c7be13142de9641c8689244041a75c095eb1a45",
+  "cargo_lock_sha256": "8a0dd4a3d56d2d2f219eaaac7fa657d9825493e5938a5dc745b249305316f846",
   "feature_resolution": "locked default workspace metadata across declared target edges",
   "format_version": 1,
   "generated_by": "cargo xtask generate vet-inventory",

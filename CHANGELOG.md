@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
+0.2.0 is the first Rustleaks release that is not a pre-release. It can be
+installed with Homebrew, Scoop, or the new `.deb` and `.rpm` packages.
+Rustleaks no longer tracks a Gitleaks revision. Gitleaks configuration files,
+ignore files, baselines, allow comments and the legacy Gitleaks names keep
+working.
+
+Check these changes before you upgrade:
+
+- SARIF reports name the tool `rustleaks` and JUnit reports name the suite
+  `rustleaks`. GitHub code scanning opens new alerts for existing findings
+  once.
+- In `rustleaks-core`, the default configuration has every built-in rule, as
+  the CLI does. `ConfigLoader::with_builtin_rules`,
+  `honor_gitleaks_allow`, `UPSTREAM_REVISION` and `DEFAULT_CONFIG_REVISION`
+  are removed.
+- When two built-in rules report the same secret, one finding is reported.
+  Baseline and ignore entries for the dropped findings no longer match.
+- Git history scans now read files that `.gitattributes` marks as binary, and
+  can report more findings.
+
 - On Unix, a new `--report-path` file is created with mode `0600`, so only
   its owner can read it. Before, it got the default mode from the umask. An
   existing file keeps its owner and mode.
@@ -711,7 +733,7 @@ Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
-[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.1.0-alpha.12...HEAD
+[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.2.0...HEAD
 [0.1.0-alpha.1]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
@@ -724,3 +746,4 @@ version and exact source commit.
 [0.1.0-alpha.10]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.10
 [0.1.0-alpha.11]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.11
 [0.1.0-alpha.12]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.12
+[0.2.0]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.2.0

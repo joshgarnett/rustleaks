@@ -1,8 +1,7 @@
 # Contributing
 
-Rustleaks is in alpha development. This file is the single source for the
-issue, commit and pull request rules. People and agents follow the same
-rules.
+This file is the single source for the issue, commit and pull request rules.
+People and agents follow the same rules.
 
 Every contribution must keep configurations, ignore files, baselines,
 reports, exit codes and supported commands working, including the legacy

@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-rustleaks-core = { path = "../rustleaks-core", version = "=0.1.0-alpha.12" }
+rustleaks-core = { path = "../rustleaks-core", version = "=0.2.0" }
 thiserror = "2"
 
 [dev-dependencies]

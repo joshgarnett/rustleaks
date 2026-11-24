@@ -9,7 +9,7 @@ load(
 
 # The workspace package version from Cargo.toml. Bazel targets of workspace
 # crates set it as `CARGO_PKG_VERSION`.
-RUSTLEAKS_VERSION = "0.1.0-alpha.12"
+RUSTLEAKS_VERSION = "0.2.0"
 
 _DOC_TEST_INCOMPATIBLE = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],

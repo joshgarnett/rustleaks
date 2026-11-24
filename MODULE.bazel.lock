@@ -322,7 +322,7 @@
     "@@rules_pkg+//toolchains/rpm:rpmbuild_configure.bzl%find_system_rpmbuild_bzlmod": {
       "general": {
         "bzlTransitiveDigest": "9HVW2/lqcIJQiRN0QXRBEEEu4X5577GLCxN3ifPnx1I=",
-        "usagesDigest": "2M4W0vRHg8kAZoMEMExgeJYYGeIuTlJMtrYcxnKS+t4=",
+        "usagesDigest": "XXdrh+uiHaP35Ib0Lkr6bfgq5OCzsbzn3jTZFxEHO2g=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "rules_pkg_rpmbuild": {

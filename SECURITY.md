@@ -3,8 +3,8 @@
 ## Supported versions
 
 Security fixes target the current development line and the latest published
-release. Older prereleases and source snapshots are not supported unless a
-release advisory states otherwise.
+release. Older releases, including the 0.1.0 alpha releases, and source
+snapshots are not supported unless a release advisory states otherwise.
 
 ## Reporting
 
