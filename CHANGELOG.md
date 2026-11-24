@@ -6,8 +6,9 @@
   gzip-compressed TAR archive, as a complete scan already did. Before, a
   normal scan skipped such a file as binary, so secrets inside it were
   missed. A `.tgz` file that does not start with the gzip magic bytes is
-  scanned as a plain file in both scans. Before, a complete scan reported
-  it as a decode issue.
+  read as its other suffixes name it, such as `x.tar.tgz` as a TAR, and
+  otherwise as a plain file. A gzip `x.gz.tgz` is read as a gzip stream of
+  one file. Before, a complete scan reported such files as a decode issue.
 - Git runs with `LC_ALL=C` and without `LANGUAGE` during scans and remote
   discovery, unless the caller's command environment sets them. With a
   translated Git, harmless rename-limit and auto-gc warnings were reported
