@@ -27,14 +27,16 @@ use process::Outcome;
 use profiles::{Deadline, Profile};
 
 #[derive(Clone, Copy)]
-struct Target {
-    workspace: &'static str,
-    name: &'static str,
+pub(crate) struct Target {
+    pub(crate) workspace: &'static str,
+    pub(crate) name: &'static str,
     max_len: u64,
     features: &'static [&'static str],
 }
 
-const TARGETS: &[Target] = &[
+/// Every fuzz target, in campaign order, with the crate whose `fuzz/`
+/// workspace builds it.
+pub(crate) const TARGETS: &[Target] = &[
     Target {
         workspace: "rustleaks-core",
         name: "go_regex",
@@ -84,6 +86,17 @@ const TARGETS: &[Target] = &[
         features: &["default"],
     },
 ];
+
+/// The crates that own a standalone fuzz workspace, in [`TARGETS`] order.
+pub(crate) fn workspaces() -> Vec<&'static str> {
+    let mut workspaces = Vec::new();
+    for target in TARGETS {
+        if !workspaces.contains(&target.workspace) {
+            workspaces.push(target.workspace);
+        }
+    }
+    workspaces
+}
 
 impl Target {
     fn directory(self, root: &Path) -> PathBuf {

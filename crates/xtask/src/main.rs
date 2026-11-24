@@ -203,11 +203,8 @@ fn fuzz_build() -> Result<(), String> {
         CARGO_FUZZ_VERSION,
         "cargo-fuzz",
     )?;
-    for manifest in [
-        "crates/rustleaks-core/fuzz/Cargo.toml",
-        "crates/rustleaks-sources/fuzz/Cargo.toml",
-        "crates/rustleaks-report/fuzz/Cargo.toml",
-    ] {
+    for workspace in fuzzing::workspaces() {
+        let manifest = format!("crates/{workspace}/fuzz/Cargo.toml");
         command_output(Command::new("cargo").current_dir(&root).args([
             toolchain.as_str(),
             "check",
@@ -215,10 +212,13 @@ fn fuzz_build() -> Result<(), String> {
             "--offline",
             "--all-targets",
             "--manifest-path",
-            manifest,
+            manifest.as_str(),
         ]))?;
     }
-    println!("all eight fuzz targets compile with their locked standalone manifests");
+    println!(
+        "all {} fuzz targets compile with their locked standalone manifests",
+        fuzzing::TARGETS.len()
+    );
     Ok(())
 }
 
