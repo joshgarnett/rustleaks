@@ -232,6 +232,11 @@ not an alternative.
 - `src/block/tests.rs` covers empty, single-block and multi-block streams,
   output chunk sizes, changed block and combined CRCs, and a truncated final
   CRC.
+- Decodes every stream of a concatenated input and rejects other data after
+  the last stream.
+- Buffers up to a worst-case compressed block, so blocks of incompressible
+  data decode. `src/decoder/tests.rs` covers these cases with a small test
+  encoder.
 
 `rustleaks-rar-codec`:
 
@@ -258,7 +263,7 @@ not an alternative.
 - `src/reader.rs` checks the coder graph (`validate_coder_graph`) before any
   decoder is built; the graph fields in `src/block.rs` stay private to the
   crate.
-- `tests/oracle_codecs.rs` holds direct codec fixtures.
+- `tests/method_fixtures.rs` holds direct codec fixtures.
 - `rustleaks-sources` checks next-header ranges and declared sizes before
   parsing, applies archive limits during iteration and contains panics. All
   7z input is rejected under `panic=abort`.

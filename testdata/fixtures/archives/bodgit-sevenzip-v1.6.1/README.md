@@ -6,7 +6,7 @@ These archives are byte-for-byte copies of the decoder fixtures in
 LZMA, Deflate, bzip2, Brotli, LZ4 and Zstandard methods, BCJ2, and the x86,
 ARM, PPC and SPARC branch converters.
 
-`//crates/rustleaks-sevenz:oracle_codecs_test` decodes each archive. The
+`//crates/rustleaks-sevenz:method_fixtures_test` decodes each archive. The
 source corpus (`../../../source-corpus/requests-v1.jsonl`) holds copies of
 them in its `archive-7z-*` cases.
 

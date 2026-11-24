@@ -409,7 +409,9 @@ fn check_compile_assets(crate_root: &Path, build: &str) -> Result<(), String> {
         needs_testdata |= text.contains("testdata/") || text.contains("../testdata");
         needs_default |= text.contains("default/gitleaks.toml");
     }
-    if needs_testdata && !build.contains("//testdata:") && !build.contains("//:build_contract_files")
+    if needs_testdata
+        && !build.contains("//testdata:")
+        && !build.contains("//:build_contract_files")
     {
         return Err(format!(
             "{} reads testdata/ but declares no //testdata: data",

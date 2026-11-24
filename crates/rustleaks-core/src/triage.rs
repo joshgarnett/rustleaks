@@ -646,7 +646,11 @@ fn validate_policy_reference(reference: &str) -> Result<(), ReviewError> {
     validate_identifier(reference, MAX_POLICY_REFERENCE_BYTES, b"._-:/+=;|,")
 }
 
-fn validate_identifier(reference: &str, max_bytes: usize, allowed: &[u8]) -> Result<(), ReviewError> {
+fn validate_identifier(
+    reference: &str,
+    max_bytes: usize,
+    allowed: &[u8],
+) -> Result<(), ReviewError> {
     if reference.is_empty()
         || reference.len() > max_bytes
         || !reference

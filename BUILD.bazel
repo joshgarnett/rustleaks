@@ -198,7 +198,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-report:rustleaks_report_unit_test",
     "//crates/rustleaks-report:security_stress_test",
     "//crates/rustleaks-report:template_test",
-    "//crates/rustleaks-sevenz:oracle_codecs_test",
+    "//crates/rustleaks-sevenz:method_fixtures_test",
     "//crates/rustleaks-sevenz:rustleaks_sevenz",
     "//crates/rustleaks-sevenz:rustleaks_sevenz_unit_test",
     "//crates/rustleaks-sources:archive_fuzz_test",

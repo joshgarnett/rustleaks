@@ -11,6 +11,21 @@
   translated Git, harmless rename-limit and auto-gc warnings were reported
   as Git errors, a repository without a remote failed discovery, and a
   complete scan could end incomplete.
+- bzip2 input whose blocks hold random or already compressed data, such as
+  a `.tar.bz2` of JAR files or images, now decodes. Before, decoding stopped
+  with `huffman bitstream truncated` and the rest of the input was not
+  scanned. The decoder also no longer keeps the whole compressed input in
+  memory.
+- bzip2 files with several streams, as written by `pbzip2` or joined with
+  `cat`, are decoded in full. Before, only the first stream was scanned, with
+  no warning. Data after the last stream that is not a bzip2 stream gives a
+  decode issue.
+- 7z archives with many Zstandard members no longer allocate and zero the
+  whole 7z memory limit for each block; one buffer is reused for the archive.
+- A 7z LZMA coder with fewer than 5 property bytes gives the decode issue
+  `LZMA properties too short` instead of `7z decoder panicked on untrusted
+  input`. Other 7z decode and limit issues show a plain message instead of
+  Rust debug text.
 - `ReviewPolicy::for_builtin` works when the policy has two or more
   built-in rule files, including every built-in rule as the CLI uses them.
   It returned `ReviewError::InvalidReference` because policy references did
