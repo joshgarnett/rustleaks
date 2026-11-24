@@ -53,8 +53,8 @@ impl<R: Read> Read for DeflateDecoder<R> {
             } else {
                 MZFlush::None
             };
-            // Output stops at each 32 KiB window flush, as in Gitleaks' DEFLATE
-            // reader, so short reads fall where Gitleaks sees them.
+            // Output stops at each 32 KiB window flush. The read sizes become
+            // 7z fragment boundaries, so keep them stable.
             let until_window_flush = DEFLATE_WINDOW_SIZE - self.emitted % DEFLATE_WINDOW_SIZE;
             let output_limit = output.len().min(until_window_flush);
             let result = inflate(

@@ -4,24 +4,28 @@ use super::filters::{self, DeltaErrorMessages};
 #[cfg(test)]
 use super::{huffman, match_finder};
 use super::{validate_huffman_counts, Error, Result};
-use std::collections::VecDeque;
 use std::io::Read;
 #[cfg(test)]
 use std::ops::Range;
 
-pub const LEVEL_TABLE_SIZE: usize = 20;
-pub const MAIN_TABLE_SIZE: usize = 306;
-pub const DISTANCE_TABLE_SIZE_50: usize = 64;
-pub const DISTANCE_TABLE_SIZE_70: usize = 80;
-pub const ALIGN_TABLE_SIZE: usize = 16;
-pub const LENGTH_TABLE_SIZE: usize = 44;
+pub(crate) const LEVEL_TABLE_SIZE: usize = 20;
+pub(crate) const MAIN_TABLE_SIZE: usize = 306;
+pub(crate) const DISTANCE_TABLE_SIZE_50: usize = 64;
+pub(crate) const DISTANCE_TABLE_SIZE_70: usize = 80;
+pub(crate) const ALIGN_TABLE_SIZE: usize = 16;
+pub(crate) const LENGTH_TABLE_SIZE: usize = 44;
+#[cfg(test)]
 const DEFAULT_DICTIONARY_SIZE: usize = 4 * 1024 * 1024;
-const STREAM_FLUSH_THRESHOLD: usize = 64 * 1024;
 #[cfg(test)]
 const MAX_ENCODER_MATCH_OFFSET: usize = DEFAULT_DICTIONARY_SIZE;
 #[cfg(test)]
 const MAX_ENCODER_MATCH_LENGTH: usize = 4096;
+// The block size constants below tune the test-only encoder. Their notes
+// are upstream `rars` tuning notes; the measured corpus is not in this
+// repository.
+
 /// The largest block the format allows a writer to emit.
+#[cfg(test)]
 const MAX_COMPRESSED_BLOCK_OUTPUT: usize = 4 * 1024 * 1024;
 /// How much input goes into one compressed block.
 ///
@@ -31,7 +35,9 @@ const MAX_COMPRESSED_BLOCK_OUTPUT: usize = 4 * 1024 * 1024;
 /// costs no match range. Measured over the corpus, 64 KiB packs 6.4% smaller
 /// than a mebibyte and within 0.2% of the best size tried at any point between
 /// 16 KiB and 256 KiB.
+#[cfg(test)]
 pub(crate) const LZ_BLOCK_SIZE: usize = 64 * 1024;
+#[cfg(test)]
 const _: () = assert!(LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 
 /// The most input one block may cover once blocks are being extended.
@@ -43,7 +49,9 @@ const _: () = assert!(LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 /// optimal parse prices every position in a block and its arrays scale with
 /// the block, so a mebibyte is the point where the extra table sets saved stop
 /// being worth the pages.
+#[cfg(test)]
 pub(crate) const MAX_LZ_BLOCK_SIZE: usize = 1024 * 1024;
+#[cfg(test)]
 const _: () = assert!(MAX_LZ_BLOCK_SIZE <= MAX_COMPRESSED_BLOCK_OUTPUT);
 
 /// How far a chunk's byte distribution may sit from the open block's before
@@ -193,14 +201,14 @@ const MAX_MATCH_CANDIDATES: usize = 256;
 
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompressedBlock {
+pub(crate) struct CompressedBlock {
     pub header: CompressedBlockHeader,
     pub header_len: usize,
     pub payload: Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CompressedBlockHeader {
+pub(crate) struct CompressedBlockHeader {
     pub flags: u8,
     pub is_last: bool,
     pub has_tables: bool,
@@ -214,29 +222,8 @@ struct OwnedCompressedBlock {
     payload: Vec<u8>,
 }
 
-#[derive(Debug)]
-#[doc(hidden)]
-pub enum StreamDecodeError<E> {
-    Decode(Error),
-    FilteredMember,
-    Sink(E),
-}
-
-impl<E> From<Error> for StreamDecodeError<E> {
-    fn from(error: Error) -> Self {
-        Self::Decode(error)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[doc(hidden)]
-pub enum DecodedChunk<'a> {
-    Bytes(&'a [u8]),
-    Repeated { byte: u8, len: usize },
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableLengths {
+pub(crate) struct TableLengths {
     pub main: Vec<u8>,
     pub distance: Vec<u8>,
     pub align: Vec<u8>,
@@ -244,7 +231,7 @@ pub struct TableLengths {
 }
 
 #[derive(Debug, Clone)]
-pub struct DecodeTables {
+pub(crate) struct DecodeTables {
     pub main: HuffmanTable,
     pub distance: HuffmanTable,
     pub align: HuffmanTable,
@@ -253,7 +240,7 @@ pub struct DecodeTables {
 }
 
 impl DecodeTables {
-    pub fn from_lengths(lengths: &TableLengths) -> Result<Self> {
+    pub(crate) fn from_lengths(lengths: &TableLengths) -> Result<Self> {
         let align_mode = lengths
             .align
             .iter()
@@ -286,7 +273,7 @@ impl DecodeMode {
 }
 
 #[cfg(test)]
-pub fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
+pub(crate) fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
     if input.len() < 3 {
         return Err(Error::NeedMoreInput);
     }
@@ -346,7 +333,7 @@ pub fn parse_compressed_block(input: &[u8]) -> Result<CompressedBlock> {
     })
 }
 
-pub fn read_level_lengths(input: &[u8]) -> Result<([u8; LEVEL_TABLE_SIZE], usize)> {
+pub(crate) fn read_level_lengths(input: &[u8]) -> Result<([u8; LEVEL_TABLE_SIZE], usize)> {
     let mut bits = BitReader::new(input);
     let mut lengths = [0; LEVEL_TABLE_SIZE];
     let mut pos = 0;
@@ -375,7 +362,7 @@ pub fn read_level_lengths(input: &[u8]) -> Result<([u8; LEVEL_TABLE_SIZE], usize
     Ok((lengths, bits.bit_pos))
 }
 
-pub fn table_length_count(algorithm_version: u8) -> Result<usize> {
+pub(crate) fn table_length_count(algorithm_version: u8) -> Result<usize> {
     match algorithm_version {
         0 => Ok(MAIN_TABLE_SIZE + DISTANCE_TABLE_SIZE_50 + ALIGN_TABLE_SIZE + LENGTH_TABLE_SIZE),
         1 => Ok(MAIN_TABLE_SIZE + DISTANCE_TABLE_SIZE_70 + ALIGN_TABLE_SIZE + LENGTH_TABLE_SIZE),
@@ -385,7 +372,10 @@ pub fn table_length_count(algorithm_version: u8) -> Result<usize> {
     }
 }
 
-pub fn read_table_lengths(input: &[u8], algorithm_version: u8) -> Result<(TableLengths, usize)> {
+pub(crate) fn read_table_lengths(
+    input: &[u8],
+    algorithm_version: u8,
+) -> Result<(TableLengths, usize)> {
     let table_size = table_length_count(algorithm_version)?;
     let (level_lengths, level_bits) = read_level_lengths(input)?;
     let level_decoder = HuffmanTable::from_lengths(&level_lengths)?;
@@ -454,7 +444,7 @@ pub fn read_table_lengths(input: &[u8], algorithm_version: u8) -> Result<(TableL
 }
 
 #[cfg(test)]
-pub fn encode_table_lengths_with_bit_count(
+pub(crate) fn encode_table_lengths_with_bit_count(
     lengths: &TableLengths,
     algorithm_version: u8,
 ) -> Result<(Vec<u8>, usize)> {
@@ -1310,7 +1300,6 @@ fn encode_lz_block(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 fn encode_lz_block_in_window(
     combined: &[u8],
     block: std::ops::Range<usize>,
@@ -2064,7 +2053,6 @@ fn encode_tokens_with_progress(
 /// match found one byte ahead (when computed) so the caller can reuse it for
 /// the next position instead of searching again.
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 fn lazy_match_decision(
     input: &[u8],
     pos: usize,
@@ -2179,7 +2167,7 @@ fn best_match(
 
 #[cfg(test)]
 fn match_length(input: &[u8], pos: usize, distance: usize, max_length: usize) -> usize {
-    super::fast::match_length(input, pos, distance, max_length)
+    super::match_finder::match_length(input, pos, distance, max_length)
 }
 
 #[cfg(test)]
@@ -2308,7 +2296,8 @@ impl Unpack50Decoder {
         }
     }
 
-    pub fn decode_member(
+    #[cfg(test)]
+    pub(crate) fn decode_member(
         &mut self,
         input: &[u8],
         algorithm_version: u8,
@@ -2326,7 +2315,8 @@ impl Unpack50Decoder {
         )
     }
 
-    pub fn decode_member_with_dictionary(
+    #[cfg(test)]
+    pub(crate) fn decode_member_with_dictionary(
         &mut self,
         input: &[u8],
         algorithm_version: u8,
@@ -2369,7 +2359,8 @@ impl Unpack50Decoder {
         )
     }
 
-    pub fn decode_member_from_reader(
+    #[cfg(test)]
+    pub(crate) fn decode_member_from_reader(
         &mut self,
         input: &mut impl Read,
         algorithm_version: u8,
@@ -2387,7 +2378,8 @@ impl Unpack50Decoder {
         )
     }
 
-    pub fn decode_member_from_reader_with_dictionary(
+    #[cfg(test)]
+    pub(crate) fn decode_member_from_reader_with_dictionary(
         &mut self,
         input: &mut impl Read,
         algorithm_version: u8,
@@ -2568,121 +2560,6 @@ impl Unpack50Decoder {
         }
     }
 
-    pub fn decode_member_from_reader_with_dictionary_to_sink<E>(
-        &mut self,
-        input: &mut impl Read,
-        algorithm_version: u8,
-        output_size: usize,
-        dictionary_size: usize,
-        solid: bool,
-        mut sink: impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        if dictionary_size == 0 {
-            return Err(Error::InvalidData("RAR 5 dictionary size is zero").into());
-        }
-        if !solid {
-            self.reset();
-        }
-
-        // VecDeque grows as decoded bytes arrive, so using the declared
-        // dictionary here does not allocate a potentially huge RAR 7 window
-        // up front. It does, however, retain every byte that a legal match may
-        // reference instead of silently truncating the window at 64 MiB.
-        let history_limit = dictionary_size;
-        if self.history.len() > history_limit {
-            let discard = self.history.len() - history_limit;
-            self.history.drain(..discard);
-        }
-        let mut output = StreamingOutput::new(
-            std::mem::take(&mut self.history),
-            output_size,
-            dictionary_size,
-            history_limit,
-        );
-
-        loop {
-            let block = read_compressed_block(input)?;
-            let payload = block.payload.as_slice();
-            let mut payload_bit_pos = 0;
-            if block.header.has_tables {
-                let (lengths, table_bits) = read_table_lengths(payload, algorithm_version)?;
-                self.tables = Some(DecodeTables::from_lengths(&lengths)?);
-                payload_bit_pos = table_bits;
-            }
-            let tables = self
-                .tables
-                .take()
-                .ok_or(Error::InvalidData("RAR 5 block reuses missing tables"))?;
-            let mut bits = BitReader::new(payload);
-            bits.bit_pos = payload_bit_pos;
-
-            while bits.bit_pos < block.header.payload_bits && output.written() < output_size {
-                let symbol = tables.main.decode(&mut bits)?;
-                match symbol {
-                    0..=255 => output.push(symbol as u8, &mut sink)?,
-                    256 => {
-                        return Err(StreamDecodeError::FilteredMember);
-                    }
-                    257 => {
-                        if self.last_length != 0 {
-                            output.copy_match(self.reps[0], self.last_length, &mut sink)?;
-                        }
-                    }
-                    258..=261 => {
-                        let rep_index = symbol - 258;
-                        let distance = self.reps[rep_index];
-                        if distance == 0 {
-                            return Err(Error::InvalidData(
-                                "RAR 5 repeat distance is not initialized",
-                            )
-                            .into());
-                        }
-                        let length_slot = tables.length.decode(&mut bits)?;
-                        let length_extra = bits.read_bits(length_slot_extra_bits(length_slot)?)?;
-                        let length = slot_to_length(length_slot, length_extra)?;
-                        self.reps[..=rep_index].rotate_right(1);
-                        self.reps[0] = distance;
-                        self.last_length = length;
-                        output.copy_match(distance, length, &mut sink)?;
-                    }
-                    262.. => {
-                        let length_slot = symbol - 262;
-                        let length_extra = bits.read_bits(length_slot_extra_bits(length_slot)?)?;
-                        let mut length = slot_to_length(length_slot, length_extra)?;
-                        let distance_slot = tables.distance.decode(&mut bits)?;
-                        let distance_bit_count = distance_slot_bit_count(distance_slot)?;
-                        let distance_extra = if distance_bit_count >= 4 && tables.align_mode {
-                            let high = bits.read_bits((distance_bit_count - 4) as u8)?;
-                            let low = tables.align.decode(&mut bits)? as u32;
-                            (high << 4) | low
-                        } else {
-                            bits.read_bits(distance_bit_count as u8)?
-                        };
-                        let distance = slot_to_distance(distance_slot, distance_extra)?;
-                        length += length_bonus(distance);
-                        self.reps.rotate_right(1);
-                        self.reps[0] = distance;
-                        self.last_length = length;
-                        output.copy_match(distance, length, &mut sink)?;
-                    }
-                }
-            }
-
-            self.tables = Some(tables);
-            if block.header.is_last || output.written() >= output_size {
-                break;
-            }
-        }
-
-        if output.written() == output_size {
-            output.finish(&mut sink)?;
-            self.history = output.into_history();
-            Ok(())
-        } else {
-            Err(Error::NeedMoreInput.into())
-        }
-    }
-
     fn reset(&mut self) {
         self.tables = None;
         self.reps = [0; 4];
@@ -2743,189 +2620,6 @@ impl Unpack50Decoder {
             }
         }
         Ok(())
-    }
-}
-
-struct StreamingOutput {
-    history: VecDeque<u8>,
-    pending: Vec<u8>,
-    written: usize,
-    output_limit: usize,
-    dictionary_size: usize,
-    history_limit: usize,
-    all_zero: bool,
-}
-
-impl StreamingOutput {
-    fn new(
-        history: Vec<u8>,
-        output_limit: usize,
-        dictionary_size: usize,
-        history_limit: usize,
-    ) -> Self {
-        Self {
-            all_zero: history.iter().all(|&byte| byte == 0),
-            history: history.into(),
-            pending: Vec::with_capacity(STREAM_FLUSH_THRESHOLD),
-            written: 0,
-            output_limit,
-            dictionary_size,
-            history_limit,
-        }
-    }
-
-    fn written(&self) -> usize {
-        self.written
-    }
-
-    fn push<E>(
-        &mut self,
-        byte: u8,
-        sink: &mut impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        if self.written >= self.output_limit {
-            return Err(Error::InvalidData("RAR 5 match exceeds output limit").into());
-        }
-        if byte != 0 {
-            self.all_zero = false;
-        }
-        self.pending.push(byte);
-        self.written += 1;
-        if self.pending.len() >= STREAM_FLUSH_THRESHOLD {
-            self.flush(sink)?;
-        }
-        Ok(())
-    }
-
-    fn push_repeated<E>(
-        &mut self,
-        byte: u8,
-        mut count: usize,
-        sink: &mut impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        if self
-            .written
-            .checked_add(count)
-            .is_none_or(|end| end > self.output_limit)
-        {
-            return Err(Error::InvalidData("RAR 5 match exceeds output limit").into());
-        }
-        if byte != 0 {
-            self.all_zero = false;
-        }
-        while count > 0 {
-            let available = STREAM_FLUSH_THRESHOLD - self.pending.len();
-            let take = count.min(available.max(1));
-            let old_len = self.pending.len();
-            self.pending.resize(old_len + take, byte);
-            self.written += take;
-            count -= take;
-            if self.pending.len() >= STREAM_FLUSH_THRESHOLD {
-                self.flush(sink)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn push_zeroes<E>(
-        &mut self,
-        count: usize,
-        sink: &mut impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        if self
-            .written
-            .checked_add(count)
-            .is_none_or(|end| end > self.output_limit)
-        {
-            return Err(Error::InvalidData("RAR 5 match exceeds output limit").into());
-        }
-        self.flush(sink)?;
-        sink(DecodedChunk::Repeated {
-            byte: 0,
-            len: count,
-        })
-        .map_err(StreamDecodeError::Sink)?;
-        self.written += count;
-        if self.history.is_empty() && self.history_limit != 0 {
-            self.history.push_back(0);
-        }
-        Ok(())
-    }
-
-    fn copy_match<E>(
-        &mut self,
-        distance: usize,
-        length: usize,
-        sink: &mut impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        if self.all_zero && distance <= self.written + self.history.len() {
-            return self.push_zeroes(length, sink);
-        }
-        // Zero-fill out-of-window matches, as the buffered decoder does.
-        if distance == 0
-            || distance > self.dictionary_size
-            || distance > self.history.len() + self.pending.len()
-        {
-            return self.push_repeated(0, length, sink);
-        }
-        if self
-            .written
-            .checked_add(length)
-            .is_none_or(|end| end > self.output_limit)
-        {
-            return Err(Error::InvalidData("RAR 5 match exceeds output limit").into());
-        }
-        if distance == 1 {
-            let byte = self.byte_at_distance(1)?;
-            return self.push_repeated(byte, length, sink);
-        }
-        for _ in 0..length {
-            let byte = self.byte_at_distance(distance)?;
-            self.push(byte, sink)?;
-        }
-        Ok(())
-    }
-
-    fn byte_at_distance(&self, distance: usize) -> Result<u8> {
-        if distance <= self.pending.len() {
-            Ok(self.pending[self.pending.len() - distance])
-        } else {
-            let history_distance = distance - self.pending.len();
-            if history_distance > self.history.len() {
-                return Err(Error::InvalidData("RAR 5 match distance exceeds window"));
-            }
-            Ok(*self
-                .history
-                .get(self.history.len() - history_distance)
-                .ok_or(Error::InvalidData("RAR 5 match distance exceeds window"))?)
-        }
-    }
-
-    fn flush<E>(
-        &mut self,
-        sink: &mut impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        if self.pending.is_empty() {
-            return Ok(());
-        }
-        sink(DecodedChunk::Bytes(&self.pending)).map_err(StreamDecodeError::Sink)?;
-        self.history.extend(self.pending.iter().copied());
-        self.pending.clear();
-        while self.history.len() > self.history_limit {
-            self.history.pop_front();
-        }
-        Ok(())
-    }
-
-    fn finish<E>(
-        &mut self,
-        sink: &mut impl FnMut(DecodedChunk<'_>) -> std::result::Result<(), E>,
-    ) -> std::result::Result<(), StreamDecodeError<E>> {
-        self.flush(sink)
-    }
-
-    fn into_history(self) -> Vec<u8> {
-        self.history.into()
     }
 }
 
@@ -3137,7 +2831,7 @@ fn e8e9_decode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     let cmp_mask = if include_e9 { 0xfe } else { 0xff };
     let opcode_limit = data.len() - 4;
     let mut opcode_pos = 0usize;
-    while let Some(pos) = super::fast::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
+    while let Some(pos) = super::x86::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
         let cur_pos = pos + 1;
         let offset = file_offset.wrapping_add(cur_pos as u32) % X86_FILTER_FILE_SIZE;
         let addr = u32::from_le_bytes([
@@ -3168,7 +2862,7 @@ fn e8e9_encode(data: &mut [u8], file_offset: u32, include_e9: bool) {
     let cmp_mask = if include_e9 { 0xfe } else { 0xff };
     let opcode_limit = data.len() - 4;
     let mut opcode_pos = 0usize;
-    while let Some(pos) = super::fast::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
+    while let Some(pos) = super::x86::next_x86_opcode(data, opcode_pos, opcode_limit, cmp_mask) {
         let cur_pos = pos + 1;
         let offset = file_offset.wrapping_add(cur_pos as u32) % X86_FILTER_FILE_SIZE;
         let addr = u32::from_le_bytes([
@@ -3244,7 +2938,7 @@ fn length_bonus(distance: usize) -> usize {
     usize::from(distance > 0x100) + usize::from(distance > 0x2000) + usize::from(distance > 0x40000)
 }
 
-pub fn slot_to_length(slot: usize, extra_bits: u32) -> Result<usize> {
+pub(crate) fn slot_to_length(slot: usize, extra_bits: u32) -> Result<usize> {
     if slot < 8 {
         return Ok(slot + 2);
     }
@@ -3263,7 +2957,7 @@ pub fn slot_to_length(slot: usize, extra_bits: u32) -> Result<usize> {
     Ok((((4 | (slot & 3)) << bit_count) | extra_bits as usize) + 2)
 }
 
-pub fn distance_slot_bit_count(slot: usize) -> Result<usize> {
+pub(crate) fn distance_slot_bit_count(slot: usize) -> Result<usize> {
     if slot < 4 {
         Ok(0)
     } else {
@@ -3276,7 +2970,7 @@ pub fn distance_slot_bit_count(slot: usize) -> Result<usize> {
     }
 }
 
-pub fn slot_to_distance(slot: usize, extra_bits: u32) -> Result<usize> {
+pub(crate) fn slot_to_distance(slot: usize, extra_bits: u32) -> Result<usize> {
     if slot < 4 {
         return Ok(slot + 1);
     }
@@ -3293,7 +2987,7 @@ pub fn slot_to_distance(slot: usize, extra_bits: u32) -> Result<usize> {
 }
 
 #[derive(Debug, Clone)]
-pub struct HuffmanTable {
+pub(crate) struct HuffmanTable {
     symbols: Vec<HuffmanSymbol>,
     first_code: [u16; 16],
     first_index: [usize; 16],
@@ -3308,7 +3002,7 @@ struct HuffmanSymbol {
 }
 
 impl HuffmanTable {
-    pub fn from_lengths(lengths: &[u8]) -> Result<Self> {
+    pub(crate) fn from_lengths(lengths: &[u8]) -> Result<Self> {
         let mut count = [0u16; 16];
         for &length in lengths {
             if length > 15 {
@@ -4502,27 +4196,6 @@ mod tests {
     }
 
     #[test]
-    fn streaming_decode_reports_filtered_member_with_typed_sentinel() {
-        let data = b"\xe8\0\0\0\0plain text after call".to_vec();
-        let input = encode_lz_member_with_filter(&data, crate::FilterKind::E8).unwrap();
-        let mut reader = input.as_slice();
-        let mut decoder = Unpack50Decoder::new();
-
-        let error = decoder
-            .decode_member_from_reader_with_dictionary_to_sink(
-                &mut reader,
-                0,
-                data.len(),
-                128 * 1024,
-                false,
-                |_chunk| Ok::<_, std::convert::Infallible>(()),
-            )
-            .unwrap_err();
-
-        assert!(matches!(error, StreamDecodeError::FilteredMember));
-    }
-
-    #[test]
     fn encodes_lz_member_with_e8e9_filter_record() {
         let data = b"\xe9\0\0\0\0jump target through e9".to_vec();
         let input = encode_lz_member_with_filter(&data, crate::FilterKind::E8E9).unwrap();
@@ -5317,126 +4990,6 @@ mod tests {
 
         assert_eq!(result, Err(Error::Cancelled));
         assert!(polls > 1);
-    }
-
-    #[test]
-    fn streaming_decoder_history_is_capped_without_reordering() {
-        let mut decoder = Unpack50Decoder::new();
-        let first_payload = literal_only_payload(b"ABBA");
-        let first =
-            encode_compressed_block(&first_payload, first_payload.len() * 8, true, true).unwrap();
-        let second_payload = literal_only_payload(b"BAAB");
-        let second =
-            encode_compressed_block(&second_payload, second_payload.len() * 8, true, true).unwrap();
-        let mut decoded = Vec::new();
-
-        decoder
-            .decode_member_from_reader_with_dictionary_to_sink(
-                &mut std::io::Cursor::new(&first),
-                0,
-                4,
-                6,
-                false,
-                |chunk| {
-                    match chunk {
-                        DecodedChunk::Bytes(bytes) => decoded.extend_from_slice(bytes),
-                        DecodedChunk::Repeated { byte, len } => {
-                            decoded.extend(std::iter::repeat_n(byte, len));
-                        }
-                    }
-                    Ok::<(), std::io::Error>(())
-                },
-            )
-            .unwrap();
-        assert_eq!(decoded, b"ABBA");
-        assert_eq!(decoder.history, b"ABBA");
-
-        decoded.clear();
-        decoder
-            .decode_member_from_reader_with_dictionary_to_sink(
-                &mut std::io::Cursor::new(&second),
-                0,
-                4,
-                6,
-                true,
-                |chunk| {
-                    match chunk {
-                        DecodedChunk::Bytes(bytes) => decoded.extend_from_slice(bytes),
-                        DecodedChunk::Repeated { byte, len } => {
-                            decoded.extend(std::iter::repeat_n(byte, len));
-                        }
-                    }
-                    Ok::<(), std::io::Error>(())
-                },
-            )
-            .unwrap();
-        assert_eq!(decoded, b"BAAB");
-        assert_eq!(decoder.history, b"BABAAB");
-    }
-
-    #[test]
-    fn streaming_window_accepts_match_beyond_old_64_mib_cap() {
-        const OLD_STREAM_HISTORY_LIMIT: usize = 64 * 1024 * 1024;
-        let distance = OLD_STREAM_HISTORY_LIMIT + 1;
-        let history = vec![b'A'; distance];
-        let mut output = StreamingOutput::new(history, 1, distance, distance);
-        let mut decoded = Vec::new();
-
-        output
-            .copy_match(distance, 1, &mut |chunk| {
-                match chunk {
-                    DecodedChunk::Bytes(bytes) => decoded.extend_from_slice(bytes),
-                    DecodedChunk::Repeated { byte, len } => {
-                        decoded.extend(std::iter::repeat_n(byte, len));
-                    }
-                }
-                Ok::<(), std::io::Error>(())
-            })
-            .unwrap();
-        output
-            .finish(&mut |chunk| {
-                match chunk {
-                    DecodedChunk::Bytes(bytes) => decoded.extend_from_slice(bytes),
-                    DecodedChunk::Repeated { byte, len } => {
-                        decoded.extend(std::iter::repeat_n(byte, len));
-                    }
-                }
-                Ok::<(), std::io::Error>(())
-            })
-            .unwrap();
-
-        assert_eq!(decoded, b"A");
-    }
-
-    #[test]
-    fn streaming_window_zero_fills_match_beyond_declared_dictionary() {
-        let mut output = StreamingOutput::new(vec![b'A'; 8], 1, 7, 8);
-        let mut decoded = Vec::new();
-
-        output
-            .copy_match(8, 1, &mut |chunk| {
-                match chunk {
-                    DecodedChunk::Bytes(bytes) => decoded.extend_from_slice(bytes),
-                    DecodedChunk::Repeated { byte, len } => {
-                        decoded.extend(std::iter::repeat_n(byte, len));
-                    }
-                }
-                Ok::<(), std::io::Error>(())
-            })
-            .unwrap();
-        output
-            .flush(&mut |chunk| {
-                match chunk {
-                    DecodedChunk::Bytes(bytes) => decoded.extend_from_slice(bytes),
-                    DecodedChunk::Repeated { byte, len } => {
-                        decoded.extend(std::iter::repeat_n(byte, len));
-                    }
-                }
-                Ok::<(), std::io::Error>(())
-            })
-            .unwrap();
-
-        assert_eq!(decoded, b"\0");
     }
 
     fn literal_only_payload(data: &[u8]) -> Vec<u8> {

@@ -1,19 +1,18 @@
-//! bzip2 low-level header APIs
+//! bzip2 stream header
 
-pub use self::error::HeaderError;
+pub(crate) use self::error::HeaderError;
 
 mod error;
 
 /// A bzip2 header
 #[derive(Clone)]
-pub struct Header {
-    raw_blocksize: u8,
+pub(crate) struct Header {
     max_blocksize: u32,
 }
 
 impl Header {
     /// Parse a bzip2 header
-    pub fn parse(buf: [u8; 4]) -> Result<Self, HeaderError> {
+    pub(crate) fn parse(buf: [u8; 4]) -> Result<Self, HeaderError> {
         let signature = &buf[..2];
         if signature != b"BZ" {
             return Err(HeaderError::InvalidSignature);
@@ -28,41 +27,18 @@ impl Header {
         match hundred_k_blocksize {
             b'1'..=b'9' => {
                 let raw_blocksize = hundred_k_blocksize - b'0';
-                Self::from_raw_blocksize(raw_blocksize)
+                Ok(Self {
+                    max_blocksize: 100 * 1000 * u32::from(raw_blocksize),
+                })
             }
             _ => Err(HeaderError::InvalidBlockSize),
         }
     }
 
-    /// Construct `Header` from the raw blocksize
-    ///
-    /// # Errors
-    ///
-    /// Returns [`HeaderError::InvalidBlockSize`] if `raw_blocksize`
-    /// isn't `1..=9`
-    pub fn from_raw_blocksize(raw_blocksize: u8) -> Result<Self, HeaderError> {
-        if raw_blocksize < 1 || raw_blocksize > 9 {
-            return Err(HeaderError::InvalidBlockSize);
-        }
-
-        let max_blocksize = 100 * 1000 * u32::from(raw_blocksize);
-        Ok(Self {
-            raw_blocksize,
-            max_blocksize,
-        })
-    }
-
-    /// The raw blocksize, as declared in the bzip2 header
-    ///
-    /// The returned value is always `1..=9`
-    pub fn raw_blocksize(&self) -> u8 {
-        self.raw_blocksize
-    }
-
     /// The maximum blocksize
     ///
     /// The returned value is always `100000..=900000`
-    pub fn max_blocksize(&self) -> u32 {
+    pub(crate) fn max_blocksize(&self) -> u32 {
         self.max_blocksize
     }
 }
@@ -74,7 +50,7 @@ mod tests {
     #[test]
     fn valid_9k() {
         let header = Header::parse(*b"BZh9").unwrap();
-        assert_eq!(header.raw_blocksize(), 9);
         assert_eq!(header.max_blocksize(), 900000);
+        assert_eq!(Header::parse(*b"BZh1").unwrap().max_blocksize(), 100000);
     }
 }

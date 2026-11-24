@@ -45,7 +45,7 @@ fn decodes_every_unencrypted_method_fixture() {
                     read_sizes.push(count);
                     sink.extend_from_slice(&buffer[..count]);
                 }
-                if entry.has_stream {
+                if entry.has_stream() {
                     files += 1;
                     bytes += sink.len() as u64;
                 }

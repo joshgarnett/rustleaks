@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::Read;
 
 use lzma_rust2::{
     Lzma2Reader, LzmaReader,
@@ -13,32 +13,83 @@ use crate::codec::{
     lz4::Lz4Decoder,
     zstd::{ZstdBuffers, ZstdDecoder},
 };
-use crate::{ByteReader, archive::EncoderMethod, block::Block, block::Coder, error::Error};
+use crate::{archive::EncoderMethod, block::Block, block::Coder, error::Error};
+
+/// Working memory of one Zstandard coder: its part of the shared history
+/// and its own fixed buffers.
+pub(crate) struct ZstdSlot<'b> {
+    pub(crate) history: &'b mut [u8],
+    pub(crate) buffers: &'b mut ZstdBuffers,
+}
 
 /// Buffers for the Zstandard coders of one block, taken in decoder order.
-pub(crate) type ZstdPool<'b> = std::slice::IterMut<'b, ZstdBuffers>;
+pub(crate) type ZstdPool<'b> = std::vec::IntoIter<ZstdSlot<'b>>;
 
-/// Allocates the working memory of the Zstandard coders in `block`.
+/// Working memory of the Zstandard coders, kept from block to block.
 ///
-/// All Zstandard decoders of a block are open at the same time, so they
-/// share the memory limit.
-pub(crate) fn zstd_buffers(
-    block: &Block,
-    memory_limit_kb: usize,
-) -> Result<Vec<ZstdBuffers>, Error> {
-    let count = block
-        .coders
-        .iter()
-        .filter(|coder| coder.encoder_method_id() == EncoderMethod::ID_ZSTD)
-        .count();
-    let mut buffers = Vec::new();
-    buffers
-        .try_reserve_exact(count)
-        .map_err(|_| Error::other("unable to allocate the 7z Zstandard buffer table"))?;
-    for _ in 0..count {
-        buffers.push(ZstdBuffers::new(memory_limit_kb / count)?);
+/// Blocks are decoded one after another, so each block reuses the memory of
+/// the block before it. The history is allocated and zeroed once, when the
+/// first block with a Zstandard coder needs it, and never holds more than
+/// the memory limit. Each decoder writes a history byte before it reads it,
+/// so bytes left from an earlier block are never read.
+#[derive(Default)]
+pub(crate) struct ZstdBufferCache {
+    history: Vec<u8>,
+    buffers: Vec<ZstdBuffers>,
+}
+
+impl ZstdBufferCache {
+    /// Returns working memory for the Zstandard coders in `block`.
+    ///
+    /// All Zstandard decoders of a block are open at the same time, so they
+    /// share the memory limit equally.
+    pub(crate) fn for_block(
+        &mut self,
+        block: &Block,
+        memory_limit_kb: usize,
+    ) -> Result<ZstdPool<'_>, Error> {
+        let count = block
+            .coders
+            .iter()
+            .filter(|coder| coder.encoder_method_id() == EncoderMethod::ID_ZSTD)
+            .count();
+        let mut slots = Vec::new();
+        if count == 0 {
+            return Ok(slots.into_iter());
+        }
+        let overflow = || Error::other("7z decoder memory limit overflow");
+        let history_len = (memory_limit_kb / count)
+            .checked_mul(1024)
+            .ok_or_else(overflow)?;
+        let total = history_len.checked_mul(count).ok_or_else(overflow)?;
+        if let Some(missing) = total.checked_sub(self.history.len()).filter(|&n| n > 0) {
+            self.history
+                .try_reserve_exact(missing)
+                .map_err(|_| Error::other("unable to allocate the 7z Zstandard history buffer"))?;
+            self.history.resize(total, 0);
+        }
+        if let Some(missing) = count.checked_sub(self.buffers.len()).filter(|&n| n > 0) {
+            self.buffers
+                .try_reserve_exact(missing)
+                .map_err(|_| Error::other("unable to allocate the 7z Zstandard buffer table"))?;
+            for _ in 0..missing {
+                self.buffers.push(ZstdBuffers::new()?);
+            }
+        }
+        slots
+            .try_reserve_exact(count)
+            .map_err(|_| Error::other("unable to allocate the 7z Zstandard buffer table"))?;
+        let mut history = &mut self.history[..total];
+        for buffers in &mut self.buffers[..count] {
+            let (own, rest) = std::mem::take(&mut history).split_at_mut(history_len);
+            history = rest;
+            slots.push(ZstdSlot {
+                history: own,
+                buffers,
+            });
+        }
+        Ok(slots.into_iter())
     }
-    Ok(buffers)
 }
 
 pub enum Decoder<'b, R: Read> {
@@ -82,19 +133,21 @@ pub fn add_decoder<'b, I: Read>(
     let method = if let Some(m) = method {
         m
     } else {
-        return Err(Error::UnsupportedCompressionMethod(format!(
-            "{:?}",
-            coder.encoder_method_id()
-        )));
+        let id: String = coder
+            .encoder_method_id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        return Err(Error::UnsupportedCompressionMethod(format!("id {id}")));
     };
     match method.id() {
         EncoderMethod::ID_COPY => Ok(Decoder::Copy(input)),
         EncoderMethod::ID_LZMA => {
-            let dict_size = get_lzma_dic_size(coder)?;
-            if coder.properties.is_empty() {
-                return Err(Error::Other("LZMA properties too short".into()));
-            }
-            let props = coder.properties[0];
+            // One byte of literal and position bits, then a 32-bit dictionary size.
+            let &[props, d0, d1, d2, d3, ..] = coder.properties.as_slice() else {
+                return Err(Error::other("LZMA properties too short"));
+            };
+            let dict_size = u32::from_le_bytes([d0, d1, d2, d3]);
             let mem_size = usize::try_from(
                 lzma_get_memory_usage_by_props(dict_size, props)
                     .map_err(|error| Error::other(error.to_string()))?,
@@ -103,7 +156,7 @@ pub fn add_decoder<'b, I: Read>(
             if mem_size > max_mem_limit_kb {
                 return Err(Error::MaxMemLimited {
                     max_kb: max_mem_limit_kb,
-                    actaul_kb: mem_size,
+                    actual_kb: mem_size,
                 });
             }
             let lz =
@@ -116,7 +169,7 @@ pub fn add_decoder<'b, I: Read>(
             if mem_size > max_mem_limit_kb {
                 return Err(Error::MaxMemLimited {
                     max_kb: max_mem_limit_kb,
-                    actaul_kb: mem_size,
+                    actual_kb: mem_size,
                 });
             }
 
@@ -141,10 +194,10 @@ pub fn add_decoder<'b, I: Read>(
             Ok(Decoder::Lz4(de))
         }
         EncoderMethod::ID_ZSTD => {
-            let buffers = zstd
+            let slot = zstd
                 .next()
                 .ok_or_else(|| Error::other("no buffers for a 7z Zstandard coder"))?;
-            let de = ZstdDecoder::new(input, uncompressed_len, buffers)?;
+            let de = ZstdDecoder::new(input, uncompressed_len, slot)?;
             Ok(Decoder::Zstd(Box::new(de)))
         }
         EncoderMethod::ID_BCJ_X86 => {
@@ -212,11 +265,6 @@ fn get_lzma2_dic_size(coder: &Coder) -> Result<u32, Error> {
     Ok(size)
 }
 
-fn get_lzma_dic_size(coder: &Coder) -> io::Result<u32> {
-    let mut props = &coder.properties[1..5];
-    props.read_u32()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,7 +288,7 @@ mod tests {
             1,
             &coder(EncoderMethod::ID_LZMA, properties),
             1,
-            &mut [].iter_mut(),
+            &mut Vec::new().into_iter(),
         );
         assert!(matches!(result, Err(Error::MaxMemLimited { .. })));
     }
@@ -252,8 +300,65 @@ mod tests {
             1,
             &coder(EncoderMethod::ID_LZMA2, vec![20]),
             1,
-            &mut [].iter_mut(),
+            &mut Vec::new().into_iter(),
         );
         assert!(matches!(result, Err(Error::MaxMemLimited { .. })));
+    }
+
+    fn zstd_block(count: usize) -> Block {
+        let mut block = Block::default();
+        for _ in 0..count {
+            block.coders.push(coder(EncoderMethod::ID_ZSTD, Vec::new()));
+        }
+        block.coders.push(coder(EncoderMethod::ID_COPY, Vec::new()));
+        block
+    }
+
+    fn history_lens(cache: &mut ZstdBufferCache, count: usize, limit_kb: usize) -> Vec<usize> {
+        let slots = cache.for_block(&zstd_block(count), limit_kb).unwrap();
+        slots.map(|slot| slot.history.len()).collect()
+    }
+
+    #[test]
+    fn zstd_history_is_allocated_once_and_shared_by_the_coders_of_a_block() {
+        const LIMIT_KB: usize = 1024;
+        let mut cache = ZstdBufferCache::default();
+        assert!(history_lens(&mut cache, 0, LIMIT_KB).is_empty());
+        assert!(cache.history.is_empty());
+
+        assert_eq!(history_lens(&mut cache, 1, LIMIT_KB), [1024 * 1024]);
+        let start = cache.history.as_ptr();
+        // Later blocks reuse the history without allocating or zeroing it.
+        for _ in 0..3 {
+            assert_eq!(history_lens(&mut cache, 1, LIMIT_KB), [1024 * 1024]);
+            assert_eq!(cache.history.as_ptr(), start);
+        }
+        // Coders of one block split the limit, inside the same allocation.
+        assert_eq!(
+            history_lens(&mut cache, 2, LIMIT_KB),
+            [512 * 1024, 512 * 1024]
+        );
+        assert_eq!(history_lens(&mut cache, 3, LIMIT_KB), [341 * 1024; 3]);
+        assert_eq!(cache.history.as_ptr(), start);
+        assert_eq!(cache.history.len(), 1024 * 1024);
+        assert_eq!(cache.buffers.len(), 3);
+        // Less than 1 KiB for each coder leaves every history empty.
+        assert_eq!(history_lens(&mut cache, 2, 1), [0, 0]);
+    }
+
+    #[test]
+    fn rejects_short_lzma_properties() {
+        for properties in [vec![], vec![0x5d, 0, 0, 1]] {
+            let result = add_decoder(
+                &[][..],
+                1,
+                &coder(EncoderMethod::ID_LZMA, properties),
+                64 * 1024,
+                &mut Vec::new().into_iter(),
+            );
+            assert!(
+                matches!(&result, Err(Error::Other(message)) if message == "LZMA properties too short")
+            );
+        }
     }
 }

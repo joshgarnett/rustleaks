@@ -6,7 +6,7 @@ use std::io;
 ///
 /// [`Header`]: crate::header::Header
 #[derive(Debug, Clone, PartialEq)]
-pub enum HeaderError {
+pub(crate) enum HeaderError {
     /// The file signature isn't valid (should be `BZ`)
     InvalidSignature,
     /// The bzip2 version isn't supported (only the huffman version is supported)

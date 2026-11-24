@@ -33,6 +33,53 @@
 //! gigabytes keep only their low half; `resolve` measures back from the newest
 //! position inserted to recover the rest.
 
+/// Returns how many bytes at `pos` match the bytes `distance` back, up to
+/// `max_length` and the end of `input`.
+pub(crate) fn match_length(input: &[u8], pos: usize, distance: usize, max_length: usize) -> usize {
+    if distance == 0 || distance > pos {
+        return 0;
+    }
+
+    let max_length = max_length.min(input.len().saturating_sub(pos));
+    let mut length = 0;
+    while length + 32 <= max_length {
+        for offset in [0, 8, 16, 24] {
+            let current = u64::from_le_bytes(
+                input[pos + length + offset..pos + length + offset + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            let previous = u64::from_le_bytes(
+                input[pos + length + offset - distance..pos + length + offset - distance + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            let difference = current ^ previous;
+            if difference != 0 {
+                return length + offset + (difference.trailing_zeros() / 8) as usize;
+            }
+        }
+        length += 32;
+    }
+    while length + 8 <= max_length {
+        let current = u64::from_le_bytes(input[pos + length..pos + length + 8].try_into().unwrap());
+        let previous = u64::from_le_bytes(
+            input[pos + length - distance..pos + length - distance + 8]
+                .try_into()
+                .unwrap(),
+        );
+        let difference = current ^ previous;
+        if difference != 0 {
+            return length + (difference.trailing_zeros() / 8) as usize;
+        }
+        length += 8;
+    }
+    while length < max_length && input[pos + length] == input[pos + length - distance] {
+        length += 1;
+    }
+    length
+}
+
 /// Sentinel for "no position" in `head`/`prev` chains.
 pub(crate) const NO_POSITION: usize = usize::MAX;
 
@@ -284,7 +331,46 @@ impl TreeMatchFinder {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve, MatchFinder, TreeMatchFinder, NO_LINK, NO_POSITION};
+    use super::{match_length, resolve, MatchFinder, TreeMatchFinder, NO_LINK, NO_POSITION};
+
+    fn reference_match_length(
+        input: &[u8],
+        pos: usize,
+        distance: usize,
+        max_length: usize,
+    ) -> usize {
+        let mut length = 0usize;
+        while length < max_length && input[pos + length] == input[pos + length - distance] {
+            length += 1;
+        }
+        length
+    }
+
+    #[test]
+    fn match_length_matches_bytewise_around_chunk_boundaries() {
+        let mut input = Vec::new();
+        input.extend((0..192).map(|index| (index % 251) as u8));
+        input.extend_from_within(64..192);
+
+        for distance in 1..=64 {
+            let pos = 192usize;
+            let max = (input.len() - pos).min(96);
+            let expected = reference_match_length(&input, pos, distance, max);
+            assert_eq!(match_length(&input, pos, distance, max), expected);
+        }
+    }
+
+    #[test]
+    fn match_length_stops_at_first_mismatch_in_chunk_tail() {
+        let mut input = b"abcdefghijklmnopqrstuvwxyz012345".repeat(4);
+        let pos = 64;
+        input[pos + 37] ^= 0x55;
+
+        assert_eq!(
+            match_length(&input, pos, 32, 64),
+            reference_match_length(&input, pos, 32, 64)
+        );
+    }
 
     /// Four repeats of the same four bytes, so every position shares a hash and
     /// they form one chain.

@@ -2,6 +2,10 @@
 //!
 //! The crate decodes only. It has no encoder, no file system extraction and
 //! no worker threads.
+//!
+//! The code is derived from `sevenz-rust2` 0.20.2 (Apache-2.0) and changed
+//! for Rustleaks. The changes are listed in `docs/dev/dependencies.md`, in
+//! the "Fork changes" section.
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
@@ -16,15 +20,12 @@ pub(crate) mod block;
 mod crc;
 pub(crate) mod decoder;
 
-mod time;
-
 use std::io::Read;
 
-pub use archive::*;
-pub use block::*;
+pub use archive::{Archive, ArchiveEntry};
+pub use block::Block;
 pub use error::Error;
-pub use reader::{ArchiveReader, BlockDecoder};
-pub use time::NtTime;
+pub use reader::ArchiveReader;
 
 trait ByteReader {
     fn read_u8(&mut self) -> std::io::Result<u8>;
