@@ -63,8 +63,8 @@ labels. A maintainer applies labels during triage.
 | `wontfix` | The maintainer decided not to make the change. Explain why and close the issue. |
 | `invalid` | The report is not a Rustleaks problem or does not follow this policy. Close the issue. |
 
-Dependabot adds `dependencies` and an ecosystem label (`rust`,
-`github_actions` or `rust_toolchain_package_manager`) to its pull requests.
+Dependabot adds `dependencies` and an ecosystem label, such as `rust` or
+`github_actions`, to its pull requests.
 Do not apply the ecosystem labels to issues. Add `accessibility` to an issue
 when the problem is a barrier for people with disabilities.
 
@@ -112,8 +112,8 @@ Do not make a functional test depend on timing. See
 [Testing](docs/dev/testing.md) for how to add and
 register tests.
 
-Cross-compilation proves only that the code compiles. It does not show
-runtime support for a target.
+[Platforms](docs/dev/testing.md#platforms) says what cross-compilation
+proves and what a target support claim needs.
 
 Use Cargo only for package metadata, crates.io packaging, `cargo xtask`, and
 the named security, fuzz, Miri and MSRV tools. Never use Cargo to work around
@@ -122,27 +122,15 @@ the Cargo, crate-universe and Bazel module lockfiles.
 
 ## Test data
 
-- A change to the default rules or a rule file follows the rule maintenance
-  procedure and has a changelog entry.
-- A case under `testdata/` may change only with a reviewed change to the
-  behavior it covers. Write its new expected value from the intended
-  behavior. See [Test data](docs/dev/testing.md#test-data). Never edit
-  copied fixtures.
+Follow [Rules for tests](docs/dev/testing.md#rules-for-tests) and
+[Test data](docs/dev/testing.md#test-data). In addition:
+
+- A change to the default rules or a rule file follows
+  [Rule pack authoring](docs/dev/rule-pack-authoring.md) and has a changelog
+  entry.
 - Regenerate the public API snapshot as described in
   `testdata/public-api/README.md` when the `rustleaks-core` API changes.
-- New regression tests need findings, spans, fingerprints, report fields,
-  exit codes and error classes that are specified independently, positive and
-  negative cases, and stable names. Never generate these expected values from
-  current Rust output.
-- Explain every intended functional change, and add a test that fails when
-  the behavior breaks.
-- A presentation change, such as help, usage, error wording or log text,
-  updates the affected test expectation. A reviewer checks the new text
-  against the stated intent.
-- Use synthetic or reviewed copied test values. Keep copied bytes, modes,
-  symbolic links, provenance, hashes, licenses and attribution.
-- Keep suspected findings and fuzz crash artifacts private until their
-  contents are reviewed.
+- Explain every intended functional change in the pull request.
 
 ## Commits
 

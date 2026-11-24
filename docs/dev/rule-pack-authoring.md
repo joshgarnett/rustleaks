@@ -1,11 +1,12 @@
 # Rule pack authoring
 
-This page is for contributors who add or change rules in the native rule
-packs, the rule files that hold the Rustleaks rules. Every scan without a
-configuration, and every configuration with `[extend] useDefault = true`,
-uses all of them. The page covers the pack files, the rules the native loader
-enforces, the native-only rule features, and the steps for a change. For what
-users see, see [Built-in rules](../user/built-in-rules.md).
+This page is for contributors who add or change built-in rules: the default
+rules and the Rustleaks rule files. The `NativePolicy` API and this page call
+a Rustleaks rule file a pack. Every scan without a configuration, and every
+configuration with `[extend] useDefault = true`, uses all of them. The page
+covers the pack files, the rules the native loader enforces, the native-only
+rule features, and the steps for a change. For what users see, see
+[Built-in rules](../user/built-in-rules.md).
 
 ## Packs and their files
 
@@ -90,13 +91,10 @@ framing is an equality check, not a digest and not authentication.
   are not part of the identity. Consumers that cache results must bind them
   separately.
 
-The CLI debug log prints only `builtin_review_reference()`. That reference
-covers the full composition, not an `--enable-rule` selection.
-
 ## Native-only rule features
 
 These features work only in packs loaded through `NativePolicy`. Rules that
-do not use them keep the normal Gitleaks behavior.
+do not use them keep the standard rule behavior.
 
 ### Byte regex dialect
 
@@ -207,7 +205,7 @@ entropy = { algorithm = "byte-shannon-f64-v1", reject = "lt", threshold = 3.5 }
 - `CompiledRule::native_entropy()` returns the table. The older `entropy()`
   accessor returns zero for these rules.
 
-Scalar `entropy = 3.5` keeps the Gitleaks behavior: character counts and `<=`
+Scalar `entropy = 3.5` keeps the standard behavior: character counts and `<=`
 rejection, with zero meaning off.
 
 ### Secret predicates
@@ -331,18 +329,43 @@ Rustleaks does not check whether a credential is live, does not revoke
 credentials, loads no runtime plugins and uses no learned filters. Adding
 any of these needs a concrete user need and a reviewed safety design.
 
+## Changing the default rules
+
+The shipped default rules, `crates/rustleaks-core/default/gitleaks.toml`,
+started from the Gitleaks default configuration and are maintained in place.
+Do not edit `testdata/config-corpus/default-gitleaks.toml`: it is test input
+for the configuration cases, not a copy of the shipped rules.
+
+A change to the default rules needs normal review, and:
+
+- tests with expectations from the change's definition, including near
+  misses that must stay findings;
+- for an added allowlist, an update to
+  `crates/rustleaks-core/tests/default_rules.rs`, which names the allowlists
+  that Rustleaks adds;
+- updates of `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and
+  `DEFAULT_RULES_SHA256` in `xtask`, and a regenerated quality baseline
+  (see [Quality corpus](#quality-corpus));
+- an update to [Default rules](../user/built-in-rules.md#default-rules) when
+  users see the change, and a changelog entry; and
+- a measurement on a held-out set that was not used to design the change.
+
+A change that makes Rustleaks miss secrets it found before needs maintainer
+approval. Run these targets first:
+
+```sh
+bazelisk test //crates/rustleaks-core:default_rule_corpus_test
+bazelisk test //crates/rustleaks-core:detect_corpus_test
+bazelisk test //crates/rustleaks-core:allowlist_test
+```
+
 ## Changing a pack
 
 ### Choose where the rule goes
 
-- Use `rustleaks-providers-v1` for provider API keys and tokens,
-  `rustleaks-connections-v1` for passwords in connection strings and URLs,
-  and `rustleaks-extra-v1` for the small first-party set.
-- Changes to the shipped default rules
-  (`crates/rustleaks-core/default/gitleaks.toml`) follow [A detection
-  rule](architecture.md#a-detection-rule). Do not edit
-  `testdata/config-corpus/default-gitleaks.toml`, which is test input for the
-  configuration cases.
+Use `rustleaks-providers-v1` for provider API keys and tokens,
+`rustleaks-connections-v1` for passwords in connection strings and URLs, and
+`rustleaks-extra-v1` for the small first-party set.
 
 ### Imported rules
 
@@ -396,7 +419,10 @@ to update `rustleaks-extra-v1.sha256`.
 
 Write synthetic positive cases, near misses, entropy boundaries, exact
 locations, ASCII and Unicode differences, invalid bytes, allowlist cases and
-overlap with the default rules. Write the expected findings by hand.
+overlap with the default rules. Write the expected findings by hand. A rule
+that reports the same secret as another built-in rule needs an `[[overlaps]]`
+entry and a case in `tests/rule_overlaps.rs`; see
+[Same secret from two rules](#same-secret-from-two-rules).
 
 | Test file in `crates/rustleaks-core/tests/` | Covers |
 | --- | --- |
@@ -413,7 +439,13 @@ Run the narrow target first:
 ```sh
 bazelisk test //crates/rustleaks-core:provider_rules_test
 bazelisk test //crates/rustleaks-core:connection_rules_test
+bazelisk test //crates/rustleaks-core:native_rules_test
+bazelisk test //crates/rustleaks-core:native_policy_test
+bazelisk test //crates/rustleaks-core:rule_overlaps_test
 ```
+
+Add `bazelisk test //crates/rustleaks-core:config_test` for a TOML, extension
+or configuration loading change.
 
 A new test file must be registered. See
 [Testing](testing.md#adding-a-test).
@@ -497,11 +529,17 @@ These notes add to the steps above.
   writes the hash. Check mode rejects changed patterns, missing predicates,
   added rule fields, changed identities and license changes.
 - A change needs a source review, new independent expected results and a
-  versioned policy decision.
+  changelog entry.
 
 ### Documentation and review
 
-- Update the pack's `.md` file, the rule counts in this page and the user
+- When a rule is added or removed, update the rule counts by hand. They are
+  in the pack's `.md` file, in the table under
+  [Packs and their files](#packs-and-their-files), in the total under
+  [rustleaks-providers-v1](#rustleaks-providers-v1), and in the count
+  assertions in `provider_rules.rs`, `config.rs`, `rule_precedence.rs` and
+  `remaining_verified_rules.rs`.
+- Update the pack's `.md` file and the user
   [built-in rules guide](../user/built-in-rules.md) when its description
   changes.
 - Run `just ci`. Run `just fuzz-smoke` when you change regex, decoder or
