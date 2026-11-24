@@ -160,6 +160,9 @@ See [Using rustleaks-core](../user/library.md#review-records).
   removed on every exit path, including a killed process. The spool limit
   bounds the bytes held at once by one traversal. A memory-backed temporary
   folder turns spool files into memory use.
+- The RAR3 PPMd model has no Rustleaks limit. It grows with the decoded
+  data, up to about 80 bytes for each decoded byte in a measured worst case,
+  so one member within the 64 MiB limit can use several GB.
 - The XZ decoder sizes its dictionary from the stream header without a
   Rustleaks limit. Bzip2 blocks are at most 900 kB, and large-window Brotli is
   rejected.

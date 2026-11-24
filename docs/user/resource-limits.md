@@ -215,7 +215,9 @@ The limits work as follows:
   headers, and the decoder dictionaries of 7z, Zstandard and LZIP. Each is
   limited to 64 MiB, or to the member limit if it is lower. A RAR member over
   the limit skips the rest of the RAR archive. A larger dictionary or 7z
-  header skips the stream or archive.
+  header skips the stream or archive. The model of a RAR3 member compressed with
+  PPMd is not limited. It grows with the decoded data: in a measured worst
+  case, 1 MiB of decoded data used about 49 MB and 4 MiB used up to 330 MB.
 - **Git.** An archive file from Git history is copied to temporary storage
   before it is read. A file larger than `git_blob_bytes` or the temporary
   storage limit is skipped with a warning, and the history scan continues.

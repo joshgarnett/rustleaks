@@ -29,6 +29,15 @@
   release to a pre-release. `Update Package Managers` checks the release tag
   against the release commit, and its publish job runs only Git and the
   GitHub CLI.
+- A 7z archive can no longer make Rustleaks use far more memory than its
+  limits. An encoded header must decode to no more than the 7z memory limit
+  (64 MiB, or the member limit if lower), or the archive is skipped with a
+  limit warning. An archive that declares more entries than the entry limit
+  is skipped before its file table is built, with the same warning as
+  before. 7z members compressed with Zstandard are decoded as a stream, so
+  memory no longer grows with the member size. A Zstandard member whose
+  compressed size is above the memory limit is now scanned instead of
+  skipped.
 - A configuration file that fails to parse or decode no longer prints its
   text. The error names the kind of error, the file and the line and
   column. A configuration in the scanned folder can name any readable file
