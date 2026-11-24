@@ -19,7 +19,7 @@ pub(crate) use reporting::run as report;
 mod development_fixtures;
 pub(crate) use development_fixtures::run as fixtures;
 
-const TARGET: &str = "//crates/rustleaks-compat:rustleaks_perf";
+const TARGET: &str = "//crates/rustleaks-eval:rustleaks_perf";
 const BUILD_FLAGS: &[&str] = &["--compilation_mode=opt", "--stamp=no"];
 const MEASUREMENT_SCOPE: &str = "legacy-v1-includes-verification";
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -427,7 +427,7 @@ fn prepare_with_flags(root: &Path, extra_flags: &[&str], scope: &str) -> Result<
 }
 
 /// Directory whose every `.rs` file defines benchmark workloads.
-const PERF_WORKLOAD_DIRECTORY: &str = "crates/rustleaks-compat/src/perf";
+const PERF_WORKLOAD_DIRECTORY: &str = "crates/rustleaks-eval/src/perf";
 
 /// Other files that define the benchmark workloads, outside
 /// [`PERF_WORKLOAD_DIRECTORY`].
@@ -476,7 +476,7 @@ fn workload_definition_files(root: &Path) -> Result<Vec<String>, String> {
         return Err(format!("{PERF_WORKLOAD_DIRECTORY} has no workload sources"));
     }
     scanned.sort();
-    let mut files = vec!["crates/rustleaks-compat/src/bin/rustleaks-perf.rs".to_owned()];
+    let mut files = vec!["crates/rustleaks-eval/src/bin/rustleaks-perf.rs".to_owned()];
     files.extend(scanned);
     files.extend(PERF_WORKLOAD_FILES.iter().map(|&name| name.to_owned()));
     Ok(files)

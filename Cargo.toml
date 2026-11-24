@@ -7,7 +7,7 @@ members = [
     "crates/rustleaks-sources",
     "crates/rustleaks-report",
     "crates/rustleaks-cli",
-    "crates/rustleaks-compat",
+    "crates/rustleaks-eval",
     "crates/xtask",
 ]
 resolver = "2"

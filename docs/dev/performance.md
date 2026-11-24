@@ -56,7 +56,7 @@ may reuse its engine across measured iterations.
 
 ## Build identity
 
-The tools build `//crates/rustleaks-compat:rustleaks_perf` with
+The tools build `//crates/rustleaks-eval:rustleaks_perf` with
 `--compilation_mode=opt --stamp=no` and read the Rust compile actions. Each
 report records:
 
@@ -262,7 +262,7 @@ Notes for some groups:
   line or 25,000 extra bytes. A file without line breaks gives one
   125,000-byte fragment and then 28,672-byte fragments.
 - Archive workloads run through the archive test driver, because
-  `rustleaks-compat` does not turn on the `archives` feature. Zstandard and
+  `rustleaks-eval` does not turn on the `archives` feature. Zstandard and
   bzip2 fixtures are hand-built zero runs, since no encoder is available
   without a new dependency.
 - The `fragments` workloads end each fragment with one reviewed private-key
@@ -280,7 +280,7 @@ selected configuration, so only plants can produce findings.
 
 Each module lists its workloads and how their expected outcomes are built.
 The shared generators are in `suite_support.rs`. All files are in
-`crates/rustleaks-compat/src/perf/`:
+`crates/rustleaks-eval/src/perf/`:
 
 | Group | Module |
 | --- | --- |

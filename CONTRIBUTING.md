@@ -166,7 +166,7 @@ Choose the narrowest type:
 | `chore` | Narrow maintenance that fits no other type. |
 
 When useful, choose the narrowest stable lowercase scope: `core`, `sources`,
-`report`, `cli`, `compat`, `xtask`, `bazel`, `deps`, `docs`, `ci`,
+`report`, `cli`, `eval`, `xtask`, `bazel`, `deps`, `docs`, `ci`,
 `security` (the security policy and checks) or `release`. Omit the scope for
 a change that crosses many areas. Never use a goal, agent, review round,
 ticket or temporary task as a scope.

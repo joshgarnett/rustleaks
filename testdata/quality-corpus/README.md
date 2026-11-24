@@ -7,7 +7,7 @@ intended input, not from detector output. Unlike the other corpora in
 precision on real repositories, check that a value is a valid provider
 format, or check whether a credential works.
 
-`crates/rustleaks-compat/src/evaluation/generator.rs` generates
+`crates/rustleaks-eval/src/evaluation/generator.rs` generates
 `cases-v1.json`, using the separate case catalog in `native_cases.rs`. The evaluator
 writes `baseline-v1.json`. Both files are generated; do not edit them by
 hand. All material in this corpus is covered by the repository's MIT license.
@@ -18,14 +18,14 @@ It contains no live credentials and no external data.
 Format the generator and evaluator, then run from the repository root:
 
 ```sh
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- generate
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- check
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- check-baseline
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- generate
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- check
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- check-baseline
 ```
 
 `just quality-eval` checks the corpus and prints the current report. The
-`rustleaks-compat` unit tests check that the corpus regenerates exactly, that
+`rustleaks-eval` unit tests check that the corpus regenerates exactly, that
 the baseline replays, and that the metrics match hand-calculated controls.
 Regeneration can change source fingerprints without changing counts. Review
 counts and labels on their own. Never change a label to improve a detector's

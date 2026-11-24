@@ -21,7 +21,7 @@ contributors. For how to run and add tests, see
 | `session-corpus/` | Baselines, ignore files and fingerprints | `//crates/rustleaks-core:session_corpus_test` |
 | `source-corpus/` | Readers, files, directories, symlinks and archives | `//crates/rustleaks-sources:source_corpus_test` |
 | `fixtures/` | Copied fixture files with their licenses | Many tests |
-| `quality-corpus/` | Synthetic detection quality cases and their baseline (generated) | `//crates/rustleaks-compat:rustleaks_compat_unit_test`, `just quality-eval` |
+| `quality-corpus/` | Synthetic detection quality cases and their baseline (generated) | `//crates/rustleaks-eval:rustleaks_eval_unit_test`, `just quality-eval` |
 | `public-api/` | The `rustleaks-core` public API snapshot (generated) | `cargo xtask public-api-check` |
 | `BUILD.bazel` | The `all`, `corpora` and `fixtures` file groups that tests use as data | Bazel |
 
@@ -96,8 +96,8 @@ Do not edit generated files by hand. Regenerate them with these commands:
 
 | Files | Command |
 | --- | --- |
-| `quality-corpus/cases-v1.json` | `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- generate` |
-| `quality-corpus/baseline-v1.json` | `bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline` |
+| `quality-corpus/cases-v1.json` | `bazelisk run //crates/rustleaks-eval:rustleaks_quality -- generate` |
+| `quality-corpus/baseline-v1.json` | `bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline` |
 | `public-api/rustleaks-core.txt` | `cargo +nightly-2026-08-21 public-api -p rustleaks-core -sss --color never`, with `cargo-public-api` 0.52.0 |
 
 The quality tool also accepts `check` and `check-baseline`. `just quality-eval`

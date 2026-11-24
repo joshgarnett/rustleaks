@@ -31,13 +31,13 @@ between them, and where to make common changes. For using the library, see
 | `rustleaks-sources` | Files, directories, standard input, archives, Git, links to findings, cancellation and the bounded source runner | No |
 | `rustleaks-report` | JSON, CSV, JUnit, SARIF and safe template reports | No |
 | `rustleaks-cli` | The `rustleaks` command: arguments, configuration discovery, running a scan, output and exit codes | No |
-| `rustleaks-compat` | Quality evaluation and performance workloads | No |
+| `rustleaks-eval` | Quality evaluation and performance workloads | No |
 | `xtask` | Repository checks, generators, release, security, fuzz and performance tools | No |
 | `rustleaks-bzip2`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Safe forks of archive decoders, used only by `rustleaks-sources` (and `rustleaks-sevenz` uses `rustleaks-bzip2`) | No |
 
 Dependencies point one way: `rustleaks-sources` and `rustleaks-report` depend
 on `rustleaks-core`, and `rustleaks-cli` depends on all three. Nothing depends
-on `rustleaks-cli`, `rustleaks-compat` or `xtask`.
+on `rustleaks-cli`, `rustleaks-eval` or `xtask`.
 
 The archive decoders sit behind the `archives` feature of
 `rustleaks-sources`. No decoder type crosses the source API, and no decoder
@@ -72,7 +72,7 @@ need, for example the engine alone.
 ### Workspace, CLI and tools
 
 The workspace root owns package policy and validation. The CLI is a thin
-consumer of the libraries. `rustleaks-compat` and `xtask` are test and
+consumer of the libraries. `rustleaks-eval` and `xtask` are test and
 maintenance tools. They are never published.
 
 ### Configuration

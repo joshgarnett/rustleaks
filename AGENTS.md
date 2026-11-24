@@ -24,7 +24,7 @@ runtimes and native libraries. It reads no files except through the two
 explicit file helpers named in the architecture. Source adapters belong in
 `rustleaks-sources`, formatting in `rustleaks-report`, orchestration in
 `rustleaks-cli`, and unpublished regression or maintenance code in
-`rustleaks-compat` or `xtask`. Owned codec crates are source implementation
+`rustleaks-eval` or `xtask`. Owned codec crates are source implementation
 details and must not enter the default core graph or public API. See
 [the architecture](docs/dev/architecture.md).
 

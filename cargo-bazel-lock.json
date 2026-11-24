@@ -1,5 +1,5 @@
 {
-  "checksum": "9d2bea2f702bdeb20d02641579f429456fc181b969d238b480c6b7d5b4f2b994",
+  "checksum": "3299cffdecf0b354e553c361fd4f66bc82c76842a66041ea9fabbf5d17febb4f",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -2086,52 +2086,6 @@
       ],
       "license_file": null
     },
-    "rustleaks-compat 0.1.0-alpha.12": {
-      "name": "rustleaks-compat",
-      "version": "0.1.0-alpha.12",
-      "package_url": null,
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "rustleaks_compat",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "rustleaks_compat",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            },
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0-alpha.12"
-      },
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "license_file": null
-    },
     "rustleaks-core 0.1.0-alpha.12": {
       "name": "rustleaks-core",
       "version": "0.1.0-alpha.12",
@@ -2204,6 +2158,52 @@
       "license_ids": [
         "Apache-2.0",
         "BSD-3-Clause",
+        "MIT"
+      ],
+      "license_file": null
+    },
+    "rustleaks-eval 0.1.0-alpha.12": {
+      "name": "rustleaks-eval",
+      "version": "0.1.0-alpha.12",
+      "package_url": null,
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "rustleaks_eval",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "rustleaks_eval",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0-alpha.12"
+      },
+      "license": "MIT",
+      "license_ids": [
         "MIT"
       ],
       "license_file": null
@@ -4079,8 +4079,8 @@
   "workspace_members": {
     "rustleaks-bzip2 0.1.2-rustleaks.1": "crates/rustleaks-bzip2",
     "rustleaks-cli 0.1.0-alpha.12": "crates/rustleaks-cli",
-    "rustleaks-compat 0.1.0-alpha.12": "crates/rustleaks-compat",
     "rustleaks-core 0.1.0-alpha.12": "crates/rustleaks-core",
+    "rustleaks-eval 0.1.0-alpha.12": "crates/rustleaks-eval",
     "rustleaks-rar-codec 0.9.3-rustleaks.1": "crates/rustleaks-rar-codec",
     "rustleaks-report 0.1.0-alpha.12": "crates/rustleaks-report",
     "rustleaks-sevenz 0.20.2-rustleaks.1": "crates/rustleaks-sevenz",

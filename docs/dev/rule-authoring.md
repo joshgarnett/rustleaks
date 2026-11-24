@@ -457,8 +457,8 @@ default rules with `rustleaks-extra-v1`. Its labels are written
 independently of detector output. Regenerate and check it with:
 
 ```sh
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- generate
-bazelisk run //crates/rustleaks-compat:rustleaks_quality -- baseline
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- generate
+bazelisk run //crates/rustleaks-eval:rustleaks_quality -- baseline
 just quality-eval
 ```
 

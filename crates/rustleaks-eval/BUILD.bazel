@@ -12,8 +12,8 @@ _DEPS = [
 ]
 
 rustleaks_library(
-    name = "rustleaks_compat",
-    crate_name = "rustleaks_compat",
+    name = "rustleaks_eval",
+    crate_name = "rustleaks_eval",
     data = ["//testdata:all"],
     deps = ["//crates/rustleaks-core:rustleaks_core"],
     docs = False,
@@ -30,7 +30,7 @@ rust_binary(
     deps = all_crate_deps(normal = True) + _DEPS,
     edition = "2024",
     rustc_env = {
-        "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
+        "CARGO_MANIFEST_DIR": "crates/rustleaks-eval",
         "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
     srcs = ["src/bin/rustleaks-perf.rs"] + glob(["src/perf/*.rs"]),
@@ -43,10 +43,10 @@ rust_binary(
     crate_name = "rustleaks_quality",
     crate_root = "src/bin/rustleaks-quality.rs",
     data = ["//testdata:all"],
-    deps = all_crate_deps(normal = True) + [":rustleaks_compat"],
+    deps = all_crate_deps(normal = True) + [":rustleaks_eval"],
     edition = "2024",
     rustc_env = {
-        "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
+        "CARGO_MANIFEST_DIR": "crates/rustleaks-eval",
         "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
     srcs = ["src/bin/rustleaks-quality.rs"],
@@ -89,7 +89,7 @@ rust_test(
     env = _PERF_TEST_ENV,
     deps = all_crate_deps(normal = True, normal_dev = True) + _DEPS,
     rustc_env = {
-        "CARGO_MANIFEST_DIR": "crates/rustleaks-compat",
+        "CARGO_MANIFEST_DIR": "crates/rustleaks-eval",
         "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
     visibility = ["//visibility:public"],
@@ -98,7 +98,7 @@ rust_test(
 test_suite(
     name = "all_tests",
     tests = [
-        ":rustleaks_compat_unit_test",
+        ":rustleaks_eval_unit_test",
         ":rustleaks_perf_test",
     ],
     visibility = ["//visibility:public"],
