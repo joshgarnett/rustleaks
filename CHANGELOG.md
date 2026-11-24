@@ -22,7 +22,11 @@
 - A normal scan now reads a file whose name ends in `.tgz` as a
   gzip-compressed TAR archive, as a complete scan already did. Before, a
   normal scan skipped such a file as binary, so secrets inside it were
-  missed.
+  missed. A `.tgz` file that does not start with the gzip magic bytes is
+  read as its other suffixes name it, such as `x.tar.tgz` as a TAR, and
+  otherwise as a plain file. In a normal scan, a gzip `x.gz.tgz` is read as
+  a gzip stream of one file. Before, a complete scan reported such files as
+  a decode issue.
 - Git runs with `LC_ALL=C` and without `LANGUAGE` during scans and remote
   discovery, unless the caller's command environment sets them. With a
   translated Git, harmless rename-limit and auto-gc warnings were reported
@@ -38,7 +42,8 @@
   no warning. Data after the last stream that is not a bzip2 stream gives a
   decode issue.
 - 7z archives with many Zstandard members no longer allocate and zero the
-  whole 7z memory limit for each block; one buffer is reused for the archive.
+  whole 7z memory limit for each block. One buffer is reused from block to
+  block, and a block without Zstandard frees it.
 - A 7z LZMA coder with fewer than 5 property bytes gives the decode issue
   `LZMA properties too short` instead of `7z decoder panicked on untrusted
   input`. Other 7z decode and limit issues show a plain message instead of

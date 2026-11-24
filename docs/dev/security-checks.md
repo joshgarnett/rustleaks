@@ -388,7 +388,8 @@ Scan the worktree and Git history with Rustleaks before a release. Pull
 requests run the worktree scan, and the nightly workflow runs both scans.
 
 - The root `.rustleaks.toml` extends the default rules and skips the test
-  corpora under `testdata/`, copied fixtures, the rule test fixtures and
+  corpora under `testdata/` (and under `compat/` in older commits), copied
+  fixtures, the rule test fixtures and
   case files, a few rule tests, examples and rule documents that hold
   synthetic credentials, Git metadata and build output. In `CHANGELOG.md` it
   allows only two quoted synthetic passwords. In the providers pack
@@ -398,7 +399,10 @@ requests run the worktree scan, and the nightly workflow runs both scans.
   scan applies these line rules.
 - The root `.rustleaksignore` lists reviewed fingerprints of synthetic
   examples and generated hashes. A worktree fingerprint includes the line
-  number, so update it when an edit moves the reviewed line.
+  number. When an edit moves a reviewed line, add the entry for the new line
+  and keep the old one, because the Git history scan still finds the value
+  at the old line in older commits. Before you remove an entry as stale, run
+  both the `git` history scan and the `dir` scan without it.
 - GitHub secret scanning skips only the generated corpora, copied fixtures and
   the default configuration files listed in `.github/secret_scanning.yml`.
   Repository checks require that exact list. Generator source, examples and

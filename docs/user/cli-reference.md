@@ -85,6 +85,12 @@ With both `--staged` and `--pre-commit`, Rustleaks scans the staged changes.
 `--pre-commit` have no commit and no link. See [Using Rustleaks in CI and Git
 hooks](ci.md) for examples.
 
+Rustleaks runs Git with `LC_ALL=C`. Git then matches non-ASCII text byte by
+byte, so `--log-opts` options that match text, such as `-i`, `--grep` and
+`--author`, can select other commits than in a UTF-8 locale. For example,
+`-i` does not match `É` to `é`. The clean filters that `--pre-commit` runs
+also run in the C locale.
+
 ### dir
 
 ```text

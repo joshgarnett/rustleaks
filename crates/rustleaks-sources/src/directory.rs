@@ -561,11 +561,14 @@ impl DirectorySource {
         let logical = self.emitted_path(target)?;
         let physical = LogicalPath::from_native(target);
         let prefix = logical.as_bytes();
+        // A `.tgz` file whose bytes are not a gzip TAR is read as a leaf, so
+        // an exact exclusion of its own path is passed on too.
+        let tgz = crate::archive::path_has_tgz_suffix(target);
         let mut paths = Vec::new();
         for excluded in &self.options.excluded_paths {
-            if excluded.as_bytes().starts_with(prefix)
-                && excluded.as_bytes().get(prefix.len()) == Some(&b'!')
-            {
+            let bytes = excluded.as_bytes();
+            let member = bytes.starts_with(prefix) && bytes.get(prefix.len()) == Some(&b'!');
+            if member || (tgz && bytes == prefix) {
                 paths.try_reserve(1).map_err(|error| {
                     CallbackError::new(format!("could not retain archive exclusion: {error}"))
                 })?;
