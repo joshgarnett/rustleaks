@@ -32,7 +32,7 @@ env:
 
 jobs:
   release:
-    name: Publish verified GitHub prerelease
+    name: Publish verified GitHub release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release
@@ -226,7 +226,7 @@ jobs:
             found { print }
             END { if (!found) exit 1 }
           ' CHANGELOG.md > "${RUNNER_TEMP}/release-notes.md"
-      - name: Publish the exact tag and GitHub prerelease
+      - name: Publish the exact tag and GitHub release
         env:
           CANDIDATE: ${{ inputs.candidate }}
           EXPECTED_VERSION: ${{ inputs.version }}

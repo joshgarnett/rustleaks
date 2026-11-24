@@ -45,7 +45,7 @@ and fail when that boundary changes.
 | Bazel and local tools | `MODULE.bazel`, lockfiles, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned toolchains and lockfiles, declared inputs, exact tool versions, private bounded output, verified process cleanup | `just ci`, build system checks, package consumers, target compile matrix |
 | Hosted CI | `.github/workflows/`, `.github/actions/setup/` | Read-only default permissions, minimal job grants, actions pinned by full SHA, no secrets in pull request and dry-run jobs | Pull request, nightly, weekly, CodeQL, native and dry-run workflows |
 | Releases | Package metadata, release Bazel configs, `//release/linux-packages`, `release-dry-run.yml`, `publish.yml`, `release.yml`, `release` environment | Exact-main qualification, repeat builds with byte comparison, Linux packages checked against the archive, checksums, SBOMs, signed provenance, protected publication | `just release-dry-run`, hosted qualification, native smoke tests, package installs on glibc 2.28, attestation and bundle checks |
-| Package managers | `packages.yml`, `joshgarnett/homebrew-tap`, `joshgarnett/scoop-bucket`, packaging GitHub App, `release` environment | Formula and manifest written from attested archives and checksums, installs checked before any push, one-hour App token for contents write on the two repositories only, in the protected publish job, no version moves back | Workflow policy check, `release-artifact package-managers` and `check-upgrade` tests, Homebrew and Scoop install jobs |
+| Package managers | `packages.yml`, `joshgarnett/homebrew-tap`, `joshgarnett/scoop-bucket`, packaging GitHub App, `release` environment | Formula and manifest written from attested archives and checksums, release tag matched to the release commit, installs and channel versions checked before any push and without a credential, one-hour App token for contents write on the two repositories only, in a protected publish job that runs only Git and the GitHub CLI, no version moves back and no stable channel moves to a pre-release | Workflow policy check, `release-artifact package-managers` and `check-upgrade` tests, Homebrew and Scoop install jobs |
 
 Exact limits are in [Engine internals](engine-internals.md) and
 [Resource limits](../user/resource-limits.md). Dependency reasoning is in
@@ -226,9 +226,16 @@ See [Using rustleaks-core](../user/library.md#review-records).
   only what their action needs.
 - The packaging App key is the only stored workflow secret. Anyone who can
   approve a `release` environment job can push to the tap and bucket, which
-  changes what `brew install` and `scoop install` give users. The Scoop
-  install check runs the pinned Scoop installer, which downloads Scoop and
-  its main bucket without a pin, in a job with no credential.
+  changes what `brew install` and `scoop install` give users. The job that
+  reads the key runs no Rustleaks code, setup action or Cargo build, so no
+  build script runs beside it. It trusts Git and the GitHub CLI of the
+  hosted runner image. The Scoop install check runs the pinned Scoop
+  installer, which downloads Scoop and its main bucket without a pin, in a
+  job with no credential.
+- The release dry run installs `rpm` from the Ubuntu archive without a
+  version pin, in the glibc jobs that can request attestations. The job log
+  records `rpmbuild --version`. The `.rpm` check compares the package with
+  the archive, but does not prove which `rpmbuild` wrote it.
 - Each release still needs a hosted run, an approved publication path and an
   explicit decision.
 

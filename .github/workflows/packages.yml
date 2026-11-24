@@ -1,9 +1,10 @@
 name: Update Package Managers
 
 # Writes the Homebrew formula and Scoop manifest for a published release,
-# installs each one on its platforms, and only then, when `publish` is set,
-# pushes them to joshgarnett/homebrew-tap and joshgarnett/scoop-bucket.
-# Without `publish` the workflow uses no credential and changes nothing.
+# and installs each one on its platforms. When `publish` is set, it also
+# checks the versions in joshgarnett/homebrew-tap and joshgarnett/scoop-bucket
+# and, after every check passes, pushes to them. Without `publish` the
+# workflow uses no credential and changes nothing.
 
 on:
   workflow_dispatch:
@@ -67,6 +68,11 @@ jobs:
           fi
           candidate="$(jq -r '.target_commitish' <<<"${release_json}")"
           [[ "${candidate}" =~ ^[0-9a-f]{40}$ ]]
+          # The release target can be edited after publication; the tag is
+          # what users fetch. release.yml creates a lightweight tag.
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.object.type' <<<"${ref_json}")" = commit
+          test "$(jq -r '.object.sha' <<<"${ref_json}")" = "${candidate}"
           git merge-base --is-ancestor "${candidate}" HEAD
           echo "candidate=${candidate}" >> "${GITHUB_OUTPUT}"
       - name: Download and verify the release archives
@@ -226,19 +232,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Select-String -Quiet -Pattern REDACTED -Path $smoke)) { throw 'Scoop smoke finding missing' }
 
-  publish:
-    name: Push the formula and manifest
-    needs:
-      - generate
-      - verify-homebrew
-      - verify-scoop
+  check-channels:
+    name: Check the tap and bucket versions
+    needs: generate
     if: inputs.publish
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: release
     permissions:
-      actions: read
       contents: read
+    outputs:
+      homebrew-tap: ${{ steps.check.outputs.homebrew-tap }}
+      scoop-bucket: ${{ steps.check.outputs.scoop-bucket }}
     steps:
       - name: Check out the trigger commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -250,25 +254,12 @@ jobs:
           rust-components: ""
           install-just: "false"
           install-bazelisk: "false"
-      - name: Build the upgrade check before any token exists
-        run: |
-          set -euo pipefail
-          cargo fetch --locked
-          cargo build --locked -p xtask
-      - name: Download the checked formula and manifest
-        env:
-          EXPECTED_VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
-            --name "package-managers-${EXPECTED_VERSION}" --dir "${RUNNER_TEMP}/package-managers"
-      - name: Prepare the tap and bucket changes
+      - name: Refuse a version that would move either channel back
+        id: check
         env:
           EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          work="${RUNNER_TEMP}/package-managers/out"
           for channel in "homebrew-tap Formula/rustleaks.rb" "scoop-bucket bucket/rustleaks.json"; do
             read -r repository file <<<"${channel}"
             checkout="${RUNNER_TEMP}/${repository}"
@@ -279,8 +270,52 @@ jobs:
               else
                 current="$(sed -n 's#.*/releases/download/v\([^/]*\)/.*#\1#p' "${checkout}/${file}" | sort -u)"
               fi
-              ./target/debug/xtask release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
+              cargo xtask release-artifact check-upgrade "${current}" "${EXPECTED_VERSION}"
             fi
+            # The publish job pushes only on top of the commit checked here.
+            echo "${repository}=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+          done
+
+  publish:
+    name: Push the formula and manifest
+    needs:
+      - generate
+      - check-channels
+      - verify-homebrew
+      - verify-scoop
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+    # Only Git and the GitHub CLI run in this job. It checks out no
+    # Rustleaks code and runs no setup action or Cargo, so no build code
+    # shares the runner with the App key or token.
+    steps:
+      - name: Download the checked formula and manifest
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "package-managers-${EXPECTED_VERSION}" --dir "${RUNNER_TEMP}/package-managers"
+      - name: Prepare the tap and bucket changes on the checked commits
+        env:
+          HOMEBREW_TAP_HEAD: ${{ needs.check-channels.outputs.homebrew-tap }}
+          SCOOP_BUCKET_HEAD: ${{ needs.check-channels.outputs.scoop-bucket }}
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/package-managers/out"
+          for channel in "homebrew-tap Formula/rustleaks.rb ${HOMEBREW_TAP_HEAD}" "scoop-bucket bucket/rustleaks.json ${SCOOP_BUCKET_HEAD}"; do
+            read -r repository file expected <<<"${channel}"
+            [[ "${expected}" =~ ^[0-9a-f]{40}$ ]]
+            checkout="${RUNNER_TEMP}/${repository}"
+            git clone --depth 1 --branch main "https://github.com/joshgarnett/${repository}.git" "${checkout}"
+            # A main that moved after the version check stops the push.
+            test "$(git -C "${checkout}" rev-parse HEAD)" = "${expected}"
             mkdir -p "$(dirname "${checkout}/${file}")"
             install -m 0644 "${work}/${file}" "${checkout}/${file}"
             git -C "${checkout}" add "${file}"
@@ -296,7 +331,7 @@ jobs:
             homebrew-tap
             scoop-bucket
           permission-contents: write
-      # Only Git and the GitHub CLI run while the token exists.
+      # A plain push refuses anything but a fast-forward of main.
       - name: Push to the tap and bucket
         env:
           APP_SLUG: ${{ steps.token.outputs.app-slug }}
