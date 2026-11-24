@@ -994,6 +994,9 @@ fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
             assert!(output.status.success(), "isolated Git {arguments:?} failed");
         };
         git(&["init", "--quiet", &format!("--object-format={format}")]);
+        // Git for Windows sets `core.autocrlf` in its system configuration,
+        // and the worktree diff would then warn about line endings.
+        git(&["config", "--local", "core.autocrlf", "false"]);
         fs::write(
             repository.join(".gitattributes"),
             "*.env -diff\n*.lock binary\n*.dat diff\n",
@@ -1015,9 +1018,9 @@ fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
         git(&["add", "--", "third.env"]);
         fs::write(repository.join("third.env"), "worktree marked text\n").expect("write file");
 
-        let contents = |source: &mut rustleaks_sources::GitSource| {
+        let contents = |label: &str, source: &mut rustleaks_sources::GitSource| {
             let (fragments, issues) = collect(source);
-            assert!(issues.is_empty(), "{format}: {issues:?}");
+            assert!(issues.is_empty(), "{format} {label}: {issues:?}");
             let mut contents = fragments
                 .iter()
                 .map(|fragment| {
@@ -1037,34 +1040,52 @@ fn attributes_that_mark_text_as_binary_do_not_hide_history_content() {
         ];
         let one = std::num::NonZeroUsize::MIN;
         let two = std::num::NonZeroUsize::new(2).unwrap();
-        for mut source in [
-            support::git_source(&repository),
-            support::git_source(&repository)
-                .history_processes(two)
-                .history_batch_commits(one),
-            support::git_source(&repository).mode(GitMode::LogArguments(vec!["--all".into()])),
-            support::git_source(&repository)
-                .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
-            support::git_source(&repository)
-                .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())])
-                .history_processes(two)
-                .history_batch_commits(one),
+        for (label, mut source) in [
+            ("history", support::git_source(&repository)),
+            (
+                "two processes",
+                support::git_source(&repository)
+                    .history_processes(two)
+                    .history_batch_commits(one),
+            ),
+            (
+                "log arguments",
+                support::git_source(&repository).mode(GitMode::LogArguments(vec!["--all".into()])),
+            ),
+            (
+                "history with GIT_ATTR_SOURCE",
+                support::git_source(&repository)
+                    .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+            ),
+            (
+                "two processes with GIT_ATTR_SOURCE",
+                support::git_source(&repository)
+                    .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())])
+                    .history_processes(two)
+                    .history_batch_commits(one),
+            ),
         ] {
-            assert_eq!(contents(&mut source), history, "{format}");
+            assert_eq!(contents(label, &mut source), history, "{format} {label}");
         }
-        for mut staged in [
-            support::git_source(&repository).mode(GitMode::Diff { staged: true }),
-            support::git_source(&repository)
-                .mode(GitMode::Diff { staged: true })
-                .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+        for (label, mut staged) in [
+            (
+                "staged",
+                support::git_source(&repository).mode(GitMode::Diff { staged: true }),
+            ),
+            (
+                "staged with GIT_ATTR_SOURCE",
+                support::git_source(&repository)
+                    .mode(GitMode::Diff { staged: true })
+                    .command_environment([("GIT_ATTR_SOURCE".into(), "HEAD".into())]),
+            ),
         ] {
             assert_eq!(
-                contents(&mut staged),
+                contents(label, &mut staged),
                 [("third.env".to_owned(), "staged marked text\n".to_owned())],
-                "{format}"
+                "{format} {label}"
             );
         }
         let mut worktree = support::git_source(&repository).mode(GitMode::Diff { staged: false });
-        assert_eq!(contents(&mut worktree), [], "{format}");
+        assert_eq!(contents("worktree", &mut worktree), [], "{format}");
     }
 }
